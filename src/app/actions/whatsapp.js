@@ -2,11 +2,65 @@
 
 import { createClient } from '@/utils/supabase/server';
 import { revalidatePath } from 'next/cache';
+import globalCatalogData from '@/config/whatsappBspCatalog.json';
 
 // ==========================================
-// SETTINGS
+// TIER 1: GLOBAL BSP CATALOG & DEFINITION
 // ==========================================
-export async function getWhatsappSettings() {
+export async function getGlobalBspCatalog() {
+  return { success: true, catalog: globalCatalogData };
+}
+
+// ==========================================
+// TIER 2: CLIENT / WORKSPACE ALLOCATIONS
+// ==========================================
+export async function getClientBspAllocations() {
+  const supabase = await createClient();
+  const { data } = await supabase.from('whatsapp_settings').select('api_key').limit(1).single();
+  let clientAllocations = {};
+  if (data?.api_key && typeof data.api_key === 'string' && data.api_key.trim().startsWith('{')) {
+    try {
+      const parsed = JSON.parse(data.api_key);
+      clientAllocations = parsed.client_allocations || {};
+    } catch (_) {}
+  }
+  
+  // Also fetch active tenants/companies from Supabase
+  let tenants = [];
+  try {
+    const { data: tList } = await supabase.from('tenants').select('id, name, tenant_code');
+    tenants = tList || [];
+  } catch (_) {}
+
+  return { success: true, allocations: clientAllocations, tenants };
+}
+
+export async function saveClientBspAllocations(allocations) {
+  const supabase = await createClient();
+  const { data: existing } = await supabase.from('whatsapp_settings').select('*').limit(1).single();
+  if (!existing) return { success: false, error: 'WhatsApp settings record not initialized' };
+
+  let currentConfig = {};
+  if (existing.api_key && typeof existing.api_key === 'string' && existing.api_key.trim().startsWith('{')) {
+    try { currentConfig = JSON.parse(existing.api_key); } catch (_) {}
+  }
+  currentConfig.client_allocations = allocations || {};
+
+  const jsonStr = JSON.stringify(currentConfig);
+  const { error } = await supabase.from('whatsapp_settings').update({
+    api_key: jsonStr,
+    updated_at: new Date().toISOString()
+  }).eq('id', existing.id);
+
+  if (error) return { success: false, error: error.message };
+  revalidatePath('/');
+  return { success: true, allocations };
+}
+
+// ==========================================
+// TIER 3: CLIENT / GLOBAL SETTINGS
+// ==========================================
+export async function getWhatsappSettings(clientCompany = '') {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from('whatsapp_settings')
@@ -29,6 +83,8 @@ export async function getWhatsappSettings() {
   }
 
   const customBsps = Array.isArray(parsedConfig?.custom_bsps) ? parsedConfig.custom_bsps : [];
+  const clientAllocations = parsedConfig?.client_allocations || {};
+  const bspCredentials = parsedConfig?.bsp_credentials || {};
 
   // Normalize multi-provider structure while guaranteeing 100% backward compatibility
   let defaultEnabled = ['aisensy'];
@@ -37,8 +93,28 @@ export async function getWhatsappSettings() {
     defaultEnabled = parsedConfig.enabled_providers;
   }
 
+  let isClientScoped = false;
+  let assignedBsps = [];
+
+  // Check if a specific company/tenant has assigned BSPs
+  if (clientCompany) {
+    const compKey = String(clientCompany).trim();
+    const alloc = clientAllocations[compKey] || 
+                  clientAllocations[compKey.toLowerCase()] ||
+                  clientAllocations[compKey.toUpperCase()];
+    if (alloc && Array.isArray(alloc.allowed_bsps) && alloc.allowed_bsps.length > 0) {
+      isClientScoped = true;
+      assignedBsps = alloc.allowed_bsps;
+      defaultEnabled = alloc.allowed_bsps;
+    }
+  }
+
   const normalized = {
     ...data,
+    is_client_scoped: isClientScoped,
+    assigned_bsps: assignedBsps,
+    client_allocations: clientAllocations,
+    bsp_credentials: bspCredentials,
     enabled_providers: defaultEnabled,
     default_provider: parsedConfig?.default_provider || parsedConfig?.provider || (data.api_key_nstlp ? 'nextel' : 'aisensy'),
     provider: parsedConfig?.default_provider || parsedConfig?.provider || (data.api_key_nstlp ? 'nextel' : 'aisensy'),
@@ -89,6 +165,8 @@ export async function saveWhatsappSettings(payload, fallbackNstlp) {
       provider: primaryDefault,
       account_limit: Number(payload.account_limit || enabledList.length || 1),
       custom_bsps: Array.isArray(payload.custom_bsps) ? payload.custom_bsps : [],
+      client_allocations: payload.client_allocations || {},
+      bsp_credentials: payload.bsp_credentials || {},
       meta: payload.meta || {},
       aisensy: payload.aisensy || {},
       interakt: payload.interakt || {},
@@ -185,28 +263,42 @@ export async function testWhatsappProviderConnection({ provider, config, testPho
       if (!endpoint) return { success: false, error: 'Nextel Endpoint URL is required.' };
       return { success: true, message: 'Nextel Endpoint session URL verified ready.' };
     } else {
-      // Check if it's a dynamic custom BSP
+      // Check if it's a dynamic custom BSP or catalog BSP
       const customBsp = (config?.custom_bsps || []).find(b => b.id === provider || b.name?.toLowerCase() === provider?.toLowerCase());
-      if (customBsp) {
-        if (!customBsp.endpoint_url) {
-          return { success: false, error: `${customBsp.name || 'Custom BSP'} endpoint URL is required.` };
+      const catalogBsp = globalCatalogData.find(b => b.id === provider || b.name?.toLowerCase() === provider?.toLowerCase());
+      const bspDefinition = customBsp || catalogBsp;
+      const bspCreds = config?.bsp_credentials?.[provider] || config?.[provider] || {};
+
+      if (bspDefinition) {
+        const endpointUrl = bspCreds.endpoint_url || bspDefinition.default_endpoint || bspDefinition.endpoint_url;
+        const authToken = bspCreds.api_key || bspCreds.access_token || bspCreds.auth_token || bspDefinition.auth_token || '';
+
+        if (!endpointUrl) {
+          return { success: false, error: `${bspDefinition.name} endpoint URL is required.` };
         }
 
         const headers = { 'Content-Type': 'application/json' };
-        if (customBsp.auth_type === 'Bearer' && customBsp.auth_token) {
-          headers['Authorization'] = `Bearer ${customBsp.auth_token.trim()}`;
-        } else if (customBsp.auth_type === 'HeaderKey' && customBsp.auth_token) {
-          headers[customBsp.auth_header_name?.trim() || 'X-API-KEY'] = customBsp.auth_token.trim();
-        } else if (customBsp.auth_type === 'Basic' && customBsp.auth_token) {
-          headers['Authorization'] = `Basic ${customBsp.auth_token.trim()}`;
+        const authType = bspDefinition.auth_type || 'Bearer';
+        const headerName = bspDefinition.auth_header_name || 'Authorization';
+
+        if (authToken) {
+          if (authType === 'Bearer') {
+            headers[headerName] = `Bearer ${authToken.trim()}`;
+          } else if (authType === 'HeaderKey') {
+            headers[headerName] = authToken.trim();
+          } else if (authType === 'Basic') {
+            headers[headerName] = authToken.trim().startsWith('Basic ') ? authToken.trim() : `Basic ${authToken.trim()}`;
+          }
         }
 
-        const renderedPayload = (customBsp.payload_format || '{\n  "to": "{{PHONE}}",\n  "message": "{{MESSAGE}}"\n}')
+        const renderedPayload = (bspDefinition.payload_format || '{\n  "to": "{{PHONE}}",\n  "message": "{{MESSAGE}}"\n}')
           .replace(/\{\{PHONE\}\}/g, phoneStr)
           .replace(/\{\{NAME\}\}/g, 'Test Customer')
           .replace(/\{\{TEMPLATE_NAME\}\}/g, 'test_template')
           .replace(/\{\{MESSAGE\}\}/g, 'CRM Connection Test')
-          .replace(/\{\{IMAGE_URL\}\}/g, '');
+          .replace(/\{\{IMAGE_URL\}\}/g, '')
+          .replace(/\{\{AUTH_TOKEN\}\}/g, authToken)
+          .replace(/\{\{API_KEY\}\}/g, authToken);
 
         try {
           JSON.parse(renderedPayload);
@@ -214,8 +306,8 @@ export async function testWhatsappProviderConnection({ provider, config, testPho
           return { success: false, error: `Invalid JSON payload template format: ${err.message}` };
         }
 
-        const testRes = await fetch(customBsp.endpoint_url, {
-          method: customBsp.method || 'POST',
+        const testRes = await fetch(endpointUrl, {
+          method: bspDefinition.method || 'POST',
           headers,
           body: renderedPayload
         });
@@ -227,13 +319,13 @@ export async function testWhatsappProviderConnection({ provider, config, testPho
         if (!testRes.ok) {
           return { 
             success: false, 
-            error: `${customBsp.name} returned HTTP ${testRes.status}: ${resData?.message || resData?.error || resText.substring(0, 150) || 'Request failed'}` 
+            error: `${bspDefinition.name} returned HTTP ${testRes.status}: ${resData?.message || resData?.error || resText.substring(0, 150) || 'Request failed'}` 
           };
         }
 
         return { 
           success: true, 
-          message: `${customBsp.name} connection test call succeeded (HTTP ${testRes.status})! Response: ${resData?.message || resData?.status || 'OK'}` 
+          message: `${bspDefinition.name} connection test call succeeded (HTTP ${testRes.status})! Response: ${resData?.message || resData?.status || 'OK'}` 
         };
       }
     }
@@ -386,16 +478,29 @@ export async function sendWhatsappMessage(leadId, templateId, selectedPhones = [
         else if (tplTarget.includes('wati')) activeProvider = 'wati';
         else if (tplTarget.includes('nextel')) activeProvider = 'nextel';
         else {
-          const matchedCustom = customBsps.find(b => 
+          const matchedCatalog = globalCatalogData.find(b => 
             tplTarget.includes(b.id?.toLowerCase()) || 
             (b.name && tplTarget.includes(b.name.toLowerCase()))
           );
-          if (matchedCustom) activeProvider = matchedCustom.id;
+          if (matchedCatalog) {
+            activeProvider = matchedCatalog.id;
+          } else {
+            const matchedCustom = customBsps.find(b => 
+              tplTarget.includes(b.id?.toLowerCase()) || 
+              (b.name && tplTarget.includes(b.name.toLowerCase()))
+            );
+            if (matchedCustom) activeProvider = matchedCustom.id;
+          }
         }
 
-        // OPTION B: Company/Brand Routing (NSMLR -> AiSensy, NSTLP -> Nextel)
+        // OPTION B: Company/Client Allocation Routing
         if (!activeProvider) {
-          if (company === 'NSTLP' || tplTarget === 'nstlp') {
+          const clientAlloc = parsedProviderConfig?.client_allocations?.[company] || 
+                              parsedProviderConfig?.client_allocations?.[company.toLowerCase()] ||
+                              parsedProviderConfig?.client_allocations?.[company.toUpperCase()];
+          if (clientAlloc?.default_bsp) {
+            activeProvider = clientAlloc.default_bsp;
+          } else if (company === 'NSTLP' || tplTarget === 'nstlp') {
             activeProvider = 'nextel';
           } else if (company === 'NSMLR' || tplTarget === 'nsmlr') {
             activeProvider = 'aisensy';
@@ -410,7 +515,10 @@ export async function sendWhatsappMessage(leadId, templateId, selectedPhones = [
                            (settings.api_key_nstlp ? 'nextel' : 'aisensy');
         }
 
+        const matchedCatalogBsp = globalCatalogData.find(b => b.id === activeProvider);
         const matchedCustomBsp = customBsps.find(b => b.id === activeProvider || (b.name && b.name.toLowerCase() === String(activeProvider).toLowerCase()));
+        const bspDefinition = matchedCustomBsp || (activeProvider !== 'aisensy' ? matchedCatalogBsp : null);
+        const bspCreds = parsedProviderConfig?.bsp_credentials?.[activeProvider] || parsedProviderConfig?.[activeProvider] || {};
 
         if (activeProvider === 'meta') {
           // =======================
@@ -570,21 +678,29 @@ export async function sendWhatsappMessage(leadId, templateId, selectedPhones = [
              throw new Error((responseData.message || responseData.error || "Failed to send to " + phoneStr));
           }
 
-        } else if (matchedCustomBsp) {
+        } else if (bspDefinition) {
           // =======================
-          // DYNAMIC CUSTOM BSP INTEGRATION
+          // GLOBAL BSP & CUSTOM GATEWAY DISPATCH ENGINE
           // =======================
-          if (!matchedCustomBsp.endpoint_url) {
-            throw new Error(`Custom BSP "${matchedCustomBsp.name}" endpoint URL is not configured`);
+          const endpointUrl = bspCreds.endpoint_url || bspDefinition.default_endpoint || bspDefinition.endpoint_url;
+          const authToken = bspCreds.api_key || bspCreds.access_token || bspCreds.auth_token || bspDefinition.auth_token || '';
+
+          if (!endpointUrl) {
+            throw new Error(`WhatsApp Gateway "${bspDefinition.name}" endpoint URL is not configured`);
           }
 
           const headers = { 'Content-Type': 'application/json' };
-          if (matchedCustomBsp.auth_type === 'Bearer' && matchedCustomBsp.auth_token) {
-            headers['Authorization'] = `Bearer ${matchedCustomBsp.auth_token.trim()}`;
-          } else if (matchedCustomBsp.auth_type === 'HeaderKey' && matchedCustomBsp.auth_token) {
-            headers[matchedCustomBsp.auth_header_name?.trim() || 'X-API-KEY'] = matchedCustomBsp.auth_token.trim();
-          } else if (matchedCustomBsp.auth_type === 'Basic' && matchedCustomBsp.auth_token) {
-            headers['Authorization'] = `Basic ${matchedCustomBsp.auth_token.trim()}`;
+          const authType = bspDefinition.auth_type || 'Bearer';
+          const headerName = bspDefinition.auth_header_name || 'Authorization';
+
+          if (authToken) {
+            if (authType === 'Bearer') {
+              headers[headerName] = `Bearer ${authToken.trim()}`;
+            } else if (authType === 'HeaderKey') {
+              headers[headerName] = authToken.trim();
+            } else if (authType === 'Basic') {
+              headers[headerName] = authToken.trim().startsWith('Basic ') ? authToken.trim() : `Basic ${authToken.trim()}`;
+            }
           }
 
           const custName = lead.name || lead.company || lead.business_type || "Customer";
@@ -597,15 +713,17 @@ export async function sendWhatsappMessage(leadId, templateId, selectedPhones = [
           const cleanMsg = JSON.stringify(msgBody).slice(1, -1);
           const cleanImg = JSON.stringify(imgUrl).slice(1, -1);
 
-          const renderedPayload = (matchedCustomBsp.payload_format || '{\n  "to": "{{PHONE}}",\n  "message": "{{MESSAGE}}"\n}')
+          const renderedPayload = (bspDefinition.payload_format || '{\n  "to": "{{PHONE}}",\n  "message": "{{MESSAGE}}"\n}')
             .replace(/\{\{PHONE\}\}/g, phoneStr)
             .replace(/\{\{NAME\}\}/g, cleanName)
             .replace(/\{\{TEMPLATE_NAME\}\}/g, cleanTplName)
             .replace(/\{\{MESSAGE\}\}/g, cleanMsg)
-            .replace(/\{\{IMAGE_URL\}\}/g, cleanImg);
+            .replace(/\{\{IMAGE_URL\}\}/g, cleanImg)
+            .replace(/\{\{AUTH_TOKEN\}\}/g, authToken)
+            .replace(/\{\{API_KEY\}\}/g, authToken);
 
-          const response = await fetch(matchedCustomBsp.endpoint_url, {
-            method: matchedCustomBsp.method || 'POST',
+          const response = await fetch(endpointUrl, {
+            method: bspDefinition.method || 'POST',
             headers,
             body: renderedPayload
           });
@@ -615,7 +733,7 @@ export async function sendWhatsappMessage(leadId, templateId, selectedPhones = [
           try { responseData = JSON.parse(responseText); } catch (_) {}
 
           if (!response.ok) {
-            throw new Error(responseData?.message || responseData?.error || responseText.substring(0, 160) || `Custom BSP HTTP Error ${response.status}`);
+            throw new Error(responseData?.message || responseData?.error || responseText.substring(0, 160) || `${bspDefinition.name} HTTP Error ${response.status}`);
           }
 
         } else {

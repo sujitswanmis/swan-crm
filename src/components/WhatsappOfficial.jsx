@@ -5,7 +5,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Save, Plus, Trash2, Image as ImageIcon, Upload, PlayCircle, Settings, MessageSquare, Repeat,
   CheckCircle2, AlertCircle, Eye, EyeOff, Send, ShieldCheck, Users, HelpCircle, RefreshCw, Zap,
-  Building2, Filter, Briefcase, Edit3, Globe, Code2, X, ExternalLink
+  Building2, Filter, Briefcase, Edit3, Globe, Code2, X, ExternalLink, Check, Search, Layers, Key
 } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { 
@@ -17,7 +17,10 @@ import {
   getWhatsappAutomations,
   saveWhatsappAutomation,
   deleteWhatsappAutomation,
-  testWhatsappProviderConnection
+  testWhatsappProviderConnection,
+  getGlobalBspCatalog,
+  getClientBspAllocations,
+  saveClientBspAllocations
 } from '@/app/actions/whatsapp';
 import { getTenantBranches } from '@/app/actions/tenantBranches';
 import { filterVisibleSubTabs, getSubItemPermissions } from '@/utils/permissionUtils';
@@ -65,6 +68,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
   };
   const [loading, setLoading] = useState(false);
   const supabase = createClient();
+  const isAdmin = userRole === 'admin' || userRole === 'super_admin';
 
   // Settings State - Multi-Active Providers & Default Gateway
   const [enabledProviders, setEnabledProviders] = useState(['aisensy']);
@@ -75,6 +79,19 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
   const [interaktConfig, setInteraktConfig] = useState({ api_key: '' });
   const [watiConfig, setWatiConfig] = useState({ endpoint_url: '', access_token: '' });
   const [nextelConfig, setNextelConfig] = useState({ endpoint_url: '' });
+
+  // 3-Tier Multi-Tenant State (Catalog, Allocations, Workspace Setup)
+  const [catalog, setCatalog] = useState([]);
+  const [catalogSearch, setCatalogSearch] = useState('');
+  const [clientAllocations, setClientAllocations] = useState({});
+  const [tenantsList, setTenantsList] = useState([]);
+  const [selectedClientForAllocation, setSelectedClientForAllocation] = useState('Swan Agro');
+  const [activeAdminSubTab, setActiveAdminSubTab] = useState('catalog'); // 'catalog' | 'allocations' | 'credentials'
+  const [isClientScoped, setIsClientScoped] = useState(false);
+  const [assignedBsps, setAssignedBsps] = useState([]);
+  const [bspCredentials, setBspCredentials] = useState({});
+  const [savingAllocations, setSavingAllocations] = useState(false);
+  const [allocationFeedback, setAllocationFeedback] = useState(null);
 
   // Custom BSP State - Dynamic Self-Serve Gateway Engine
   const [customBsps, setCustomBsps] = useState([]);
@@ -142,21 +159,39 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
   const loadAllData = async () => {
     setLoading(true);
     const effectiveComp = userCompany || 'Swan Agro';
-    const [setRes, tplRes, autoRes, branchRes] = await Promise.all([
-      getWhatsappSettings(),
+    const [setRes, tplRes, autoRes, branchRes, catRes, allocRes] = await Promise.all([
+      getWhatsappSettings(effectiveComp),
       getWhatsappTemplates(),
       getWhatsappAutomations(),
-      getTenantBranches(effectiveComp)
+      getTenantBranches(effectiveComp),
+      getGlobalBspCatalog(),
+      getClientBspAllocations()
     ]);
 
     if (branchRes.success && Array.isArray(branchRes.branches)) {
       setBranches(branchRes.branches);
+    }
+
+    if (catRes.success && Array.isArray(catRes.catalog)) {
+      setCatalog(catRes.catalog);
+    }
+
+    if (allocRes.success) {
+      setClientAllocations(allocRes.allocations || {});
+      setTenantsList(allocRes.tenants || []);
     }
     
     if (setRes.success && setRes.data) {
       const d = setRes.data;
       if (Array.isArray(d.custom_bsps)) {
         setCustomBsps(d.custom_bsps);
+      }
+
+      setIsClientScoped(!!d.is_client_scoped);
+      const assigned = Array.isArray(d.assigned_bsps) ? d.assigned_bsps : [];
+      setAssignedBsps(assigned);
+      if (d.bsp_credentials && typeof d.bsp_credentials === 'object') {
+        setBspCredentials(d.bsp_credentials);
       }
 
       const initialEnabled = Array.isArray(d.enabled_providers) && d.enabled_providers.length > 0
@@ -203,6 +238,113 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
     });
   };
 
+  // --- CLIENT ALLOCATION HELPERS (TIER 2) ---
+  const allClients = React.useMemo(() => {
+    const list = [
+      { id: 'Swan Agro', name: 'Swan Agro (Headquarters)', code: 'Swan Agro' },
+      { id: 'NSMLR', name: 'NSMLR (Main Unit)', code: 'NSMLR' },
+      { id: 'NSTLP', name: 'NSTLP (Plant 2)', code: 'NSTLP' }
+    ];
+    (tenantsList || []).forEach(t => {
+      const code = t.tenant_code || t.name;
+      if (!list.some(x => x.code?.toLowerCase() === code?.toLowerCase())) {
+        list.push({ id: t.id, name: t.name, code: code });
+      }
+    });
+    return list;
+  }, [tenantsList]);
+
+  const currentClientAlloc = clientAllocations[selectedClientForAllocation] || {
+    allowed_bsps: ['aisensy', 'nextel'],
+    default_bsp: 'aisensy',
+    account_limit: 1
+  };
+
+  const toggleClientBsp = (bspId) => {
+    const existing = clientAllocations[selectedClientForAllocation] || {
+      allowed_bsps: ['aisensy', 'nextel'],
+      default_bsp: 'aisensy',
+      account_limit: 1
+    };
+    const currentAllowed = Array.isArray(existing.allowed_bsps) ? existing.allowed_bsps : [];
+    let updatedAllowed;
+    if (currentAllowed.includes(bspId)) {
+      if (currentAllowed.length === 1) {
+        alert('Each client must have at least one assigned BSP gateway.');
+        return;
+      }
+      updatedAllowed = currentAllowed.filter(x => x !== bspId);
+    } else {
+      updatedAllowed = [...currentAllowed, bspId];
+    }
+    let updatedDefault = existing.default_bsp;
+    if (!updatedAllowed.includes(updatedDefault)) {
+      updatedDefault = updatedAllowed[0] || 'aisensy';
+    }
+    setClientAllocations(prev => ({
+      ...prev,
+      [selectedClientForAllocation]: {
+        ...existing,
+        allowed_bsps: updatedAllowed,
+        default_bsp: updatedDefault
+      }
+    }));
+  };
+
+  const setClientDefaultBsp = (defBsp) => {
+    const existing = clientAllocations[selectedClientForAllocation] || {
+      allowed_bsps: ['aisensy', 'nextel'],
+      default_bsp: 'aisensy',
+      account_limit: 1
+    };
+    setClientAllocations(prev => ({
+      ...prev,
+      [selectedClientForAllocation]: {
+        ...existing,
+        default_bsp: defBsp
+      }
+    }));
+  };
+
+  const setClientAccountLimit = (limit) => {
+    const existing = clientAllocations[selectedClientForAllocation] || {
+      allowed_bsps: ['aisensy', 'nextel'],
+      default_bsp: 'aisensy',
+      account_limit: 1
+    };
+    setClientAllocations(prev => ({
+      ...prev,
+      [selectedClientForAllocation]: {
+        ...existing,
+        account_limit: Number(limit) || 1
+      }
+    }));
+  };
+
+  const handleSaveClientAllocations = async () => {
+    if (!selectedClientForAllocation) return;
+    setSavingAllocations(true);
+    setAllocationFeedback(null);
+    const res = await saveClientBspAllocations(clientAllocations);
+    setSavingAllocations(false);
+    if (res.success) {
+      setAllocationFeedback({ success: true, message: `Allocations successfully saved for ${selectedClientForAllocation}!` });
+      setTimeout(() => setAllocationFeedback(null), 4000);
+    } else {
+      setAllocationFeedback({ success: false, message: res.error || 'Failed to save allocations' });
+    }
+  };
+
+  const handleUpdateBspCredential = (bspId, field, value) => {
+    setBspCredentials(prev => ({
+      ...prev,
+      [bspId]: {
+        ...(prev[bspId] || {}),
+        [field]: value
+      }
+    }));
+  };
+
   // --- SETTINGS LOGIC ---
   const handleSaveSettings = async (customBspsOverride, enabledProvidersOverride) => {
     setLoading(true);
@@ -214,6 +356,8 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
       provider: defaultProvider,
       account_limit: Number(accountLimit) || activeEnabled.length,
       custom_bsps: activeCustomBsps,
+      client_allocations: clientAllocations,
+      bsp_credentials: bspCredentials,
       meta: metaConfig,
       aisensy: aisensyConfig,
       interakt: interaktConfig,
@@ -247,7 +391,8 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
       interakt: interaktConfig,
       wati: watiConfig,
       nextel: nextelConfig,
-      custom_bsps: customBsps
+      custom_bsps: customBsps,
+      bsp_credentials: bspCredentials
     };
     const res = await testWhatsappProviderConnection({ provider: testProvider, config, testPhone });
     setTestingConnection(false);
@@ -359,13 +504,15 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
   const getBspDisplayName = (bspId) => {
     if (!bspId) return 'AiSensy';
     const lower = String(bspId).toLowerCase();
+    const catalogItem = catalog.find(b => b.id.toLowerCase() === lower);
+    if (catalogItem) return catalogItem.name;
+    const custom = customBsps.find(b => b.id.toLowerCase() === lower || (b.name && b.name.toLowerCase() === lower));
+    if (custom) return custom.name;
     if (lower === 'meta') return 'Meta Cloud API';
     if (lower === 'aisensy') return 'AiSensy';
     if (lower === 'interakt') return 'Interakt';
     if (lower === 'wati') return 'Wati';
     if (lower === 'nextel') return 'Nextel.io';
-    const custom = customBsps.find(b => b.id.toLowerCase() === lower || (b.name && b.name.toLowerCase() === lower));
-    if (custom) return custom.name;
     return bspId.toUpperCase();
   };
 
@@ -531,694 +678,1106 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
 
       {/* SETTINGS TAB */}
       {activeTab === 'settings' && (
-        <div style={{ maxWidth: '960px' }}>
-          <div style={{ marginBottom: '1.5rem' }}>
-            <h2 style={{ fontSize: '1.35rem', fontWeight: 700, margin: '0 0 0.35rem 0', color: 'var(--text-primary)' }}>
-              WhatsApp Official API & Multi-Provider Gateway
-            </h2>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', margin: 0 }}>
-              Configure official WhatsApp Business API accounts. Enable one or more providers (Meta Cloud API, AiSensy, Interakt, Wati, Nextel) and designate your Primary Default Gateway.
-            </p>
-          </div>
-
-          {/* SAAS ENTITLEMENT & ACCOUNT SLOTS CARD */}
-          <div style={{ 
-            display: 'grid', 
-            gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', 
-            gap: '1rem', 
-            marginBottom: '1.5rem',
-            padding: '1.25rem',
-            background: 'linear-gradient(135deg, rgba(37, 99, 235, 0.05) 0%, rgba(59, 130, 246, 0.08) 100%)',
-            border: '1px solid rgba(37, 99, 235, 0.25)',
-            borderRadius: '10px'
-          }}>
-            <div style={{ display: 'flex', gap: '0.85rem', alignItems: 'flex-start' }}>
-              <div style={{ 
-                width: '40px', 
-                height: '40px', 
-                borderRadius: '8px', 
-                backgroundColor: 'rgba(37, 99, 235, 0.15)', 
-                color: '#2563eb', 
-                display: 'flex', 
-                alignItems: 'center', 
-                justifyContent: 'center',
-                flexShrink: 0
-              }}>
-                <Zap size={22} />
-              </div>
-              <div>
-                <div style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.2rem' }}>
-                  WhatsApp API Account Quota & Setup
-                </div>
-                <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: '1.35' }}>
-                  Onetime setup package provides dedicated WhatsApp API integration. Toggle and configure individual accounts below.
-                </div>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', gap: '0.85rem', alignItems: 'flex-start' }}>
-              <div style={{ 
-                width: '40px', 
-                height: '40px', 
-                borderRadius: '8px', 
-                backgroundColor: 'rgba(16, 185, 129, 0.15)', 
-                color: '#10b981', 
-                display: 'flex', 
-                alignItems: 'center', 
-                justifyContent: 'center',
-                flexShrink: 0
-              }}>
-                <ShieldCheck size={22} />
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
-                  <label style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                    Active Connected Accounts:
-                  </label>
-                  <span style={{ 
-                    padding: '0.25rem 0.6rem', 
-                    borderRadius: '20px', 
-                    backgroundColor: 'rgba(16, 185, 129, 0.15)', 
-                    color: '#065f46', 
-                    fontWeight: 700, 
-                    fontSize: '0.82rem' 
-                  }}>
-                    {enabledProviders.length} Account{enabledProviders.length > 1 ? 's' : ''} Active
-                  </span>
-                </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
-                  {enabledProviders.map(p => (
-                    <span key={p} style={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'capitalize', padding: '0.15rem 0.45rem', borderRadius: '4px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-light)' }}>
-                      {p}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* MULTI-ACTIVE PROVIDER SELECTION */}
-          <div style={{ marginBottom: '1.5rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-              <div>
-                <label style={{ fontSize: '0.95rem', fontWeight: 700, display: 'block', color: 'var(--text-primary)', marginBottom: '0.2rem' }}>
-                  Configured WhatsApp Gateways (Enable/Disable Accounts)
-                </label>
-                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                  Check any provider you have purchased/subscribed to, or add any custom WhatsApp BSP gateway dynamically.
-                </span>
-              </div>
-              {settingsPerms.edit && (
-                <button
-                  type="button"
-                  onClick={handleOpenAddCustomBsp}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.4rem',
-                    padding: '0.45rem 0.9rem',
-                    backgroundColor: 'rgba(37, 99, 235, 0.1)',
-                    color: 'var(--accent-color, #2563eb)',
-                    border: '1px solid rgba(37, 99, 235, 0.3)',
-                    borderRadius: '6px',
-                    fontSize: '0.82rem',
-                    fontWeight: 600,
-                    cursor: 'pointer'
-                  }}
-                >
-                  <Plus size={16} /> Add Custom BSP Gateway
-                </button>
-              )}
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(175px, 1fr))', gap: '0.75rem' }}>
-              {[
-                { id: 'meta', name: 'Meta Cloud API', tag: 'Direct Graph API', note: 'Direct Meta platform v21.0' },
-                { id: 'aisensy', name: 'AiSensy', tag: 'Meta BSP', note: 'Campaigns & NSMLR default' },
-                { id: 'interakt', name: 'Interakt', tag: 'Jio Haptik BSP', note: 'Smart automated suite' },
-                { id: 'wati', name: 'Wati', tag: 'Clare.ai BSP', note: 'Team inbox & broadcasts' },
-                { id: 'nextel', name: 'Nextel.io', tag: 'Meta BSP', note: 'Session & NSTLP default' }
-              ].map(p => {
-                const isEnabled = enabledProviders.includes(p.id);
-                return (
-                  <div
-                    key={p.id}
-                    onClick={() => toggleProvider(p.id)}
-                    style={{
-                      padding: '0.85rem',
-                      borderRadius: '8px',
-                      border: isEnabled ? '2px solid var(--accent-color, #2563eb)' : '1px solid var(--border-light)',
-                      backgroundColor: isEnabled ? 'rgba(37, 99, 235, 0.06)' : 'var(--bg-primary)',
-                      cursor: settingsPerms.edit ? 'pointer' : 'default',
-                      transition: 'all 0.15s ease-in-out',
-                      position: 'relative'
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
-                      <span style={{ fontWeight: 700, fontSize: '0.92rem', color: isEnabled ? 'var(--accent-color, #2563eb)' : 'var(--text-primary)' }}>
-                        {p.name}
-                      </span>
-                      {isEnabled ? (
-                        <CheckCircle2 size={16} color="var(--accent-color, #2563eb)" />
-                      ) : (
-                        <div style={{ width: '14px', height: '14px', borderRadius: '4px', border: '1.5px solid var(--border-light)' }} />
-                      )}
-                    </div>
-                    <span style={{ 
-                      display: 'inline-block', 
-                      fontSize: '0.68rem', 
-                      fontWeight: 600, 
-                      padding: '0.15rem 0.4rem', 
-                      borderRadius: '4px', 
-                      backgroundColor: isEnabled ? 'rgba(37, 99, 235, 0.15)' : 'var(--bg-surface)',
-                      color: isEnabled ? '#1d4ed8' : 'var(--text-secondary)',
-                      marginBottom: '0.35rem'
-                    }}>
-                      {isEnabled ? '● Active Account' : p.tag}
-                    </span>
-                    <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-secondary)', lineHeight: '1.25' }}>
-                      {p.note}
-                    </p>
-                  </div>
-                );
-              })}
-
-              {/* DYNAMIC CUSTOM BSPS */}
-              {customBsps.map(p => {
-                const isEnabled = enabledProviders.includes(p.id);
-                return (
-                  <div
-                    key={p.id}
-                    onClick={() => toggleProvider(p.id)}
-                    style={{
-                      padding: '0.85rem',
-                      borderRadius: '8px',
-                      border: isEnabled ? '2px solid #8b5cf6' : '1px solid var(--border-light)',
-                      backgroundColor: isEnabled ? 'rgba(139, 92, 246, 0.06)' : 'var(--bg-primary)',
-                      cursor: settingsPerms.edit ? 'pointer' : 'default',
-                      transition: 'all 0.15s ease-in-out',
-                      position: 'relative',
-                      display: 'flex',
-                      flexDirection: 'column'
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
-                      <span style={{ fontWeight: 700, fontSize: '0.92rem', color: isEnabled ? '#7c3aed' : 'var(--text-primary)' }}>
-                        {p.name}
-                      </span>
-                      {isEnabled ? (
-                        <CheckCircle2 size={16} color="#7c3aed" />
-                      ) : (
-                        <div style={{ width: '14px', height: '14px', borderRadius: '4px', border: '1.5px solid var(--border-light)' }} />
-                      )}
-                    </div>
-                    <span style={{ 
-                      display: 'inline-block', 
-                      fontSize: '0.68rem', 
-                      fontWeight: 600, 
-                      padding: '0.15rem 0.4rem', 
-                      borderRadius: '4px', 
-                      backgroundColor: isEnabled ? 'rgba(139, 92, 246, 0.15)' : 'var(--bg-surface)',
-                      color: isEnabled ? '#6d28d9' : 'var(--text-secondary)',
-                      marginBottom: '0.35rem'
-                    }}>
-                      {isEnabled ? '● Active Custom BSP' : 'Custom Gateway'}
-                    </span>
-                    <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.73rem', color: 'var(--text-secondary)', lineHeight: '1.25', wordBreak: 'break-all' }}>
-                      {p.endpoint_url ? (p.endpoint_url.length > 32 ? p.endpoint_url.substring(0, 30) + '...' : p.endpoint_url) : 'Self-serve API'}
-                    </p>
-                    {settingsPerms.edit && (
-                      <div style={{ display: 'flex', gap: '0.35rem', marginTop: 'auto', paddingTop: '0.4rem', borderTop: '1px dashed var(--border-light)' }} onClick={e => e.stopPropagation()}>
-                        <button
-                          type="button"
-                          onClick={(e) => handleOpenEditCustomBsp(p, e)}
-                          style={{
-                            flex: 1,
-                            padding: '0.25rem 0.45rem',
-                            fontSize: '0.72rem',
-                            fontWeight: 600,
-                            borderRadius: '4px',
-                            border: '1px solid var(--border-light)',
-                            backgroundColor: 'var(--bg-surface)',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: '0.25rem',
-                            color: 'var(--text-primary)'
-                          }}
-                        >
-                          <Edit3 size={12} /> Edit
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => handleDeleteCustomBsp(p.id, p.name, e)}
-                          style={{
-                            padding: '0.25rem 0.45rem',
-                            fontSize: '0.72rem',
-                            borderRadius: '4px',
-                            border: 'none',
-                            backgroundColor: '#fee2e2',
-                            color: '#ef4444',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center'
-                          }}
-                          title="Delete Custom BSP"
-                        >
-                          <Trash2 size={12} />
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* OPTION C: PRIMARY DEFAULT PROVIDER SELECTOR */}
-          <div style={{ 
-            marginBottom: '1.5rem', 
-            padding: '1rem 1.25rem', 
-            backgroundColor: 'var(--bg-primary)', 
-            border: '1px solid var(--border-light)', 
-            borderRadius: '8px',
-            display: 'flex',
-            flexWrap: 'wrap',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '1rem'
-          }}>
+        <div style={{ maxWidth: '1080px' }}>
+          <div style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
             <div>
-              <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-primary)', marginBottom: '0.2rem' }}>
-                Option C: Primary Default Gateway
-              </div>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                When a template or lead has no specific company/route selected, messages will dispatch through this primary gateway.
-              </div>
+              <h2 style={{ fontSize: '1.35rem', fontWeight: 700, margin: '0 0 0.35rem 0', color: 'var(--text-primary)' }}>
+                WhatsApp Business Solutions (BSP) & Gateway Setup
+              </h2>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', margin: 0 }}>
+                {isAdmin 
+                  ? 'Manage Master BSP Gateway Catalog, allocate providers to client companies, and configure API credentials.' 
+                  : 'Configure official WhatsApp Business API credentials for your assigned workspace.'}
+              </p>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <select
-                value={defaultProvider}
-                onChange={(e) => setDefaultProvider(e.target.value)}
-                disabled={!settingsPerms.edit}
-                style={{ 
-                  padding: '0.5rem 0.85rem', 
-                  borderRadius: '6px', 
-                  border: '1px solid var(--border-light)', 
-                  backgroundColor: 'var(--bg-surface)', 
-                  fontWeight: 600,
-                  fontSize: '0.88rem',
-                  color: 'var(--text-primary)'
-                }}
-              >
-                {enabledProviders.map(p => (
-                  <option key={p} value={p}>
-                    {getBspDisplayName(p)} (Default)
-                  </option>
-                ))}
-              </select>
-            </div>
+            {isClientScoped && (
+              <span style={{ 
+                padding: '0.35rem 0.75rem', 
+                borderRadius: '20px', 
+                backgroundColor: 'rgba(37, 99, 235, 0.1)', 
+                color: 'var(--accent-color, #2563eb)', 
+                fontWeight: 600, 
+                fontSize: '0.8rem',
+                border: '1px solid rgba(37, 99, 235, 0.25)' 
+              }}>
+                🏢 Workspace: {userCompany || 'Swan Agro'}
+              </span>
+            )}
           </div>
 
-          {/* DYNAMIC CREDENTIALS FOR ALL ENABLED PROVIDERS */}
-          {enabledProviders.includes('meta') && (
-            <div style={{ marginBottom: '1.5rem', padding: '1.5rem', backgroundColor: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', color: '#2563eb' }}>
-                <ShieldCheck size={20} />
-                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>Meta Cloud API Credentials (v21.0)</h3>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
-                <div>
-                  <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
-                    Phone Number ID <span style={{ color: '#ef4444' }}>*</span>
-                  </label>
-                  <input 
-                    type="text"
-                    value={metaConfig.phone_number_id}
-                    onChange={(e) => setMetaConfig({ ...metaConfig, phone_number_id: e.target.value })}
-                    disabled={!settingsPerms.edit}
-                    placeholder="e.g. 104857291823901"
-                    style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontFamily: 'monospace', fontSize: '0.85rem' }}
-                  />
-                </div>
-                <div>
-                  <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
-                    WABA ID (WhatsApp Business Account ID)
-                  </label>
-                  <input 
-                    type="text"
-                    value={metaConfig.waba_id}
-                    onChange={(e) => setMetaConfig({ ...metaConfig, waba_id: e.target.value })}
-                    disabled={!settingsPerms.edit}
-                    placeholder="e.g. 293847192837465"
-                    style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontFamily: 'monospace', fontSize: '0.85rem' }}
-                  />
-                </div>
-              </div>
-              <div style={{ marginBottom: '1rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
-                  <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>
-                    System User Permanent Access Token <span style={{ color: '#ef4444' }}>*</span>
-                  </label>
-                  <button 
-                    type="button" 
-                    onClick={() => setShowSecretToken(!showSecretToken)} 
-                    style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.78rem' }}
-                  >
-                    {showSecretToken ? <EyeOff size={14} /> : <Eye size={14} />} {showSecretToken ? 'Hide Token' : 'Show Token'}
-                  </button>
-                </div>
-                <textarea 
-                  value={metaConfig.access_token}
-                  onChange={(e) => setMetaConfig({ ...metaConfig, access_token: e.target.value })}
-                  disabled={!settingsPerms.edit}
-                  rows={showSecretToken ? 3 : 2}
-                  placeholder="EAAG..."
-                  style={{ 
-                    width: '100%', 
-                    padding: '0.65rem', 
-                    borderRadius: '6px', 
-                    border: '1px solid var(--border-light)', 
-                    backgroundColor: 'var(--bg-surface)', 
-                    fontFamily: 'monospace', 
-                    fontSize: '0.82rem',
-                    filter: showSecretToken ? 'none' : 'blur(3px)',
-                    transition: 'filter 0.2s'
-                  }}
-                />
-              </div>
-            </div>
-          )}
-
-          {enabledProviders.includes('aisensy') && (
-            <div style={{ marginBottom: '1.5rem', padding: '1.5rem', backgroundColor: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', color: '#0284c7' }}>
-                <ShieldCheck size={20} />
-                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>AiSensy WhatsApp API Credentials</h3>
-              </div>
-              <div style={{ marginBottom: '1rem' }}>
-                <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
-                  AiSensy API Key <span style={{ color: '#ef4444' }}>*</span>
-                </label>
-                <textarea 
-                  value={aisensyConfig.api_key}
-                  onChange={(e) => setAisensyConfig({ ...aisensyConfig, api_key: e.target.value })}
-                  disabled={!settingsPerms.edit}
-                  placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                  style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontFamily: 'monospace', fontSize: '0.82rem', minHeight: '75px' }}
-                />
-              </div>
-              <div>
-                <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
-                  AiSensy Registered Business / User Name
-                </label>
-                <input 
-                  type="text"
-                  value={aisensyConfig.user_name}
-                  onChange={(e) => setAisensyConfig({ ...aisensyConfig, user_name: e.target.value })}
-                  disabled={!settingsPerms.edit}
-                  placeholder="e.g. New Swan MultiTech Limited-Swan Agro"
-                  style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontSize: '0.85rem' }}
-                />
-              </div>
-            </div>
-          )}
-
-          {enabledProviders.includes('interakt') && (
-            <div style={{ marginBottom: '1.5rem', padding: '1.5rem', backgroundColor: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', color: '#7c3aed' }}>
-                <ShieldCheck size={20} />
-                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>Interakt (Jio Haptik) API Credentials</h3>
-              </div>
-              <div style={{ marginBottom: '1rem' }}>
-                <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
-                  Interakt Secret API Key <span style={{ color: '#ef4444' }}>*</span>
-                </label>
-                <input 
-                  type="password"
-                  value={interaktConfig.api_key}
-                  onChange={(e) => setInteraktConfig({ ...interaktConfig, api_key: e.target.value })}
-                  disabled={!settingsPerms.edit}
-                  placeholder="e.g. a1b2c3d4e5f6..."
-                  style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontFamily: 'monospace', fontSize: '0.85rem' }}
-                />
-              </div>
-            </div>
-          )}
-
-          {enabledProviders.includes('wati') && (
-            <div style={{ marginBottom: '1.5rem', padding: '1.5rem', backgroundColor: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', color: '#059669' }}>
-                <ShieldCheck size={20} />
-                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>Wati (Clare.ai) API Credentials</h3>
-              </div>
-              <div style={{ marginBottom: '1rem' }}>
-                <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
-                  Wati API Endpoint URL <span style={{ color: '#ef4444' }}>*</span>
-                </label>
-                <input 
-                  type="text"
-                  value={watiConfig.endpoint_url}
-                  onChange={(e) => setWatiConfig({ ...watiConfig, endpoint_url: e.target.value })}
-                  disabled={!settingsPerms.edit}
-                  placeholder="e.g. https://live-server-xxxx.wati.io/api/v1"
-                  style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontFamily: 'monospace', fontSize: '0.85rem' }}
-                />
-              </div>
-              <div>
-                <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
-                  Wati Access Token <span style={{ color: '#ef4444' }}>*</span>
-                </label>
-                <textarea 
-                  value={watiConfig.access_token}
-                  onChange={(e) => setWatiConfig({ ...watiConfig, access_token: e.target.value })}
-                  disabled={!settingsPerms.edit}
-                  placeholder="Bearer token from Wati..."
-                  style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontFamily: 'monospace', fontSize: '0.82rem', minHeight: '65px' }}
-                />
-              </div>
-            </div>
-          )}
-
-          {enabledProviders.includes('nextel') && (
-            <div style={{ marginBottom: '1.5rem', padding: '1.5rem', backgroundColor: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', color: '#d97706' }}>
-                <ShieldCheck size={20} />
-                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>Nextel.io API Credentials (NSTLP)</h3>
-              </div>
-              <div>
-                <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
-                  Nextel Session Endpoint URL <span style={{ color: '#ef4444' }}>*</span>
-                </label>
-                <textarea 
-                  value={nextelConfig.endpoint_url}
-                  onChange={(e) => setNextelConfig({ ...nextelConfig, endpoint_url: e.target.value })}
-                  disabled={!settingsPerms.edit}
-                  placeholder="https://api.nextel.io/API_V2/Whatsapp/send_session/..."
-                  style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontFamily: 'monospace', fontSize: '0.82rem', minHeight: '75px' }}
-                />
-              </div>
-            </div>
-          )}
-
-          {/* DYNAMIC CREDENTIALS & PAYLOAD SUMMARY FOR ACTIVE CUSTOM BSPS */}
-          {customBsps.filter(b => enabledProviders.includes(b.id)).map(cb => (
-            <div key={cb.id} style={{ marginBottom: '1.5rem', padding: '1.5rem', backgroundColor: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid rgba(139, 92, 246, 0.3)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#7c3aed' }}>
-                  <Globe size={20} />
-                  <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>{cb.name} Gateway Configuration</h3>
-                  <span style={{ fontSize: '0.72rem', fontWeight: 600, padding: '0.15rem 0.45rem', borderRadius: '4px', backgroundColor: 'rgba(139, 92, 246, 0.15)', color: '#6d28d9' }}>Custom BSP</span>
-                </div>
-                {settingsPerms.edit && (
-                  <button
-                    type="button"
-                    onClick={(e) => handleOpenEditCustomBsp(cb, e)}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.35rem',
-                      padding: '0.4rem 0.8rem',
-                      fontSize: '0.8rem',
-                      fontWeight: 600,
-                      borderRadius: '6px',
-                      border: '1px solid #8b5cf6',
-                      backgroundColor: 'transparent',
-                      color: '#7c3aed',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <Edit3 size={14} /> Edit Endpoint & Payload Template
-                  </button>
-                )}
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
-                <div>
-                  <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem', color: 'var(--text-secondary)' }}>
-                    API Endpoint URL:
-                  </label>
-                  <div style={{ padding: '0.6rem 0.75rem', borderRadius: '6px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-light)', fontFamily: 'monospace', fontSize: '0.82rem', wordBreak: 'break-all' }}>
-                    <span style={{ fontWeight: 700, color: '#7c3aed', marginRight: '0.4rem' }}>{cb.method || 'POST'}</span> {cb.endpoint_url}
-                  </div>
-                </div>
-                <div>
-                  <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem', color: 'var(--text-secondary)' }}>
-                    Authentication:
-                  </label>
-                  <div style={{ padding: '0.6rem 0.75rem', borderRadius: '6px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-light)', fontSize: '0.82rem' }}>
-                    {cb.auth_type === 'Bearer' ? 'Bearer Token' : cb.auth_type === 'HeaderKey' ? `Header (${cb.auth_header_name || 'apikey'})` : cb.auth_type === 'Basic' ? 'Basic Auth' : 'None / URL'}
-                    {' '}• {cb.auth_token ? '•••••••• (Configured)' : 'No Token'}
-                  </div>
-                </div>
-              </div>
-              <div>
-                <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem', color: 'var(--text-secondary)' }}>
-                  Payload Template Format:
-                </label>
-                <pre style={{ margin: 0, padding: '0.75rem', borderRadius: '6px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-light)', fontFamily: 'monospace', fontSize: '0.78rem', maxHeight: '110px', overflowY: 'auto' }}>
-                  {cb.payload_format}
-                </pre>
-              </div>
-            </div>
-          ))}
-
-          {/* DUAL COMPANY BACKWARD COMPATIBILITY NOTICE */}
-          <div style={{ 
-            marginBottom: '1.5rem', 
-            padding: '1rem 1.25rem', 
-            backgroundColor: 'rgba(2, 132, 199, 0.05)', 
-            border: '1px dashed rgba(2, 132, 199, 0.35)', 
-            borderRadius: '8px' 
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.35rem', color: '#0369a1', fontWeight: 600, fontSize: '0.88rem' }}>
-              <HelpCircle size={16} /> Legacy Dual Routing Synchronization (NSMLR & NSTLP)
-            </div>
-            <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: '1.35' }}>
-              For New Swan internal operations, leads tagged with <strong>NSMLR</strong> automatically route through AiSensy, and leads tagged with <strong>NSTLP</strong> route through Nextel. Both keys are securely preserved in the database to guarantee zero disruption to existing telecalling workflows.
-            </p>
-          </div>
-
-          {/* LIVE TEST CONNECTION CARD */}
-          <div style={{ 
-            marginBottom: '1.5rem', 
-            padding: '1.25rem', 
-            backgroundColor: 'var(--bg-primary)', 
-            borderRadius: '10px', 
-            border: '1px solid var(--border-light)' 
-          }}>
-            <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '0.98rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-              Live Connection Verification
-            </h3>
-            <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-              Select an enabled provider and verify connectivity before broadcasting messages.
-            </p>
-
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'center', marginBottom: testFeedback ? '0.75rem' : 0 }}>
-              <select
-                value={testProvider}
-                onChange={(e) => setTestProvider(e.target.value)}
-                style={{
-                  padding: '0.65rem 0.85rem',
-                  borderRadius: '6px',
-                  border: '1px solid var(--border-light)',
-                  backgroundColor: 'var(--bg-surface)',
-                  fontSize: '0.85rem',
-                  fontWeight: 600,
-                  color: 'var(--text-primary)'
-                }}
-              >
-                {enabledProviders.map(p => (
-                  <option key={p} value={p}>
-                    Test {getBspDisplayName(p)} Gateway
-                  </option>
-                ))}
-              </select>
-
-              <input 
-                type="text"
-                value={testPhone}
-                onChange={(e) => setTestPhone(e.target.value)}
-                placeholder="Recipient Mobile (e.g. 9876543210)"
-                style={{ 
-                  flex: '1 1 200px', 
-                  padding: '0.65rem 0.85rem', 
-                  borderRadius: '6px', 
-                  border: '1px solid var(--border-light)', 
-                  backgroundColor: 'var(--bg-surface)', 
-                  fontSize: '0.85rem' 
-                }}
-              />
+          {/* ADMIN 3-TIER SUB-TAB SWITCHER */}
+          {isAdmin && (
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem', overflowX: 'auto' }}>
               <button
                 type="button"
-                onClick={handleTestConnection}
-                disabled={testingConnection || !settingsPerms.edit}
-                style={{ 
-                  padding: '0.65rem 1.25rem', 
-                  backgroundColor: 'transparent', 
-                  color: 'var(--accent-color, #2563eb)', 
-                  border: '1px solid var(--accent-color, #2563eb)', 
-                  borderRadius: '6px', 
-                  cursor: (testingConnection || !settingsPerms.edit) ? 'not-allowed' : 'pointer',
+                onClick={() => setActiveAdminSubTab('catalog')}
+                style={{
+                  padding: '0.55rem 1rem',
+                  borderRadius: '6px',
+                  border: activeAdminSubTab === 'catalog' ? '1px solid var(--accent-color, #2563eb)' : '1px solid var(--border-light)',
+                  backgroundColor: activeAdminSubTab === 'catalog' ? 'var(--accent-color, #2563eb)' : 'var(--bg-primary)',
+                  color: activeAdminSubTab === 'catalog' ? '#fff' : 'var(--text-primary)',
                   fontWeight: 600,
                   fontSize: '0.85rem',
+                  cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '0.5rem'
+                  gap: '0.45rem',
+                  transition: 'all 0.15s ease'
                 }}
               >
-                <RefreshCw size={16} className={testingConnection ? 'animate-spin' : ''} />
-                {testingConnection ? 'Verifying...' : `Test ${getBspDisplayName(testProvider)}`}
+                <Layers size={16} /> Tier 1: Master BSP Catalog ({catalog.length || 20}+ Gateways)
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveAdminSubTab('allocations')}
+                style={{
+                  padding: '0.55rem 1rem',
+                  borderRadius: '6px',
+                  border: activeAdminSubTab === 'allocations' ? '1px solid var(--accent-color, #2563eb)' : '1px solid var(--border-light)',
+                  backgroundColor: activeAdminSubTab === 'allocations' ? 'var(--accent-color, #2563eb)' : 'var(--bg-primary)',
+                  color: activeAdminSubTab === 'allocations' ? '#fff' : 'var(--text-primary)',
+                  fontWeight: 600,
+                  fontSize: '0.85rem',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.45rem',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <Users size={16} /> Tier 2: Client Allocation Matrix
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveAdminSubTab('credentials')}
+                style={{
+                  padding: '0.55rem 1rem',
+                  borderRadius: '6px',
+                  border: activeAdminSubTab === 'credentials' ? '1px solid var(--accent-color, #2563eb)' : '1px solid var(--border-light)',
+                  backgroundColor: activeAdminSubTab === 'credentials' ? 'var(--accent-color, #2563eb)' : 'var(--bg-primary)',
+                  color: activeAdminSubTab === 'credentials' ? '#fff' : 'var(--text-primary)',
+                  fontWeight: 600,
+                  fontSize: '0.85rem',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.45rem',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <Key size={16} /> Tier 3: API Setup & Credentials
               </button>
             </div>
+          )}
 
-            {testFeedback && (
-              <div style={{ 
-                padding: '0.75rem 1rem', 
-                borderRadius: '6px', 
-                backgroundColor: testFeedback.success ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)', 
-                border: testFeedback.success ? '1px solid #10b981' : '1px solid #ef4444',
-                color: testFeedback.success ? '#065f46' : '#991b1b',
-                fontSize: '0.85rem',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem',
-                marginTop: '0.75rem'
-              }}>
-                {testFeedback.success ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
-                <span>{testFeedback.message || testFeedback.error}</span>
+          {/* ======================================================== */}
+          {/* TIER 1: MASTER BSP CATALOG (ALL 20+ GLOBAL GATEWAYS)    */}
+          {/* ======================================================== */}
+          {isAdmin && activeAdminSubTab === 'catalog' && (
+            <div>
+              {/* TOP ACTIONS & SEARCH */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1.25rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: '1 1 300px' }}>
+                  <div style={{ position: 'relative', width: '100%' }}>
+                    <Search size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
+                    <input
+                      type="text"
+                      value={catalogSearch}
+                      onChange={(e) => setCatalogSearch(e.target.value)}
+                      placeholder="Search by BSP name, category, or vendor (e.g. Twilio, Gupshup, Meta, Infobip)..."
+                      style={{
+                        width: '100%',
+                        padding: '0.55rem 0.75rem 0.55rem 2.25rem',
+                        borderRadius: '6px',
+                        border: '1px solid var(--border-light)',
+                        backgroundColor: 'var(--bg-surface)',
+                        fontSize: '0.85rem'
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                    {enabledProviders.length} of {(catalog.length || 20) + customBsps.length} Active
+                  </span>
+                  {settingsPerms.edit && (
+                    <button
+                      type="button"
+                      onClick={handleOpenAddCustomBsp}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.4rem',
+                        padding: '0.5rem 0.9rem',
+                        backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                        color: 'var(--accent-color, #2563eb)',
+                        border: '1px solid rgba(37, 99, 235, 0.3)',
+                        borderRadius: '6px',
+                        fontSize: '0.82rem',
+                        fontWeight: 600,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <Plus size={16} /> Add Custom BSP Gateway
+                    </button>
+                  )}
+                </div>
               </div>
-            )}
-          </div>
 
-          {/* ACTION BUTTON */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', paddingTop: '0.5rem' }}>
-            {settingsPerms.edit ? (
-              <button 
-                onClick={handleSaveSettings}
-                disabled={loading}
-                style={{ 
-                  padding: '0.75rem 1.75rem', 
-                  background: 'var(--accent-color, #2563eb)', 
-                  color: 'white', 
-                  border: 'none', 
-                  borderRadius: '6px', 
-                  cursor: loading ? 'not-allowed' : 'pointer', 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: '0.5rem', 
-                  fontWeight: 600,
-                  fontSize: '0.9rem',
-                  boxShadow: '0 2px 4px rgba(37, 99, 235, 0.2)'
-                }}
-              >
-                <Save size={18} /> {loading ? 'Saving Settings...' : 'Save WhatsApp Configuration'}
-              </button>
-            ) : (
-              <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>🔒 Read-only view. Contact administrator to update API keys.</span>
-            )}
-          </div>
+              {/* GLOBAL BSP GRID */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
+                {[...catalog, ...customBsps]
+                  .filter(b => {
+                    if (!catalogSearch.trim()) return true;
+                    const q = catalogSearch.toLowerCase();
+                    return (
+                      b.name?.toLowerCase().includes(q) ||
+                      b.id?.toLowerCase().includes(q) ||
+                      b.vendor?.toLowerCase().includes(q) ||
+                      b.category?.toLowerCase().includes(q)
+                    );
+                  })
+                  .map(b => {
+                    const isEnabled = enabledProviders.includes(b.id);
+                    const isCustom = b.id?.startsWith('custom_') || customBsps.some(cb => cb.id === b.id);
+                    return (
+                      <div
+                        key={b.id}
+                        style={{
+                          padding: '1.15rem',
+                          borderRadius: '10px',
+                          border: isEnabled ? (isCustom ? '2px solid #8b5cf6' : '2px solid var(--accent-color, #2563eb)') : '1px solid var(--border-light)',
+                          backgroundColor: isEnabled ? (isCustom ? 'rgba(139, 92, 246, 0.04)' : 'rgba(37, 99, 235, 0.04)') : 'var(--bg-primary)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '0.75rem',
+                          position: 'relative'
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
+                          <div>
+                            <div style={{ fontWeight: 700, fontSize: '1rem', color: isEnabled ? 'var(--accent-color, #2563eb)' : 'var(--text-primary)' }}>
+                              {b.name}
+                            </div>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
+                              {b.vendor || 'Independent Provider'}
+                            </div>
+                          </div>
+                          <span style={{
+                            fontSize: '0.68rem',
+                            fontWeight: 700,
+                            padding: '0.2rem 0.5rem',
+                            borderRadius: '4px',
+                            backgroundColor: isCustom ? 'rgba(139, 92, 246, 0.15)' : 'var(--bg-surface)',
+                            color: isCustom ? '#7c3aed' : 'var(--text-secondary)',
+                            border: '1px solid var(--border-light)'
+                          }}>
+                            {b.category || (isCustom ? 'Custom BSP' : 'Meta BSP')}
+                          </span>
+                        </div>
+
+                        <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: '1.35', minHeight: '38px' }}>
+                          {b.note || 'Meta verified WhatsApp Business Solution Provider gateway.'}
+                        </div>
+
+                        <div style={{ fontSize: '0.72rem', backgroundColor: 'var(--bg-surface)', padding: '0.5rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                          <span style={{ fontWeight: 700, color: 'var(--accent-color, #2563eb)' }}>{b.method || 'POST'}</span> {b.default_endpoint || b.endpoint_url || 'Endpoint configured in credentials'}
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto', paddingTop: '0.5rem', borderTop: '1px solid var(--border-light)' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            {b.website && (
+                              <a
+                                href={b.website}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{ display: 'flex', alignItems: 'center', gap: '0.2rem', fontSize: '0.74rem', color: 'var(--accent-color, #2563eb)', textDecoration: 'none', fontWeight: 600 }}
+                              >
+                                Docs <ExternalLink size={12} />
+                              </a>
+                            )}
+                            {isCustom && settingsPerms.edit && (
+                              <button
+                                type="button"
+                                onClick={(e) => handleOpenEditCustomBsp(b, e)}
+                                style={{ background: 'none', border: 'none', color: '#7c3aed', fontSize: '0.74rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.2rem' }}
+                              >
+                                <Edit3 size={12} /> Edit
+                              </button>
+                            )}
+                            {isCustom && settingsPerms.edit && (
+                              <button
+                                type="button"
+                                onClick={(e) => handleDeleteCustomBsp(b.id, b.name, e)}
+                                style={{ background: 'none', border: 'none', color: '#ef4444', fontSize: '0.74rem', cursor: 'pointer' }}
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            )}
+                          </div>
+
+                          {settingsPerms.edit && (
+                            <button
+                              type="button"
+                              onClick={() => toggleProvider(b.id)}
+                              style={{
+                                padding: '0.35rem 0.75rem',
+                                borderRadius: '6px',
+                                border: isEnabled ? '1px solid var(--accent-color, #2563eb)' : '1px solid var(--border-light)',
+                                backgroundColor: isEnabled ? 'var(--accent-color, #2563eb)' : 'transparent',
+                                color: isEnabled ? '#fff' : 'var(--text-secondary)',
+                                fontSize: '0.78rem',
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.35rem'
+                              }}
+                            >
+                              {isEnabled ? <CheckCircle2 size={14} /> : null}
+                              {isEnabled ? 'Active Gateway' : 'Enable'}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+          )}
+
+          {/* ======================================================== */}
+          {/* TIER 2: CLIENT / WORKSPACE ALLOCATION MATRIX            */}
+          {/* ======================================================== */}
+          {isAdmin && activeAdminSubTab === 'allocations' && (
+            <div style={{ marginBottom: '2rem' }}>
+              <div style={{ 
+                padding: '1.25rem', 
+                backgroundColor: 'var(--bg-primary)', 
+                borderRadius: '10px', 
+                border: '1px solid var(--border-light)',
+                marginBottom: '1.5rem'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.25rem' }}>
+                  <div>
+                    <h3 style={{ margin: '0 0 0.35rem 0', fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                      Client / Company WhatsApp Gateway Allocation
+                    </h3>
+                    <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                      Select a company or tenant workspace to assign permitted BSP gateways. Non-admin workspace users will only see and configure their assigned providers.
+                    </p>
+                  </div>
+
+                  {/* CLIENT SELECTOR */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <label style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                      Target Client / Tenant:
+                    </label>
+                    <select
+                      value={selectedClientForAllocation}
+                      onChange={(e) => setSelectedClientForAllocation(e.target.value)}
+                      style={{
+                        padding: '0.55rem 0.85rem',
+                        borderRadius: '6px',
+                        border: '1px solid var(--accent-color, #2563eb)',
+                        backgroundColor: 'var(--bg-surface)',
+                        fontWeight: 700,
+                        fontSize: '0.88rem',
+                        color: 'var(--text-primary)'
+                      }}
+                    >
+                      {allClients.map(c => (
+                        <option key={c.id || c.code} value={c.code || c.name}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* SELECTED CLIENT CONFIGURATION BOX */}
+                <div style={{ 
+                  padding: '1rem', 
+                  borderRadius: '8px', 
+                  backgroundColor: 'var(--bg-surface)', 
+                  border: '1px solid var(--border-light)',
+                  marginBottom: '1.25rem'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                    <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-primary)' }}>
+                      Assigned BSP Gateways for: <span style={{ color: 'var(--accent-color, #2563eb)' }}>{selectedClientForAllocation}</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const allIds = [...catalog, ...customBsps].map(b => b.id);
+                          setClientAllocations(prev => ({
+                            ...prev,
+                            [selectedClientForAllocation]: {
+                              ...(prev[selectedClientForAllocation] || {}),
+                              allowed_bsps: allIds,
+                              default_bsp: allIds[0] || 'aisensy',
+                              account_limit: allIds.length
+                            }
+                          }));
+                        }}
+                        style={{ fontSize: '0.75rem', padding: '0.3rem 0.6rem', borderRadius: '4px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-primary)', cursor: 'pointer' }}
+                      >
+                        Select All 20+
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setClientAllocations(prev => ({
+                            ...prev,
+                            [selectedClientForAllocation]: {
+                              ...(prev[selectedClientForAllocation] || {}),
+                              allowed_bsps: ['aisensy', 'nextel'],
+                              default_bsp: 'aisensy',
+                              account_limit: 2
+                            }
+                          }));
+                        }}
+                        style={{ fontSize: '0.75rem', padding: '0.3rem 0.6rem', borderRadius: '4px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-primary)', cursor: 'pointer' }}
+                      >
+                        Reset to Standard (AiSensy + Nextel)
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* CHECKBOX MATRIX OF ALL 20+ BSPS */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '0.65rem', marginBottom: '1.25rem' }}>
+                    {[...catalog, ...customBsps].map(b => {
+                      const isAllowed = (currentClientAlloc.allowed_bsps || []).includes(b.id);
+                      return (
+                        <div
+                          key={b.id}
+                          onClick={() => toggleClientBsp(b.id)}
+                          style={{
+                            padding: '0.65rem 0.85rem',
+                            borderRadius: '6px',
+                            border: isAllowed ? '1.5px solid var(--accent-color, #2563eb)' : '1px solid var(--border-light)',
+                            backgroundColor: isAllowed ? 'rgba(37, 99, 235, 0.08)' : 'var(--bg-primary)',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: '0.5rem',
+                            userSelect: 'none'
+                          }}
+                        >
+                          <div>
+                            <div style={{ fontWeight: 600, fontSize: '0.84rem', color: isAllowed ? 'var(--accent-color, #2563eb)' : 'var(--text-primary)' }}>
+                              {b.name}
+                            </div>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
+                              {b.category || 'Official BSP'}
+                            </div>
+                          </div>
+                          {isAllowed ? (
+                            <CheckCircle2 size={16} color="var(--accent-color, #2563eb)" />
+                          ) : (
+                            <div style={{ width: '14px', height: '14px', borderRadius: '3px', border: '1px solid var(--border-light)' }} />
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* CLIENT DEFAULT GATEWAY & ACCOUNT LIMIT */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border-light)' }}>
+                    <div>
+                      <label style={{ fontSize: '0.82rem', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
+                        Client Default BSP Gateway:
+                      </label>
+                      <select
+                        value={currentClientAlloc.default_bsp || (currentClientAlloc.allowed_bsps || [])[0] || 'aisensy'}
+                        onChange={(e) => setClientDefaultBsp(e.target.value)}
+                        style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-primary)', fontSize: '0.85rem', fontWeight: 600 }}
+                      >
+                        {(currentClientAlloc.allowed_bsps || []).map(pId => (
+                          <option key={pId} value={pId}>
+                            {getBspDisplayName(pId)} (Client Default)
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label style={{ fontSize: '0.82rem', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
+                        Allowed Active Account Limit:
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="20"
+                        value={currentClientAlloc.account_limit || 1}
+                        onChange={(e) => setClientAccountLimit(e.target.value)}
+                        style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-primary)', fontSize: '0.85rem' }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* SAVE ALLOCATION BUTTON & FEEDBACK */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                  <button
+                    type="button"
+                    onClick={handleSaveClientAllocations}
+                    disabled={savingAllocations}
+                    style={{
+                      padding: '0.65rem 1.4rem',
+                      borderRadius: '6px',
+                      backgroundColor: 'var(--accent-color, #2563eb)',
+                      color: '#fff',
+                      border: 'none',
+                      fontWeight: 600,
+                      fontSize: '0.88rem',
+                      cursor: savingAllocations ? 'not-allowed' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.45rem'
+                    }}
+                  >
+                    <Save size={16} /> {savingAllocations ? 'Saving Allocations...' : `Save Allocations for ${selectedClientForAllocation}`}
+                  </button>
+
+                  {allocationFeedback && (
+                    <span style={{ fontSize: '0.84rem', fontWeight: 600, color: allocationFeedback.success ? '#10b981' : '#ef4444' }}>
+                      {allocationFeedback.message}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* OVERVIEW TABLE OF ALL ALLOCATIONS */}
+              <div style={{ padding: '1.25rem', backgroundColor: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
+                <h4 style={{ margin: '0 0 0.85rem 0', fontSize: '0.95rem', fontWeight: 700 }}>
+                  Active Client Allocation Matrix Overview
+                </h4>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.83rem' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '2px solid var(--border-light)', textAlign: 'left', color: 'var(--text-secondary)' }}>
+                        <th style={{ padding: '0.65rem 0.75rem' }}>Client / Company</th>
+                        <th style={{ padding: '0.65rem 0.75rem' }}>Assigned BSP Gateways</th>
+                        <th style={{ padding: '0.65rem 0.75rem' }}>Default Gateway</th>
+                        <th style={{ padding: '0.65rem 0.75rem' }}>Quota</th>
+                        <th style={{ padding: '0.65rem 0.75rem' }}>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {allClients.map(c => {
+                        const alloc = clientAllocations[c.code] || clientAllocations[c.name] || {
+                          allowed_bsps: ['aisensy', 'nextel'],
+                          default_bsp: 'aisensy',
+                          account_limit: 2
+                        };
+                        return (
+                          <tr key={c.id || c.code} style={{ borderBottom: '1px solid var(--border-light)' }}>
+                            <td style={{ padding: '0.75rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                              {c.name}
+                            </td>
+                            <td style={{ padding: '0.75rem' }}>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+                                {(alloc.allowed_bsps || []).map(pId => (
+                                  <span key={pId} style={{ padding: '0.15rem 0.45rem', borderRadius: '4px', backgroundColor: 'rgba(37, 99, 235, 0.1)', color: 'var(--accent-color, #2563eb)', fontSize: '0.72rem', fontWeight: 600 }}>
+                                    {getBspDisplayName(pId)}
+                                  </span>
+                                ))}
+                              </div>
+                            </td>
+                            <td style={{ padding: '0.75rem', fontWeight: 600 }}>
+                              {getBspDisplayName(alloc.default_bsp)}
+                            </td>
+                            <td style={{ padding: '0.75rem', color: 'var(--text-secondary)' }}>
+                              {alloc.account_limit || (alloc.allowed_bsps || []).length} lines
+                            </td>
+                            <td style={{ padding: '0.75rem' }}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedClientForAllocation(c.code || c.name);
+                                  window.scrollTo({ top: 150, behavior: 'smooth' });
+                                }}
+                                style={{ padding: '0.3rem 0.6rem', borderRadius: '4px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer' }}
+                              >
+                                Edit
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ======================================================== */}
+          {/* TIER 3: WORKSPACE API SETUP & CREDENTIALS               */}
+          {/* ======================================================== */}
+          {(!isAdmin || activeAdminSubTab === 'credentials') && (
+            <div>
+              {/* SCOPED CLIENT NOTICE */}
+              {isClientScoped && (
+                <div style={{ marginBottom: '1.25rem', padding: '0.85rem 1.15rem', backgroundColor: 'rgba(37, 99, 235, 0.07)', border: '1px solid rgba(37, 99, 235, 0.25)', borderRadius: '8px', fontSize: '0.83rem', color: '#1e40af' }}>
+                  🔒 <strong>Workspace Gateway Access:</strong> Your company (<strong>{userCompany || 'Swan Agro'}</strong>) is configured with dedicated access to {assignedBsps.length} WhatsApp BSP gateway(s). Only your assigned gateways are shown below.
+                </div>
+              )}
+
+              {/* OPTION C: PRIMARY DEFAULT PROVIDER SELECTOR */}
+              <div style={{ 
+                marginBottom: '1.5rem', 
+                padding: '1rem 1.25rem', 
+                backgroundColor: 'var(--bg-primary)', 
+                border: '1px solid var(--border-light)', 
+                borderRadius: '8px',
+                display: 'flex',
+                flexWrap: 'wrap',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '1rem'
+              }}>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-primary)', marginBottom: '0.2rem' }}>
+                    Primary Default Dispatch Gateway
+                  </div>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                    When a template or campaign has no specific provider selected, messages will dispatch through this primary gateway.
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <select
+                    value={defaultProvider}
+                    onChange={(e) => setDefaultProvider(e.target.value)}
+                    disabled={!settingsPerms.edit}
+                    style={{ 
+                      padding: '0.5rem 0.85rem', 
+                      borderRadius: '6px', 
+                      border: '1px solid var(--border-light)', 
+                      backgroundColor: 'var(--bg-surface)', 
+                      fontWeight: 600,
+                      fontSize: '0.88rem',
+                      color: 'var(--text-primary)'
+                    }}
+                  >
+                    {((isClientScoped && assignedBsps.length > 0) ? assignedBsps : enabledProviders).map(p => (
+                      <option key={p} value={p}>
+                        {getBspDisplayName(p)} (Default)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* CREDENTIALS CARDS */}
+              {/* 1. Meta Direct */}
+              {((isClientScoped && assignedBsps.length > 0) ? assignedBsps : enabledProviders).includes('meta') && (
+                <div style={{ marginBottom: '1.5rem', padding: '1.5rem', backgroundColor: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', color: '#2563eb' }}>
+                    <ShieldCheck size={20} />
+                    <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>Meta Cloud API Credentials (v21.0)</h3>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+                    <div>
+                      <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
+                        Phone Number ID <span style={{ color: '#ef4444' }}>*</span>
+                      </label>
+                      <input 
+                        type="text"
+                        value={metaConfig.phone_number_id}
+                        onChange={(e) => setMetaConfig({ ...metaConfig, phone_number_id: e.target.value })}
+                        disabled={!settingsPerms.edit}
+                        placeholder="e.g. 104857291823901"
+                        style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontFamily: 'monospace', fontSize: '0.85rem' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
+                        WABA ID (WhatsApp Business Account ID)
+                      </label>
+                      <input 
+                        type="text"
+                        value={metaConfig.waba_id}
+                        onChange={(e) => setMetaConfig({ ...metaConfig, waba_id: e.target.value })}
+                        disabled={!settingsPerms.edit}
+                        placeholder="e.g. 293847192837465"
+                        style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontFamily: 'monospace', fontSize: '0.85rem' }}
+                      />
+                    </div>
+                  </div>
+                  <div style={{ marginBottom: '1rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                      <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>
+                        System User Permanent Access Token <span style={{ color: '#ef4444' }}>*</span>
+                      </label>
+                      <button 
+                        type="button" 
+                        onClick={() => setShowSecretToken(!showSecretToken)} 
+                        style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.78rem' }}
+                      >
+                        {showSecretToken ? <EyeOff size={14} /> : <Eye size={14} />} {showSecretToken ? 'Hide Token' : 'Show Token'}
+                      </button>
+                    </div>
+                    <textarea 
+                      value={metaConfig.access_token}
+                      onChange={(e) => setMetaConfig({ ...metaConfig, access_token: e.target.value })}
+                      disabled={!settingsPerms.edit}
+                      rows={showSecretToken ? 3 : 2}
+                      placeholder="EAAG..."
+                      style={{ 
+                        width: '100%', 
+                        padding: '0.65rem', 
+                        borderRadius: '6px', 
+                        border: '1px solid var(--border-light)', 
+                        backgroundColor: 'var(--bg-surface)', 
+                        fontFamily: 'monospace', 
+                        fontSize: '0.82rem',
+                        filter: showSecretToken ? 'none' : 'blur(3px)',
+                        transition: 'filter 0.2s'
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* 2. AiSensy */}
+              {((isClientScoped && assignedBsps.length > 0) ? assignedBsps : enabledProviders).includes('aisensy') && (
+                <div style={{ marginBottom: '1.5rem', padding: '1.5rem', backgroundColor: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', color: '#0284c7' }}>
+                    <ShieldCheck size={20} />
+                    <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>AiSensy WhatsApp API Credentials</h3>
+                  </div>
+                  <div style={{ marginBottom: '1rem' }}>
+                    <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
+                      AiSensy API Key <span style={{ color: '#ef4444' }}>*</span>
+                    </label>
+                    <textarea 
+                      value={aisensyConfig.api_key}
+                      onChange={(e) => setAisensyConfig({ ...aisensyConfig, api_key: e.target.value })}
+                      disabled={!settingsPerms.edit}
+                      placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                      style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontFamily: 'monospace', fontSize: '0.82rem', minHeight: '75px' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
+                      AiSensy Registered Business / User Name
+                    </label>
+                    <input 
+                      type="text"
+                      value={aisensyConfig.user_name}
+                      onChange={(e) => setAisensyConfig({ ...aisensyConfig, user_name: e.target.value })}
+                      disabled={!settingsPerms.edit}
+                      placeholder="e.g. New Swan MultiTech Limited-Swan Agro"
+                      style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontSize: '0.85rem' }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* 3. Interakt */}
+              {((isClientScoped && assignedBsps.length > 0) ? assignedBsps : enabledProviders).includes('interakt') && (
+                <div style={{ marginBottom: '1.5rem', padding: '1.5rem', backgroundColor: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', color: '#7c3aed' }}>
+                    <ShieldCheck size={20} />
+                    <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>Interakt (Jio Haptik) API Credentials</h3>
+                  </div>
+                  <div style={{ marginBottom: '1rem' }}>
+                    <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
+                      Interakt Secret API Key <span style={{ color: '#ef4444' }}>*</span>
+                    </label>
+                    <input 
+                      type="password"
+                      value={interaktConfig.api_key}
+                      onChange={(e) => setInteraktConfig({ ...interaktConfig, api_key: e.target.value })}
+                      disabled={!settingsPerms.edit}
+                      placeholder="e.g. a1b2c3d4e5f6..."
+                      style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontFamily: 'monospace', fontSize: '0.85rem' }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* 4. Wati */}
+              {((isClientScoped && assignedBsps.length > 0) ? assignedBsps : enabledProviders).includes('wati') && (
+                <div style={{ marginBottom: '1.5rem', padding: '1.5rem', backgroundColor: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', color: '#059669' }}>
+                    <ShieldCheck size={20} />
+                    <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>Wati (Clare.ai) API Credentials</h3>
+                  </div>
+                  <div style={{ marginBottom: '1rem' }}>
+                    <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
+                      Wati API Endpoint URL <span style={{ color: '#ef4444' }}>*</span>
+                    </label>
+                    <input 
+                      type="text"
+                      value={watiConfig.endpoint_url}
+                      onChange={(e) => setWatiConfig({ ...watiConfig, endpoint_url: e.target.value })}
+                      disabled={!settingsPerms.edit}
+                      placeholder="e.g. https://live-server-xxxx.wati.io/api/v1"
+                      style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontFamily: 'monospace', fontSize: '0.85rem' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
+                      Wati Access Token <span style={{ color: '#ef4444' }}>*</span>
+                    </label>
+                    <textarea 
+                      value={watiConfig.access_token}
+                      onChange={(e) => setWatiConfig({ ...watiConfig, access_token: e.target.value })}
+                      disabled={!settingsPerms.edit}
+                      placeholder="Bearer token from Wati..."
+                      style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontFamily: 'monospace', fontSize: '0.82rem', minHeight: '65px' }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* 5. Nextel */}
+              {((isClientScoped && assignedBsps.length > 0) ? assignedBsps : enabledProviders).includes('nextel') && (
+                <div style={{ marginBottom: '1.5rem', padding: '1.5rem', backgroundColor: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', color: '#d97706' }}>
+                    <ShieldCheck size={20} />
+                    <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>Nextel.io API Credentials (NSTLP)</h3>
+                  </div>
+                  <div>
+                    <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
+                      Nextel Session Endpoint URL <span style={{ color: '#ef4444' }}>*</span>
+                    </label>
+                    <textarea 
+                      value={nextelConfig.endpoint_url}
+                      onChange={(e) => setNextelConfig({ ...nextelConfig, endpoint_url: e.target.value })}
+                      disabled={!settingsPerms.edit}
+                      placeholder="https://api.nextel.io/API_V2/Whatsapp/send_session/..."
+                      style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontFamily: 'monospace', fontSize: '0.82rem', minHeight: '75px' }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* 6. ALL OTHER GLOBAL CATALOG BSPS (Gupshup, Twilio, DoubleTick, Gallabox, Infobip, Kaleyra, CM.com, MessageBird, Sinch, Zoko, Yellow.ai, Karix, ValueFirst, BhashSMS) */}
+              {((isClientScoped && assignedBsps.length > 0) ? assignedBsps : enabledProviders)
+                .filter(pId => !['meta', 'aisensy', 'interakt', 'wati', 'nextel'].includes(pId) && !pId.startsWith('custom_'))
+                .map(pId => {
+                  const bspInfo = catalog.find(b => b.id === pId) || { id: pId, name: pId.toUpperCase() };
+                  const creds = bspCredentials[pId] || {};
+                  return (
+                    <div key={pId} style={{ marginBottom: '1.5rem', padding: '1.5rem', backgroundColor: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#0284c7' }}>
+                          <ShieldCheck size={20} />
+                          <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>{bspInfo.name} API Credentials</h3>
+                          <span style={{ fontSize: '0.72rem', padding: '0.15rem 0.45rem', borderRadius: '4px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
+                            {bspInfo.category || 'Meta BSP'}
+                          </span>
+                        </div>
+                        {bspInfo.website && (
+                          <a href={bspInfo.website} target="_blank" rel="noreferrer" style={{ fontSize: '0.78rem', color: 'var(--accent-color, #2563eb)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '0.25rem', fontWeight: 600 }}>
+                            Provider Console <ExternalLink size={12} />
+                          </a>
+                        )}
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+                        <div>
+                          <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
+                            API Key / Auth Token <span style={{ color: '#ef4444' }}>*</span>
+                          </label>
+                          <input 
+                            type="password"
+                            value={creds.api_key || creds.access_token || ''}
+                            onChange={(e) => handleUpdateBspCredential(pId, 'api_key', e.target.value)}
+                            disabled={!settingsPerms.edit}
+                            placeholder="Enter API Key / Token"
+                            style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontFamily: 'monospace', fontSize: '0.85rem' }}
+                          />
+                        </div>
+
+                        <div>
+                          <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
+                            API Endpoint URL
+                          </label>
+                          <input 
+                            type="text"
+                            value={creds.endpoint_url || bspInfo.default_endpoint || ''}
+                            onChange={(e) => handleUpdateBspCredential(pId, 'endpoint_url', e.target.value)}
+                            disabled={!settingsPerms.edit}
+                            placeholder={bspInfo.default_endpoint || 'https://api.provider.com/...'}
+                            style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontFamily: 'monospace', fontSize: '0.85rem' }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Provider Specific Helper Fields */}
+                      {pId === 'twilio' && (
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem' }}>
+                          <div>
+                            <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
+                              Twilio Account SID
+                            </label>
+                            <input 
+                              type="text"
+                              value={creds.account_sid || ''}
+                              onChange={(e) => handleUpdateBspCredential(pId, 'account_sid', e.target.value)}
+                              disabled={!settingsPerms.edit}
+                              placeholder="AC..."
+                              style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontFamily: 'monospace', fontSize: '0.85rem' }}
+                            />
+                          </div>
+                          <div>
+                            <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
+                              Twilio From WhatsApp Number
+                            </label>
+                            <input 
+                              type="text"
+                              value={creds.from_number || ''}
+                              onChange={(e) => handleUpdateBspCredential(pId, 'from_number', e.target.value)}
+                              disabled={!settingsPerms.edit}
+                              placeholder="+14155238886"
+                              style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontSize: '0.85rem' }}
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {pId === 'gupshup' && (
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem' }}>
+                          <div>
+                            <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
+                              Gupshup App Name
+                            </label>
+                            <input 
+                              type="text"
+                              value={creds.app_name || ''}
+                              onChange={(e) => handleUpdateBspCredential(pId, 'app_name', e.target.value)}
+                              disabled={!settingsPerms.edit}
+                              placeholder="e.g. MyWhatsAppApp"
+                              style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontSize: '0.85rem' }}
+                            />
+                          </div>
+                          <div>
+                            <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
+                              Source / Sender Number
+                            </label>
+                            <input 
+                              type="text"
+                              value={creds.source_number || ''}
+                              onChange={(e) => handleUpdateBspCredential(pId, 'source_number', e.target.value)}
+                              disabled={!settingsPerms.edit}
+                              placeholder="e.g. 919876543210"
+                              style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontSize: '0.85rem' }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+              {/* 7. CUSTOM BSPS */}
+              {customBsps.filter(b => ((isClientScoped && assignedBsps.length > 0) ? assignedBsps : enabledProviders).includes(b.id)).map(cb => (
+                <div key={cb.id} style={{ marginBottom: '1.5rem', padding: '1.5rem', backgroundColor: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid rgba(139, 92, 246, 0.3)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#7c3aed' }}>
+                      <Globe size={20} />
+                      <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>{cb.name} Gateway Configuration</h3>
+                      <span style={{ fontSize: '0.72rem', fontWeight: 600, padding: '0.15rem 0.45rem', borderRadius: '4px', backgroundColor: 'rgba(139, 92, 246, 0.15)', color: '#6d28d9' }}>Custom BSP</span>
+                    </div>
+                    {settingsPerms.edit && (
+                      <button
+                        type="button"
+                        onClick={(e) => handleOpenEditCustomBsp(cb, e)}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.35rem',
+                          padding: '0.4rem 0.8rem',
+                          fontSize: '0.8rem',
+                          fontWeight: 600,
+                          borderRadius: '6px',
+                          border: '1px solid #8b5cf6',
+                          backgroundColor: 'transparent',
+                          color: '#7c3aed',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <Edit3 size={14} /> Edit Endpoint & Payload Template
+                      </button>
+                    )}
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+                    <div>
+                      <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem', color: 'var(--text-secondary)' }}>
+                        API Endpoint URL:
+                      </label>
+                      <div style={{ padding: '0.6rem 0.75rem', borderRadius: '6px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-light)', fontFamily: 'monospace', fontSize: '0.82rem', wordBreak: 'break-all' }}>
+                        <span style={{ fontWeight: 700, color: '#7c3aed', marginRight: '0.4rem' }}>{cb.method || 'POST'}</span> {cb.endpoint_url}
+                      </div>
+                    </div>
+                    <div>
+                      <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem', color: 'var(--text-secondary)' }}>
+                        Authentication:
+                      </label>
+                      <div style={{ padding: '0.6rem 0.75rem', borderRadius: '6px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-light)', fontSize: '0.82rem' }}>
+                        {cb.auth_type === 'Bearer' ? 'Bearer Token' : cb.auth_type === 'HeaderKey' ? `Header (${cb.auth_header_name || 'apikey'})` : cb.auth_type === 'Basic' ? 'Basic Auth' : 'None / URL'}
+                        {' '}• {cb.auth_token ? '•••••••• (Configured)' : 'No Token'}
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem', color: 'var(--text-secondary)' }}>
+                      Payload Template Format:
+                    </label>
+                    <pre style={{ margin: 0, padding: '0.75rem', borderRadius: '6px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-light)', fontFamily: 'monospace', fontSize: '0.78rem', maxHeight: '110px', overflowY: 'auto' }}>
+                      {cb.payload_format}
+                    </pre>
+                  </div>
+                </div>
+              ))}
+
+              {/* DUAL COMPANY BACKWARD COMPATIBILITY NOTICE */}
+              <div style={{ 
+                marginBottom: '1.5rem', 
+                padding: '1rem 1.25rem', 
+                backgroundColor: 'rgba(2, 132, 199, 0.05)', 
+                border: '1px dashed rgba(2, 132, 199, 0.35)', 
+                borderRadius: '8px' 
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.35rem', color: '#0369a1', fontWeight: 600, fontSize: '0.88rem' }}>
+                  <HelpCircle size={16} /> Legacy Dual Routing Synchronization (NSMLR & NSTLP)
+                </div>
+                <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: '1.35' }}>
+                  For New Swan internal operations, leads tagged with <strong>NSMLR</strong> automatically route through AiSensy, and leads tagged with <strong>NSTLP</strong> route through Nextel. Both keys are securely preserved in the database to guarantee zero disruption to existing telecalling workflows.
+                </p>
+              </div>
+
+              {/* LIVE TEST CONNECTION CARD */}
+              <div style={{ 
+                marginBottom: '1.5rem', 
+                padding: '1.25rem', 
+                backgroundColor: 'var(--bg-primary)', 
+                borderRadius: '10px', 
+                border: '1px solid var(--border-light)' 
+              }}>
+                <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '0.98rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  Live Connection Verification
+                </h3>
+                <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+                  Select an enabled provider and verify connectivity before broadcasting messages.
+                </p>
+
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'center', marginBottom: testFeedback ? '0.75rem' : 0 }}>
+                  <select
+                    value={testProvider}
+                    onChange={(e) => setTestProvider(e.target.value)}
+                    style={{
+                      padding: '0.65rem 0.85rem',
+                      borderRadius: '6px',
+                      border: '1px solid var(--border-light)',
+                      backgroundColor: 'var(--bg-surface)',
+                      fontSize: '0.85rem',
+                      fontWeight: 600,
+                      color: 'var(--text-primary)'
+                    }}
+                  >
+                    {((isClientScoped && assignedBsps.length > 0) ? assignedBsps : enabledProviders).map(p => (
+                      <option key={p} value={p}>
+                        Test {getBspDisplayName(p)} Gateway
+                      </option>
+                    ))}
+                  </select>
+
+                  <input 
+                    type="text"
+                    value={testPhone}
+                    onChange={(e) => setTestPhone(e.target.value)}
+                    placeholder="Recipient Mobile (e.g. 9876543210)"
+                    style={{ 
+                      flex: '1 1 200px', 
+                      padding: '0.65rem 0.85rem', 
+                      borderRadius: '6px', 
+                      border: '1px solid var(--border-light)', 
+                      backgroundColor: 'var(--bg-surface)', 
+                      fontSize: '0.85rem' 
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleTestConnection}
+                    disabled={testingConnection || !settingsPerms.edit}
+                    style={{ 
+                      padding: '0.65rem 1.25rem', 
+                      backgroundColor: 'transparent', 
+                      color: 'var(--accent-color, #2563eb)', 
+                      border: '1px solid var(--accent-color, #2563eb)', 
+                      borderRadius: '6px', 
+                      cursor: (testingConnection || !settingsPerms.edit) ? 'not-allowed' : 'pointer',
+                      fontWeight: 600,
+                      fontSize: '0.85rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem'
+                    }}
+                  >
+                    <RefreshCw size={16} className={testingConnection ? 'animate-spin' : ''} />
+                    {testingConnection ? 'Verifying...' : `Test ${getBspDisplayName(testProvider)}`}
+                  </button>
+                </div>
+
+                {testFeedback && (
+                  <div style={{ 
+                    padding: '0.75rem 1rem', 
+                    borderRadius: '6px', 
+                    backgroundColor: testFeedback.success ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)', 
+                    border: testFeedback.success ? '1px solid #10b981' : '1px solid #ef4444',
+                    color: testFeedback.success ? '#065f46' : '#991b1b',
+                    fontSize: '0.85rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    marginTop: '0.75rem'
+                  }}>
+                    {testFeedback.success ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
+                    <span>{testFeedback.message || testFeedback.error}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* ACTION BUTTON */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', paddingTop: '0.5rem' }}>
+                {settingsPerms.edit ? (
+                  <button 
+                    onClick={() => handleSaveSettings()}
+                    disabled={loading}
+                    style={{ 
+                      padding: '0.75rem 1.75rem', 
+                      background: 'var(--accent-color, #2563eb)', 
+                      color: 'white', 
+                      border: 'none', 
+                      borderRadius: '6px', 
+                      cursor: loading ? 'not-allowed' : 'pointer', 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: '0.5rem', 
+                      fontWeight: 600,
+                      fontSize: '0.9rem',
+                      boxShadow: '0 2px 4px rgba(37, 99, 235, 0.2)'
+                    }}
+                  >
+                    <Save size={18} /> {loading ? 'Saving Settings...' : 'Save WhatsApp Configuration'}
+                  </button>
+                ) : (
+                  <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>🔒 Read-only view. Contact administrator to update API keys.</span>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -1265,13 +1824,8 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
               style={{ padding: '0.4rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontSize: '0.82rem', fontWeight: 500 }}
             >
               <option value="All">All BSP Gateways</option>
-              <option value="aisensy">AiSensy</option>
-              <option value="interakt">Interakt</option>
-              <option value="meta">Meta Cloud API</option>
-              <option value="wati">Wati</option>
-              <option value="nextel">Nextel.io</option>
-              {customBsps.map(cb => (
-                <option key={cb.id} value={cb.id}>{cb.name} (Custom)</option>
+              {((isClientScoped && assignedBsps.length > 0) ? assignedBsps : enabledProviders).map(pId => (
+                <option key={pId} value={pId}>{getBspDisplayName(pId)}</option>
               ))}
             </select>
 
@@ -1310,18 +1864,19 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                     onChange={e => setSelectedTemplateBsp(e.target.value)} 
                     style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontWeight: 600, fontSize: '0.85rem' }}
                   >
-                    <optgroup label="Official Built-In BSPs">
-                      <option value="aisensy">AiSensy (Official Meta BSP)</option>
-                      <option value="interakt">Interakt (Jio Haptik BSP)</option>
-                      <option value="meta">Meta Cloud API (Direct v21.0)</option>
-                      <option value="wati">Wati (Clare.ai BSP)</option>
-                      <option value="nextel">Nextel.io (Session Webhook)</option>
-                    </optgroup>
-                    {customBsps.length > 0 && (
-                      <optgroup label="Custom Added BSPs">
-                        {customBsps.map(cb => (
-                          <option key={cb.id} value={cb.id}>
-                            ⚡ {cb.name} (Custom Gateway)
+                    {isClientScoped && assignedBsps.length > 0 ? (
+                      <optgroup label="Assigned BSP Gateways">
+                        {assignedBsps.map(pId => (
+                          <option key={pId} value={pId}>
+                            {getBspDisplayName(pId)}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ) : (
+                      <optgroup label="Active Workspace Gateways">
+                        {enabledProviders.map(pId => (
+                          <option key={pId} value={pId}>
+                            {getBspDisplayName(pId)}
                           </option>
                         ))}
                       </optgroup>
