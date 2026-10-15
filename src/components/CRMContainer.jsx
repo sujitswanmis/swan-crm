@@ -7013,7 +7013,7 @@ export default function CRMContainer({
                 isVisited={isTabPermitted('whatsapp_official', moduleAccess, userRole) && visitedTabs.has('whatsapp_official')}
               >
                 <ErrorBoundary>
-                  <WhatsappOfficial moduleAccess={moduleAccess} userRole={userRole} />
+                  <WhatsappOfficial moduleAccess={moduleAccess} userRole={userRole} userCompany={userCompany} />
                 </ErrorBoundary>
               </KeepAliveTab>
 

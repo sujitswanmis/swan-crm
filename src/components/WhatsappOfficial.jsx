@@ -4,7 +4,8 @@ import MobileTableView from '@/components/common/MobileTableView';
 import React, { useState, useEffect } from 'react';
 import { 
   Save, Plus, Trash2, Image as ImageIcon, Upload, PlayCircle, Settings, MessageSquare, Repeat,
-  CheckCircle2, AlertCircle, Eye, EyeOff, Send, ShieldCheck, Users, HelpCircle, RefreshCw, Zap
+  CheckCircle2, AlertCircle, Eye, EyeOff, Send, ShieldCheck, Users, HelpCircle, RefreshCw, Zap,
+  Building2, Filter, Briefcase
 } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { 
@@ -18,6 +19,7 @@ import {
   deleteWhatsappAutomation,
   testWhatsappProviderConnection
 } from '@/app/actions/whatsapp';
+import { getTenantBranches } from '@/app/actions/tenantBranches';
 import { filterVisibleSubTabs, getSubItemPermissions } from '@/utils/permissionUtils';
 
 const ALL_WA_TABS = [
@@ -26,7 +28,7 @@ const ALL_WA_TABS = [
   { id: 'settings', label: 'Global Settings', icon: Settings }
 ];
 
-export default function WhatsappOfficial({ moduleAccess = {}, userRole = '' }) {
+export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', userCompany = '' }) {
   const visibleTabs = filterVisibleSubTabs(moduleAccess, userRole, 'whatsapp_official', ALL_WA_TABS);
 
   const [activeTab, setActiveTab] = useState(() => {
@@ -91,6 +93,13 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '' }) {
   const [currentTemplate, setCurrentTemplate] = useState({ template_name: '', campaign_name: '', message_body: '', image_url: '', company: 'All' });
   const [uploadingImage, setUploadingImage] = useState(false);
 
+  // Branches & Office State
+  const [branches, setBranches] = useState([]);
+  const [selectedTemplateBsp, setSelectedTemplateBsp] = useState('aisensy');
+  const [selectedTemplateBranch, setSelectedTemplateBranch] = useState('Headquarters (Main Office)');
+  const [filterBsp, setFilterBsp] = useState('All');
+  const [filterBranch, setFilterBranch] = useState('All');
+
   // Automations State
   const [automations, setAutomations] = useState([]);
   const [showAutoForm, setShowAutoForm] = useState(false);
@@ -113,15 +122,21 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '' }) {
     loadConfig();
     window.addEventListener('crm_config_updated', loadConfig);
     return () => window.removeEventListener('crm_config_updated', loadConfig);
-  }, []);
+  }, [userCompany]);
 
   const loadAllData = async () => {
     setLoading(true);
-    const [setRes, tplRes, autoRes] = await Promise.all([
+    const effectiveComp = userCompany || 'Swan Agro';
+    const [setRes, tplRes, autoRes, branchRes] = await Promise.all([
       getWhatsappSettings(),
       getWhatsappTemplates(),
-      getWhatsappAutomations()
+      getWhatsappAutomations(),
+      getTenantBranches(effectiveComp)
     ]);
+
+    if (branchRes.success && Array.isArray(branchRes.branches)) {
+      setBranches(branchRes.branches);
+    }
     
     if (setRes.success && setRes.data) {
       const d = setRes.data;
@@ -133,6 +148,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '' }) {
       const def = d.default_provider || d.provider || initialEnabled[0] || 'aisensy';
       setDefaultProvider(def);
       setTestProvider(def);
+      setSelectedTemplateBsp(def);
       setAccountLimit(d.account_limit || initialEnabled.length);
 
       if (d.meta) setMetaConfig({ phone_number_id: d.meta.phone_number_id || '', waba_id: d.meta.waba_id || '', access_token: d.meta.access_token || '', api_version: d.meta.api_version || 'v21.0' });
@@ -232,13 +248,64 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '' }) {
     setUploadingImage(false);
   };
 
+  const parseTemplateMeta = (compStr) => {
+    const raw = String(compStr || '').trim();
+    let bsp = defaultProvider || 'aisensy';
+    let branch = 'Headquarters (Main Office)';
+
+    const match = raw.match(/\[(.*?)\]/);
+    if (match && match[1]) {
+      bsp = match[1].toLowerCase();
+      branch = raw.replace(/\[.*?\]/, '').trim() || 'Headquarters (Main Office)';
+    } else if (raw.toLowerCase() === 'nstlp') {
+      bsp = 'nextel';
+      branch = 'NSTLP (Plant 2)';
+    } else if (raw.toLowerCase() === 'nsmlr') {
+      bsp = 'aisensy';
+      branch = 'NSMLR (Main Unit)';
+    } else if (['aisensy', 'interakt', 'meta', 'wati', 'nextel'].includes(raw.toLowerCase())) {
+      bsp = raw.toLowerCase();
+      branch = 'Headquarters (Main Office)';
+    } else if (raw && raw !== 'All') {
+      branch = raw;
+    }
+    return { bsp, branch };
+  };
+
+  const handleOpenCreateTemplate = () => {
+    setSelectedTemplateBsp(defaultProvider || 'aisensy');
+    const firstBranch = branches[0]?.branch_name || 'Headquarters (Main Office)';
+    setSelectedTemplateBranch(firstBranch);
+    setCurrentTemplate({ template_name: '', campaign_name: '', message_body: '', image_url: '', company: 'All' });
+    setShowTemplateForm(true);
+  };
+
+  const handleOpenEditTemplate = (tpl) => {
+    const meta = parseTemplateMeta(tpl.company);
+    setSelectedTemplateBsp(meta.bsp);
+    setSelectedTemplateBranch(meta.branch);
+    setCurrentTemplate(tpl);
+    setShowTemplateForm(true);
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
   const handleSaveTemplate = async () => {
     if (!currentTemplate.template_name || !currentTemplate.campaign_name || !currentTemplate.message_body) {
       alert('Please fill all required fields');
       return;
     }
     setLoading(true);
-    const res = await saveWhatsappTemplate(currentTemplate);
+    const branchLabel = selectedTemplateBranch || 'Headquarters (Main Office)';
+    const bspLabel = selectedTemplateBsp || defaultProvider || 'aisensy';
+    const combinedCompany = `${branchLabel} [${bspLabel}]`;
+
+    const res = await saveWhatsappTemplate({
+      ...currentTemplate,
+      company: combinedCompany
+    });
+
     if (res.success) {
       setShowTemplateForm(false);
       setCurrentTemplate({ template_name: '', campaign_name: '', message_body: '', image_url: '', company: 'All' });
@@ -834,121 +901,291 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '' }) {
       {/* TEMPLATES TAB */}
       {activeTab === 'templates' && (
         <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-            <h2 style={{ fontSize: '1.25rem' }}>Message Templates</h2>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
+            <div>
+              <h2 style={{ fontSize: '1.25rem', margin: '0 0 0.25rem 0' }}>Message Templates Library</h2>
+              <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                Create and manage official WhatsApp templates mapped to your Client Main Office / Branches and selected BSP provider.
+              </p>
+            </div>
             {templatesPerms.add && (
               <button 
-                onClick={() => { setCurrentTemplate({ template_name: '', campaign_name: '', message_body: '', image_url: '' }); setShowTemplateForm(true); }}
-                style={{ padding: '0.5rem 1rem', background: '#10b981', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 500 }}
+                onClick={handleOpenCreateTemplate}
+                style={{ padding: '0.55rem 1.15rem', background: '#10b981', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600, fontSize: '0.88rem' }}
               >
                 <Plus size={18} /> Create New Template
               </button>
             )}
           </div>
 
+          {/* FILTER BAR FOR TEMPLATES */}
+          <div style={{ 
+            display: 'flex', 
+            flexWrap: 'wrap', 
+            gap: '0.75rem', 
+            alignItems: 'center', 
+            marginBottom: '1.5rem', 
+            padding: '0.75rem 1rem', 
+            backgroundColor: 'var(--bg-primary)', 
+            borderRadius: '8px', 
+            border: '1px solid var(--border-light)' 
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: 'var(--text-secondary)', fontSize: '0.85rem', fontWeight: 600 }}>
+              <Filter size={15} /> Filter:
+            </div>
+
+            {/* Filter by BSP */}
+            <select
+              value={filterBsp}
+              onChange={(e) => setFilterBsp(e.target.value)}
+              style={{ padding: '0.4rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontSize: '0.82rem', fontWeight: 500 }}
+            >
+              <option value="All">All BSP Gateways</option>
+              <option value="aisensy">AiSensy</option>
+              <option value="interakt">Interakt</option>
+              <option value="meta">Meta Cloud API</option>
+              <option value="wati">Wati</option>
+              <option value="nextel">Nextel.io</option>
+            </select>
+
+            {/* Filter by Branch */}
+            <select
+              value={filterBranch}
+              onChange={(e) => setFilterBranch(e.target.value)}
+              style={{ padding: '0.4rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontSize: '0.82rem', fontWeight: 500 }}
+            >
+              <option value="All">All Offices / Branches</option>
+              <option value="Headquarters (Main Office)">Headquarters (Main Office)</option>
+              {branches.map(b => (
+                <option key={b.id || b.branch_name} value={b.branch_name}>
+                  {b.branch_name}
+                </option>
+              ))}
+              <option value="NSMLR (Main Unit)">NSMLR (Main Unit)</option>
+              <option value="NSTLP (Plant 2)">NSTLP (Plant 2)</option>
+            </select>
+          </div>
+
           {showTemplateForm && (
-            <div style={{ backgroundColor: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '8px', padding: '1.5rem', marginBottom: '2rem' }}>
-              <h3 style={{ marginTop: 0, marginBottom: '1.5rem', fontSize: '1.1rem' }}>{currentTemplate.id ? 'Edit' : 'New'} Template</h3>
+            <div style={{ backgroundColor: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '10px', padding: '1.75rem', marginBottom: '2rem', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
+              <h3 style={{ marginTop: 0, marginBottom: '1.25rem', fontSize: '1.15rem', fontWeight: 700 }}>
+                {currentTemplate.id ? 'Edit Template' : 'Create New WhatsApp Template'}
+              </h3>
               
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1.5rem', marginBottom: '1.5rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.25rem', marginBottom: '1.25rem' }}>
+                {/* 1. Selected BSP Name */}
                 <div className="form-group">
-                  <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.5rem' }}>Gateway / Route (Option A & B)</label>
-                  <select value={currentTemplate.company || 'All'} onChange={e => setCurrentTemplate({...currentTemplate, company: e.target.value})} style={{ width: '100%', padding: '0.6rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}>
-                    <option value="All">All / Default (Smart Auto-Route)</option>
-                    <option value="AiSensy">AiSensy (Official Meta BSP)</option>
-                    <option value="Interakt">Interakt (Jio Haptik BSP)</option>
-                    <option value="Meta">Meta Cloud API (Direct)</option>
-                    <option value="Wati">Wati (Clare.ai BSP)</option>
-                    <option value="Nextel">Nextel.io (Session Webhook)</option>
-                    <option value="NSMLR">NSMLR (AiSensy Legacy Brand)</option>
-                    <option value="NSTLP">NSTLP (Nextel Legacy Brand)</option>
+                  <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem', marginBottom: '0.45rem', color: 'var(--text-primary)' }}>
+                    <Zap size={15} color="#2563eb" /> Selected BSP Provider
+                  </label>
+                  <select 
+                    value={selectedTemplateBsp} 
+                    onChange={e => setSelectedTemplateBsp(e.target.value)} 
+                    style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontWeight: 600, fontSize: '0.85rem' }}
+                  >
+                    <option value="aisensy">AiSensy (Official Meta BSP)</option>
+                    <option value="interakt">Interakt (Jio Haptik BSP)</option>
+                    <option value="meta">Meta Cloud API (Direct v21.0)</option>
+                    <option value="wati">Wati (Clare.ai BSP)</option>
+                    <option value="nextel">Nextel.io (Session Webhook)</option>
                   </select>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.2rem', display: 'block' }}>
+                    Auto-selected to active workspace default ({defaultProvider.toUpperCase()}).
+                  </span>
                 </div>
+
+                {/* 2. Client Main Office & Branch List */}
                 <div className="form-group">
-                  <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.5rem' }}>Template Name (CRM Display)</label>
-                  <input type="text" value={currentTemplate.template_name} onChange={e => setCurrentTemplate({...currentTemplate, template_name: e.target.value})} placeholder="e.g. dealer_marketing" style={{ width: '100%', padding: '0.6rem', borderRadius: '6px', border: '1px solid var(--border-light)' }} />
+                  <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem', marginBottom: '0.45rem', color: 'var(--text-primary)' }}>
+                    <Building2 size={15} color="#10b981" /> Client Office / Branch List
+                  </label>
+                  <select 
+                    value={selectedTemplateBranch} 
+                    onChange={e => setSelectedTemplateBranch(e.target.value)} 
+                    style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontWeight: 600, fontSize: '0.85rem' }}
+                  >
+                    <option value="Headquarters (Main Office)">🏢 Headquarters (Main Office)</option>
+                    {branches.filter(b => b.branch_name !== 'Headquarters (Main Office)').map(b => (
+                      <option key={b.id || b.branch_name} value={b.branch_name}>
+                        🏢 {b.branch_name} ({b.location_type || 'Branch'})
+                      </option>
+                    ))}
+                    <option value="All Branches (Universal)">🏢 All Branches (Universal)</option>
+                    <option value="NSMLR (Main Unit)">🏢 NSMLR (Main Unit)</option>
+                    <option value="NSTLP (Plant 2)">🏢 NSTLP (Plant 2)</option>
+                  </select>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.2rem', display: 'block' }}>
+                    Headquarters (Main Office) is selected by default.
+                  </span>
                 </div>
+
+                {/* 3. Template Name */}
                 <div className="form-group">
-                  <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.5rem' }}>Campaign Name (API ID)</label>
-                  <input type="text" value={currentTemplate.campaign_name} onChange={e => setCurrentTemplate({...currentTemplate, campaign_name: e.target.value})} placeholder="API Campaign ID" style={{ width: '100%', padding: '0.6rem', borderRadius: '6px', border: '1px solid var(--border-light)' }} />
+                  <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.45rem', color: 'var(--text-primary)' }}>
+                    Template Name (CRM Display) <span style={{ color: '#ef4444' }}>*</span>
+                  </label>
+                  <input 
+                    type="text" 
+                    value={currentTemplate.template_name} 
+                    onChange={e => setCurrentTemplate({...currentTemplate, template_name: e.target.value})} 
+                    placeholder="e.g. welcome_offer" 
+                    style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontSize: '0.85rem' }} 
+                  />
+                </div>
+
+                {/* 4. Campaign / API ID */}
+                <div className="form-group">
+                  <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.45rem', color: 'var(--text-primary)' }}>
+                    API Campaign ID / Name <span style={{ color: '#ef4444' }}>*</span>
+                  </label>
+                  <input 
+                    type="text" 
+                    value={currentTemplate.campaign_name} 
+                    onChange={e => setCurrentTemplate({...currentTemplate, campaign_name: e.target.value})} 
+                    placeholder="Exact template name in BSP" 
+                    style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontFamily: 'monospace', fontSize: '0.85rem' }} 
+                  />
                 </div>
               </div>
 
-              <div className="form-group" style={{ marginBottom: '1.5rem' }}>
-                <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.5rem' }}>Message Content</label>
+              <div className="form-group" style={{ marginBottom: '1.25rem' }}>
+                <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.45rem', color: 'var(--text-primary)' }}>
+                  Message Content Body <span style={{ color: '#ef4444' }}>*</span>
+                </label>
                 <textarea 
                   value={currentTemplate.message_body} 
                   onChange={e => setCurrentTemplate({...currentTemplate, message_body: e.target.value})} 
-                  placeholder="Paste the message here. Use {{1}} for dynamic names." 
-                  style={{ width: '100%', padding: '0.6rem', borderRadius: '6px', border: '1px solid var(--border-light)', minHeight: '150px' }} 
+                  placeholder="Paste template message body here. Use {{1}} for customer name..." 
+                  style={{ width: '100%', padding: '0.75rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', minHeight: '120px', fontSize: '0.85rem' }} 
                 />
               </div>
 
-              <div className="form-group" style={{ marginBottom: '2rem' }}>
-                <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.5rem' }}>Image Attachment (Optional)</label>
+              <div className="form-group" style={{ marginBottom: '1.5rem' }}>
+                <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.45rem', color: 'var(--text-primary)' }}>
+                  Header Media Image Attachment (Optional)
+                </label>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                  <label style={{ padding: '0.5rem 1rem', background: 'var(--th-hover-bg)', color: '#334155', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', fontWeight: 500 }}>
+                  <label style={{ padding: '0.5rem 1rem', background: 'var(--th-hover-bg, #f1f5f9)', color: 'var(--text-primary)', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', fontWeight: 500, border: '1px solid var(--border-light)' }}>
                     <Upload size={16} /> {uploadingImage ? 'Uploading...' : 'Upload Image File'}
                     <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleImageUpload} disabled={uploadingImage} />
                   </label>
                   
                   {currentTemplate.image_url && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: '#10b981' }}>
-                      <ImageIcon size={16} /> Image Linked
-                      <img src={currentTemplate.image_url} alt="preview" style={{ height: '30px', width: '30px', objectFit: 'cover', borderRadius: '4px', marginLeft: '0.5rem' }} />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.82rem', color: '#10b981' }}>
+                      <ImageIcon size={16} /> Image Attached
+                      <img src={currentTemplate.image_url} alt="preview" style={{ height: '32px', width: '32px', objectFit: 'cover', borderRadius: '4px', marginLeft: '0.5rem', border: '1px solid #10b981' }} />
                     </div>
                   )}
                 </div>
               </div>
 
               <div style={{ display: 'flex', gap: '1rem' }}>
-                <button onClick={handleSaveTemplate} disabled={loading} style={{ padding: '0.6rem 1.5rem', background: 'var(--accent-color)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 500 }}>
+                <button 
+                  onClick={handleSaveTemplate} 
+                  disabled={loading} 
+                  style={{ padding: '0.65rem 1.6rem', background: 'var(--accent-color, #2563eb)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.88rem' }}
+                >
                   {loading ? 'Saving...' : 'Save Template'}
                 </button>
-                <button onClick={() => setShowTemplateForm(false)} style={{ padding: '0.6rem 1.5rem', background: 'transparent', color: 'var(--text-secondary)', border: '1px solid var(--border-light)', borderRadius: '6px', cursor: 'pointer', fontWeight: 500 }}>
+                <button 
+                  onClick={() => setShowTemplateForm(false)} 
+                  style={{ padding: '0.65rem 1.4rem', background: 'transparent', color: 'var(--text-secondary)', border: '1px solid var(--border-light)', borderRadius: '6px', cursor: 'pointer', fontWeight: 500, fontSize: '0.88rem' }}
+                >
                   Cancel
                 </button>
               </div>
             </div>
           )}
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1.5rem' }}>
-            {templates.map(tpl => (
-              <div key={tpl.id} style={{ border: '1px solid var(--border-light)', borderRadius: '8px', overflow: 'hidden', backgroundColor: 'var(--bg-surface)', display: 'flex', flexDirection: 'column' }}>
-                {tpl.image_url && (
-                  <div style={{ height: '120px', width: '100%', overflow: 'hidden', backgroundColor: 'var(--th-bg)' }}>
-                    <img src={tpl.image_url} alt="Template" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  </div>
-                )}
-                <div style={{ padding: '1.25rem', flex: 1, display: 'flex', flexDirection: 'column' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
-                    <h4 style={{ margin: '0', fontSize: '1rem', color: 'var(--text-primary)' }}>{tpl.template_name}</h4>
-                    <span style={{ fontSize: '0.7rem', fontWeight: 600, padding: '0.15rem 0.4rem', backgroundColor: 'var(--th-hover-bg)', borderRadius: '4px' }}>{tpl.company || 'All'}</span>
-                  </div>
-                  <p style={{ margin: '0 0 1rem 0', fontSize: '0.75rem', color: 'var(--text-secondary)', fontFamily: 'monospace' }}>API: {tpl.campaign_name}</p>
-                  
-                  <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', background: 'var(--bg-primary)', padding: '0.75rem', borderRadius: '6px', marginBottom: '1rem', flex: 1, whiteSpace: 'pre-wrap', maxHeight: '100px', overflowY: 'auto' }}>
-                    {tpl.message_body.substring(0, 150)}{tpl.message_body.length > 150 ? '...' : ''}
-                  </div>
-                  
-                  <div style={{ display: 'flex', gap: '0.5rem', marginTop: 'auto' }}>
-                    {templatesPerms.edit && (
-                      <button onClick={() => { setCurrentTemplate(tpl); setShowTemplateForm(true); window.scrollTo(0, 0); }} style={{ flex: 1, padding: '0.4rem', background: 'var(--th-bg)', color: '#475569', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 500 }}>
-                        Edit
-                      </button>
+          {/* TEMPLATES CARDS GRID */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1.25rem' }}>
+            {templates
+              .filter(tpl => {
+                const meta = parseTemplateMeta(tpl.company);
+                if (filterBsp !== 'All' && meta.bsp !== filterBsp.toLowerCase()) return false;
+                if (filterBranch !== 'All' && !meta.branch.toLowerCase().includes(filterBranch.toLowerCase())) return false;
+                return true;
+              })
+              .map(tpl => {
+                const meta = parseTemplateMeta(tpl.company);
+                return (
+                  <div key={tpl.id} style={{ border: '1px solid var(--border-light)', borderRadius: '10px', overflow: 'hidden', backgroundColor: 'var(--bg-surface)', display: 'flex', flexDirection: 'column', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+                    {tpl.image_url && (
+                      <div style={{ height: '120px', width: '100%', overflow: 'hidden', backgroundColor: 'var(--th-bg)' }}>
+                        <img src={tpl.image_url} alt="Template" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      </div>
                     )}
-                    {templatesPerms.delete && (
-                      <button onClick={() => handleDeleteTemplate(tpl.id)} style={{ padding: '0.4rem', background: '#fee2e2', color: '#ef4444', border: 'none', borderRadius: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <Trash2 size={16} />
-                      </button>
-                    )}
+                    <div style={{ padding: '1.25rem', flex: 1, display: 'flex', flexDirection: 'column' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem', gap: '0.5rem' }}>
+                        <h4 style={{ margin: '0', fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)' }}>{tpl.template_name}</h4>
+                      </div>
+
+                      {/* DUAL BADGES: BSP NAME + CLIENT OFFICE / BRANCH */}
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', marginBottom: '0.75rem' }}>
+                        <span style={{ 
+                          fontSize: '0.72rem', 
+                          fontWeight: 700, 
+                          padding: '0.18rem 0.5rem', 
+                          borderRadius: '4px', 
+                          backgroundColor: 'rgba(37, 99, 235, 0.1)', 
+                          color: '#2563eb',
+                          border: '1px solid rgba(37, 99, 235, 0.25)',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.25rem'
+                        }}>
+                          <Zap size={11} /> {meta.bsp.toUpperCase()}
+                        </span>
+
+                        <span style={{ 
+                          fontSize: '0.72rem', 
+                          fontWeight: 600, 
+                          padding: '0.18rem 0.5rem', 
+                          borderRadius: '4px', 
+                          backgroundColor: 'rgba(16, 185, 129, 0.1)', 
+                          color: '#065f46',
+                          border: '1px solid rgba(16, 185, 129, 0.25)',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.25rem'
+                        }}>
+                          <Building2 size={11} /> {meta.branch}
+                        </span>
+                      </div>
+
+                      <p style={{ margin: '0 0 0.75rem 0', fontSize: '0.75rem', color: 'var(--text-secondary)', fontFamily: 'monospace' }}>
+                        API ID: <strong>{tpl.campaign_name}</strong>
+                      </p>
+                      
+                      <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', background: 'var(--bg-primary)', padding: '0.75rem', borderRadius: '6px', marginBottom: '1rem', flex: 1, whiteSpace: 'pre-wrap', maxHeight: '95px', overflowY: 'auto' }}>
+                        {tpl.message_body.substring(0, 140)}{tpl.message_body.length > 140 ? '...' : ''}
+                      </div>
+                      
+                      <div style={{ display: 'flex', gap: '0.5rem', marginTop: 'auto' }}>
+                        {templatesPerms.edit && (
+                          <button 
+                            onClick={() => handleOpenEditTemplate(tpl)} 
+                            style={{ flex: 1, padding: '0.45rem', background: 'var(--th-bg)', color: 'var(--text-primary)', border: '1px solid var(--border-light)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600 }}
+                          >
+                            Edit
+                          </button>
+                        )}
+                        {templatesPerms.delete && (
+                          <button 
+                            onClick={() => handleDeleteTemplate(tpl.id)} 
+                            style={{ padding: '0.45rem 0.75rem', background: '#fee2e2', color: '#ef4444', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
-            ))}
+                );
+              })}
             {templates.length === 0 && !showTemplateForm && (
               <div style={{ gridColumn: '1 / -1', padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)', background: 'var(--bg-primary)', borderRadius: '8px' }}>
-                No templates created yet.
+                No templates created yet. Click "Create New Template" above.
               </div>
             )}
           </div>

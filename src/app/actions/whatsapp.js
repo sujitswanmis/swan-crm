@@ -323,9 +323,11 @@ export async function sendWhatsappMessage(leadId, templateId, selectedPhones = [
 
         // OPTION A: Template-Level Specific Provider Selection
         const tplTarget = String(template.provider || template.company || '').trim().toLowerCase();
-        if (['meta', 'aisensy', 'interakt', 'wati', 'nextel'].includes(tplTarget)) {
-          activeProvider = tplTarget;
-        }
+        if (tplTarget.includes('aisensy')) activeProvider = 'aisensy';
+        else if (tplTarget.includes('interakt')) activeProvider = 'interakt';
+        else if (tplTarget.includes('meta')) activeProvider = 'meta';
+        else if (tplTarget.includes('wati')) activeProvider = 'wati';
+        else if (tplTarget.includes('nextel')) activeProvider = 'nextel';
 
         // OPTION B: Company/Brand Routing (NSMLR -> AiSensy, NSTLP -> Nextel)
         if (!activeProvider) {
