@@ -114,6 +114,46 @@ export async function getTenantBranches(companyOrTenantId = 'Default') {
 }
 
 /**
+ * Get all branches across all companies and tenants
+ */
+export async function getAllTenantBranches() {
+  try {
+    const admin = getAdminClient();
+    let dbBranches = [];
+    try {
+      const { data, error } = await admin
+        .from('tenant_branches')
+        .select('*')
+        .order('created_at', { ascending: true });
+
+      if (!error && Array.isArray(data)) {
+        dbBranches = data;
+      }
+    } catch (e) {
+      // Table may not exist yet in Supabase
+    }
+
+    const localMap = await readLocalBranches();
+    const allLocal = [];
+    Object.values(localMap).forEach(arr => {
+      if (Array.isArray(arr)) allLocal.push(...arr);
+    });
+
+    const mergedMap = new Map();
+    dbBranches.forEach(b => mergedMap.set(b.id || b.branch_code, b));
+    allLocal.forEach(b => mergedMap.set(b.id || b.branch_code, b));
+
+    return {
+      success: true,
+      branches: Array.from(mergedMap.values())
+    };
+  } catch (err) {
+    console.error('getAllTenantBranches error:', err);
+    return { success: false, error: err.message, branches: [] };
+  }
+}
+
+/**
  * Create or update a branch
  */
 export async function saveTenantBranch({

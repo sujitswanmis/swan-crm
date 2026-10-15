@@ -1,4 +1,57 @@
 {
+  "New Swan Group": [
+    {
+      "id": "br_nsg_hq_001",
+      "company": "New Swan Group",
+      "branch_code": "NEW_SWAN_GROUP",
+      "branch_name": "New Swan Group (Headquarters)",
+      "location_type": "Headquarters",
+      "address": "Headquarters Complex",
+      "city": "Ludhiana",
+      "state": "Punjab",
+      "pincode": "",
+      "gstin": "",
+      "phone": "",
+      "email": "admin@newswangroup.com",
+      "incharge_name": "Group Admin",
+      "is_active": true,
+      "created_at": "2026-10-15T10:00:00.000Z"
+    },
+    {
+      "id": "br_nsmlr_001",
+      "company": "New Swan Group",
+      "branch_code": "NSMLR",
+      "branch_name": "NSMLR",
+      "location_type": "Manufacturing Unit",
+      "address": "NSMLR Facility",
+      "city": "Ludhiana",
+      "state": "Punjab",
+      "pincode": "",
+      "gstin": "",
+      "phone": "",
+      "email": "",
+      "incharge_name": "Unit Head",
+      "is_active": true,
+      "created_at": "2026-10-15T10:00:00.000Z"
+    },
+    {
+      "id": "br_nstlp_001",
+      "company": "New Swan Group",
+      "branch_code": "NSTLP",
+      "branch_name": "NSTLP",
+      "location_type": "Plant 2",
+      "address": "NSTLP Facility",
+      "city": "Ludhiana",
+      "state": "Punjab",
+      "pincode": "",
+      "gstin": "",
+      "phone": "",
+      "email": "",
+      "incharge_name": "Plant Incharge",
+      "is_active": true,
+      "created_at": "2026-10-15T10:00:00.000Z"
+    }
+  ],
   "SuPuja Creations": [
     {
       "id": "br_hq_1791830835870",

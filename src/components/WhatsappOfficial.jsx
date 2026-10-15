@@ -23,7 +23,7 @@ import {
   getClientBspAllocations,
   saveClientBspAllocations
 } from '@/app/actions/whatsapp';
-import { getTenantBranches } from '@/app/actions/tenantBranches';
+import { getTenantBranches, getAllTenantBranches } from '@/app/actions/tenantBranches';
 import { filterVisibleSubTabs, getSubItemPermissions } from '@/utils/permissionUtils';
 
 const ALL_WA_TABS = [
@@ -177,7 +177,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
       getWhatsappSettings(effectiveComp),
       getWhatsappTemplates(),
       getWhatsappAutomations(),
-      getTenantBranches(effectiveComp),
+      isAdmin ? getAllTenantBranches() : getTenantBranches(effectiveComp),
       getGlobalBspCatalog(),
       getClientBspAllocations()
     ]);
@@ -252,39 +252,84 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
     });
   };
 
-  // --- CLIENT ALLOCATION HELPERS (TIER 2) ---
+  // --- CLIENT & BRANCH ALLOCATION HELPERS (TIER 2) ---
   const allClients = React.useMemo(() => {
     const list = [
-      { id: 'NEW_SWAN_GROUP', name: 'New Swan Group (Headquarters)', code: 'NEW_SWAN_GROUP' },
-      { id: 'NSMLR', name: '🏢 NSMLR (Branch)', code: 'NSMLR' },
-      { id: 'NSTLP', name: '🏢 NSTLP (Branch)', code: 'NSTLP' }
+      { id: 'NEW_SWAN_GROUP', name: 'New Swan Group (Headquarters)', code: 'NEW_SWAN_GROUP', type: 'headquarters', group: 'New Swan Group' },
+      { id: 'NSMLR', name: '🏢 NSMLR (Branch)', code: 'NSMLR', type: 'branch', group: 'New Swan Group' },
+      { id: 'NSTLP', name: '🏢 NSTLP (Branch)', code: 'NSTLP', type: 'branch', group: 'New Swan Group' }
     ];
+
+    // Additional Tenants as Headquarters
     (tenantsList || []).forEach(t => {
       const code = t.tenant_code || t.name;
       if (!list.some(x => x.code?.toLowerCase() === code?.toLowerCase())) {
-        list.push({ id: t.id, name: t.name, code: code });
+        list.push({ 
+          id: t.id, 
+          name: `${t.name} (Headquarters)`, 
+          code: code, 
+          type: 'headquarters', 
+          group: t.name 
+        });
       }
     });
+
+    // Additional Branches from branches list
+    (branches || []).forEach(b => {
+      const bCode = (b.branch_code || b.branch_name || '').trim();
+      if (bCode && !list.some(x => x.code?.toLowerCase() === bCode.toLowerCase())) {
+        list.push({
+          id: b.id || bCode,
+          name: `🏢 ${b.branch_name} (${b.location_type || 'Branch'})`,
+          code: bCode,
+          type: 'branch',
+          group: b.company || 'Branch Office'
+        });
+      }
+    });
+
     return list;
-  }, [tenantsList]);
+  }, [tenantsList, branches]);
 
-  const currentClientAlloc = clientAllocations[selectedClientForAllocation] || {
-    allowed_bsps: ['aisensy', 'nextel'],
-    default_bsp: 'aisensy',
-    account_limit: 1
-  };
-
-  const toggleClientBsp = (bspId) => {
-    const existing = clientAllocations[selectedClientForAllocation] || {
-      allowed_bsps: ['aisensy', 'nextel'],
+  const getInitialClientAlloc = (clientCode) => {
+    const code = String(clientCode || '').toUpperCase();
+    if (code.includes('NSTLP')) {
+      return {
+        allowed_bsps: ['nextel'],
+        default_bsp: 'nextel',
+        account_limit: 1
+      };
+    }
+    if (code.includes('NSMLR')) {
+      return {
+        allowed_bsps: ['aisensy'],
+        default_bsp: 'aisensy',
+        account_limit: 1
+      };
+    }
+    if (code === 'NEW_SWAN_GROUP') {
+      return {
+        allowed_bsps: ['aisensy', 'nextel'],
+        default_bsp: 'aisensy',
+        account_limit: 2
+      };
+    }
+    return {
+      allowed_bsps: ['aisensy'],
       default_bsp: 'aisensy',
       account_limit: 1
     };
+  };
+
+  const currentClientAlloc = clientAllocations[selectedClientForAllocation] || getInitialClientAlloc(selectedClientForAllocation);
+
+  const toggleClientBsp = (bspId) => {
+    const existing = clientAllocations[selectedClientForAllocation] || getInitialClientAlloc(selectedClientForAllocation);
     const currentAllowed = Array.isArray(existing.allowed_bsps) ? existing.allowed_bsps : [];
     let updatedAllowed;
     if (currentAllowed.includes(bspId)) {
       if (currentAllowed.length === 1) {
-        alert('Each client must have at least one assigned BSP gateway.');
+        alert('Each client or branch must have at least one assigned BSP gateway.');
         return;
       }
       updatedAllowed = currentAllowed.filter(x => x !== bspId);
@@ -306,11 +351,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
   };
 
   const setClientDefaultBsp = (defBsp) => {
-    const existing = clientAllocations[selectedClientForAllocation] || {
-      allowed_bsps: ['aisensy', 'nextel'],
-      default_bsp: 'aisensy',
-      account_limit: 1
-    };
+    const existing = clientAllocations[selectedClientForAllocation] || getInitialClientAlloc(selectedClientForAllocation);
     setClientAllocations(prev => ({
       ...prev,
       [selectedClientForAllocation]: {
@@ -321,11 +362,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
   };
 
   const setClientAccountLimit = (limit) => {
-    const existing = clientAllocations[selectedClientForAllocation] || {
-      allowed_bsps: ['aisensy', 'nextel'],
-      default_bsp: 'aisensy',
-      account_limit: 1
-    };
+    const existing = clientAllocations[selectedClientForAllocation] || getInitialClientAlloc(selectedClientForAllocation);
     setClientAllocations(prev => ({
       ...prev,
       [selectedClientForAllocation]: {
@@ -1058,17 +1095,17 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.25rem' }}>
                   <div>
                     <h3 style={{ margin: '0 0 0.35rem 0', fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                      Client / Company WhatsApp Gateway Allocation
+                      Headquarters & Branch WhatsApp Gateway Allocation Matrix
                     </h3>
                     <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
-                      Select a company or tenant workspace to assign permitted BSP gateways. Non-admin workspace users will only see and configure their assigned providers.
+                      Assign permitted BSP gateways and default sender endpoints to each Headquarters and Operational Branch Office. Workspace users in that branch will strictly route through their assigned gateways.
                     </p>
                   </div>
 
-                  {/* CLIENT SELECTOR */}
+                  {/* CLIENT / BRANCH SELECTOR */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <label style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                      Target Client / Tenant:
+                    <label style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+                      Target Headquarters / Branch Office:
                     </label>
                     <select
                       value={selectedClientForAllocation}
@@ -1080,14 +1117,24 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                         backgroundColor: 'var(--bg-surface)',
                         fontWeight: 700,
                         fontSize: '0.88rem',
-                        color: 'var(--text-primary)'
+                        color: 'var(--text-primary)',
+                        minWidth: '260px'
                       }}
                     >
-                      {allClients.map(c => (
-                        <option key={c.id || c.code} value={c.code || c.name}>
-                          {c.name}
-                        </option>
-                      ))}
+                      <optgroup label="🏢 Headquarters & Main Offices">
+                        {allClients.filter(c => c.type === 'headquarters').map(c => (
+                          <option key={c.id || c.code} value={c.code || c.name}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                      <optgroup label="🏭 Operational Branches & Plants">
+                        {allClients.filter(c => c.type === 'branch').map(c => (
+                          <option key={c.id || c.code} value={c.code || c.name}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </optgroup>
                     </select>
                   </div>
                 </div>
@@ -1250,14 +1297,25 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
 
               {/* OVERVIEW TABLE OF ALL ALLOCATIONS */}
               <div style={{ padding: '1.25rem', backgroundColor: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
-                <h4 style={{ margin: '0 0 0.85rem 0', fontSize: '0.95rem', fontWeight: 700 }}>
-                  Active Client Allocation Matrix Overview
-                </h4>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  <div>
+                    <h4 style={{ margin: 0, fontSize: '0.98rem', fontWeight: 700 }}>
+                      Active Headquarters & Branch Allocation Matrix Overview
+                    </h4>
+                    <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                      All registered headquarters and branch units with assigned WhatsApp gateways.
+                    </span>
+                  </div>
+                  <span style={{ fontSize: '0.78rem', fontWeight: 600, padding: '0.25rem 0.65rem', borderRadius: '12px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
+                    {allClients.length} Offices Active
+                  </span>
+                </div>
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.83rem' }}>
                     <thead>
                       <tr style={{ borderBottom: '2px solid var(--border-light)', textAlign: 'left', color: 'var(--text-secondary)' }}>
-                        <th style={{ padding: '0.65rem 0.75rem' }}>Client / Company</th>
+                        <th style={{ padding: '0.65rem 0.75rem' }}>Headquarters / Branch Office</th>
+                        <th style={{ padding: '0.65rem 0.75rem' }}>Office Type</th>
                         <th style={{ padding: '0.65rem 0.75rem' }}>Assigned BSP Gateways</th>
                         <th style={{ padding: '0.65rem 0.75rem' }}>Default Gateway</th>
                         <th style={{ padding: '0.65rem 0.75rem' }}>Quota</th>
@@ -1266,15 +1324,26 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                     </thead>
                     <tbody>
                       {allClients.map(c => {
-                        const alloc = clientAllocations[c.code] || clientAllocations[c.name] || {
-                          allowed_bsps: ['aisensy', 'nextel'],
-                          default_bsp: 'aisensy',
-                          account_limit: 2
-                        };
+                        const alloc = clientAllocations[c.code] || clientAllocations[c.name] || getInitialClientAlloc(c.code);
+                        const isHQ = c.type === 'headquarters';
+                        const isNstlp = (c.code || '').toUpperCase().includes('NSTLP');
                         return (
                           <tr key={c.id || c.code} style={{ borderBottom: '1px solid var(--border-light)' }}>
                             <td style={{ padding: '0.75rem', fontWeight: 700, color: 'var(--text-primary)' }}>
                               {c.name}
+                            </td>
+                            <td style={{ padding: '0.75rem' }}>
+                              <span style={{
+                                padding: '0.2rem 0.5rem',
+                                borderRadius: '4px',
+                                fontSize: '0.7rem',
+                                fontWeight: 700,
+                                backgroundColor: isHQ ? 'rgba(37, 99, 235, 0.1)' : 'rgba(16, 185, 129, 0.1)',
+                                color: isHQ ? 'var(--accent-color, #2563eb)' : '#059669',
+                                border: isHQ ? '1px solid rgba(37, 99, 235, 0.25)' : '1px solid rgba(16, 185, 129, 0.25)'
+                              }}>
+                                {isHQ ? '🏢 Headquarters' : '🏭 Branch Office'}
+                              </span>
                             </td>
                             <td style={{ padding: '0.75rem' }}>
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
@@ -1286,10 +1355,15 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                               </div>
                             </td>
                             <td style={{ padding: '0.75rem', fontWeight: 600 }}>
-                              {getBspDisplayName(alloc.default_bsp)}
+                              <span style={{
+                                color: isNstlp || alloc.default_bsp === 'nextel' ? '#7c3aed' : 'var(--accent-color, #2563eb)',
+                                fontWeight: 700
+                              }}>
+                                {getBspDisplayName(alloc.default_bsp)}
+                              </span>
                             </td>
                             <td style={{ padding: '0.75rem', color: 'var(--text-secondary)' }}>
-                              {alloc.account_limit || (alloc.allowed_bsps || []).length} lines
+                              {alloc.account_limit || (alloc.allowed_bsps || []).length} gateway(s)
                             </td>
                             <td style={{ padding: '0.75rem' }}>
                               <button
