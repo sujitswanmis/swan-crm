@@ -506,7 +506,8 @@ export default function AttendanceModule({
         hodEmail: userEmail,
         userRole,
         statusFilter: 'ALL',
-        tenantId: effectiveTenantId
+        tenantId: effectiveTenantId,
+        company: userCompany
       });
       if (res.success) {
         setHodRequests(res.allRequests || res.requests || []);
@@ -567,15 +568,21 @@ export default function AttendanceModule({
     }
   };
 
-  // Initial Load
+  // Initial Load & on workspace/user change
   useEffect(() => {
+    // Reset state to avoid stale flash when switching workspaces
+    setHodRequests([]);
+    setHodPendingCount(0);
+    setTeamMasterData({ records: [], summary: {}, isRange: false });
+    setMonthlyMatrixData(null);
+
     fetchTodayAttendance();
     fetchHistory();
     fetchMyRequests();
     if (isHodOrManager) {
       fetchHodRequests();
     }
-  }, [userEmail, historyYear, historyMonth]);
+  }, [userEmail, historyYear, historyMonth, effectiveTenantId, userCompany]);
 
   useEffect(() => {
     if (activeTab === 'monthly_logs') {
@@ -589,7 +596,7 @@ export default function AttendanceModule({
         fetchTeamMonthlyMatrix();
       }
     }
-  }, [activeTab, teamReportView, teamDatePreset, teamStartDate, teamEndDate, teamMasterDepartment, matrixYear, matrixMonth]);
+  }, [activeTab, teamReportView, teamDatePreset, teamStartDate, teamEndDate, teamMasterDepartment, matrixYear, matrixMonth, effectiveTenantId, userCompany]);
 
   // Handle Punch In click — show confirm popup first
   const handlePunchIn = () => {
@@ -940,7 +947,8 @@ export default function AttendanceModule({
           requestId: actionModal.request.id,
           actionByName: userName,
           actionByEmail: userEmail,
-          actionRemarks: actionRemarks || 'Approved'
+          actionRemarks: actionRemarks || 'Approved',
+          tenantId: effectiveTenantId
         });
         if (res.success) {
           setActionModal(null);
@@ -961,7 +969,8 @@ export default function AttendanceModule({
           requestId: actionModal.request.id,
           actionByName: userName,
           actionByEmail: userEmail,
-          actionRemarks
+          actionRemarks,
+          tenantId: effectiveTenantId
         });
         if (res.success) {
           setActionModal(null);
@@ -1006,7 +1015,8 @@ export default function AttendanceModule({
         requestId: request.id,
         actionByName: userName,
         actionByEmail: userEmail,
-        actionRemarks: 'Approved by HOD'
+        actionRemarks: 'Approved by HOD',
+        tenantId: effectiveTenantId
       });
       if (res.success) {
         speakHumanFemaleAnnouncement(`Approved regularization for ${request.emp_name}`, `${request.emp_name} जी का अटेंडेंस अप्रूव कर दिया गया है।`);
@@ -1042,7 +1052,8 @@ export default function AttendanceModule({
           requestIds: ids,
           actionByName: userName,
           actionByEmail: userEmail,
-          actionRemarks: bulkRemarks || 'Bulk Approved by HOD'
+          actionRemarks: bulkRemarks || 'Bulk Approved by HOD',
+          tenantId: effectiveTenantId
         });
         if (res.success) {
           speakHumanFemaleAnnouncement(`Batch approved ${res.approvedCount} requests`, `कुल ${res.approvedCount} रेगुलराइजेशन रिक्वेस्ट्स एक साथ अप्रूव कर दी गई हैं।`);
@@ -1065,7 +1076,8 @@ export default function AttendanceModule({
           requestIds: ids,
           actionByName: userName,
           actionByEmail: userEmail,
-          actionRemarks: bulkRemarks
+          actionRemarks: bulkRemarks,
+          tenantId: effectiveTenantId
         });
         if (res.success) {
           setBulkActionModal(null);

@@ -92,6 +92,24 @@ const getAdminClient = () => {
 const DEFAULT_TENANT_ID = '00000000-0000-0000-0000-000000000001';
 const ATTENDANCE_FILE_PATH = path.join(process.cwd(), 'src', 'config', 'attendance_data.json');
 
+/**
+ * Helper to match company / workspace branch
+ */
+function matchesCompany(userComp, targetCompany) {
+  if (!targetCompany || targetCompany.toLowerCase() === 'all') return true;
+  const target = targetCompany.toLowerCase().trim();
+  const uComp = (userComp || '').toLowerCase().trim();
+  if (target === 'nsmlr') return uComp.includes('nsmlr');
+  if (target === 'nstlp' || target.includes('nstl')) return uComp.includes('nstl');
+  if (target.startsWith('nse')) return uComp.includes('nse');
+  if (target.includes('supuja')) return uComp.includes('supuja');
+  if (target.includes('testing')) return uComp.includes('testing');
+  if (target.includes('swan') || target.includes('new swan')) {
+    return uComp.includes('swan') || ['nsmlr', 'nstlp', 'nse', ''].includes(uComp);
+  }
+  return uComp === target || uComp.includes(target);
+}
+
 // Helper to read JSON fallback data
 async function getFallbackData() {
   try {
@@ -137,7 +155,11 @@ export async function getTodayAttendance(userEmail, userId, tenantId = DEFAULT_T
 
   // Local fallback first
   const local = await getFallbackData();
-  const localRec = local.records.find(r => (r.email || '').toLowerCase() === normalizedEmail && r.attendance_date === today);
+  const localRec = local.records.find(r => 
+    (r.tenant_id || DEFAULT_TENANT_ID) === tenantId &&
+    (r.email || '').toLowerCase() === normalizedEmail && 
+    r.attendance_date === today
+  );
 
   try {
     const startDateStr = `${nowYear}-${String(nowMonth).padStart(2, '0')}-01`;
@@ -149,12 +171,14 @@ export async function getTodayAttendance(userEmail, userId, tenantId = DEFAULT_T
         .from('attendance_records')
         .select('*')
         .ilike('email', normalizedEmail)
+        .eq('tenant_id', tenantId)
         .gte('attendance_date', startDateStr)
         .lte('attendance_date', endDateStr),
       adminClient
         .from('attendance_records')
         .select('*')
         .ilike('email', normalizedEmail)
+        .eq('tenant_id', tenantId)
         .eq('attendance_date', today)
         .maybeSingle()
     ]);
@@ -165,7 +189,10 @@ export async function getTodayAttendance(userEmail, userId, tenantId = DEFAULT_T
     if (dbMonthRecs && dbMonthRecs.length > 0) {
       monthlyRecords = dbMonthRecs;
     } else {
-      monthlyRecords = local.records.filter(r => (r.email || '').toLowerCase() === normalizedEmail);
+      monthlyRecords = local.records.filter(r => 
+        (r.tenant_id || DEFAULT_TENANT_ID) === tenantId && 
+        (r.email || '').toLowerCase() === normalizedEmail
+      );
     }
 
     const monthlyUsage = calculateMonthlyShortLeaveUsage(monthlyRecords, nowYear, nowMonth, today);
@@ -184,7 +211,7 @@ export async function getTodayAttendance(userEmail, userId, tenantId = DEFAULT_T
       source: dbToday ? 'supabase' : 'local'
     };
   } catch (err) {
-    const monthlyUsage = calculateMonthlyShortLeaveUsage(local.records.filter(r => (r.email || '').toLowerCase() === normalizedEmail), nowYear, nowMonth, today);
+    const monthlyUsage = calculateMonthlyShortLeaveUsage(local.records.filter(r => (r.tenant_id || DEFAULT_TENANT_ID) === tenantId && (r.email || '').toLowerCase() === normalizedEmail), nowYear, nowMonth, today);
     return {
       success: true,
       data: localRec || null,
@@ -216,7 +243,11 @@ export async function punchIn({
 
   // 1. Fetch current today record from local or DB - Strict 1-Time Punch In Rule
   const local = await getFallbackData();
-  const existingLocal = local.records.find(r => (r.email || '').toLowerCase() === normalizedEmail && r.attendance_date === today);
+  const existingLocal = local.records.find(r => 
+    (r.tenant_id || DEFAULT_TENANT_ID) === tenantId &&
+    (r.email || '').toLowerCase() === normalizedEmail && 
+    r.attendance_date === today
+  );
   let existingDb = null;
 
   try {
@@ -224,6 +255,7 @@ export async function punchIn({
       .from('attendance_records')
       .select('*')
       .ilike('email', normalizedEmail)
+      .eq('tenant_id', tenantId)
       .eq('attendance_date', today)
       .maybeSingle();
     if (dbRec) existingDb = dbRec;
@@ -245,7 +277,10 @@ export async function punchIn({
   const nowYear = now.getFullYear();
   const nowMonth = now.getMonth() + 1;
 
-  let monthlyRecords = local.records.filter(r => (r.email || '').toLowerCase() === normalizedEmail);
+  let monthlyRecords = local.records.filter(r => 
+    (r.tenant_id || DEFAULT_TENANT_ID) === tenantId &&
+    (r.email || '').toLowerCase() === normalizedEmail
+  );
   try {
     const startDateStr = `${nowYear}-${String(nowMonth).padStart(2, '0')}-01`;
     const lastDay = new Date(nowYear, nowMonth, 0).getDate();
@@ -255,6 +290,7 @@ export async function punchIn({
       .from('attendance_records')
       .select('*')
       .ilike('email', normalizedEmail)
+      .eq('tenant_id', tenantId)
       .gte('attendance_date', startDateStr)
       .lte('attendance_date', endDateStr);
 
@@ -375,7 +411,11 @@ export async function punchOut({
 
   // 1. Fetch current today record from local or DB
   const local = await getFallbackData();
-  let existingLocal = local.records.find(r => (r.email || '').toLowerCase() === normalizedEmail && r.attendance_date === today);
+  let existingLocal = local.records.find(r => 
+    (r.tenant_id || DEFAULT_TENANT_ID) === tenantId &&
+    (r.email || '').toLowerCase() === normalizedEmail && 
+    r.attendance_date === today
+  );
   let existingDb = null;
 
   try {
@@ -383,6 +423,7 @@ export async function punchOut({
       .from('attendance_records')
       .select('*')
       .ilike('email', normalizedEmail)
+      .eq('tenant_id', tenantId)
       .eq('attendance_date', today)
       .maybeSingle();
     if (dbRec) existingDb = dbRec;
@@ -414,7 +455,10 @@ export async function punchOut({
   const nowYear = now.getFullYear();
   const nowMonth = now.getMonth() + 1;
 
-  let monthlyRecords = local.records.filter(r => (r.email || '').toLowerCase() === normalizedEmail);
+  let monthlyRecords = local.records.filter(r => 
+    (r.tenant_id || DEFAULT_TENANT_ID) === tenantId &&
+    (r.email || '').toLowerCase() === normalizedEmail
+  );
   try {
     const startDateStr = `${nowYear}-${String(nowMonth).padStart(2, '0')}-01`;
     const lastDay = new Date(nowYear, nowMonth, 0).getDate();
@@ -424,6 +468,7 @@ export async function punchOut({
       .from('attendance_records')
       .select('*')
       .ilike('email', normalizedEmail)
+      .eq('tenant_id', tenantId)
       .gte('attendance_date', startDateStr)
       .lte('attendance_date', endDateStr);
 
@@ -554,6 +599,7 @@ export async function getMyAttendanceHistory(userEmail, year, month, tenantId = 
       .from('attendance_records')
       .select('*')
       .ilike('email', normalizedEmail)
+      .eq('tenant_id', tenantId)
       .gte('attendance_date', startDateStr)
       .lte('attendance_date', endDateStr)
       .order('attendance_date', { ascending: false });
@@ -565,6 +611,7 @@ export async function getMyAttendanceHistory(userEmail, year, month, tenantId = 
 
   const local = await getFallbackData();
   const localRecords = (local.records || []).filter(r => 
+    (r.tenant_id || DEFAULT_TENANT_ID) === tenantId &&
     (r.email || '').toLowerCase() === normalizedEmail &&
     r.attendance_date >= startDateStr &&
     r.attendance_date <= endDateStr
@@ -789,7 +836,10 @@ export async function getMyRegularizationRequests(userEmail, tenantId = DEFAULT_
 
   // Always load local fallback
   const local = await getFallbackData();
-  const localReqs = local.requests.filter(r => r.email && r.email.trim().toLowerCase() === normalizedEmail);
+  const localReqs = local.requests.filter(r => 
+    (r.tenant_id || DEFAULT_TENANT_ID) === tenantId &&
+    r.email && r.email.trim().toLowerCase() === normalizedEmail
+  );
   const localMap = {};
   for (const r of localReqs) localMap[r.id] = r;
 
@@ -798,6 +848,7 @@ export async function getMyRegularizationRequests(userEmail, tenantId = DEFAULT_
       .from('attendance_regularization_requests')
       .select('*')
       .ilike('email', normalizedEmail)
+      .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false });
 
     if (!error && data) {
@@ -824,15 +875,32 @@ export async function getHodPendingRequests({
   userRole = 'agent',
   statusFilter = 'ALL',
   departmentFilter = '',
-  tenantId = DEFAULT_TENANT_ID
+  tenantId = DEFAULT_TENANT_ID,
+  company = ''
 }) {
   const adminClient = getAdminClient();
   const isAdmin = userRole === 'admin' || userRole === 'Admin' || userRole === 'Super Admin' || userRole === 'super_admin' || userRole === 'management';
 
-  // Always load local fallback
+  // Resolve allowed employee emails by company / branch filter if specified
+  let allowedEmails = null;
+  if (company && company.toLowerCase() !== 'all') {
+    try {
+      const { data: uData } = await adminClient
+        .from('user_roles')
+        .select('email, company');
+      if (uData && Array.isArray(uData)) {
+        const matchingUsers = uData.filter(u => matchesCompany(u.company, company));
+        allowedEmails = new Set(matchingUsers.map(u => (u.email || '').toLowerCase().trim()));
+      }
+    } catch {}
+  }
+
+  // Always load local fallback scoped to tenant and branch
   const local = await getFallbackData();
   const localFiltered = local.requests.filter(r => {
+    if ((r.tenant_id || DEFAULT_TENANT_ID) !== tenantId) return false;
     if (departmentFilter && departmentFilter !== 'All' && r.department !== departmentFilter) return false;
+    if (allowedEmails && !allowedEmails.has((r.email || '').toLowerCase().trim())) return false;
     if (!isAdmin && hodEmail) {
       return r.assigned_hod_email === hodEmail || (r.assigned_hod_name && r.assigned_hod_name.toLowerCase().includes(hodEmail.split('@')[0].toLowerCase()));
     }
@@ -845,6 +913,7 @@ export async function getHodPendingRequests({
     let query = adminClient
       .from('attendance_regularization_requests')
       .select('*')
+      .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false });
 
     if (!isAdmin && hodEmail) {
@@ -857,9 +926,14 @@ export async function getHodPendingRequests({
 
     const { data, error } = await query;
     if (!error && data) {
+      // Filter DB records by allowed company emails if branch-scoped
+      let filteredData = data;
+      if (allowedEmails) {
+        filteredData = data.filter(r => allowedEmails.has((r.email || '').toLowerCase().trim()));
+      }
       // Merge: DB takes priority; add local-only records (newly submitted, not yet synced to DB)
       const dbMap = {};
-      for (const r of data) dbMap[r.id] = r;
+      for (const r of filteredData) dbMap[r.id] = r;
       for (const r of localFiltered) {
         if (!dbMap[r.id]) dbMap[r.id] = r; // local-only (DB insert may have failed silently)
       }
@@ -1019,7 +1093,8 @@ export async function approveRegularizationRequest({
         action_remarks: actionRemarks || 'Approved by HOD',
         updated_at: nowIso
       })
-      .eq('id', ensureUuid(requestId));
+      .eq('id', ensureUuid(requestId))
+      .eq('tenant_id', tenantId);
 
     if (reqErr) console.error('Supabase approve request error:', reqErr);
 
@@ -1080,7 +1155,8 @@ export async function rejectRegularizationRequest({
   requestId,
   actionByName,
   actionByEmail,
-  actionRemarks = 'Rejected by HOD'
+  actionRemarks = 'Rejected by HOD',
+  tenantId = DEFAULT_TENANT_ID
 }) {
   if (!requestId) return { success: false, error: 'Request ID is required' };
   const adminClient = getAdminClient();
@@ -1096,6 +1172,7 @@ export async function rejectRegularizationRequest({
         .from('attendance_regularization_requests')
         .select('*')
         .eq('id', requestId)
+        .eq('tenant_id', tenantId)
         .maybeSingle();
       if (dbReq) request = dbReq;
     } catch {}
@@ -1136,7 +1213,8 @@ export async function rejectRegularizationRequest({
         action_remarks: actionRemarks,
         updated_at: nowIso
       })
-      .eq('id', ensureUuid(requestId));
+      .eq('id', ensureUuid(requestId))
+      .eq('tenant_id', tenantId);
   } catch (err) {
     console.error('Supabase reject request error:', err);
   }
@@ -1213,7 +1291,8 @@ export async function bulkRejectRegularizationRequests({
   requestIds = [],
   actionByName,
   actionByEmail,
-  actionRemarks = 'Bulk Rejected by HOD'
+  actionRemarks = 'Bulk Rejected by HOD',
+  tenantId = DEFAULT_TENANT_ID
 }) {
   if (!requestIds || requestIds.length === 0) {
     return { success: false, error: 'No requests selected for bulk rejection.' };
@@ -1229,7 +1308,8 @@ export async function bulkRejectRegularizationRequests({
         requestId: reqId,
         actionByName,
         actionByEmail,
-        actionRemarks
+        actionRemarks,
+        tenantId
       });
       if (res.success) {
         rejectedCount++;
@@ -1278,15 +1358,7 @@ export async function getTeamAttendanceMaster({
     if (!uErr && Array.isArray(usersData)) {
       let filteredUsers = usersData;
       if (company && company !== 'all') {
-        const cLower = company.toLowerCase().trim();
-        const isSwan = cLower.includes('swan') || ['nsmlr', 'nstlp', 'nse'].includes(cLower);
-        filteredUsers = usersData.filter(u => {
-          const uComp = (u.company || '').toLowerCase().trim();
-          if (isSwan) {
-            return uComp.includes('swan') || ['nsmlr', 'nstlp', 'nse', ''].includes(uComp);
-          }
-          return uComp === cLower;
-        });
+        filteredUsers = usersData.filter(u => matchesCompany(u.company, company));
       }
 
       allUsers = filteredUsers
@@ -1318,7 +1390,8 @@ export async function getTeamAttendanceMaster({
   try {
     let query = adminClient
       .from('attendance_records')
-      .select('*');
+      .select('*')
+      .eq('tenant_id', tenantId);
 
     if (isRange) {
       query = query.gte('attendance_date', effectiveStart).lte('attendance_date', effectiveEnd);
@@ -1343,6 +1416,7 @@ export async function getTeamAttendanceMaster({
 
   const local = await getFallbackData();
   const localDayRecs = (local.records || []).filter(r => {
+    if ((r.tenant_id || DEFAULT_TENANT_ID) !== tenantId) return false;
     if (isRange) {
       if (r.attendance_date < effectiveStart || r.attendance_date > effectiveEnd) return false;
     } else {
@@ -1604,15 +1678,7 @@ export async function getTeamMonthlyMatrix({
     if (!uErr && Array.isArray(usersData)) {
       let filteredUsers = usersData;
       if (company && company !== 'all') {
-        const cLower = company.toLowerCase().trim();
-        const isSwan = cLower.includes('swan') || ['nsmlr', 'nstlp', 'nse'].includes(cLower);
-        filteredUsers = usersData.filter(u => {
-          const uComp = (u.company || '').toLowerCase().trim();
-          if (isSwan) {
-            return uComp.includes('swan') || ['nsmlr', 'nstlp', 'nse', ''].includes(uComp);
-          }
-          return uComp === cLower;
-        });
+        filteredUsers = usersData.filter(u => matchesCompany(u.company, company));
       }
 
       allUsers = filteredUsers
@@ -1645,6 +1711,7 @@ export async function getTeamMonthlyMatrix({
     const { data, error } = await adminClient
       .from('attendance_records')
       .select('*')
+      .eq('tenant_id', tenantId)
       .gte('attendance_date', startDateStr)
       .lte('attendance_date', endDateStr);
 
@@ -1659,6 +1726,7 @@ export async function getTeamMonthlyMatrix({
 
   const local = await getFallbackData();
   const localMonthRecs = (local.records || []).filter(r => {
+    if ((r.tenant_id || DEFAULT_TENANT_ID) !== tenantId) return false;
     if (r.attendance_date < startDateStr || r.attendance_date > endDateStr) return false;
     if (r.user_id && approvedUserIds.has(r.user_id)) return true;
     if (r.email && approvedUserEmails.has((r.email || '').toLowerCase())) return true;
