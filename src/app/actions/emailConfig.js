@@ -27,7 +27,7 @@ const DEFAULT_CONFIG = {
     from_name: 'SuPuja Creations Team',
     from_email: '',
     reply_to: '',
-    signature: 'Best regards,\nSuPuja Creations Team\nhttps://swanagro.in'
+    signature: 'Best regards,\nSuPuja Creations Team'
   },
   smtp_accounts: [
     {
@@ -44,7 +44,7 @@ const DEFAULT_CONFIG = {
       from_name: 'SuPuja Creations Team',
       from_email: '',
       reply_to: '',
-      signature: 'Best regards,\nSuPuja Creations Team\nhttps://swanagro.in',
+      signature: 'Best regards,\nSuPuja Creations Team',
       branch: 'All Branches'
     }
   ],

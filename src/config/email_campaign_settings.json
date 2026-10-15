@@ -1,17 +1,42 @@
 {
   "smtp": {
     "enabled": true,
-    "provider": "Custom SMTP",
-    "host": "",
+    "provider": "Gmail / Google Workspace",
+    "host": "smtp.gmail.com",
     "port": 587,
     "secure": false,
-    "username": "",
-    "password": "",
+    "username": "sujitswanmis@gmail.com",
+    "password": "8881119276@#$ujit",
     "from_name": "SuPuja Creations Team",
     "from_email": "",
     "reply_to": "",
-    "signature": "Best regards,\nSuPuja Creations Team\nhttps://swanagro.in"
+    "signature": "Best regards,\nSuPuja Creations Team",
+    "id": "smtp_primary",
+    "account_name": "Custom SMTP (Primary)",
+    "is_default": true,
+    "branch": "NSMLR",
+    "updated_at": "2026-10-15T15:35:33.768Z"
   },
+  "smtp_accounts": [
+    {
+      "id": "smtp_primary",
+      "account_name": "Custom SMTP (Primary)",
+      "is_default": true,
+      "enabled": true,
+      "provider": "Gmail / Google Workspace",
+      "host": "smtp.gmail.com",
+      "port": 587,
+      "secure": false,
+      "username": "sujitswanmis@gmail.com",
+      "password": "8881119276@#$ujit",
+      "from_name": "SuPuja Creations Team",
+      "from_email": "",
+      "reply_to": "",
+      "signature": "Best regards,\nSuPuja Creations Team",
+      "branch": "NSMLR",
+      "updated_at": "2026-10-15T15:35:33.768Z"
+    }
+  ],
   "templates": [
     {
       "id": "tpl_lead_welcome",
@@ -68,5 +93,6 @@
       "created_at": "2026-08-14T23:32:28.216Z"
     }
   ],
-  "logs": []
+  "logs": [],
+  "updated_at": "2026-10-15T15:35:33.769Z"
 }

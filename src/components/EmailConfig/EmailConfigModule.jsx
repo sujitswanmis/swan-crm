@@ -22,7 +22,7 @@ import {
   deleteEmailAutomation, 
   sendTestEmail 
 } from '@/app/actions/emailConfig';
-import { getAllTenantBranches } from '@/app/actions/tenantBranches';
+import { getTenantBranches } from '@/app/actions/tenantBranches';
 
 const SMTP_PRESETS = [
   {
@@ -223,9 +223,14 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
     setLoading(true);
     setErrorMsg(null);
     try {
+      const SWAN_COMPANIES = ['nstlp', 'nsmlr', 'nstl', 'swan agro', 'new swan', 'new swan group'];
+      const compStr = String(userCompany || '').trim().toLowerCase();
+      const isSwan = !userCompany || SWAN_COMPANIES.includes(compStr);
+      const effectiveBranchComp = isSwan ? 'New Swan Group' : (userCompany || 'SuPuja Creations');
+
       const [res, branchRes] = await Promise.all([
         getEmailConfig(userCompany, isMasterAdmin),
-        getAllTenantBranches().catch(() => ({ success: false, branches: [] }))
+        getTenantBranches(effectiveBranchComp).catch(() => ({ success: false, branches: [] }))
       ]);
       if (res.success && res.data) {
         setSmtp(res.data.smtp || {});
@@ -261,15 +266,15 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
     setEditingSmtp({
       id: '',
       account_name: '',
-      provider: 'Custom SMTP',
+      provider: 'Gmail / Google Workspace',
       is_default: smtpAccounts.length === 0,
       enabled: true,
-      host: '',
+      host: 'smtp.gmail.com',
       port: 587,
       secure: false,
       username: '',
       password: '',
-      from_name: smtp.from_name || 'SuPuja Creations Team',
+      from_name: smtp.from_name || (userCompany ? `${userCompany} Team` : 'SuPuja Creations Team'),
       from_email: '',
       reply_to: '',
       signature: smtp.signature || '',
@@ -285,10 +290,50 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
     setShowSmtpModal(true);
   };
 
+  const handleUsernameChange = (val) => {
+    if (!editingSmtp) return;
+    const trimmed = (val || '').trim().toLowerCase();
+    const updated = { ...editingSmtp, username: val };
+
+    // Auto-detect Gmail
+    if (trimmed.endsWith('@gmail.com') || trimmed.endsWith('@googlemail.com')) {
+      if (!editingSmtp.host || editingSmtp.host === '' || editingSmtp.host.includes('gmail')) {
+        updated.host = 'smtp.gmail.com';
+        updated.port = 587;
+        updated.secure = false;
+        updated.provider = 'Gmail / Google Workspace';
+        if (!editingSmtp.account_name || editingSmtp.account_name === 'Custom SMTP (Primary)' || editingSmtp.account_name === 'Custom SMTP') {
+          const prefix = val.split('@')[0];
+          updated.account_name = `Gmail (${prefix})`;
+        }
+      }
+    } else if (trimmed.endsWith('@outlook.com') || trimmed.endsWith('@hotmail.com') || trimmed.endsWith('@live.com')) {
+      if (!editingSmtp.host || editingSmtp.host === '' || editingSmtp.host.includes('office365')) {
+        updated.host = 'smtp.office365.com';
+        updated.port = 587;
+        updated.secure = false;
+        updated.provider = 'Microsoft 365 / Outlook';
+        if (!editingSmtp.account_name || editingSmtp.account_name === 'Custom SMTP (Primary)' || editingSmtp.account_name === 'Custom SMTP') {
+          const prefix = val.split('@')[0];
+          updated.account_name = `Outlook (${prefix})`;
+        }
+      }
+    }
+    setEditingSmtp(updated);
+  };
+
   const handleSaveSmtpAccountData = async () => {
     if (!editingSmtp) return;
-    if (!editingSmtp.account_name?.trim() || !editingSmtp.host?.trim() || !editingSmtp.username?.trim() || !editingSmtp.password?.trim()) {
-      alert('Account Name, SMTP Host, Username, and Password are required.');
+    if (!editingSmtp.account_name?.trim()) {
+      alert('Please enter an Account Name / Label for this server.');
+      return;
+    }
+    if (!editingSmtp.host?.trim()) {
+      alert('SMTP Host Server is required! (e.g. smtp.gmail.com for Gmail, or click a 1-Click preset button above).');
+      return;
+    }
+    if (!editingSmtp.username?.trim() || !editingSmtp.password?.trim()) {
+      alert('SMTP Username / Email and Password are required.');
       return;
     }
     setSaving(true);
@@ -343,13 +388,20 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
 
   const handleApplyPresetToEditing = (preset) => {
     if (!editingSmtp) return;
-    setEditingSmtp(prev => ({
-      ...prev,
-      provider: preset.name,
-      host: preset.host,
-      port: preset.port,
-      secure: preset.secure
-    }));
+    setEditingSmtp(prev => {
+      const isDefaultName = !prev.account_name || 
+        prev.account_name === 'Custom SMTP (Primary)' || 
+        prev.account_name === 'Custom SMTP' ||
+        SMTP_PRESETS.some(p => prev.account_name.startsWith(p.name));
+      return {
+        ...prev,
+        provider: preset.name,
+        host: preset.host,
+        port: preset.port,
+        secure: preset.secure,
+        account_name: isDefaultName ? `${preset.name} Gateway` : prev.account_name
+      };
+    });
   };
 
   const handleOpenTestModal = (acc) => {
@@ -2282,7 +2334,7 @@ export default function EmailConfigModule({ moduleAccess = {}, userRole = '', us
                 <input
                   type="text"
                   value={editingSmtp.username || ''}
-                  onChange={(e) => setEditingSmtp({ ...editingSmtp, username: e.target.value })}
+                  onChange={(e) => handleUsernameChange(e.target.value)}
                   placeholder="you@yourcompany.com"
                   style={{ width: '100%', padding: '0.6rem 0.85rem', borderRadius: '8px', border: '1px solid var(--border-light)', fontSize: '0.88rem' }}
                 />
