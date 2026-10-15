@@ -90,6 +90,16 @@ export const DEFAULT_PROCESS_CATALOG = [
     description: 'AI Conversational Assistant, custom model tuning, prompt builder & vector knowledge base',
     is_active: true,
     sort_order: 9
+  },
+  {
+    process_code: 'WHATSAPP_OFFICIAL',
+    display_name: 'Official WhatsApp Suite (Multi-Provider)',
+    category: 'COMMUNICATION',
+    monthly_rate_per_user: 99.00,
+    one_time_setup_rate: 1999.00,
+    description: '1 WhatsApp API Account (Meta Cloud, AiSensy, Interakt, Wati, Nextel) with target seat allocation & stage automations',
+    is_active: true,
+    sort_order: 10
   }
 ];
 
@@ -112,7 +122,8 @@ export const PROCESS_TO_TABS_MAP = {
   ATTENDANCE: ['attendance', 'joining'],
   RECRUITER: ['recruiter'],
   PARTY_MASTER: ['party', 'location_master', 'location_territory'],
-  AI_SUITE: ['ai', 'aiadmin', 'aiknowledgebase']
+  AI_SUITE: ['ai', 'aiadmin', 'aiknowledgebase'],
+  WHATSAPP_OFFICIAL: ['whatsapp_official']
 };
 
 /**
@@ -136,7 +147,8 @@ export const TAB_TO_ALLOWED_PROCESSES = {
   location_territory: ['PARTY_MASTER'],
   ai: ['AI_SUITE'],
   aiadmin: ['AI_SUITE'],
-  aiknowledgebase: ['AI_SUITE']
+  aiknowledgebase: ['AI_SUITE'],
+  whatsapp_official: ['WHATSAPP_OFFICIAL']
 };
 
 /**
