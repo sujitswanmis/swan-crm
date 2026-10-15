@@ -1,11 +1,20 @@
 'use client';
 
 import MobileTableView from '@/components/common/MobileTableView';
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { Plus, Briefcase, Users, Search, ChevronRight, UserPlus, Filter, RefreshCw, Calendar, FileText, CheckCircle2, ClipboardList } from 'lucide-react';
 import CandidateProfilePanel from './CandidateProfilePanel';
 import { getRecruitersList } from '@/app/actions/team';
+import { 
+  getPositions, 
+  savePosition, 
+  deletePosition, 
+  getCandidates, 
+  saveCandidate, 
+  deleteCandidate, 
+  addCandidateNote 
+} from '@/app/actions/recruitment';
 import { useTableColumnResize, ColumnResizer } from '@/utils/tableColumnResize';
 
 const RECRUITER_POSITIONS_DEFAULT_COL_WIDTHS = {
@@ -95,8 +104,24 @@ const DEFAULT_DEPARTMENTS = [
   "Transport", "Security", "Production Planning and Control", "Vendor Development"
 ];
 
-export default function RecruiterDashboard({ userRole, userName, selectedStage = 'positions', recruiterAccess = null, isAdmin = false }) {
+export default function RecruiterDashboard({ 
+  userRole, 
+  userName, 
+  selectedStage = 'positions', 
+  recruiterAccess = null, 
+  isAdmin = false,
+  userCompany = '',
+  tenantId = null
+}) {
   const supabase = useMemo(() => createClient(), []);
+
+  const effectiveTenantId = useMemo(() => {
+    if (tenantId) return tenantId;
+    const c = String(userCompany || '').toLowerCase().trim();
+    const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl'];
+    if (!c || SWAN_COMPANIES.includes(c)) return '00000000-0000-0000-0000-000000000001';
+    return null;
+  }, [tenantId, userCompany]);
 
   // Compute which stages this user can access
   const canAccessStage = (stageId) => {
@@ -227,42 +252,31 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
     { id: 'S09', label: 'S09: Joined', color: '#dcfce7', textColor: '#166534' }
   ];
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      // Fetch positions
-      const { data: posData, error: posError } = await supabase
-        .from('recruitment_positions')
-        .select('*')
-        .order('created_at', { ascending: false });
-        
-      if (posError) throw posError;
+      const posData = await getPositions(effectiveTenantId, userCompany);
       setPositions(posData || []);
 
-      // Fetch candidates
-      const { data: candData, error: candError } = await supabase
-        .from('recruitment_candidates')
-        .select('*, recruitment_positions(title, department)')
-        .order('created_at', { ascending: false });
-
-      if (candError) throw candError;
+      const posIds = (posData || []).map(p => p.id);
+      const candData = await getCandidates(posIds);
       setCandidates(candData || []);
     } catch (e) {
       console.error("Failed to load recruiter dashboard data:", e);
     } finally {
       setLoading(false);
     }
-  };
+  }, [effectiveTenantId, userCompany]);
 
   // Load recruiters list using server action (bypasses RLS)
-  const loadRecruiters = async () => {
+  const loadRecruiters = useCallback(async () => {
     try {
-      const data = await getRecruitersList();
+      const data = await getRecruitersList(userCompany);
       setRecruitersList(data || []);
     } catch (e) {
       console.error('Failed to load recruiters list:', e);
     }
-  };
+  }, [userCompany]);
 
   const fetchDepartments = async () => {
     try {
@@ -282,6 +296,8 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
   };
 
   useEffect(() => {
+    setPositions([]);
+    setCandidates([]);
     loadData();
     loadRecruiters();
     fetchDepartments();
@@ -313,7 +329,7 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
       supabase.removeChannel(channel2);
       supabase.removeChannel(channel3);
     };
-  }, [supabase]);
+  }, [supabase, loadData, loadRecruiters]);
 
   // Handle Position Creation
   const handleCreatePosition = async (e) => {
@@ -324,18 +340,15 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
       const { data: { user } } = await supabase.auth.getUser();
       const creator = userName || user?.email?.split('@')[0] || 'Recruiter';
 
-      const { error } = await supabase
-        .from('recruitment_positions')
-        .insert([{
-          ...newPosition,
-          deadline_date: newPosition.deadline_date || null,
-          salary_min: newPosition.salary_min ? parseInt(newPosition.salary_min) : null,
-          salary_max: newPosition.salary_max ? parseInt(newPosition.salary_max) : null,
-          status: selectedStage === 'S01' ? 'S01' : 'S00',
-          created_by: creator
-        }]);
+      const res = await savePosition({
+        ...newPosition,
+        deadline_date: newPosition.deadline_date || null,
+        salary_min: newPosition.salary_min ? parseInt(newPosition.salary_min) : null,
+        salary_max: newPosition.salary_max ? parseInt(newPosition.salary_max) : null,
+        status: selectedStage === 'S01' ? 'S01' : 'S00'
+      }, effectiveTenantId, userCompany, creator);
 
-      if (error) throw error;
+      if (!res.success) throw new Error(res.error);
       setNewPosition({ title: '', department: '', openings: 1, jd_text: '', deadline_date: '', interviewer_name: '', recruiter_assigned: 'All', salary_min: '', salary_max: '' });
       setIsPositionModalOpen(false);
       loadData();
@@ -349,11 +362,12 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
     try {
       const { data: { user } } = await supabase.auth.getUser();
       const claimant = userName || user?.email?.split('@')[0] || 'Recruiter';
-      const { error } = await supabase
-        .from('recruitment_positions')
-        .update({ recruiter_assigned: claimant })
-        .eq('id', positionId);
-      if (error) throw error;
+      const res = await savePosition({
+        id: positionId,
+        recruiter_assigned: claimant
+      }, effectiveTenantId, userCompany, claimant);
+
+      if (!res.success) throw new Error(res.error);
       loadData();
     } catch (err) {
       alert('Error claiming position: ' + err.message);
@@ -382,16 +396,15 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
     if (!editPositionForm.title || !editPositionForm.department) return;
     setSavingEditPos(true);
     try {
-      const { error } = await supabase
-        .from('recruitment_positions')
-        .update({
-          ...editPositionForm,
-          deadline_date: editPositionForm.deadline_date || null,
-          salary_min: editPositionForm.salary_min ? parseInt(editPositionForm.salary_min) : null,
-          salary_max: editPositionForm.salary_max ? parseInt(editPositionForm.salary_max) : null
-        })
-        .eq('id', editingPosition.id);
-      if (error) throw error;
+      const res = await savePosition({
+        id: editingPosition.id,
+        ...editPositionForm,
+        deadline_date: editPositionForm.deadline_date || null,
+        salary_min: editPositionForm.salary_min ? parseInt(editPositionForm.salary_min) : null,
+        salary_max: editPositionForm.salary_max ? parseInt(editPositionForm.salary_max) : null
+      }, effectiveTenantId, userCompany, userName);
+
+      if (!res.success) throw new Error(res.error);
       setEditingPosition(null);
       loadData();
     } catch (err) {
@@ -410,39 +423,17 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
       const { data: { user } } = await supabase.auth.getUser();
       const creator = userName || user?.email?.split('@')[0] || 'Recruiter';
 
-      // Get count of existing candidates for this position to generate display ID
-      const { count, error: countError } = await supabase
-        .from('recruitment_candidates')
-        .select('*', { count: 'exact', head: true })
-        .eq('position_id', newCandidate.position_id);
+      const res = await saveCandidate({
+        ...newCandidate,
+        expected_salary_min: newCandidate.expected_salary_min ? parseInt(newCandidate.expected_salary_min) : null,
+        expected_salary_max: newCandidate.expected_salary_max ? parseInt(newCandidate.expected_salary_max) : null
+      }, creator);
 
-      if (countError) throw countError;
+      if (!res.success) throw new Error(res.error);
 
-      const nextSeq = (count || 0) + 1;
-      const posShort = newCandidate.position_id.substring(0, 8).toUpperCase();
-      const candidateCode = `POS-${posShort}-${String(nextSeq).padStart(3, '0')}`;
-
-      const { data, error } = await supabase
-        .from('recruitment_candidates')
-        .insert([{
-          ...newCandidate,
-          expected_salary_min: newCandidate.expected_salary_min ? parseInt(newCandidate.expected_salary_min) : null,
-          expected_salary_max: newCandidate.expected_salary_max ? parseInt(newCandidate.expected_salary_max) : null,
-          candidate_code: candidateCode,
-          current_stage: 'S02',
-          created_by: creator
-        }])
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      // Add default filtration note log
-      await supabase.from('recruitment_candidate_notes').insert([{
-        candidate_id: data.id,
-        note_text: `Candidate Resume Filtered and Registered (S02) with ID: ${candidateCode}`,
-        created_by: creator
-      }]);
+      if (res.data?.id) {
+        await addCandidateNote(res.data.id, `Candidate Resume Filtered and Registered (S02) with ID: ${res.data.candidate_code}`, creator);
+      }
 
       setNewCandidate({ name: '', email: '', phone: '', position_id: '', resume_url: '', expected_salary_min: '', expected_salary_max: '' });
       setIsCandidateModalOpen(false);
@@ -457,26 +448,17 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
     try {
       const { data: { user } } = await supabase.auth.getUser();
       const actor = userName || user?.email?.split('@')[0] || 'System';
-      
       const defaultStatus = getStatusOptions(newStage)[0];
 
-      const { error } = await supabase
-        .from('recruitment_candidates')
-        .update({ 
-          current_stage: newStage,
-          candidate_status: defaultStatus
-        })
-        .eq('id', candidateId);
+      const res = await saveCandidate({
+        id: candidateId,
+        current_stage: newStage,
+        candidate_status: defaultStatus
+      }, actor);
 
-      if (error) throw error;
+      if (!res.success) throw new Error(res.error);
 
-      // Log transition
-      await supabase.from('recruitment_candidate_notes').insert([{
-        candidate_id: candidateId,
-        note_text: `Stage changed to ${newStage} (Status reset to ${defaultStatus})`,
-        created_by: actor
-      }]);
-
+      await addCandidateNote(candidateId, `Stage changed to ${newStage} (Status reset to ${defaultStatus})`, actor);
       loadData();
     } catch (e) {
       alert("Error updating stage: " + e.message);
@@ -486,12 +468,12 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
   // Update Candidate Status from table dropdown
   const handleUpdateCandidateStatus = async (candidateId, newStatus) => {
     try {
-      const { error } = await supabase
-        .from('recruitment_candidates')
-        .update({ candidate_status: newStatus })
-        .eq('id', candidateId);
+      const res = await saveCandidate({
+        id: candidateId,
+        candidate_status: newStatus
+      }, userName);
 
-      if (error) throw error;
+      if (!res.success) throw new Error(res.error);
       loadData();
     } catch (e) {
       alert("Error updating status: " + e.message);
@@ -502,12 +484,12 @@ export default function RecruiterDashboard({ userRole, userName, selectedStage =
   const handleTogglePositionStatus = async (positionId, currentStatus) => {
     const nextStatus = currentStatus === 'S00' ? 'S01' : 'S00';
     try {
-      const { error } = await supabase
-        .from('recruitment_positions')
-        .update({ status: nextStatus })
-        .eq('id', positionId);
-        
-      if (error) throw error;
+      const res = await savePosition({
+        id: positionId,
+        status: nextStatus
+      }, effectiveTenantId, userCompany, userName);
+
+      if (!res.success) throw new Error(res.error);
       loadData();
     } catch (e) {
       alert("Error updating position status: " + e.message);

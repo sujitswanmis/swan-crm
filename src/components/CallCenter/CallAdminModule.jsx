@@ -589,7 +589,7 @@ function TabEndpoints() {
 }
 
 // ── Tab: Call Logs ────────────────────────────────────────────
-function TabCallLogs() {
+function TabCallLogs({ userCompany = '', tenantId = null }) {
   const [calls, setCalls] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -714,6 +714,8 @@ function TabCallLogs() {
     try {
       const { startDate, endDate } = getISTDateRange(preset, cStart, cEnd);
       let queryUrl = `/api/plivo/admin/call-logs?source=${src}&limit=${pSize}&offset=${pg * pSize}`;
+      if (userCompany) queryUrl += `&company=${encodeURIComponent(userCompany)}`;
+      if (tenantId) queryUrl += `&tenant_id=${encodeURIComponent(tenantId)}`;
       if (startDate) queryUrl += `&start_date=${encodeURIComponent(startDate)}`;
       if (endDate) queryUrl += `&end_date=${encodeURIComponent(endDate)}`;
 
@@ -726,7 +728,7 @@ function TabCallLogs() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [userCompany, tenantId]);
 
   useEffect(() => {
     fetchLogs(source, page, pageSize, datePreset, customStartDate, customEndDate);
@@ -1929,7 +1931,9 @@ export default function CallAdminModule({
   moduleAccess = {}, 
   userRole = '', 
   activeSubTab = null, 
-  onSubTabChange = null 
+  onSubTabChange = null,
+  userCompany = '',
+  tenantId = null
 }) {
   const visibleTabs = filterVisibleSubTabs(moduleAccess, userRole, 'calladmin', TABS);
 
@@ -1967,19 +1971,19 @@ export default function CallAdminModule({
   const fetchData = useCallback(async () => {
     try {
       const [userData, adminData, endpointsRes] = await Promise.all([
-        getTeamMembers(),
-        getCallAdminData(),
+        getTeamMembers(userCompany),
+        getCallAdminData(userCompany, tenantId),
         fetch('/api/plivo/admin/endpoints').then(r => r.json()).catch(() => ({ endpoints: [] }))
       ]);
       if (userData) setUsers(userData.filter(u => u.emp_name?.trim()));
-      setEndpoints(endpointsRes.endpoints || []);
+      setEndpoints(adminData.endpoints?.length ? adminData.endpoints : (endpointsRes.endpoints || []));
       setAgents(adminData.agents || []);
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [userCompany, tenantId]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -2046,7 +2050,7 @@ export default function CallAdminModule({
           />
         )}
         {activeTab === 'endpoints' && <TabEndpoints />}
-        {activeTab === 'calllogs' && <TabCallLogs />}
+        {activeTab === 'calllogs' && <TabCallLogs userCompany={userCompany} tenantId={tenantId} />}
         {activeTab === 'monitor' && <TabMonitor agents={agents} onRefresh={fetchData} />}
         {activeTab === 'settings' && <TabSettings agents={agents} />}
       </div>

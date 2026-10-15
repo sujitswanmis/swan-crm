@@ -53,11 +53,11 @@ export async function getTeamMembers(requesterCompany = null) {
   }));
 }
 
-export async function getRecruitersList() {
+export async function getRecruitersList(company = null) {
   const adminClient = getAdminClient();
   const { data, error } = await adminClient
     .from('user_roles')
-    .select('emp_name, emp_designation, user_id, emp_id, module_access')
+    .select('emp_name, emp_designation, user_id, emp_id, module_access, company')
     .ilike('emp_designation', '%recruiter%')
     .order('emp_name', { ascending: true });
 
@@ -65,7 +65,21 @@ export async function getRecruitersList() {
     console.error('Error fetching recruiters list:', error);
     return [];
   }
-  return (data || []).filter(u => u.emp_name && (u.module_access?.emp_status !== 'InActive' && u.module_access?.emp_status !== 'Trash' && u.module_access?.emp_status !== 'Terminated'));
+
+  const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl'];
+  const reqLower = String(company || '').toLowerCase().trim();
+  const isSwanRequester = !company || SWAN_COMPANIES.includes(reqLower);
+
+  return (data || []).filter(u => {
+    if (!u.emp_name) return false;
+    const status = u.module_access?.emp_status;
+    if (status === 'InActive' || status === 'Trash' || status === 'Terminated') return false;
+    const userComp = String(u.company || '').toLowerCase().trim();
+    if (!isSwanRequester) {
+      return userComp === reqLower;
+    }
+    return SWAN_COMPANIES.includes(userComp) || !userComp;
+  });
 }
 
 export async function updateUserRole(userId, newRole) {
@@ -762,11 +776,43 @@ export async function bulkImportEmployeesFast(records = []) {
 }
 
 // CALL CENTER ADMIN ACTIONS
-export async function getCallAdminData() {
+export async function getCallAdminData(company = null, tenantId = null) {
   const adminClient = getAdminClient();
-  const { data: endpoints } = await adminClient.from('agent_endpoint_registry').select('*').order('alias');
-  const { data: agents } = await adminClient.from('call_agents').select('*');
-  return { endpoints: endpoints || [], agents: agents || [] };
+  const [{ data: endpoints }, { data: agents }, { data: users }] = await Promise.all([
+    adminClient.from('agent_endpoint_registry').select('*').order('alias'),
+    adminClient.from('call_agents').select('*'),
+    adminClient.from('user_roles').select('user_id, company')
+  ]);
+
+  const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl'];
+  const reqLower = String(company || '').toLowerCase().trim();
+  const isSwanRequester = !company || SWAN_COMPANIES.includes(reqLower);
+
+  const userCompanyMap = new Map();
+  (users || []).forEach(u => {
+    if (u.user_id) userCompanyMap.set(u.user_id, String(u.company || '').toLowerCase().trim());
+  });
+
+  const scopedAgents = (agents || []).filter(a => {
+    const userComp = userCompanyMap.get(a.user_id) || '';
+    if (!isSwanRequester) {
+      return userComp === reqLower;
+    }
+    return SWAN_COMPANIES.includes(userComp) || !userComp;
+  });
+
+  const scopedAgentIds = new Set(scopedAgents.map(a => a.id));
+
+  const scopedEndpoints = (endpoints || []).filter(ep => {
+    if (ep.assigned_agent_id && scopedAgentIds.has(ep.assigned_agent_id)) return true;
+    if (!isSwanRequester) {
+      const aliasOrKey = `${ep.endpoint_key || ''} ${ep.alias || ''}`.toLowerCase();
+      return aliasOrKey.includes(reqLower);
+    }
+    return true;
+  });
+
+  return { endpoints: scopedEndpoints, agents: scopedAgents };
 }
 
 export async function addCallAgentAdmin(userId, displayName) {

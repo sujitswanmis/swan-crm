@@ -6810,6 +6810,8 @@ export default function CRMContainer({
                     selectedStage={recruiterFilterStage}
                     recruiterAccess={moduleAccess['recruiter'] || null}
                     isAdmin={userRole === 'admin' || userRole === 'Admin'}
+                    userCompany={userCompany}
+                    tenantId={effectiveTenantId}
                   />
                 </ErrorBoundary>
               </KeepAliveTab>
@@ -6974,7 +6976,7 @@ export default function CRMContainer({
                 isVisited={isTabPermitted('callcenter', moduleAccess, userRole) && visitedTabs.has('callcenter')}
               >
                 <ErrorBoundary>
-                  <CallCenterModule userId={userId} />
+                  <CallCenterModule userId={userId} userCompany={userCompany} tenantId={effectiveTenantId} />
                 </ErrorBoundary>
               </KeepAliveTab>
 
@@ -6989,6 +6991,8 @@ export default function CRMContainer({
                     userRole={userRole} 
                     activeSubTab={callAdminSubTab}
                     onSubTabChange={handleCallAdminSubTabChange}
+                    userCompany={userCompany}
+                    tenantId={effectiveTenantId}
                   />
                 </ErrorBoundary>
               </KeepAliveTab>

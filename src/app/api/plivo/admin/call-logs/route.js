@@ -9,6 +9,11 @@ export async function GET(req) {
     const source = url.searchParams.get('source') || 'db'; // 'db' or 'plivo'
     const startDate = url.searchParams.get('start_date') || url.searchParams.get('startDate');
     const endDate = url.searchParams.get('end_date') || url.searchParams.get('endDate');
+    const company = url.searchParams.get('company') || '';
+
+    const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl'];
+    const reqLower = String(company || '').toLowerCase().trim();
+    const isSwanRequester = !company || SWAN_COMPANIES.includes(reqLower);
 
     const adminClient = require('@supabase/supabase-js').createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -16,6 +21,29 @@ export async function GET(req) {
     );
 
     if (source === 'db') {
+      let workspaceAgentIds = null;
+      if (!isSwanRequester) {
+        const { data: users } = await adminClient
+          .from('user_roles')
+          .select('user_id')
+          .ilike('company', reqLower);
+
+        const userIds = (users || []).map(u => u.user_id).filter(Boolean);
+        if (userIds.length === 0) {
+          return NextResponse.json({ calls: [], total: 0 });
+        }
+
+        const { data: agents } = await adminClient
+          .from('call_agents')
+          .select('id')
+          .in('user_id', userIds);
+
+        workspaceAgentIds = (agents || []).map(a => a.id).filter(Boolean);
+        if (workspaceAgentIds.length === 0) {
+          return NextResponse.json({ calls: [], total: 0 });
+        }
+      }
+
       let query = adminClient
         .from('call_sessions')
         .select(`
@@ -25,6 +53,10 @@ export async function GET(req) {
             plivo_username
           )
         `, { count: 'exact' });
+
+      if (workspaceAgentIds) {
+        query = query.in('agent_id', workspaceAgentIds);
+      }
 
       if (startDate) {
         query = query.gte('created_at', startDate);
@@ -39,6 +71,11 @@ export async function GET(req) {
 
       if (error) throw error;
       return NextResponse.json({ calls: data || [], total: count || 0 });
+    }
+
+    // Plivo CDR logs: strictly isolate to Swan Master, client workspaces have 0 Plivo raw leakage
+    if (!isSwanRequester) {
+      return NextResponse.json({ calls: [], total: 0 });
     }
 
     // Plivo CDR logs
