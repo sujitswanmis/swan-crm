@@ -1128,21 +1128,24 @@ export default function GlobalSoftphoneWidget({ userId }) {
         });
 
         client.on('onIncomingCall', async (callerName, extraHeaders, callInfo, incomingCallerName) => {
+          const resolvedCaller = callerName || incomingCallerName || '';
           const pending = pendingOutboundCallRef.current;
           const activeRoom = optimisticCallRef.current?.roomName || activeSessionRef.current?.room_name || pending?.roomName;
           const isCancelledOutbound = [...cancelledOutboundRoomsRef.current].some((room) =>
-            incomingMatchesOutboundRoom(room, extraHeaders, incomingCallerName)
+            incomingMatchesOutboundRoom(room, extraHeaders, resolvedCaller)
           );
           if (isCancelledOutbound) {
             try { client.reject(callInfo?.callUUID); } catch (_e) {}
             return;
           }
-          const matchesOutbound = shouldAutoAnswerOutbound(pending, activeRoom, extraHeaders, incomingCallerName);
+          const isFreshPending = pending && activeRoom === pending.roomName && (Date.now() - pending.startedAt < 18000);
+          const matchesOutbound = shouldAutoAnswerOutbound(pending, activeRoom, extraHeaders, resolvedCaller) || (isFreshPending && (extraHeaders?.['X-PH-CrmRoom'] || extraHeaders?.['x-ph-crmroom'] || resolvedCaller.startsWith('CRM') || isFreshPending));
           if (matchesOutbound) {
             pendingOutboundCallRef.current = null;
             try {
               if (typeof client.stopRingTone === 'function') client.stopRingTone();
-              if (client.answer(callInfo?.callUUID) !== false) {
+              const callUuid = callInfo?.callUUID || callInfo?.callId;
+              if (client.answer(callUuid) !== false) {
                 setActiveCall({ direction: 'inbound', remote: callerName });
                 setIncomingCall(null);
                 return;
@@ -1338,17 +1341,37 @@ export default function GlobalSoftphoneWidget({ userId }) {
 
   const answerCall = () => {
     if (plivoClient && incomingCall) {
-      plivoClient.answer();
-      setActiveCall({ direction: 'inbound', remote: incomingCall.callerName });
-      setIncomingCall(null);
-      startDurationTimer();
+      try {
+        const callUuid = incomingCall.callInfo?.callUUID || incomingCall?.callUUID;
+        if (callUuid) {
+          plivoClient.answer(callUuid);
+        } else {
+          plivoClient.answer();
+        }
+        setActiveCall({ direction: 'inbound', remote: incomingCall.callerName });
+        startDurationTimer();
+      } catch (err) {
+        console.warn('[Softphone] answerCall warning:', err);
+      } finally {
+        setIncomingCall(null);
+      }
     }
   };
 
   const rejectCall = () => {
     if (plivoClient && incomingCall) {
-      plivoClient.reject();
-      setIncomingCall(null);
+      try {
+        const callUuid = incomingCall.callInfo?.callUUID || incomingCall?.callUUID;
+        if (callUuid) {
+          plivoClient.reject(callUuid);
+        } else {
+          plivoClient.reject();
+        }
+      } catch (err) {
+        console.warn('[Softphone] rejectCall warning:', err);
+      } finally {
+        setIncomingCall(null);
+      }
     }
   };
 

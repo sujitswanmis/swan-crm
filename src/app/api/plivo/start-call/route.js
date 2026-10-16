@@ -113,7 +113,7 @@ export async function POST(req) {
           hangupMethod: 'POST',
           ringTimeout: 35,
           ...(callingMode === 'browser_webrtc' ? {
-            sipHeaders: `CrmRoom=${outboundToken}`,
+            sipHeaders: `X-PH-CrmRoom=${outboundToken}`,
             callerName: `CRM${outboundToken}`,
           } : {}),
         }
