@@ -295,7 +295,8 @@ export async function POST(req) {
       );
     }
 
-    const sipUri = `sip:${cleanUsername}@phone.plivo.com`;
+    const realUsername = plivoData.username || cleanUsername;
+    const sipUri = plivoData.sip_uri || `sip:${realUsername}@phone.plivo.com`;
     const slug = getCompanySlug(company || 'SWAN');
     const endpointKey = `TC_${slug.toUpperCase()}_${Date.now().toString().slice(-5)}`;
 
@@ -309,7 +310,7 @@ export async function POST(req) {
       .insert({
         endpoint_key: endpointKey,
         alias: company ? `${alias.trim()} [${company}]` : alias.trim(),
-        username: cleanUsername,
+        username: realUsername,
         sip_uri: sipUri,
         endpoint_id: plivoData.endpoint_id || null,
         status: 'available'
@@ -327,7 +328,7 @@ export async function POST(req) {
         .from('call_agents')
         .update({
           plivo_endpoint_key: plivoData.endpoint_id || endpointKey,
-          plivo_username: cleanUsername,
+          plivo_username: realUsername,
           plivo_sip_uri: sipUri,
           plivo_password: String(password).trim()
         })
@@ -338,7 +339,7 @@ export async function POST(req) {
         .from('call_agents')
         .insert({
           display_name: `Endpoint ${alias.trim()}`,
-          plivo_username: cleanUsername,
+          plivo_username: realUsername,
           plivo_endpoint_key: plivoData.endpoint_id || endpointKey,
           plivo_sip_uri: sipUri,
           plivo_password: String(password).trim(),
@@ -350,10 +351,10 @@ export async function POST(req) {
 
     return NextResponse.json({
       success: true,
-      message: `SIP Endpoint ${cleanUsername} created successfully on Plivo!`,
+      message: `SIP Endpoint ${realUsername} created successfully on Plivo!`,
       endpoint: {
         endpoint_id: plivoData.endpoint_id,
-        username: cleanUsername,
+        username: realUsername,
         sip_uri: sipUri,
         alias: alias.trim(),
         endpoint_key: endpointKey,
