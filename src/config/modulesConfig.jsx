@@ -3,7 +3,20 @@ import { UserPlus, FileText, Users, Building2, CheckCircle, Archive, Globe, Bot,
 
 export const MODULES_CONFIG = [
   // General / Dashboards
-  { id: 'analytics', path: 'analytics', label: 'Analytics Dashboard', category: 'General', icon: <PieChart size={20} />, viewOnly: true },
+  {
+    id: 'analytics', path: 'analytics', label: 'Analytics Dashboard', category: 'General',
+    icon: <PieChart size={20} />, viewOnly: true,
+    roleDisplayTabs: [
+      { id: 'overview', label: 'Executive Overview' },
+      { id: 'scorecard', label: 'Team Scorecard' },
+      { id: 'lead-data', label: 'Lead Data' },
+      { id: 'delegation', label: 'Delegation Tasks' },
+      { id: 'checklist', label: 'Daily Checklists' },
+      { id: 'attendance', label: 'Attendance Ops' },
+      { id: 'recruiter', label: 'Recruiter Hub' }
+    ],
+    roleDisplayNote: 'All tabs use Analytics Dashboard access.'
+  },
   { id: 'new_swan_ai', path: 'ai', label: 'New Swan AI', category: 'General', icon: <Bot size={20} /> },
   { id: 'callcenter', path: 'callcenter', label: 'Call Center', category: 'General', icon: <PhoneCall size={20} /> },
   { 
@@ -59,6 +72,8 @@ export const MODULES_CONFIG = [
     category: 'Sales', 
     icon: <Users size={20} />,
     subItemsType: 'leads_stages',
+    roleDisplayTabs: [{ id: 'all_leads', label: 'All Leads' }],
+    roleDisplayNote: 'All Leads uses the selected lead stages.',
     subItems: [
       { id: 'lead_dashboard', label: '📊 Lead Dashboard' },
       { id: 'hourly_work', label: '⏰ Hourly Work' },
@@ -134,6 +149,11 @@ export const MODULES_CONFIG = [
     category: 'Human Resource', 
     icon: <Users size={20} />,
     subItemsType: 'recruiter_stages',
+    roleDisplayTabs: [
+      { id: 'dashboard', label: 'Recruiter Dashboard' },
+      { id: 'all_stages', label: 'Recruiter All Stage' }
+    ],
+    roleDisplayNote: 'Dashboard and All Stage require manager access and cannot be granted by a custom staff role.',
     subItems: [
       { id: 'S00', label: 'S00 — Requirements Received' },
       { id: 'S01', label: 'S01 — JDs Prepared & Posted' },
@@ -161,7 +181,6 @@ export const MODULES_CONFIG = [
       { id: 'user_manage', label: 'User Manage' },
       { id: 'roles', label: 'Roles & Permissions' },
       { id: 'hierarchy', label: 'Org Hierarchy' },
-      { id: 'public', label: 'Public Users' },
       { id: 'sessions', label: 'Active Sessions' },
       { id: 'audit', label: 'Audit Logs' }
     ]
@@ -175,6 +194,7 @@ export const MODULES_CONFIG = [
     label: 'Workflow Builder', 
     category: 'System', 
     icon: <GitMerge size={20} />,
+    roleAssignable: false,
     subItemsType: 'tabs',
     subItems: [
       { id: 'active', label: 'Active Workflows' },
@@ -182,7 +202,7 @@ export const MODULES_CONFIG = [
       { id: 'trash', label: 'Trash Bin' }
     ]
   },
-  { id: 'public_users', path: 'public_users', label: 'Public User Management', category: 'System', icon: <Users size={20} /> },
+  { id: 'public_users', path: 'public_users', label: 'Public User Management', category: 'System', icon: <Users size={20} />, roleAssignable: false, roleRestrictionLabel: 'Admin only' },
   { id: 'aiadmin', path: 'aiadmin', label: 'User AI Usage', category: 'System', icon: <Bot size={20} /> },
   { id: 'aiknowledgebase', path: 'aiknowledgebase', label: 'AI Knowledge Base (RAG)', category: 'System', icon: <Bot size={20} /> },
   { 
@@ -195,9 +215,10 @@ export const MODULES_CONFIG = [
     subItems: [
       { id: 'agents', label: 'Agents & Endpoints' },
       { id: 'endpoints', label: 'SIP Endpoints' },
+      { id: 'telephony', label: 'Telephony & Seats' },
       { id: 'calllogs', label: 'Call Logs' },
       { id: 'monitor', label: 'Live Monitor' },
-      { id: 'settings', label: 'Settings' }
+      { id: 'settings', label: 'Routing & Rules' }
     ]
   },
   { 
@@ -220,10 +241,15 @@ export const MODULES_CONFIG = [
     category: 'System', 
     icon: <MessageCircle size={20} />,
     subItemsType: 'tabs',
+    roleDisplayTabs: [
+      { id: 'catalog', label: 'Master BSP Catalog (20+)' },
+      { id: 'allocations', label: 'Client Allocation Matrix' }
+    ],
+    roleDisplayNote: 'Catalog and Allocation Matrix are Master Admin only.',
     subItems: [
-      { id: 'templates', label: 'Templates' },
-      { id: 'automations', label: 'Automations' },
-      { id: 'settings', label: 'API Settings' }
+      { id: 'templates', label: 'Templates Library' },
+      { id: 'automations', label: 'Stage Automations' },
+      { id: 'settings', label: 'API Credentials & Setup' }
     ]
   },
   { 
@@ -244,13 +270,25 @@ export const MODULES_CONFIG = [
   },
   { id: 'sms_config', path: 'sms_config', label: 'SMS Configuration', category: 'System', icon: <MessageCircle size={20} /> },
   { id: 'rcs_config', path: 'rcs_config', label: 'RCS Configuration', category: 'System', icon: <MessageCircle size={20} /> },
-  { id: 'email_config', path: 'email_config', label: 'Email Configuration', category: 'System', icon: <MessageCircle size={20} /> },
+  {
+    id: 'email_config', path: 'email_config', label: 'Email Configuration', category: 'System',
+    icon: <MessageCircle size={20} />,
+    roleDisplayTabs: [
+      { id: 'smtp', label: 'SMTP Server Settings' },
+      { id: 'templates', label: 'Email Templates' },
+      { id: 'automations', label: 'Stage Automations' },
+      { id: 'test', label: 'Live Email Test' },
+      { id: 'logs', label: 'Sent History' }
+    ],
+    roleDisplayNote: 'All tabs use Email Configuration access.'
+  },
   { 
     id: 'admin_message_config', 
     path: 'admin_message_config', 
     label: 'Admin Message Config', 
     category: 'System', 
     icon: <ShieldCheck size={20} />,
+    roleAssignable: false,
     subItemsType: 'tabs',
     subItems: [
       { id: 'wa_official', label: 'WhatsApp Official' },
@@ -278,6 +316,7 @@ export const MODULES_CONFIG = [
       { id: 'business', label: 'Business Profile' },
       { id: 'crm', label: 'CRM & Lead Config' },
       { id: 'fields', label: 'Custom Fields' },
+      { id: 'templates', label: 'Message & WhatsApp Templates' },
       { id: 'notifications', label: 'Notifications & Alerts' },
       { id: 'roles', label: 'Roles & Permissions' },
       { id: 'automation', label: 'Automation & API' },

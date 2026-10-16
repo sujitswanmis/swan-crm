@@ -526,10 +526,36 @@
       "userId": "15e6a4bb-ca0c-4743-bf79-494ae64074ee",
       "email": "supujacreations@gmail.com",
       "empName": "SuPuja Creations",
-      "activeSeconds": 3935,
-      "idleSeconds": 9409,
+      "activeSeconds": 10055,
+      "idleSeconds": 17234,
       "firstSeen": "2026-10-15T09:18:28.985067+00:00",
-      "lastSeen": "2026-10-15T13:22:36.743Z",
+      "lastSeen": "2026-10-15T18:29:31.057Z",
+      "status": "away",
+      "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36"
+    }
+  },
+  "2026-10-16": {
+    "15e6a4bb-ca0c-4743-bf79-494ae64074ee": {
+      "userId": "15e6a4bb-ca0c-4743-bf79-494ae64074ee",
+      "email": "supujacreations@gmail.com",
+      "empName": "SuPuja Creations",
+      "activeSeconds": 8429,
+      "idleSeconds": 14894,
+      "firstSeen": "2026-10-15T18:30:32.011961+00:00",
+      "lastSeen": "2026-10-16T18:29:45.693Z",
+      "status": "away",
+      "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36"
+    }
+  },
+  "2026-10-17": {
+    "15e6a4bb-ca0c-4743-bf79-494ae64074ee": {
+      "userId": "15e6a4bb-ca0c-4743-bf79-494ae64074ee",
+      "email": "supujacreations@gmail.com",
+      "empName": "SuPuja Creations",
+      "activeSeconds": 292,
+      "idleSeconds": 130,
+      "firstSeen": "2026-10-16T18:31:34.998733+00:00",
+      "lastSeen": "2026-10-16T18:37:33.578Z",
       "status": "away",
       "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36"
     }

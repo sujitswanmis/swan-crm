@@ -1,15 +1,15 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { 
   registerEmployeeDetails, 
   requestPasswordResetOtp, 
-  verifyPasswordResetOtpAndSetPassword,
-  requestLoginOtp,
-  verifyLoginOtp
+  verifyPasswordResetOtpAndSetPassword
 } from '@/app/actions/team';
+import { requestEmailLoginOtp } from '@/app/actions/loginOtp';
+import styles from './login.module.css';
 import { Eye, EyeOff, KeyRound, ArrowLeft, CheckCircle2, ShieldCheck, Mail, RefreshCw, Lock, Sparkles, UserCheck } from 'lucide-react';
 import { PremiumProgressLoader } from '@/components/PremiumProgressLoader';
 import pkg from '../../../package.json';
@@ -46,6 +46,19 @@ function LoginFormContent() {
   const [loginOtp, setLoginOtp] = useState('');
   const [loginOtpLoading, setLoginOtpLoading] = useState(false);
   const [loginOtpSuccessMsg, setLoginOtpSuccessMsg] = useState(null);
+  const [loginOtpChallenge, setLoginOtpChallenge] = useState(null);
+  const [loginOtpCooldown, setLoginOtpCooldown] = useState(0);
+  const loginOtpBusy = useRef(false);
+  const loginOtpResendAt = useRef(0);
+  const loginOtpLength = loginOtpChallenge?.otpLength || 6;
+
+  useEffect(() => {
+    if (loginOtpCooldown <= 0) return;
+    const timer = setTimeout(() => {
+      setLoginOtpCooldown(Math.max(0, Math.ceil((loginOtpResendAt.current - Date.now()) / 1000)));
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [loginOtpCooldown]);
 
   // Forgot Password state
   const [forgotStep, setForgotStep] = useState(1); // 1: enter email, 2: enter otp & new password
@@ -178,56 +191,77 @@ function LoginFormContent() {
   // EMAIL OTP LOGIN FLOW
   // ==========================================
   const handleRequestLoginOtp = async () => {
-    if (!email || !email.includes('@')) {
+    if (loginOtpBusy.current || Date.now() < loginOtpResendAt.current) return;
+    const requestedEmail = email.trim().toLowerCase();
+    if (!requestedEmail || !requestedEmail.includes('@')) {
       setError("Please enter your registered official email address.");
       return;
     }
+    loginOtpBusy.current = true;
     setLoginOtpLoading(true);
     setError(null);
-    const res = await requestLoginOtp(email);
-    setLoginOtpLoading(false);
-    if (res.success) {
-      setLoginOtpStep(2);
-      setLoginOtpSuccessMsg(res.message);
-    } else {
-      setError(res.error);
+    setLoginOtp('');
+    setLoginOtpChallenge(null);
+    setLoginOtpSuccessMsg(null);
+    loginOtpResendAt.current = Date.now() + 60_000;
+    setLoginOtpCooldown(60);
+    try {
+      const res = await requestEmailLoginOtp(requestedEmail);
+      if (res.success) {
+        setEmail(requestedEmail);
+        setLoginOtpChallenge({ email: requestedEmail, verificationEmail: res.verificationEmail, otpLength: res.otpLength });
+        setLoginOtpStep(2);
+        setLoginOtpSuccessMsg(res.message);
+      } else {
+        setLoginOtpStep(1);
+        setError(res.error);
+      }
+    } catch {
+      setLoginOtpStep(1);
+      setError('Could not send the login code. Please try again shortly or sign in with password.');
+    } finally {
+      loginOtpBusy.current = false;
+      setLoginOtpLoading(false);
     }
   };
 
   const handleVerifyLoginOtp = async () => {
-    if (!loginOtp || loginOtp.length < 4) {
-      setError("Please enter the 6-digit login verification code sent to your email.");
+    if (loginOtpBusy.current) return;
+    if (!loginOtpChallenge || loginOtpChallenge.email !== email.trim().toLowerCase()) {
+      setError('Please request a login code for this email address.');
+      return;
+    }
+    if (!new RegExp(`^\\d{${loginOtpLength}}$`).test(loginOtp)) {
+      setError(`Please enter the ${loginOtpLength}-digit login verification code sent to your email.`);
       return;
     }
 
+    loginOtpBusy.current = true;
     setLoginOtpLoading(true);
     setError(null);
-    const res = await verifyLoginOtp(email, loginOtp);
-    
-    if (!res.success) {
-      setLoginOtpLoading(false);
-      setError(res.error);
-      return;
-    }
 
-    // Use magiclink token_hash to establish active client session
+    // Verify the provider-issued OTP directly; no process-local cache or token handoff.
     try {
       const { data, error: verifyError } = await supabase.auth.verifyOtp({
-        token_hash: res.tokenHash,
-        type: 'magiclink'
+        email: loginOtpChallenge.verificationEmail,
+        token: loginOtp,
+        type: 'email'
       });
 
-      if (verifyError || !data?.user) {
-        setLoginOtpLoading(false);
-        setError(verifyError?.message || 'Authentication failed. Please try again.');
+      if (verifyError || !data?.user || !data?.session) {
+        setError(verifyError?.code === 'otp_expired'
+          ? 'This code is invalid or expired. Use the latest email code, or request a new one.'
+          : verifyError?.message || 'Authentication failed. Please try again.');
         return;
       }
 
       // Success! Proceed to redirect
       await completeLoginFlow(data.user.id);
     } catch (authErr) {
-      setLoginOtpLoading(false);
       setError(authErr.message || 'Login failed. Please try again.');
+    } finally {
+      loginOtpBusy.current = false;
+      setLoginOtpLoading(false);
     }
   };
 
@@ -352,7 +386,7 @@ function LoginFormContent() {
             {mode === 'forgot' && (forgotStep === 2 && forgotOtp ? 'Set Your Account Password' : 'Reset Your Password')}
           </h1>
           <p style={{ color: 'var(--text-secondary)', marginTop: '0.45rem', marginBottom: 0, fontSize: '0.86rem', lineHeight: 1.45 }}>
-            {mode === 'login' && (loginMethod === 'password' ? 'Sign in with your email & password' : 'Sign in securely using 6-Digit Email OTP')}
+            {mode === 'login' && (loginMethod === 'password' ? 'Sign in with your email & password' : 'Sign in securely using Email OTP')}
             {mode === 'register' && 'Enter your official details to register'}
             {mode === 'forgot' && (forgotStep === 1 ? 'Enter your official email to receive a secure reset code' : 'Enter OTP and create your new password')}
           </p>
@@ -374,6 +408,7 @@ function LoginFormContent() {
           }}>
             <button
               type="button"
+              disabled={loginOtpLoading}
               onClick={() => {
                 setLoginMethod('password');
                 setError(null);
@@ -400,11 +435,14 @@ function LoginFormContent() {
 
             <button
               type="button"
+              disabled={loginOtpLoading}
               onClick={() => {
                 setLoginMethod('otp');
                 setError(null);
                 setLoginOtpStep(1);
                 setLoginOtpSuccessMsg(null);
+                setLoginOtpChallenge(null);
+                setLoginOtp('');
               }}
               style={{
                 display: 'flex',
@@ -489,9 +527,10 @@ function LoginFormContent() {
                     Forgot password?
                   </button>
                 </div>
-                <div style={{ position: 'relative' }}>
+                <div className={styles.passwordField}>
                   <input
                     type={showPassword ? "text" : "password"}
+                    autoComplete="current-password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
@@ -501,7 +540,9 @@ function LoginFormContent() {
                     type="button"
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => setShowPassword(prev => !prev)}
-                    style={{ position: 'absolute', right: '0.5rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', touchAction: 'manipulation', userSelect: 'none' }}
+                    className={styles.passwordToggle}
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    aria-pressed={showPassword}
                     title={showPassword ? "Hide password" : "Show password"}
                   >
                     {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
@@ -526,22 +567,15 @@ function LoginFormContent() {
                   setLoginMethod('otp');
                   setError(null);
                   setLoginOtpStep(1);
+                  setLoginOtpSuccessMsg(null);
+                  setLoginOtpChallenge(null);
+                  setLoginOtp('');
                 }}
                 style={{ width: '100%', padding: '0.65rem', fontSize: '0.85rem', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', cursor: 'pointer', fontWeight: 600, color: '#334155', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}
               >
                 <Mail size={14} color="#4338ca" /> Sign in with Email OTP instead
               </button>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setMode('register');
-                  setError(null);
-                }}
-                style={{ width: '100%', padding: '0.65rem', fontSize: '0.85rem', background: 'transparent', border: 'none', cursor: 'pointer', fontWeight: 500, color: 'var(--text-secondary)' }}
-              >
-                Don&apos;t have an account? <span style={{ color: '#4338ca', fontWeight: 600 }}>Register</span>
-              </button>
             </div>
           </>
         )}
@@ -561,6 +595,7 @@ function LoginFormContent() {
                     <input
                       type="email"
                       value={email}
+                      disabled={loginOtpLoading}
                       onChange={(e) => setEmail(e.target.value)}
                       placeholder="e.g. employee@company.com"
                       style={{ width: '100%', padding: '0.65rem 1rem 0.65rem 2.6rem', paddingLeft: '2.6rem', borderRadius: '9px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}
@@ -568,41 +603,48 @@ function LoginFormContent() {
                     <Mail size={16} style={{ position: 'absolute', left: '0.85rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)', pointerEvents: 'none', zIndex: 2 }} />
                   </div>
                   <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.4rem', marginBottom: 0 }}>
-                    We&apos;ll send a 6-digit login verification code directly to this official mailbox.
+                    We&apos;ll send a login verification code directly to this official mailbox.
                   </p>
                 </div>
 
                 <button
                   type="button"
                   onClick={handleRequestLoginOtp}
-                  disabled={loginOtpLoading || !email}
+                  disabled={loginOtpLoading || loginOtpCooldown > 0 || !email}
                   className="btn-primary"
                   style={{ width: '100%', padding: '0.75rem', fontSize: '0.95rem', fontWeight: 600, borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', backgroundColor: '#4338ca' }}
                 >
                   {loginOtpLoading ? <RefreshCw size={16} className="animate-spin" /> : <Mail size={16} />}
-                  {loginOtpLoading ? 'Sending Login Code...' : 'Send 6-Digit Login OTP'}
+                  {loginOtpLoading ? 'Sending Login Code...' : loginOtpCooldown > 0 ? `Send again in ${loginOtpCooldown}s` : 'Send Login OTP'}
                 </button>
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
                 <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
-                    <label style={{ fontSize: '0.85rem', fontWeight: 600 }}>Enter 6-Digit Login OTP *</label>
+                    <label style={{ fontSize: '0.85rem', fontWeight: 600 }}>Enter {loginOtpLength}-Digit Login OTP *</label>
                     <button
                       type="button"
                       onClick={handleRequestLoginOtp}
-                      disabled={loginOtpLoading}
+                      disabled={loginOtpLoading || loginOtpCooldown > 0}
                       style={{ background: 'none', border: 'none', color: '#4338ca', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer' }}
                     >
-                      Resend Code
+                      {loginOtpCooldown > 0 ? `Resend in ${loginOtpCooldown}s` : 'Resend Code'}
                     </button>
                   </div>
                   <input
                     type="text"
-                    maxLength={6}
+                    maxLength={loginOtpLength}
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    disabled={loginOtpLoading}
                     value={loginOtp}
                     onChange={(e) => setLoginOtp(e.target.value.replace(/\D/g, ''))}
-                    placeholder="123456"
+                    onPaste={(e) => {
+                      e.preventDefault();
+                      setLoginOtp(e.clipboardData.getData('text').replace(/\D/g, '').slice(0, loginOtpLength));
+                    }}
+                    placeholder={`Enter ${loginOtpLength}-digit OTP`}
                     autoFocus
                     style={{ width: '100%', padding: '0.75rem 1rem', borderRadius: '8px', border: '2px solid #4338ca', fontSize: '1.3rem', textAlign: 'center', letterSpacing: '8px', fontWeight: 800 }}
                   />
@@ -610,9 +652,12 @@ function LoginFormContent() {
                     <span style={{ fontSize: '0.76rem', color: 'var(--text-secondary)' }}>Sent to: <b>{email}</b></span>
                     <button
                       type="button"
+                      disabled={loginOtpLoading}
                       onClick={() => {
                         setLoginOtpStep(1);
                         setLoginOtp('');
+                        setLoginOtpChallenge(null);
+                        setLoginOtpSuccessMsg(null);
                         setError(null);
                       }}
                       style={{ background: 'none', border: 'none', color: '#4338ca', fontSize: '0.76rem', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}
@@ -625,7 +670,7 @@ function LoginFormContent() {
                 <button
                   type="button"
                   onClick={handleVerifyLoginOtp}
-                  disabled={loginOtpLoading || loginOtp.length < 4}
+                  disabled={loginOtpLoading || !loginOtpChallenge || loginOtp.length !== loginOtpLength}
                   className="btn-primary"
                   style={{ width: '100%', padding: '0.75rem', fontSize: '0.95rem', fontWeight: 600, borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', backgroundColor: '#16a34a' }}
                 >
@@ -638,6 +683,7 @@ function LoginFormContent() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '1.25rem' }}>
               <button
                 type="button"
+                disabled={loginOtpLoading}
                 onClick={() => {
                   setLoginMethod('password');
                   setError(null);
@@ -721,7 +767,7 @@ function LoginFormContent() {
               </div>
               <div>
                 <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Password *</label>
-                <div style={{ position: 'relative' }}>
+                <div className={styles.passwordField}>
                   <input
                     type={showPassword ? "text" : "password"}
                     value={password}
@@ -733,7 +779,9 @@ function LoginFormContent() {
                     type="button"
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => setShowPassword(prev => !prev)}
-                    style={{ position: 'absolute', right: '0.5rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', touchAction: 'manipulation', userSelect: 'none' }}
+                    className={styles.passwordToggle}
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    aria-pressed={showPassword}
                   >
                     {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                   </button>
@@ -827,7 +875,7 @@ function LoginFormContent() {
                   <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.35rem' }}>
                     New Password *
                   </label>
-                  <div style={{ position: 'relative' }}>
+                  <div className={styles.passwordField}>
                     <input
                       type={showForgotNewPassword ? "text" : "password"}
                       value={forgotNewPassword}
@@ -839,7 +887,9 @@ function LoginFormContent() {
                       type="button"
                       onMouseDown={(e) => e.preventDefault()}
                       onClick={() => setShowForgotNewPassword(prev => !prev)}
-                      style={{ position: 'absolute', right: '0.5rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', touchAction: 'manipulation', userSelect: 'none' }}
+                      className={styles.passwordToggle}
+                      aria-label={showForgotNewPassword ? "Hide password" : "Show password"}
+                      aria-pressed={showForgotNewPassword}
                       title={showForgotNewPassword ? "Hide password" : "Show password"}
                     >
                       {showForgotNewPassword ? <EyeOff size={16} /> : <Eye size={16} />}

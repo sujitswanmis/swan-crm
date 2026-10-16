@@ -1,22 +1,43 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { Shield, Sparkles, Users, CheckCircle2, ChevronRight, Eye, ShieldAlert, Search, Filter } from 'lucide-react';
+import { Shield, CheckCircle2, Search, Plus, Loader2 } from 'lucide-react';
 import { ROLE_PRESETS } from '../utils/rolePresets';
 import { isMasterAdmin } from '../utils/userManagementUtils';
 
 export default function RolesPermissionsTab({
   users = [],
   onManagePermissions = () => {},
-  onAssignRoleToUser = () => {}
+  onAssignRoleToUser = () => {},
+  onAddRole = () => {},
+  customRoles = [],
+  canManageRoles = false,
+  rolesLoading = false,
+  rolesError = '',
+  assigningRoleUserId = null
 }) {
   const [selectedPresetKey, setSelectedPresetKey] = useState('master_admin');
   const [searchUserQuery, setSearchUserQuery] = useState('');
 
+  const roleProfiles = useMemo(() => [
+    ...ROLE_PRESETS,
+    ...customRoles.map(role => ({
+      key: `custom:${role.id}`,
+      id: role.id,
+      name: role.name,
+      description: role.description || 'Custom permission template',
+      presetData: role.permissions || {},
+      color: '#4f46e5',
+      badgeBg: '#eef2ff',
+      badgeBorder: '#c7d2fe',
+      custom: true
+    }))
+  ], [customRoles]);
+
   // Active Preset definition
   const currentPreset = useMemo(() => {
-    return ROLE_PRESETS.find(p => p.key === selectedPresetKey) || ROLE_PRESETS[0];
-  }, [selectedPresetKey]);
+    return roleProfiles.find(p => p.key === selectedPresetKey) || ROLE_PRESETS[0];
+  }, [roleProfiles, selectedPresetKey]);
 
   // Compute users per role
   const roleStats = useMemo(() => {
@@ -24,9 +45,17 @@ export default function RolesPermissionsTab({
     ROLE_PRESETS.forEach(p => {
       stats[p.key] = 0;
     });
+    customRoles.forEach(role => {
+      stats[`custom:${role.id}`] = 0;
+    });
 
     (users || []).forEach(u => {
       if (u.role === 'customer') return;
+      const customKey = `custom:${u.module_access?.role_template_id}`;
+      if (Object.hasOwn(stats, customKey)) {
+        stats[customKey] += 1;
+        return;
+      }
       if (isMasterAdmin(u)) {
         stats.master_admin = (stats.master_admin || 0) + 1;
         return;
@@ -46,7 +75,7 @@ export default function RolesPermissionsTab({
     });
 
     return stats;
-  }, [users]);
+  }, [users, customRoles]);
 
   // Filter users matching search query for quick permission inspection
   const filteredUsers = useMemo(() => {
@@ -86,17 +115,25 @@ export default function RolesPermissionsTab({
             Standardize security and workflow access across departments. Apply pre-configured role profiles or customize per-user overrides.
           </p>
         </div>
+        {canManageRoles && (
+          <button type="button" onClick={onAddRole} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.65rem 0.9rem', borderRadius: '8px', border: 0, background: 'var(--primary-color, #2563eb)', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
+            <Plus size={16} /> Add Role
+          </button>
+        )}
       </div>
+
+      {rolesLoading && <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', fontSize: '0.8rem', color: 'var(--text-secondary)' }}><Loader2 size={15} /> Loading saved roles...</div>}
+      {rolesError && <div role="alert" style={{ padding: '0.75rem 1rem', borderRadius: '8px', background: '#fffbeb', color: '#92400e', fontSize: '0.82rem' }}>{rolesError}</div>}
 
       {/* Grid: Left Column (Role Profiles List) & Right Column (Profile Inspector) */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.25rem' }}>
         {/* Left: Role Presets Cards */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
           <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-            Predefined Role Templates ({ROLE_PRESETS.length})
+            Role Templates ({roleProfiles.length})
           </span>
 
-          {ROLE_PRESETS.map(preset => {
+          {roleProfiles.map(preset => {
             const isSelected = selectedPresetKey === preset.key;
             const count = roleStats[preset.key] || 0;
 
@@ -167,7 +204,7 @@ export default function RolesPermissionsTab({
                 color: currentPreset.color,
                 border: `1px solid ${currentPreset.badgeBorder}`
               }}>
-                Role Template
+                {currentPreset.custom ? 'Custom Role' : 'Role Template'}
               </span>
             </div>
 
@@ -254,28 +291,42 @@ export default function RolesPermissionsTab({
                 >
                   <div>
                     <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{u.emp_name || u.email}</div>
-                    <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{u.emp_designation || u.emp_department || 'Staff'}</div>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
+                      {u.emp_designation || u.emp_department || 'Staff'}
+                      {u.module_access?.role_template_name ? ` • Role: ${u.module_access.role_template_name}` : ''}
+                    </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => onManagePermissions(u)}
-                    style={{
-                      padding: '0.25rem 0.65rem',
-                      borderRadius: '6px',
-                      border: '1px solid #ddd6fe',
-                      backgroundColor: '#f5f3ff',
-                      color: '#7c3aed',
-                      fontWeight: 600,
-                      fontSize: '0.72rem',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.3rem'
-                    }}
-                  >
-                    <Shield size={12} />
-                    Edit Matrix
-                  </button>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+                    {currentPreset.custom && canManageRoles && (
+                      <button
+                        type="button"
+                        onClick={() => onAssignRoleToUser(u, currentPreset)}
+                        disabled={assigningRoleUserId === u.user_id || u.role !== 'agent'}
+                        style={{ padding: '0.25rem 0.65rem', borderRadius: '6px', border: 0, backgroundColor: '#4f46e5', color: '#fff', fontWeight: 600, fontSize: '0.72rem', cursor: 'pointer', opacity: u.role === 'agent' ? 1 : 0.5 }}
+                      >
+                        {assigningRoleUserId === u.user_id ? 'Assigning...' : 'Assign Role'}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => onManagePermissions(u)}
+                      style={{
+                        padding: '0.25rem 0.65rem',
+                        borderRadius: '6px',
+                        border: '1px solid #ddd6fe',
+                        backgroundColor: '#f5f3ff',
+                        color: '#7c3aed',
+                        fontWeight: 600,
+                        fontSize: '0.72rem',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.3rem'
+                      }}
+                    >
+                      <Shield size={12} /> Edit Matrix
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>

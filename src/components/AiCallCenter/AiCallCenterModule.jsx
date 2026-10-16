@@ -1,7 +1,7 @@
 'use client';
 
 import MobileTableView from '@/components/common/MobileTableView';
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Bot, Settings2, Megaphone, Users, CheckCircle2, PlayCircle, Loader2, StopCircle, RefreshCw, Plus, Upload, PhoneOutgoing, ArrowLeft } from 'lucide-react';
 import Papa from 'papaparse';
 import { filterVisibleSubTabs, getSubItemPermissions } from '@/utils/permissionUtils';
@@ -11,6 +11,8 @@ const ALL_AICALL_TABS = [
   { id: 'campaigns', label: 'Campaigns', icon: <PhoneOutgoing size={18} /> },
   { id: 'settings', label: 'Incoming Settings', icon: <Settings2 size={18} /> }
 ];
+const AI_CAMPAIGN_WIDTHS = [240, 140, 150, 140, 120];
+const AI_CONTACT_WIDTHS = [220, 180, 140, 180];
 
 export default function AiCallCenterModule({ moduleAccess = {}, userRole = '' }) {
   const visibleTabs = filterVisibleSubTabs(moduleAccess, userRole, 'aicallcenter', ALL_AICALL_TABS);
@@ -19,11 +21,7 @@ export default function AiCallCenterModule({ moduleAccess = {}, userRole = '' })
     return visibleTabs[0]?.id || 'dashboard';
   });
 
-  useEffect(() => {
-    if (visibleTabs.length > 0 && !visibleTabs.some(t => t.id === activeTab)) {
-      setActiveTab(visibleTabs[0].id);
-    }
-  }, [visibleTabs, activeTab]);
+  const currentTab = visibleTabs.some(t => t.id === activeTab) ? activeTab : visibleTabs[0]?.id;
 
   const [activeCampaignId, setActiveCampaignId] = useState(null);
 
@@ -39,7 +37,7 @@ export default function AiCallCenterModule({ moduleAccess = {}, userRole = '' })
 
     if (activeCampaignId) return <CampaignDetail id={activeCampaignId} onBack={() => setActiveCampaignId(null)} />;
 
-    switch (activeTab) {
+    switch (currentTab) {
       case 'dashboard': return <DashboardTab />;
       case 'campaigns': return <CampaignsTab onSelectCampaign={setActiveCampaignId} />;
       case 'settings': return <SettingsTab />;
@@ -67,8 +65,8 @@ export default function AiCallCenterModule({ moduleAccess = {}, userRole = '' })
               onClick={() => setActiveTab(t.id)}
               style={{
                 display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem',
-                background: activeTab === t.id ? '#eff6ff' : 'transparent',
-                color: activeTab === t.id ? '#3b82f6' : '#64748b',
+                background: currentTab === t.id ? '#eff6ff' : 'transparent',
+                color: currentTab === t.id ? '#3b82f6' : '#64748b',
                 border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem'
               }}
             >
@@ -85,16 +83,20 @@ export default function AiCallCenterModule({ moduleAccess = {}, userRole = '' })
 
 // ── Dashboard ────────────────────────────────────────────────────────
 function DashboardTab() {
+  const [campaigns, setCampaigns] = useState([]);
+  useEffect(() => { fetch('/api/ai/campaigns').then(r => r.json()).then(d => setCampaigns(d.campaigns || [])).catch(() => {}); }, []);
+  const total = campaigns.reduce((sum, item) => sum + (item.completed_calls || 0), 0);
+  const interested = campaigns.reduce((sum, item) => sum + (item.interested_count || 0), 0);
+  const callbacks = campaigns.reduce((sum, item) => sum + (item.callback_count || 0), 0);
   return (
     <div style={{ background: 'white', padding: '2rem', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
       <h2 style={{ color: '#1e293b' }}>AI Overview</h2>
-      <p style={{ color: '#64748b' }}>Quick stats will appear here as campaigns start generating data.</p>
-      {/* Metrics placeholder */}
+      <p style={{ color: '#64748b' }}>Completed campaign call results.</p>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginTop: '1rem' }}>
-         <MetricBox label="Total Calls" value="0" color="#3b82f6" />
-         <MetricBox label="Interested" value="0" color="#10b981" />
-         <MetricBox label="Callbacks" value="0" color="#f59e0b" />
-         <MetricBox label="Failed" value="0" color="#ef4444" />
+         <MetricBox label="Completed Calls" value={total} color="#3b82f6" />
+         <MetricBox label="Interested" value={interested} color="#10b981" />
+         <MetricBox label="Callbacks" value={callbacks} color="#f59e0b" />
+         <MetricBox label="Campaigns" value={campaigns.length} color="#64748b" />
       </div>
     </div>
   );
@@ -106,32 +108,72 @@ const MetricBox = ({ label, value, color }) => (
   </div>
 );
 
+function useTableWidths(key, defaults) {
+  const [widths, setWidths] = useState(defaults);
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(key) || 'null');
+      if (Array.isArray(saved)) Promise.resolve().then(() => setWidths(defaults.map((width, index) => Math.max(70, Number(saved[index]) || width))));
+    } catch {}
+  }, [key, defaults]);
+  useEffect(() => { try { localStorage.setItem(key, JSON.stringify(widths)); } catch {} }, [key, widths]);
+  return [widths, setWidths];
+}
+
+function ResizableHeader({ label, index, width, defaultWidth, onWidth }) {
+  const drag = useRef(null);
+  return <th style={{ padding: '0.75rem 1rem', width, minWidth: 70, position: 'relative', userSelect: 'none' }}>
+    {label}
+    <span role="separator" aria-label={`Resize ${label} column`} aria-orientation="vertical" tabIndex={0}
+      onPointerDown={event => {
+        event.preventDefault();
+        drag.current = { x: event.clientX, width };
+        event.currentTarget.setPointerCapture(event.pointerId);
+        event.currentTarget.style.background = 'var(--accent-color, #2563eb)';
+      }}
+      onPointerMove={event => { if (drag.current) onWidth(index, Math.max(70, drag.current.width + event.clientX - drag.current.x)); }}
+      onPointerUp={event => { drag.current = null; event.currentTarget.style.background = '#cbd5e1'; event.currentTarget.releasePointerCapture(event.pointerId); }}
+      onPointerCancel={event => { drag.current = null; event.currentTarget.style.background = '#cbd5e1'; }}
+      onDoubleClick={() => onWidth(index, defaultWidth)}
+      onKeyDown={event => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') onWidth(index, Math.max(70, width + (event.key === 'ArrowRight' ? 10 : -10))); }}
+      style={{ position: 'absolute', right: 0, top: 0, height: '100%', width: 8, cursor: 'col-resize', touchAction: 'none', background: '#cbd5e1' }} />
+  </th>;
+}
+
 // ── Settings ────────────────────────────────────────────────────────
 function SettingsTab() {
   const [settings, setSettings] = useState({});
+  const [readiness, setReadiness] = useState(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    fetch('/api/ai/settings').then(r => r.json()).then(d => setSettings(d.settings || {}));
+    fetch('/api/ai/settings').then(r => r.json()).then(d => { setSettings(d.settings || {}); setReadiness(d.readiness || null); }).catch(() => {});
   }, []);
 
   const handleSave = async () => {
     setSaving(true);
-    await fetch('/api/ai/settings', { method: 'POST', body: JSON.stringify(settings) });
-    setSaving(false);
-    alert('Settings saved successfully!');
+    try {
+      const response = await fetch('/api/ai/settings', { method: 'POST', body: JSON.stringify(settings) });
+      const data = await response.json();
+      alert(response.ok ? 'Settings saved.' : (data.error || 'Could not save settings'));
+    } catch { alert('Could not save settings'); }
+    finally { setSaving(false); }
   };
 
   return (
     <div style={{ background: 'white', padding: '2rem', borderRadius: '12px', border: '1px solid #e2e8f0', maxWidth: '800px' }}>
       <h3 style={{ marginBottom: '1.5rem' }}>Incoming AI Configuration</h3>
+      <p style={{ color: '#475569', fontSize: '0.9rem' }}>Incoming AI requires a separate Plivo number mapped to the AI Agent flow. This switch does not change the existing human call number.</p>
+      {readiness && <p style={{ padding: '0.75rem', background: readiness.outgoingReady ? '#ecfdf5' : '#fff7ed', borderRadius: '8px', fontSize: '0.85rem' }}>
+        Outgoing AI: {readiness.outgoingReady ? 'configured' : `setup needed (${readiness.missing.join(', ')})`}. Scheduler: {readiness.schedulerReady ? 'endpoint secured; external schedule required' : 'CRON_SECRET needed for automatic calls'}.
+      </p>}
       
       <div style={{ marginBottom: '1.5rem' }}>
         <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}>
           <input type="checkbox" checked={!!settings.is_incoming_ai_enabled} onChange={e => setSettings({...settings, is_incoming_ai_enabled: e.target.checked})} />
           Enable AI for Incoming Calls
         </label>
-        <p style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '0.5rem' }}>If enabled, incoming calls will be routed to the Plivo AI Agent using the prompt below.</p>
+        <p style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '0.5rem' }}>This enables CRM context for the separately mapped Plivo AI Agent. Number routing must be configured in Plivo.</p>
       </div>
 
       <div style={{ marginBottom: '1.5rem' }}>
@@ -168,6 +210,9 @@ function SettingsTab() {
 // ── Campaigns ────────────────────────────────────────────────────────
 function CampaignsTab({ onSelectCampaign }) {
   const [campaigns, setCampaigns] = useState([]);
+  const defaults = AI_CAMPAIGN_WIDTHS;
+  const [widths, setWidths] = useTableWidths('ai-campaigns-column-widths', defaults);
+  const setWidth = (index, width) => setWidths(current => current.map((item, i) => i === index ? width : item));
   const [showCreate, setShowCreate] = useState(false);
   const [newCampaign, setNewCampaign] = useState({ name: '', language: 'Hindi', script: '' });
 
@@ -205,14 +250,10 @@ function CampaignsTab({ onSelectCampaign }) {
         <h3 style={{ margin: 0 }}>Outgoing Campaigns</h3>
         <button onClick={() => setShowCreate(true)} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem', background: '#3b82f6', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer' }}><Plus size={16}/> New Campaign</button>
       </div>
-      <MobileTableView id="AiCallCenter/AiCallCenterModule-1"><table style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <MobileTableView id="AiCallCenter/AiCallCenterModule-1"><table style={{ width: '100%', minWidth: widths.reduce((a, b) => a + b, 0), tableLayout: 'fixed', borderCollapse: 'collapse' }}>
         <thead style={{ backgroundColor: 'var(--th-bg)' }}>
           <tr style={{ textAlign: 'left', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
-            <th style={{ padding: '1rem' }}>Name</th>
-            <th style={{ padding: '1rem' }}>Status</th>
-            <th style={{ padding: '1rem' }}>Contacts</th>
-            <th style={{ padding: '1rem' }}>Interested</th>
-            <th style={{ padding: '1rem' }}>Action</th>
+            {['Name', 'Status', 'Contacts', 'Interested', 'Action'].map((label, index) => <ResizableHeader key={label} label={label} index={index} width={widths[index]} defaultWidth={defaults[index]} onWidth={setWidth} />)}
           </tr>
         </thead>
         <tbody>
@@ -236,6 +277,9 @@ function CampaignsTab({ onSelectCampaign }) {
 function CampaignDetail({ id, onBack }) {
   const [data, setData] = useState(null);
   const [dialing, setDialing] = useState(false);
+  const defaults = AI_CONTACT_WIDTHS;
+  const [widths, setWidths] = useTableWidths('ai-contacts-column-widths', defaults);
+  const setWidth = (index, width) => setWidths(current => current.map((item, i) => i === index ? width : item));
 
   const fetchDetail = useCallback(async () => {
     const res = await fetch(`/api/ai/campaign/${id}`);
@@ -243,7 +287,9 @@ function CampaignDetail({ id, onBack }) {
     setData(json);
   }, [id]);
 
-  useEffect(() => { fetchDetail(); }, [fetchDetail]);
+  useEffect(() => {
+    fetch(`/api/ai/campaign/${id}`).then(response => response.json()).then(setData).catch(() => setData({ error: 'Could not load campaign' }));
+  }, [id]);
 
   const handleUpload = (e) => {
     const file = e.target.files[0];
@@ -266,25 +312,30 @@ function CampaignDetail({ id, onBack }) {
   };
 
   const handleStart = async () => {
-    await fetch('/api/ai/campaign/start', { method: 'POST', body: JSON.stringify({ campaign_id: id }) });
-    fetchDetail();
+    try {
+      const response = await fetch('/api/ai/campaign/start', { method: 'POST', body: JSON.stringify({ campaign_id: id }) });
+      const result = await response.json();
+      if (!response.ok) alert(result.error || 'Could not start campaign');
+      else { alert(result.message); await fetchDetail(); }
+    } catch { alert('Could not start campaign'); }
   };
   const handleStop = async () => {
-    await fetch('/api/ai/campaign/stop', { method: 'POST', body: JSON.stringify({ campaign_id: id }) });
-    fetchDetail();
+    try {
+      const response = await fetch('/api/ai/campaign/stop', { method: 'POST', body: JSON.stringify({ campaign_id: id }) });
+      if (!response.ok) throw new Error();
+      await fetchDetail();
+    } catch { alert('Could not pause campaign'); }
   };
 
   const dialNext = async () => {
     setDialing(true);
-    const r = await fetch('/api/ai/campaign/dial-next', { method: 'POST', body: JSON.stringify({ campaign_id: id, batch_size: 1 }) });
-    const d = await r.json();
-    setDialing(false);
-    if (d.success) {
-       alert(`Dialed ${d.dialed} contact(s)`);
-       fetchDetail();
-    } else {
-       alert(d.message || d.error);
-    }
+    try {
+      const r = await fetch('/api/ai/campaign/dial-next', { method: 'POST', body: JSON.stringify({ campaign_id: id }) });
+      const d = await r.json();
+      alert(d.success ? (d.dialed ? 'AI call initiated for one contact' : d.message) : (d.error || 'Call failed'));
+      await fetchDetail();
+    } catch { alert('Call failed'); }
+    finally { setDialing(false); }
   };
 
   if (!data) return <div style={{ padding: '2rem', textAlign: 'center' }}><Loader2 className="spin" /></div>;
@@ -318,7 +369,7 @@ function CampaignDetail({ id, onBack }) {
         <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', padding: '1.5rem', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
            <div>
               <h4 style={{ margin: '0 0 0.5rem 0', color: '#1e3a8a' }}>Campaign is Running</h4>
-              <p style={{ margin: 0, color: '#1e40af', fontSize: '0.9rem' }}>You can trigger outbound calls manually or setup a cron job to call automatically.</p>
+              <p style={{ margin: 0, color: '#1e40af', fontSize: '0.9rem' }}>Dial one contact manually. Automatic calling requires a configured external scheduler and Plivo AI Agent.</p>
            </div>
            <button onClick={dialNext} disabled={dialing} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.75rem 1.5rem', background: '#2563eb', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 600, fontSize: '1rem' }}>
               <PhoneOutgoing size={18}/> {dialing ? 'Dialing...' : 'Dial Next Contact'}
@@ -329,13 +380,10 @@ function CampaignDetail({ id, onBack }) {
       <div style={{ background: 'white', padding: '1.5rem', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
          <h3 style={{ margin: '0 0 1rem 0' }}>Contacts ({contacts.length})</h3>
          <div style={{ overflowX: 'auto' }}>
-            <MobileTableView id="AiCallCenter/AiCallCenterModule-2"><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+            <MobileTableView id="AiCallCenter/AiCallCenterModule-2"><table style={{ width: '100%', minWidth: widths.reduce((a, b) => a + b, 0), tableLayout: 'fixed', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
               <thead style={{ backgroundColor: 'var(--th-bg)' }}>
                 <tr style={{ textAlign: 'left', color: 'var(--text-secondary)' }}>
-                  <th style={{ padding: '0.75rem 1rem' }}>Name</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>Mobile</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>Status</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>AI Result</th>
+                  {['Name', 'Mobile', 'Status', 'AI Result'].map((label, index) => <ResizableHeader key={label} label={label} index={index} width={widths[index]} defaultWidth={defaults[index]} onWidth={setWidth} />)}
                 </tr>
               </thead>
               <tbody>

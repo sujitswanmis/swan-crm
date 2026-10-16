@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { aiWebhookAuthorized, parseAiWebhook } from '@/lib/aiCallCenter';
 
 export async function POST(req) {
+  if (!aiWebhookAuthorized(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   try {
     const adminClient = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -9,9 +11,7 @@ export async function POST(req) {
     );
 
     // Parse Plivo webhook data
-    const textData = await req.text();
-    const searchParams = new URLSearchParams(textData);
-    const event = Object.fromEntries(searchParams);
+    const event = await parseAiWebhook(req);
 
     // Get the global AI settings
     const { data: settings } = await adminClient
@@ -21,12 +21,9 @@ export async function POST(req) {
       .single();
 
     if (!settings || !settings.is_incoming_ai_enabled) {
-      // If AI is disabled, we fallback to standard human routing or just return empty XML
-      // Note: Ideally, Plivo should be configured to only route to AI Agent if enabled,
-      // or we can return a Plivo XML here to bridge to human.
-      // Assuming Plivo AI Agent is expecting context.
       return NextResponse.json({ 
-        context: "AI is currently disabled. Tell the caller that all executives are busy and hang up.",
+        enabled: false,
+        context: 'AI is unavailable. Offer a callback or transfer to the configured human number.',
         transfer_number: settings?.human_transfer_number || null
       });
     }
@@ -36,14 +33,16 @@ export async function POST(req) {
     const callUuid = event.CallUUID || event.call_uuid;
 
     // Log the incoming call start
-    await adminClient.from('ai_call_logs').insert({
-      call_direction: 'incoming',
-      caller_number: callerNumber,
-      receiver_number: receiverNumber,
-      plivo_call_uuid: callUuid,
-      call_status: 'in-progress',
-      raw_payload: event
-    });
+    if (!callUuid) return NextResponse.json({ error: 'Missing call UUID' }, { status: 400 });
+    const { data: existingLog } = await adminClient.from('ai_call_logs').select('id')
+      .eq('plivo_call_uuid', callUuid).eq('call_direction', 'incoming').limit(1).maybeSingle();
+    if (!existingLog) {
+      const { error: logError } = await adminClient.from('ai_call_logs').insert({
+        call_direction: 'incoming', caller_number: callerNumber, receiver_number: receiverNumber,
+        plivo_call_uuid: callUuid, call_status: 'in-progress', raw_payload: event
+      });
+      if (logError) throw logError;
+    }
 
     // Fetch Knowledge Base Documents
     let knowledgeContext = "";
@@ -51,13 +50,13 @@ export async function POST(req) {
       const { data: docs } = await adminClient
         .from('company_documents')
         .select('title, content')
-        .limit(20);
+        .limit(12);
       
       if (docs && docs.length > 0) {
         knowledgeContext = "\n\n--- COMPANY KNOWLEDGE BASE ---\nUse the following official company rules/policies to answer the caller:\n\n" + 
           docs.map(d => {
-            const cleanTitle = d.title.replace(/^\[(text|url|pdf)\]/, '');
-            return `Title: ${cleanTitle}\nContent: ${d.content}`;
+            const cleanTitle = String(d.title || '').replace(/^\[(text|url|pdf)\]/, '');
+            return `Title: ${cleanTitle}\nContent: ${String(d.content || '').slice(0, 2000)}`;
           }).join('\n\n') +
           "\n--- END KNOWLEDGE BASE ---\n";
       }

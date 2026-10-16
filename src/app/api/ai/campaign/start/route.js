@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
+import { aiReadiness } from '@/lib/aiCallCenter';
 
 export async function POST(req) {
   try {
@@ -15,22 +16,25 @@ export async function POST(req) {
     if (!campaign_id) {
       return NextResponse.json({ error: 'Missing campaign_id' }, { status: 400 });
     }
+    const readiness = aiReadiness();
+    if (!readiness.outgoingReady) {
+      return NextResponse.json({ error: `AI setup incomplete: ${readiness.missing.join(', ')}` }, { status: 503 });
+    }
 
     const adminClient = require('@supabase/supabase-js').createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL,
       process.env.SUPABASE_SERVICE_ROLE_KEY
     );
 
-    await adminClient
+    const { error } = await adminClient
       .from('ai_campaigns')
       .update({ status: 'running' })
       .eq('id', campaign_id);
+    if (error) throw error;
 
-    // In a production system, this would trigger a background worker (like Redis/BullMQ)
-    // to start processing calls. For now, we rely on the client to trigger calls 
-    // one-by-one or in small batches using a "Dial Next Batch" API for safety.
-
-    return NextResponse.json({ success: true, message: 'Campaign started' }, { status: 200 });
+    return NextResponse.json({ success: true, message: readiness.schedulerReady
+      ? 'Campaign ready for scheduler calls'
+      : 'Campaign ready; use Dial Next Contact until a scheduler is configured' }, { status: 200 });
   } catch (error) {
     console.error('Start Campaign Error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });

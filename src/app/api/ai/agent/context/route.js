@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { aiWebhookAuthorized, parseAiWebhook, normalizeAiNumber } from '@/lib/aiCallCenter';
 
 export async function POST(req) {
+  if (!aiWebhookAuthorized(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   try {
     const adminClient = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -9,30 +11,24 @@ export async function POST(req) {
     );
 
     // Parse Plivo webhook/function node data
-    const textData = await req.text();
-    let data;
-    try {
-      data = JSON.parse(textData);
-    } catch {
-      data = Object.fromEntries(new URLSearchParams(textData));
-    }
+    const data = await parseAiWebhook(req);
 
     // Usually Plivo sends "To" and "From" for outbound calls. "To" is the customer.
-    const customerNumber = data.To || data.to || data.customer_number;
+    const customerNumber = normalizeAiNumber(data.To || data.to || data.customer_number);
+    const contactId = data.contact_id;
 
-    if (!customerNumber) {
-      return NextResponse.json({ error: 'Missing customer number' }, { status: 400 });
+    if (!customerNumber && !contactId) {
+      return NextResponse.json({ error: 'Missing contact identity' }, { status: 400 });
     }
 
     // Find the latest dialing/in-progress call log for this number
-    const { data: callLog } = await adminClient
+    let query = adminClient
       .from('ai_call_logs')
       .select('contact_id, campaign_id')
-      .eq('receiver_number', customerNumber)
       .eq('call_direction', 'outgoing')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single();
+      .eq('call_status', 'dialing');
+    query = contactId ? query.eq('contact_id', contactId) : query.eq('receiver_number', customerNumber);
+    const { data: callLog } = await query.order('created_at', { ascending: false }).limit(1).maybeSingle();
 
     if (!callLog || !callLog.contact_id) {
        return NextResponse.json({ error: 'No active context found for this number' }, { status: 404 });

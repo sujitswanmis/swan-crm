@@ -517,6 +517,7 @@ export default function CRMContainer({
     user_id: userId, emp_name: userName
   }), [reportingLeadTeam, userId, userName]);
   const leadAssigneeScopeKey = JSON.stringify(reportingLeadAssignees);
+  const leadAssigneeScope = useMemo(() => new Set(JSON.parse(leadAssigneeScopeKey)), [leadAssigneeScopeKey]);
   const [adminCompanyFilter, setAdminCompanyFilter] = useState(() => {
     const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl'];
     const compLower = String(userCompany || '').toLowerCase().trim();

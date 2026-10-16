@@ -11,7 +11,8 @@ export default function PermissionMatrixModal({
   onClose,
   user,
   onSave,
-  saving = false
+  saving = false,
+  customRoles = []
 }) {
   const [accessForm, setAccessForm] = useState({});
   const [searchQuery, setSearchQuery] = useState('');
@@ -46,22 +47,33 @@ export default function PermissionMatrixModal({
   };
 
   const handleGlobalFlagChange = (flagKey, val) => {
-    setAccessForm(prev => ({
-      ...prev,
-      [flagKey]: val
-    }));
+    setAccessForm(prev => {
+      const next = { ...prev, [flagKey]: val };
+      delete next.role_template_id;
+      delete next.role_template_name;
+      return next;
+    });
   };
 
   const handleApplyPreset = (presetKey) => {
     const preset = ROLE_PRESETS.find(p => p.key === presetKey);
-    if (!preset) return;
-    if (window.confirm(`Apply "${preset.name}" preset permissions to this user? This will update current selections.`)) {
+    const customRole = user.role === 'agent' ? customRoles.find(role => `custom:${role.id}` === presetKey) : null;
+    const selectedRole = preset || customRole;
+    if (!selectedRole) return;
+    if (window.confirm(`Apply "${selectedRole.name}" preset permissions to this user? This will update current selections.`)) {
       setAccessForm(prev => {
         const next = { ...prev };
         // Replace only permission fields; keep employee profile fallback data in module_access.
         MODULES_CONFIG.forEach(mod => { delete next[mod.id]; });
         Object.keys(ROLE_PRESETS[0].presetData).forEach(key => { delete next[key]; });
-        return { ...next, ...structuredClone(preset.presetData) };
+        delete next.can_import_export;
+        delete next.role_template_id;
+        delete next.role_template_name;
+        return {
+          ...next,
+          ...structuredClone(customRole ? customRole.permissions : preset.presetData),
+          ...(customRole ? { role_template_id: customRole.id, role_template_name: customRole.name } : {})
+        };
       });
     }
   };
@@ -84,10 +96,10 @@ export default function PermissionMatrixModal({
         updatedMod.delete = false;
       }
 
-      return {
-        ...prev,
-        [modId]: updatedMod
-      };
+      const next = { ...prev, [modId]: updatedMod };
+      delete next.role_template_id;
+      delete next.role_template_name;
+      return next;
     });
   };
 
@@ -100,7 +112,7 @@ export default function PermissionMatrixModal({
         [subItemId]: { ...(currentSubs[subItemId] || {}), view: val }
       };
 
-      return {
+      const next = {
         ...prev,
         [modId]: {
           ...currentMod,
@@ -108,6 +120,9 @@ export default function PermissionMatrixModal({
           sub_items: newSubs
         }
       };
+      delete next.role_template_id;
+      delete next.role_template_name;
+      return next;
     });
   };
 
@@ -122,6 +137,8 @@ export default function PermissionMatrixModal({
           ...(val ? { view: true } : {})
         };
       });
+      delete updated.role_template_id;
+      delete updated.role_template_name;
       return updated;
     });
   };
@@ -248,9 +265,12 @@ export default function PermissionMatrixModal({
                 fontWeight: 600
               }}
             >
-              <option value="">-- Apply Predefined Role Template --</option>
+              <option value="">-- Apply Role Template --</option>
               {ROLE_PRESETS.map(p => (
                 <option key={p.key} value={p.key}>{p.name}</option>
+              ))}
+              {user.role === 'agent' && customRoles.map(role => (
+                <option key={role.id} value={`custom:${role.id}`}>{role.name} (Custom)</option>
               ))}
             </select>
           </div>
