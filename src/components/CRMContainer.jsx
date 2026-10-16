@@ -961,22 +961,26 @@ export default function CRMContainer({
       .catch(() => {});
   }, []);
 
-  const [activePipelineStages, setActivePipelineStages] = useState(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const saved = localStorage.getItem('crm_config');
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (parsed.stages && Array.isArray(parsed.stages)) {
-            return parsed.stages.filter(s => s.enabled !== false).map(s => s.name);
-          }
-        }
-      } catch (e) {}
-    }
-    return ['01 - New Stage', '02 - Contact Stage', '03 - Qualification Stage', '04 - Follow Up Stage', '05 - Sales Process Stage', '06 - Conversion Stage', '07 - Final Stage', '08 - Transfer to Party'];
-  });
+  const DEFAULT_PIPELINE_STAGES = [
+    '01 - New Stage', '02 - Contact Stage', '03 - Qualification Stage', 
+    '04 - Follow Up Stage', '05 - Sales Process Stage', '06 - Conversion Stage', 
+    '07 - Final Stage', '08 - Transfer to Party'
+  ];
+
+  const [activePipelineStages, setActivePipelineStages] = useState(DEFAULT_PIPELINE_STAGES);
 
   useEffect(() => {
+    // Read customized stages on client mount strictly after hydration
+    try {
+      const saved = localStorage.getItem('crm_config');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.stages && Array.isArray(parsed.stages)) {
+          setActivePipelineStages(parsed.stages.filter(s => s.enabled !== false).map(s => s.name));
+        }
+      }
+    } catch (e) {}
+
     const handleConfigStagesUpdated = (e) => {
       try {
         const cfg = e?.detail || JSON.parse(localStorage.getItem('crm_config') || '{}');
