@@ -9,7 +9,7 @@ import { isFeatureEntitled } from '@/utils/saasEntitlements';
 import SubscriptionExpiryBanner from './SaaS/SubscriptionExpiryBanner';
 import SubscriptionExpiredModal from './SaaS/SubscriptionExpiredModal';
 import AddonPurchaseModal from './SaaS/AddonPurchaseModal';
-import { Database, LayoutDashboard, Users, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, MessageSquare, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen, Building2, MapPin, Globe, ShieldCheck, Camera, User, Upload, Loader2, Trash2, Calendar, Clock, AlertTriangle, AlertCircle, X, ExternalLink, CheckSquare, WifiOff, Sparkles, Volume2, CheckCircle2, Play, Settings2, FormInput, Workflow, Monitor, Target, FileType, Compass, Layers, Network, Activity, Crown, GitMerge, Sliders, Send, Mail, Zap } from 'lucide-react';
+import { Database, LayoutDashboard, Users, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, MessageSquare, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen, Building2, MapPin, ShieldCheck, Camera, User, Upload, Loader2, Trash2, Calendar, Clock, AlertTriangle, AlertCircle, X, ExternalLink, CheckSquare, WifiOff, Sparkles, Volume2, CheckCircle2, Play, Settings2, FormInput, Workflow, Monitor, Target, FileType, Compass, Layers, Network, Activity, Crown, GitMerge, Sliders, Send, Mail, Zap } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { getTeamMembers } from '@/app/actions/team';
@@ -174,18 +174,13 @@ export function isTabPermitted(tabId, moduleAccess = {}, userRole = '', tenantEn
     return false;
   }
 
-  // 2. SaaS Studio, Workflow Builder & Admin Message Gate: STRICTLY restricted to Master Admin (supujacreations@gmail.com)
+  // 2. SaaS Studio, Workflow Builder & Admin Message Gate: STRICTLY restricted to Master Admin (supujacreations@gmail.com / sujitswanmis@gmail.com)
   if (tabId === 'saas_studio' || tabId === 'saas_master' || tabId === 'config_master' || tabId === 'workplace' || tabId === 'workflow' || tabId === 'admin_message_config') {
-    const isMaster = (userEmail || moduleAccess?._userEmail || '').toLowerCase() === 'supujacreations@gmail.com' ||
-                     (userEmail || moduleAccess?._userEmail || '').toLowerCase() === 'admin@newswangroup.com' ||
-                     (userEmail || moduleAccess?._userEmail || '').toLowerCase() === 'sujitswanmis@gmail.com' ||
+    const emailLower = (userEmail || moduleAccess?._userEmail || '').toLowerCase().trim();
+    const isMaster = emailLower === 'supujacreations@gmail.com' ||
+                     emailLower === 'sujitswanmis@gmail.com' ||
                      (typeof userRole === 'string' && userRole.toLowerCase() === 'masteradmin') ||
-                     moduleAccess?.is_master_admin === true ||
-                     (typeof userRole === 'string' && userRole.toLowerCase() === 'admin' && (
-                       !(moduleAccess?._company || '') ||
-                       (moduleAccess?._company || '').toLowerCase().includes('swan') ||
-                       (moduleAccess?._company || '').toLowerCase().includes('supuja')
-                     ));
+                     moduleAccess?.is_master_admin === true;
     return isMaster;
   }
 
@@ -366,12 +361,13 @@ export default function CRMContainer({
   }, [userId, supabase]);
 
   const isAdmin = userRole === 'admin' || userRole === 'Admin';
-  const isMasterAdmin = (userEmail || '').toLowerCase() === 'supujacreations@gmail.com' ||
-    (userEmail || '').toLowerCase() === 'admin@newswangroup.com' ||
-    (userEmail || '').toLowerCase() === 'sujitswanmis@gmail.com' ||
+  const emailLower = (userEmail || '').toLowerCase().trim();
+  const isMasterAdmin = !isImpersonating && (
+    emailLower === 'supujacreations@gmail.com' ||
+    emailLower === 'sujitswanmis@gmail.com' ||
     (typeof userRole === 'string' && userRole.toLowerCase() === 'masteradmin') ||
-    moduleAccess?.is_master_admin === true ||
-    (isAdmin && (!userCompany || userCompany.toLowerCase().includes('swan') || userCompany.toLowerCase().includes('supuja')));
+    moduleAccess?.is_master_admin === true
+  );
   const effectiveTenantEntitlements = tenantEntitlements || moduleAccess?._tenantEntitlements || null;
   const effectiveTenantId = tenantId || moduleAccess?._tenantId || null;
   const isCallingEntitled = isFeatureEntitled('callcenter', effectiveTenantEntitlements, effectiveTenantId);
@@ -971,15 +967,16 @@ export default function CRMContainer({
     const requested = route === 'user_management_new'
       ? (searchParams?.get('tab') || searchParams?.get('subtab') || initialSearchParams?.tab || initialSearchParams?.subtab || '').toLowerCase()
       : '';
-    return ['user_manage', 'roles', 'hierarchy', 'public', 'sessions', 'audit'].includes(requested) ? requested : 'user_manage';
+    return ['user_manage', 'roles', 'hierarchy', 'sessions', 'audit'].includes(requested) ? requested : 'user_manage';
   });
 
   const handleUserManagementSubTabChange = (subTabId) => {
-    setUserManagementSubTab(subTabId);
+    const nextSubTab = ['user_manage', 'roles', 'hierarchy', 'sessions', 'audit'].includes(subTabId) ? subTabId : 'user_manage';
+    setUserManagementSubTab(nextSubTab);
     React.startTransition(() => {
       setActiveTab('user_management_new');
     });
-    window.history.pushState(null, '', `/user_management_new?tab=${subTabId}`);
+    window.history.pushState(null, '', `/user_management_new?tab=${nextSubTab}`);
     if (window.innerWidth <= 768) {
       setIsSidebarOpen(false);
     }
@@ -2652,7 +2649,7 @@ export default function CRMContainer({
         if (sub) setDashboardSubTab(sub);
       } else if (tab === 'user_management_new') {
         const sub = (params.get('tab') || params.get('subtab') || '').toLowerCase();
-        setUserManagementSubTab(['user_manage', 'roles', 'hierarchy', 'public', 'sessions', 'audit'].includes(sub) ? sub : 'user_manage');
+        setUserManagementSubTab(['user_manage', 'roles', 'hierarchy', 'sessions', 'audit'].includes(sub) ? sub : 'user_manage');
       } else if (tab === 'sessions' || tab === 'shift-monitoring' || tab === 'shift-analytics' || tab === 'breakdown') {
         tab = 'settings';
         setCurrentSettingSubTab('sessions');
@@ -4819,7 +4816,6 @@ export default function CRMContainer({
                     { id: 'user_manage', label: 'User Manage', icon: Users },
                     { id: 'roles', label: 'Roles & Permissions', icon: Shield },
                     { id: 'hierarchy', label: 'Org Hierarchy', icon: Network },
-                    { id: 'public', label: 'Public Users', icon: Globe },
                     { id: 'sessions', label: 'Active Sessions', icon: Monitor },
                     { id: 'audit', label: 'Audit Logs', icon: Clock }
                   ].map(sub => {
@@ -7093,7 +7089,7 @@ export default function CRMContainer({
                 isVisited={isTabPermitted('whatsapp_official', moduleAccess, userRole) && visitedTabs.has('whatsapp_official')}
               >
                 <ErrorBoundary>
-                  <WhatsappOfficial moduleAccess={moduleAccess} userRole={userRole} userCompany={userCompany} />
+                  <WhatsappOfficial moduleAccess={moduleAccess} userRole={userRole} userCompany={userCompany} isMasterAdmin={isMasterAdmin} />
                 </ErrorBoundary>
               </KeepAliveTab>
 

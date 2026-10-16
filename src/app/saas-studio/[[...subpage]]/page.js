@@ -42,9 +42,8 @@ export default async function SaasStudioPage({ params, searchParams }) {
     .eq('user_id', user.id)
     .single();
 
-  const userEmailLower = (user.email || '').toLowerCase();
+  const userEmailLower = (user.email || '').toLowerCase().trim();
   const isMasterAdminEmail = userEmailLower === 'supujacreations@gmail.com' ||
-    userEmailLower === 'admin@newswangroup.com' ||
     userEmailLower === 'sujitswanmis@gmail.com';
   const callerRole = isMasterAdminEmail ? 'Admin' : (roleData?.role || 'agent');
   const isAdmin = isMasterAdminEmail || callerRole === 'admin' || callerRole === 'Admin';
@@ -53,8 +52,8 @@ export default async function SaasStudioPage({ params, searchParams }) {
     redirect('/chat');
   }
 
-  // If not admin, redirect to dashboard
-  if (!isAdmin && !isMasterAdminEmail) {
+  // If not master admin email, redirect to dashboard immediately
+  if (!isMasterAdminEmail) {
     redirect('/dashboard');
   }
 
@@ -78,6 +77,9 @@ export default async function SaasStudioPage({ params, searchParams }) {
   }
 
   const isMasterAdminUser = isMasterAdminEmail && !isImpersonating;
+  if (!isMasterAdminUser) {
+    redirect('/dashboard');
+  }
   const userRole = isMasterAdminUser ? 'Admin' : (effectiveRoleData?.role || 'agent');
   const canImportExport = isMasterAdminUser || userRole === 'admin' || userRole === 'Admin' || effectiveRoleData?.can_import_export;
   const canRead = isMasterAdminUser || userRole === 'admin' || userRole === 'Admin' || effectiveRoleData?.can_read !== false;

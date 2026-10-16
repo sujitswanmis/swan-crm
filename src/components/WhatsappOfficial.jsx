@@ -34,17 +34,17 @@ const ALL_WA_TABS = [
   { id: 'settings', label: 'API Credentials & Setup', icon: Settings }
 ];
 
-export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', userCompany = '' }) {
+export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', userCompany = '', isMasterAdmin = false }) {
   const rLower = String(userRole || '').trim().toLowerCase();
   const isAdmin = !userRole || rLower === 'admin' || rLower === 'superadmin' || rLower === 'super_admin' || rLower === 'masteradmin' || rLower === 'owner' || rLower.includes('admin');
 
   const visibleTabs = React.useMemo(() => {
     let list = ALL_WA_TABS;
-    if (!isAdmin) {
+    if (!isMasterAdmin) {
       list = list.filter(t => t.id !== 'catalog' && t.id !== 'allocations');
     }
     return filterVisibleSubTabs(moduleAccess, userRole, 'whatsapp_official', list);
-  }, [moduleAccess, userRole, isAdmin]);
+  }, [moduleAccess, userRole, isMasterAdmin]);
 
   const [activeTab, setActiveTab] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -1210,7 +1210,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
           {/* ======================================================== */}
           {/* TIER 1: MASTER BSP CATALOG (ALL 20+ GLOBAL GATEWAYS)    */}
           {/* ======================================================== */}
-          {isAdmin && activeTab === 'catalog' && (
+          {isMasterAdmin && activeTab === 'catalog' && (
             <div>
               {/* TOP ACTIONS & SEARCH */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1.25rem' }}>
@@ -1413,7 +1413,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
           {/* ======================================================== */}
           {/* TIER 2: CLIENT / WORKSPACE ALLOCATION MATRIX            */}
           {/* ======================================================== */}
-          {isAdmin && (activeTab === 'allocations' || (activeTab === 'settings' && activeAdminSubTab === 'allocations')) && (
+          {isMasterAdmin && (activeTab === 'allocations' || (activeTab === 'settings' && activeAdminSubTab === 'allocations')) && (
             <div style={{ marginBottom: '2rem' }}>
               <div style={{ 
                 padding: '1.25rem', 
@@ -1973,7 +1973,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
             return (
               <div>
                 {/* 2 LINKED CASCADING FILTERS FOR CREDENTIALS: HEADQUARTERS -> USKE ANUSAR BRANCH */}
-                {isAdmin && (
+                {isMasterAdmin && (
                   <div style={{
                     marginBottom: '1.5rem',
                     padding: '1.15rem 1.25rem',
