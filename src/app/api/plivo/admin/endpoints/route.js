@@ -9,7 +9,7 @@ export async function GET(req) {
     const company = req?.nextUrl?.searchParams?.get('company') || '';
     const tenantId = req?.nextUrl?.searchParams?.get('tenant_id') || null;
 
-    const { authId, authToken } = await getWorkspaceTelephonyConfig(company, tenantId);
+    const { authId, authToken, isSwan, mode } = await getWorkspaceTelephonyConfig(company, tenantId);
 
     if (!authId || !authToken) {
       return NextResponse.json(
@@ -80,7 +80,7 @@ export async function GET(req) {
       ).values()
     );
 
-    const endpoints = uniqueEndpoints.map((ep) => ({
+    let endpoints = uniqueEndpoints.map((ep) => ({
       endpoint_id: ep.endpoint_id,
       alias: ep.alias,
       username: ep.username,
@@ -89,9 +89,75 @@ export async function GET(req) {
       application: ep.application,
     }));
 
+    // Workspace Scoping & Isolation
+    // Non-Swan workspaces in Managed mode must NEVER see NSMLR or other tenant endpoints
+    if (!isSwan && mode !== 'byoc') {
+      const compLower = String(company || '').toLowerCase().trim();
+      const slug = getCompanySlug(company); // e.g. 'supuja_creations' or 'supuja'
+
+      const adminClient = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL,
+        process.env.SUPABASE_SERVICE_ROLE_KEY
+      );
+
+      const [{ data: compUsers }, { data: dbEndpoints }] = await Promise.all([
+        compLower ? adminClient.from('user_roles').select('user_id').ilike('company', `%${compLower}%`) : Promise.resolve({ data: [] }),
+        adminClient.from('agent_endpoint_registry').select('*')
+      ]);
+
+      const compUserIds = new Set((compUsers || []).map(u => u.user_id));
+      let compAgentIds = new Set();
+      if (compUserIds.size > 0) {
+        const { data: compAgents } = await adminClient
+          .from('call_agents')
+          .select('id')
+          .in('user_id', Array.from(compUserIds));
+        compAgentIds = new Set((compAgents || []).map(a => a.id));
+      }
+
+      // Valid endpoint keys or usernames belonging to this workspace
+      const allowedEndpointIds = new Set();
+      const allowedUsernames = new Set();
+
+      (dbEndpoints || []).forEach(ep => {
+        const aliasOrKey = `${ep.endpoint_key || ''} ${ep.alias || ''}`.toLowerCase();
+        // Strict exclusion of NSMLR endpoints
+        if (aliasOrKey.includes('nsmlr') || String(ep.username || '').toLowerCase().includes('nsmlr')) {
+          return;
+        }
+        const belongsByText = (compLower && aliasOrKey.includes(compLower)) || (slug && aliasOrKey.includes(slug));
+        const belongsByAgent = ep.assigned_agent_id && compAgentIds.has(ep.assigned_agent_id);
+        if (belongsByText || belongsByAgent) {
+          if (ep.endpoint_id) allowedEndpointIds.add(String(ep.endpoint_id));
+          if (ep.username) allowedUsernames.add(String(ep.username).toLowerCase());
+        }
+      });
+
+      // Filter endpoints from Plivo
+      endpoints = endpoints.filter(ep => {
+        const epUser = String(ep.username || '').toLowerCase();
+        const epAlias = String(ep.alias || '').toLowerCase();
+
+        // 1. Strict Exclusion: Non-Swan workspaces NEVER see NSMLR or Swan endpoints
+        if (epUser.includes('nsmlr') || epAlias.includes('nsmlr')) return false;
+
+        // 2. Allow if recorded in DB for this workspace
+        if (ep.endpoint_id && allowedEndpointIds.has(String(ep.endpoint_id))) return true;
+        if (epUser && allowedUsernames.has(epUser)) return true;
+
+        // 3. Allow if Plivo username or alias matches workspace slug / company
+        if (slug && (epUser.includes(slug) || epAlias.includes(slug))) return true;
+        const slugShort = slug.split('_')[0]; // e.g. 'supuja'
+        if (slugShort && slugShort.length >= 3 && (epUser.includes(slugShort) || epAlias.includes(slugShort))) return true;
+        if (compLower && epAlias.includes(compLower)) return true;
+
+        return false;
+      });
+    }
+
     return NextResponse.json({
       endpoints,
-      total: totalCount || endpoints.length,
+      total: endpoints.length,
       fetched: endpoints.length,
     });
   } catch (error) {

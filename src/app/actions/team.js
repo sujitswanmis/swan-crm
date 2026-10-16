@@ -804,10 +804,17 @@ export async function getCallAdminData(company = null, tenantId = null) {
   const scopedAgentIds = new Set(scopedAgents.map(a => a.id));
 
   const scopedEndpoints = (endpoints || []).filter(ep => {
-    if (ep.assigned_agent_id && scopedAgentIds.has(ep.assigned_agent_id)) return true;
     if (!isSwanRequester) {
       const aliasOrKey = `${ep.endpoint_key || ''} ${ep.alias || ''}`.toLowerCase();
-      return aliasOrKey.includes(reqLower);
+      const epUser = String(ep.username || '').toLowerCase();
+      // Strict exclusion of NSMLR endpoints for non-Swan workspaces
+      if (aliasOrKey.includes('nsmlr') || epUser.includes('nsmlr')) {
+        return false;
+      }
+      if (ep.assigned_agent_id && scopedAgentIds.has(ep.assigned_agent_id)) return true;
+      const slug = reqLower.replace(/[^a-z0-9]/g, '_');
+      const slugShort = slug.split('_')[0];
+      return aliasOrKey.includes(reqLower) || (slug && aliasOrKey.includes(slug)) || (slugShort && slugShort.length >= 3 && aliasOrKey.includes(slugShort));
     }
     return true;
   });
