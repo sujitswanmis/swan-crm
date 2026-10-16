@@ -140,19 +140,23 @@ export function getTileSections({ cells, labels }, summaryKeys = []) {
 }
 
 function TileFields({ fields, prefix = 'sum' }) {
-  return fields.map(({ cell, index, label }, fieldIdx) => (
-    <div key={`tile-${prefix}-${index}-${cell.key || fieldIdx}`} data-tile-field
-      style={{ display: 'grid', gridTemplateColumns: 'minmax(80px, 36%) minmax(0, 1fr)',
-        alignItems: 'start', gap: 8, padding: '4px 0', minWidth: 0 }}>
-      {!(cell.props.colSpan > 1) && <span style={{ fontSize: '0.72rem', lineHeight: 1.4,
-        fontWeight: 500, color: 'var(--text-secondary, #64748b)', overflowWrap: 'anywhere' }}>{label}</span>}
-      <div {...interactionProps(cell.props)} style={{ minWidth: 0, overflowWrap: 'anywhere',
-        gridColumn: cell.props.colSpan > 1 ? '1 / -1' : undefined,
-        color: cell.props.style?.color, fontWeight: cell.props.style?.fontWeight }}>
-        {cell.props.children}
-      </div>
-    </div>
-  ));
+  return (
+    <>
+      {fields.map(({ cell, index, label }, fieldIdx) => (
+        <div key={`tile-${prefix}-${index}-${cell.key || fieldIdx}`} data-tile-field
+          style={{ display: 'grid', gridTemplateColumns: 'minmax(80px, 36%) minmax(0, 1fr)',
+            alignItems: 'start', gap: 8, padding: '4px 0', minWidth: 0 }}>
+          {!(cell.props.colSpan > 1) && <span style={{ fontSize: '0.72rem', lineHeight: 1.4,
+            fontWeight: 500, color: 'var(--text-secondary, #64748b)', overflowWrap: 'anywhere' }}>{label}</span>}
+          <div {...interactionProps(cell.props)} style={{ minWidth: 0, overflowWrap: 'anywhere',
+            gridColumn: cell.props.colSpan > 1 ? '1 / -1' : undefined,
+            color: cell.props.style?.color, fontWeight: cell.props.style?.fontWeight }}>
+            {cell.props.children}
+          </div>
+        </div>
+      ))}
+    </>
+  );
 }
 
 function interactionProps(props) {
@@ -207,9 +211,9 @@ export default function MobileTableView({ id, children, view: controlledView, hi
                 {cell.props.children}
               </div>)}
             </div>}
-            <TileFields fields={summary} prefix="sum" />
-            {expanded && <TileFields fields={remaining} prefix="rem" />}
-            {remaining.length > 0 && <button type="button" aria-expanded={expanded}
+            <TileFields key="mobile-summary-fields" fields={summary} prefix="sum" />
+            {expanded && <TileFields key="mobile-remaining-fields" fields={remaining} prefix="rem" />}
+            {remaining.length > 0 && <button key="mobile-expand-btn" type="button" aria-expanded={expanded}
               onClick={event => {
                 event.stopPropagation();
                 setExpandedRows(current => {
