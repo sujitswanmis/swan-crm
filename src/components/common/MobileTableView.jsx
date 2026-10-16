@@ -126,23 +126,33 @@ export function getTileSections({ cells, labels }, summaryKeys = []) {
   const actions = fields.filter(field => /^(actions?|options?|controls?|select|profile)$/i.test(field.label) ||
     (!field.label && containsControl(field.cell.props.children)));
   const data = fields.filter(field => !actions.includes(field));
-  const preferred = summaryKeys.map(key => data.find(field => field.key === key)).filter(Boolean);
+  const preferred = [];
+  const seenKeys = new Set();
+  for (const key of summaryKeys) {
+    const found = data.find(field => field.key === key && !seenKeys.has(field.key));
+    if (found) {
+      preferred.push(found);
+      seenKeys.add(found.key);
+    }
+  }
   const summary = [...preferred, ...data.filter(field => !preferred.includes(field))].slice(0, 6);
   return { actions, summary, remaining: data.filter(field => !summary.includes(field)) };
 }
 
-function TileFields({ fields }) {
-  return fields.map(({ cell, index, label }) => <div key={cell.key || index} data-tile-field
-    style={{ display: 'grid', gridTemplateColumns: 'minmax(80px, 36%) minmax(0, 1fr)',
-      alignItems: 'start', gap: 8, padding: '4px 0', minWidth: 0 }}>
-    {!(cell.props.colSpan > 1) && <span style={{ fontSize: '0.72rem', lineHeight: 1.4,
-      fontWeight: 500, color: 'var(--text-secondary, #64748b)', overflowWrap: 'anywhere' }}>{label}</span>}
-    <div {...interactionProps(cell.props)} style={{ minWidth: 0, overflowWrap: 'anywhere',
-      gridColumn: cell.props.colSpan > 1 ? '1 / -1' : undefined,
-      color: cell.props.style?.color, fontWeight: cell.props.style?.fontWeight }}>
-      {cell.props.children}
+function TileFields({ fields, prefix = 'sum' }) {
+  return fields.map(({ cell, index, label }, fieldIdx) => (
+    <div key={`tile-${prefix}-${index}-${cell.key || fieldIdx}`} data-tile-field
+      style={{ display: 'grid', gridTemplateColumns: 'minmax(80px, 36%) minmax(0, 1fr)',
+        alignItems: 'start', gap: 8, padding: '4px 0', minWidth: 0 }}>
+      {!(cell.props.colSpan > 1) && <span style={{ fontSize: '0.72rem', lineHeight: 1.4,
+        fontWeight: 500, color: 'var(--text-secondary, #64748b)', overflowWrap: 'anywhere' }}>{label}</span>}
+      <div {...interactionProps(cell.props)} style={{ minWidth: 0, overflowWrap: 'anywhere',
+        gridColumn: cell.props.colSpan > 1 ? '1 / -1' : undefined,
+        color: cell.props.style?.color, fontWeight: cell.props.style?.fontWeight }}>
+        {cell.props.children}
+      </div>
     </div>
-  </div>);
+  ));
 }
 
 function interactionProps(props) {
@@ -172,7 +182,7 @@ export default function MobileTableView({ id, children, view: controlledView, hi
         <summary style={{ cursor: 'pointer', padding: '5px 0' }}>Column controls &amp; selection</summary>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, padding: '8px 0' }}>
           {tiles[0].labels.filter(label => containsControl(label.props.children)).map((label, index) =>
-            <div {...interactionProps(label.props)} key={label.key || index}
+            <div {...interactionProps(label.props)} key={label.key || `col-ctrl-${index}`}
               style={{ position: 'relative', minWidth: 100, maxWidth: '100%' }}>
               {withoutResizers(label.props.children)}
             </div>)}
@@ -185,7 +195,7 @@ export default function MobileTableView({ id, children, view: controlledView, hi
           const { actions, summary, remaining } = getTileSections(tile, summaryKeys);
           const rowKey = `${id}:${row.key || pageIndex * 25 + index}`;
           const expanded = expandedRows.has(rowKey);
-          return <article {...interactionProps(row.props)} key={row.key || index} aria-label={`Record ${pageIndex * 25 + index + 1}`}
+          return <article {...interactionProps(row.props)} key={row.key || `tile-row-${pageIndex * 25 + index}`} aria-label={`Record ${pageIndex * 25 + index + 1}`}
             style={{ border: '1px solid var(--border-light, #cbd5e1)', borderRadius: 8, padding: '8px 10px',
               fontSize: '0.82rem', lineHeight: 1.35,
               background: row.props.style?.backgroundColor || 'var(--bg-surface, white)',
@@ -193,12 +203,12 @@ export default function MobileTableView({ id, children, view: controlledView, hi
               opacity: row.props.style?.opacity, pointerEvents: row.props.style?.pointerEvents, minWidth: 0 }}>
             {actions.length > 0 && <div key="mobile-row-actions" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
               gap: 8, paddingBottom: 6, marginBottom: 3, borderBottom: '1px solid var(--border-light)' }}>
-              {actions.map(({ cell, index: cellIndex }) => <div {...interactionProps(cell.props)} key={cell.key || cellIndex}>
+              {actions.map(({ cell, index: cellIndex }) => <div {...interactionProps(cell.props)} key={`action-${cell.key || cellIndex}`}>
                 {cell.props.children}
               </div>)}
             </div>}
-            <TileFields fields={summary} />
-            {expanded && <TileFields fields={remaining} />}
+            <TileFields fields={summary} prefix="sum" />
+            {expanded && <TileFields fields={remaining} prefix="rem" />}
             {remaining.length > 0 && <button type="button" aria-expanded={expanded}
               onClick={event => {
                 event.stopPropagation();
