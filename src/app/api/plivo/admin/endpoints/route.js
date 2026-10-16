@@ -80,14 +80,37 @@ export async function GET(req) {
       ).values()
     );
 
-    let endpoints = uniqueEndpoints.map((ep) => ({
-      endpoint_id: ep.endpoint_id,
-      alias: ep.alias,
-      username: ep.username,
-      sip_uri: ep.sip_uri,
-      sip_registered: ep.sip_registered,
-      application: ep.application,
-    }));
+    const adminClient = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY
+    );
+
+    const { data: dbAgents } = await adminClient
+      .from('call_agents')
+      .select('plivo_username, plivo_endpoint_key, plivo_password')
+      .not('plivo_password', 'is', null);
+
+    const passwordMap = {};
+    (dbAgents || []).forEach(a => {
+      if (a.plivo_password) {
+        if (a.plivo_username) passwordMap[a.plivo_username.toLowerCase()] = a.plivo_password;
+        if (a.plivo_endpoint_key) passwordMap[String(a.plivo_endpoint_key)] = a.plivo_password;
+      }
+    });
+
+    let endpoints = uniqueEndpoints.map((ep) => {
+      const un = String(ep.username || '').toLowerCase();
+      const pwd = passwordMap[un] || (ep.endpoint_id ? passwordMap[String(ep.endpoint_id)] : null) || null;
+      return {
+        endpoint_id: ep.endpoint_id,
+        alias: ep.alias,
+        username: ep.username,
+        sip_uri: ep.sip_uri,
+        sip_registered: ep.sip_registered,
+        application: ep.application,
+        password: pwd
+      };
+    });
 
     // Workspace Scoping & Isolation
     // Non-Swan workspaces in Managed mode must NEVER see NSMLR or other tenant endpoints
@@ -177,6 +200,49 @@ export async function GET(req) {
 export async function POST(req) {
   try {
     const body = await req.json();
+
+    // ── Handle SIP Password Update ───────────────────────────
+    if (body.action === 'update_password') {
+      const { endpointId, username, password, company, tenantId } = body;
+      if (!endpointId || !password) {
+        return NextResponse.json({ error: 'Endpoint ID and password are required.' }, { status: 400 });
+      }
+
+      const { authId, authToken } = await getWorkspaceTelephonyConfig(company, tenantId);
+      if (!authId || !authToken) {
+        return NextResponse.json({ error: 'Plivo credentials are not configured.' }, { status: 500 });
+      }
+
+      const b64 = Buffer.from(`${authId}:${authToken}`).toString('base64');
+      const plivoUrl = `https://api.plivo.com/v1/Account/${authId}/Endpoint/${endpointId}/`;
+      const plivoRes = await fetch(plivoUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Basic ${b64}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ password: String(password).trim() })
+      });
+
+      if (!plivoRes.ok) {
+        const pData = await plivoRes.json().catch(() => ({}));
+        throw new Error(pData?.error || pData?.message || 'Failed to update password on Plivo.');
+      }
+
+      const adminClient = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL,
+        process.env.SUPABASE_SERVICE_ROLE_KEY
+      );
+
+      const cleanUser = String(username || '').toLowerCase().trim();
+      if (cleanUser) {
+        await adminClient.from('call_agents').update({ plivo_password: String(password).trim() }).eq('plivo_username', cleanUser);
+      }
+      await adminClient.from('call_agents').update({ plivo_password: String(password).trim() }).eq('plivo_endpoint_key', endpointId);
+
+      return NextResponse.json({ success: true, message: 'Password updated successfully on Plivo and CRM!' });
+    }
+
     const { alias, username, password, company, tenantId, assignToAgentId } = body;
 
     if (!alias || !username || !password) {
@@ -255,17 +321,31 @@ export async function POST(req) {
       console.warn('Endpoint registered in Plivo but failed in local registry:', regError);
     }
 
-    // If agent ID was provided, assign endpoint immediately
+    // Always store password in call_agents so it can always be retrieved and assigned
     if (assignToAgentId) {
       await adminClient
         .from('call_agents')
         .update({
-          plivo_endpoint_key: endpointKey,
+          plivo_endpoint_key: plivoData.endpoint_id || endpointKey,
           plivo_username: cleanUsername,
           plivo_sip_uri: sipUri,
           plivo_password: String(password).trim()
         })
         .eq('id', assignToAgentId);
+    } else {
+      // Store in shadow record so unassigned endpoint password is safe
+      await adminClient
+        .from('call_agents')
+        .insert({
+          display_name: `Endpoint ${alias.trim()}`,
+          plivo_username: cleanUsername,
+          plivo_endpoint_key: plivoData.endpoint_id || endpointKey,
+          plivo_sip_uri: sipUri,
+          plivo_password: String(password).trim(),
+          status: 'offline'
+        })
+        .select()
+        .maybeSingle();
     }
 
     return NextResponse.json({
@@ -276,7 +356,8 @@ export async function POST(req) {
         username: cleanUsername,
         sip_uri: sipUri,
         alias: alias.trim(),
-        endpoint_key: endpointKey
+        endpoint_key: endpointKey,
+        password: String(password).trim()
       }
     });
 

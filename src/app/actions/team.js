@@ -817,6 +817,17 @@ export async function getCallAdminData(company = null, tenantId = null) {
       return aliasOrKey.includes(reqLower) || (slug && aliasOrKey.includes(slug)) || (slugShort && slugShort.length >= 3 && aliasOrKey.includes(slugShort));
     }
     return true;
+  }).map(ep => {
+    const un = String(ep.username || '').toLowerCase();
+    const agentMatch = (agents || []).find(a => 
+      (a.plivo_username && a.plivo_username.toLowerCase() === un) ||
+      (a.plivo_endpoint_key && (a.plivo_endpoint_key === ep.endpoint_id || a.plivo_endpoint_key === ep.endpoint_key))
+    );
+    const pwd = agentMatch?.plivo_password || plivoCredentialsMap[ep.username] || null;
+    return {
+      ...ep,
+      password: pwd
+    };
   });
 
   return { endpoints: scopedEndpoints, agents: scopedAgents };
@@ -852,7 +863,7 @@ export async function addCallAgentAdmin(userId, displayName, company = '') {
   return { success: true, data };
 }
 
-const plivoCredentialsMap = {
+export const plivoCredentialsMap = {
   'nsmlrtc3939694880445266':          'nsmlrtc0001@2026',
   'nsmlrtc2657389236553295188':       'nsmlrtc0002@2026',
   'nsmlrtc93506189021999878029640':   'nsmlrtc0003@2026',

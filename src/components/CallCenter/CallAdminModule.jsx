@@ -9,7 +9,7 @@ import {
   UserPlus, Edit2, Trash2, ChevronRight, Server, Radio,
   PhoneIncoming, PhoneOutgoing, ArrowRight, Eye, Filter,
   Calendar, Search, ToggleLeft, ToggleRight, Save, Bell, FileSpreadsheet,
-  Plus, X, Key, ShieldCheck, Cpu
+  Plus, X, Key, ShieldCheck, Cpu, Copy
 } from 'lucide-react';
 import { getTeamMembers, getCallAdminData, addCallAgentAdmin, updateCallAgentAdmin } from '@/app/actions/team';
 import { PremiumProgressLoader } from '../PremiumProgressLoader';
@@ -90,16 +90,18 @@ const CALL_ADMIN_ENDPOINTS_DEFAULT_COL_WIDTHS = {
   alias: 180,
   username: 200,
   sip_uri: 260,
-  app_linked: 140,
-  status: 140
+  password: 180,
+  app_linked: 130,
+  status: 130
 };
 
 const CALL_ADMIN_ENDPOINTS_MIN_COL_WIDTHS = {
   alias: 120,
   username: 130,
   sip_uri: 160,
-  app_linked: 100,
-  status: 100
+  password: 130,
+  app_linked: 90,
+  status: 90
 };
 
 // ─── Helpers ────────────────────────────────────────────────
@@ -519,6 +521,53 @@ function TabEndpoints({ userCompany = '', tenantId = null, agents = [], onRefres
     CALL_ADMIN_ENDPOINTS_MIN_COL_WIDTHS
   );
 
+  const [visiblePasswords, setVisiblePasswords] = useState({});
+  const [copiedEndpoint, setCopiedEndpoint] = useState(null);
+
+  const togglePasswordVisibility = (key) => {
+    setVisiblePasswords(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const handleCopyPassword = (pwd, key) => {
+    if (!pwd) return;
+    if (typeof navigator !== 'undefined' && navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(pwd);
+      setCopiedEndpoint(key);
+      setTimeout(() => setCopiedEndpoint(null), 2500);
+    } else {
+      prompt("Copy SIP password:", pwd);
+    }
+  };
+
+  const handleUpdatePassword = async (ep) => {
+    const newPwd = prompt(`Enter new SIP Password for "${ep.alias}" (${ep.username}):`, ep.password || '');
+    if (!newPwd || !newPwd.trim()) return;
+
+    try {
+      const res = await fetch('/api/plivo/admin/endpoints', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'update_password',
+          endpointId: ep.endpoint_id,
+          username: ep.username,
+          password: newPwd.trim(),
+          company: userCompany,
+          tenantId: tenantId
+        })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to update password');
+      }
+      alert('Password updated successfully on Plivo and CRM!');
+      await fetchEndpoints();
+      if (onRefresh) await onRefresh();
+    } catch (err) {
+      alert('Error updating password: ' + err.message);
+    }
+  };
+
   const fetchEndpoints = useCallback(async () => {
     setLoading(true);
     try {
@@ -639,6 +688,7 @@ function TabEndpoints({ userCompany = '', tenantId = null, agents = [], onRefres
                   { key: 'alias', label: 'Alias', width: colWidths.alias },
                   { key: 'username', label: 'Username', width: colWidths.username },
                   { key: 'sip_uri', label: 'SIP URI', width: colWidths.sip_uri },
+                  { key: 'password', label: 'SIP Password', width: colWidths.password },
                   { key: 'app_linked', label: 'App Linked', width: colWidths.app_linked },
                   { key: 'status', label: 'Status', width: colWidths.status },
                 ].map(col => (
@@ -676,12 +726,51 @@ function TabEndpoints({ userCompany = '', tenantId = null, agents = [], onRefres
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan="5" style={{ padding:'3rem', textAlign:'center', color:'#94a3b8' }}><Loader2 className="spin" size={24} /></td></tr>
+                <tr><td colSpan="6" style={{ padding:'3rem', textAlign:'center', color:'#94a3b8' }}><Loader2 className="spin" size={24} /></td></tr>
               ) : endpoints.map((ep, i) => (
                 <tr key={ep.endpoint_id || ep.endpoint_key || ep.id || `ep-row-${i}`} style={{ borderBottom:'1px solid #f1f5f9', background: i%2===0?'white':'#fafafa' }}>
                   <td style={{ width: `${colWidths.alias}px`, padding:'1rem', fontWeight:600, color:'#1e293b', boxSizing: 'border-box', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3, verticalAlign: 'top' }} title={ep.alias}>{ep.alias}</td>
                   <td style={{ width: `${colWidths.username}px`, padding:'1rem', fontFamily:'monospace', fontSize:'0.8rem', color:'#475569', boxSizing: 'border-box', whiteSpace: 'normal', wordBreak: 'break-all', lineHeight: 1.3, verticalAlign: 'top' }} title={ep.username}>{ep.username}</td>
                   <td style={{ width: `${colWidths.sip_uri}px`, padding:'1rem', fontFamily:'monospace', fontSize:'0.78rem', color:'#64748b', boxSizing: 'border-box', whiteSpace: 'normal', wordBreak: 'break-all', lineHeight: 1.3, verticalAlign: 'top' }} title={ep.sip_uri}>{ep.sip_uri}</td>
+                  <td style={{ width: `${colWidths.password}px`, padding:'1rem', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', justifyContent: 'space-between' }}>
+                      <span style={{ fontFamily: 'monospace', fontSize: '0.82rem', color: ep.password ? '#1e293b' : '#94a3b8' }}>
+                        {ep.password
+                          ? (visiblePasswords[ep.endpoint_id || ep.endpoint_key] ? ep.password : '••••••••')
+                          : 'Not Stored'}
+                      </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                        {ep.password && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => togglePasswordVisibility(ep.endpoint_id || ep.endpoint_key)}
+                              title={visiblePasswords[ep.endpoint_id || ep.endpoint_key] ? 'Hide Password' : 'Show Password'}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px', color: '#64748b', display: 'flex' }}
+                            >
+                              <Eye size={14} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleCopyPassword(ep.password, ep.endpoint_id || ep.endpoint_key)}
+                              title="Copy Password"
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px', color: copiedEndpoint === (ep.endpoint_id || ep.endpoint_key) ? '#16a34a' : '#64748b', display: 'flex' }}
+                            >
+                              {copiedEndpoint === (ep.endpoint_id || ep.endpoint_key) ? <CheckCircle size={14} color="#16a34a" /> : <Copy size={14} />}
+                            </button>
+                          </>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleUpdatePassword(ep)}
+                          title="Set or Change SIP Password"
+                          style={{ padding: '0.15rem 0.45rem', fontSize: '0.72rem', borderRadius: '4px', border: '1px solid #cbd5e1', background: 'white', cursor: 'pointer', color: '#2563eb', fontWeight: 600 }}
+                        >
+                          {ep.password ? 'Edit' : 'Set'}
+                        </button>
+                      </div>
+                    </div>
+                  </td>
                   <td style={{ width: `${colWidths.app_linked}px`, padding:'1rem', boxSizing: 'border-box' }}>
                     {ep.application
                       ? <span style={{ color:'#16a34a', fontSize:'0.8rem', display:'flex', alignItems:'center', gap:'0.3rem' }}><CheckCircle size={13}/>Linked</span>
@@ -692,7 +781,7 @@ function TabEndpoints({ userCompany = '', tenantId = null, agents = [], onRefres
               ))}
               {endpoints.length === 0 && !loading && (
                 <tr>
-                  <td colSpan="5" style={{ padding:'3.5rem 2rem', textAlign:'center', color:'#64748b' }}>
+                  <td colSpan="6" style={{ padding:'3.5rem 2rem', textAlign:'center', color:'#64748b' }}>
                     <div style={{ maxWidth: '440px', margin: '0 auto' }}>
                       <Server size={36} color="#94a3b8" style={{ margin: '0 auto 0.75rem' }} />
                       <div style={{ fontWeight: 700, color: '#1e293b', fontSize: '1rem', marginBottom: '0.35rem' }}>
