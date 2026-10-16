@@ -243,6 +243,58 @@ export async function POST(req) {
       return NextResponse.json({ success: true, message: 'Password updated successfully on Plivo and CRM!' });
     }
 
+    // ── Handle SIP Alias / Friendly Name Update ──────────────
+    if (body.action === 'update_alias') {
+      const { endpointId, username, alias, company, tenantId } = body;
+      if (!endpointId || !alias) {
+        return NextResponse.json({ error: 'Endpoint ID and alias are required.' }, { status: 400 });
+      }
+
+      const { authId, authToken } = await getWorkspaceTelephonyConfig(company, tenantId);
+      if (!authId || !authToken) {
+        return NextResponse.json({ error: 'Plivo credentials are not configured.' }, { status: 500 });
+      }
+
+      const b64 = Buffer.from(`${authId}:${authToken}`).toString('base64');
+      const plivoUrl = `https://api.plivo.com/v1/Account/${authId}/Endpoint/${endpointId}/`;
+      const plivoRes = await fetch(plivoUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Basic ${b64}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ alias: String(alias).trim() })
+      });
+
+      if (!plivoRes.ok) {
+        const pData = await plivoRes.json().catch(() => ({}));
+        throw new Error(pData?.error || pData?.message || 'Failed to update alias on Plivo.');
+      }
+
+      const adminClient = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL,
+        process.env.SUPABASE_SERVICE_ROLE_KEY
+      );
+
+      const cleanUser = String(username || '').toLowerCase().trim();
+      const updatedAlias = String(alias).trim();
+
+      if (endpointId) {
+        await adminClient
+          .from('agent_endpoint_registry')
+          .update({ alias: updatedAlias })
+          .eq('endpoint_id', endpointId);
+      }
+      if (cleanUser) {
+        await adminClient
+          .from('agent_endpoint_registry')
+          .update({ alias: updatedAlias })
+          .eq('username', cleanUser);
+      }
+
+      return NextResponse.json({ success: true, message: 'Alias updated successfully on Plivo and CRM!' });
+    }
+
     const { alias, username, password, company, tenantId, assignToAgentId } = body;
 
     if (!alias || !username || !password) {

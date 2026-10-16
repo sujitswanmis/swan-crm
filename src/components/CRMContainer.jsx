@@ -556,7 +556,7 @@ export default function CRMContainer({
       const sub = cleanPath.split('/')[1];
       if (sub) return sub;
     }
-    if (queryTab && ['agents', 'endpoints', 'calllogs', 'monitor', 'settings'].includes(queryTab)) {
+    if (queryTab && ['agents', 'endpoints', 'telephony', 'calllogs', 'monitor', 'settings'].includes(queryTab)) {
       return queryTab;
     }
     return 'agents';

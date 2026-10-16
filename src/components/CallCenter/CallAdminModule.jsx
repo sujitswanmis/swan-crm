@@ -9,7 +9,7 @@ import {
   UserPlus, Edit2, Trash2, ChevronRight, Server, Radio,
   PhoneIncoming, PhoneOutgoing, ArrowRight, Eye, Filter,
   Calendar, Search, ToggleLeft, ToggleRight, Save, Bell, FileSpreadsheet,
-  Plus, X, Key, ShieldCheck, Cpu, Copy
+  Plus, X, Key, KeyRound, ShieldCheck, Cpu, Copy
 } from 'lucide-react';
 import { getTeamMembers, getCallAdminData, addCallAgentAdmin, updateCallAgentAdmin } from '@/app/actions/team';
 import { PremiumProgressLoader } from '../PremiumProgressLoader';
@@ -108,9 +108,10 @@ const CALL_ADMIN_ENDPOINTS_MIN_COL_WIDTHS = {
 const TABS = [
   { id: 'agents',    label: 'Agents & Endpoints', icon: Users },
   { id: 'endpoints', label: 'SIP Endpoints',       icon: Server },
+  { id: 'telephony', label: 'Telephony & Seats',   icon: KeyRound },
   { id: 'calllogs',  label: 'Call Logs',           icon: PhoneCall },
   { id: 'monitor',   label: 'Live Monitor',         icon: Activity },
-  { id: 'settings',  label: 'Settings',             icon: Settings },
+  { id: 'settings',  label: 'Routing & Rules',      icon: Settings },
 ];
 
 const statusBadge = (status) => {
@@ -590,6 +591,42 @@ function TabEndpoints({ userCompany = '', tenantId = null, agents = [], onRefres
     }
   };
 
+  const handleUpdateAlias = async (ep) => {
+    const currentAlias = ep.alias || '';
+    const newAlias = prompt(`Enter new Friendly Name / Alias for endpoint (${ep.username}):`, currentAlias);
+    if (newAlias === null) return;
+    const trimmed = newAlias.trim();
+    if (!trimmed) {
+      alert('Alias cannot be empty!');
+      return;
+    }
+    if (trimmed === currentAlias) return;
+
+    try {
+      const res = await fetch('/api/plivo/admin/endpoints', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'update_alias',
+          endpointId: ep.endpoint_id,
+          username: ep.username,
+          alias: trimmed,
+          company: userCompany,
+          tenantId: tenantId
+        })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to update alias');
+      }
+      alert(`Endpoint alias updated to "${trimmed}"!`);
+      await fetchEndpoints();
+      if (onRefresh) await onRefresh();
+    } catch (err) {
+      alert('Error updating alias: ' + err.message);
+    }
+  };
+
   const fetchEndpoints = useCallback(async () => {
     setLoading(true);
     try {
@@ -751,7 +788,34 @@ function TabEndpoints({ userCompany = '', tenantId = null, agents = [], onRefres
                 <tr><td colSpan="6" style={{ padding:'3rem', textAlign:'center', color:'#94a3b8' }}><Loader2 className="spin" size={24} /></td></tr>
               ) : endpoints.map((ep, i) => (
                 <tr key={ep.endpoint_id || ep.endpoint_key || ep.id || `ep-row-${i}`} style={{ borderBottom:'1px solid #f1f5f9', background: i%2===0?'white':'#fafafa' }}>
-                  <td style={{ width: `${colWidths.alias}px`, padding:'1rem', fontWeight:600, color:'#1e293b', boxSizing: 'border-box', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3, verticalAlign: 'top' }} title={ep.alias}>{ep.alias}</td>
+                  <td style={{ width: `${colWidths.alias}px`, padding:'0.85rem 1rem', boxSizing: 'border-box', verticalAlign: 'top' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.4rem' }}>
+                      <span style={{ fontWeight: 600, color: '#1e293b', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }} title={ep.alias}>
+                        {ep.alias}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateAlias(ep)}
+                        title="Edit Endpoint Alias / Friendly Name"
+                        style={{
+                          padding: '0.15rem 0.45rem',
+                          fontSize: '0.72rem',
+                          borderRadius: '4px',
+                          border: '1px solid #cbd5e1',
+                          background: 'white',
+                          cursor: 'pointer',
+                          color: '#2563eb',
+                          fontWeight: 600,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.2rem',
+                          flexShrink: 0
+                        }}
+                      >
+                        <Edit2 size={12} /> Rename
+                      </button>
+                    </div>
+                  </td>
                   <td style={{ width: `${colWidths.username}px`, padding:'1rem', fontFamily:'monospace', fontSize:'0.8rem', color:'#475569', boxSizing: 'border-box', whiteSpace: 'normal', wordBreak: 'break-all', lineHeight: 1.3, verticalAlign: 'top' }} title={ep.username}>{ep.username}</td>
                   <td style={{ width: `${colWidths.sip_uri}px`, padding:'1rem', fontFamily:'monospace', fontSize:'0.78rem', color:'#64748b', boxSizing: 'border-box', whiteSpace: 'normal', wordBreak: 'break-all', lineHeight: 1.3, verticalAlign: 'top' }} title={ep.sip_uri}>{ep.sip_uri}</td>
                   <td style={{ width: `${colWidths.password}px`, padding:'1rem', boxSizing: 'border-box', verticalAlign: 'middle' }}>
@@ -1828,6 +1892,346 @@ function TabMonitor({ agents, onRefresh }) {
   );
 }
 
+// ── Tab: Telephony & Seats (Workspace Telephony Authorization) ───────
+function TabTelephonyGateway({ userCompany = '', tenantId = null, onRefresh = null }) {
+  const [loading, setLoading] = useState(true);
+  const [telephonyMode, setTelephonyMode] = useState('managed'); // 'byoc' | 'managed'
+  const [plivoAuthId, setPlivoAuthId] = useState('');
+  const [plivoAuthToken, setPlivoAuthToken] = useState('');
+  const [callerId, setCallerId] = useState('');
+  const [callingSeatLimit, setCallingSeatLimit] = useState(5);
+  const [seatQuota, setSeatQuota] = useState(null);
+  const [showAuthToken, setShowAuthToken] = useState(false);
+  const [testingConnection, setTestingConnection] = useState(false);
+  const [testResult, setTestResult] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+
+  const fetchTelephonySettings = useCallback(() => {
+    setLoading(true);
+    fetch(`/api/plivo/admin/settings?company=${encodeURIComponent(userCompany || '')}&tenant_id=${tenantId || ''}`)
+      .then(r => r.json())
+      .then(d => {
+        setTelephonyMode(d.telephonyMode || (d.isSwan ? 'managed' : (d.plivoAuthId ? 'byoc' : 'managed')));
+        setPlivoAuthId(d.plivoAuthId || '');
+        setPlivoAuthToken(d.plivoAuthToken || '');
+        setCallerId(d.callerId || d.fromNumber || '');
+        setCallingSeatLimit(d.callingSeatLimit || (d.isSwan ? 300 : 5));
+        if (d.seatQuota) setSeatQuota(d.seatQuota);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, [userCompany, tenantId]);
+
+  useEffect(() => {
+    fetchTelephonySettings();
+  }, [fetchTelephonySettings]);
+
+  const handleTestConnection = async () => {
+    setTestingConnection(true);
+    setTestResult(null);
+    try {
+      const res = await fetch('/api/plivo/admin/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'test_connection',
+          company: userCompany,
+          tenantId,
+          plivoAuthId,
+          plivoAuthToken
+        })
+      });
+      const data = await res.json();
+      setTestResult(data);
+    } catch (err) {
+      setTestResult({ success: false, error: err.message });
+    } finally {
+      setTestingConnection(false);
+    }
+  };
+
+  const handleSave = async (e) => {
+    if (e) e.preventDefault();
+    setSaving(true);
+    setSaveSuccess(false);
+    try {
+      const res = await fetch('/api/plivo/admin/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          company: userCompany,
+          tenantId,
+          telephonyMode,
+          plivoAuthId,
+          plivoAuthToken,
+          callerId,
+          callingSeatLimit: parseInt(callingSeatLimit, 10) || 5
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 4000);
+        fetchTelephonySettings();
+        if (onRefresh) onRefresh();
+      } else {
+        alert('Error saving telephony settings: ' + (data.error || 'Unknown error'));
+      }
+    } catch (err) {
+      alert('Error saving telephony settings: ' + err.message);
+    }
+    setSaving(false);
+  };
+
+  if (loading) return <PremiumProgressLoader message="Loading Telephony Gateway" active={loading} />;
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:'1.5rem', maxWidth:'1280px', margin:'0 auto' }}>
+      
+      {/* Top Banner & Save Action */}
+      <div style={{ background:'white', borderRadius:'12px', padding:'1.25rem 1.5rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0', display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:'1rem' }}>
+        <div>
+          <h2 style={{ fontSize:'1.2rem', fontWeight:800, color:'#1e293b', margin:0, display:'flex', alignItems:'center', gap:'0.6rem' }}>
+            <KeyRound size={22} color="#2563eb" /> Telephony Gateway &amp; Workspace Authorization
+          </h2>
+          <p style={{ color:'#64748b', fontSize:'0.85rem', margin:'0.25rem 0 0 0' }}>
+            Authorize Plivo credentials (BYOC vs Managed), set Caller ID, and manage active concurrent calling seats.
+          </p>
+        </div>
+        <div style={{ display:'flex', alignItems:'center', gap:'0.75rem' }}>
+          {saveSuccess && (
+            <span style={{ display:'flex', alignItems:'center', gap:'0.35rem', color:'#16a34a', fontSize:'0.85rem', fontWeight:600, background:'#dcfce7', padding:'0.4rem 0.85rem', borderRadius:'6px' }}>
+              <CheckCircle size={16} /> Telephony Settings Saved!
+            </span>
+          )}
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            style={{
+              display:'flex', alignItems:'center', gap:'0.5rem',
+              padding:'0.6rem 1.4rem', borderRadius:'8px', border:'none',
+              background:'#2563eb', color:'white', fontWeight:700, fontSize:'0.88rem',
+              cursor:'pointer', opacity: saving ? 0.7 : 1,
+              boxShadow:'0 2px 4px rgba(37,99,235,0.2)'
+            }}
+          >
+            {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+            {saving ? 'Saving...' : 'Save Telephony & Seats'}
+          </button>
+        </div>
+      </div>
+
+      {/* Telephony Gateway & BYOC Configuration Card */}
+      <div style={{ background:'white', borderRadius:'12px', padding:'1.5rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0', display:'flex', flexDirection:'column', gap:'1.25rem' }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', flexWrap:'wrap', gap:'0.75rem' }}>
+          <div>
+            <h3 style={{ fontSize:'1.05rem', fontWeight:700, margin:0, color:'#1e293b', display:'flex', alignItems:'center', gap:'0.5rem' }}>
+              <ShieldCheck size={18} color="#2563eb" /> Telephony Connection Mode
+            </h3>
+            <p style={{ color:'#64748b', fontSize:'0.82rem', marginTop:'0.25rem' }}>
+              Configure how this client workspace connects to Plivo (Shared Platform Gateway vs Client BYOC).
+            </p>
+          </div>
+          {seatQuota && (
+            <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', background:'#eff6ff', border:'1px solid #bfdbfe', padding:'0.4rem 0.85rem', borderRadius:'8px', fontSize:'0.82rem' }}>
+              <Users size={16} color="#2563eb" />
+              <span style={{ fontWeight:700, color:'#1e40af' }}>
+                Calling Seats: {seatQuota.used} / {seatQuota.total} Used (Across Headquarter &amp; Branches)
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* Telephony Mode Selection */}
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(260px, 1fr))', gap:'1rem' }}>
+          <label
+            onClick={() => setTelephonyMode('managed')}
+            style={{
+              display:'flex', alignItems:'flex-start', gap:'0.85rem', padding:'1rem',
+              borderRadius:'10px',
+              border: telephonyMode === 'managed' ? '2px solid #2563eb' : '1px solid #e2e8f0',
+              background: telephonyMode === 'managed' ? '#eff6ff' : '#f8fafc',
+              cursor:'pointer', transition:'all 0.15s'
+            }}
+          >
+            <input
+              type="radio"
+              name="tabTelephonyMode"
+              value="managed"
+              checked={telephonyMode === 'managed'}
+              onChange={() => setTelephonyMode('managed')}
+              style={{ marginTop:'0.2rem', accentColor:'#2563eb' }}
+            />
+            <div>
+              <div style={{ fontWeight:700, color:'#1e293b', fontSize:'0.9rem', display:'flex', alignItems:'center', gap:'0.4rem' }}>
+                <Cpu size={16} color="#2563eb" /> Managed Telephony (Platform)
+              </div>
+              <div style={{ fontSize:'0.78rem', color:'#64748b', marginTop:'0.25rem', lineHeight:1.4 }}>
+                Uses platform&apos;s managed Plivo gateway and pre-allotted SIP endpoints. Ideal for turnkey calling without customer-provided Plivo keys.
+              </div>
+            </div>
+          </label>
+
+          <label
+            onClick={() => setTelephonyMode('byoc')}
+            style={{
+              display:'flex', alignItems:'flex-start', gap:'0.85rem', padding:'1rem',
+              borderRadius:'10px',
+              border: telephonyMode === 'byoc' ? '2px solid #2563eb' : '1px solid #e2e8f0',
+              background: telephonyMode === 'byoc' ? '#eff6ff' : '#f8fafc',
+              cursor:'pointer', transition:'all 0.15s'
+            }}
+          >
+            <input
+              type="radio"
+              name="tabTelephonyMode"
+              value="byoc"
+              checked={telephonyMode === 'byoc'}
+              onChange={() => setTelephonyMode('byoc')}
+              style={{ marginTop:'0.2rem', accentColor:'#2563eb' }}
+            />
+            <div>
+              <div style={{ fontWeight:700, color:'#1e293b', fontSize:'0.9rem', display:'flex', alignItems:'center', gap:'0.4rem' }}>
+                <ShieldCheck size={16} color="#16a34a" /> BYOC (Bring Your Own Plivo)
+              </div>
+              <div style={{ fontSize:'0.78rem', color:'#64748b', marginTop:'0.25rem', lineHeight:1.4 }}>
+                Client workspace uses their own Plivo Auth ID, Auth Token, and rented caller numbers. Full billing isolation and independent endpoints.
+              </div>
+            </div>
+          </label>
+        </div>
+
+        {/* BYOC Credentials Form (shown when BYOC is active) */}
+        {telephonyMode === 'byoc' && (
+          <div style={{ padding:'1.25rem', background:'#f8fafc', borderRadius:'10px', border:'1px solid #e2e8f0', display:'flex', flexDirection:'column', gap:'1rem' }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+              <div style={{ fontSize:'0.88rem', fontWeight:700, color:'#1e293b' }}>
+                Plivo API Credentials &amp; Caller ID
+              </div>
+              <span style={{ fontSize:'0.75rem', color:'#64748b' }}>
+                Enter credentials from your Plivo Dashboard (Account &gt; Overview)
+              </span>
+            </div>
+
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(280px, 1fr))', gap:'1rem' }}>
+              <div>
+                <label style={{ display:'block', fontSize:'0.8rem', fontWeight:600, color:'#475569', marginBottom:'0.3rem' }}>
+                  Plivo Auth ID *
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. MAMJFHXXXXXXXXXXXXXXXX (Alphanumeric Auth ID, not email)"
+                  value={plivoAuthId}
+                  onChange={e => setPlivoAuthId(e.target.value.trim())}
+                  style={{ width:'100%', boxSizing:'border-box', padding:'0.55rem 0.8rem', borderRadius:'6px', border:'1px solid #cbd5e1', fontSize:'0.85rem', fontFamily:'monospace', background:'white' }}
+                />
+                <span style={{ fontSize:'0.72rem', color:'#94a3b8', marginTop:'0.2rem', display:'block' }}>
+                  Copy your Auth ID from Plivo Console (do not enter your email address).
+                </span>
+              </div>
+
+              <div>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'0.3rem' }}>
+                  <label style={{ fontSize:'0.8rem', fontWeight:600, color:'#475569' }}>
+                    Plivo Auth Token *
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowAuthToken(!showAuthToken)}
+                    style={{ background:'none', border:'none', color:'#2563eb', fontSize:'0.72rem', cursor:'pointer' }}
+                  >
+                    {showAuthToken ? 'Hide' : 'Show'}
+                  </button>
+                </div>
+                <input
+                  type={showAuthToken ? 'text' : 'password'}
+                  placeholder="e.g. NTdiOWXXXXXXXXXXXXXXXXXXXXXXXXXX"
+                  value={plivoAuthToken}
+                  onChange={e => setPlivoAuthToken(e.target.value.trim())}
+                  style={{ width:'100%', boxSizing:'border-box', padding:'0.55rem 0.8rem', borderRadius:'6px', border:'1px solid #cbd5e1', fontSize:'0.85rem', fontFamily:'monospace', background:'white' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display:'block', fontSize:'0.8rem', fontWeight:600, color:'#475569', marginBottom:'0.3rem' }}>
+                  Caller ID (From Phone Number) *
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. +918035340622"
+                  value={callerId}
+                  onChange={e => setCallerId(e.target.value.trim())}
+                  style={{ width:'100%', boxSizing:'border-box', padding:'0.55rem 0.8rem', borderRadius:'6px', border:'1px solid #cbd5e1', fontSize:'0.85rem', fontFamily:'monospace', background:'white' }}
+                />
+                <span style={{ fontSize:'0.72rem', color:'#94a3b8', marginTop:'0.2rem', display:'block' }}>
+                  Purchased Plivo number with country code (used as outgoing Caller ID).
+                </span>
+              </div>
+            </div>
+
+            <div style={{ display:'flex', alignItems:'center', gap:'1rem', marginTop:'0.5rem', flexWrap:'wrap' }}>
+              <button
+                type="button"
+                onClick={handleTestConnection}
+                disabled={testingConnection || !plivoAuthId || !plivoAuthToken}
+                style={{
+                  display:'flex', alignItems:'center', gap:'0.4rem',
+                  padding:'0.5rem 1rem', borderRadius:'6px', border:'1px solid #cbd5e1',
+                  background:'white', color:'#1e293b', fontWeight:600, fontSize:'0.82rem',
+                  cursor:'pointer', opacity: (testingConnection || !plivoAuthId || !plivoAuthToken) ? 0.6 : 1
+                }}
+              >
+                {testingConnection ? <Loader2 size={14} className="spin" /> : <Activity size={14} color="#2563eb" />}
+                {testingConnection ? 'Testing Connection...' : 'Test Plivo Connection'}
+              </button>
+
+              {testResult && (
+                <div style={{
+                  display:'flex', alignItems:'center', gap:'0.4rem',
+                  padding:'0.4rem 0.75rem', borderRadius:'6px', fontSize:'0.8rem', fontWeight:600,
+                  background: testResult.success ? '#dcfce7' : '#fee2e2',
+                  color: testResult.success ? '#15803d' : '#b91c1c'
+                }}>
+                  {testResult.success ? <CheckCircle size={14} /> : <XCircle size={14} />}
+                  <span>{testResult.success ? `Connected! Account: ${testResult.accountName || 'Active'}` : `Failed: ${testResult.error}`}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Calling Seat Quota Setting */}
+        <div style={{ padding:'1rem 1.25rem', background:'#f8fafc', borderRadius:'10px', border:'1px solid #e2e8f0', display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:'1rem' }}>
+          <div>
+            <div style={{ fontWeight:700, color:'#1e293b', fontSize:'0.9rem', display:'flex', alignItems:'center', gap:'0.4rem' }}>
+              <Users size={16} color="#7c3aed" /> Workspace Calling Seat Allocation
+            </div>
+            <div style={{ fontSize:'0.78rem', color:'#64748b', marginTop:'0.2rem', lineHeight:1.4 }}>
+              Set maximum number of telecallers allowed to use the Softphone concurrently across Headquarter and all Branches.
+            </div>
+          </div>
+          <div style={{ display:'flex', alignItems:'center', gap:'0.75rem' }}>
+            <span style={{ fontSize:'0.82rem', color:'#475569', fontWeight:600 }}>Seat Limit:</span>
+            <input
+              type="number"
+              min="1"
+              max="500"
+              value={callingSeatLimit}
+              onChange={e => setCallingSeatLimit(Math.max(1, parseInt(e.target.value, 10) || 1))}
+              style={{
+                width:'90px', padding:'0.45rem 0.65rem', borderRadius:'6px',
+                border:'1px solid #cbd5e1', fontSize:'0.9rem', fontWeight:700,
+                textAlign:'center', background:'white'
+              }}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Tab: Settings ─────────────────────────────────────────────
 function TabSettings({ agents = [], userCompany = '', tenantId = null }) {
   const [settings, setSettings] = useState(null);
@@ -2002,204 +2406,8 @@ function TabSettings({ agents = [], userCompany = '', tenantId = null }) {
             }}
           >
             {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-            {saving ? 'Saving...' : 'Save Inbound Settings'}
+            {saving ? 'Saving...' : 'Save Routing Rules'}
           </button>
-        </div>
-      </div>
-
-      {/* Telephony Gateway & BYOC Configuration Card */}
-      <div style={{ background:'white', borderRadius:'12px', padding:'1.5rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0', display:'flex', flexDirection:'column', gap:'1.25rem' }}>
-        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', flexWrap:'wrap', gap:'0.75rem' }}>
-          <div>
-            <h3 style={{ fontSize:'1.05rem', fontWeight:700, margin:0, color:'#1e293b', display:'flex', alignItems:'center', gap:'0.5rem' }}>
-              <Key size={18} color="#3b82f6" /> Telephony Gateway & Credential Setup
-            </h3>
-            <p style={{ color:'#64748b', fontSize:'0.82rem', marginTop:'0.25rem' }}>
-              Configure how this workspace connects to Plivo (Shared Platform Gateway vs Client BYOC) and manage active softphone calling seats.
-            </p>
-          </div>
-          {seatQuota && (
-            <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', background:'#eff6ff', border:'1px solid #bfdbfe', padding:'0.4rem 0.85rem', borderRadius:'8px', fontSize:'0.82rem' }}>
-              <Users size={16} color="#2563eb" />
-              <span style={{ fontWeight:700, color:'#1e40af' }}>
-                Calling Seats: {seatQuota.used} / {seatQuota.total} Used
-              </span>
-            </div>
-          )}
-        </div>
-
-        {/* Telephony Mode Selection */}
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(260px, 1fr))', gap:'1rem' }}>
-          <label
-            onClick={() => setTelephonyMode('managed')}
-            style={{
-              display:'flex', alignItems:'flex-start', gap:'0.85rem', padding:'1rem',
-              borderRadius:'10px',
-              border: telephonyMode === 'managed' ? '2px solid #2563eb' : '1px solid #e2e8f0',
-              background: telephonyMode === 'managed' ? '#eff6ff' : '#f8fafc',
-              cursor:'pointer', transition:'all 0.15s'
-            }}
-          >
-            <input
-              type="radio"
-              name="telephonyMode"
-              value="managed"
-              checked={telephonyMode === 'managed'}
-              onChange={() => setTelephonyMode('managed')}
-              style={{ marginTop:'0.2rem', accentColor:'#2563eb' }}
-            />
-            <div>
-              <div style={{ fontWeight:700, color:'#1e293b', fontSize:'0.9rem', display:'flex', alignItems:'center', gap:'0.4rem' }}>
-                <Cpu size={16} color="#2563eb" /> Managed Telephony (Platform)
-              </div>
-              <div style={{ fontSize:'0.78rem', color:'#64748b', marginTop:'0.25rem', lineHeight:1.4 }}>
-                Uses platform&apos;s managed Plivo gateway and pre-allotted SIP endpoints. Ideal for turnkey calling without customer-provided Plivo keys.
-              </div>
-            </div>
-          </label>
-
-          <label
-            onClick={() => setTelephonyMode('byoc')}
-            style={{
-              display:'flex', alignItems:'flex-start', gap:'0.85rem', padding:'1rem',
-              borderRadius:'10px',
-              border: telephonyMode === 'byoc' ? '2px solid #2563eb' : '1px solid #e2e8f0',
-              background: telephonyMode === 'byoc' ? '#eff6ff' : '#f8fafc',
-              cursor:'pointer', transition:'all 0.15s'
-            }}
-          >
-            <input
-              type="radio"
-              name="telephonyMode"
-              value="byoc"
-              checked={telephonyMode === 'byoc'}
-              onChange={() => setTelephonyMode('byoc')}
-              style={{ marginTop:'0.2rem', accentColor:'#2563eb' }}
-            />
-            <div>
-              <div style={{ fontWeight:700, color:'#1e293b', fontSize:'0.9rem', display:'flex', alignItems:'center', gap:'0.4rem' }}>
-                <ShieldCheck size={16} color="#16a34a" /> BYOC (Bring Your Own Plivo)
-              </div>
-              <div style={{ fontSize:'0.78rem', color:'#64748b', marginTop:'0.25rem', lineHeight:1.4 }}>
-                Client workspace uses their own Plivo Auth ID, Auth Token, and rented caller numbers. Full billing isolation and independent endpoints.
-              </div>
-            </div>
-          </label>
-        </div>
-
-        {/* BYOC Credentials Form (shown when BYOC is active) */}
-        {telephonyMode === 'byoc' && (
-          <div style={{ padding:'1.25rem', background:'#f8fafc', borderRadius:'10px', border:'1px solid #e2e8f0', display:'flex', flexDirection:'column', gap:'1rem' }}>
-            <div style={{ fontSize:'0.85rem', fontWeight:700, color:'#1e293b' }}>
-              Plivo API Credentials &amp; Caller ID
-            </div>
-
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(280px, 1fr))', gap:'1rem' }}>
-              <div>
-                <label style={{ display:'block', fontSize:'0.8rem', fontWeight:600, color:'#475569', marginBottom:'0.3rem' }}>
-                  Plivo Auth ID *
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. MAMJFHXXXXXXXXXXXXXXXX"
-                  value={plivoAuthId}
-                  onChange={e => setPlivoAuthId(e.target.value.trim())}
-                  style={{ width:'100%', boxSizing:'border-box', padding:'0.55rem 0.8rem', borderRadius:'6px', border:'1px solid #cbd5e1', fontSize:'0.85rem', fontFamily:'monospace', background:'white' }}
-                />
-              </div>
-
-              <div>
-                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'0.3rem' }}>
-                  <label style={{ fontSize:'0.8rem', fontWeight:600, color:'#475569' }}>
-                    Plivo Auth Token *
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => setShowAuthToken(!showAuthToken)}
-                    style={{ background:'none', border:'none', color:'#2563eb', fontSize:'0.72rem', cursor:'pointer' }}
-                  >
-                    {showAuthToken ? 'Hide' : 'Show'}
-                  </button>
-                </div>
-                <input
-                  type={showAuthToken ? 'text' : 'password'}
-                  placeholder="e.g. NTdiOWXXXXXXXXXXXXXXXXXXXXXXXXXX"
-                  value={plivoAuthToken}
-                  onChange={e => setPlivoAuthToken(e.target.value.trim())}
-                  style={{ width:'100%', boxSizing:'border-box', padding:'0.55rem 0.8rem', borderRadius:'6px', border:'1px solid #cbd5e1', fontSize:'0.85rem', fontFamily:'monospace', background:'white' }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display:'block', fontSize:'0.8rem', fontWeight:600, color:'#475569', marginBottom:'0.3rem' }}>
-                  Caller ID (From Phone Number)
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. +91XXXXXXXXXX"
-                  value={callerId}
-                  onChange={e => setCallerId(e.target.value.trim())}
-                  style={{ width:'100%', boxSizing:'border-box', padding:'0.55rem 0.8rem', borderRadius:'6px', border:'1px solid #cbd5e1', fontSize:'0.85rem', fontFamily:'monospace', background:'white' }}
-                />
-              </div>
-            </div>
-
-            <div style={{ display:'flex', alignItems:'center', gap:'1rem', marginTop:'0.5rem', flexWrap:'wrap' }}>
-              <button
-                type="button"
-                onClick={handleTestConnection}
-                disabled={testingConnection || !plivoAuthId || !plivoAuthToken}
-                style={{
-                  display:'flex', alignItems:'center', gap:'0.4rem',
-                  padding:'0.5rem 1rem', borderRadius:'6px', border:'1px solid #cbd5e1',
-                  background:'white', color:'#1e293b', fontWeight:600, fontSize:'0.82rem',
-                  cursor:'pointer', opacity: (testingConnection || !plivoAuthId || !plivoAuthToken) ? 0.6 : 1
-                }}
-              >
-                {testingConnection ? <Loader2 size={14} className="spin" /> : <Activity size={14} color="#2563eb" />}
-                {testingConnection ? 'Testing Connection...' : 'Test Plivo Connection'}
-              </button>
-
-              {testResult && (
-                <div style={{
-                  display:'flex', alignItems:'center', gap:'0.4rem',
-                  padding:'0.4rem 0.75rem', borderRadius:'6px', fontSize:'0.8rem', fontWeight:600,
-                  background: testResult.success ? '#dcfce7' : '#fee2e2',
-                  color: testResult.success ? '#15803d' : '#b91c1c'
-                }}>
-                  {testResult.success ? <CheckCircle size={14} /> : <XCircle size={14} />}
-                  <span>{testResult.success ? `Connected! Account: ${testResult.accountName || 'Active'}` : `Failed: ${testResult.error}`}</span>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Calling Seat Quota Setting */}
-        <div style={{ padding:'1rem 1.25rem', background:'#f8fafc', borderRadius:'10px', border:'1px solid #e2e8f0', display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:'1rem' }}>
-          <div>
-            <div style={{ fontWeight:700, color:'#1e293b', fontSize:'0.9rem', display:'flex', alignItems:'center', gap:'0.4rem' }}>
-              <Users size={16} color="#7c3aed" /> Workspace Calling Seat Allocation
-            </div>
-            <div style={{ fontSize:'0.78rem', color:'#64748b', marginTop:'0.2rem', lineHeight:1.4 }}>
-              Set maximum number of telecallers allowed to use the Softphone concurrently in this workspace.
-            </div>
-          </div>
-          <div style={{ display:'flex', alignItems:'center', gap:'0.75rem' }}>
-            <span style={{ fontSize:'0.82rem', color:'#475569', fontWeight:600 }}>Seat Limit:</span>
-            <input
-              type="number"
-              min="1"
-              max="500"
-              value={callingSeatLimit}
-              onChange={e => setCallingSeatLimit(Math.max(1, parseInt(e.target.value, 10) || 1))}
-              style={{
-                width:'90px', padding:'0.45rem 0.65rem', borderRadius:'6px',
-                border:'1px solid #cbd5e1', fontSize:'0.9rem', fontWeight:700,
-                textAlign:'center', background:'white'
-              }}
-            />
-          </div>
         </div>
       </div>
 
@@ -2700,6 +2908,7 @@ export default function CallAdminModule({
           />
         )}
         {activeTab === 'endpoints' && <TabEndpoints userCompany={userCompany} tenantId={tenantId} agents={agents} onRefresh={fetchData} />}
+        {activeTab === 'telephony' && <TabTelephonyGateway userCompany={userCompany} tenantId={tenantId} onRefresh={fetchData} />}
         {activeTab === 'calllogs' && <TabCallLogs userCompany={userCompany} tenantId={tenantId} />}
         {activeTab === 'monitor' && <TabMonitor agents={agents} onRefresh={fetchData} />}
         {activeTab === 'settings' && <TabSettings agents={agents} userCompany={userCompany} tenantId={tenantId} />}

@@ -77,6 +77,7 @@ export async function GET(req) {
       telephonyMode: telConfig?.agent_code || parsedTel.mode || 'managed',
       callingSeatLimit: parseInt(telConfig?.plivo_endpoint_key, 10) || parsedTel.calling_seat_limit || (isSwan ? 300 : 5),
       plivoAuthId: parsedTel.auth_id || (isSwan ? (process.env.PLIVO_AUTH_ID || '') : ''),
+      plivoAuthToken: parsedTel.auth_token ? '••••••••••••••••••••••••' : (isSwan && process.env.PLIVO_AUTH_TOKEN ? '••••••••••••••••••••••••' : ''),
       hasCustomToken: Boolean(parsedTel.auth_token),
       seatQuota,
       isSwan
