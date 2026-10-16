@@ -815,8 +815,25 @@ export async function getCallAdminData(company = null, tenantId = null) {
   return { endpoints: scopedEndpoints, agents: scopedAgents };
 }
 
-export async function addCallAgentAdmin(userId, displayName) {
+export async function addCallAgentAdmin(userId, displayName, company = '') {
   const adminClient = getAdminClient();
+
+  // If company not passed, resolve from user_roles
+  let comp = company;
+  if (!comp) {
+    const { data: u } = await adminClient.from('user_roles').select('company').eq('user_id', userId).maybeSingle();
+    comp = u?.company || '';
+  }
+
+  const { getWorkspaceCallingSeatQuota } = await import('@/utils/telephonyConfig');
+  const quota = await getWorkspaceCallingSeatQuota(comp);
+  if (!quota.canAdd) {
+    return {
+      success: false,
+      error: `Calling Seat Limit Reached (${quota.used}/${quota.total} Seats Allocated). Please contact Master Admin to upgrade calling seats.`
+    };
+  }
+
   const { data, error } = await adminClient.from('call_agents').insert({
     user_id: userId,
     display_name: displayName,
@@ -881,6 +898,16 @@ export async function autoProvisionCallAgent(userId, company = '') {
       .select('emp_name, emp_mobile, company')
       .eq('user_id', userId)
       .maybeSingle();
+
+    const userComp = company || user?.company || '';
+    const { getWorkspaceCallingSeatQuota } = await import('@/utils/telephonyConfig');
+    const quota = await getWorkspaceCallingSeatQuota(userComp);
+    if (!quota.canAdd) {
+      return {
+        success: false,
+        error: `Calling Seat Limit Reached (${quota.used}/${quota.total} Seats Allocated). Please contact your workspace administrator to assign a calling seat.`
+      };
+    }
 
     const displayName = user?.emp_name || 'Agent';
     const mobile = user?.emp_mobile || null;

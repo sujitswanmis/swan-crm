@@ -31,30 +31,36 @@ export async function POST(req) {
       return NextResponse.json({ error: 'Valid 10-digit Indian phone number required' }, { status: 400 });
     }
 
-    const authId = process.env.PLIVO_AUTH_ID;
-    const authToken = process.env.PLIVO_AUTH_TOKEN;
-    const fromNumber = process.env.PLIVO_FROM_NUMBER || '+918035340622';
-
-    if (!authId || !authToken) {
-      return NextResponse.json({ error: 'Plivo credentials not configured' }, { status: 500 });
-    }
-
-    const client = new plivo.Client(authId, authToken);
-    const roomName = clientRoomName || `room_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-    const outboundToken = outboundRoomToken(roomName);
-
     // Create Call Session in DB
     const adminClient = require('@supabase/supabase-js').createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL,
       process.env.SUPABASE_SERVICE_ROLE_KEY
     );
 
+    const { data: userRole } = await adminClient
+      .from('user_roles')
+      .select('company')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    const userCompany = userRole?.company || '';
+    const { getWorkspaceTelephonyConfig } = await import('@/utils/telephonyConfig');
+    const { authId, authToken, fromNumber } = await getWorkspaceTelephonyConfig(userCompany);
+
+    if (!authId || !authToken) {
+      return NextResponse.json({ error: 'Plivo credentials not configured for this workspace' }, { status: 500 });
+    }
+
+    const client = new plivo.Client(authId, authToken);
+    const roomName = clientRoomName || `room_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+    const outboundToken = outboundRoomToken(roomName);
+
     // Get Agent ID
     const { data: agentData } = await adminClient
       .from('call_agents')
       .select('id, plivo_sip_uri')
       .eq('user_id', user.id)
-      .single();
+      .maybeSingle();
 
     if (!agentData) {
       return NextResponse.json({ error: 'Agent profile not found' }, { status: 404 });

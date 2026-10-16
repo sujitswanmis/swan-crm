@@ -1,16 +1,15 @@
 import { NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
+import { getWorkspaceTelephonyConfig, getCompanySlug } from '@/utils/telephonyConfig';
 
 // GET /api/plivo/admin/endpoints
-// Fetch all Plivo endpoints using offset-based pagination.
-export async function GET() {
+// Fetch Plivo endpoints using offset-based pagination.
+export async function GET(req) {
   try {
-    const authId = (process.env.PLIVO_AUTH_ID || '')
-      .trim()
-      .replace(/['"]/g, '');
+    const company = req?.nextUrl?.searchParams?.get('company') || '';
+    const tenantId = req?.nextUrl?.searchParams?.get('tenant_id') || null;
 
-    const authToken = (process.env.PLIVO_AUTH_TOKEN || '')
-      .trim()
-      .replace(/['"]/g, '');
+    const { authId, authToken } = await getWorkspaceTelephonyConfig(company, tenantId);
 
     if (!authId || !authToken) {
       return NextResponse.json(
@@ -72,7 +71,6 @@ export async function GET() {
       offset += currentPageEndpoints.length;
     }
 
-
     const uniqueEndpoints = Array.from(
       new Map(
         allEndpoints.map((endpoint) => [
@@ -103,6 +101,123 @@ export async function GET() {
       {
         error: error.message || 'Unable to fetch Plivo endpoints.',
       },
+      { status: 500 }
+    );
+  }
+}
+
+// POST /api/plivo/admin/endpoints
+// Directly create a new SIP endpoint on Plivo REST API and register in agent_endpoint_registry
+export async function POST(req) {
+  try {
+    const body = await req.json();
+    const { alias, username, password, company, tenantId, assignToAgentId } = body;
+
+    if (!alias || !username || !password) {
+      return NextResponse.json(
+        { error: 'Alias, Username, and Password are required to create a SIP endpoint.' },
+        { status: 400 }
+      );
+    }
+
+    const cleanUsername = String(username).trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (cleanUsername.length < 3) {
+      return NextResponse.json(
+        { error: 'Username must be at least 3 alphanumeric characters.' },
+        { status: 400 }
+      );
+    }
+
+    const { authId, authToken } = await getWorkspaceTelephonyConfig(company, tenantId);
+
+    if (!authId || !authToken) {
+      return NextResponse.json(
+        { error: 'Plivo credentials are not configured for this workspace.' },
+        { status: 500 }
+      );
+    }
+
+    const b64 = Buffer.from(`${authId}:${authToken}`).toString('base64');
+    const plivoUrl = `https://api.plivo.com/v1/Account/${authId}/Endpoint/`;
+
+    const plivoRes = await fetch(plivoUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${b64}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        username: cleanUsername,
+        password: String(password).trim(),
+        alias: String(alias).trim()
+      })
+    });
+
+    const plivoData = await plivoRes.json();
+
+    if (!plivoRes.ok) {
+      console.error('Plivo endpoint create failed:', plivoData);
+      return NextResponse.json(
+        { error: plivoData?.error || plivoData?.message || 'Failed to create endpoint on Plivo cloud.' },
+        { status: plivoRes.status || 400 }
+      );
+    }
+
+    const sipUri = `sip:${cleanUsername}@phone.plivo.com`;
+    const slug = getCompanySlug(company || 'SWAN');
+    const endpointKey = `TC_${slug.toUpperCase()}_${Date.now().toString().slice(-5)}`;
+
+    const adminClient = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY
+    );
+
+    const { data: registryItem, error: regError } = await adminClient
+      .from('agent_endpoint_registry')
+      .insert({
+        endpoint_key: endpointKey,
+        alias: company ? `${alias.trim()} [${company}]` : alias.trim(),
+        username: cleanUsername,
+        sip_uri: sipUri,
+        endpoint_id: plivoData.endpoint_id || null,
+        status: 'available'
+      })
+      .select()
+      .single();
+
+    if (regError) {
+      console.warn('Endpoint registered in Plivo but failed in local registry:', regError);
+    }
+
+    // If agent ID was provided, assign endpoint immediately
+    if (assignToAgentId) {
+      await adminClient
+        .from('call_agents')
+        .update({
+          plivo_endpoint_key: endpointKey,
+          plivo_username: cleanUsername,
+          plivo_sip_uri: sipUri,
+          plivo_password: String(password).trim()
+        })
+        .eq('id', assignToAgentId);
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: `SIP Endpoint ${cleanUsername} created successfully on Plivo!`,
+      endpoint: {
+        endpoint_id: plivoData.endpoint_id,
+        username: cleanUsername,
+        sip_uri: sipUri,
+        alias: alias.trim(),
+        endpoint_key: endpointKey
+      }
+    });
+
+  } catch (err) {
+    console.error('Error creating Plivo endpoint:', err);
+    return NextResponse.json(
+      { error: err.message || 'Internal server error creating Plivo endpoint.' },
       { status: 500 }
     );
   }

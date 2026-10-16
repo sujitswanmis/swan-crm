@@ -52,13 +52,34 @@ export async function GET(req) {
       }
     } catch(e) {}
 
+    const configKey = `system_telephony_config_${scopeSlug}`;
+    const { data: telConfig } = await adminClient
+      .from('call_agents')
+      .select('agent_code, mobile_number, plivo_endpoint_key, plivo_password')
+      .eq('plivo_username', configKey)
+      .maybeSingle();
+
+    let parsedTel = {};
+    if (telConfig?.plivo_password) {
+      try { parsedTel = JSON.parse(telConfig.plivo_password); } catch(_) {}
+    }
+
+    const { getWorkspaceCallingSeatQuota } = await import('@/utils/telephonyConfig');
+    const seatQuota = await getWorkspaceCallingSeatQuota(company);
+
     return NextResponse.json({
       apps: appsList,
-      fromNumber: process.env.PLIVO_FROM_NUMBER || '',
+      fromNumber: telConfig?.mobile_number || parsedTel.from_number || process.env.PLIVO_FROM_NUMBER || '',
       defaultForward: dbSettings?.mobile_number || (isSwan ? (process.env.DEFAULT_FORWARD_TO || '') : ''),
       routingMode: inboundSettings?.agent_code || 'simultaneous',
       stickyAgent: inboundSettings?.plivo_endpoint_key !== 'false',
-      inboundAgentIds: Array.isArray(inboundAgentIds) ? inboundAgentIds : []
+      inboundAgentIds: Array.isArray(inboundAgentIds) ? inboundAgentIds : [],
+      telephonyMode: telConfig?.agent_code || parsedTel.mode || 'managed',
+      callingSeatLimit: parseInt(telConfig?.plivo_endpoint_key, 10) || parsedTel.calling_seat_limit || (isSwan ? 300 : 5),
+      plivoAuthId: parsedTel.auth_id || (isSwan ? (process.env.PLIVO_AUTH_ID || '') : ''),
+      hasCustomToken: Boolean(parsedTel.auth_token),
+      seatQuota,
+      isSwan
     });
   } catch (error) {
     console.error('Admin settings error:', error);
@@ -70,7 +91,19 @@ export async function GET(req) {
 export async function POST(req) {
   try {
     const body = await req.json();
-    const { defaultForward, routingMode, stickyAgent, inboundAgentIds, company } = body;
+    const {
+      action,
+      defaultForward,
+      routingMode,
+      stickyAgent,
+      inboundAgentIds,
+      company,
+      telephonyMode,
+      plivoAuthId,
+      plivoAuthToken,
+      callerId,
+      callingSeatLimit
+    } = body;
 
     const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl'];
     const compLower = (company || '').toLowerCase().trim();
@@ -78,11 +111,84 @@ export async function POST(req) {
     const scopeSlug = isSwan ? '' : compLower.replace(/[^a-z0-9]/g, '_');
     const forwardKey = isSwan ? 'system_settings_forward' : `system_settings_forward_${scopeSlug}`;
     const inboundKey = isSwan ? 'system_settings_inbound' : `system_settings_inbound_${scopeSlug}`;
+    const configKey = `system_telephony_config_${scopeSlug}`;
+
+    // Test Connection Action
+    if (action === 'test_connection') {
+      const testId = (plivoAuthId || process.env.PLIVO_AUTH_ID || '').trim();
+      const testToken = (plivoAuthToken || process.env.PLIVO_AUTH_TOKEN || '').trim();
+      if (!testId || !testToken) {
+        return NextResponse.json({ success: false, error: 'Plivo Auth ID and Auth Token are required.' }, { status: 400 });
+      }
+      const b64 = Buffer.from(`${testId}:${testToken}`).toString('base64');
+      const testRes = await fetch(`https://api.plivo.com/v1/Account/${testId}/`, {
+        headers: { 'Authorization': `Basic ${b64}` }
+      });
+      const testData = await testRes.json();
+      if (!testRes.ok) {
+        return NextResponse.json({ success: false, error: testData?.error || testData?.message || 'Invalid Plivo credentials' }, { status: 400 });
+      }
+      return NextResponse.json({
+        success: true,
+        message: `Plivo Connection Verified! Account: ${testData.name || testId} (Credits: ${testData.cash_credits || '0'} ${testData.currency || 'USD'})`
+      });
+    }
 
     const adminClient = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL,
       process.env.SUPABASE_SERVICE_ROLE_KEY
     );
+
+    // Update Telephony Mode & BYOC Credentials & Seat Limit
+    if (telephonyMode !== undefined || plivoAuthId !== undefined || callingSeatLimit !== undefined || callerId !== undefined) {
+      const { data: existingTel } = await adminClient
+        .from('call_agents')
+        .select('id, plivo_password')
+        .eq('plivo_username', configKey)
+        .maybeSingle();
+
+      let existingPayload = {};
+      if (existingTel?.plivo_password) {
+        try { existingPayload = JSON.parse(existingTel.plivo_password); } catch(_) {}
+      }
+
+      const updatedPayload = {
+        ...existingPayload,
+        mode: telephonyMode || existingPayload.mode || 'managed',
+        auth_id: plivoAuthId !== undefined ? plivoAuthId.trim() : (existingPayload.auth_id || ''),
+        from_number: callerId !== undefined ? callerId.trim() : (existingPayload.from_number || ''),
+        calling_seat_limit: parseInt(callingSeatLimit, 10) || existingPayload.calling_seat_limit || (isSwan ? 300 : 5)
+      };
+
+      if (plivoAuthToken && plivoAuthToken.trim() && !plivoAuthToken.includes('••••')) {
+        updatedPayload.auth_token = plivoAuthToken.trim();
+      }
+
+      if (existingTel) {
+        await adminClient
+          .from('call_agents')
+          .update({
+            agent_code: updatedPayload.mode,
+            mobile_number: updatedPayload.from_number,
+            plivo_endpoint_key: String(updatedPayload.calling_seat_limit),
+            plivo_password: JSON.stringify(updatedPayload)
+          })
+          .eq('plivo_username', configKey);
+      } else {
+        await adminClient
+          .from('call_agents')
+          .insert({
+            display_name: isSwan ? 'Swan Telephony Config' : `Telephony Config (${company})`,
+            plivo_username: configKey,
+            agent_code: updatedPayload.mode,
+            mobile_number: updatedPayload.from_number,
+            plivo_endpoint_key: String(updatedPayload.calling_seat_limit),
+            plivo_password: JSON.stringify(updatedPayload),
+            is_active: false,
+            status: 'offline'
+          });
+      }
+    }
 
     if (defaultForward !== undefined) {
       const { data: existingFwd } = await adminClient

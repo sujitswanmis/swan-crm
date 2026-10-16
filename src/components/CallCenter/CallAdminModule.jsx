@@ -8,7 +8,8 @@ import {
   Play, Pause,
   UserPlus, Edit2, Trash2, ChevronRight, Server, Radio,
   PhoneIncoming, PhoneOutgoing, ArrowRight, Eye, Filter,
-  Calendar, Search, ToggleLeft, ToggleRight, Save, Bell, FileSpreadsheet
+  Calendar, Search, ToggleLeft, ToggleRight, Save, Bell, FileSpreadsheet,
+  Plus, X, Key, ShieldCheck, Cpu
 } from 'lucide-react';
 import { getTeamMembers, getCallAdminData, addCallAgentAdmin, updateCallAgentAdmin } from '@/app/actions/team';
 import { PremiumProgressLoader } from '../PremiumProgressLoader';
@@ -245,7 +246,7 @@ const getISTDateRange = (preset, customStart, customEnd) => {
 // ─── Sub-components ─────────────────────────────────────────
 
 // ── Tab: Agents ──────────────────────────────────────────────
-function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, addCallAgentAdmin }) {
+function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, addCallAgentAdmin, userCompany = '', seatQuota = null }) {
   const [saving, setSaving] = useState({});
   const [selectedUserId, setSelectedUserId] = useState('');
   const [adding, setAdding] = useState(false);
@@ -266,9 +267,13 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
 
   const handleAdd = async () => {
     if (!selectedUserId) return;
+    if (seatQuota && !seatQuota.canAdd) {
+      alert(`Calling seat limit reached (${seatQuota.used}/${seatQuota.total}). Please increase calling seat allocation in Settings before adding more agents.`);
+      return;
+    }
     setAdding(true);
     const user = users.find(u => u.user_id === selectedUserId);
-    const res = await addCallAgentAdmin(selectedUserId, user?.emp_name || 'Agent');
+    const res = await addCallAgentAdmin(selectedUserId, user?.emp_name || 'Agent', userCompany);
     if (!res.success) alert('Failed: ' + res.error);
     else { setSelectedUserId(''); await onRefresh(); }
     setAdding(false);
@@ -308,13 +313,34 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
     <div>
       {/* Add Agent */}
       <div style={{ background:'white', borderRadius:'12px', padding:'1.5rem', marginBottom:'1.5rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0' }}>
-        <h3 style={{ fontSize:'1rem', fontWeight:600, marginBottom:'1rem', display:'flex', alignItems:'center', gap:'0.5rem', color:'#1e293b' }}>
-          <UserPlus size={18} color="#3b82f6" /> Add User to Call Center
-        </h3>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'1rem', flexWrap:'wrap', gap:'0.5rem' }}>
+          <h3 style={{ fontSize:'1rem', fontWeight:600, margin:0, display:'flex', alignItems:'center', gap:'0.5rem', color:'#1e293b' }}>
+            <UserPlus size={18} color="#3b82f6" /> Add User to Call Center
+          </h3>
+          {seatQuota && (
+            <div style={{
+              display:'flex', alignItems:'center', gap:'0.5rem',
+              background: seatQuota.canAdd ? '#f0fdf4' : '#fef2f2',
+              border: `1px solid ${seatQuota.canAdd ? '#bbf7d0' : '#fecaca'}`,
+              padding:'0.35rem 0.85rem', borderRadius:'8px', fontSize:'0.82rem'
+            }}>
+              <Users size={15} color={seatQuota.canAdd ? '#16a34a' : '#dc2626'} />
+              <span style={{ fontWeight: 600, color: seatQuota.canAdd ? '#15803d' : '#b91c1c' }}>
+                Calling Seats: {seatQuota.used} / {seatQuota.total} Used
+              </span>
+              {!seatQuota.canAdd && (
+                <span style={{ color: '#dc2626', fontWeight: 700, marginLeft: '0.25rem', fontSize:'0.75rem' }}>
+                  (Limit Reached)
+                </span>
+              )}
+            </div>
+          )}
+        </div>
         <div style={{ display:'flex', gap:'1rem', alignItems:'center' }}>
           <select
             value={selectedUserId}
             onChange={e => setSelectedUserId(e.target.value)}
+            disabled={seatQuota && !seatQuota.canAdd}
             style={{ flex:1, padding:'0.65rem 1rem', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'0.9rem', background:'white' }}
           >
             <option value="">Select Team Member…</option>
@@ -324,14 +350,28 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
           </select>
           <button
             onClick={handleAdd}
-            disabled={adding || !selectedUserId}
-            style={{ padding:'0.65rem 1.5rem', background:'#3b82f6', color:'white', border:'none', borderRadius:'8px', fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:'0.5rem', opacity: adding||!selectedUserId ? 0.6 : 1 }}
+            disabled={adding || !selectedUserId || (seatQuota && !seatQuota.canAdd)}
+            style={{
+              padding:'0.65rem 1.5rem',
+              background: (seatQuota && !seatQuota.canAdd) ? '#94a3b8' : '#3b82f6',
+              color:'white', border:'none', borderRadius:'8px', fontWeight:600,
+              cursor: (seatQuota && !seatQuota.canAdd) ? 'not-allowed' : 'pointer',
+              display:'flex', alignItems:'center', gap:'0.5rem',
+              opacity: (adding || !selectedUserId || (seatQuota && !seatQuota.canAdd)) ? 0.6 : 1
+            }}
           >
             {adding ? <Loader2 size={16} className="spin" /> : <UserPlus size={16} />}
             Authorize
           </button>
         </div>
-        {unassigned.length === 0 && <p style={{ color:'#94a3b8', fontSize:'0.85rem', marginTop:'0.75rem' }}>All team members are already in the call center.</p>}
+        {seatQuota && !seatQuota.canAdd && (
+          <p style={{ color:'#dc2626', fontSize:'0.82rem', marginTop:'0.75rem', fontWeight: 500 }}>
+            ⚠️ Calling seat allocation full ({seatQuota.used}/{seatQuota.total}). To add more agents, increase the calling seat quota under Settings.
+          </p>
+        )}
+        {unassigned.length === 0 && (!seatQuota || seatQuota.canAdd) && (
+          <p style={{ color:'#94a3b8', fontSize:'0.85rem', marginTop:'0.75rem' }}>All team members are already in the call center.</p>
+        )}
       </div>
 
       {/* Agents Table */}
@@ -453,10 +493,19 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
 }
 
 // ── Tab: SIP Endpoints ────────────────────────────────────────
-function TabEndpoints({ userCompany = '', tenantId = null }) {
+function TabEndpoints({ userCompany = '', tenantId = null, agents = [], onRefresh = null }) {
   const [endpoints, setEndpoints] = useState([]);
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(null);
+
+  // Endpoint Creation Modal State
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newAlias, setNewAlias] = useState('');
+  const [newUsername, setNewUsername] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [assignAgentId, setAssignAgentId] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState('');
 
   const {
     colWidths,
@@ -470,28 +519,67 @@ function TabEndpoints({ userCompany = '', tenantId = null }) {
     CALL_ADMIN_ENDPOINTS_MIN_COL_WIDTHS
   );
 
-  const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl'];
-  const reqLower = String(userCompany || '').toLowerCase().trim();
-  const isSwan = !userCompany || SWAN_COMPANIES.includes(reqLower);
-
   const fetchEndpoints = useCallback(async () => {
     setLoading(true);
     try {
-      if (!isSwan) {
-        const { getCallAdminData } = await import('@/app/actions/team');
-        const adminData = await getCallAdminData(userCompany, tenantId);
-        setEndpoints(adminData.endpoints || []);
-      } else {
-        const res = await fetch('/api/plivo/admin/endpoints');
-        const data = await res.json();
-        setEndpoints(data.endpoints || []);
-      }
+      const q = new URLSearchParams();
+      if (userCompany) q.set('company', userCompany);
+      if (tenantId) q.set('tenant_id', tenantId);
+      const res = await fetch(`/api/plivo/admin/endpoints?${q.toString()}`);
+      const data = await res.json();
+      setEndpoints(data.endpoints || []);
       setLastRefresh(new Date());
     } catch (e) { console.error(e); }
     setLoading(false);
-  }, [userCompany, tenantId, isSwan]);
+  }, [userCompany, tenantId]);
 
   useEffect(() => { fetchEndpoints(); }, [fetchEndpoints]);
+
+  const generateRandomCredentials = () => {
+    const rand = Math.random().toString(36).substring(2, 7);
+    const cleanComp = (userCompany || 'agent').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 8);
+    setNewUsername(`ep_${cleanComp}_${rand}`);
+    setNewPassword(`Sip#${Math.random().toString(36).substring(2, 8)}!${Math.floor(100 + Math.random() * 900)}`);
+  };
+
+  const handleCreateEndpoint = async (e) => {
+    if (e) e.preventDefault();
+    if (!newAlias.trim()) { setCreateError('Alias is required'); return; }
+    if (!newUsername.trim()) { setCreateError('Username is required'); return; }
+    if (!newPassword.trim()) { setCreateError('Password is required'); return; }
+    setCreating(true);
+    setCreateError('');
+    try {
+      const res = await fetch('/api/plivo/admin/endpoints', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          company: userCompany,
+          tenant_id: tenantId,
+          alias: newAlias.trim(),
+          username: newUsername.trim().toLowerCase(),
+          password: newPassword.trim(),
+          assignToAgentId: assignAgentId || null
+        })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to create endpoint');
+      }
+      setShowCreateModal(false);
+      setNewAlias('');
+      setNewUsername('');
+      setNewPassword('');
+      setAssignAgentId('');
+      await fetchEndpoints();
+      if (onRefresh) await onRefresh();
+      alert(`Endpoint "${data.alias || newAlias}" created successfully!`);
+    } catch (err) {
+      setCreateError(err.message);
+    } finally {
+      setCreating(false);
+    }
+  };
 
   const registered = endpoints.filter(e => e.sip_registered === 'true').length;
 
@@ -517,12 +605,27 @@ function TabEndpoints({ userCompany = '', tenantId = null }) {
       </div>
 
       <div style={{ background:'white', borderRadius:'12px', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0', overflow:'hidden' }}>
-        <div style={{ padding:'1.25rem 1.5rem', borderBottom:'1px solid #f1f5f9', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-          <h3 style={{ fontSize:'1rem', fontWeight:600, color:'#1e293b', display:'flex', alignItems:'center', gap:'0.5rem' }}>
+        <div style={{ padding:'1.25rem 1.5rem', borderBottom:'1px solid #f1f5f9', display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:'1rem' }}>
+          <h3 style={{ fontSize:'1rem', fontWeight:600, color:'#1e293b', display:'flex', alignItems:'center', gap:'0.5rem', margin:0 }}>
             <Server size={18} color="#3b82f6" /> Plivo SIP Endpoints
           </h3>
-          <div style={{ display:'flex', alignItems:'center', gap:'1rem' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:'0.75rem' }}>
             {lastRefresh && <span style={{ fontSize:'0.75rem', color:'#94a3b8' }}>Updated {lastRefresh.toLocaleTimeString()}</span>}
+            <button
+              onClick={() => {
+                generateRandomCredentials();
+                setCreateError('');
+                setShowCreateModal(true);
+              }}
+              style={{
+                display:'flex', alignItems:'center', gap:'0.4rem',
+                padding:'0.5rem 1rem', background:'#2563eb', color:'white',
+                border:'none', borderRadius:'8px', cursor:'pointer', fontSize:'0.85rem', fontWeight:600,
+                boxShadow:'0 1px 2px rgba(37,99,235,0.2)'
+              }}
+            >
+              <Plus size={15} /> Create SIP Endpoint
+            </button>
             <button onClick={fetchEndpoints} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.5rem 1rem', background:'#f1f5f9', border:'none', borderRadius:'8px', cursor:'pointer', fontSize:'0.85rem', fontWeight:500 }}>
               <RefreshCw size={14} className={loading ? 'spin' : ''} /> Refresh
             </button>
@@ -593,11 +696,25 @@ function TabEndpoints({ userCompany = '', tenantId = null }) {
                     <div style={{ maxWidth: '440px', margin: '0 auto' }}>
                       <Server size={36} color="#94a3b8" style={{ margin: '0 auto 0.75rem' }} />
                       <div style={{ fontWeight: 700, color: '#1e293b', fontSize: '1rem', marginBottom: '0.35rem' }}>
-                        No External SIP Trunks Configured
+                        No SIP Endpoints Registered
                       </div>
-                      <div style={{ fontSize: '0.85rem', color: '#64748b', lineHeight: 1.5 }}>
-                        This workspace operates on direct browser WebRTC and mobile dialer. External SIP trunks are only needed for custom hardware PBX or third-party desktop softphones.
+                      <div style={{ fontSize: '0.85rem', color: '#64748b', lineHeight: 1.5, marginBottom: '1rem' }}>
+                        Create a Plivo SIP endpoint using the button above to assign softphone calling lines to telecallers.
                       </div>
+                      <button
+                        onClick={() => {
+                          generateRandomCredentials();
+                          setCreateError('');
+                          setShowCreateModal(true);
+                        }}
+                        style={{
+                          padding:'0.5rem 1rem', background:'#2563eb', color:'white',
+                          border:'none', borderRadius:'8px', cursor:'pointer', fontSize:'0.85rem', fontWeight:600
+                        }}
+                      >
+                        <Plus size={15} style={{ display:'inline', verticalAlign:'middle', marginRight:'4px' }} />
+                        Create First Endpoint
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -606,6 +723,152 @@ function TabEndpoints({ userCompany = '', tenantId = null }) {
           </table></MobileTableView>
         </div>
       </div>
+
+      {/* Direct Plivo SIP Endpoint Creation Modal */}
+      {showCreateModal && (
+        <div style={{
+          position:'fixed', inset:0, zIndex:9999,
+          background:'rgba(15,23,42,0.6)', backdropFilter:'blur(4px)',
+          display:'flex', alignItems:'center', justifyContent:'center', padding:'1rem'
+        }}>
+          <div style={{
+            background:'white', borderRadius:'14px', maxWidth:'520px', width:'100%',
+            boxShadow:'0 20px 25px -5px rgba(0,0,0,0.2)', border:'1px solid #e2e8f0',
+            overflow:'hidden'
+          }}>
+            <div style={{ padding:'1.25rem 1.5rem', borderBottom:'1px solid #f1f5f9', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:'0.6rem' }}>
+                <div style={{ width:36, height:36, borderRadius:'8px', background:'#eff6ff', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                  <Server size={18} color="#2563eb" />
+                </div>
+                <div>
+                  <h3 style={{ margin:0, fontSize:'1.05rem', fontWeight:700, color:'#1e293b' }}>Create Plivo SIP Endpoint</h3>
+                  <p style={{ margin:0, fontSize:'0.75rem', color:'#64748b' }}>Creates live endpoint on Plivo API instantly</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowCreateModal(false)}
+                style={{ background:'none', border:'none', color:'#94a3b8', cursor:'pointer', padding:'4px', display:'flex' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateEndpoint} style={{ padding:'1.5rem', display:'flex', flexDirection:'column', gap:'1.1rem' }}>
+              {createError && (
+                <div style={{ padding:'0.75rem 1rem', background:'#fef2f2', border:'1px solid #fecaca', borderRadius:'8px', color:'#dc2626', fontSize:'0.82rem', display:'flex', alignItems:'center', gap:'0.5rem' }}>
+                  <AlertCircle size={16} />
+                  <span>{createError}</span>
+                </div>
+              )}
+
+              <div>
+                <label style={{ display:'block', fontSize:'0.82rem', fontWeight:600, color:'#334155', marginBottom:'0.35rem' }}>
+                  Endpoint Alias / Friendly Name *
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Sales Desk 1 or Telecaller Seat 3"
+                  value={newAlias}
+                  onChange={e => setNewAlias(e.target.value)}
+                  style={{ width:'100%', boxSizing:'border-box', padding:'0.6rem 0.85rem', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'0.88rem' }}
+                  required
+                />
+              </div>
+
+              <div>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'0.35rem' }}>
+                  <label style={{ fontSize:'0.82rem', fontWeight:600, color:'#334155' }}>
+                    SIP Username *
+                  </label>
+                  <button
+                    type="button"
+                    onClick={generateRandomCredentials}
+                    style={{ background:'none', border:'none', color:'#2563eb', fontSize:'0.75rem', fontWeight:600, cursor:'pointer' }}
+                  >
+                    🎲 Auto Generate
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  placeholder="e.g. ep_telecaller_01 (lowercase letters/digits)"
+                  value={newUsername}
+                  onChange={e => setNewUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+                  style={{ width:'100%', boxSizing:'border-box', padding:'0.6rem 0.85rem', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'0.88rem', fontFamily:'monospace' }}
+                  required
+                />
+              </div>
+
+              <div>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'0.35rem' }}>
+                  <label style={{ fontSize:'0.82rem', fontWeight:600, color:'#334155' }}>
+                    SIP Password *
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setNewPassword(`Sip#${Math.random().toString(36).substring(2, 8)}!${Math.floor(100 + Math.random() * 900)}`)}
+                    style={{ background:'none', border:'none', color:'#2563eb', fontSize:'0.75rem', fontWeight:600, cursor:'pointer' }}
+                  >
+                    🎲 New Password
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  placeholder="Secure password for WebRTC / Softphone registration"
+                  value={newPassword}
+                  onChange={e => setNewPassword(e.target.value)}
+                  style={{ width:'100%', boxSizing:'border-box', padding:'0.6rem 0.85rem', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'0.88rem', fontFamily:'monospace' }}
+                  required
+                />
+              </div>
+
+              {agents?.length > 0 && (
+                <div>
+                  <label style={{ display:'block', fontSize:'0.82rem', fontWeight:600, color:'#334155', marginBottom:'0.35rem' }}>
+                    Assign Directly to Agent (Optional)
+                  </label>
+                  <select
+                    value={assignAgentId}
+                    onChange={e => setAssignAgentId(e.target.value)}
+                    style={{ width:'100%', boxSizing:'border-box', padding:'0.6rem 0.85rem', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'0.88rem', background:'white' }}
+                  >
+                    <option value="">— Leave Unassigned (Keep Available in Pool) —</option>
+                    {agents.map(a => (
+                      <option key={a.id} value={a.id}>
+                        {a.display_name} {a.plivo_endpoint_key ? '(Has Endpoint)' : '(No Endpoint)'}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div style={{ display:'flex', justifyContent:'flex-end', gap:'0.75rem', marginTop:'0.5rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowCreateModal(false)}
+                  disabled={creating}
+                  style={{ padding:'0.6rem 1.25rem', borderRadius:'8px', border:'1px solid #cbd5e1', background:'white', color:'#475569', fontWeight:600, fontSize:'0.85rem', cursor:'pointer' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={creating}
+                  style={{
+                    padding:'0.6rem 1.4rem', borderRadius:'8px', border:'none',
+                    background:'#2563eb', color:'white', fontWeight:700, fontSize:'0.85rem',
+                    cursor:'pointer', display:'flex', alignItems:'center', gap:'0.5rem',
+                    opacity: creating ? 0.7 : 1
+                  }}
+                >
+                  {creating ? <Loader2 size={16} className="spin" /> : <Plus size={16} />}
+                  {creating ? 'Creating on Plivo...' : 'Create Endpoint'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1466,6 +1729,17 @@ function TabSettings({ agents = [], userCompany = '', tenantId = null }) {
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
+  // Telephony Gateway & BYOC State
+  const [telephonyMode, setTelephonyMode] = useState('managed'); // 'byoc' | 'managed'
+  const [plivoAuthId, setPlivoAuthId] = useState('');
+  const [plivoAuthToken, setPlivoAuthToken] = useState('');
+  const [callerId, setCallerId] = useState('');
+  const [callingSeatLimit, setCallingSeatLimit] = useState(5);
+  const [seatQuota, setSeatQuota] = useState(null);
+  const [showAuthToken, setShowAuthToken] = useState(false);
+  const [testingConnection, setTestingConnection] = useState(false);
+  const [testResult, setTestResult] = useState(null);
+
   const fetchSettings = useCallback(() => {
     setLoading(true);
     fetch(`/api/plivo/admin/settings?company=${encodeURIComponent(userCompany || '')}&tenant_id=${tenantId || ''}`)
@@ -1476,6 +1750,12 @@ function TabSettings({ agents = [], userCompany = '', tenantId = null }) {
         setRoutingMode(d.routingMode || 'simultaneous');
         setStickyAgent(d.stickyAgent !== false);
         setInboundAgentIds(Array.isArray(d.inboundAgentIds) ? d.inboundAgentIds : []);
+        setTelephonyMode(d.telephonyMode || (d.isSwan ? 'managed' : (d.plivoAuthId ? 'byoc' : 'managed')));
+        setPlivoAuthId(d.plivoAuthId || '');
+        setPlivoAuthToken(d.plivoAuthToken || '');
+        setCallerId(d.callerId || d.fromNumber || '');
+        setCallingSeatLimit(d.callingSeatLimit || (d.isSwan ? 300 : 5));
+        if (d.seatQuota) setSeatQuota(d.seatQuota);
         setLoading(false);
       })
       .catch(() => setLoading(false));
@@ -1484,6 +1764,30 @@ function TabSettings({ agents = [], userCompany = '', tenantId = null }) {
   useEffect(() => {
     fetchSettings();
   }, [fetchSettings]);
+
+  const handleTestConnection = async () => {
+    setTestingConnection(true);
+    setTestResult(null);
+    try {
+      const res = await fetch('/api/plivo/admin/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'test_connection',
+          company: userCompany,
+          tenantId,
+          plivoAuthId,
+          plivoAuthToken
+        })
+      });
+      const data = await res.json();
+      setTestResult(data);
+    } catch (err) {
+      setTestResult({ success: false, error: err.message });
+    } finally {
+      setTestingConnection(false);
+    }
+  };
 
   const handleSave = async (e) => {
     if (e) e.preventDefault();
@@ -1500,7 +1804,12 @@ function TabSettings({ agents = [], userCompany = '', tenantId = null }) {
           defaultForward: cleanNum,
           routingMode,
           stickyAgent,
-          inboundAgentIds
+          inboundAgentIds,
+          telephonyMode,
+          plivoAuthId,
+          plivoAuthToken,
+          callerId,
+          callingSeatLimit: parseInt(callingSeatLimit, 10) || 5
         })
       });
       const data = await res.json();
@@ -1584,6 +1893,202 @@ function TabSettings({ agents = [], userCompany = '', tenantId = null }) {
             {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
             {saving ? 'Saving...' : 'Save Inbound Settings'}
           </button>
+        </div>
+      </div>
+
+      {/* Telephony Gateway & BYOC Configuration Card */}
+      <div style={{ background:'white', borderRadius:'12px', padding:'1.5rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0', display:'flex', flexDirection:'column', gap:'1.25rem' }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', flexWrap:'wrap', gap:'0.75rem' }}>
+          <div>
+            <h3 style={{ fontSize:'1.05rem', fontWeight:700, margin:0, color:'#1e293b', display:'flex', alignItems:'center', gap:'0.5rem' }}>
+              <Key size={18} color="#3b82f6" /> Telephony Gateway & Credential Setup
+            </h3>
+            <p style={{ color:'#64748b', fontSize:'0.82rem', marginTop:'0.25rem' }}>
+              Configure how this workspace connects to Plivo (Shared Platform Gateway vs Client BYOC) and manage active softphone calling seats.
+            </p>
+          </div>
+          {seatQuota && (
+            <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', background:'#eff6ff', border:'1px solid #bfdbfe', padding:'0.4rem 0.85rem', borderRadius:'8px', fontSize:'0.82rem' }}>
+              <Users size={16} color="#2563eb" />
+              <span style={{ fontWeight:700, color:'#1e40af' }}>
+                Calling Seats: {seatQuota.used} / {seatQuota.total} Used
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* Telephony Mode Selection */}
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(260px, 1fr))', gap:'1rem' }}>
+          <label
+            onClick={() => setTelephonyMode('managed')}
+            style={{
+              display:'flex', alignItems:'flex-start', gap:'0.85rem', padding:'1rem',
+              borderRadius:'10px',
+              border: telephonyMode === 'managed' ? '2px solid #2563eb' : '1px solid #e2e8f0',
+              background: telephonyMode === 'managed' ? '#eff6ff' : '#f8fafc',
+              cursor:'pointer', transition:'all 0.15s'
+            }}
+          >
+            <input
+              type="radio"
+              name="telephonyMode"
+              value="managed"
+              checked={telephonyMode === 'managed'}
+              onChange={() => setTelephonyMode('managed')}
+              style={{ marginTop:'0.2rem', accentColor:'#2563eb' }}
+            />
+            <div>
+              <div style={{ fontWeight:700, color:'#1e293b', fontSize:'0.9rem', display:'flex', alignItems:'center', gap:'0.4rem' }}>
+                <Cpu size={16} color="#2563eb" /> Managed Telephony (Platform)
+              </div>
+              <div style={{ fontSize:'0.78rem', color:'#64748b', marginTop:'0.25rem', lineHeight:1.4 }}>
+                Uses platform&apos;s managed Plivo gateway and pre-allotted SIP endpoints. Ideal for turnkey calling without customer-provided Plivo keys.
+              </div>
+            </div>
+          </label>
+
+          <label
+            onClick={() => setTelephonyMode('byoc')}
+            style={{
+              display:'flex', alignItems:'flex-start', gap:'0.85rem', padding:'1rem',
+              borderRadius:'10px',
+              border: telephonyMode === 'byoc' ? '2px solid #2563eb' : '1px solid #e2e8f0',
+              background: telephonyMode === 'byoc' ? '#eff6ff' : '#f8fafc',
+              cursor:'pointer', transition:'all 0.15s'
+            }}
+          >
+            <input
+              type="radio"
+              name="telephonyMode"
+              value="byoc"
+              checked={telephonyMode === 'byoc'}
+              onChange={() => setTelephonyMode('byoc')}
+              style={{ marginTop:'0.2rem', accentColor:'#2563eb' }}
+            />
+            <div>
+              <div style={{ fontWeight:700, color:'#1e293b', fontSize:'0.9rem', display:'flex', alignItems:'center', gap:'0.4rem' }}>
+                <ShieldCheck size={16} color="#16a34a" /> BYOC (Bring Your Own Plivo)
+              </div>
+              <div style={{ fontSize:'0.78rem', color:'#64748b', marginTop:'0.25rem', lineHeight:1.4 }}>
+                Client workspace uses their own Plivo Auth ID, Auth Token, and rented caller numbers. Full billing isolation and independent endpoints.
+              </div>
+            </div>
+          </label>
+        </div>
+
+        {/* BYOC Credentials Form (shown when BYOC is active) */}
+        {telephonyMode === 'byoc' && (
+          <div style={{ padding:'1.25rem', background:'#f8fafc', borderRadius:'10px', border:'1px solid #e2e8f0', display:'flex', flexDirection:'column', gap:'1rem' }}>
+            <div style={{ fontSize:'0.85rem', fontWeight:700, color:'#1e293b' }}>
+              Plivo API Credentials &amp; Caller ID
+            </div>
+
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(280px, 1fr))', gap:'1rem' }}>
+              <div>
+                <label style={{ display:'block', fontSize:'0.8rem', fontWeight:600, color:'#475569', marginBottom:'0.3rem' }}>
+                  Plivo Auth ID *
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. MAMJFHXXXXXXXXXXXXXXXX"
+                  value={plivoAuthId}
+                  onChange={e => setPlivoAuthId(e.target.value.trim())}
+                  style={{ width:'100%', boxSizing:'border-box', padding:'0.55rem 0.8rem', borderRadius:'6px', border:'1px solid #cbd5e1', fontSize:'0.85rem', fontFamily:'monospace', background:'white' }}
+                />
+              </div>
+
+              <div>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'0.3rem' }}>
+                  <label style={{ fontSize:'0.8rem', fontWeight:600, color:'#475569' }}>
+                    Plivo Auth Token *
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowAuthToken(!showAuthToken)}
+                    style={{ background:'none', border:'none', color:'#2563eb', fontSize:'0.72rem', cursor:'pointer' }}
+                  >
+                    {showAuthToken ? 'Hide' : 'Show'}
+                  </button>
+                </div>
+                <input
+                  type={showAuthToken ? 'text' : 'password'}
+                  placeholder="e.g. NTdiOWXXXXXXXXXXXXXXXXXXXXXXXXXX"
+                  value={plivoAuthToken}
+                  onChange={e => setPlivoAuthToken(e.target.value.trim())}
+                  style={{ width:'100%', boxSizing:'border-box', padding:'0.55rem 0.8rem', borderRadius:'6px', border:'1px solid #cbd5e1', fontSize:'0.85rem', fontFamily:'monospace', background:'white' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display:'block', fontSize:'0.8rem', fontWeight:600, color:'#475569', marginBottom:'0.3rem' }}>
+                  Caller ID (From Phone Number)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. +91XXXXXXXXXX"
+                  value={callerId}
+                  onChange={e => setCallerId(e.target.value.trim())}
+                  style={{ width:'100%', boxSizing:'border-box', padding:'0.55rem 0.8rem', borderRadius:'6px', border:'1px solid #cbd5e1', fontSize:'0.85rem', fontFamily:'monospace', background:'white' }}
+                />
+              </div>
+            </div>
+
+            <div style={{ display:'flex', alignItems:'center', gap:'1rem', marginTop:'0.5rem', flexWrap:'wrap' }}>
+              <button
+                type="button"
+                onClick={handleTestConnection}
+                disabled={testingConnection || !plivoAuthId || !plivoAuthToken}
+                style={{
+                  display:'flex', alignItems:'center', gap:'0.4rem',
+                  padding:'0.5rem 1rem', borderRadius:'6px', border:'1px solid #cbd5e1',
+                  background:'white', color:'#1e293b', fontWeight:600, fontSize:'0.82rem',
+                  cursor:'pointer', opacity: (testingConnection || !plivoAuthId || !plivoAuthToken) ? 0.6 : 1
+                }}
+              >
+                {testingConnection ? <Loader2 size={14} className="spin" /> : <Activity size={14} color="#2563eb" />}
+                {testingConnection ? 'Testing Connection...' : 'Test Plivo Connection'}
+              </button>
+
+              {testResult && (
+                <div style={{
+                  display:'flex', alignItems:'center', gap:'0.4rem',
+                  padding:'0.4rem 0.75rem', borderRadius:'6px', fontSize:'0.8rem', fontWeight:600,
+                  background: testResult.success ? '#dcfce7' : '#fee2e2',
+                  color: testResult.success ? '#15803d' : '#b91c1c'
+                }}>
+                  {testResult.success ? <CheckCircle size={14} /> : <XCircle size={14} />}
+                  <span>{testResult.success ? `Connected! Account: ${testResult.accountName || 'Active'}` : `Failed: ${testResult.error}`}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Calling Seat Quota Setting */}
+        <div style={{ padding:'1rem 1.25rem', background:'#f8fafc', borderRadius:'10px', border:'1px solid #e2e8f0', display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:'1rem' }}>
+          <div>
+            <div style={{ fontWeight:700, color:'#1e293b', fontSize:'0.9rem', display:'flex', alignItems:'center', gap:'0.4rem' }}>
+              <Users size={16} color="#7c3aed" /> Workspace Calling Seat Allocation
+            </div>
+            <div style={{ fontSize:'0.78rem', color:'#64748b', marginTop:'0.2rem', lineHeight:1.4 }}>
+              Set maximum number of telecallers allowed to use the Softphone concurrently in this workspace.
+            </div>
+          </div>
+          <div style={{ display:'flex', alignItems:'center', gap:'0.75rem' }}>
+            <span style={{ fontSize:'0.82rem', color:'#475569', fontWeight:600 }}>Seat Limit:</span>
+            <input
+              type="number"
+              min="1"
+              max="500"
+              value={callingSeatLimit}
+              onChange={e => setCallingSeatLimit(Math.max(1, parseInt(e.target.value, 10) || 1))}
+              style={{
+                width:'90px', padding:'0.45rem 0.65rem', borderRadius:'6px',
+                border:'1px solid #cbd5e1', fontSize:'0.9rem', fontWeight:700,
+                textAlign:'center', background:'white'
+              }}
+            />
+          </div>
         </div>
       </div>
 
@@ -1989,22 +2494,27 @@ export default function CallAdminModule({
   const [agents, setAgents] = useState([]);
   const [endpoints, setEndpoints] = useState([]);
   const [users, setUsers] = useState([]);
+  const [seatQuota, setSeatQuota] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
     try {
-      const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl'];
-      const reqLower = String(userCompany || '').toLowerCase().trim();
-      const isSwan = !userCompany || SWAN_COMPANIES.includes(reqLower);
+      const q = new URLSearchParams();
+      if (userCompany) q.set('company', userCompany);
+      if (tenantId) q.set('tenant_id', tenantId);
 
-      const [userData, adminData, endpointsRes] = await Promise.all([
+      const [userData, adminData, endpointsRes, settingsRes] = await Promise.all([
         getTeamMembers(userCompany),
         getCallAdminData(userCompany, tenantId),
-        isSwan ? fetch('/api/plivo/admin/endpoints').then(r => r.json()).catch(() => ({ endpoints: [] })) : Promise.resolve({ endpoints: [] })
+        fetch(`/api/plivo/admin/endpoints?${q.toString()}`).then(r => r.json()).catch(() => ({ endpoints: [] })),
+        fetch(`/api/plivo/admin/settings?${q.toString()}`).then(r => r.json()).catch(() => ({}))
       ]);
       if (userData) setUsers(userData.filter(u => u.emp_name?.trim()));
-      setEndpoints(adminData.endpoints?.length ? adminData.endpoints : (isSwan ? (endpointsRes.endpoints || []) : []));
+      setEndpoints(adminData.endpoints?.length ? adminData.endpoints : (endpointsRes.endpoints || []));
       setAgents(adminData.agents || []);
+      if (settingsRes?.seatQuota) {
+        setSeatQuota(settingsRes.seatQuota);
+      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -2074,9 +2584,11 @@ export default function CallAdminModule({
             onRefresh={fetchData}
             updateCallAgentAdmin={updateCallAgentAdmin}
             addCallAgentAdmin={addCallAgentAdmin}
+            userCompany={userCompany}
+            seatQuota={seatQuota}
           />
         )}
-        {activeTab === 'endpoints' && <TabEndpoints userCompany={userCompany} tenantId={tenantId} />}
+        {activeTab === 'endpoints' && <TabEndpoints userCompany={userCompany} tenantId={tenantId} agents={agents} onRefresh={fetchData} />}
         {activeTab === 'calllogs' && <TabCallLogs userCompany={userCompany} tenantId={tenantId} />}
         {activeTab === 'monitor' && <TabMonitor agents={agents} onRefresh={fetchData} />}
         {activeTab === 'settings' && <TabSettings agents={agents} userCompany={userCompany} tenantId={tenantId} />}
