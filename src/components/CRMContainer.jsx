@@ -7023,7 +7023,7 @@ export default function CRMContainer({
                     initialUsers={teamMembers} 
                     activeSubTab={userManagementSubTab} 
                     onTabChange={handleUserManagementSubTabChange} 
-                    currentUserCompany={userCompany}
+                    currentUserCompany={adminCompanyFilter || userCompany}
                   />
                 </ErrorBoundary>
               </KeepAliveTab>
@@ -7184,7 +7184,8 @@ export default function CRMContainer({
                       initialTab={configMasterSubTab}
                       activeSubTab={configMasterSubTab}
                       onSubTabChange={handleConfigMasterSubTabChange}
-                      userRole={userRole}
+                      userRole={userRole || 'admin'}
+                      moduleAccess={moduleAccess}
                     />
                   ) : null}
                 </ErrorBoundary>

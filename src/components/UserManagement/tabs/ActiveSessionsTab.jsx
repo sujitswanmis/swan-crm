@@ -93,7 +93,7 @@ function formatTimeAgo(dateString) {
   return `${diffDays}d ago`;
 }
 
-export default function ActiveSessionsTab() {
+export default function ActiveSessionsTab({ currentUserCompany = '' }) {
   const todayDateStr = useMemo(() => getTodayDateStr(), []);
   const todayReadableStr = useMemo(() => getTodayReadableIST(), []);
 
@@ -136,7 +136,7 @@ export default function ActiveSessionsTab() {
   const fetchActivitySummary = useCallback(async (showSpinner = true) => {
     if (showSpinner) setLoading(true);
     try {
-      const res = await getEmployeeDailyActivitySummary(todayDateStr, todayDateStr);
+      const res = await getEmployeeDailyActivitySummary(todayDateStr, todayDateStr, currentUserCompany);
       if (res && res.success) {
         setEmployees(res.employees || []);
       } else {
@@ -147,7 +147,7 @@ export default function ActiveSessionsTab() {
     } finally {
       if (showSpinner) setLoading(false);
     }
-  }, [todayDateStr]);
+  }, [todayDateStr, currentUserCompany]);
 
   // Periodic poll every 25 seconds for live status
   useEffect(() => {

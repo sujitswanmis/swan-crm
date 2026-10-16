@@ -660,7 +660,7 @@ export async function getCurrentEmployeeStatus(userEmail = '') {
 // -------------------------------------------------------------
 // 4. GET DAILY/PERIOD ACTIVITY, 9-HOUR SHIFT & BREAK SUMMARY FOR ADMIN
 // -------------------------------------------------------------
-export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, endDate = null) {
+export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, endDate = null, requesterCompany = null) {
   try {
     const todayStr = getOfficeTodayDateStr();
     const startDate = startDateOrTarget || todayStr;
@@ -747,6 +747,22 @@ export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, 
         const hasNameOrEmail = (r.emp_name && r.emp_name.trim()) || (r.email && r.email.trim());
         return hasNameOrEmail && status === 'Active';
       });
+
+      if (requesterCompany && requesterCompany !== 'All') {
+        const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl'];
+        const reqLower = String(requesterCompany || '').toLowerCase().trim();
+        const isSwanRequester = SWAN_COMPANIES.includes(reqLower);
+
+        allTeamMembers = allTeamMembers.filter(u => {
+          const userComp = String(u.company || '').toLowerCase().trim();
+          if (!isSwanRequester) {
+            // Client workspace (e.g. SuPuja Creations, Testing New Swan Group): strictly return users of that company
+            return userComp === reqLower;
+          }
+          // New Swan Group: return New Swan Group members, exclude separate client tenants
+          return SWAN_COMPANIES.includes(userComp) || !userComp;
+        });
+      }
     }
 
     // Process 2: Aggregate Local activity records across date range

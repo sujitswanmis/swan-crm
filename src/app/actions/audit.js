@@ -191,7 +191,8 @@ export async function getAuditLogs({
   customTimeFrom = '19:00',
   customTimeTo = '09:00',
   dateFrom = '',
-  dateTo = ''
+  dateTo = '',
+  company = ''
 }) {
   try {
     const adminClient = getAdminClient();
@@ -200,6 +201,34 @@ export async function getAuditLogs({
     let query = adminClient
       .from('audit_logs')
       .select('*', { count: 'exact' });
+
+    // Company / Tenant Isolation Filter
+    if (company && company !== 'All') {
+      const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl'];
+      const compLower = String(company).toLowerCase().trim();
+      const isSwan = SWAN_COMPANIES.includes(compLower);
+
+      const { data: companyUsers } = await adminClient
+        .from('user_roles')
+        .select('user_id, email, company');
+
+      const targetEmails = (companyUsers || [])
+        .filter(u => {
+          const uComp = String(u.company || '').toLowerCase().trim();
+          if (!isSwan) {
+            return uComp === compLower;
+          }
+          return SWAN_COMPANIES.includes(uComp) || !uComp;
+        })
+        .map(u => (u.email || '').toLowerCase().trim())
+        .filter(Boolean);
+
+      if (targetEmails.length > 0) {
+        query = query.in('email', targetEmails);
+      } else {
+        return { success: true, logs: [], totalCount: 0, page, pageSize };
+      }
+    }
 
     const effectiveSearch = (search || searchQuery || '').trim();
     const effectiveAction = (actionFilter || (actionType !== 'all' ? actionType : '')).trim();

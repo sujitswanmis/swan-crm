@@ -17,8 +17,11 @@ import AutomationAPI from '../Settings/AutomationAPI';
 import PageNavigationConfig from '../Settings/PageNavigationConfig';
 import OfflineRuleModule from '../Offline/OfflineRuleModule';
 import PublicUserManagement from '../PublicUserManagement';
+import dynamic from 'next/dynamic';
+const BroadcastNotificationPanel = dynamic(() => import('./BroadcastNotificationPanel'));
 
 const CONFIG_TABS = [
+  { id: 'notifications', label: 'User Notifications', icon: Users, description: 'Workspace, headquarters and branch announcements with delivery and read reports' },
   { id: 'messages', label: 'Platform Messaging & OTPs', icon: ShieldCheck, description: 'Central OTP templates, SMTP authentication & global DLT/WABA gateways' },
   { id: 'status', label: 'System Health & Server Logs', icon: Activity, description: 'Database performance, telephony metrics, system uptime & latency logs' },
   { id: 'automation', label: 'Automation & Webhook API', icon: Workflow, description: 'Platform API keys, external CRM webhooks & scheduled triggers' },
@@ -27,7 +30,7 @@ const CONFIG_TABS = [
   { id: 'public_users', label: 'Public User Management', icon: Users, description: 'External candidate applicants, job portal registrations & public user controls' }
 ];
 
-export default function ConfigMasterPanel({ initialTab = 'messages', activeSubTab = null, onSubTabChange = null, userRole = 'admin' }) {
+export default function ConfigMasterPanel({ initialTab = 'messages', activeSubTab = null, onSubTabChange = null, userRole = 'admin', moduleAccess = {} }) {
   const [activeTab, setActiveTab] = useState(() => {
     let raw = activeSubTab || initialTab || 'messages';
     if (raw === 'admin_messages') raw = 'messages';
@@ -142,7 +145,8 @@ export default function ConfigMasterPanel({ initialTab = 'messages', activeSubTa
 
       {/* Tab Panels */}
       <div style={{ width: '100%' }}>
-        {activeTab === 'messages' && <AdminMessageConfig />}
+        {activeTab === 'notifications' && <BroadcastNotificationPanel />}
+        {activeTab === 'messages' && <AdminMessageConfig moduleAccess={moduleAccess} userRole={userRole || 'admin'} />}
         {activeTab === 'status' && <SystemStatusHealth />}
         {activeTab === 'automation' && <AutomationAPI />}
         {activeTab === 'navigation' && <PageNavigationConfig />}

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
-  Users, Shield, Network, Globe, Monitor, Clock, 
+  Users, Shield, Network, Monitor, Clock,
   AlertCircle, CheckCircle2, Loader2, Sparkles 
 } from 'lucide-react';
 import { 
@@ -11,18 +11,19 @@ import {
   restoreUserFromTrash, deleteUserAdmin 
 } from '@/app/actions/team';
 import { createClient } from '@/utils/supabase/client';
+import { getRoleTemplates, createRoleTemplate, assignRoleTemplate } from '@/app/actions/roleTemplates';
 
 // Tabs
 import UserManageTab from './tabs/UserManageTab';
 import RolesPermissionsTab from './tabs/RolesPermissionsTab';
 import OrgHierarchyTab from './tabs/OrgHierarchyTab';
-import PublicUsersTab from './tabs/PublicUsersTab';
 import ActiveSessionsTab from './tabs/ActiveSessionsTab';
 import AuditLogsTab from './tabs/AuditLogsTab';
 
 // Modals
 import AddEditUserModal from './modals/AddEditUserModal';
 import PermissionMatrixModal from './modals/PermissionMatrixModal';
+import RoleTemplateModal from './modals/RoleTemplateModal';
 import ResetPasswordModal from './modals/ResetPasswordModal';
 import ImpersonateModal from './modals/ImpersonateModal';
 import BulkImportExportModal from './modals/BulkImportExportModal';
@@ -30,21 +31,26 @@ import ConfirmActionModal from './modals/ConfirmActionModal';
 
 import { DEFAULT_DEPARTMENTS } from './utils/userManagementUtils';
 
+const validSubTabs = ['user_manage', 'roles', 'hierarchy', 'sessions', 'audit'];
+const normalizeSubTab = (tab) => validSubTabs.includes(tab) ? tab : 'user_manage';
+
 export default function UserManagementContainer({ initialUsers = [], activeSubTab = 'user_manage', onTabChange = () => {}, currentUserCompany = '' }) {
   const [users, setUsers] = useState(initialUsers || []);
   const [loading, setLoading] = useState(!initialUsers || initialUsers.length === 0);
-  const [activeTab, setActiveTab] = useState(activeSubTab || 'user_manage');
+  const [activeTab, setActiveTab] = useState(() => normalizeSubTab(activeSubTab));
   const [departments, setDepartments] = useState(DEFAULT_DEPARTMENTS);
 
   useEffect(() => {
-    if (activeSubTab && activeSubTab !== activeTab) {
-      setActiveTab(activeSubTab);
+    const nextTab = normalizeSubTab(activeSubTab);
+    if (nextTab !== activeTab) {
+      setActiveTab(nextTab);
     }
   }, [activeSubTab]);
 
   const handleTabSwitch = (newTabId) => {
-    setActiveTab(newTabId);
-    onTabChange(newTabId);
+    const nextTab = normalizeSubTab(newTabId);
+    setActiveTab(nextTab);
+    onTabChange(nextTab);
   };
 
   // Modals state
@@ -53,6 +59,13 @@ export default function UserManagementContainer({ initialUsers = [], activeSubTa
 
   const [permissionModal, setPermissionModal] = useState({ isOpen: false, user: null });
   const [savingPermissions, setSavingPermissions] = useState(false);
+  const [roleTemplates, setRoleTemplates] = useState([]);
+  const [rolesLoading, setRolesLoading] = useState(false);
+  const [rolesError, setRolesError] = useState('');
+  const [canManageRoles, setCanManageRoles] = useState(false);
+  const [roleModalOpen, setRoleModalOpen] = useState(false);
+  const [savingRole, setSavingRole] = useState(false);
+  const [assigningRoleUserId, setAssigningRoleUserId] = useState(null);
 
   const [resetPasswordModal, setResetPasswordModal] = useState({ isOpen: false, user: null });
   const [savingPassword, setSavingPassword] = useState(false);
@@ -78,6 +91,66 @@ export default function UserManagementContainer({ initialUsers = [], activeSubTa
     setTimeout(() => {
       setToast(prev => ({ ...prev, show: false }));
     }, 3500);
+  };
+
+  useEffect(() => {
+    if (activeTab !== 'roles' && !permissionModal.isOpen) return;
+    let active = true;
+    setRolesLoading(true);
+    React.startTransition(() => {
+      getRoleTemplates().then(result => {
+        if (!active) return;
+        setRoleTemplates(result.roles || []);
+        setCanManageRoles(result.canManageRoles === true);
+        setRolesError(result.success ? '' : result.error || 'Could not load saved roles.');
+      }).catch(error => {
+        if (!active) return;
+        setRoleTemplates([]);
+        setCanManageRoles(false);
+        setRolesError(error.message || 'Could not load saved roles.');
+      }).finally(() => {
+        if (active) setRolesLoading(false);
+      });
+    });
+    return () => { active = false; };
+  }, [activeTab, permissionModal.isOpen]);
+
+  const handleCreateRole = async details => {
+    setSavingRole(true);
+    try {
+      const result = await createRoleTemplate(details);
+      if (!result.success) throw new Error(result.error || 'Could not create role.');
+      setRoleTemplates(previous => [...previous, result.role].sort((a, b) => a.name.localeCompare(b.name)));
+      setRoleModalOpen(false);
+      showToast(`Role "${result.role.name}" created.`);
+    } finally {
+      setSavingRole(false);
+    }
+  };
+
+  const handleAssignRole = async (user, role) => {
+    if (!window.confirm(`Assign "${role.name}" to ${user.emp_name || user.email}? Their current module permissions will be replaced.`)) return;
+    setAssigningRoleUserId(user.user_id);
+    try {
+      const result = await assignRoleTemplate(user.user_id, role.id);
+      if (!result.success) throw new Error(result.error || 'Could not assign role.');
+      setUsers(previous => previous.map(member => member.user_id === user.user_id ? { ...member, module_access: result.moduleAccess } : member));
+      showToast(`Role "${role.name}" assigned to ${user.emp_name || user.email}.`);
+      try {
+        const supabase = createClient();
+        await supabase.channel('crm_realtime_permission_sync').send({
+          type: 'broadcast',
+          event: 'permission_updated',
+          payload: { userId: user.user_id, moduleAccess: result.moduleAccess, timestamp: Date.now() }
+        });
+      } catch (broadcastError) {
+        console.warn('Role permission broadcast unavailable:', broadcastError);
+      }
+    } catch (error) {
+      showToast(error.message || 'Could not assign role.', 'error');
+    } finally {
+      setAssigningRoleUserId(null);
+    }
   };
 
   // Fetch users from backend
@@ -153,8 +226,11 @@ export default function UserManagementContainer({ initialUsers = [], activeSubTa
   const handleSavePermissions = async (userId, updatedAccess) => {
     setSavingPermissions(true);
     try {
-      const res = await updateModuleAccess(userId, updatedAccess);
+      const res = updatedAccess.role_template_id
+        ? await assignRoleTemplate(userId, updatedAccess.role_template_id)
+        : await updateModuleAccess(userId, updatedAccess);
       if (res && res.success) {
+        const savedAccess = res.moduleAccess || updatedAccess;
         // Realtime broadcast to active user sessions
         try {
           const supabase = createClient();
@@ -164,7 +240,7 @@ export default function UserManagementContainer({ initialUsers = [], activeSubTa
             event: 'permission_updated',
             payload: {
               userId,
-              moduleAccess: updatedAccess,
+              moduleAccess: savedAccess,
               timestamp: Date.now()
             }
           });
@@ -354,7 +430,6 @@ export default function UserManagementContainer({ initialUsers = [], activeSubTa
     { id: 'user_manage', label: 'User Manage', icon: Users, badge: users.filter(u => u.role !== 'customer').length },
     { id: 'roles', label: 'Roles & Permissions', icon: Shield },
     { id: 'hierarchy', label: 'Org Hierarchy', icon: Network },
-    { id: 'public', label: 'Public Users', icon: Globe, badge: users.filter(u => u.role === 'customer').length },
     { id: 'sessions', label: 'Active Sessions', icon: Monitor },
     { id: 'audit', label: 'Audit Logs', icon: Clock }
   ];
@@ -473,6 +548,13 @@ export default function UserManagementContainer({ initialUsers = [], activeSubTa
           <RolesPermissionsTab
             users={users}
             onManagePermissions={(u) => setPermissionModal({ isOpen: true, user: u })}
+            onAssignRoleToUser={handleAssignRole}
+            onAddRole={() => setRoleModalOpen(true)}
+            customRoles={roleTemplates}
+            canManageRoles={canManageRoles}
+            rolesLoading={rolesLoading}
+            rolesError={rolesError}
+            assigningRoleUserId={assigningRoleUserId}
           />
         )}
 
@@ -484,20 +566,12 @@ export default function UserManagementContainer({ initialUsers = [], activeSubTa
           />
         )}
 
-        {activeTab === 'public' && (
-          <PublicUsersTab
-            users={users}
-            onRefresh={() => fetchUsers(false)}
-            onResetPassword={(u) => setResetPasswordModal({ isOpen: true, user: u })}
-          />
-        )}
-
         {activeTab === 'sessions' && (
-          <ActiveSessionsTab />
+          <ActiveSessionsTab currentUserCompany={currentUserCompany} />
         )}
 
         {activeTab === 'audit' && (
-          <AuditLogsTab />
+          <AuditLogsTab currentUserCompany={currentUserCompany} />
         )}
       </div>
 
@@ -518,7 +592,16 @@ export default function UserManagementContainer({ initialUsers = [], activeSubTa
         user={permissionModal.user}
         onSave={handleSavePermissions}
         saving={savingPermissions}
+        customRoles={roleTemplates}
       />
+
+      {roleModalOpen && (
+        <RoleTemplateModal
+          onClose={() => setRoleModalOpen(false)}
+          onSave={handleCreateRole}
+          saving={savingRole}
+        />
+      )}
 
       <ResetPasswordModal
         isOpen={resetPasswordModal.isOpen}

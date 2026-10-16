@@ -22,8 +22,10 @@ const ALL_ADMIN_MSG_TABS = [
   { id: 'rcs', label: 'RCS Configuration', icon: Globe }
 ];
 
-export default function AdminMessageConfig({ moduleAccess = {}, userRole = '' }) {
-  const visibleTabs = filterVisibleSubTabs(moduleAccess, userRole, 'admin_message_config', ALL_ADMIN_MSG_TABS);
+export default function AdminMessageConfig({ moduleAccess = {}, userRole = 'admin' }) {
+  const rLower = String(userRole || '').trim().toLowerCase();
+  const isAdmin = !userRole || rLower === 'admin' || rLower === 'superadmin' || rLower === 'masteradmin' || rLower === 'super_admin' || rLower === 'master_admin';
+  const visibleTabs = isAdmin ? ALL_ADMIN_MSG_TABS : filterVisibleSubTabs(moduleAccess, userRole, 'admin_message_config', ALL_ADMIN_MSG_TABS);
 
   const [activeTab, setActiveTab] = useState(() => {
     return visibleTabs[0]?.id || 'email';

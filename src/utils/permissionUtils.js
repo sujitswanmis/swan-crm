@@ -3,8 +3,13 @@
  * Enforces 4-Column (View, Add, Edit, Delete) and Sub-Tab Permissions across CRM.
  */
 
+function checkIsAdminRole(userRole) {
+  const rLower = String(userRole || '').trim().toLowerCase();
+  return rLower === 'admin' || rLower === 'superadmin' || rLower === 'masteradmin' || rLower === 'super_admin' || rLower === 'master_admin';
+}
+
 export function getModulePermissions(moduleAccess, userRole, moduleId) {
-  const isAdmin = userRole === 'admin' || userRole === 'Admin';
+  const isAdmin = checkIsAdminRole(userRole);
   if (isAdmin) {
     return { view: true, add: true, edit: true, delete: true, is_manager: true };
   }
@@ -39,7 +44,7 @@ export function getModulePermissions(moduleAccess, userRole, moduleId) {
 }
 
 export function getSubItemPermissions(moduleAccess, userRole, moduleId, subItemId) {
-  const isAdmin = userRole === 'admin' || userRole === 'Admin';
+  const isAdmin = checkIsAdminRole(userRole);
   if (isAdmin) {
     return { view: true, add: true, edit: true, delete: true };
   }
@@ -96,7 +101,7 @@ export function getSubItemPermissions(moduleAccess, userRole, moduleId, subItemI
 }
 
 export function filterVisibleSubTabs(moduleAccess, userRole, moduleId, tabsList = []) {
-  const isAdmin = userRole === 'admin' || userRole === 'Admin';
+  const isAdmin = checkIsAdminRole(userRole);
   if (isAdmin) return tabsList;
 
   return tabsList.filter(tab => {
