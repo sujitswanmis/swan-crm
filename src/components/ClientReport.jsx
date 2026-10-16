@@ -1181,7 +1181,9 @@ export default function ClientReport({
 
   useEffect(() => {
     if (initialData && initialData.length > 0) {
-      const processed = initialData.map((lead) => {
+      const processed = initialData
+        .filter(lead => lead && lead.status !== 'DRAFT')
+        .map((lead) => {
         const assignedName = lead.assigned_to 
           ? normalizeEmployeeName(lead.assigned_to, teamMembers) 
           : (lead.assigned_to_name ? normalizeEmployeeName(lead.assigned_to_name, teamMembers) : 'Unassigned');

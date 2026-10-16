@@ -3,7 +3,7 @@
 import MobileTableView from '@/components/common/MobileTableView';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createClient } from '@/utils/supabase/client';
-import { ChevronDown, ChevronUp, Save, Briefcase, MapPin, User, FileText, CheckCircle2, Upload, Download, X, AlertTriangle, Search, ChevronLeft, ChevronRight, Filter } from 'lucide-react';
+import { ChevronDown, ChevronUp, Save, Briefcase, MapPin, User, FileText, CheckCircle2, Upload, Download, X, AlertTriangle, Search, ChevronLeft, ChevronRight, Filter, UserPlus, Edit3, Trash2, Clock } from 'lucide-react';
 import Papa from 'papaparse';
 import { getTeamMembers } from '@/app/actions/team';
 import { logAuditAction } from '@/app/actions/audit';
@@ -11,6 +11,12 @@ import { getStatesCentral, getDistrictsCentral } from '@/app/actions/centralLoca
 import { INDIAN_STATES, getDistrictsForState } from '@/constants/indianLocations';
 import { normalizeLeadRecord, normalizeEmployeeName, normalizePhoneTo10, resolveTeamMemberId } from '@/utils/dataSanitizer';
 import { enqueueOfflineAction, canPerformOfflineAction, sanitizeLeadPayloadForDb, upsertLeadsLocally, showSyncToast } from '@/utils/offlineSync';
+import { 
+  saveClientRegistrationDraft, 
+  getClientRegistrationDrafts, 
+  deleteClientRegistrationDraft, 
+  submitClientRegistrationAndSync 
+} from '@/app/actions/clientRegistrationSync';
 
 const IMPORT_FIELDS = [
   { key: 'lead_date', label: 'Lead Date', standardHeaders: ['Lead Date', 'leaddate', 'date'] },
@@ -574,6 +580,31 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
     'LP08: Invalid', 'LP09: Spam', 'LP10: Archive', 'LP11: Competitor Dealer', 'LP12: Competitor Distributor'
   ]);
 
+  const [activeView, setActiveView] = useState('form'); // 'form' | 'drafts'
+  const [draftsList, setDraftsList] = useState([]);
+  const [isLoadingDrafts, setIsLoadingDrafts] = useState(false);
+  const [currentDraftId, setCurrentDraftId] = useState(null);
+  const [isSavingDraft, setIsSavingDraft] = useState(false);
+  const [clientFormFields, setClientFormFields] = useState({});
+
+  const loadDrafts = async () => {
+    setIsLoadingDrafts(true);
+    try {
+      const res = await getClientRegistrationDrafts(userCompany);
+      if (res && res.success) {
+        setDraftsList(res.drafts || []);
+      }
+    } catch (err) {
+      console.warn('Draft load notice:', err);
+    } finally {
+      setIsLoadingDrafts(false);
+    }
+  };
+
+  useEffect(() => {
+    loadDrafts();
+  }, [userCompany]);
+
   useEffect(() => {
     const loadConfig = () => {
       const saved = localStorage.getItem('crm_config');
@@ -583,6 +614,7 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
           if (parsed.sources) setSources(parsed.sources);
           if (parsed.clientStatuses) setClientStatuses(parsed.clientStatuses);
           if (parsed.priorities) setPriorities(parsed.priorities);
+          if (parsed.client_form_fields) setClientFormFields(parsed.client_form_fields);
         } catch (e) { console.error(e); }
       }
     };
@@ -591,6 +623,55 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
     window.addEventListener('crm_config_updated', loadConfig);
     return () => window.removeEventListener('crm_config_updated', loadConfig);
   }, []);
+
+  const handleSaveDraft = async () => {
+    if (!formData.company && !formData.name && !formData.phone) {
+      alert('Kripya kam se kam Business Name, Contact Name ya Mobile Number bharein taaki draft save kiya ja sake.');
+      return;
+    }
+    setIsSavingDraft(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const actor = normalizeEmployeeName(user?.email?.split('@')[0] || 'User', teamMembers);
+      const draftPayload = {
+        ...formData,
+        id: currentDraftId || initialData?.id || undefined
+      };
+      const res = await saveClientRegistrationDraft(draftPayload, userCompany, actor);
+      if (res && res.success) {
+        if (res.draft?.id) setCurrentDraftId(res.draft.id);
+        alert('✅ Draft safely saved! Aap is adhoore form ko kabhi bhi "Saved Drafts" tab se resume kar sakte hain.');
+        loadDrafts();
+      } else {
+        alert('Failed to save draft: ' + (res?.error || 'Unknown error'));
+      }
+    } catch (e) {
+      alert('Error saving draft: ' + e.message);
+    } finally {
+      setIsSavingDraft(false);
+    }
+  };
+
+  const handleResumeDraft = (draft) => {
+    setCurrentDraftId(draft.id);
+    setFormData(prev => ({
+      ...prev,
+      ...draft,
+      id: draft.id
+    }));
+    setActiveView('form');
+  };
+
+  const handleDeleteDraft = async (draftId) => {
+    if (!window.confirm('Kya aap is draft ko delete karna chahte hain?')) return;
+    try {
+      await deleteClientRegistrationDraft(draftId);
+      setDraftsList(prev => prev.filter(d => d.id !== draftId));
+      if (currentDraftId === draftId) setCurrentDraftId(null);
+    } catch (e) {
+      alert('Error deleting draft: ' + e.message);
+    }
+  };
 
   const [formData, setFormData] = useState({
     // Lead Info
@@ -1030,8 +1111,26 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
               await upsertLeadsLocally([finalNewLeadObj]);
             }
             
+            if (finalNewLeadObj) {
+              try {
+                await submitClientRegistrationAndSync(finalNewLeadObj, actor, finalNewLeadObj.our_company || cleanPayload.our_company);
+              } catch (syncErr) {
+                console.warn('4-way auto-sync notice:', syncErr);
+              }
+            }
+
+            if (currentDraftId) {
+              try {
+                await deleteClientRegistrationDraft(currentDraftId);
+                setCurrentDraftId(null);
+                loadDrafts();
+              } catch (draftErr) {
+                console.warn('Draft cleanup notice:', draftErr);
+              }
+            }
+            
             showSyncToast('✅ Saved to Supabase: Client registered successfully!', 'success', 3500);
-            alert('Client Registered Successfully!');
+            alert('Client Registered Successfully! (Synced with Client Report, Lead Data & Party Master)');
             if (onRegistrationSuccess) onRegistrationSuccess(finalNewLeadObj);
             if (finalNewLeadObj) {
               window.dispatchEvent(new CustomEvent('crm_leads_imported', { detail: [finalNewLeadObj] }));
@@ -1674,21 +1773,28 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
     }
   };
 
-  const renderInput = (label, name, type = 'text', required = false) => (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-      <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
-        {label} {required && <span style={{color: 'red'}}>*</span>}
-      </label>
-      <input 
-        type={type} 
-        name={name} 
-        value={formData[name]} 
-        onChange={handleChange} 
-        required={required}
-        style={{ padding: '0.6rem 0.8rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}
-      />
-    </div>
-  );
+  const renderInput = (label, name, type = 'text', required = false) => {
+    const fieldConfig = clientFormFields?.[name];
+    if (fieldConfig && fieldConfig.enabled === false) return null;
+    const isReq = fieldConfig?.required !== undefined ? fieldConfig.required : required;
+    const displayLabel = fieldConfig?.label || label;
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+        <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
+          {displayLabel} {isReq && <span style={{color: 'red'}}>*</span>}
+        </label>
+        <input 
+          type={type} 
+          name={name} 
+          value={formData[name] ?? ''} 
+          onChange={handleChange} 
+          required={isReq}
+          style={{ padding: '0.6rem 0.8rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}
+        />
+      </div>
+    );
+  };
 
   return (
     <div style={{ width: '100%', flex: 1, overflowY: 'auto', paddingRight: '0.5rem', paddingBottom: '2rem' }}>
@@ -1734,7 +1840,273 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
           </div>
         </div>
 
-        {/* Real-Time Duplicate Alert Banner */}
+        {/* Navigation Tabs: Form vs Saved Drafts */}
+        {!isEditMode && (
+          <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem' }}>
+            <button
+              type="button"
+              onClick={() => setActiveView('form')}
+              style={{
+                padding: '0.6rem 1.25rem',
+                borderRadius: '8px',
+                border: activeView === 'form' ? '1px solid var(--accent-color)' : '1px solid var(--border-light)',
+                background: activeView === 'form' ? 'var(--accent-color)' : 'var(--bg-primary)',
+                color: activeView === 'form' ? '#ffffff' : 'var(--text-secondary)',
+                fontWeight: 600,
+                fontSize: '0.9rem',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                transition: 'all 0.2s ease'
+              }}
+            >
+              <UserPlus size={16} /> New Client Registration
+            </button>
+            <button
+              type="button"
+              onClick={() => { setActiveView('drafts'); loadDrafts(); }}
+              style={{
+                padding: '0.6rem 1.25rem',
+                borderRadius: '8px',
+                border: activeView === 'drafts' ? '1px solid var(--accent-color)' : '1px solid var(--border-light)',
+                background: activeView === 'drafts' ? 'var(--accent-color)' : 'var(--bg-primary)',
+                color: activeView === 'drafts' ? '#ffffff' : 'var(--text-secondary)',
+                fontWeight: 600,
+                fontSize: '0.9rem',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                transition: 'all 0.2s ease'
+              }}
+            >
+              <FileText size={16} /> Saved Drafts
+              {draftsList.length > 0 && (
+                <span style={{
+                  backgroundColor: activeView === 'drafts' ? '#ffffff' : 'var(--accent-color)',
+                  color: activeView === 'drafts' ? 'var(--accent-color)' : '#ffffff',
+                  fontSize: '0.75rem',
+                  padding: '0.1rem 0.5rem',
+                  borderRadius: '10px',
+                  fontWeight: 700
+                }}>
+                  {draftsList.length}
+                </span>
+              )}
+            </button>
+          </div>
+        )}
+
+        {/* Drafts View */}
+        {activeView === 'drafts' && !isEditMode ? (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <FileText size={20} color="var(--accent-color)" /> Saved Registration Drafts
+                </h3>
+                <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                  Incomplete/adhoore client forms saved for later completion. You can resume or delete them at any time.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setCurrentDraftId(null);
+                  setActiveView('form');
+                }}
+                style={{
+                  padding: '0.5rem 1rem',
+                  background: 'var(--accent-color)',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  fontWeight: 600,
+                  fontSize: '0.85rem',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem'
+                }}
+              >
+                <UserPlus size={15} /> Start New Client Form
+              </button>
+            </div>
+
+            {isLoadingDrafts ? (
+              <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                Loading saved drafts...
+              </div>
+            ) : draftsList.length === 0 ? (
+              <div style={{ padding: '3rem 1.5rem', textAlign: 'center', background: 'var(--bg-primary)', borderRadius: '10px', border: '1px dashed var(--border-light)' }}>
+                <Clock size={36} color="var(--text-secondary)" style={{ margin: '0 auto 0.75rem auto', opacity: 0.6 }} />
+                <h4 style={{ margin: 0, color: 'var(--text-primary)', fontSize: '1rem' }}>No Saved Drafts</h4>
+                <p style={{ margin: '0.5rem 0 1.25rem 0', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+                  Aapka koi saved draft nahi hai. Jab aap form bharte waqt &quot;Save as Draft&quot; dabayenge, tab wo yahan save ho jayega.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCurrentDraftId(null);
+                    setActiveView('form');
+                  }}
+                  style={{
+                    padding: '0.5rem 1.2rem',
+                    background: 'var(--accent-color)',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '6px',
+                    fontWeight: 600,
+                    fontSize: '0.85rem',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Fill Client Registration Form
+                </button>
+              </div>
+            ) : (
+              <div style={{ overflowX: 'auto', border: '1px solid var(--border-light)', borderRadius: '8px' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.88rem' }}>
+                  <thead>
+                    <tr style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
+                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Business / Client Name</th>
+                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Contact Person &amp; Phone</th>
+                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>City / State</th>
+                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Last Saved</th>
+                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Saved By</th>
+                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600, textAlign: 'center' }}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {draftsList.map(draft => (
+                      <tr key={draft.id} style={{ borderBottom: '1px solid var(--border-light)', background: 'var(--bg-surface)' }}>
+                        <td style={{ padding: '0.75rem 1rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                          {draft.company || draft.name || 'Unnamed Client'}
+                          {draft.business_gst && (
+                            <span style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 400 }}>
+                              GST: {draft.business_gst}
+                            </span>
+                          )}
+                        </td>
+                        <td style={{ padding: '0.75rem 1rem', color: 'var(--text-primary)' }}>
+                          <div>{draft.name || '-'}</div>
+                          <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{draft.phone || '-'}</div>
+                        </td>
+                        <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>
+                          {[draft.city_name, draft.state_name].filter(Boolean).join(', ') || '-'}
+                        </td>
+                        <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)', fontSize: '0.82rem' }}>
+                          {draft.updated_at || draft.created_at ? (
+                            new Date(draft.updated_at || draft.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'short', timeStyle: 'short' })
+                          ) : '-'}
+                        </td>
+                        <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)', fontSize: '0.82rem' }}>
+                          {draft.entry_by || draft.created_by || '-'}
+                        </td>
+                        <td style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>
+                          <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
+                            <button
+                              type="button"
+                              onClick={() => handleResumeDraft(draft)}
+                              style={{
+                                padding: '0.35rem 0.75rem',
+                                background: 'var(--accent-color)',
+                                color: '#fff',
+                                border: 'none',
+                                borderRadius: '5px',
+                                fontSize: '0.8rem',
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.3rem'
+                              }}
+                              title="Resume & Complete Registration"
+                            >
+                              <Edit3 size={13} /> Resume
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteDraft(draft.id)}
+                              style={{
+                                padding: '0.35rem 0.65rem',
+                                background: '#fee2e2',
+                                color: '#b91c1c',
+                                border: '1px solid #fca5a5',
+                                borderRadius: '5px',
+                                fontSize: '0.8rem',
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.3rem'
+                              }}
+                              title="Delete Draft"
+                            >
+                              <Trash2 size={13} /> Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        ) : (
+          <>
+            {/* Active Draft Banner */}
+            {currentDraftId && (
+              <div style={{
+                background: '#e0f2fe',
+                border: '1px solid #7dd3fc',
+                borderRadius: '8px',
+                padding: '0.75rem 1rem',
+                marginBottom: '1rem',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: '0.5rem'
+              }}>
+                <div style={{ fontSize: '0.88rem', color: '#0369a1', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <span>📝 Resuming Saved Draft (ID: #{currentDraftId})</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCurrentDraftId(null);
+                    setFormData(prev => ({
+                      ...prev,
+                      source_name: '', entry_by: '', business_type: '', business_gst: '', company: '', priority: '', our_company: defaultWorkspaceCompany,
+                      business_contact_1: '', business_contact_2: '', business_alt_1: '', business_alt_2: '',
+                      business_email_1: '', business_email_2: '', business_alt_email_1: '', business_alt_email_2: '',
+                      name: '', phone: '', cp1_mobile_2: '', cp1_alt_1: '', cp1_alt_2: '', email: '', cp1_email_2: '',
+                      cp2_name: '', cp2_mobile_1: '', cp2_mobile_2: '', cp2_alt_1: '', cp2_alt_2: '', cp2_email_1: '', cp2_email_2: '',
+                      cp3_name: '', cp3_mobile_1: '', cp3_mobile_2: '', cp3_alt_1: '', cp3_alt_2: '', cp3_email_1: '', cp3_email_2: '',
+                      state_name: '', district_name: '', pin_code: '', city_name: '', tehsil_name: '', block_name: '', address: '',
+                      requirement: '', investment: '', buying_timeline: ''
+                    }));
+                  }}
+                  style={{
+                    padding: '0.3rem 0.65rem',
+                    background: '#ffffff',
+                    border: '1px solid #7dd3fc',
+                    borderRadius: '4px',
+                    fontSize: '0.8rem',
+                    color: '#0369a1',
+                    cursor: 'pointer',
+                    fontWeight: 600
+                  }}
+                >
+                  Cancel Draft &amp; Start Fresh
+                </button>
+              </div>
+            )}
+
+            {/* Real-Time Duplicate Alert Banner */}
         {duplicateInfo && (
           <div style={{
             backgroundColor: 'rgba(239, 68, 68, 0.08)',
@@ -2057,11 +2429,36 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
             )}
           </div>
 
-          {/* Submit Button */}
-          <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'flex-end' }}>
+          {/* Action Buttons: Save Draft vs Final Submit */}
+          <div style={{ marginTop: '1.25rem', display: 'flex', justifyContent: 'flex-end', gap: '1rem', flexWrap: 'wrap' }}>
+            {!isEditMode && (
+              <button 
+                type="button" 
+                onClick={handleSaveDraft}
+                disabled={isSavingDraft || isSubmitting}
+                style={{ 
+                  padding: '0.75rem 1.5rem', 
+                  backgroundColor: 'var(--bg-primary)', 
+                  color: 'var(--text-primary)', 
+                  border: '1px solid var(--border-light)', 
+                  borderRadius: '8px', 
+                  fontSize: '0.95rem', 
+                  fontWeight: 600, 
+                  cursor: isSavingDraft ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                }}
+              >
+                <Save size={18} />
+                {isSavingDraft ? 'Saving Draft...' : 'Save as Draft (Adhoora Form)'}
+              </button>
+            )}
+
             <button 
               type="submit" 
-              disabled={isSubmitting}
+              disabled={isSubmitting || isSavingDraft}
               style={{ 
                 padding: '0.75rem 2rem', 
                 backgroundColor: 'var(--accent-color)', 
@@ -2070,18 +2467,20 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
                 borderRadius: '8px', 
                 fontSize: '1rem', 
                 fontWeight: 600, 
-                cursor: isSubmitting ? 'not-allowed' : 'pointer',
+                cursor: (isSubmitting || isSavingDraft) ? 'not-allowed' : 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '0.5rem'
               }}
             >
-              <Save size={20} />
-              {isSubmitting ? (isEditMode ? 'Updating...' : 'Registering...') : (isEditMode ? 'Update Client' : 'Register Client')}
+              <CheckCircle2 size={20} />
+              {isSubmitting ? (isEditMode ? 'Updating...' : 'Registering & Syncing...') : (isEditMode ? 'Update Client' : 'Final Submit & Register Client')}
             </button>
           </div>
 
         </form>
+        </>
+        )}
       </div>
 
       {/* Bulk Importer Modal */}

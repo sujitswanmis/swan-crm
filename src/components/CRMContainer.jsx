@@ -961,6 +961,34 @@ export default function CRMContainer({
       .catch(() => {});
   }, []);
 
+  const [activePipelineStages, setActivePipelineStages] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('crm_config');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed.stages && Array.isArray(parsed.stages)) {
+            return parsed.stages.filter(s => s.enabled !== false).map(s => s.name);
+          }
+        }
+      } catch (e) {}
+    }
+    return ['01 - New Stage', '02 - Contact Stage', '03 - Qualification Stage', '04 - Follow Up Stage', '05 - Sales Process Stage', '06 - Conversion Stage', '07 - Final Stage', '08 - Transfer to Party'];
+  });
+
+  useEffect(() => {
+    const handleConfigStagesUpdated = (e) => {
+      try {
+        const cfg = e?.detail || JSON.parse(localStorage.getItem('crm_config') || '{}');
+        if (cfg?.stages && Array.isArray(cfg.stages)) {
+          setActivePipelineStages(cfg.stages.filter(s => s.enabled !== false).map(s => s.name));
+        }
+      } catch (err) {}
+    };
+    window.addEventListener('crm_config_updated', handleConfigStagesUpdated);
+    return () => window.removeEventListener('crm_config_updated', handleConfigStagesUpdated);
+  }, []);
+
   const [leadDataExpanded, setLeadDataExpanded] = useState(false);
   const [recruiterMenuExpanded, setRecruiterMenuExpanded] = useState(false);
   const [recruiterFilterStage, setRecruiterFilterStage] = useState('dashboard');
@@ -4619,7 +4647,10 @@ export default function CRMContainer({
                                 All Leads
                               </button>
 
-                              {['01 - New Stage', '02 - Contact Stage', '03 - Qualification Stage', '04 - Follow Up Stage', '05 - Sales Process Stage', '06 - Conversion Stage', '07 - Final Stage', '08 - Transfer to Party'].map(stage => {
+                              {(activePipelineStages && activePipelineStages.length > 0 
+                                ? activePipelineStages 
+                                : ['01 - New Stage', '02 - Contact Stage', '03 - Qualification Stage', '04 - Follow Up Stage', '05 - Sales Process Stage', '06 - Conversion Stage', '07 - Final Stage', '08 - Transfer to Party']
+                              ).map(stage => {
                                 const stagePerms = getSubItemPermissions(moduleAccess, userRole, 'leads', stage);
                                 if (!stagePerms.view) {
                                   return null;

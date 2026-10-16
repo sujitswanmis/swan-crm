@@ -113,7 +113,7 @@ export default function SettingsContainer({ moduleAccess = {}, userRole = '', us
       {/* Settings Content Area (Full Width) */}
       <div className="card" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', width: '100%', borderRadius: 0, border: 'none', boxShadow: 'none' }}>
         {activeTab === 'business' && <BusinessProfile userCompany={userCompany} />}
-        {activeTab === 'crm' && <CRMConfig />}
+        {activeTab === 'crm' && <CRMConfig userCompany={userCompany} />}
         {activeTab === 'fields' && <CustomFields />}
         {activeTab === 'templates' && <WorkspaceMessageTemplates userCompany={userCompany} />}
         {activeTab === 'notifications' && <NotificationsConfig />}

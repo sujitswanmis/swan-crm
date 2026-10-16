@@ -685,7 +685,7 @@ const LeadStatusCell = React.memo(({ info }) => {
           stages.map((stageObj, i) => {
             const stageNum = i + 1;
             const cleanStageName = stageObj.name.replace(/^\d+\s*-\s*/, '');
-            const isVisible = isAllLeads || parseInt(leadStagePrefix) === stageNum || parseInt(leadStagePrefix) === stageNum - 1;
+            const isVisible = (stageObj.enabled !== false) && (isAllLeads || parseInt(leadStagePrefix) === stageNum || parseInt(leadStagePrefix) === stageNum - 1);
             if (!isVisible) return null;
 
             return (
