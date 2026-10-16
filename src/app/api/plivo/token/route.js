@@ -19,17 +19,26 @@ export async function POST(req) {
       .from('call_agents')
       .select('plivo_username, plivo_password')
       .eq('user_id', user.id)
-      .single();
+      .maybeSingle();
 
     if (!agentData || !agentData.plivo_username) {
-      return NextResponse.json({ error: 'Agent missing Plivo endpoint' }, { status: 400 });
+      return NextResponse.json({
+        enabled: false,
+        fallbackMode: 'mobile',
+        message: 'No dedicated Plivo SIP endpoint configured. Direct/Mobile calling active.'
+      }, { status: 200 });
     }
 
     if (!agentData.plivo_password) {
-      return NextResponse.json({ error: 'Agent missing Plivo password in database. Please contact admin.' }, { status: 400 });
+      return NextResponse.json({
+        enabled: false,
+        fallbackMode: 'mobile',
+        message: 'Agent missing Plivo password. Direct/Mobile calling active.'
+      }, { status: 200 });
     }
 
     return NextResponse.json({
+      enabled: true,
       username: agentData.plivo_username,
       password: agentData.plivo_password
     });

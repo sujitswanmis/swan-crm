@@ -861,15 +861,66 @@ export async function updateCallAgentAdmin(agentId, updates) {
   return { success: true };
 }
 
+export async function autoProvisionCallAgent(userId, company = '') {
+  try {
+    const adminClient = getAdminClient();
+    // 1. Check if agent already exists
+    const { data: existing } = await adminClient
+      .from('call_agents')
+      .select('*')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (existing) {
+      return { success: true, data: existing };
+    }
+
+    // 2. Fetch user profile from user_roles
+    const { data: user } = await adminClient
+      .from('user_roles')
+      .select('emp_name, emp_mobile, company')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    const displayName = user?.emp_name || 'Agent';
+    const mobile = user?.emp_mobile || null;
+
+    // 3. Insert new agent record
+    const { data: created, error } = await adminClient
+      .from('call_agents')
+      .insert({
+        user_id: userId,
+        display_name: displayName,
+        mobile_number: mobile,
+        default_calling_mode: 'browser_webrtc',
+        status: 'available',
+        is_active: true
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error auto-provisioning call agent:', error);
+      return { success: false, error: error.message };
+    }
+
+    return { success: true, data: created };
+  } catch (err) {
+    console.error('Exception in autoProvisionCallAgent:', err);
+    return { success: false, error: err.message };
+  }
+}
+
 export async function getAgentProfile(userId) {
   const adminClient = getAdminClient();
   const { data: agentData, error: agentError } = await adminClient
     .from('call_agents')
     .select('*')
     .eq('user_id', userId)
-    .single();
+    .maybeSingle();
     
   if (agentError) return { data: null, error: agentError.message };
+  if (!agentData) return { data: null, error: 'Agent profile not found' };
   
   // Also fetch user role to get employee mobile number (emp_mobile)
   try {
@@ -877,7 +928,7 @@ export async function getAgentProfile(userId) {
       .from('user_roles')
       .select('emp_mobile')
       .eq('user_id', userId)
-      .single();
+      .maybeSingle();
       
     if (roleData && roleData.emp_mobile) {
       agentData.mobile_number = roleData.emp_mobile;

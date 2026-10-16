@@ -453,7 +453,7 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
 }
 
 // ── Tab: SIP Endpoints ────────────────────────────────────────
-function TabEndpoints() {
+function TabEndpoints({ userCompany = '', tenantId = null }) {
   const [endpoints, setEndpoints] = useState([]);
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(null);
@@ -470,16 +470,26 @@ function TabEndpoints() {
     CALL_ADMIN_ENDPOINTS_MIN_COL_WIDTHS
   );
 
+  const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl'];
+  const reqLower = String(userCompany || '').toLowerCase().trim();
+  const isSwan = !userCompany || SWAN_COMPANIES.includes(reqLower);
+
   const fetchEndpoints = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/plivo/admin/endpoints');
-      const data = await res.json();
-      setEndpoints(data.endpoints || []);
+      if (!isSwan) {
+        const { getCallAdminData } = await import('@/app/actions/team');
+        const adminData = await getCallAdminData(userCompany, tenantId);
+        setEndpoints(adminData.endpoints || []);
+      } else {
+        const res = await fetch('/api/plivo/admin/endpoints');
+        const data = await res.json();
+        setEndpoints(data.endpoints || []);
+      }
       setLastRefresh(new Date());
     } catch (e) { console.error(e); }
     setLoading(false);
-  }, []);
+  }, [userCompany, tenantId, isSwan]);
 
   useEffect(() => { fetchEndpoints(); }, [fetchEndpoints]);
 
@@ -578,7 +588,19 @@ function TabEndpoints() {
                 </tr>
               ))}
               {endpoints.length === 0 && !loading && (
-                <tr><td colSpan="5" style={{ padding:'3rem', textAlign:'center', color:'#94a3b8' }}>No endpoints found.</td></tr>
+                <tr>
+                  <td colSpan="5" style={{ padding:'3.5rem 2rem', textAlign:'center', color:'#64748b' }}>
+                    <div style={{ maxWidth: '440px', margin: '0 auto' }}>
+                      <Server size={36} color="#94a3b8" style={{ margin: '0 auto 0.75rem' }} />
+                      <div style={{ fontWeight: 700, color: '#1e293b', fontSize: '1rem', marginBottom: '0.35rem' }}>
+                        No External SIP Trunks Configured
+                      </div>
+                      <div style={{ fontSize: '0.85rem', color: '#64748b', lineHeight: 1.5 }}>
+                        This workspace operates on direct browser WebRTC and mobile dialer. External SIP trunks are only needed for custom hardware PBX or third-party desktop softphones.
+                      </div>
+                    </div>
+                  </td>
+                </tr>
               )}
             </tbody>
           </table></MobileTableView>
@@ -1433,7 +1455,7 @@ function TabMonitor({ agents, onRefresh }) {
 }
 
 // ── Tab: Settings ─────────────────────────────────────────────
-function TabSettings({ agents = [] }) {
+function TabSettings({ agents = [], userCompany = '', tenantId = null }) {
   const [settings, setSettings] = useState(null);
   const [loading, setLoading] = useState(true);
   const [defaultForward, setDefaultForward] = useState('');
@@ -1444,9 +1466,9 @@ function TabSettings({ agents = [] }) {
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
-  const fetchSettings = () => {
+  const fetchSettings = useCallback(() => {
     setLoading(true);
-    fetch('/api/plivo/admin/settings')
+    fetch(`/api/plivo/admin/settings?company=${encodeURIComponent(userCompany || '')}&tenant_id=${tenantId || ''}`)
       .then(r => r.json())
       .then(d => {
         setSettings(d);
@@ -1457,11 +1479,11 @@ function TabSettings({ agents = [] }) {
         setLoading(false);
       })
       .catch(() => setLoading(false));
-  };
+  }, [userCompany, tenantId]);
 
   useEffect(() => {
     fetchSettings();
-  }, []);
+  }, [fetchSettings]);
 
   const handleSave = async (e) => {
     if (e) e.preventDefault();
@@ -1473,6 +1495,8 @@ function TabSettings({ agents = [] }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          company: userCompany,
+          tenantId,
           defaultForward: cleanNum,
           routingMode,
           stickyAgent,
@@ -1493,10 +1517,9 @@ function TabSettings({ agents = [] }) {
     setSaving(false);
   };
 
-  // Filter actual human agents with SIP endpoints
+  // Filter actual human agents
   const humanAgents = (agents || []).filter(a =>
-    a.plivo_username &&
-    !a.plivo_username.startsWith('system_settings_') &&
+    !a.plivo_username?.startsWith('system_settings_') &&
     a.display_name &&
     !a.display_name.startsWith('System ')
   );
@@ -1970,13 +1993,17 @@ export default function CallAdminModule({
 
   const fetchData = useCallback(async () => {
     try {
+      const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl'];
+      const reqLower = String(userCompany || '').toLowerCase().trim();
+      const isSwan = !userCompany || SWAN_COMPANIES.includes(reqLower);
+
       const [userData, adminData, endpointsRes] = await Promise.all([
         getTeamMembers(userCompany),
         getCallAdminData(userCompany, tenantId),
-        fetch('/api/plivo/admin/endpoints').then(r => r.json()).catch(() => ({ endpoints: [] }))
+        isSwan ? fetch('/api/plivo/admin/endpoints').then(r => r.json()).catch(() => ({ endpoints: [] })) : Promise.resolve({ endpoints: [] })
       ]);
       if (userData) setUsers(userData.filter(u => u.emp_name?.trim()));
-      setEndpoints(adminData.endpoints?.length ? adminData.endpoints : (endpointsRes.endpoints || []));
+      setEndpoints(adminData.endpoints?.length ? adminData.endpoints : (isSwan ? (endpointsRes.endpoints || []) : []));
       setAgents(adminData.agents || []);
     } catch (err) {
       console.error(err);
@@ -2049,10 +2076,10 @@ export default function CallAdminModule({
             addCallAgentAdmin={addCallAgentAdmin}
           />
         )}
-        {activeTab === 'endpoints' && <TabEndpoints />}
+        {activeTab === 'endpoints' && <TabEndpoints userCompany={userCompany} tenantId={tenantId} />}
         {activeTab === 'calllogs' && <TabCallLogs userCompany={userCompany} tenantId={tenantId} />}
         {activeTab === 'monitor' && <TabMonitor agents={agents} onRefresh={fetchData} />}
-        {activeTab === 'settings' && <TabSettings agents={agents} />}
+        {activeTab === 'settings' && <TabSettings agents={agents} userCompany={userCompany} tenantId={tenantId} />}
       </div>
     </div>
   );

@@ -143,11 +143,12 @@ const getISTDateRange = (preset, customStart, customEnd) => {
   return { startDate: '', endDate: '' };
 };
 
-export default function CallCenterModule({ userId }) {
+export default function CallCenterModule({ userId, userCompany = '', tenantId = null }) {
   const [agentData, setAgentData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [callsLoading, setCallsLoading] = useState(false);
   const [agentStatus, setAgentStatus] = useState('offline');
+  const [activating, setActivating] = useState(false);
 
   // Call Logs & Pagination
   const [recentCalls, setRecentCalls] = useState([]);
@@ -374,12 +375,107 @@ export default function CallCenterModule({ userId }) {
     );
   }
 
+  const handleSelfActivate = async () => {
+    setActivating(true);
+    try {
+      const { autoProvisionCallAgent } = await import('@/app/actions/team');
+      const res = await autoProvisionCallAgent(userId, userCompany);
+      if (res.success && res.data) {
+        setAgentData(res.data);
+        if (res.data.status) setAgentStatus(res.data.status);
+        await fetchCalls(res.data.id, page, pageSize, datePreset, customStartDate, customEndDate, search);
+      } else {
+        alert(res.error || 'Failed to activate agent extension');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Error activating agent extension: ' + (err.message || 'Unknown error'));
+    } finally {
+      setActivating(false);
+    }
+  };
+
   if (!agentData) {
     return (
-      <div style={{ padding: '3rem', textAlign: 'center', color: '#666' }}>
-        <ShieldAlert size={48} style={{ margin: '0 auto 1rem', color: '#ef4444' }} />
-        <h2 style={{ color: '#1e293b', marginBottom: '0.5rem' }}>Call Center Access Denied</h2>
-        <p style={{ color: '#64748b' }}>You have not been assigned as a Call Center Agent. Please contact the administrator.</p>
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '80%', padding: '2rem' }}>
+        <div style={{
+          background: 'white',
+          borderRadius: '16px',
+          padding: '2.5rem',
+          maxWidth: '520px',
+          width: '100%',
+          textAlign: 'center',
+          boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.04)',
+          border: '1px solid #e2e8f0'
+        }}>
+          <div style={{
+            width: '64px',
+            height: '64px',
+            borderRadius: '50%',
+            background: '#eff6ff',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            margin: '0 auto 1.25rem',
+            color: '#3b82f6'
+          }}>
+            <PhoneCall size={32} />
+          </div>
+          <span style={{
+            display: 'inline-block',
+            padding: '0.25rem 0.75rem',
+            borderRadius: '9999px',
+            background: '#f1f5f9',
+            color: '#475569',
+            fontSize: '0.78rem',
+            fontWeight: 600,
+            marginBottom: '0.75rem',
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em'
+          }}>
+            {userCompany || 'Workspace Telecalling'}
+          </span>
+          <h2 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#1e293b', marginBottom: '0.5rem' }}>
+            Telecalling Desk Activation
+          </h2>
+          <p style={{ color: '#64748b', fontSize: '0.9rem', lineHeight: 1.5, marginBottom: '1.75rem' }}>
+            Welcome to your workspace Telecalling Desk. Click below to activate your telecalling extension and start tracking customer calls, dialer history, and calling analytics.
+          </p>
+          <button
+            onClick={handleSelfActivate}
+            disabled={activating}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '0.5rem',
+              width: '100%',
+              padding: '0.85rem 1.5rem',
+              borderRadius: '10px',
+              background: '#2563eb',
+              color: 'white',
+              fontWeight: 600,
+              fontSize: '0.95rem',
+              border: 'none',
+              cursor: activating ? 'not-allowed' : 'pointer',
+              boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.25)',
+              opacity: activating ? 0.7 : 1,
+              transition: 'all 0.15s ease-in-out'
+            }}
+          >
+            {activating ? (
+              <>
+                <Loader2 size={18} className="spin" />
+                <span>Activating Extension...</span>
+              </>
+            ) : (
+              <>
+                <PhoneCall size={18} />
+                <span>Activate Telecalling Extension</span>
+              </>
+            )}
+          </button>
+        </div>
       </div>
     );
   }

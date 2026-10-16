@@ -8,10 +8,25 @@ export async function GET(req) {
     const authToken = (process.env.PLIVO_AUTH_TOKEN || '').trim().replace(/['"]/g, '');
     const b64 = Buffer.from(`${authId}:${authToken}`).toString('base64');
 
-    const appsRes = await fetch(`https://api.plivo.com/v1/Account/${authId}/Application/`, {
-      headers: { 'Authorization': 'Basic ' + b64 }
-    });
-    const appsData = await appsRes.json();
+    const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl'];
+    const company = (req.nextUrl?.searchParams?.get('company') || '').toLowerCase().trim();
+    const isSwan = !company || SWAN_COMPANIES.includes(company);
+    const scopeSlug = isSwan ? '' : company.replace(/[^a-z0-9]/g, '_');
+    const forwardKey = isSwan ? 'system_settings_forward' : `system_settings_forward_${scopeSlug}`;
+    const inboundKey = isSwan ? 'system_settings_inbound' : `system_settings_inbound_${scopeSlug}`;
+
+    let appsList = [];
+    if (isSwan) {
+      try {
+        const appsRes = await fetch(`https://api.plivo.com/v1/Account/${authId}/Application/`, {
+          headers: { 'Authorization': 'Basic ' + b64 }
+        });
+        const appsData = await appsRes.json();
+        appsList = appsData.objects || [];
+      } catch (err) {
+        console.warn('Plivo apps fetch warning:', err);
+      }
+    }
 
     const adminClient = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -21,13 +36,13 @@ export async function GET(req) {
     const { data: dbSettings } = await adminClient
       .from('call_agents')
       .select('mobile_number')
-      .eq('plivo_username', 'system_settings_forward')
+      .eq('plivo_username', forwardKey)
       .maybeSingle();
 
     const { data: inboundSettings } = await adminClient
       .from('call_agents')
       .select('agent_code, plivo_endpoint_key, plivo_password')
-      .eq('plivo_username', 'system_settings_inbound')
+      .eq('plivo_username', inboundKey)
       .maybeSingle();
 
     let inboundAgentIds = [];
@@ -38,9 +53,9 @@ export async function GET(req) {
     } catch(e) {}
 
     return NextResponse.json({
-      apps: appsData.objects || [],
+      apps: appsList,
       fromNumber: process.env.PLIVO_FROM_NUMBER || '',
-      defaultForward: dbSettings?.mobile_number || process.env.DEFAULT_FORWARD_TO || '',
+      defaultForward: dbSettings?.mobile_number || (isSwan ? (process.env.DEFAULT_FORWARD_TO || '') : ''),
       routingMode: inboundSettings?.agent_code || 'simultaneous',
       stickyAgent: inboundSettings?.plivo_endpoint_key !== 'false',
       inboundAgentIds: Array.isArray(inboundAgentIds) ? inboundAgentIds : []
@@ -55,7 +70,14 @@ export async function GET(req) {
 export async function POST(req) {
   try {
     const body = await req.json();
-    const { defaultForward, routingMode, stickyAgent, inboundAgentIds } = body;
+    const { defaultForward, routingMode, stickyAgent, inboundAgentIds, company } = body;
+
+    const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl'];
+    const compLower = (company || '').toLowerCase().trim();
+    const isSwan = !compLower || SWAN_COMPANIES.includes(compLower);
+    const scopeSlug = isSwan ? '' : compLower.replace(/[^a-z0-9]/g, '_');
+    const forwardKey = isSwan ? 'system_settings_forward' : `system_settings_forward_${scopeSlug}`;
+    const inboundKey = isSwan ? 'system_settings_inbound' : `system_settings_inbound_${scopeSlug}`;
 
     const adminClient = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -63,10 +85,29 @@ export async function POST(req) {
     );
 
     if (defaultForward !== undefined) {
-      await adminClient
+      const { data: existingFwd } = await adminClient
         .from('call_agents')
-        .update({ mobile_number: defaultForward })
-        .eq('plivo_username', 'system_settings_forward');
+        .select('id')
+        .eq('plivo_username', forwardKey)
+        .maybeSingle();
+
+      if (existingFwd) {
+        await adminClient
+          .from('call_agents')
+          .update({ mobile_number: defaultForward })
+          .eq('plivo_username', forwardKey);
+      } else {
+        await adminClient
+          .from('call_agents')
+          .insert({
+            display_name: isSwan ? 'System Forwarding Number' : `System Forwarding (${company})`,
+            plivo_username: forwardKey,
+            mobile_number: defaultForward,
+            default_calling_mode: 'mobile',
+            is_active: false,
+            status: 'offline'
+          });
+      }
     }
 
     if (routingMode !== undefined || stickyAgent !== undefined || inboundAgentIds !== undefined) {
@@ -78,20 +119,20 @@ export async function POST(req) {
       const { data: existing } = await adminClient
         .from('call_agents')
         .select('id')
-        .eq('plivo_username', 'system_settings_inbound')
+        .eq('plivo_username', inboundKey)
         .maybeSingle();
 
       if (existing) {
         await adminClient
           .from('call_agents')
           .update(updatePayload)
-          .eq('plivo_username', 'system_settings_inbound');
+          .eq('plivo_username', inboundKey);
       } else {
         await adminClient
           .from('call_agents')
           .insert({
-            display_name: 'System Inbound Routing Settings',
-            plivo_username: 'system_settings_inbound',
+            display_name: isSwan ? 'System Inbound Routing Settings' : `Inbound Routing (${company})`,
+            plivo_username: inboundKey,
             default_calling_mode: 'browser_webrtc',
             agent_code: routingMode || 'simultaneous',
             plivo_endpoint_key: String(stickyAgent ?? true),

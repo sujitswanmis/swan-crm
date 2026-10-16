@@ -1053,6 +1053,9 @@ export default function GlobalSoftphoneWidget({ userId }) {
         clientInstance.login(data.username, data.password);
       } else if (data.token) {
         clientInstance.loginWithAccessToken(data.token);
+      } else if (data.enabled === false) {
+        setConnectionState('offline');
+        setErrorMessage('');
       } else {
         setConnectionState('error');
         setErrorMessage(data.error || 'Failed to fetch credentials');
