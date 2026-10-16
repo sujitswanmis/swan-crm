@@ -20,6 +20,40 @@ function normalizePhone(phone) {
 }
 
 /**
+ * Whitelist of verified Supabase Postgres columns on the 'leads' table.
+ * Strips all non-database / virtual / computed fields before Supabase calls.
+ */
+const VALID_LEAD_COLUMNS = new Set([
+  'id', 'lead_ref_id', 'lead_date', 'name', 'company', 'our_company',
+  'email', 'phone', 'status', 'priority', 'deal_value', 'source',
+  'source_name', 'assigned_to', 'created_by', 'entry_by', 'created_at',
+  'follow_up_date', 'business_type', 'business_gst', 'business_contact_1',
+  'business_contact_2', 'business_alt_1', 'business_alt_2', 'business_email_1',
+  'business_email_2', 'business_alt_email_1', 'business_alt_email_2',
+  'cp1_name', 'cp1_mobile_2', 'cp1_alt_1', 'cp1_alt_2', 'cp1_email_2',
+  'cp2_name', 'cp2_mobile_1', 'cp2_mobile_2', 'cp2_alt_1', 'cp2_alt_2',
+  'cp2_email_1', 'cp2_email_2', 'cp3_name', 'cp3_mobile_1', 'cp3_mobile_2',
+  'cp3_alt_1', 'cp3_alt_2', 'cp3_email_1', 'cp3_email_2', 'state_name',
+  'district_name', 'city_name', 'tehsil_name', 'block_name', 'pin_code',
+  'address', 'requirement', 'investment', 'buying_timeline', 'updated_at'
+]);
+
+function sanitizeLeadPayload(input, isUpdate = false) {
+  if (!input || typeof input !== 'object') return {};
+  const clean = {};
+  for (const key of Object.keys(input)) {
+    if (VALID_LEAD_COLUMNS.has(key) && input[key] !== undefined) {
+      clean[key] = input[key];
+    }
+  }
+  if (isUpdate) {
+    delete clean.id;
+    delete clean.created_at;
+  }
+  return clean;
+}
+
+/**
  * 1. Save or Update Incomplete Registration as DRAFT
  */
 export async function saveClientRegistrationDraft(draftData, userCompany = '', currentUser = '') {
@@ -34,45 +68,81 @@ export async function saveClientRegistrationDraft(draftData, userCompany = '', c
       return { success: false, error: 'Please enter at least a Business Name, Contact Name, or Mobile Number to save as draft.' };
     }
 
-    const payload = {
+    const rawPayload = {
       ...draftData,
       company: companyName || 'Draft Company',
       name: contactName || 'Draft Contact',
       phone: phone || draftData.phone || null,
       status: 'DRAFT',
-      client_status: 'Draft',
       entry_by: currentUser || draftData.entry_by || 'User',
       our_company: userCompany || draftData.our_company || 'New Swan Group',
       updated_at: new Date().toISOString()
     };
 
-    // Remove any undefined values
-    Object.keys(payload).forEach(k => {
-      if (payload[k] === undefined) delete payload[k];
-    });
-
     if (draftData.id) {
       // Update existing draft
-      const { data, error } = await adminClient
-        .from('leads')
-        .update(payload)
-        .eq('id', draftData.id)
-        .select()
-        .single();
+      const cleanPayload = sanitizeLeadPayload(rawPayload, true);
+      let updateError = null;
+      let updatedData = null;
 
-      if (error) throw error;
-      return { success: true, draft: data, message: 'Draft updated successfully!' };
+      for (let attempt = 0; attempt < 4; attempt++) {
+        const { data, error } = await adminClient
+          .from('leads')
+          .update(cleanPayload)
+          .eq('id', draftData.id)
+          .select()
+          .maybeSingle();
+
+        if (!error) {
+          updatedData = data;
+          updateError = null;
+          break;
+        }
+
+        const match = error.message && error.message.match(/Could not find the '([^']+)' column/i);
+        if (match && match[1] && cleanPayload[match[1]] !== undefined) {
+          delete cleanPayload[match[1]];
+          updateError = error;
+        } else {
+          updateError = error;
+          break;
+        }
+      }
+
+      if (updateError) throw updateError;
+      return { success: true, draft: updatedData || { id: draftData.id, ...cleanPayload }, message: 'Draft updated successfully!' };
     } else {
       // Create new draft record
-      payload.created_at = new Date().toISOString();
-      const { data, error } = await adminClient
-        .from('leads')
-        .insert([payload])
-        .select()
-        .single();
+      rawPayload.created_at = new Date().toISOString();
+      const cleanPayload = sanitizeLeadPayload(rawPayload, false);
+      let insertError = null;
+      let insertedData = null;
 
-      if (error) throw error;
-      return { success: true, draft: data, message: 'Draft saved successfully!' };
+      for (let attempt = 0; attempt < 4; attempt++) {
+        const { data, error } = await adminClient
+          .from('leads')
+          .insert([cleanPayload])
+          .select()
+          .single();
+
+        if (!error) {
+          insertedData = data;
+          insertError = null;
+          break;
+        }
+
+        const match = error.message && error.message.match(/Could not find the '([^']+)' column/i);
+        if (match && match[1] && cleanPayload[match[1]] !== undefined) {
+          delete cleanPayload[match[1]];
+          insertError = error;
+        } else {
+          insertError = error;
+          break;
+        }
+      }
+
+      if (insertError) throw insertError;
+      return { success: true, draft: insertedData, message: 'Draft saved successfully!' };
     }
   } catch (err) {
     console.error('saveClientRegistrationDraft error:', err);
@@ -145,41 +215,35 @@ export async function submitClientRegistrationAndSync(formData, userCompany = ''
       return { success: false, error: 'Business / Company Name is required.' };
     }
 
-    const cleanPayload = {
+    const rawPayload = {
       ...formData,
       company: companyName,
       name: contactName || 'Contact Person',
       phone: primaryPhone || formData.phone,
       status: '6;01>Converted>Client Registered',
-      client_status: 'Active',
       our_company: finalCompany,
       entry_by: currentUser || formData.entry_by || 'User',
       updated_at: new Date().toISOString()
     };
-
-    // Clean payload of helper or undefined fields
-    delete cleanPayload.party_master_id;
-    delete cleanPayload.draft_id;
-    Object.keys(cleanPayload).forEach(k => {
-      if (cleanPayload[k] === undefined) delete cleanPayload[k];
-    });
 
     let savedLeadId = formData.id || null;
     let leadRefId = formData.lead_ref_id || null;
 
     // STEP 1: Update existing draft or insert new lead
     if (savedLeadId) {
+      const cleanPayload = sanitizeLeadPayload(rawPayload, true);
       const { data, error } = await adminClient
         .from('leads')
         .update(cleanPayload)
         .eq('id', savedLeadId)
         .select()
-        .single();
+        .maybeSingle();
 
       if (error) throw error;
-      leadRefId = data.lead_ref_id;
+      if (data) leadRefId = data.lead_ref_id;
     } else {
-      cleanPayload.created_at = new Date().toISOString();
+      rawPayload.created_at = new Date().toISOString();
+      const cleanPayload = sanitizeLeadPayload(rawPayload, false);
       const { data, error } = await adminClient
         .from('leads')
         .insert([cleanPayload])
