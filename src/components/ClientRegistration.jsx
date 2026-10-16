@@ -572,6 +572,11 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
     loadTeam();
   }, [supabase]);
 
+  const DEFAULT_BUSINESS_TYPES = [
+    'Dealer', 'Distributor', 'Retailer', 'Farmer', 'Trader', 
+    'Manufacturer', 'Service Provider', 'Wholesaler', 'Broker', 'Other'
+  ];
+
   const [sources, setSources] = useState(['Website', 'Facebook', 'Google Ads', 'IndiaMART', 'TradeIndia', 'WhatsApp', 'Phone Call', 'Field Visit', 'Dealer Reference', 'Customer Reference', 'Exhibition', 'Other']);
   const [clientStatuses, setClientStatuses] = useState(['None', 'Hot', 'Warm', 'Cold', 'Active', 'InActive', 'Hold', 'In-Progress']);
   const [priorities, setPriorities] = useState([
@@ -579,6 +584,7 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
     'LP04: Low', 'LP05: Cold', 'LP06: Disqualified', 'LP07: Irrelevant', 
     'LP08: Invalid', 'LP09: Spam', 'LP10: Archive', 'LP11: Competitor Dealer', 'LP12: Competitor Distributor'
   ]);
+  const [businessTypes, setBusinessTypes] = useState(DEFAULT_BUSINESS_TYPES);
 
   const [activeView, setActiveView] = useState('form'); // 'form' | 'drafts'
   const [draftsList, setDraftsList] = useState([]);
@@ -611,9 +617,12 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
       if (saved) {
         try {
           const parsed = JSON.parse(saved);
-          if (parsed.sources) setSources(parsed.sources);
-          if (parsed.clientStatuses) setClientStatuses(parsed.clientStatuses);
-          if (parsed.priorities) setPriorities(parsed.priorities);
+          if (parsed.sources && Array.isArray(parsed.sources)) setSources(parsed.sources);
+          if (parsed.clientStatuses && Array.isArray(parsed.clientStatuses)) setClientStatuses(parsed.clientStatuses);
+          if (parsed.priorities && Array.isArray(parsed.priorities)) setPriorities(parsed.priorities);
+          if (parsed.businessTypes && Array.isArray(parsed.businessTypes) && parsed.businessTypes.length > 0) {
+            setBusinessTypes(parsed.businessTypes);
+          }
           if (parsed.client_form_fields) setClientFormFields(parsed.client_form_fields);
         } catch (e) { console.error(e); }
       }
@@ -621,8 +630,28 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
     
     loadConfig();
     window.addEventListener('crm_config_updated', loadConfig);
+
+    // Also fetch latest tenant-configured CRM config from API in background
+    const url = `/api/settings/crm-config${userCompany ? `?company=${encodeURIComponent(userCompany)}` : ''}`;
+    fetch(url)
+      .then(res => res.json())
+      .then(data => {
+        if (!data?.config) return;
+        const cfg = data.config;
+        if (cfg.sources && Array.isArray(cfg.sources)) setSources(cfg.sources);
+        if (cfg.clientStatuses && Array.isArray(cfg.clientStatuses)) setClientStatuses(cfg.clientStatuses);
+        if (cfg.priorities && Array.isArray(cfg.priorities)) setPriorities(cfg.priorities);
+        if (cfg.businessTypes && Array.isArray(cfg.businessTypes) && cfg.businessTypes.length > 0) {
+          setBusinessTypes(cfg.businessTypes);
+        }
+        if (cfg.client_form_fields) setClientFormFields(cfg.client_form_fields);
+      })
+      .catch(err => {
+        console.warn('Notice: Background CRM config fetch in ClientRegistration:', err);
+      });
+
     return () => window.removeEventListener('crm_config_updated', loadConfig);
-  }, []);
+  }, [userCompany]);
 
   const handleSaveDraft = async () => {
     if (!formData.company && !formData.name && !formData.phone) {
@@ -1215,7 +1244,7 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
         .map(m => String(m.emp_name).replace(/,/g, '').trim())
         .filter(Boolean);
 
-      const businessTypes = ['Dealer', 'Distributor', 'Retailer', 'Farmer', 'Trader', 'Manufacturer', 'Service Provider', 'Other'];
+      const currentBusinessTypes = (businessTypes && businessTypes.length > 0) ? businessTypes : DEFAULT_BUSINESS_TYPES;
       const investmentRanges = ['Below 1 Lakh', '1 Lakh - 5 Lakh', '5 Lakh - 10 Lakh', '10 Lakh - 25 Lakh', '25 Lakh - 50 Lakh', 'Above 50 Lakh'];
       const timelines = ['Immediate', 'Within 7 Days', 'Within 15 Days', 'Within 30 Days', 'Within 60 Days', 'After 60 Days', 'Not Decided'];
 
@@ -1253,7 +1282,7 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
 
       // Column E: Business Types
       listSheet.getCell('E1').value = 'Business Type';
-      businessTypes.forEach((b, idx) => {
+      currentBusinessTypes.forEach((b, idx) => {
         listSheet.getCell(`E${idx + 2}`).value = b;
       });
 
@@ -2159,68 +2188,114 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
             {expandedSections.leadInfo && (
               <div style={{ padding: '1.5rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', background: 'var(--bg-surface)' }}>
                 {renderInput('Lead Date', 'lead_date', 'date', true)}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                  <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Our Company Name <span style={{color: 'red'}}>*</span></label>
-                  <select name="our_company" value={formData.our_company === 'NSTL' ? 'NSTLP' : formData.our_company} onChange={handleChange} required style={{ padding: '0.6rem 0.8rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}>
-                    {isSwanWorkspace ? (
-                      <>
-                        <option value="">Select Company</option>
-                        <option value="NSMLR">NSMLR</option>
-                        <option value="NSTLP">NSTLP</option>
-                      </>
-                    ) : (
-                      <option value={userCompany || 'Client Workspace'}>{userCompany || 'Client Workspace'}</option>
-                    )}
-                  </select>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                  <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Lead Source</label>
-                  <select name="source" value={formData.source} onChange={handleChange} style={{ padding: '0.6rem 0.8rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}>
-                    <option value="">Select Lead Source</option>
-                    {sources.map(src => (
-                      <option key={src} value={src}>{src}</option>
-                    ))}
-                  </select>
-                </div>
+
+                {(!clientFormFields?.our_company || clientFormFields.our_company.enabled !== false) && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                    <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                      {clientFormFields?.our_company?.label || 'Our Company Name'} <span style={{color: 'red'}}>*</span>
+                    </label>
+                    <select name="our_company" value={formData.our_company === 'NSTL' ? 'NSTLP' : formData.our_company} onChange={handleChange} required style={{ padding: '0.6rem 0.8rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}>
+                      {isSwanWorkspace ? (
+                        <>
+                          <option value="">Select Company</option>
+                          <option value="NSMLR">NSMLR</option>
+                          <option value="NSTLP">NSTLP</option>
+                        </>
+                      ) : (
+                        <option value={userCompany || 'Client Workspace'}>{userCompany || 'Client Workspace'}</option>
+                      )}
+                    </select>
+                  </div>
+                )}
+
+                {(!clientFormFields?.source || clientFormFields.source.enabled !== false) && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                    <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                      {clientFormFields?.source?.label || 'Lead Source'} {Boolean(clientFormFields?.source?.required) && <span style={{color: 'red'}}>*</span>}
+                    </label>
+                    <select 
+                      name="source" 
+                      value={formData.source} 
+                      onChange={handleChange} 
+                      required={Boolean(clientFormFields?.source?.required)}
+                      style={{ padding: '0.6rem 0.8rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}
+                    >
+                      <option value="">Select Lead Source</option>
+                      {sources.map(src => (
+                        <option key={src} value={src}>{src}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
                 {renderInput('Source Name', 'source_name', 'text')}
+
                 {/* Lead Entry By - Custom Search & Dropdown (Top Manual Entry Allowed) */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                  <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Lead Entry By</label>
-                  <SearchableEntryByDropdown
-                    value={formData.entry_by || ''}
-                    onChange={(val) => setFormData(prev => ({ ...prev, entry_by: val }))}
-                    teamMembers={teamMembers}
-                  />
-                </div>
+                {(!clientFormFields?.entry_by || clientFormFields.entry_by.enabled !== false) && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                    <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                      {clientFormFields?.entry_by?.label || 'Lead Entry By'} {Boolean(clientFormFields?.entry_by?.required) && <span style={{color: 'red'}}>*</span>}
+                    </label>
+                    <SearchableEntryByDropdown
+                      value={formData.entry_by || ''}
+                      onChange={(val) => setFormData(prev => ({ ...prev, entry_by: val }))}
+                      teamMembers={teamMembers}
+                    />
+                  </div>
+                )}
 
                 {/* Assigned To Row - Strict Custom Search & Dropdown ONLY (No Manual Option) */}
-                <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                  <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Assign To (Agent)</label>
-                  <SearchableAssignToDropdown
-                    value={formData.assigned_to || ''}
-                    onChange={(val) => setFormData(prev => ({ ...prev, assigned_to: val }))}
-                    teamMembers={teamMembers}
-                  />
-                </div>
+                {(!clientFormFields?.assigned_to || clientFormFields.assigned_to.enabled !== false) && (
+                  <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                    <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                      {clientFormFields?.assigned_to?.label || 'Assign To (Agent)'} {Boolean(clientFormFields?.assigned_to?.required) && <span style={{color: 'red'}}>*</span>}
+                    </label>
+                    <SearchableAssignToDropdown
+                      value={formData.assigned_to || ''}
+                      onChange={(val) => setFormData(prev => ({ ...prev, assigned_to: val }))}
+                      teamMembers={teamMembers}
+                    />
+                  </div>
+                )}
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                  <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Client Status</label>
-                  <select name="status" value={formData.status} onChange={handleChange} style={{ padding: '0.6rem 0.8rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}>
-                    {clientStatuses.map(st => (
-                      <option key={st} value={st}>{st}</option>
-                    ))}
-                  </select>
-                </div>
+                {(!clientFormFields?.status || clientFormFields.status.enabled !== false) && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                    <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                      {clientFormFields?.status?.label || 'Client Status'} {Boolean(clientFormFields?.status?.required) && <span style={{color: 'red'}}>*</span>}
+                    </label>
+                    <select 
+                      name="status" 
+                      value={formData.status} 
+                      onChange={handleChange} 
+                      required={Boolean(clientFormFields?.status?.required)}
+                      style={{ padding: '0.6rem 0.8rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}
+                    >
+                      {clientStatuses.map(st => (
+                        <option key={st} value={st}>{st}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                  <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Lead Priority Type</label>
-                  <select name="priority" value={formData.priority} onChange={handleChange} style={{ padding: '0.6rem 0.8rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}>
-                    <option value="">Select Priority</option>
-                    {priorities.map(p => (
-                      <option key={p} value={p}>{p}</option>
-                    ))}
-                  </select>
-                </div>
+                {(!clientFormFields?.priority || clientFormFields.priority.enabled !== false) && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                    <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                      {clientFormFields?.priority?.label || 'Lead Priority Type'} {Boolean(clientFormFields?.priority?.required) && <span style={{color: 'red'}}>*</span>}
+                    </label>
+                    <select 
+                      name="priority" 
+                      value={formData.priority} 
+                      onChange={handleChange} 
+                      required={Boolean(clientFormFields?.priority?.required)}
+                      style={{ padding: '0.6rem 0.8rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}
+                    >
+                      <option value="">Select Priority</option>
+                      {priorities.map(p => (
+                        <option key={p} value={p}>{p}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -2234,20 +2309,28 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
             {expandedSections.businessInfo && (
               <div style={{ padding: '1.5rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', background: 'var(--bg-surface)' }}>
                 {renderInput('Business Name', 'company', 'text', true)}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                  <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Business Type</label>
-                  <select name="business_type" value={formData.business_type} onChange={handleChange} style={{ padding: '0.6rem 0.8rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}>
-                    <option value="">Select Business Type</option>
-                    <option value="Dealer">Dealer</option>
-                    <option value="Distributor">Distributor</option>
-                    <option value="Retailer">Retailer</option>
-                    <option value="Farmer">Farmer</option>
-                    <option value="Trader">Trader</option>
-                    <option value="Manufacturer">Manufacturer</option>
-                    <option value="Service Provider">Service Provider</option>
-                    <option value="Other">Other</option>
-                  </select>
-                </div>
+                {(!clientFormFields?.business_type || clientFormFields.business_type.enabled !== false) && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                    <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                      {clientFormFields?.business_type?.label || 'Business Type'} {Boolean(clientFormFields?.business_type?.required) && <span style={{color: 'red'}}>*</span>}
+                    </label>
+                    <select 
+                      name="business_type" 
+                      value={formData.business_type} 
+                      onChange={handleChange} 
+                      required={Boolean(clientFormFields?.business_type?.required)}
+                      style={{ padding: '0.6rem 0.8rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}
+                    >
+                      <option value="">Select Business Type</option>
+                      {businessTypes.map(bt => (
+                        <option key={bt} value={bt}>{bt}</option>
+                      ))}
+                      {formData.business_type && !businessTypes.includes(formData.business_type) && (
+                        <option value={formData.business_type}>{formData.business_type}</option>
+                      )}
+                    </select>
+                  </div>
+                )}
                 {renderInput('Business GST', 'business_gst')}
                 {renderInput('Contact Number 1', 'business_contact_1')}
                 {renderInput('Contact Number 2', 'business_contact_2')}
@@ -2327,54 +2410,64 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
             {expandedSections.location && (
               <div style={{ padding: '1.5rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', background: 'var(--bg-surface)' }}>
                 {/* State Dropdown */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                  <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500 }}>State Name</label>
-                  <select
-                    name="state_name"
-                    value={formData.state_name || ''}
-                    onChange={(e) => {
-                      const newSt = e.target.value;
-                      setFormData(prev => ({ ...prev, state_name: newSt, district_name: '' }));
-                    }}
-                    style={{ padding: '0.6rem 0.8rem', borderRadius: '6px', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', color: 'var(--text-primary)', fontSize: '0.9rem', outline: 'none' }}
-                  >
-                    <option value="">Select State / UT ({statesList.length})</option>
-                    {statesList.map((st) => (
-                      <option key={st.id || st.state_name} value={st.state_name}>
-                        {st.state_name}
-                      </option>
-                    ))}
-                    {formData.state_name && !statesList.some(s => s.state_name?.toLowerCase() === formData.state_name?.toLowerCase()) && (
-                      <option value={formData.state_name}>{formData.state_name}</option>
-                    )}
-                  </select>
-                </div>
+                {(!clientFormFields?.state_name || clientFormFields.state_name.enabled !== false) && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                    <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                      {clientFormFields?.state_name?.label || 'State Name'} {Boolean(clientFormFields?.state_name?.required) && <span style={{color: 'red'}}>*</span>}
+                    </label>
+                    <select
+                      name="state_name"
+                      value={formData.state_name || ''}
+                      required={Boolean(clientFormFields?.state_name?.required)}
+                      onChange={(e) => {
+                        const newSt = e.target.value;
+                        setFormData(prev => ({ ...prev, state_name: newSt, district_name: '' }));
+                      }}
+                      style={{ padding: '0.6rem 0.8rem', borderRadius: '6px', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', color: 'var(--text-primary)', fontSize: '0.9rem', outline: 'none' }}
+                    >
+                      <option value="">Select State / UT ({statesList.length})</option>
+                      {statesList.map((st) => (
+                        <option key={st.id || st.state_name} value={st.state_name}>
+                          {st.state_name}
+                        </option>
+                      ))}
+                      {formData.state_name && !statesList.some(s => s.state_name?.toLowerCase() === formData.state_name?.toLowerCase()) && (
+                        <option value={formData.state_name}>{formData.state_name}</option>
+                      )}
+                    </select>
+                  </div>
+                )}
 
                 {/* District Dropdown */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                  <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500 }}>District Name</label>
-                  <select
-                    name="district_name"
-                    value={formData.district_name || ''}
-                    onChange={handleChange}
-                    disabled={!formData.state_name}
-                    style={{ padding: '0.6rem 0.8rem', borderRadius: '6px', border: '1px solid var(--border-light)', background: !formData.state_name ? 'var(--bg-secondary)' : 'var(--bg-surface)', color: 'var(--text-primary)', fontSize: '0.9rem', outline: 'none' }}
-                  >
-                    <option value="">
-                      {formData.state_name 
-                        ? (districtsList.length > 0 ? `Select District (${districtsList.length})` : 'Select District...') 
-                        : 'Select State First'}
-                    </option>
-                    {districtsList.map((dt) => (
-                      <option key={dt.id || dt.district_name} value={dt.district_name}>
-                        {dt.district_name}
+                {(!clientFormFields?.district_name || clientFormFields.district_name.enabled !== false) && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                    <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                      {clientFormFields?.district_name?.label || 'District Name'} {Boolean(clientFormFields?.district_name?.required) && <span style={{color: 'red'}}>*</span>}
+                    </label>
+                    <select
+                      name="district_name"
+                      value={formData.district_name || ''}
+                      onChange={handleChange}
+                      disabled={!formData.state_name}
+                      required={Boolean(clientFormFields?.district_name?.required)}
+                      style={{ padding: '0.6rem 0.8rem', borderRadius: '6px', border: '1px solid var(--border-light)', background: !formData.state_name ? 'var(--bg-secondary)' : 'var(--bg-surface)', color: 'var(--text-primary)', fontSize: '0.9rem', outline: 'none' }}
+                    >
+                      <option value="">
+                        {formData.state_name 
+                          ? (districtsList.length > 0 ? `Select District (${districtsList.length})` : 'Select District...') 
+                          : 'Select State First'}
                       </option>
-                    ))}
-                    {formData.district_name && !districtsList.some(d => d.district_name?.toLowerCase() === formData.district_name?.toLowerCase()) && (
-                      <option value={formData.district_name}>{formData.district_name}</option>
-                    )}
-                  </select>
-                </div>
+                      {districtsList.map((dt) => (
+                        <option key={dt.id || dt.district_name} value={dt.district_name}>
+                          {dt.district_name}
+                        </option>
+                      ))}
+                      {formData.district_name && !districtsList.some(d => d.district_name?.toLowerCase() === formData.district_name?.toLowerCase()) && (
+                        <option value={formData.district_name}>{formData.district_name}</option>
+                      )}
+                    </select>
+                  </div>
+                )}
 
                 {renderInput('PIN Code', 'pin_code')}
                 {renderInput('City Name', 'city_name')}
@@ -2399,32 +2492,52 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
                   {renderInput('Detailed Requirement', 'requirement')}
                 </div>
                 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                  <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Investment Size</label>
-                  <select name="investment" value={formData.investment} onChange={handleChange} style={{ padding: '0.6rem 0.8rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}>
-                    <option value="">Select Investment</option>
-                    <option value="Below 1 Lakh">Below 1 Lakh</option>
-                    <option value="1 Lakh - 5 Lakh">1 Lakh - 5 Lakh</option>
-                    <option value="5 Lakh - 10 Lakh">5 Lakh - 10 Lakh</option>
-                    <option value="10 Lakh - 25 Lakh">10 Lakh - 25 Lakh</option>
-                    <option value="25 Lakh - 50 Lakh">25 Lakh - 50 Lakh</option>
-                    <option value="Above 50 Lakh">Above 50 Lakh</option>
-                  </select>
-                </div>
+                {(!clientFormFields?.investment || clientFormFields.investment.enabled !== false) && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                    <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                      {clientFormFields?.investment?.label || 'Investment Size'} {Boolean(clientFormFields?.investment?.required) && <span style={{color: 'red'}}>*</span>}
+                    </label>
+                    <select 
+                      name="investment" 
+                      value={formData.investment} 
+                      onChange={handleChange} 
+                      required={Boolean(clientFormFields?.investment?.required)}
+                      style={{ padding: '0.6rem 0.8rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}
+                    >
+                      <option value="">Select Investment</option>
+                      <option value="Below 1 Lakh">Below 1 Lakh</option>
+                      <option value="1 Lakh - 5 Lakh">1 Lakh - 5 Lakh</option>
+                      <option value="5 Lakh - 10 Lakh">5 Lakh - 10 Lakh</option>
+                      <option value="10 Lakh - 25 Lakh">10 Lakh - 25 Lakh</option>
+                      <option value="25 Lakh - 50 Lakh">25 Lakh - 50 Lakh</option>
+                      <option value="Above 50 Lakh">Above 50 Lakh</option>
+                    </select>
+                  </div>
+                )}
                 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                  <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Buying Timeline</label>
-                  <select name="buying_timeline" value={formData.buying_timeline} onChange={handleChange} style={{ padding: '0.6rem 0.8rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}>
-                    <option value="">Select Buying Timeline</option>
-                    <option value="Immediate">Immediate</option>
-                    <option value="Within 7 Days">Within 7 Days</option>
-                    <option value="Within 15 Days">Within 15 Days</option>
-                    <option value="Within 30 Days">Within 30 Days</option>
-                    <option value="Within 60 Days">Within 60 Days</option>
-                    <option value="After 60 Days">After 60 Days</option>
-                    <option value="Not Decided">Not Decided</option>
-                  </select>
-                </div>
+                {(!clientFormFields?.buying_timeline || clientFormFields.buying_timeline.enabled !== false) && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                    <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                      {clientFormFields?.buying_timeline?.label || 'Buying Timeline'} {Boolean(clientFormFields?.buying_timeline?.required) && <span style={{color: 'red'}}>*</span>}
+                    </label>
+                    <select 
+                      name="buying_timeline" 
+                      value={formData.buying_timeline} 
+                      onChange={handleChange} 
+                      required={Boolean(clientFormFields?.buying_timeline?.required)}
+                      style={{ padding: '0.6rem 0.8rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}
+                    >
+                      <option value="">Select Buying Timeline</option>
+                      <option value="Immediate">Immediate</option>
+                      <option value="Within 7 Days">Within 7 Days</option>
+                      <option value="Within 15 Days">Within 15 Days</option>
+                      <option value="Within 30 Days">Within 30 Days</option>
+                      <option value="Within 60 Days">Within 60 Days</option>
+                      <option value="After 60 Days">After 60 Days</option>
+                      <option value="Not Decided">Not Decided</option>
+                    </select>
+                  </div>
+                )}
               </div>
             )}
           </div>

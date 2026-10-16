@@ -13,41 +13,82 @@ import {
   ToggleLeft,
   ToggleRight,
   FormInput,
+  Briefcase,
   Check,
   RotateCcw
 } from 'lucide-react';
 import { logAuditAction } from '@/app/actions/audit';
 
-const DEFAULT_CLIENT_FORM_FIELDS = {
-  lead_date: { label: 'Lead Date', category: 'Lead Info', enabled: true, required: true },
-  our_company: { label: 'Our Company Name', category: 'Lead Info', enabled: true, required: true },
-  source: { label: 'Lead Source', category: 'Lead Info', enabled: true, required: true },
-  source_name: { label: 'Source Name', category: 'Lead Info', enabled: true, required: false },
-  entry_by: { label: 'Entry By', category: 'Lead Info', enabled: true, required: true },
-  assigned_to: { label: 'Assigned To', category: 'Lead Info', enabled: true, required: false },
-  status: { label: 'Lead Status', category: 'Lead Info', enabled: true, required: true },
-  priority: { label: 'Lead Priority Type', category: 'Lead Info', enabled: true, required: false },
-  company: { label: 'Business / Firm Name', category: 'Business Details', enabled: true, required: true },
-  business_type: { label: 'Business Type', category: 'Business Details', enabled: true, required: false },
-  business_gst: { label: 'Business GSTIN', category: 'Business Details', enabled: true, required: false },
-  business_pan: { label: 'Business PAN', category: 'Business Details', enabled: true, required: false },
-  business_contact_1: { label: 'Business Contact 1', category: 'Business Details', enabled: true, required: false },
-  business_contact_2: { label: 'Business Contact 2', category: 'Business Details', enabled: true, required: false },
-  business_email_1: { label: 'Business Email 1', category: 'Business Details', enabled: true, required: false },
-  name: { label: 'Contact Person Name (CP1)', category: 'Contact Person', enabled: true, required: true },
-  phone: { label: 'Mobile Number (CP1)', category: 'Contact Person', enabled: true, required: true },
-  email: { label: 'Email Address (CP1)', category: 'Contact Person', enabled: true, required: false },
-  cp1_mobile_2: { label: 'Alternate Mobile (CP1)', category: 'Contact Person', enabled: true, required: false },
-  state_name: { label: 'State', category: 'Location & Address', enabled: true, required: true },
-  district_name: { label: 'District', category: 'Location & Address', enabled: true, required: true },
-  city_name: { label: 'City', category: 'Location & Address', enabled: true, required: true },
-  tehsil_name: { label: 'Tehsil', category: 'Location & Address', enabled: true, required: false },
-  block_name: { label: 'Block', category: 'Location & Address', enabled: true, required: false },
-  pin_code: { label: 'PIN Code', category: 'Location & Address', enabled: true, required: false },
-  address: { label: 'Full Address', category: 'Location & Address', enabled: true, required: false },
-  requirement: { label: 'Requirement / Product', category: 'Commercial Details', enabled: true, required: false },
-  investment: { label: 'Investment / Budget', category: 'Commercial Details', enabled: true, required: false },
-  buying_timeline: { label: 'Buying Timeline', category: 'Commercial Details', enabled: true, required: false }
+export const DEFAULT_BUSINESS_TYPES = [
+  'Dealer', 'Distributor', 'Retailer', 'Farmer', 'Trader', 
+  'Manufacturer', 'Service Provider', 'Wholesaler', 'Broker', 'Other'
+];
+
+export const DEFAULT_CLIENT_FORM_FIELDS = {
+  // 01 - Lead Information
+  lead_date: { label: 'Lead Date', category: '01 - Lead Information', enabled: true, required: true },
+  our_company: { label: 'Our Company Name', category: '01 - Lead Information', enabled: true, required: true },
+  source: { label: 'Lead Source', category: '01 - Lead Information', enabled: true, required: true },
+  source_name: { label: 'Source Name', category: '01 - Lead Information', enabled: true, required: false },
+  entry_by: { label: 'Lead Entry By', category: '01 - Lead Information', enabled: true, required: true },
+  assigned_to: { label: 'Assign To (Agent)', category: '01 - Lead Information', enabled: true, required: false },
+  status: { label: 'Client Status', category: '01 - Lead Information', enabled: true, required: true },
+  priority: { label: 'Lead Priority Type', category: '01 - Lead Information', enabled: true, required: false },
+
+  // 02 - Business Details
+  company: { label: 'Business / Firm Name', category: '02 - Business Details', enabled: true, required: true },
+  business_type: { label: 'Business Type', category: '02 - Business Details', enabled: true, required: false },
+  business_gst: { label: 'Business GSTIN', category: '02 - Business Details', enabled: true, required: false },
+  business_pan: { label: 'Business PAN', category: '02 - Business Details', enabled: true, required: false },
+  business_contact_1: { label: 'Business Contact 1', category: '02 - Business Details', enabled: true, required: false },
+  business_contact_2: { label: 'Business Contact 2', category: '02 - Business Details', enabled: true, required: false },
+  business_alt_1: { label: 'Business Alternate Number 1', category: '02 - Business Details', enabled: true, required: false },
+  business_alt_2: { label: 'Business Alternate Number 2', category: '02 - Business Details', enabled: true, required: false },
+  business_email_1: { label: 'Business Mail ID 1', category: '02 - Business Details', enabled: true, required: false },
+  business_email_2: { label: 'Business Mail ID 2', category: '02 - Business Details', enabled: true, required: false },
+  business_alt_email_1: { label: 'Business Alternate Mail 1', category: '02 - Business Details', enabled: true, required: false },
+  business_alt_email_2: { label: 'Business Alternate Mail 2', category: '02 - Business Details', enabled: true, required: false },
+
+  // 03 - Contact Person 1
+  name: { label: 'CP1 Name (Primary Contact)', category: '03 - Contact Person 1', enabled: true, required: true },
+  phone: { label: 'CP1 Mobile Number 1', category: '03 - Contact Person 1', enabled: true, required: true },
+  cp1_mobile_2: { label: 'CP1 Mobile Number 2', category: '03 - Contact Person 1', enabled: true, required: false },
+  cp1_alt_1: { label: 'CP1 Alternate Number 1', category: '03 - Contact Person 1', enabled: true, required: false },
+  cp1_alt_2: { label: 'CP1 Alternate Number 2', category: '03 - Contact Person 1', enabled: true, required: false },
+  email: { label: 'CP1 Mail ID 1', category: '03 - Contact Person 1', enabled: true, required: false },
+  cp1_email_2: { label: 'CP1 Alternate Mail 1', category: '03 - Contact Person 1', enabled: true, required: false },
+
+  // 04 - Contact Person 2
+  cp2_name: { label: 'CP2 Name', category: '04 - Contact Person 2', enabled: true, required: false },
+  cp2_mobile_1: { label: 'CP2 Mobile Number 1', category: '04 - Contact Person 2', enabled: true, required: false },
+  cp2_mobile_2: { label: 'CP2 Mobile Number 2', category: '04 - Contact Person 2', enabled: true, required: false },
+  cp2_alt_1: { label: 'CP2 Alternate Number 1', category: '04 - Contact Person 2', enabled: true, required: false },
+  cp2_alt_2: { label: 'CP2 Alternate Number 2', category: '04 - Contact Person 2', enabled: true, required: false },
+  cp2_email_1: { label: 'CP2 Mail ID 1', category: '04 - Contact Person 2', enabled: true, required: false },
+  cp2_email_2: { label: 'CP2 Alternate Mail 1', category: '04 - Contact Person 2', enabled: true, required: false },
+
+  // 05 - Contact Person 3
+  cp3_name: { label: 'CP3 Name', category: '05 - Contact Person 3', enabled: true, required: false },
+  cp3_mobile_1: { label: 'CP3 Mobile Number 1', category: '05 - Contact Person 3', enabled: true, required: false },
+  cp3_mobile_2: { label: 'CP3 Mobile Number 2', category: '05 - Contact Person 3', enabled: true, required: false },
+  cp3_alt_1: { label: 'CP3 Alternate Number 1', category: '05 - Contact Person 3', enabled: true, required: false },
+  cp3_alt_2: { label: 'CP3 Alternate Number 2', category: '05 - Contact Person 3', enabled: true, required: false },
+  cp3_email_1: { label: 'CP3 Mail ID 1', category: '05 - Contact Person 3', enabled: true, required: false },
+  cp3_email_2: { label: 'CP3 Alternate Mail 1', category: '05 - Contact Person 3', enabled: true, required: false },
+
+  // 06 - Location Details
+  state_name: { label: 'State Name', category: '06 - Location Details', enabled: true, required: true },
+  district_name: { label: 'District Name', category: '06 - Location Details', enabled: true, required: true },
+  city_name: { label: 'City Name', category: '06 - Location Details', enabled: true, required: true },
+  tehsil_name: { label: 'Tehsil Name', category: '06 - Location Details', enabled: true, required: false },
+  block_name: { label: 'Block Name', category: '06 - Location Details', enabled: true, required: false },
+  pin_code: { label: 'PIN Code', category: '06 - Location Details', enabled: true, required: false },
+  address: { label: 'Full Address', category: '06 - Location Details', enabled: true, required: false },
+
+  // 07 - Requirements
+  requirement: { label: 'Detailed Requirement', category: '07 - Requirements', enabled: true, required: false },
+  investment: { label: 'Investment Size', category: '07 - Requirements', enabled: true, required: false },
+  buying_timeline: { label: 'Buying Timeline', category: '07 - Requirements', enabled: true, required: false }
 };
 
 export default function CRMConfig({ userCompany = '' }) {
@@ -82,6 +123,9 @@ export default function CRMConfig({ userCompany = '' }) {
   ]);
   const [newPriority, setNewPriority] = useState('');
 
+  const [businessTypes, setBusinessTypes] = useState(DEFAULT_BUSINESS_TYPES);
+  const [newBusinessType, setNewBusinessType] = useState('');
+
   const [assignmentRule, setAssignmentRule] = useState('round_robin');
   const [leadSyncChunkSize, setLeadSyncChunkSize] = useState('500');
   const [clientFormFields, setClientFormFields] = useState(DEFAULT_CLIENT_FORM_FIELDS);
@@ -101,10 +145,18 @@ export default function CRMConfig({ userCompany = '' }) {
         if (parsed.sources && Array.isArray(parsed.sources) && parsed.sources.length > 0) setSources(parsed.sources);
         if (parsed.clientStatuses && Array.isArray(parsed.clientStatuses) && parsed.clientStatuses.length > 0) setClientStatuses(parsed.clientStatuses);
         if (parsed.priorities && Array.isArray(parsed.priorities) && parsed.priorities.length > 0) setPriorities(parsed.priorities);
+        if (parsed.businessTypes && Array.isArray(parsed.businessTypes) && parsed.businessTypes.length > 0) setBusinessTypes(parsed.businessTypes);
         if (parsed.assignmentRule) setAssignmentRule(parsed.assignmentRule);
         if (parsed.leadSyncChunkSize) setLeadSyncChunkSize(parsed.leadSyncChunkSize);
         if (parsed.client_form_fields) {
-          setClientFormFields({ ...DEFAULT_CLIENT_FORM_FIELDS, ...parsed.client_form_fields });
+          const merged = { ...DEFAULT_CLIENT_FORM_FIELDS };
+          Object.keys(parsed.client_form_fields).forEach(k => {
+            merged[k] = {
+              ...(DEFAULT_CLIENT_FORM_FIELDS[k] || {}),
+              ...parsed.client_form_fields[k]
+            };
+          });
+          setClientFormFields(merged);
         }
       }
     } catch (e) {
@@ -124,10 +176,18 @@ export default function CRMConfig({ userCompany = '' }) {
         if (cfg.sources && Array.isArray(cfg.sources) && cfg.sources.length > 0) setSources(cfg.sources);
         if (cfg.clientStatuses && Array.isArray(cfg.clientStatuses) && cfg.clientStatuses.length > 0) setClientStatuses(cfg.clientStatuses);
         if (cfg.priorities && Array.isArray(cfg.priorities) && cfg.priorities.length > 0) setPriorities(cfg.priorities);
+        if (cfg.businessTypes && Array.isArray(cfg.businessTypes) && cfg.businessTypes.length > 0) setBusinessTypes(cfg.businessTypes);
         if (cfg.assignmentRule) setAssignmentRule(cfg.assignmentRule);
         if (cfg.leadSyncChunkSize) setLeadSyncChunkSize(cfg.leadSyncChunkSize);
         if (cfg.client_form_fields) {
-          setClientFormFields({ ...DEFAULT_CLIENT_FORM_FIELDS, ...cfg.client_form_fields });
+          const merged = { ...DEFAULT_CLIENT_FORM_FIELDS };
+          Object.keys(cfg.client_form_fields).forEach(k => {
+            merged[k] = {
+              ...(DEFAULT_CLIENT_FORM_FIELDS[k] || {}),
+              ...cfg.client_form_fields[k]
+            };
+          });
+          setClientFormFields(merged);
         }
 
         // Sync back to localStorage so other tabs / components have latest Supabase data
@@ -161,6 +221,7 @@ export default function CRMConfig({ userCompany = '' }) {
       stages,
       clientStatuses,
       priorities,
+      businessTypes,
       assignmentRule,
       leadSyncChunkSize,
       client_form_fields: clientFormFields,
@@ -263,6 +324,7 @@ export default function CRMConfig({ userCompany = '' }) {
   const subTabs = [
     { id: 'stages', label: 'Pipeline Stages' },
     { id: 'client_form', label: 'Client Form Fields' },
+    { id: 'business_types', label: 'Business Types' },
     { id: 'sources', label: 'Lead Sources' },
     { id: 'client_status', label: 'Client Statuses' },
     { id: 'priority', label: 'Priority Types' },
@@ -329,6 +391,7 @@ export default function CRMConfig({ userCompany = '' }) {
             }}
           >
             {tab.id === 'client_form' && <FormInput size={15} />}
+            {tab.id === 'business_types' && <Briefcase size={15} />}
             {tab.label}
             {tab.id === 'stages' && (
               <span style={{ 
@@ -582,11 +645,12 @@ export default function CRMConfig({ userCompany = '' }) {
           <div style={{ background: 'var(--bg-primary)', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--border-light)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.25rem' }}>
               <div>
-                <h3 style={{ marginTop: 0, fontSize: '1.1rem', color: 'var(--text-primary)', marginBottom: '0.35rem' }}>
+                <h3 style={{ marginTop: 0, fontSize: '1.1rem', color: 'var(--text-primary)', marginBottom: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <FormInput size={18} color="var(--accent-color)" />
                   Client Registration Form Fields (Tenant Control)
                 </h3>
                 <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: 0 }}>
-                  Select which fields appear in <strong>Sales &gt; New Client Registration</strong> for your workspace, and which fields are mandatory.
+                  Configure which fields appear in <strong>Sales &gt; New Client Registration</strong> for your workspace, and which fields are mandatory. All 51 form fields across 7 sections are configurable.
                 </p>
               </div>
               <button
@@ -615,60 +679,143 @@ export default function CRMConfig({ userCompany = '' }) {
                 <thead>
                   <tr style={{ background: 'var(--bg-surface)', borderBottom: '1px solid var(--border-light)' }}>
                     <th style={{ padding: '0.65rem 0.9rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Field Name & Key</th>
-                    <th style={{ padding: '0.65rem 0.9rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Section</th>
+                    <th style={{ padding: '0.65rem 0.9rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Section / Group</th>
                     <th style={{ padding: '0.65rem 0.9rem', fontWeight: 600, color: 'var(--text-secondary)', textAlign: 'center' }}>Visible in Form</th>
                     <th style={{ padding: '0.65rem 0.9rem', fontWeight: 600, color: 'var(--text-secondary)', textAlign: 'center' }}>Required (Mandatory)</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {Object.entries(clientFormFields).map(([key, config]) => {
-                    const isVisible = config.enabled !== false;
-                    const isRequired = Boolean(config.required);
-                    return (
-                      <tr key={key} style={{ borderBottom: '1px solid var(--border-light)', background: isVisible ? 'transparent' : 'rgba(148, 163, 184, 0.05)' }}>
-                        <td style={{ padding: '0.6rem 0.9rem' }}>
-                          <div style={{ fontWeight: 600, color: isVisible ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
-                            {config.label}
-                          </div>
-                          <code style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{key}</code>
-                        </td>
-                        <td style={{ padding: '0.6rem 0.9rem', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
-                          <span style={{ background: 'var(--bg-surface)', padding: '0.2rem 0.5rem', borderRadius: '4px', border: '1px solid var(--border-light)' }}>
-                            {config.category || 'General'}
-                          </span>
-                        </td>
-                        <td style={{ padding: '0.6rem 0.9rem', textAlign: 'center' }}>
-                          <input 
-                            type="checkbox"
-                            checked={isVisible}
-                            onChange={(e) => {
-                              setClientFormFields(prev => ({
-                                ...prev,
-                                [key]: { ...prev[key], enabled: e.target.checked }
-                              }));
-                            }}
-                            style={{ width: '17px', height: '17px', accentColor: 'var(--accent-color)', cursor: 'pointer' }}
-                          />
-                        </td>
-                        <td style={{ padding: '0.6rem 0.9rem', textAlign: 'center' }}>
-                          <input 
-                            type="checkbox"
-                            checked={isRequired}
-                            disabled={!isVisible}
-                            onChange={(e) => {
-                              setClientFormFields(prev => ({
-                                ...prev,
-                                [key]: { ...prev[key], required: e.target.checked }
-                              }));
-                            }}
-                            style={{ width: '17px', height: '17px', accentColor: '#ef4444', cursor: isVisible ? 'pointer' : 'not-allowed' }}
-                          />
-                        </td>
-                      </tr>
-                    );
-                  })}
+                  {Object.entries(clientFormFields)
+                    .sort(([, a], [, b]) => (a.category || '').localeCompare(b.category || ''))
+                    .map(([key, config]) => {
+                      const isVisible = config.enabled !== false;
+                      const isRequired = Boolean(config.required);
+                      return (
+                        <tr key={key} style={{ borderBottom: '1px solid var(--border-light)', background: isVisible ? 'transparent' : 'rgba(148, 163, 184, 0.05)' }}>
+                          <td style={{ padding: '0.6rem 0.9rem' }}>
+                            <div style={{ fontWeight: 600, color: isVisible ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
+                              {config.label}
+                            </div>
+                            <code style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{key}</code>
+                          </td>
+                          <td style={{ padding: '0.6rem 0.9rem', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
+                            <span style={{ background: 'var(--bg-surface)', padding: '0.2rem 0.5rem', borderRadius: '4px', border: '1px solid var(--border-light)', fontWeight: 500 }}>
+                              {config.category || '01 - Lead Information'}
+                            </span>
+                          </td>
+                          <td style={{ padding: '0.6rem 0.9rem', textAlign: 'center' }}>
+                            <input 
+                              type="checkbox"
+                              checked={isVisible}
+                              onChange={(e) => {
+                                setClientFormFields(prev => ({
+                                  ...prev,
+                                  [key]: { ...prev[key], enabled: e.target.checked }
+                                }));
+                              }}
+                              style={{ width: '17px', height: '17px', accentColor: 'var(--accent-color)', cursor: 'pointer' }}
+                            />
+                          </td>
+                          <td style={{ padding: '0.6rem 0.9rem', textAlign: 'center' }}>
+                            <input 
+                              type="checkbox"
+                              checked={isRequired}
+                              disabled={!isVisible}
+                              onChange={(e) => {
+                                setClientFormFields(prev => ({
+                                  ...prev,
+                                  [key]: { ...prev[key], required: e.target.checked }
+                                }));
+                              }}
+                              style={{ width: '17px', height: '17px', accentColor: '#ef4444', cursor: isVisible ? 'pointer' : 'not-allowed' }}
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })}
                 </tbody>
               </table>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 3: BUSINESS TYPES */}
+        {activeSubTab === 'business_types' && (
+          <div style={{ background: 'var(--bg-primary)', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--border-light)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.25rem' }}>
+              <div>
+                <h3 style={{ marginTop: 0, fontSize: '1.1rem', color: 'var(--text-primary)', marginBottom: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Briefcase size={18} color="var(--accent-color)" />
+                  Business Types (Client Registration Dropdown)
+                </h3>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: 0 }}>
+                  Manage the options that appear in the <strong>Business Type</strong> dropdown in New Client Registration (e.g., Dealer, Distributor, Wholesaler, Broker).
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setBusinessTypes(DEFAULT_BUSINESS_TYPES)}
+                style={{
+                  padding: '0.45rem 0.85rem',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border-light)',
+                  background: 'var(--bg-surface)',
+                  color: 'var(--text-secondary)',
+                  fontSize: '0.8rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.35rem'
+                }}
+              >
+                <RotateCcw size={14} /> Reset to Defaults
+              </button>
+            </div>
+            
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem' }}>
+              <input 
+                type="text" 
+                value={newBusinessType}
+                onChange={(e) => setNewBusinessType(e.target.value)}
+                placeholder="Add new business type (e.g., Wholesaler, Broker, Franchise)..."
+                style={{ flex: 1, padding: '0.6rem 1rem', border: '1px solid var(--border-light)', borderRadius: '8px', background: 'var(--bg-surface)', color: 'var(--text-primary)' }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && newBusinessType.trim()) {
+                    if (!businessTypes.includes(newBusinessType.trim())) {
+                      setBusinessTypes([...businessTypes, newBusinessType.trim()]);
+                    }
+                    setNewBusinessType('');
+                  }
+                }}
+              />
+              <button 
+                onClick={() => {
+                  if (newBusinessType.trim()) {
+                    if (!businessTypes.includes(newBusinessType.trim())) {
+                      setBusinessTypes([...businessTypes, newBusinessType.trim()]);
+                    }
+                    setNewBusinessType('');
+                  }
+                }}
+                style={{ padding: '0.6rem 1.5rem', background: 'var(--accent-color)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+              >
+                <Plus size={18} /> Add
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              {businessTypes.map((bt, i) => (
+                <DraggableItem 
+                  key={bt} 
+                  item={bt} 
+                  index={i} 
+                  array={businessTypes} 
+                  setArray={setBusinessTypes} 
+                  onRemove={(item) => setBusinessTypes(businessTypes.filter(b => b !== item))} 
+                  editable={true} 
+                />
+              ))}
             </div>
           </div>
         )}

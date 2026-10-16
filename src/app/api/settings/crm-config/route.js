@@ -6,6 +6,77 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
+export const DEFAULT_BUSINESS_TYPES = [
+  'Dealer', 'Distributor', 'Retailer', 'Farmer', 'Trader', 
+  'Manufacturer', 'Service Provider', 'Wholesaler', 'Broker', 'Other'
+];
+
+export const DEFAULT_CLIENT_FORM_FIELDS = {
+  // 01 - Lead Information
+  lead_date: { label: 'Lead Date', category: '01 - Lead Information', enabled: true, required: true },
+  our_company: { label: 'Our Company Name', category: '01 - Lead Information', enabled: true, required: true },
+  source: { label: 'Lead Source', category: '01 - Lead Information', enabled: true, required: true },
+  source_name: { label: 'Source Name', category: '01 - Lead Information', enabled: true, required: false },
+  entry_by: { label: 'Lead Entry By', category: '01 - Lead Information', enabled: true, required: true },
+  assigned_to: { label: 'Assign To (Agent)', category: '01 - Lead Information', enabled: true, required: false },
+  status: { label: 'Client Status', category: '01 - Lead Information', enabled: true, required: true },
+  priority: { label: 'Lead Priority Type', category: '01 - Lead Information', enabled: true, required: false },
+
+  // 02 - Business Details
+  company: { label: 'Business / Firm Name', category: '02 - Business Details', enabled: true, required: true },
+  business_type: { label: 'Business Type', category: '02 - Business Details', enabled: true, required: false },
+  business_gst: { label: 'Business GSTIN', category: '02 - Business Details', enabled: true, required: false },
+  business_contact_1: { label: 'Business Contact 1', category: '02 - Business Details', enabled: true, required: false },
+  business_contact_2: { label: 'Business Contact 2', category: '02 - Business Details', enabled: true, required: false },
+  business_alt_1: { label: 'Business Alternate Number 1', category: '02 - Business Details', enabled: true, required: false },
+  business_alt_2: { label: 'Business Alternate Number 2', category: '02 - Business Details', enabled: true, required: false },
+  business_email_1: { label: 'Business Mail ID 1', category: '02 - Business Details', enabled: true, required: false },
+  business_email_2: { label: 'Business Mail ID 2', category: '02 - Business Details', enabled: true, required: false },
+  business_alt_email_1: { label: 'Business Alternate Mail 1', category: '02 - Business Details', enabled: true, required: false },
+  business_alt_email_2: { label: 'Business Alternate Mail 2', category: '02 - Business Details', enabled: true, required: false },
+
+  // 03 - Contact Person 1
+  name: { label: 'CP1 Name (Primary Contact)', category: '03 - Contact Person 1', enabled: true, required: true },
+  phone: { label: 'CP1 Mobile Number 1', category: '03 - Contact Person 1', enabled: true, required: true },
+  cp1_mobile_2: { label: 'CP1 Mobile Number 2', category: '03 - Contact Person 1', enabled: true, required: false },
+  cp1_alt_1: { label: 'CP1 Alternate Number 1', category: '03 - Contact Person 1', enabled: true, required: false },
+  cp1_alt_2: { label: 'CP1 Alternate Number 2', category: '03 - Contact Person 1', enabled: true, required: false },
+  email: { label: 'CP1 Mail ID 1', category: '03 - Contact Person 1', enabled: true, required: false },
+  cp1_email_2: { label: 'CP1 Alternate Mail 1', category: '03 - Contact Person 1', enabled: true, required: false },
+
+  // 04 - Contact Person 2
+  cp2_name: { label: 'CP2 Name', category: '04 - Contact Person 2', enabled: true, required: false },
+  cp2_mobile_1: { label: 'CP2 Mobile Number 1', category: '04 - Contact Person 2', enabled: true, required: false },
+  cp2_mobile_2: { label: 'CP2 Mobile Number 2', category: '04 - Contact Person 2', enabled: true, required: false },
+  cp2_alt_1: { label: 'CP2 Alternate Number 1', category: '04 - Contact Person 2', enabled: true, required: false },
+  cp2_alt_2: { label: 'CP2 Alternate Number 2', category: '04 - Contact Person 2', enabled: true, required: false },
+  cp2_email_1: { label: 'CP2 Mail ID 1', category: '04 - Contact Person 2', enabled: true, required: false },
+  cp2_email_2: { label: 'CP2 Alternate Mail 1', category: '04 - Contact Person 2', enabled: true, required: false },
+
+  // 05 - Contact Person 3
+  cp3_name: { label: 'CP3 Name', category: '05 - Contact Person 3', enabled: true, required: false },
+  cp3_mobile_1: { label: 'CP3 Mobile Number 1', category: '05 - Contact Person 3', enabled: true, required: false },
+  cp3_mobile_2: { label: 'CP3 Mobile Number 2', category: '05 - Contact Person 3', enabled: true, required: false },
+  cp3_alt_1: { label: 'CP3 Alternate Number 1', category: '05 - Contact Person 3', enabled: true, required: false },
+  cp3_alt_2: { label: 'CP3 Alternate Number 2', category: '05 - Contact Person 3', enabled: true, required: false },
+  cp3_email_1: { label: 'CP3 Mail ID 1', category: '05 - Contact Person 3', enabled: true, required: false },
+  cp3_email_2: { label: 'CP3 Alternate Mail 1', category: '05 - Contact Person 3', enabled: true, required: false },
+
+  // 06 - Location Details
+  state_name: { label: 'State Name', category: '06 - Location Details', enabled: true, required: true },
+  district_name: { label: 'District Name', category: '06 - Location Details', enabled: true, required: true },
+  city_name: { label: 'City Name', category: '06 - Location Details', enabled: true, required: true },
+  tehsil_name: { label: 'Tehsil Name', category: '06 - Location Details', enabled: true, required: false },
+  block_name: { label: 'Block Name', category: '06 - Location Details', enabled: true, required: false },
+  pin_code: { label: 'PIN Code', category: '06 - Location Details', enabled: true, required: false },
+  address: { label: 'Full Address', category: '06 - Location Details', enabled: true, required: false },
+
+  // 07 - Requirements
+  requirement: { label: 'Detailed Requirement', category: '07 - Requirements', enabled: true, required: false },
+  investment: { label: 'Investment Size', category: '07 - Requirements', enabled: true, required: false },
+  buying_timeline: { label: 'Buying Timeline', category: '07 - Requirements', enabled: true, required: false }
+};
+
 export const DEFAULT_CRM_CONFIG = {
   sources: [
     'Website', 'Facebook', 'Google Ads', 'IndiaMART', 'TradeIndia', 
@@ -28,39 +99,10 @@ export const DEFAULT_CRM_CONFIG = {
     'LP04: Low', 'LP05: Cold', 'LP06: Disqualified', 'LP07: Irrelevant', 
     'LP08: Invalid', 'LP09: Spam', 'LP10: Archive', 'LP11: Competitor Dealer', 'LP12: Competitor Distributor'
   ],
+  businessTypes: DEFAULT_BUSINESS_TYPES,
   assignmentRule: 'round_robin',
   leadSyncChunkSize: '500',
-  client_form_fields: {
-    lead_date: { label: 'Lead Date', enabled: true, required: true },
-    our_company: { label: 'Our Company Name', enabled: true, required: true },
-    source: { label: 'Lead Source', enabled: true, required: true },
-    source_name: { label: 'Source Name', enabled: true, required: false },
-    entry_by: { label: 'Entry By', enabled: true, required: true },
-    assigned_to: { label: 'Assigned To', enabled: true, required: false },
-    status: { label: 'Lead Status', enabled: true, required: true },
-    priority: { label: 'Lead Priority Type', enabled: true, required: false },
-    company: { label: 'Business / Firm Name', enabled: true, required: true },
-    business_type: { label: 'Business Type', enabled: true, required: false },
-    business_gst: { label: 'Business GSTIN', enabled: true, required: false },
-    business_pan: { label: 'Business PAN', enabled: true, required: false },
-    business_contact_1: { label: 'Business Contact 1', enabled: true, required: false },
-    business_contact_2: { label: 'Business Contact 2', enabled: true, required: false },
-    business_email_1: { label: 'Business Email 1', enabled: true, required: false },
-    name: { label: 'Primary Contact Person (CP1 Name)', enabled: true, required: true },
-    phone: { label: 'CP1 Mobile Number', enabled: true, required: true },
-    email: { label: 'CP1 Email', enabled: true, required: false },
-    cp1_mobile_2: { label: 'CP1 Alternate Mobile', enabled: true, required: false },
-    state_name: { label: 'State', enabled: true, required: true },
-    district_name: { label: 'District', enabled: true, required: true },
-    city_name: { label: 'City', enabled: true, required: true },
-    tehsil_name: { label: 'Tehsil', enabled: true, required: false },
-    block_name: { label: 'Block', enabled: true, required: false },
-    pin_code: { label: 'PIN Code', enabled: true, required: false },
-    address: { label: 'Full Address', enabled: true, required: false },
-    requirement: { label: 'Requirement / Product', enabled: true, required: false },
-    investment: { label: 'Investment / Budget', enabled: true, required: false },
-    buying_timeline: { label: 'Buying Timeline', enabled: true, required: false }
-  }
+  client_form_fields: DEFAULT_CLIENT_FORM_FIELDS
 };
 
 function getTenantConfigId(company) {
