@@ -439,7 +439,7 @@ export async function getAllTenantsWithSubscriptions() {
 
     const { data: entitlementsList } = await admin
       .from('tenant_entitlements')
-      .select('tenant_id, module_key, is_enabled');
+      .select('tenant_id, module_key, is_enabled, config_json');
 
     const { data: userCounts } = await admin
       .from('user_roles')
@@ -502,6 +502,11 @@ export async function getAllTenantsWithSubscriptions() {
         ? 999 
         : (Number(smtpLimitsMap[t.id]) || Number(smtpLimitsMap[t.tenant_code]) || Number(smtpLimitsMap[t.name]) || 1);
 
+      const telEnt = (entitlementsList || []).find(e => e.tenant_id === t.id && e.module_key === 'TELEPHONY_CONFIG');
+      const telConfig = telEnt?.config_json || {};
+      const callingSeatLimit = isMasterHq ? 300 : (Number(telConfig.calling_seat_limit) || 5);
+      const callingMode = isMasterHq ? 'managed' : (telConfig.mode || 'managed');
+
       return {
         id: t.id,
         tenant_code: t.tenant_code,
@@ -521,7 +526,16 @@ export async function getAllTenantsWithSubscriptions() {
         entitlements: tEntitlements,
         active_users_count: activeUserCount,
         user_seat_limit: sub?.user_seat_limit || (t.id === DEFAULT_TENANT_ID ? 200 : 5),
-        smtp_accounts_limit: smtpLimit
+        smtp_accounts_limit: smtpLimit,
+        calling_seats_limit: callingSeatLimit,
+        calling_mode: callingMode,
+        telephony_config: {
+          mode: callingMode,
+          calling_seat_limit: callingSeatLimit,
+          auth_id: telConfig.auth_id || '',
+          auth_token: telConfig.auth_token || '',
+          from_number: telConfig.from_number || process.env.PLIVO_FROM_NUMBER || '+918035340622'
+        }
       };
     });
 
@@ -1060,6 +1074,173 @@ export async function updateTenantSmtpLimit(tenantId, limit = 1) {
     };
   } catch (err) {
     console.error('updateTenantSmtpLimit error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Super Admin: Get telephony & calling seats config for a tenant
+ */
+export async function getTenantTelephonyConfig(tenantId, companyName = '') {
+  try {
+    const admin = getAdminClient();
+    
+    // 1. Try tenant_entitlements
+    if (tenantId) {
+      const { data: ent } = await admin
+        .from('tenant_entitlements')
+        .select('config_json')
+        .eq('tenant_id', tenantId)
+        .eq('module_key', 'TELEPHONY_CONFIG')
+        .maybeSingle();
+
+      if (ent?.config_json) {
+        return {
+          success: true,
+          config: {
+            mode: ent.config_json.mode || 'managed',
+            auth_id: ent.config_json.auth_id || '',
+            auth_token: ent.config_json.auth_token || '',
+            from_number: ent.config_json.from_number || process.env.PLIVO_FROM_NUMBER || '+918035340622',
+            calling_seat_limit: Number(ent.config_json.calling_seat_limit) || 5
+          }
+        };
+      }
+    }
+
+    // 2. Fallback to call_agents system_telephony_config_{slug}
+    const slug = (companyName || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '_');
+    if (slug) {
+      const configKey = `system_telephony_config_${slug}`;
+      const { data: agentRow } = await admin
+        .from('call_agents')
+        .select('agent_code, mobile_number, plivo_endpoint_key, plivo_password')
+        .eq('plivo_username', configKey)
+        .maybeSingle();
+
+      if (agentRow) {
+        let parsed = {};
+        try {
+          parsed = JSON.parse(agentRow.plivo_password || '{}');
+        } catch (_) {}
+
+        return {
+          success: true,
+          config: {
+            mode: agentRow.agent_code || parsed.mode || 'managed',
+            auth_id: parsed.auth_id || '',
+            auth_token: parsed.auth_token || '',
+            from_number: agentRow.mobile_number || parsed.from_number || process.env.PLIVO_FROM_NUMBER || '+918035340622',
+            calling_seat_limit: parseInt(agentRow.plivo_endpoint_key, 10) || parsed.calling_seat_limit || 5
+          }
+        };
+      }
+    }
+
+    return {
+      success: true,
+      config: {
+        mode: 'managed',
+        auth_id: '',
+        auth_token: '',
+        from_number: process.env.PLIVO_FROM_NUMBER || '+918035340622',
+        calling_seat_limit: 5
+      }
+    };
+  } catch (err) {
+    console.error('getTenantTelephonyConfig error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Super Admin: Update telephony & calling seats config for a tenant
+ */
+export async function updateTenantTelephonyConfig(tenantId, companyName, {
+  mode = 'managed',
+  authId = '',
+  authToken = '',
+  fromNumber = '',
+  callingSeatLimit = 5
+}) {
+  try {
+    const admin = getAdminClient();
+    const cleanMode = mode === 'byoc' ? 'byoc' : 'managed';
+    const cleanAuthId = (authId || '').trim();
+    const cleanAuthToken = (authToken || '').trim();
+    const cleanFromNumber = (fromNumber || '').trim() || process.env.PLIVO_FROM_NUMBER || '+918035340622';
+    const cleanSeatLimit = Math.max(1, parseInt(callingSeatLimit, 10) || 5);
+
+    const configPayload = {
+      mode: cleanMode,
+      auth_id: cleanAuthId,
+      auth_token: cleanAuthToken,
+      from_number: cleanFromNumber,
+      calling_seat_limit: cleanSeatLimit,
+      updated_at: new Date().toISOString()
+    };
+
+    // 1. Save to tenant_entitlements if tenantId is provided
+    if (tenantId) {
+      const { error: entError } = await admin
+        .from('tenant_entitlements')
+        .upsert({
+          tenant_id: tenantId,
+          module_key: 'TELEPHONY_CONFIG',
+          is_enabled: true,
+          config_json: configPayload
+        }, { onConflict: 'tenant_id,module_key' });
+
+      if (entError) {
+        console.warn('tenant_entitlements upsert notice for TELEPHONY_CONFIG:', entError.message);
+      }
+    }
+
+    // 2. Also sync to call_agents system_telephony_config_{slug} for backward compatibility
+    const slug = (companyName || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '_');
+    if (slug) {
+      const configKey = `system_telephony_config_${slug}`;
+      const payloadString = JSON.stringify(configPayload);
+
+      const { data: existingAgent } = await admin
+        .from('call_agents')
+        .select('id')
+        .eq('plivo_username', configKey)
+        .maybeSingle();
+
+      if (existingAgent) {
+        await admin
+          .from('call_agents')
+          .update({
+            agent_code: cleanMode,
+            mobile_number: cleanFromNumber,
+            plivo_endpoint_key: String(cleanSeatLimit),
+            plivo_password: payloadString,
+            is_active: true
+          })
+          .eq('id', existingAgent.id);
+      } else {
+        await admin
+          .from('call_agents')
+          .insert({
+            display_name: `Telephony Config (${companyName || slug})`,
+            plivo_username: configKey,
+            agent_code: cleanMode,
+            mobile_number: cleanFromNumber,
+            plivo_endpoint_key: String(cleanSeatLimit),
+            plivo_password: payloadString,
+            is_active: true
+          });
+      }
+    }
+
+    return {
+      success: true,
+      message: `Telephony config for '${companyName || 'tenant'}' updated successfully! (${cleanSeatLimit} Calling Seats, Mode: ${cleanMode.toUpperCase()})`,
+      config: configPayload
+    };
+  } catch (err) {
+    console.error('updateTenantTelephonyConfig error:', err);
     return { success: false, error: err.message };
   }
 }

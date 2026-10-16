@@ -44,7 +44,8 @@ import {
   Compass,
   LogIn,
   Key,
-  User
+  User,
+  Phone
 } from 'lucide-react';
 import {
   getProcessCatalog,
@@ -58,6 +59,8 @@ import {
   createTenantWorkspace,
   updateTenantEntitlements,
   updateTenantSmtpLimit,
+  getTenantTelephonyConfig,
+  updateTenantTelephonyConfig,
   extendTenantSubscriptionTrial,
   recordPaymentAndGenerateInvoice,
   updateTenantValidityAndStatus,
@@ -116,6 +119,17 @@ export default function SuperAdminSaasPanel({ initialTab = 'pricing', activeSubT
   const [seatTransactionId, setSeatTransactionId] = useState('');
   const [seatGstType, setSeatGstType] = useState('IGST'); // 'IGST' | 'CGST_SGST'
   const [processingSeats, setProcessingSeats] = useState(false);
+
+  // Telephony & Calling Seats Config Modal State
+  const [telephonyModalTenant, setTelephonyModalTenant] = useState(null);
+  const [telephonyLoading, setTelephonyLoading] = useState(false);
+  const [telephonySaving, setTelephonySaving] = useState(false);
+  const [telephonyMode, setTelephonyMode] = useState('managed'); // 'managed' | 'byoc'
+  const [telephonyAuthId, setTelephonyAuthId] = useState('');
+  const [telephonyAuthToken, setTelephonyAuthToken] = useState('');
+  const [telephonyShowToken, setTelephonyShowToken] = useState(false);
+  const [telephonyFromNumber, setTelephonyFromNumber] = useState('+918035340622');
+  const [telephonySeatLimit, setTelephonySeatLimit] = useState(5);
 
   // Billing History Ledger Modal State
   const [historyModalTenant, setHistoryModalTenant] = useState(null);
@@ -742,6 +756,61 @@ Thank you for choosing New Swan CRM!`;
       showNotification(err.message, true);
     } finally {
       setGrantingTrial(false);
+    }
+  };
+
+  const handleOpenTelephonyModal = async (t) => {
+    setTelephonyModalTenant(t);
+    setTelephonyLoading(true);
+    setTelephonyShowToken(false);
+    try {
+      const res = await getTenantTelephonyConfig(t.id, t.name);
+      if (res?.success && res.config) {
+        setTelephonyMode(res.config.mode || 'managed');
+        setTelephonyAuthId(res.config.auth_id || '');
+        setTelephonyAuthToken(res.config.auth_token || '');
+        setTelephonyFromNumber(res.config.from_number || '+918035340622');
+        setTelephonySeatLimit(res.config.calling_seat_limit || 5);
+      } else {
+        setTelephonyMode(t.calling_mode || 'managed');
+        setTelephonyAuthId('');
+        setTelephonyAuthToken('');
+        setTelephonyFromNumber('+918035340622');
+        setTelephonySeatLimit(t.calling_seats_limit || 5);
+      }
+    } catch (err) {
+      console.error('Failed to load tenant telephony config:', err);
+    } finally {
+      setTelephonyLoading(false);
+    }
+  };
+
+  const handleSaveTelephonyConfig = async () => {
+    if (!telephonyModalTenant) return;
+    setTelephonySaving(true);
+    try {
+      const res = await updateTenantTelephonyConfig(
+        telephonyModalTenant.id,
+        telephonyModalTenant.name,
+        {
+          mode: telephonyMode,
+          authId: telephonyAuthId,
+          authToken: telephonyAuthToken,
+          fromNumber: telephonyFromNumber,
+          callingSeatLimit: telephonySeatLimit
+        }
+      );
+      if (res?.success) {
+        showNotification(res.message);
+        setTelephonyModalTenant(null);
+        await loadData();
+      } else {
+        showNotification(res?.error || 'Failed to update telephony configuration.', true);
+      }
+    } catch (err) {
+      showNotification(err.message, true);
+    } finally {
+      setTelephonySaving(false);
     }
   };
 
@@ -1469,6 +1538,9 @@ Thank you for choosing New Swan CRM!`;
                           <span style={{ fontSize: '0.72rem', background: '#fef3c7', color: '#92400e', padding: '0.15rem 0.4rem', borderRadius: '4px', border: '1px solid #fde68a', fontWeight: 600 }} title="Allowed SMTP server account connections">
                             📧 SMTP: {t.smtp_accounts_limit || 1}
                           </span>
+                          <span style={{ fontSize: '0.72rem', background: '#e0f2fe', color: '#0369a1', padding: '0.15rem 0.4rem', borderRadius: '4px', border: '1px solid #bae6fd', fontWeight: 600 }} title="Calling Seats Limit and Telephony Mode">
+                            📞 Calling: {t.calling_seats_limit || 5} Seats ({t.calling_mode === 'byoc' ? 'BYOC' : 'Managed'})
+                          </span>
                           <button
                             onClick={() => handleOpenModulesModal(t)}
                             style={{
@@ -1635,6 +1707,28 @@ Thank you for choosing New Swan CRM!`;
                                 title="View complete billing ledger and all past invoices"
                               >
                                 <FolderClock size={12} /> Ledger
+                              </button>
+
+                              {/* Telephony & Calling Seats Config Button */}
+                              <button
+                                type="button"
+                                onClick={() => handleOpenTelephonyModal(t)}
+                                style={{
+                                  padding: '0.3rem 0.6rem',
+                                  borderRadius: '6px',
+                                  border: '1px solid #0284c7',
+                                  background: '#f0f9ff',
+                                  color: '#0369a1',
+                                  fontSize: '0.76rem',
+                                  cursor: 'pointer',
+                                  fontWeight: 600,
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '3px'
+                                }}
+                                title="Configure Telephony mode (Managed/BYOC), Auth ID & Token, and Calling Seat Quota"
+                              >
+                                <Phone size={12} /> Telephony
                               </button>
 
                               {/* Free Trial Button */}
@@ -2064,6 +2158,252 @@ Thank you for choosing New Swan CRM!`;
                 </div>
               );
             })()}
+          </div>
+        </div>
+      )}
+
+      {/* Telephony & Calling Seats Configuration Modal */}
+      {telephonyModalTenant && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.65)',
+          backdropFilter: 'blur(3px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 100000,
+          padding: '1rem'
+        }}>
+          <div className="card" style={{ padding: '1.75rem', width: '100%', maxWidth: '620px', maxHeight: '92vh', overflowY: 'auto', background: '#fff', borderRadius: '12px' }}>
+            {/* Modal Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.85rem', marginBottom: '1.25rem' }}>
+              <div>
+                <h3 style={{ fontSize: '1.2rem', fontWeight: 800, margin: 0, color: '#0369a1', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Phone size={22} color="#0284c7" />
+                  Telephony & Calling Seats Configuration
+                </h3>
+                <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                  Workspace: <strong>{telephonyModalTenant.name}</strong> ({telephonyModalTenant.tenant_code})
+                </p>
+              </div>
+              <button
+                onClick={() => setTelephonyModalTenant(null)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.2rem', color: '#64748b' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {telephonyLoading ? (
+              <div style={{ padding: '3rem', textAlign: 'center', color: '#64748b' }}>
+                <RefreshCw size={24} className="spin" style={{ margin: '0 auto 0.75rem auto' }} />
+                <div>Loading telephony credentials & seat settings...</div>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                {/* Section 1: Calling Mode Selector */}
+                <div>
+                  <label style={{ fontSize: '0.85rem', fontWeight: 700, color: '#1e293b', display: 'block', marginBottom: '0.5rem' }}>
+                    Telephony Infrastructure & Calling Mode
+                  </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                    <div
+                      onClick={() => setTelephonyMode('managed')}
+                      style={{
+                        padding: '0.85rem',
+                        borderRadius: '8px',
+                        border: `2px solid ${telephonyMode === 'managed' ? '#0284c7' : '#e2e8f0'}`,
+                        background: telephonyMode === 'managed' ? '#f0f9ff' : '#f8fafc',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      <div style={{ fontWeight: 700, fontSize: '0.88rem', color: telephonyMode === 'managed' ? '#0369a1' : '#334155', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                        <ShieldCheck size={16} color={telephonyMode === 'managed' ? '#0284c7' : '#64748b'} />
+                        Managed by Platform
+                      </div>
+                      <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.35rem', lineHeight: 1.35 }}>
+                        Platform SuperAdmin Plivo account trunk. No client Plivo credentials needed.
+                      </div>
+                    </div>
+
+                    <div
+                      onClick={() => setTelephonyMode('byoc')}
+                      style={{
+                        padding: '0.85rem',
+                        borderRadius: '8px',
+                        border: `2px solid ${telephonyMode === 'byoc' ? '#7c3aed' : '#e2e8f0'}`,
+                        background: telephonyMode === 'byoc' ? '#faf5ff' : '#f8fafc',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      <div style={{ fontWeight: 700, fontSize: '0.88rem', color: telephonyMode === 'byoc' ? '#6d28d9' : '#334155', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                        <Key size={16} color={telephonyMode === 'byoc' ? '#7c3aed' : '#64748b'} />
+                        BYOC (Client Plivo)
+                      </div>
+                      <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.35rem', lineHeight: 1.35 }}>
+                        Bring Your Own Carrier. Client connects their own Plivo Auth ID & Auth Token.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Section 2: BYOC Credentials (If BYOC or override) */}
+                {telephonyMode === 'byoc' ? (
+                  <div style={{ padding: '1rem', background: '#faf5ff', borderRadius: '8px', border: '1px solid #e9d5ff', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                    <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#6d28d9' }}>
+                      🔑 Client Plivo Carrier Credentials
+                    </div>
+
+                    <div>
+                      <label style={{ fontSize: '0.78rem', fontWeight: 600, color: '#4b5563', display: 'block', marginBottom: '0.25rem' }}>
+                        Plivo Auth ID (API ID)
+                      </label>
+                      <input
+                        type="text"
+                        value={telephonyAuthId}
+                        onChange={e => setTelephonyAuthId(e.target.value)}
+                        placeholder="e.g. MAMZXXXXXXXXXXXXXXXX"
+                        style={{ width: '100%', padding: '0.55rem 0.75rem', borderRadius: '6px', border: '1px solid #d8b4fe', fontSize: '0.85rem', fontFamily: 'monospace' }}
+                      />
+                    </div>
+
+                    <div>
+                      <label style={{ fontSize: '0.78rem', fontWeight: 600, color: '#4b5563', display: 'block', marginBottom: '0.25rem' }}>
+                        Plivo Auth Token (API Secret)
+                      </label>
+                      <div style={{ position: 'relative' }}>
+                        <input
+                          type={telephonyShowToken ? 'text' : 'password'}
+                          value={telephonyAuthToken}
+                          onChange={e => setTelephonyAuthToken(e.target.value)}
+                          placeholder="Enter Plivo Auth Token..."
+                          style={{ width: '100%', padding: '0.55rem 2.25rem 0.55rem 0.75rem', borderRadius: '6px', border: '1px solid #d8b4fe', fontSize: '0.85rem', fontFamily: 'monospace' }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setTelephonyShowToken(!telephonyShowToken)}
+                          style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#7c3aed' }}
+                        >
+                          {telephonyShowToken ? <EyeOff size={16} /> : <Eye size={16} />}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ padding: '0.75rem 1rem', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #bbf7d0', fontSize: '0.8rem', color: '#166534', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <CheckCircle2 size={16} color="#16a34a" />
+                    <span>Platform Plivo credentials are automatically assigned and safely encrypted.</span>
+                  </div>
+                )}
+
+                {/* Section 3: Outbound Caller ID */}
+                <div>
+                  <label style={{ fontSize: '0.85rem', fontWeight: 700, color: '#1e293b', display: 'block', marginBottom: '0.35rem' }}>
+                    Outbound Caller ID (Virtual Number)
+                  </label>
+                  <input
+                    type="text"
+                    value={telephonyFromNumber}
+                    onChange={e => setTelephonyFromNumber(e.target.value)}
+                    placeholder="+918035340622"
+                    style={{ width: '100%', padding: '0.55rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.85rem' }}
+                  />
+                  <span style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '0.2rem', display: 'block' }}>
+                    Customers see this number when agents call them from this workspace.
+                  </span>
+                </div>
+
+                {/* Section 4: Calling Seat Quota Limit */}
+                <div>
+                  <label style={{ fontSize: '0.85rem', fontWeight: 700, color: '#1e293b', display: 'block', marginBottom: '0.35rem' }}>
+                    Calling Seat Quota (HQ + Branches Total)
+                  </label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
+                    {[5, 10, 20, 50, 100].map(s => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => setTelephonySeatLimit(s)}
+                        style={{
+                          padding: '0.35rem 0.75rem',
+                          borderRadius: '6px',
+                          border: `1px solid ${telephonySeatLimit === s ? '#0284c7' : '#cbd5e1'}`,
+                          background: telephonySeatLimit === s ? '#0284c7' : '#fff',
+                          color: telephonySeatLimit === s ? '#fff' : '#334155',
+                          fontSize: '0.8rem',
+                          fontWeight: 600,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {s} Seats
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <input
+                      type="number"
+                      min="1"
+                      max="500"
+                      value={telephonySeatLimit}
+                      onChange={e => setTelephonySeatLimit(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                      style={{ width: '120px', padding: '0.55rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.9rem', fontWeight: 700 }}
+                    />
+                    <span style={{ fontSize: '0.8rem', color: '#64748b' }}>
+                      Maximum active calling agents allowed across Headquarter & all Branches.
+                    </span>
+                  </div>
+                </div>
+
+                {/* Footer Actions */}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.75rem', borderTop: '1px solid var(--border-light)', paddingTop: '1rem' }}>
+                  <button
+                    type="button"
+                    onClick={() => setTelephonyModalTenant(null)}
+                    disabled={telephonySaving}
+                    style={{
+                      padding: '0.6rem 1.25rem',
+                      borderRadius: '8px',
+                      border: '1px solid #cbd5e1',
+                      background: '#fff',
+                      fontSize: '0.85rem',
+                      cursor: 'pointer',
+                      fontWeight: 600,
+                      color: '#475569'
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveTelephonyConfig}
+                    disabled={telephonySaving}
+                    style={{
+                      padding: '0.6rem 1.5rem',
+                      borderRadius: '8px',
+                      border: 'none',
+                      background: '#0284c7',
+                      color: '#fff',
+                      fontSize: '0.85rem',
+                      cursor: telephonySaving ? 'not-allowed' : 'pointer',
+                      fontWeight: 700,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.4rem',
+                      boxShadow: '0 2px 4px rgba(2, 132, 199, 0.25)'
+                    }}
+                  >
+                    {telephonySaving ? <RefreshCw size={15} className="spin" /> : <Save size={15} />}
+                    {telephonySaving ? 'Saving...' : 'Save Telephony Configuration'}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

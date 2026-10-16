@@ -51,6 +51,58 @@ export async function getWorkspaceTelephonyConfig(company = '', tenantId = null)
       process.env.SUPABASE_SERVICE_ROLE_KEY
     );
 
+    // 1. First check tenant_entitlements if tenantId is provided or can be looked up
+    let resolvedTenantId = tenantId;
+    if (!resolvedTenantId && company) {
+      const { data: tenant } = await adminClient
+        .from('tenants')
+        .select('id')
+        .ilike('name', company.trim())
+        .maybeSingle();
+      if (tenant?.id) resolvedTenantId = tenant.id;
+    }
+
+    if (resolvedTenantId) {
+      const { data: ent } = await adminClient
+        .from('tenant_entitlements')
+        .select('config_json')
+        .eq('tenant_id', resolvedTenantId)
+        .eq('module_key', 'TELEPHONY_CONFIG')
+        .maybeSingle();
+
+      if (ent?.config_json) {
+        const c = ent.config_json;
+        const mode = c.mode || 'managed';
+        const seatLimit = Number(c.calling_seat_limit) || 5;
+        const fromNumber = c.from_number || defaultFromNumber;
+        const authId = (c.auth_id || '').trim();
+        const authToken = (c.auth_token || '').trim();
+
+        if (mode === 'byoc' && authId && authToken) {
+          return {
+            mode: 'byoc',
+            authId,
+            authToken,
+            fromNumber,
+            callingSeatLimit: seatLimit,
+            isSwan: false,
+            tenantId: resolvedTenantId
+          };
+        }
+
+        return {
+          mode: 'managed',
+          authId: authId || defaultAuthId,
+          authToken: authToken || defaultAuthToken,
+          fromNumber,
+          callingSeatLimit: seatLimit,
+          isSwan: false,
+          tenantId: resolvedTenantId
+        };
+      }
+    }
+
+    // 2. Fallback to system_telephony_config_{slug} in call_agents
     const slug = getCompanySlug(company);
     const configKey = `system_telephony_config_${slug}`;
 
@@ -120,21 +172,28 @@ export async function getWorkspaceCallingSeatQuota(company = '', tenantId = null
 
     const reqLower = String(company || '').toLowerCase().trim();
     const [{ data: users }, { data: agents }, config] = await Promise.all([
-      adminClient.from('user_roles').select('user_id, company'),
+      adminClient.from('user_roles').select('user_id, company, tenant_id'),
       adminClient.from('call_agents').select('id, user_id, is_active, plivo_username'),
       getWorkspaceTelephonyConfig(company, tenantId)
     ]);
 
     const userCompanyMap = new Map();
     (users || []).forEach(u => {
-      if (u.user_id) userCompanyMap.set(u.user_id, String(u.company || '').toLowerCase().trim());
+      if (u.user_id) {
+        userCompanyMap.set(u.user_id, {
+          company: String(u.company || '').toLowerCase().trim(),
+          tenantId: u.tenant_id
+        });
+      }
     });
 
     const activeWorkspaceAgents = (agents || []).filter(a => {
       if (!a.user_id) return false;
       if (a.plivo_username?.startsWith('system_')) return false;
-      const comp = userCompanyMap.get(a.user_id) || '';
-      return comp === reqLower;
+      const uInfo = userCompanyMap.get(a.user_id);
+      if (!uInfo) return false;
+      if (tenantId && uInfo.tenantId === tenantId) return true;
+      return uInfo.company === reqLower;
     });
 
     const used = activeWorkspaceAgents.length;

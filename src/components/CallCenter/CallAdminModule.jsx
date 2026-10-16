@@ -253,6 +253,7 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
   const [selectedUserId, setSelectedUserId] = useState('');
   const [adding, setAdding] = useState(false);
   const unassigned = users.filter(u => !agents.some(a => a.user_id === u.user_id));
+  const userMap = new Map((users || []).map(u => [u.user_id, u]));
 
   // Column Resizing Hook (Lead Data Pattern)
   const {
@@ -328,7 +329,7 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
             }}>
               <Users size={15} color={seatQuota.canAdd ? '#16a34a' : '#dc2626'} />
               <span style={{ fontWeight: 600, color: seatQuota.canAdd ? '#15803d' : '#b91c1c' }}>
-                Calling Seats: {seatQuota.used} / {seatQuota.total} Used
+                Calling Seats: {seatQuota.used} / {seatQuota.total} Used (HQ + Branches)
               </span>
               {!seatQuota.canAdd && (
                 <span style={{ color: '#dc2626', fontWeight: 700, marginLeft: '0.25rem', fontSize:'0.75rem' }}>
@@ -346,9 +347,15 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
             style={{ flex:1, padding:'0.65rem 1rem', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'0.9rem', background:'white' }}
           >
             <option value="">Select Team Member…</option>
-            {unassigned.map(u => (
-              <option key={u.user_id} value={u.user_id}>{u.emp_name} ({u.emp_department || 'No Dept'})</option>
-            ))}
+            {unassigned.map(u => {
+              const loc = u.work_location_name || u.work_location_type || 'Headquarter';
+              const dept = u.emp_department || 'General';
+              return (
+                <option key={u.user_id} value={u.user_id}>
+                  {u.emp_name} ({dept} • 🏢 {loc})
+                </option>
+              );
+            })}
           </select>
           <button
             onClick={handleAdd}
@@ -426,12 +433,26 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
               </tr>
             </thead>
             <tbody>
-              {agents.map((agent, i) => (
-                <tr key={agent.id || `agent-${i}`} style={{ borderBottom:'1px solid #f1f5f9', background: i%2===0?'white':'#fafafa' }}>
-                  <td style={{ width: `${colWidths.agent}px`, padding:'1rem', fontWeight:600, fontSize:'0.9rem', color:'#1e293b', boxSizing: 'border-box', verticalAlign: 'top' }} title={agent.display_name}>
-                    <div style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }}>{agent.display_name}</div>
-                    {agent.mobile_number && <div style={{ fontSize:'0.75rem', color:'#94a3b8', whiteSpace: 'normal', wordBreak: 'break-word', marginTop: '0.2rem' }}>{agent.mobile_number}</div>}
-                  </td>
+              {agents.map((agent, i) => {
+                const u = userMap.get(agent.user_id);
+                const loc = u?.work_location_name || u?.work_location_type || 'Headquarter';
+                const dept = u?.emp_department || '';
+                return (
+                  <tr key={agent.id || `agent-${i}`} style={{ borderBottom:'1px solid #f1f5f9', background: i%2===0?'white':'#fafafa' }}>
+                    <td style={{ width: `${colWidths.agent}px`, padding:'1rem', fontWeight:600, fontSize:'0.9rem', color:'#1e293b', boxSizing: 'border-box', verticalAlign: 'top' }} title={agent.display_name}>
+                      <div style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }}>{agent.display_name}</div>
+                      {agent.mobile_number && <div style={{ fontSize:'0.75rem', color:'#94a3b8', whiteSpace: 'normal', wordBreak: 'break-word', marginTop: '0.2rem' }}>{agent.mobile_number}</div>}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '0.3rem', flexWrap: 'wrap' }}>
+                        {dept && (
+                          <span style={{ fontSize: '0.72rem', background: '#f1f5f9', color: '#475569', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>
+                            {dept}
+                          </span>
+                        )}
+                        <span style={{ fontSize: '0.72rem', background: '#ecfdf5', color: '#047857', padding: '0.1rem 0.4rem', borderRadius: '4px', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
+                          🏢 {loc}
+                        </span>
+                      </div>
+                    </td>
                   <td style={{ width: `${colWidths.calling_mode}px`, padding:'1rem', boxSizing: 'border-box' }}>
                     <select
                       value={agent.default_calling_mode || 'browser_webrtc'}
@@ -482,7 +503,8 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
                       : <CheckCircle size={16} color="#16a34a" />}
                   </td>
                 </tr>
-              ))}
+              );
+            })}
               {agents.length === 0 && (
                 <tr><td colSpan="6" style={{ padding:'3rem', textAlign:'center', color:'#94a3b8' }}>No call center agents yet. Add a team member above.</td></tr>
               )}
