@@ -1516,7 +1516,7 @@ export default function ClientReport({
       {/* Header & Controls */}
       <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-light)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
-          <h2 style={{ margin: '0 0 0.25rem 0', color: 'var(--text-primary)' }}>Client Registered Report</h2>
+          <h2 style={{ margin: '0 0 0.25rem 0', color: 'var(--text-primary)' }}>Lead Registered Report</h2>
           <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-secondary)' }}>Total Records: {leads.length}</p>
         </div>
 

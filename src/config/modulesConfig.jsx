@@ -63,8 +63,8 @@ export const MODULES_CONFIG = [
   },
 
   // Sales
-  { id: 'registration', path: 'registration', label: 'New Client Registration', category: 'Sales', icon: <UserPlus size={20} /> },
-  { id: 'report', path: 'report', label: 'Client Registered Report', category: 'Sales', icon: <FileText size={20} /> },
+  { id: 'registration', path: 'registration', label: 'New Lead Registration', category: 'Sales', icon: <UserPlus size={20} /> },
+  { id: 'report', path: 'report', label: 'Lead Registered Report', category: 'Sales', icon: <FileText size={20} /> },
   { 
     id: 'leads', 
     path: 'leads', 

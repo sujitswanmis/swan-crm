@@ -255,7 +255,7 @@ export function canPerformOfflineAction(featureKey = '') {
       leadFollowUp: 'Follow-up Scheduling',
       attendancePunch: 'Smart Attendance Punch Station',
       attendanceRegularization: 'Attendance Regularization Request',
-      clientRegistration: 'New Client Registration',
+      clientRegistration: 'New Lead Registration',
       leadAssign: 'Lead Assignment',
       profileEdit: 'Lead Profile Editing',
       partyMasterEdit: 'Party Master Editing'

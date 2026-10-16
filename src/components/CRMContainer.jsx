@@ -247,8 +247,8 @@ export const PARTY_SUBTAB_TITLES = {
 export const MODULE_DISPLAY_NAMES = {
   dashboard: 'Analytics Dashboard',
   leads: 'Leads & Sales Database',
-  registration: 'New Client Registration',
-  report: 'Client Analytics & Reports',
+  registration: 'New Lead Registration',
+  report: 'Lead Registered Report',
   orders: 'Order Management',
   mrp: 'MRP System',
   mrp_against: 'MRP Against',
@@ -5381,8 +5381,8 @@ export default function CRMContainer({
                   {activeTab === 'attendance' && 'Smart Attendance & Regularization'}
                   {activeTab === 'checklist' && 'Smart Checklist Management'}
                   {activeTab === 'delegation' && 'Employee-to-Employee Task Delegation'}
-                  {activeTab === 'registration' && 'Client Registration'}
-                  {activeTab === 'report' && 'Client Registered Report'}
+                  {activeTab === 'registration' && 'Lead Registration'}
+                  {activeTab === 'report' && 'Lead Registered Report'}
                   {activeTab === 'aiadmin' && 'AI Admin'}
                   {activeTab === 'aiknowledgebase' && 'AI Knowledge Base'}
                   {activeTab === 'callcenter' && 'Telecalling'}

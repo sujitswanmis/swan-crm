@@ -1833,7 +1833,7 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
           <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.75rem', color: 'var(--text-primary)' }}>
             <CheckCircle2 size={24} color="var(--accent-color)" />
-            {isEditMode ? 'Edit Client Profile' : 'New Client Registration'}
+            {isEditMode ? 'Edit Lead Profile' : 'New Lead Registration'}
           </h2>
           
           <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
@@ -1890,7 +1890,7 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
                 transition: 'all 0.2s ease'
               }}
             >
-              <UserPlus size={16} /> New Client Registration
+              <UserPlus size={16} /> New Lead Registration
             </button>
             <button
               type="button"
