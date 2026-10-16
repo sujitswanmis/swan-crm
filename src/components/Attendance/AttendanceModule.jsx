@@ -398,12 +398,12 @@ export default function AttendanceModule({
     (teamMasterData.records || []).forEach(r => {
       if (r.department && r.department !== 'General') deptSet.add(r.department);
     });
-    (monthlyMatrixData.rows || []).forEach(r => {
+    (monthlyMatrixData?.rows || []).forEach(r => {
       if (r.department && r.department !== 'General') deptSet.add(r.department);
     });
     const depts = Array.from(deptSet).sort();
     return ['All', ...depts, 'General'];
-  }, [teamMasterData.records, monthlyMatrixData.rows]);
+  }, [teamMasterData.records, monthlyMatrixData?.rows]);
 
   // 1. Live Clock Timer
   useEffect(() => {
@@ -574,7 +574,7 @@ export default function AttendanceModule({
     setHodRequests([]);
     setHodPendingCount(0);
     setTeamMasterData({ records: [], summary: {}, isRange: false });
-    setMonthlyMatrixData(null);
+    setMonthlyMatrixData({ rows: [], monthDates: [], summary: {} });
 
     fetchTodayAttendance();
     fetchHistory();
@@ -1173,7 +1173,7 @@ export default function AttendanceModule({
 
   // Filter Monthly Matrix Records
   const filteredMatrixRows = useMemo(() => {
-    return (monthlyMatrixData.rows || []).filter(r => {
+    return (monthlyMatrixData?.rows || []).filter(r => {
       if (!teamSearchQuery) return true;
       const q = teamSearchQuery.toLowerCase();
       return (
@@ -1183,7 +1183,7 @@ export default function AttendanceModule({
         r.department?.toLowerCase().includes(q)
       );
     });
-  }, [monthlyMatrixData.rows, teamSearchQuery]);
+  }, [monthlyMatrixData?.rows, teamSearchQuery]);
 
   // Export Daily / Range Team Attendance to CSV (Filter & Search aware)
   const handleExportCSV = () => {
@@ -1234,7 +1234,7 @@ export default function AttendanceModule({
     const rowsToExport = filteredMatrixRows || [];
     if (rowsToExport.length === 0) return;
     
-    const datesHeaders = (monthlyMatrixData.monthDates || []).map(d => `"${d.dayNumber} (${d.dayNameShort})"`);
+    const datesHeaders = (monthlyMatrixData?.monthDates || []).map(d => `"${d.dayNumber} (${d.dayNameShort})"`);
     const headers = ['Emp ID', 'Employee Name', 'Email', 'Department', ...datesHeaders, 'Total Present', 'Total Absent', 'Total Half Days', 'Total Short Leaves', 'Total Payable Days', 'Total Hours Logged'];
 
     const rows = rowsToExport.map(r => {
@@ -3330,22 +3330,22 @@ export default function AttendanceModule({
               }}>
                 <div style={{ padding: '0.85rem', borderRadius: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', textAlign: 'center' }}>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', fontWeight: 600 }}>TOTAL EMPLOYEES</span>
-                  <span style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--text-primary)' }}>{monthlyMatrixData.summary?.totalEmployees || 0}</span>
+                  <span style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--text-primary)' }}>{monthlyMatrixData?.summary?.totalEmployees || 0}</span>
                 </div>
                 <div style={{ padding: '0.85rem', borderRadius: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', textAlign: 'center' }}>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', fontWeight: 600 }}>DAYS IN MONTH</span>
-                  <span style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--accent-color)' }}>{monthlyMatrixData.daysInMonth || 31}</span>
+                  <span style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--accent-color)' }}>{monthlyMatrixData?.daysInMonth || 31}</span>
                 </div>
                 <div style={{ padding: '0.85rem', borderRadius: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', textAlign: 'center' }}>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', fontWeight: 600 }}>WORKING DAYS</span>
                   <span style={{ fontSize: '1.35rem', fontWeight: 800, color: '#16a34a' }}>
-                    {(monthlyMatrixData.monthDates || []).filter(d => !d.isSunday).length}
+                    {(monthlyMatrixData?.monthDates || []).filter(d => !d.isSunday).length}
                   </span>
                 </div>
                 <div style={{ padding: '0.85rem', borderRadius: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', textAlign: 'center' }}>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', fontWeight: 600 }}>SUNDAYS / OFF DAYS</span>
                   <span style={{ fontSize: '1.35rem', fontWeight: 800, color: '#64748b' }}>
-                    {(monthlyMatrixData.monthDates || []).filter(d => d.isSunday).length}
+                    {(monthlyMatrixData?.monthDates || []).filter(d => d.isSunday).length}
                   </span>
                 </div>
               </div>
@@ -3411,7 +3411,7 @@ export default function AttendanceModule({
                         <th style={{ padding: '0.65rem 0.75rem', fontWeight: 700, textAlign: 'left', minWidth: '100px' }}>Dept</th>
 
                         {/* Date Columns 1 to Last Day */}
-                        {(monthlyMatrixData.monthDates || []).map(d => (
+                        {(monthlyMatrixData?.monthDates || []).map(d => (
                           <th 
                             key={d.dateStr} 
                             style={{
@@ -3440,7 +3440,7 @@ export default function AttendanceModule({
                     <tbody>
                       {filteredMatrixRows.length === 0 ? (
                         <tr>
-                          <td colSpan={(monthlyMatrixData.monthDates?.length || 31) + 9} style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                          <td colSpan={(monthlyMatrixData?.monthDates?.length || 31) + 9} style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
                             No employee records found for {matrixMonth}/{matrixYear}.
                           </td>
                         </tr>

@@ -776,6 +776,22 @@ export async function bulkImportEmployeesFast(records = []) {
 }
 
 // CALL CENTER ADMIN ACTIONS
+const plivoCredentialsMap = {
+  'nsmlrtc3939694880445266':          'nsmlrtc0001@2026',
+  'nsmlrtc2657389236553295188':       'nsmlrtc0002@2026',
+  'nsmlrtc93506189021999878029640':   'nsmlrtc0003@2026',
+  'nsmlrtcwfh7858930679233146509':    'nsmlrtcwfh0001@2026',
+  'nsmlrtcwfh50549708164654573585':   'nsmlrtcwfh0002@2026',
+  'nsmlrtcwfh44743598016079150111':   'nsmlrtcwfh0003@2026',
+  'nsmlrsc6682352866161309':          'nsmlrsc0001@2026',
+  'nsmlrsc138629850811621019308':     'nsmlrsc0002@2026',
+  'nsmlrsc22284111935640519288335':   'nsmlrsc0003@2026',
+  'nsmlrsc7239711313208619777947':    'nsmlrsc0004@2026',
+  'admin434792858589734357666520':    'Admin@102023',
+  'nsmlrpc60874839457118966':         'nsmlrpc0001@2026',
+  'nsmlrpc179667757286621':           'nsmlrpc0002@2026',
+};
+
 export async function getCallAdminData(company = null, tenantId = null) {
   const adminClient = getAdminClient();
   const [{ data: endpoints }, { data: agents }, { data: users }] = await Promise.all([
@@ -862,22 +878,6 @@ export async function addCallAgentAdmin(userId, displayName, company = '') {
   if (error) return { success: false, error: error.message };
   return { success: true, data };
 }
-
-export const plivoCredentialsMap = {
-  'nsmlrtc3939694880445266':          'nsmlrtc0001@2026',
-  'nsmlrtc2657389236553295188':       'nsmlrtc0002@2026',
-  'nsmlrtc93506189021999878029640':   'nsmlrtc0003@2026',
-  'nsmlrtcwfh7858930679233146509':    'nsmlrtcwfh0001@2026',
-  'nsmlrtcwfh50549708164654573585':   'nsmlrtcwfh0002@2026',
-  'nsmlrtcwfh44743598016079150111':   'nsmlrtcwfh0003@2026',
-  'nsmlrsc6682352866161309':          'nsmlrsc0001@2026',
-  'nsmlrsc138629850811621019308':     'nsmlrsc0002@2026',
-  'nsmlrsc22284111935640519288335':   'nsmlrsc0003@2026',
-  'nsmlrsc7239711313208619777947':    'nsmlrsc0004@2026',
-  'admin434792858589734357666520':    'Admin@102023',
-  'nsmlrpc60874839457118966':         'nsmlrpc0001@2026',
-  'nsmlrpc179667757286621':           'nsmlrpc0002@2026',
-};
 
 export async function updateCallAgentAdmin(agentId, updates) {
   const adminClient = getAdminClient();
