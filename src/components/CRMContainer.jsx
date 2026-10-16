@@ -92,7 +92,6 @@ const SETTINGS_MODULE_ITEMS = [
   { id: 'business', label: 'Business Profile & Branches', icon: Building2 },
   { id: 'crm', label: 'CRM & Lead Config', icon: Settings2 },
   { id: 'fields', label: 'Custom Fields', icon: FormInput },
-  { id: 'templates', label: 'Message & WhatsApp Templates', icon: MessageSquare },
   { id: 'notifications', label: 'Notifications & Alerts', icon: Bell },
   { id: 'departments', label: 'Manage Departments', icon: Layers },
   { id: 'targets', label: 'Targets & Performance', icon: Target },
@@ -407,11 +406,14 @@ export default function CRMContainer({
     if (['scorecard', 'overview', 'pipeline', 'lead-data', 'leads-data'].includes(path) || (path && path.startsWith('dashboard/'))) {
       return 'dashboard';
     }
-    if (['sessions', 'shift-monitoring', 'shift-analytics', 'breakdown'].includes(path)) {
+    if (['sessions', 'shift-monitoring', 'shift-analytics', 'breakdown'].includes(path) || path === 'settings' || (path && path.startsWith('settings/'))) {
       return 'settings';
     }
     if (path === 'location-master' || path === 'location_territory') {
       return 'location_master';
+    }
+    if (path === 'aiadmin' || path.startsWith('aiadmin/')) {
+      return 'aiadmin';
     }
     if (path === 'calladmin' || path === 'call-admin' || (path && (path.startsWith('calladmin/') || path.startsWith('call-admin/')))) {
       return 'calladmin';
@@ -647,8 +649,41 @@ export default function CRMContainer({
     }
     return 'messages';
   });
-  const [settingsMenuExpanded, setSettingsMenuExpanded] = useState(false);
-  const [currentSettingSubTab, setCurrentSettingSubTab] = useState('business');
+  const [currentSettingSubTab, setCurrentSettingSubTab] = useState(() => {
+    const raw = (initialRoute || pathname || '');
+    let cleanPath = (typeof raw === 'string' ? raw : '').replace(/^\/+|\/+$/g, '').toLowerCase();
+    let queryTab = (searchParams?.get('setting') || searchParams?.get('tab') || searchParams?.get('subtab') || initialSearchParams?.setting || initialSearchParams?.tab || initialSearchParams?.subtab || '').toLowerCase();
+    if (cleanPath && cleanPath.startsWith('settings/')) {
+      const sub = cleanPath.split('/')[1];
+      if (['crm-config', 'crm_config'].includes(sub)) return 'crm';
+      if (['custom-fields', 'custom_fields'].includes(sub)) return 'fields';
+      if (['business-profile', 'branches'].includes(sub)) return 'business';
+      if (['message-templates', 'whatsapp-templates'].includes(sub)) return 'templates';
+      if (['alerts', 'notification'].includes(sub)) return 'notifications';
+      if (['manage-departments', 'dept'].includes(sub)) return 'departments';
+      if (['performance', 'target'].includes(sub)) return 'targets';
+      if (['data-management'].includes(sub)) return 'data';
+      if (['file-media', 'files'].includes(sub)) return 'media';
+      if (['business', 'crm', 'fields', 'templates', 'notifications', 'departments', 'targets', 'data', 'media'].includes(sub)) {
+        return sub;
+      }
+    }
+    if (queryTab) {
+      if (['crm-config', 'crm_config'].includes(queryTab)) return 'crm';
+      if (['custom-fields', 'custom_fields'].includes(queryTab)) return 'fields';
+      if (['business-profile', 'branches'].includes(queryTab)) return 'business';
+      if (['message-templates', 'whatsapp-templates'].includes(queryTab)) return 'templates';
+      if (['alerts', 'notification'].includes(queryTab)) return 'notifications';
+      if (['manage-departments', 'dept'].includes(queryTab)) return 'departments';
+      if (['performance', 'target'].includes(queryTab)) return 'targets';
+      if (['data-management'].includes(queryTab)) return 'data';
+      if (['file-media', 'files'].includes(queryTab)) return 'media';
+      if (['business', 'crm', 'fields', 'templates', 'notifications', 'departments', 'targets', 'data', 'media'].includes(queryTab)) {
+        return queryTab;
+      }
+    }
+    return 'business';
+  });
   const [emailSubTab, setEmailSubTab] = useState(() => {
     const raw = (initialRoute || pathname || '');
     let cleanPath = (typeof raw === 'string' ? raw : '').replace(/^\/+|\/+$/g, '').toLowerCase();
@@ -707,10 +742,19 @@ export default function CRMContainer({
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const path = window.location.pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
-      const search = new URLSearchParams(window.location.search);
-      const param = search.get('setting');
-      if (param) {
-        setCurrentSettingSubTab(param);
+      const param = search.get('setting') || search.get('subtab') || search.get('tab');
+      if (path === 'settings' || (path && path.startsWith('settings/'))) {
+        let sub = '';
+        if (path.startsWith('settings/')) {
+          sub = path.split('/')[1];
+        } else if (param) {
+          sub = param;
+        }
+        let cleanSub = (sub || 'business').toLowerCase();
+        if (cleanSub === 'crm-config' || cleanSub === 'crm_config') cleanSub = 'crm';
+        if (cleanSub === 'custom-fields' || cleanSub === 'custom_fields') cleanSub = 'fields';
+        if (cleanSub === 'business-profile' || cleanSub === 'branches') cleanSub = 'business';
+        if (cleanSub) setCurrentSettingSubTab(cleanSub);
       }
       const attTab = search.get('tab') || search.get('subtab');
       if (attTab && (path === 'attendance' || (path && path.startsWith('attendance/')))) {
@@ -2591,13 +2635,23 @@ export default function CRMContainer({
     } else if (tab === 'sessions' || tab === 'shift-monitoring' || tab === 'shift-analytics' || tab === 'breakdown') {
       tab = 'settings';
       setCurrentSettingSubTab('sessions');
-    } else if (tab === 'settings') {
-      const settingParam = params.get('setting') || (params.get('sessionTab') ? 'sessions' : null);
-      if (settingParam) {
-        setCurrentSettingSubTab(settingParam);
+    } else if (tab === 'settings' || (tab && tab.startsWith('settings/'))) {
+      let sub = '';
+      if (tab.startsWith('settings/')) {
+        sub = tab.split('/')[1];
+      } else {
+        sub = params.get('setting') || (params.get('sessionTab') ? 'sessions' : null) || 'business';
       }
+      let cleanSub = (sub || 'business').toLowerCase();
+      if (cleanSub === 'crm-config' || cleanSub === 'crm_config') cleanSub = 'crm';
+      if (cleanSub === 'custom-fields' || cleanSub === 'custom_fields') cleanSub = 'fields';
+      if (cleanSub === 'business-profile' || cleanSub === 'branches') cleanSub = 'business';
+      tab = 'settings';
+      setCurrentSettingSubTab(cleanSub);
     } else if (tab === 'location-master' || tab === 'location_territory') {
       tab = 'location_master';
+    } else if (tab === 'aiadmin' || (tab && tab.startsWith('aiadmin/'))) {
+      tab = 'aiadmin';
     } else if (tab === 'party' || (tab && tab.startsWith('party/'))) {
       let sub = '';
       if (tab.startsWith('party/')) {
@@ -2699,13 +2753,23 @@ export default function CRMContainer({
       } else if (tab === 'sessions' || tab === 'shift-monitoring' || tab === 'shift-analytics' || tab === 'breakdown') {
         tab = 'settings';
         setCurrentSettingSubTab('sessions');
-      } else if (tab === 'settings') {
-        const settingParam = params.get('setting') || (params.get('sessionTab') ? 'sessions' : null);
-        if (settingParam) {
-          setCurrentSettingSubTab(settingParam);
+      } else if (tab === 'settings' || (tab && tab.startsWith('settings/'))) {
+        let sub = '';
+        if (tab.startsWith('settings/')) {
+          sub = tab.split('/')[1];
+        } else {
+          sub = params.get('setting') || (params.get('sessionTab') ? 'sessions' : null) || 'business';
         }
+        let cleanSub = (sub || 'business').toLowerCase();
+        if (cleanSub === 'crm-config' || cleanSub === 'crm_config') cleanSub = 'crm';
+        if (cleanSub === 'custom-fields' || cleanSub === 'custom_fields') cleanSub = 'fields';
+        if (cleanSub === 'business-profile' || cleanSub === 'branches') cleanSub = 'business';
+        tab = 'settings';
+        setCurrentSettingSubTab(cleanSub);
       } else if (tab === 'location-master' || tab === 'location_territory') {
         tab = 'location_master';
+      } else if (tab === 'aiadmin' || (tab && tab.startsWith('aiadmin/'))) {
+        tab = 'aiadmin';
       } else if (tab === 'party' || (tab && tab.startsWith('party/'))) {
         let sub = '';
         if (tab.startsWith('party/')) {
@@ -2880,6 +2944,13 @@ export default function CRMContainer({
       return;
     }
 
+    if (tabId === 'aiadmin') {
+      setActiveTab('aiadmin');
+      window.history.pushState(null, '', '/aiadmin/models');
+      if (window.innerWidth <= 768) setIsSidebarOpen(false);
+      return;
+    }
+
     if (tabId === 'calladmin') {
       setActiveTab('calladmin');
       const targetSub = callAdminSubTab || 'agents';
@@ -2960,6 +3031,16 @@ export default function CRMContainer({
       return;
     }
 
+    if (tabId === 'settings') {
+      setActiveTab('settings');
+      const targetSub = currentSettingSubTab || 'business';
+      window.history.pushState(null, '', `/settings/${targetSub}`);
+      if (window.innerWidth <= 768) {
+        setIsSidebarOpen(false);
+      }
+      return;
+    }
+
     setActiveTab(tabId);
     
     const newPath = `/${tabId}`;
@@ -2973,13 +3054,18 @@ export default function CRMContainer({
   };
 
   const handleSettingSubTabChange = (subTabId) => {
-    setCurrentSettingSubTab(subTabId);
+    let cleanSub = subTabId;
+    if (cleanSub === 'crm-config' || cleanSub === 'crm_config') cleanSub = 'crm';
+    if (cleanSub === 'custom-fields' || cleanSub === 'custom_fields') cleanSub = 'fields';
+    if (cleanSub === 'business-profile' || cleanSub === 'branches') cleanSub = 'business';
+
+    setCurrentSettingSubTab(cleanSub);
     if (activeTab !== 'settings') {
       setActiveTab('settings');
     }
-    const newPath = `/settings?setting=${subTabId}`;
+    const newPath = `/settings/${cleanSub}`;
     window.history.pushState(null, '', newPath);
-    window.dispatchEvent(new CustomEvent('setting_subtab_change', { detail: subTabId }));
+    window.dispatchEvent(new CustomEvent('setting_subtab_change', { detail: cleanSub }));
     
     if (window.innerWidth <= 768) {
       setIsSidebarOpen(false);
@@ -7212,7 +7298,14 @@ export default function CRMContainer({
                 isVisited={isTabPermitted('settings', moduleAccess, userRole) && visitedTabs.has('settings')}
               >
                 <ErrorBoundary>
-                  <SettingsContainer moduleAccess={moduleAccess} userRole={userRole} userCompany={userCompany} isMasterAdmin={isMasterAdmin} />
+                  <SettingsContainer 
+                    moduleAccess={moduleAccess} 
+                    userRole={userRole} 
+                    userCompany={userCompany} 
+                    isMasterAdmin={isMasterAdmin}
+                    currentSubTab={currentSettingSubTab}
+                    onSubTabChange={handleSettingSubTabChange}
+                  />
                 </ErrorBoundary>
               </KeepAliveTab>
 

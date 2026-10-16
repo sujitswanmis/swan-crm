@@ -79,13 +79,16 @@ export async function sendLeadToParty(leadId, userId, tenantId = null) {
   const leadPrimaryPhone = lead.phone || lead.business_contact_1 || '0000000000';
   const leadEmail = lead.email || lead.business_email_1 || null;
 
-  // Determine party tier from lead business_type
+  // Determine party tier from lead business_type, preserving custom tenant types (Wholesaler, Retailer, Broker, etc.)
   let pType = 'Dealer';
-  const bType = (lead.business_type || '').toLowerCase();
-  if (bType.includes('distributor')) {
+  const rawBType = (lead.business_type || '').trim();
+  const bTypeLower = rawBType.toLowerCase();
+  if (bTypeLower.includes('distributor')) {
     pType = 'Distributor';
-  } else if (bType.includes('sub-dealer') || bType.includes('sub dealer')) {
+  } else if (bTypeLower.includes('sub-dealer') || bTypeLower.includes('sub dealer')) {
     pType = 'Sub-Dealer';
+  } else if (rawBType) {
+    pType = rawBType;
   }
 
   const partyMasterPayload = {

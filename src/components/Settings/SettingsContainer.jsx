@@ -1,16 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Building2, Settings2, FormInput, Bell, Database, Target, FileType, MessageSquare } from 'lucide-react';
 
 // Subcomponents
 import BusinessProfile from './BusinessProfile';
 import CRMConfig from './CRMConfig';
 import CustomFields from './CustomFields';
+import WorkspaceMessageTemplates from './WorkspaceMessageTemplates';
 import NotificationsConfig from './NotificationsConfig';
 import DataManagement from './DataManagement';
 import TargetPerformance from './TargetPerformance';
 import FileMedia from './FileMedia';
 import ManageDepartments from './ManageDepartments';
-import WorkspaceMessageTemplates from './WorkspaceMessageTemplates';
 import { filterVisibleSubTabs } from '@/utils/permissionUtils';
 
 const SETTINGS_TABS = [
@@ -25,31 +25,66 @@ const SETTINGS_TABS = [
   { id: 'media', label: 'File & Media Settings', icon: <FileType size={18} /> }
 ];
 
-export default function SettingsContainer({ moduleAccess = {}, userRole = '', userCompany = '' }) {
+export default function SettingsContainer({ 
+  moduleAccess = {}, 
+  userRole = '', 
+  userCompany = '',
+  isMasterAdmin = false,
+  currentSubTab = 'business',
+  onSubTabChange = null
+}) {
   const visibleTabs = filterVisibleSubTabs(moduleAccess, userRole, 'settings', SETTINGS_TABS);
-  const [activeTab, setActiveTab] = useState('business');
-
-  // Sync with URL param after mount (prevents SSR hydration mismatch)
-  React.useEffect(() => {
+  
+  const resolveCurrentTab = () => {
     if (typeof window !== 'undefined') {
+      const path = window.location.pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
       const search = new URLSearchParams(window.location.search);
-      const param = search.get('setting') || search.get('subtab');
-      if (param && visibleTabs.some(t => t.id === param)) {
-        setActiveTab(param);
-        return;
+      if (path.startsWith('settings/')) {
+        const sub = path.split('/')[1];
+        if (['crm-config', 'crm_config'].includes(sub)) return 'crm';
+        if (['custom-fields', 'custom_fields'].includes(sub)) return 'fields';
+        if (['business-profile', 'branches'].includes(sub)) return 'business';
+        if (['message-templates', 'whatsapp-templates'].includes(sub)) return 'templates';
+        if (['alerts', 'notification'].includes(sub)) return 'notifications';
+        if (['manage-departments', 'dept'].includes(sub)) return 'departments';
+        if (['performance', 'target'].includes(sub)) return 'targets';
+        if (['data-management'].includes(sub)) return 'data';
+        if (['file-media', 'files'].includes(sub)) return 'media';
+        if (sub) return sub;
       }
-      if (search.get('sessionTab') && visibleTabs.some(t => t.id === 'sessions')) {
-        setActiveTab('sessions');
-        return;
+      const param = search.get('setting') || search.get('subtab') || search.get('tab');
+      if (param) return param;
+    }
+    return currentSubTab || 'business';
+  };
+
+  const [activeTab, setActiveTab] = useState(resolveCurrentTab);
+
+  // Sync when currentSubTab prop changes from parent CRMContainer
+  useEffect(() => {
+    if (currentSubTab && visibleTabs.some(t => t.id === currentSubTab)) {
+      setActiveTab(currentSubTab);
+    }
+  }, [currentSubTab, visibleTabs]);
+
+  // Sync with URL route after mount and on popstate (browser back/forward)
+  useEffect(() => {
+    const syncFromUrl = () => {
+      const target = resolveCurrentTab();
+      if (target && visibleTabs.some(t => t.id === target)) {
+        setActiveTab(target);
+      } else if (visibleTabs.length > 0 && !visibleTabs.some(t => t.id === activeTab)) {
+        setActiveTab(visibleTabs[0].id);
       }
-    }
-    if (visibleTabs.length > 0 && !visibleTabs.some(t => t.id === activeTab)) {
-      setActiveTab(visibleTabs[0].id);
-    }
+    };
+
+    syncFromUrl();
+    window.addEventListener('popstate', syncFromUrl);
+    return () => window.removeEventListener('popstate', syncFromUrl);
   }, [visibleTabs]);
 
-  // Listen for external setting subtab changes (from main sidebar)
-  React.useEffect(() => {
+  // Listen for external setting subtab changes (e.g. from main sidebar or custom events)
+  useEffect(() => {
     const handleSubTabEvent = (e) => {
       if (e.detail && visibleTabs.some(t => t.id === e.detail)) {
         setActiveTab(e.detail);
@@ -59,26 +94,14 @@ export default function SettingsContainer({ moduleAccess = {}, userRole = '', us
     return () => window.removeEventListener('setting_subtab_change', handleSubTabEvent);
   }, [visibleTabs]);
 
-  // Listen for browser back/forward navigation
-  React.useEffect(() => {
-    const handlePopState = () => {
-      const search = new URLSearchParams(window.location.search);
-      const param = search.get('setting') || (search.get('sessionTab') ? 'sessions' : null);
-      if (param && param !== activeTab && visibleTabs.some(t => t.id === param)) setActiveTab(param);
-    };
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, [activeTab, visibleTabs]);
-
   const handleTabChange = (tabId) => {
     setActiveTab(tabId);
-    const params = new URLSearchParams(window.location.search);
-    params.set('setting', tabId);
-    if (tabId !== 'sessions') {
-      params.delete('sessionTab');
+    if (onSubTabChange) {
+      onSubTabChange(tabId);
+    } else {
+      window.history.pushState(null, '', `/settings/${tabId}`);
+      window.dispatchEvent(new CustomEvent('setting_subtab_change', { detail: tabId }));
     }
-    window.history.pushState(null, '', `${window.location.pathname}?${params.toString()}`);
-    window.dispatchEvent(new CustomEvent('setting_subtab_change', { detail: tabId }));
   };
 
   if (visibleTabs.length === 0) {

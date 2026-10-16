@@ -2676,6 +2676,38 @@ export default function LeadTable({
         </div>
       </div>
 
+      {Boolean(stageFilter && (stageFilter.includes('08') || stageFilter.toLowerCase().includes('transfer to party'))) && (
+        <div style={{
+          padding: '0.65rem 1rem',
+          margin: '0.5rem 1rem 0 1rem',
+          borderRadius: '8px',
+          background: 'linear-gradient(135deg, rgba(16,185,129,0.12), rgba(5,150,105,0.06))',
+          border: '1.5px solid rgba(16,185,129,0.35)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '1rem',
+          flexWrap: 'wrap'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+            <span style={{ fontSize: '1.25rem' }}>🏢</span>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: '0.86rem', color: '#059669' }}>
+                Stage 08: Transfer to Party Master Queue
+              </div>
+              <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
+                Won deals are confirmed here and automatically synced into Party Master (S00 Drafts). Transferred leads are frozen to prevent tampering.
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.78rem', fontWeight: 600, color: '#059669' }}>
+            <span style={{ padding: '0.25rem 0.6rem', borderRadius: '4px', background: 'rgba(16,185,129,0.2)' }}>
+              🔒 Fraud &amp; Duplicate Lock Enabled
+            </span>
+          </div>
+        </div>
+      )}
+
       {viewMode === 'tiles' ? (
         <div style={{ flex: 1, overflowY: 'auto', padding: isMobile ? '0.65rem' : '1.25rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 340px), 1fr))', gap: isMobile ? '0.75rem' : '1.25rem', alignContent: 'start', backgroundColor: 'var(--bg-primary)' }}>
           {table.getRowModel().rows.length === 0 ? (

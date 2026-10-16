@@ -449,7 +449,11 @@ export function matchesLeadPreviewStage(lead, stage) {
   if (!normalizePreviewStage(stage)) return true;
   const prefix = stage.split(' - ')[0].replace(/^0/, '') + ';';
   const status = lead.status || '';
-  return (prefix === '1;' && (!status || !/^[1-7];/.test(status))) ||
+  const isS08Stage = stage.toLowerCase().includes('transfer to party') || prefix === '8;';
+  if (isS08Stage) {
+    return status.startsWith('8;') || status.toLowerCase().includes('transfer to party');
+  }
+  return (prefix === '1;' && (!status || status.startsWith('1;') || (!/^[1-9];/.test(status) && !status.toLowerCase().includes('transfer to party')))) ||
     status.startsWith(prefix) || status === stage;
 }
 
