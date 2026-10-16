@@ -748,7 +748,7 @@ export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, 
         return hasNameOrEmail && status === 'Active';
       });
 
-      if (requesterCompany && requesterCompany !== 'All') {
+      if (requesterCompany) {
         const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl'];
         const reqLower = String(requesterCompany || '').toLowerCase().trim();
         const isSwanRequester = SWAN_COMPANIES.includes(reqLower);
@@ -759,8 +759,10 @@ export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, 
             // Client workspace (e.g. SuPuja Creations, Testing New Swan Group): strictly return users of that company
             return userComp === reqLower;
           }
-          // New Swan Group: return New Swan Group members, exclude separate client tenants
-          return SWAN_COMPANIES.includes(userComp) || !userComp;
+          if (requesterCompany === 'All') {
+            return SWAN_COMPANIES.includes(userComp) || !userComp;
+          }
+          return userComp === reqLower;
         });
       }
     }
@@ -1019,12 +1021,23 @@ export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, 
       });
     });
 
-    // 7. Include any other active sessions
+    // 7. Include any other active sessions that belong to authorized scoped team members
     Object.values(sessionMap).forEach(sess => {
       const emailLower = (sess.email || '').toLowerCase();
       const userId = sess.user_id;
 
       if (!processedEmails.has(emailLower) && (!userId || !processedEmails.has(userId))) {
+        if (requesterCompany) {
+          const matchingMember = allTeamMembers.find(m => 
+            (m.email && m.email.toLowerCase() === emailLower) || 
+            (userId && m.user_id === userId)
+          );
+          if (!matchingMember) {
+            // Foreign company session -> DO NOT include!
+            return;
+          }
+        }
+
         processedEmails.add(emailLower);
         if (userId) processedEmails.add(userId);
 

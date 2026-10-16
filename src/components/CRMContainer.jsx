@@ -517,9 +517,22 @@ export default function CRMContainer({
     user_id: userId, emp_name: userName
   }), [reportingLeadTeam, userId, userName]);
   const leadAssigneeScopeKey = JSON.stringify(reportingLeadAssignees);
-  const leadAssigneeScope = useMemo(() => new Set(JSON.parse(leadAssigneeScopeKey)), [leadAssigneeScopeKey]);
-  const [adminCompanyFilter, setAdminCompanyFilter] = useState('All');
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [adminCompanyFilter, setAdminCompanyFilter] = useState(() => {
+    const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl'];
+    const compLower = String(userCompany || '').toLowerCase().trim();
+    if (userCompany && !SWAN_COMPANIES.includes(compLower)) {
+      return userCompany;
+    }
+    return 'All';
+  });
+
+  useEffect(() => {
+    const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl'];
+    const compLower = String(userCompany || '').toLowerCase().trim();
+    if (userCompany && !SWAN_COMPANIES.includes(compLower) && adminCompanyFilter !== userCompany) {
+      setAdminCompanyFilter(userCompany);
+    }
+  }, [userCompany, adminCompanyFilter]);
   const [messageMenuExpanded, setMessageMenuExpanded] = useState(false);
   const [aiMenuExpanded, setAiMenuExpanded] = useState(false);
   const [attendanceMenuExpanded, setAttendanceMenuExpanded] = useState(false);
@@ -7023,7 +7036,17 @@ export default function CRMContainer({
                     initialUsers={teamMembers} 
                     activeSubTab={userManagementSubTab} 
                     onTabChange={handleUserManagementSubTabChange} 
-                    currentUserCompany={adminCompanyFilter || userCompany}
+                    currentUserCompany={(() => {
+                      const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl'];
+                      const compLower = String(userCompany || '').toLowerCase().trim();
+                      if (userCompany && !SWAN_COMPANIES.includes(compLower)) {
+                        return userCompany;
+                      }
+                      if (adminCompanyFilter && adminCompanyFilter !== 'All') {
+                        return adminCompanyFilter;
+                      }
+                      return userCompany || 'New Swan Group';
+                    })()}
                   />
                 </ErrorBoundary>
               </KeepAliveTab>

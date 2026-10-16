@@ -203,7 +203,7 @@ export async function getAuditLogs({
       .select('*', { count: 'exact' });
 
     // Company / Tenant Isolation Filter
-    if (company && company !== 'All') {
+    if (company) {
       const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl'];
       const compLower = String(company).toLowerCase().trim();
       const isSwan = SWAN_COMPANIES.includes(compLower);
@@ -218,7 +218,10 @@ export async function getAuditLogs({
           if (!isSwan) {
             return uComp === compLower;
           }
-          return SWAN_COMPANIES.includes(uComp) || !uComp;
+          if (company === 'All') {
+            return SWAN_COMPANIES.includes(uComp) || !uComp;
+          }
+          return uComp === compLower;
         })
         .map(u => (u.email || '').toLowerCase().trim())
         .filter(Boolean);
