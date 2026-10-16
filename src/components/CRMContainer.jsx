@@ -456,9 +456,7 @@ export default function CRMContainer({
   const [initialLeadStage] = useState(() => {
     if (initialSearchParams?.stage === 'all') return null;
     if (initialSearchParams?.stage) return initialSearchParams.stage;
-    try {
-      return typeof window !== 'undefined' ? localStorage.getItem('crmActiveStage') || null : null;
-    } catch (_e) { return null; }
+    return null;
   });
   const stagePreviewStateRef = useRef(null);
   const [leads, setLeads] = useState(() => {
@@ -491,7 +489,17 @@ export default function CRMContainer({
     setIsMounted(true);
     markLeadStartupTiming('app-mounted', { pathname: window.location.pathname });
     setLeadCacheScope(userId);
-    const fast = getFastLeadsSnapshot(userId, { userCompany, userRole, stageKey: initialLeadStage });
+    let effectiveStage = initialLeadStage;
+    if (!initialSearchParams?.stage && typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('crmActiveStage');
+        if (saved && saved !== 'all') {
+          effectiveStage = saved;
+          setLeadsFilterStage(saved);
+        }
+      } catch (_e) {}
+    }
+    const fast = getFastLeadsSnapshot(userId, { userCompany, userRole, stageKey: effectiveStage });
     if (Array.isArray(fast) && fast.length > 0) {
       setRawLeads(fast);
       setLeads(fast);
@@ -499,13 +507,13 @@ export default function CRMContainer({
       setLoadingLeads(false);
       markLeadStartupTiming('preview-restored', { source: 'web-storage', count: fast.length });
     } else {
-      getLocalLeadsPreview(userCompany, userRole, initialLeadStage).then(preview => {
+      getLocalLeadsPreview(userCompany, userRole, effectiveStage).then(preview => {
         if (!active || rawLeadsRef.current?.length > 0 || preview.length === 0) return;
         setRawLeads(preview);
         setLeads(preview);
         rawLeadsRef.current = preview;
         setLoadingLeads(false);
-        saveFastLeadsSnapshot(preview, userId, { userCompany, userRole, stageKey: initialLeadStage });
+        saveFastLeadsSnapshot(preview, userId, { userCompany, userRole, stageKey: effectiveStage });
         markLeadStartupTiming('preview-restored', { source: 'indexeddb', count: preview.length });
       }).catch(() => {});
     }
@@ -649,6 +657,7 @@ export default function CRMContainer({
     }
     return 'messages';
   });
+  const [settingsMenuExpanded, setSettingsMenuExpanded] = useState(false);
   const [currentSettingSubTab, setCurrentSettingSubTab] = useState(() => {
     const raw = (initialRoute || pathname || '');
     let cleanPath = (typeof raw === 'string' ? raw : '').replace(/^\/+|\/+$/g, '').toLowerCase();
