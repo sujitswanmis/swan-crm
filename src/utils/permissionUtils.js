@@ -3,7 +3,7 @@
  * Enforces 4-Column (View, Add, Edit, Delete) and Sub-Tab Permissions across CRM.
  */
 
-function checkIsAdminRole(userRole) {
+export function checkIsAdminRole(userRole) {
   const rLower = String(userRole || '').trim().toLowerCase();
   return rLower === 'admin' || rLower === 'superadmin' || rLower === 'masteradmin' || rLower === 'super_admin' || rLower === 'master_admin';
 }

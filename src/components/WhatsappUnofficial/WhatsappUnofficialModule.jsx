@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { MessageSquare, LayoutDashboard, Settings, Smartphone, Shield, TestTube, FileText } from 'lucide-react';
-import { filterVisibleSubTabs } from '@/utils/permissionUtils';
+import { filterVisibleSubTabs, checkIsAdminRole } from '@/utils/permissionUtils';
 
 // Subcomponents (to be implemented)
 import Dashboard from './Dashboard';
@@ -19,7 +19,8 @@ const MODULE_TABS = [
   { id: 'logs', label: 'Message Logs', icon: <FileText size={18} /> },
 ];
 
-export default function WhatsappUnofficialModule({ userRole, userId, moduleAccess = {} }) {
+export default function WhatsappUnofficialModule({ userRole, userId, moduleAccess = {}, isAdmin: propIsAdmin }) {
+  const isAdmin = propIsAdmin !== undefined ? propIsAdmin : (checkIsAdminRole ? checkIsAdminRole(userRole) : false);
   const visibleTabs = filterVisibleSubTabs(moduleAccess, userRole, 'whatsapp_unofficial', MODULE_TABS);
 
   const [activeTab, setActiveTab] = useState(() => visibleTabs[0]?.id || 'dashboard');
