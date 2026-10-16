@@ -84,6 +84,10 @@ export function getSubItemPermissions(moduleAccess, userRole, moduleId, subItemI
         };
       }
     } else {
+      // If this is the new Stage 08 (Transfer to Party) in leads and not explicitly disabled, inherit parent view access
+      if (moduleId === 'leads' && (subItemId === '08 - Transfer to Party' || subItemId.includes('Transfer to Party') || subItemId.startsWith('08'))) {
+        return { view: parentPerms.view, add: parentPerms.add, edit: parentPerms.edit, delete: false };
+      }
       // If granular sub_items is defined for this module and subItemId is NOT in it -> Denied!
       return { view: false, add: false, edit: false, delete: false };
     }
@@ -93,6 +97,9 @@ export function getSubItemPermissions(moduleAccess, userRole, moduleId, subItemI
   if (Array.isArray(m.assigned_steps)) {
     const isAssigned = m.assigned_steps.includes(subItemId);
     if (!isAssigned) {
+      if (moduleId === 'leads' && (subItemId === '08 - Transfer to Party' || subItemId.includes('Transfer to Party') || subItemId.startsWith('08'))) {
+        return { view: parentPerms.view, add: parentPerms.add, edit: parentPerms.edit, delete: false };
+      }
       return { view: false, add: false, edit: false, delete: false };
     }
   }

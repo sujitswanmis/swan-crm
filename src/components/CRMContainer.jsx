@@ -987,6 +987,19 @@ export default function CRMContainer({
         if (data?.config) {
           const currentLocal = localStorage.getItem('crm_config');
           let merged = { ...data.config };
+          if (!merged.stages || !Array.isArray(merged.stages)) {
+            merged.stages = defaultStages;
+          } else {
+            const hasS08 = merged.stages.some(s => s.name?.includes('08 - Transfer to Party') || s.name?.startsWith('08'));
+            if (!hasS08) {
+              merged.stages.push({
+                name: '08 - Transfer to Party',
+                enabled: true,
+                is_closing: false,
+                substages: ['Pending Confirmation', 'Transferred to Party Master', 'Won - Transferred']
+              });
+            }
+          }
           if (currentLocal) {
             try {
               const localParsed = JSON.parse(currentLocal);
@@ -1030,7 +1043,11 @@ export default function CRMContainer({
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed.stages && Array.isArray(parsed.stages)) {
-          setActivePipelineStages(parsed.stages.filter(s => s.enabled !== false).map(s => s.name));
+          let stgNames = parsed.stages.filter(s => s.enabled !== false).map(s => s.name);
+          if (!stgNames.some(n => n.includes('08 - Transfer to Party') || n.startsWith('08'))) {
+            stgNames.push('08 - Transfer to Party');
+          }
+          setActivePipelineStages(stgNames);
         }
       }
     } catch (e) {}
@@ -1039,7 +1056,11 @@ export default function CRMContainer({
       try {
         const cfg = e?.detail || JSON.parse(localStorage.getItem('crm_config') || '{}');
         if (cfg?.stages && Array.isArray(cfg.stages)) {
-          setActivePipelineStages(cfg.stages.filter(s => s.enabled !== false).map(s => s.name));
+          let stgNames = cfg.stages.filter(s => s.enabled !== false).map(s => s.name);
+          if (!stgNames.some(n => n.includes('08 - Transfer to Party') || n.startsWith('08'))) {
+            stgNames.push('08 - Transfer to Party');
+          }
+          setActivePipelineStages(stgNames);
         }
       } catch (err) {}
     };

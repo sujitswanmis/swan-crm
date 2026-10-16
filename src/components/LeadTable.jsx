@@ -1213,7 +1213,17 @@ export default function LeadTable({
         try {
           const parsed = JSON.parse(saved);
           if (parsed.stages && parsed.stages.length > 0 && typeof parsed.stages[0] === 'object' && parsed.stages[0].substages) {
-            setStages(parsed.stages);
+            let stgs = [...parsed.stages];
+            const hasS08 = stgs.some(s => s.name?.includes('08 - Transfer to Party') || s.name?.startsWith('08'));
+            if (!hasS08) {
+              stgs.push({
+                name: '08 - Transfer to Party',
+                enabled: true,
+                is_closing: false,
+                substages: ['Pending Confirmation', 'Transferred to Party Master', 'Won - Transferred']
+              });
+            }
+            setStages(stgs);
           }
         } catch (e) { console.error(e); }
       }

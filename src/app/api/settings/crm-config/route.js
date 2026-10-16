@@ -154,6 +154,17 @@ export async function GET(request) {
       enabled: s.enabled !== false
     }));
 
+    // Guarantee Stage 08 exists in stages
+    const hasS08 = stages.some(s => s.name?.includes('08 - Transfer to Party') || s.name?.startsWith('08'));
+    if (!hasS08) {
+      stages.push({
+        name: '08 - Transfer to Party',
+        enabled: true,
+        is_closing: false,
+        substages: ['Pending Confirmation', 'Transferred to Party Master', 'Won - Transferred']
+      });
+    }
+
     const config = {
       sources: Array.isArray(raw.sources) && raw.sources.length > 0 ? raw.sources : DEFAULT_CRM_CONFIG.sources,
       stages,
@@ -212,11 +223,26 @@ export async function POST(request) {
       // Non-fatal
     }
 
+    let finalStages = Array.isArray(body.stages) ? body.stages : (currentPermissions.stages || DEFAULT_CRM_CONFIG.stages);
+    const hasS08Post = finalStages.some(s => s.name?.includes('08 - Transfer to Party') || s.name?.startsWith('08'));
+    if (!hasS08Post) {
+      finalStages.push({
+        name: '08 - Transfer to Party',
+        enabled: true,
+        is_closing: false,
+        substages: ['Pending Confirmation', 'Transferred to Party Master', 'Won - Transferred']
+      });
+    }
+    const s07 = finalStages.find(s => s.name?.includes('07 - Final Stage'));
+    if (s07 && Array.isArray(s07.substages)) {
+      s07.substages = s07.substages.filter(sub => sub !== 'Transfer to Party Master');
+    }
+
     const updatedConfig = {
       ...currentPermissions,
       ...body,
       sources: Array.isArray(body.sources) ? body.sources : (currentPermissions.sources || DEFAULT_CRM_CONFIG.sources),
-      stages: Array.isArray(body.stages) ? body.stages : (currentPermissions.stages || DEFAULT_CRM_CONFIG.stages),
+      stages: finalStages,
       clientStatuses: Array.isArray(body.clientStatuses) ? body.clientStatuses : (currentPermissions.clientStatuses || DEFAULT_CRM_CONFIG.clientStatuses),
       priorities: Array.isArray(body.priorities) ? body.priorities : (currentPermissions.priorities || DEFAULT_CRM_CONFIG.priorities),
       assignmentRule: body.assignmentRule || currentPermissions.assignmentRule || DEFAULT_CRM_CONFIG.assignmentRule,

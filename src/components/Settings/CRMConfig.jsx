@@ -171,7 +171,17 @@ export default function CRMConfig({ userCompany = '' }) {
         if (!isMounted || !data?.config) return;
         const cfg = data.config;
         if (cfg.stages && Array.isArray(cfg.stages) && cfg.stages.length > 0) {
-          setStages(cfg.stages.map(s => ({ ...s, enabled: s.enabled !== false })));
+          let stgs = cfg.stages.map(s => ({ ...s, enabled: s.enabled !== false }));
+          const hasS08 = stgs.some(s => s.name?.includes('08 - Transfer to Party') || s.name?.startsWith('08'));
+          if (!hasS08) {
+            stgs.push({
+              name: '08 - Transfer to Party',
+              enabled: true,
+              is_closing: false,
+              substages: ['Pending Confirmation', 'Transferred to Party Master', 'Won - Transferred']
+            });
+          }
+          setStages(stgs);
         }
         if (cfg.sources && Array.isArray(cfg.sources) && cfg.sources.length > 0) setSources(cfg.sources);
         if (cfg.clientStatuses && Array.isArray(cfg.clientStatuses) && cfg.clientStatuses.length > 0) setClientStatuses(cfg.clientStatuses);
@@ -216,9 +226,20 @@ export default function CRMConfig({ userCompany = '' }) {
     setSaveStatus(null);
     setSaveMessage('');
 
+    let saveStages = [...stages];
+    const hasS08Save = saveStages.some(s => s.name?.includes('08 - Transfer to Party') || s.name?.startsWith('08'));
+    if (!hasS08Save) {
+      saveStages.push({
+        name: '08 - Transfer to Party',
+        enabled: true,
+        is_closing: false,
+        substages: ['Pending Confirmation', 'Transferred to Party Master', 'Won - Transferred']
+      });
+    }
+
     const config = {
       sources,
-      stages,
+      stages: saveStages,
       clientStatuses,
       priorities,
       businessTypes,
