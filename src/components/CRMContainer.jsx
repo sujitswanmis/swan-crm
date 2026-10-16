@@ -742,6 +742,7 @@ export default function CRMContainer({
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const path = window.location.pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
+      const search = new URLSearchParams(window.location.search);
       const param = search.get('setting') || search.get('subtab') || search.get('tab');
       if (path === 'settings' || (path && path.startsWith('settings/'))) {
         let sub = '';
