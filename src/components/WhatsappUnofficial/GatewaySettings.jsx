@@ -14,7 +14,7 @@ import {
 import { 
   Phone, Settings, Save, RefreshCw, Send, 
   CheckCircle2, AlertCircle, Shield, Globe, Key, HelpCircle,
-  Plus, Building2, ExternalLink, X, Sliders, Check, Layers
+  Plus, Building2, ExternalLink, X, Sliders, Check, Layers, Hash
 } from 'lucide-react';
 
 // Built-in Default BSP Catalog with standard endpoints & descriptions
@@ -25,6 +25,13 @@ const DEFAULT_BSP_PROVIDERS = [
     url: 'https://app.aknexus.in/api', 
     description: 'High-speed WhatsApp Web gateway with auto-healing instance sessions and media dispatch.',
     authType: 'Query Param (?access_token=...)'
+  },
+  { 
+    id: 'mytapi', 
+    label: 'MyTAPI Gateway', 
+    url: 'https://api.mytapi.com/api', 
+    description: 'Unofficial WhatsApp REST API requiring instance_id, access_token, and phone_id.',
+    authType: 'Query / Body (phone_id, access_token)'
   },
   { 
     id: 'wasender', 
@@ -62,13 +69,6 @@ const DEFAULT_BSP_PROVIDERS = [
     authType: 'Query Param (?access_token=...)'
   },
   { 
-    id: 'mytapi', 
-    label: 'MyTAPI Gateway', 
-    url: 'https://api.mytapi.com/api', 
-    description: 'Unofficial WhatsApp REST API for CRM integration and automated notifications.',
-    authType: 'Query Param (?access_token=...)'
-  },
-  { 
     id: 'custom', 
     label: 'Custom / Self-Hosted Gateway', 
     url: '', 
@@ -83,8 +83,9 @@ export default function GatewaySettings({ isAdmin = true, onNavigateToInstances 
     enabled: true,
     provider: 'aknexus',
     server_url: 'https://app.aknexus.in/api',
+    instance_id: '6AD37BDFCEDF5',
     api_token: '6abe519e92b26',
-    instance_id: '6AD37D9D501B2',
+    phone_id: '',
     max_scanned_instances: 5,
     custom_providers: []
   });
@@ -116,34 +117,35 @@ export default function GatewaySettings({ isAdmin = true, onNavigateToInstances 
   });
   const [modalSaving, setModalSaving] = useState(false);
 
-  // Column Resizing for SaaS Allocation Matrix Table
+  // Column Resizing for SaaS Allocation Matrix Table (Lead Data Pattern)
   const defaultColWidths = {
-    tenant: 240,
-    provider: 210,
-    maxLimit: 130,
-    serverUrl: 220,
-    apiToken: 200,
-    status: 110,
-    actions: 140
+    tenant: 190,
+    provider: 160,
+    maxLimit: 100,
+    instanceId: 150,
+    apiToken: 150,
+    phoneId: 140,
+    serverUrl: 180,
+    status: 90,
+    actions: 110
   };
 
   const [colWidths, setColWidths] = useState(() => {
     if (typeof window !== 'undefined') {
       try {
-        const saved = localStorage.getItem('wa_unofficial_tenant_table_col_widths');
+        const saved = localStorage.getItem('wa_unofficial_tenant_table_col_widths_v2');
         if (saved) return { ...defaultColWidths, ...JSON.parse(saved) };
       } catch (e) {}
     }
     return defaultColWidths;
   });
 
-  const resizingRef = useRef(null);
   const [activeResizingCol, setActiveResizingCol] = useState(null);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
       try {
-        localStorage.setItem('wa_unofficial_tenant_table_col_widths', JSON.stringify(colWidths));
+        localStorage.setItem('wa_unofficial_tenant_table_col_widths_v2', JSON.stringify(colWidths));
       } catch (e) {}
     }
   }, [colWidths]);
@@ -158,7 +160,7 @@ export default function GatewaySettings({ isAdmin = true, onNavigateToInstances 
 
     const onMouseMove = (moveEvent) => {
       const delta = moveEvent.clientX - startX;
-      const newWidth = Math.max(70, startWidth + delta);
+      const newWidth = Math.max(65, startWidth + delta);
       setColWidths(prev => ({ ...prev, [colKey]: newWidth }));
     };
 
@@ -195,8 +197,9 @@ export default function GatewaySettings({ isAdmin = true, onNavigateToInstances 
           enabled: wa.enabled !== false,
           provider: wa.provider || 'aknexus',
           server_url: wa.server_url || 'https://app.aknexus.in/api',
+          instance_id: wa.instance_id || '6AD37BDFCEDF5',
           api_token: wa.api_token || '6abe519e92b26',
-          instance_id: wa.instance_id || '6AD37D9D501B2',
+          phone_id: wa.phone_id || '',
           max_scanned_instances: typeof wa.max_scanned_instances === 'number' ? wa.max_scanned_instances : 5,
           custom_providers: Array.isArray(wa.custom_providers) ? wa.custom_providers : []
         });
@@ -213,8 +216,10 @@ export default function GatewaySettings({ isAdmin = true, onNavigateToInstances 
           allocMap[t.id] = {
             provider: t.assigned_provider || 'aknexus',
             max_scanned_instances: t.max_scanned_instances,
-            server_url: t.server_url || '',
+            instance_id: t.instance_id || '',
             api_token: t.api_token || '',
+            phone_id: t.phone_id || '',
+            server_url: t.server_url || '',
             is_active: t.is_allocated_active !== false
           };
         });
@@ -338,6 +343,8 @@ export default function GatewaySettings({ isAdmin = true, onNavigateToInstances 
     );
   }
 
+  const isMyTapiSelected = config.provider === 'mytapi';
+
   return (
     <div style={{ flex: 1, padding: '1.75rem', overflowY: 'auto' }}>
       
@@ -351,7 +358,7 @@ export default function GatewaySettings({ isAdmin = true, onNavigateToInstances 
             </h2>
           </div>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', margin: '0.3rem 0 0 0' }}>
-            Configure default WhatsApp BSP providers (Wasender, WPPConnect, Evolution API, UltraMsg, AK Nexus) and allocate custom gateways across SaaS tenants.
+            Configure default credentials (Instance ID, Access Token, Phone ID for MyTAPI) and allocate dedicated gateways across SaaS tenants.
           </p>
         </div>
 
@@ -429,7 +436,7 @@ export default function GatewaySettings({ isAdmin = true, onNavigateToInstances 
                 </button>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))', gap: '0.6rem', maxHeight: '260px', overflowY: 'auto', padding: '2px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))', gap: '0.6rem', maxHeight: '240px', overflowY: 'auto', padding: '2px' }}>
                 {allProviders.map(prov => {
                   const isSelected = config.provider === prov.id;
                   return (
@@ -475,32 +482,103 @@ export default function GatewaySettings({ isAdmin = true, onNavigateToInstances 
                   type="text"
                   value={config.server_url}
                   onChange={(e) => setConfig({ ...config, server_url: e.target.value })}
-                  placeholder="e.g. https://wasenderapi.com/api or http://localhost:8080"
+                  placeholder="e.g. https://app.aknexus.in/api or https://api.mytapi.com/api"
                   style={{ width: '100%', padding: '0.6rem 0.6rem 0.6rem 2.2rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.85rem' }}
                 />
               </div>
               <span style={{ fontSize: '0.73rem', color: 'var(--text-secondary)', marginTop: '0.25rem', display: 'block' }}>
-                Endpoints will be called relative to this base URL for session creation and message dispatch.
+                Base URL for API queries like <code>/create_instance</code>, <code>/get_qrcode</code>, and <code>/send</code>.
+              </span>
+            </div>
+
+            {/* Default Instance ID */}
+            <div style={{ marginBottom: '1.25rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                <label style={{ fontSize: '0.82rem', fontWeight: 700 }}>
+                  Default Instance ID *
+                </label>
+                <span style={{ fontSize: '0.72rem', background: '#f1f5f9', color: '#475569', padding: '0.15rem 0.45rem', borderRadius: '4px', fontWeight: 600 }}>
+                  e.g. 6AD37BDFCEDF5
+                </span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', position: 'relative' }}>
+                <Hash size={16} style={{ position: 'absolute', left: '10px', color: 'var(--text-secondary)' }} />
+                <input
+                  type="text"
+                  value={config.instance_id}
+                  onChange={(e) => setConfig({ ...config, instance_id: e.target.value })}
+                  placeholder="e.g. 6AD37BDFCEDF5"
+                  style={{ width: '100%', padding: '0.6rem 0.6rem 0.6rem 2.2rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.85rem', fontFamily: 'monospace' }}
+                />
+              </div>
+              <span style={{ fontSize: '0.73rem', color: 'var(--text-secondary)', marginTop: '0.25rem', display: 'block' }}>
+                Standard instance or session identifier provided by your unofficial WhatsApp provider.
               </span>
             </div>
 
             {/* Access Token */}
             <div style={{ marginBottom: '1.25rem' }}>
-              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.35rem' }}>
-                Gateway Access Token / API Key / Secret *
-              </label>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                <label style={{ fontSize: '0.82rem', fontWeight: 700 }}>
+                  Gateway Access Token / API Key *
+                </label>
+                <span style={{ fontSize: '0.72rem', background: '#f1f5f9', color: '#475569', padding: '0.15rem 0.45rem', borderRadius: '4px', fontWeight: 600 }}>
+                  e.g. 6abe519e92b26
+                </span>
+              </div>
               <div style={{ display: 'flex', alignItems: 'center', position: 'relative' }}>
                 <Key size={16} style={{ position: 'absolute', left: '10px', color: 'var(--text-secondary)' }} />
                 <input
                   type="text"
                   value={config.api_token}
                   onChange={(e) => setConfig({ ...config, api_token: e.target.value })}
-                  placeholder="e.g. Bearer token, instance secret, or apikey header value"
-                  style={{ width: '100%', padding: '0.6rem 0.6rem 0.6rem 2.2rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.85rem' }}
+                  placeholder="e.g. 6abe519e92b26"
+                  style={{ width: '100%', padding: '0.6rem 0.6rem 0.6rem 2.2rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.85rem', fontFamily: 'monospace' }}
                 />
               </div>
               <span style={{ fontSize: '0.73rem', color: 'var(--text-secondary)', marginTop: '0.25rem', display: 'block' }}>
-                Authentication token or API key provided by your BSP account.
+                Authentication secret / token used to authorize requests against the WhatsApp gateway.
+              </span>
+            </div>
+
+            {/* Phone ID (Required for MyTAPI / Multi-device Gateways) */}
+            <div style={{ 
+              marginBottom: '1.25rem',
+              background: isMyTapiSelected ? '#eff6ff' : 'transparent',
+              padding: isMyTapiSelected ? '0.75rem' : '0',
+              borderRadius: isMyTapiSelected ? '8px' : '0',
+              border: isMyTapiSelected ? '1px solid #bfdbfe' : 'none'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                <label style={{ fontSize: '0.82rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <span>Phone ID</span>
+                  <span style={{ 
+                    fontSize: '0.7rem', 
+                    background: isMyTapiSelected ? '#2563eb' : '#dbeafe', 
+                    color: isMyTapiSelected ? '#fff' : '#1d4ed8', 
+                    padding: '0.15rem 0.45rem', 
+                    borderRadius: '4px', 
+                    fontWeight: 700 
+                  }}>
+                    {isMyTapiSelected ? '★ Required for MyTAPI' : 'MyTAPI / Multi-Device'}
+                  </span>
+                </label>
+                <span style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                  Optional for others
+                </span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', position: 'relative' }}>
+                <Phone size={16} style={{ position: 'absolute', left: '10px', color: isMyTapiSelected ? '#2563eb' : 'var(--text-secondary)' }} />
+                <input
+                  type="text"
+                  value={config.phone_id || ''}
+                  onChange={(e) => setConfig({ ...config, phone_id: e.target.value })}
+                  placeholder="e.g. 919876543210 or device phone id"
+                  style={{ width: '100%', padding: '0.6rem 0.6rem 0.6rem 2.2rem', borderRadius: '6px', border: isMyTapiSelected ? '1px solid #93c5fd' : '1px solid var(--border-light)', fontSize: '0.85rem' }}
+                />
+              </div>
+              <span style={{ fontSize: '0.73rem', color: isMyTapiSelected ? '#1e40af' : 'var(--text-secondary)', marginTop: '0.25rem', display: 'block' }}>
+                Required when using <strong>MyTAPI</strong> or device-bound multi-phone gateways. Leave empty if using AK Nexus, Wasender, or Evolution.
               </span>
             </div>
 
@@ -513,7 +591,7 @@ export default function GatewaySettings({ isAdmin = true, onNavigateToInstances 
                 </label>
               </div>
               <p style={{ fontSize: '0.78rem', color: '#64748b', margin: '0 0 0.75rem 0' }}>
-                Default limit for simultaneous active WhatsApp phone accounts across tenants without specific allocation.
+                Default limit for simultaneous active WhatsApp accounts across tenants without individual allocation.
               </p>
               
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
@@ -597,7 +675,7 @@ export default function GatewaySettings({ isAdmin = true, onNavigateToInstances 
               <Send size={16} style={{ color: '#059669' }} /> Verify Gateway Connection
             </h3>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.78rem', margin: '0 0 1rem 0' }}>
-              Dispatch a live ping message through the configured credentials to verify your token and server URL.
+              Dispatch a live ping message through the configured credentials (instance_id, access_token, phone_id) to verify connectivity.
             </p>
 
             <div style={{ marginBottom: '0.75rem' }}>
@@ -661,12 +739,13 @@ export default function GatewaySettings({ isAdmin = true, onNavigateToInstances 
           {/* Quick Guide */}
           <div className="card" style={{ padding: '1.25rem', borderRadius: '12px', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
             <h4 style={{ margin: '0 0 0.6rem 0', fontSize: '0.85rem', fontWeight: 700, color: '#334155', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-              <HelpCircle size={15} color="#4f46e5" /> Auto-Healing &amp; Multi-BSP Architecture
+              <HelpCircle size={15} color="#4f46e5" /> Credentials &amp; Architecture Reference
             </h4>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.78rem', color: '#475569', lineHeight: '1.4' }}>
-              <div><strong>Auto-Healing Engine:</strong> If an instance key expires or gets invalidated, the CRM auto-generates a fresh live instance key seamlessly in real-time.</div>
-              <div><strong>Tenant Isolation:</strong> Each company can be bound to its own dedicated provider (Wasender, Evolution, AK Nexus) with individual account limits.</div>
-              <div><strong>Zero Disruption:</strong> Switching providers or adding gateways does not require code restarts or affect active employee calling.</div>
+              <div><strong>Instance ID:</strong> Found in your gateway dashboard (e.g. <code>6AD37BDFCEDF5</code>). Represents your WhatsApp Web runtime instance.</div>
+              <div><strong>Access Token:</strong> Gateway API key (e.g. <code>6abe519e92b26</code>) authorizing REST requests.</div>
+              <div><strong>Phone ID (MyTAPI):</strong> Required when using MyTAPI to target a registered phone number. Leave empty for AK Nexus or Wasender.</div>
+              <div><strong>Auto-Healing Engine:</strong> Expired or invalidated instances are automatically revived in real-time without user downtime.</div>
             </div>
           </div>
 
@@ -688,7 +767,7 @@ export default function GatewaySettings({ isAdmin = true, onNavigateToInstances 
               </h3>
             </div>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.82rem', margin: '0.3rem 0 0 0' }}>
-              Allocate specific WhatsApp BSP providers, custom endpoint URLs, dedicated tokens, and max scanned instance limits per company/tenant.
+              Allocate specific WhatsApp BSP providers, dedicated Instance IDs, Access Tokens, Phone IDs (MyTAPI), and max accounts per tenant.
             </p>
           </div>
 
@@ -727,7 +806,7 @@ export default function GatewaySettings({ isAdmin = true, onNavigateToInstances 
 
                 {/* Column: Provider */}
                 <th style={{ width: `${colWidths.provider}px`, padding: '0.75rem 0.85rem', position: 'relative', fontWeight: 700, color: '#1e293b' }}>
-                  <span>Assigned BSP Provider</span>
+                  <span>Assigned BSP</span>
                   <div
                     onMouseDown={(e) => handleMouseDownResize('provider', e)}
                     onDoubleClick={() => handleDoubleClickReset('provider')}
@@ -765,6 +844,66 @@ export default function GatewaySettings({ isAdmin = true, onNavigateToInstances 
                   />
                 </th>
 
+                {/* Column: Dedicated Instance ID */}
+                <th style={{ width: `${colWidths.instanceId}px`, padding: '0.75rem 0.85rem', position: 'relative', fontWeight: 700, color: '#1e293b' }}>
+                  <span>Dedicated Instance ID</span>
+                  <div
+                    onMouseDown={(e) => handleMouseDownResize('instanceId', e)}
+                    onDoubleClick={() => handleDoubleClickReset('instanceId')}
+                    title="Drag to resize | Double click to reset"
+                    style={{
+                      position: 'absolute',
+                      right: 0,
+                      top: 0,
+                      bottom: 0,
+                      width: '6px',
+                      cursor: 'col-resize',
+                      userSelect: 'none',
+                      backgroundColor: activeResizingCol === 'instanceId' ? '#059669' : 'transparent'
+                    }}
+                  />
+                </th>
+
+                {/* Column: Dedicated Token */}
+                <th style={{ width: `${colWidths.apiToken}px`, padding: '0.75rem 0.85rem', position: 'relative', fontWeight: 700, color: '#1e293b' }}>
+                  <span>Dedicated Token</span>
+                  <div
+                    onMouseDown={(e) => handleMouseDownResize('apiToken', e)}
+                    onDoubleClick={() => handleDoubleClickReset('apiToken')}
+                    title="Drag to resize | Double click to reset"
+                    style={{
+                      position: 'absolute',
+                      right: 0,
+                      top: 0,
+                      bottom: 0,
+                      width: '6px',
+                      cursor: 'col-resize',
+                      userSelect: 'none',
+                      backgroundColor: activeResizingCol === 'apiToken' ? '#059669' : 'transparent'
+                    }}
+                  />
+                </th>
+
+                {/* Column: Dedicated Phone ID (MyTAPI) */}
+                <th style={{ width: `${colWidths.phoneId}px`, padding: '0.75rem 0.85rem', position: 'relative', fontWeight: 700, color: '#1e293b' }}>
+                  <span>Phone ID <small style={{ color: '#2563eb', fontWeight: 700 }}>(MyTAPI)</small></span>
+                  <div
+                    onMouseDown={(e) => handleMouseDownResize('phoneId', e)}
+                    onDoubleClick={() => handleDoubleClickReset('phoneId')}
+                    title="Drag to resize | Double click to reset"
+                    style={{
+                      position: 'absolute',
+                      right: 0,
+                      top: 0,
+                      bottom: 0,
+                      width: '6px',
+                      cursor: 'col-resize',
+                      userSelect: 'none',
+                      backgroundColor: activeResizingCol === 'phoneId' ? '#059669' : 'transparent'
+                    }}
+                  />
+                </th>
+
                 {/* Column: Dedicated Server URL */}
                 <th style={{ width: `${colWidths.serverUrl}px`, padding: '0.75rem 0.85rem', position: 'relative', fontWeight: 700, color: '#1e293b' }}>
                   <span>Dedicated Server URL</span>
@@ -781,26 +920,6 @@ export default function GatewaySettings({ isAdmin = true, onNavigateToInstances 
                       cursor: 'col-resize',
                       userSelect: 'none',
                       backgroundColor: activeResizingCol === 'serverUrl' ? '#059669' : 'transparent'
-                    }}
-                  />
-                </th>
-
-                {/* Column: Dedicated Token */}
-                <th style={{ width: `${colWidths.apiToken}px`, padding: '0.75rem 0.85rem', position: 'relative', fontWeight: 700, color: '#1e293b' }}>
-                  <span>Dedicated Token / Key</span>
-                  <div
-                    onMouseDown={(e) => handleMouseDownResize('apiToken', e)}
-                    onDoubleClick={() => handleDoubleClickReset('apiToken')}
-                    title="Drag to resize | Double click to reset"
-                    style={{
-                      position: 'absolute',
-                      right: 0,
-                      top: 0,
-                      bottom: 0,
-                      width: '6px',
-                      cursor: 'col-resize',
-                      userSelect: 'none',
-                      backgroundColor: activeResizingCol === 'apiToken' ? '#059669' : 'transparent'
                     }}
                   />
                 </th>
@@ -837,12 +956,15 @@ export default function GatewaySettings({ isAdmin = true, onNavigateToInstances 
                 const alloc = tenantAllocations[t.id] || {
                   provider: 'aknexus',
                   max_scanned_instances: 5,
-                  server_url: '',
+                  instance_id: '',
                   api_token: '',
+                  phone_id: '',
+                  server_url: '',
                   is_active: true
                 };
                 const isSaving = tenantSaving[t.id];
                 const isSaved = tenantSaved[t.id];
+                const isRowMyTapi = alloc.provider === 'mytapi';
 
                 return (
                   <tr 
@@ -908,19 +1030,20 @@ export default function GatewaySettings({ isAdmin = true, onNavigateToInstances 
                       </span>
                     </td>
 
-                    {/* Dedicated Server URL */}
+                    {/* Dedicated Instance ID */}
                     <td style={{ padding: '0.75rem 0.85rem' }}>
                       <input
                         type="text"
-                        value={alloc.server_url || ''}
-                        onChange={(e) => handleTenantFieldChange(t.id, 'server_url', e.target.value)}
-                        placeholder="Default (Use Global URL)"
+                        value={alloc.instance_id || ''}
+                        onChange={(e) => handleTenantFieldChange(t.id, 'instance_id', e.target.value)}
+                        placeholder="Default Instance"
                         style={{
                           width: '100%',
                           padding: '0.45rem',
                           borderRadius: '6px',
                           border: '1px solid var(--border-light)',
-                          fontSize: '0.78rem'
+                          fontSize: '0.78rem',
+                          fontFamily: 'monospace'
                         }}
                       />
                     </td>
@@ -931,7 +1054,43 @@ export default function GatewaySettings({ isAdmin = true, onNavigateToInstances 
                         type="text"
                         value={alloc.api_token || ''}
                         onChange={(e) => handleTenantFieldChange(t.id, 'api_token', e.target.value)}
-                        placeholder="Default (Use Global Token)"
+                        placeholder="Default Token"
+                        style={{
+                          width: '100%',
+                          padding: '0.45rem',
+                          borderRadius: '6px',
+                          border: '1px solid var(--border-light)',
+                          fontSize: '0.78rem',
+                          fontFamily: 'monospace'
+                        }}
+                      />
+                    </td>
+
+                    {/* Dedicated Phone ID (MyTAPI) */}
+                    <td style={{ padding: '0.75rem 0.85rem' }}>
+                      <input
+                        type="text"
+                        value={alloc.phone_id || ''}
+                        onChange={(e) => handleTenantFieldChange(t.id, 'phone_id', e.target.value)}
+                        placeholder={isRowMyTapi ? 'Required for MyTAPI' : 'Optional (phone_id)'}
+                        style={{
+                          width: '100%',
+                          padding: '0.45rem',
+                          borderRadius: '6px',
+                          border: isRowMyTapi ? '1px solid #93c5fd' : '1px solid var(--border-light)',
+                          backgroundColor: isRowMyTapi ? '#eff6ff' : '#fff',
+                          fontSize: '0.78rem'
+                        }}
+                      />
+                    </td>
+
+                    {/* Dedicated Server URL */}
+                    <td style={{ padding: '0.75rem 0.85rem' }}>
+                      <input
+                        type="text"
+                        value={alloc.server_url || ''}
+                        onChange={(e) => handleTenantFieldChange(t.id, 'server_url', e.target.value)}
+                        placeholder="Default (Use Global URL)"
                         style={{
                           width: '100%',
                           padding: '0.45rem',
@@ -1095,6 +1254,7 @@ export default function GatewaySettings({ isAdmin = true, onNavigateToInstances 
                   <option value="Bearer Token">Bearer Token (Authorization: Bearer ...)</option>
                   <option value="Header apikey">Header (apikey: ...)</option>
                   <option value="Query Param">URL Query Param (?access_token=... or ?token=...)</option>
+                  <option value="Query / Body (phone_id, access_token)">MyTAPI Style (phone_id, access_token)</option>
                   <option value="Custom Header">Custom Header</option>
                 </select>
               </div>

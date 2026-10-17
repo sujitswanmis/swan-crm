@@ -31,6 +31,7 @@ const DEFAULT_CONFIG = {
     server_url: 'https://app.aknexus.in/api',
     instance_id: '6AD37D9D501B2',
     api_token: '6abe519e92b26',
+    phone_id: '',
     max_scanned_instances: 5
   },
   sms: {

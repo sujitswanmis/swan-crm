@@ -22,17 +22,19 @@ async function getGatewayConfig(tenantId = null) {
     const provider = tenantConfig?.provider || wa?.provider || 'aknexus';
     const baseUrl = (tenantConfig?.server_url || wa?.server_url || process.env.WHATSAPP_UNOFFICIAL_BASE_URL || 'https://app.aknexus.in/api').replace(/\/+$/, '');
     const token = tenantConfig?.api_token || wa?.api_token || process.env.WHATSAPP_UNOFFICIAL_ACCESS_TOKEN || '6abe519e92b26';
-    const defaultInst = wa?.instance_id || process.env.WHATSAPP_UNOFFICIAL_DEFAULT_INSTANCE || '6AD391429FD32';
+    const defaultInst = tenantConfig?.instance_id || wa?.instance_id || process.env.WHATSAPP_UNOFFICIAL_DEFAULT_INSTANCE || '6AD37BDFCEDF5';
+    const phoneId = tenantConfig?.phone_id || wa?.phone_id || process.env.WHATSAPP_UNOFFICIAL_PHONE_ID || '';
     const maxLimit = typeof tenantConfig?.max_scanned_instances === 'number'
       ? tenantConfig.max_scanned_instances
       : (typeof wa?.max_scanned_instances === 'number' ? wa.max_scanned_instances : 5);
 
-    return { baseUrl, token, defaultInst, maxLimit, provider };
+    return { baseUrl, token, defaultInst, phoneId, maxLimit, provider };
   } catch (err) {
     return {
       baseUrl: (process.env.WHATSAPP_UNOFFICIAL_BASE_URL || 'https://app.aknexus.in/api').replace(/\/+$/, ''),
       token: process.env.WHATSAPP_UNOFFICIAL_ACCESS_TOKEN || '6abe519e92b26',
-      defaultInst: process.env.WHATSAPP_UNOFFICIAL_DEFAULT_INSTANCE || '6AD391429FD32',
+      defaultInst: process.env.WHATSAPP_UNOFFICIAL_DEFAULT_INSTANCE || '6AD37BDFCEDF5',
+      phoneId: process.env.WHATSAPP_UNOFFICIAL_PHONE_ID || '',
       maxLimit: 5,
       provider: 'aknexus'
     };
@@ -46,6 +48,7 @@ async function callStandardGateway(endpoint, queryParams = {}, postBody = null, 
   const config = overrideConfig || (await getGatewayConfig());
   const params = new URLSearchParams({
     access_token: config.token,
+    ...(config.phoneId ? { phone_id: config.phoneId } : {}),
     ...queryParams
   });
 
@@ -521,7 +524,8 @@ export async function sendText(instanceKey, toNumber, messageText, tenantId = nu
     type: 'text',
     message: messageText,
     instance_id: targetKey,
-    access_token: config.token
+    access_token: config.token,
+    ...(config.phoneId ? { phone_id: config.phoneId } : {})
   };
 
   const res = await callStandardGateway('/send', {}, payload, config);
@@ -554,7 +558,8 @@ export async function sendMedia(instanceKey, toNumber, mediaUrl, messageType = '
     media_url: mediaUrl,
     filename: filename || 'file.jpg',
     instance_id: instanceKey || config.defaultInst,
-    access_token: config.token
+    access_token: config.token,
+    ...(config.phoneId ? { phone_id: config.phoneId } : {})
   };
 
   const res = await callStandardGateway('/send', {}, payload, config);

@@ -443,8 +443,10 @@ export async function getSaaSTenantsAndAllocations() {
         ...t,
         assigned_provider: alloc.provider || wa.provider || 'aknexus',
         max_scanned_instances: typeof alloc.max_scanned_instances === 'number' ? alloc.max_scanned_instances : (wa.max_scanned_instances || 5),
+        instance_id: alloc.instance_id || '',
+        api_token: alloc.api_token || alloc.access_token || '',
+        phone_id: alloc.phone_id || '',
         server_url: alloc.server_url || '',
-        api_token: alloc.api_token || '',
         is_allocated_active: alloc.is_active !== false
       };
     });
@@ -454,6 +456,8 @@ export async function getSaaSTenantsAndAllocations() {
       tenants: enrichedTenants,
       global_provider: wa.provider || 'aknexus',
       global_max_instances: wa.max_scanned_instances || 5,
+      global_instance_id: wa.instance_id || '',
+      global_phone_id: wa.phone_id || '',
       custom_providers: wa.custom_providers || []
     };
   } catch (err) {
@@ -472,8 +476,10 @@ export async function saveSaaSTenantAllocation(tenantId, allocationData) {
       ...(tenantAllocations[tenantId] || {}),
       provider: allocationData.provider || wa.provider || 'aknexus',
       max_scanned_instances: Number(allocationData.max_scanned_instances) || 0,
-      server_url: allocationData.server_url ? allocationData.server_url.trim() : '',
+      instance_id: allocationData.instance_id ? allocationData.instance_id.trim() : '',
       api_token: allocationData.api_token ? allocationData.api_token.trim() : '',
+      phone_id: allocationData.phone_id ? allocationData.phone_id.trim() : '',
+      server_url: allocationData.server_url ? allocationData.server_url.trim() : '',
       is_active: allocationData.is_active !== false,
       updated_at: new Date().toISOString()
     };
