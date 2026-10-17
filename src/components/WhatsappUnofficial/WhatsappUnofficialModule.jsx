@@ -9,11 +9,13 @@ import UserAuthorization from './UserAuthorization';
 import LiveChat from './LiveChat';
 import TestMessage from './TestMessage';
 import MessageLogs from './MessageLogs';
+import GatewaySettings from './GatewaySettings';
 
 const MODULE_TABS = [
   { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
   { id: 'live_chat', label: 'Live Chat Inbox', icon: <MessageSquare size={18} /> },
   { id: 'instances', label: 'Instance Management', icon: <Smartphone size={18} /> },
+  { id: 'settings', label: 'API & BSP Setup', icon: <Settings size={18} /> },
   { id: 'auth', label: 'User Authorization', icon: <Shield size={18} /> },
   { id: 'test', label: 'Test Message', icon: <TestTube size={18} /> },
   { id: 'logs', label: 'Message Logs', icon: <FileText size={18} /> },
@@ -112,7 +114,18 @@ export default function WhatsappUnofficialModule({ userRole, userId, moduleAcces
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {activeTab === 'dashboard' && <Dashboard userId={userId} isAdmin={isAdmin} />}
         {activeTab === 'live_chat' && <LiveChat userId={userId} isAdmin={isAdmin} />}
-        {activeTab === 'instances' && <InstanceManagement userId={userId} />}
+        {activeTab === 'instances' && (
+          <InstanceManagement 
+            userId={userId} 
+            onNavigateToSettings={() => handleTabChange('settings')} 
+          />
+        )}
+        {activeTab === 'settings' && (
+          <GatewaySettings 
+            isAdmin={isAdmin} 
+            onNavigateToInstances={() => handleTabChange('instances')} 
+          />
+        )}
         {activeTab === 'auth' && <UserAuthorization />}
         {activeTab === 'test' && <TestMessage />}
         {activeTab === 'logs' && <MessageLogs userId={userId} isAdmin={isAdmin} />}

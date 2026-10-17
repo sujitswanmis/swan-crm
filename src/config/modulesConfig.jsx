@@ -263,6 +263,7 @@ export const MODULES_CONFIG = [
       { id: 'dashboard', label: 'Dashboard' },
       { id: 'live_chat', label: 'Live Chat Inbox' },
       { id: 'instances', label: 'Instance Management' },
+      { id: 'settings', label: 'API & BSP Setup' },
       { id: 'auth', label: 'User Authorization' },
       { id: 'test', label: 'Test Message' },
       { id: 'logs', label: 'Message Logs' }

@@ -13,10 +13,10 @@ import {
 import { QRCodeSVG } from 'qrcode.react';
 import { 
   Plus, RefreshCw, QrCode, LogOut, Loader2, 
-  CheckCircle2, Copy, Check, RotateCcw, AlertTriangle, Shield 
+  CheckCircle2, Copy, Check, RotateCcw, AlertTriangle, Shield, Settings 
 } from 'lucide-react';
 
-export default function InstanceManagement({ userId }) {
+export default function InstanceManagement({ userId, onNavigateToSettings }) {
   const [instances, setInstances] = useState([]);
   const [limitInfo, setLimitInfo] = useState({ connectedCount: 0, maxLimit: 5, isLimitReached: false });
   const [loading, setLoading] = useState(true);
@@ -194,7 +194,18 @@ export default function InstanceManagement({ userId }) {
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: '0.5rem' }}>
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          {onNavigateToSettings && (
+            <button 
+              type="button"
+              onClick={onNavigateToSettings}
+              className="btn-secondary" 
+              style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', padding: '0.5rem 0.95rem', borderRadius: '6px', fontSize: '0.85rem' }}
+            >
+              <Settings size={15} /> API &amp; BSP Setup
+            </button>
+          )}
+
           <button 
             onClick={fetchInstancesAndLimits} 
             className="btn-secondary" 
