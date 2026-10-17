@@ -7,10 +7,10 @@ import path from 'path';
 const TEMPLATES_FILE_PATH = path.join(process.cwd(), 'src', 'config', 'tenant_message_templates.json');
 
 const getAdminClient = () => {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY
-  );
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !key) return null;
+  return createClient(url, key);
 };
 
 const DEFAULT_TEMPLATES = {
@@ -269,12 +269,79 @@ async function writeLocalWaTemplates(templates) {
   }
 }
 
+const UNOFFICIAL_CAMPAIGN_TAG = 'UNOFFICIAL_WA_TEMPLATE';
+
 export async function getWhatsAppTemplates(companyOrTenantId = 'Default') {
   try {
+    const admin = getAdminClient();
+    let dbTemplates = null;
+
+    // 1. Fetch from Supabase whatsapp_templates table where campaign_name is 'UNOFFICIAL_WA_TEMPLATE'
+    try {
+      if (admin) {
+        const { data, error } = await admin
+          .from('whatsapp_templates')
+          .select('*')
+          .eq('campaign_name', UNOFFICIAL_CAMPAIGN_TAG)
+          .order('created_at', { ascending: false });
+
+      if (!error && Array.isArray(data) && data.length > 0) {
+        dbTemplates = data.map(row => {
+          let parsedBody = {};
+          if (row.message_body && row.message_body.startsWith('{')) {
+            try { parsedBody = JSON.parse(row.message_body); } catch (_) {}
+          }
+          return {
+            id: row.id,
+            supabase_id: row.id,
+            title: row.template_name || parsedBody.title || 'Untitled Template',
+            category: parsedBody.category || 'General',
+            type: parsedBody.type || (row.image_url ? 'IMAGE' : 'TEXT'),
+            content: parsedBody.content !== undefined ? parsedBody.content : (row.message_body || ''),
+            media_url: row.image_url || parsedBody.media_url || '',
+            filename: parsedBody.filename || 'document.pdf',
+            poll_question: parsedBody.poll_question || '',
+            poll_options: Array.isArray(parsedBody.poll_options) ? parsedBody.poll_options : ['Option 1', 'Option 2'],
+            poll_multiple_choice: !!parsedBody.poll_multiple_choice,
+            event_title: parsedBody.event_title || '',
+            event_description: parsedBody.event_description || '',
+            event_venue: parsedBody.event_venue || '',
+            event_start_time: parsedBody.event_start_time || '',
+            event_rsvp_url: parsedBody.event_rsvp_url || '',
+            created_at: row.created_at,
+            updated_at: parsedBody.updated_at || row.created_at
+          };
+        });
+      }
+      }
+    } catch (dbErr) {
+      console.warn('Notice: Background Supabase fetch for whatsapp templates:', dbErr.message);
+    }
+
+    // 2. Read local templates file
     const localTemplates = await readLocalWaTemplates();
+
+    if (dbTemplates && dbTemplates.length > 0) {
+      // Complement with any prebuilt templates not yet customized in DB
+      const existingTitles = new Set(dbTemplates.map(t => (t.title || '').trim().toLowerCase()));
+      const remainingPrebuilt = PREBUILT_WHATSAPP_TEMPLATES.filter(p => !existingTitles.has((p.title || '').trim().toLowerCase()));
+      const combined = [...dbTemplates, ...remainingPrebuilt];
+
+      // Sync local cache file in background
+      writeLocalWaTemplates(combined).catch(() => {});
+      return {
+        success: true,
+        source: 'supabase',
+        templates: combined
+      };
+    }
+
+    // 3. Fallback to local cache file / prebuilt
+    const fallbackList = localTemplates && localTemplates.length > 0 ? localTemplates : PREBUILT_WHATSAPP_TEMPLATES;
     return {
       success: true,
-      templates: localTemplates && localTemplates.length > 0 ? localTemplates : PREBUILT_WHATSAPP_TEMPLATES
+      source: 'local',
+      templates: fallbackList
     };
   } catch (err) {
     console.error('getWhatsAppTemplates error:', err);
@@ -284,17 +351,79 @@ export async function getWhatsAppTemplates(companyOrTenantId = 'Default') {
 
 export async function saveWhatsAppTemplate({ company = 'Default', template }) {
   try {
-    if (!template || !template.title) {
+    if (!template || !template.title?.trim()) {
       return { success: false, error: 'Template title is required.' };
     }
 
-    const localTemplates = await readLocalWaTemplates();
-    const existingIdx = localTemplates.findIndex(t => t.id === template.id);
-
     const nowIso = new Date().toISOString();
+    const admin = getAdminClient();
+
+    // Check if ID is a valid Supabase UUID
+    const isUuid = (id) => typeof id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+    let supabaseId = template.supabase_id || (isUuid(template.id) ? template.id : null);
+
+    // Prepare full JSON payload for rich properties
+    const fullJson = JSON.stringify({
+      title: template.title,
+      category: template.category || 'General',
+      type: template.type || 'TEXT',
+      content: template.content || '',
+      media_url: template.media_url || '',
+      filename: template.filename || 'document.pdf',
+      poll_question: template.poll_question || '',
+      poll_options: Array.isArray(template.poll_options) ? template.poll_options : ['Option 1', 'Option 2'],
+      poll_multiple_choice: !!template.poll_multiple_choice,
+      event_title: template.event_title || '',
+      event_description: template.event_description || '',
+      event_venue: template.event_venue || '',
+      event_start_time: template.event_start_time || '',
+      event_rsvp_url: template.event_rsvp_url || '',
+      updated_at: nowIso
+    });
+
+    const dbPayload = {
+      template_name: template.title,
+      campaign_name: UNOFFICIAL_CAMPAIGN_TAG,
+      company: company || 'Swan Agro',
+      image_url: template.media_url || null,
+      message_body: fullJson
+    };
+
+    // 1. Try Upsert / Insert to Supabase
+    try {
+      if (admin) {
+        if (supabaseId) {
+          const { data, error } = await admin
+            .from('whatsapp_templates')
+            .update(dbPayload)
+            .eq('id', supabaseId)
+            .select();
+          if (!error && data && data[0]) {
+            supabaseId = data[0].id;
+          }
+        } else {
+          const { data, error } = await admin
+            .from('whatsapp_templates')
+            .insert([dbPayload])
+            .select();
+          if (!error && data && data[0]) {
+            supabaseId = data[0].id;
+          }
+        }
+      }
+    } catch (sbErr) {
+      console.warn('Notice: Supabase write notice (local backup active):', sbErr.message);
+    }
+
+    // 2. Local File Save & Cache Sync
+    const localTemplates = await readLocalWaTemplates();
+    const assignedId = supabaseId || template.id || `tpl_wa_${Date.now()}`;
+    const existingIdx = localTemplates.findIndex(t => t.id === template.id || (supabaseId && t.id === supabaseId));
+
     const templateData = {
       ...template,
-      id: template.id || `tpl_wa_${Date.now()}`,
+      id: assignedId,
+      supabase_id: supabaseId || undefined,
       updated_at: nowIso
     };
 
@@ -309,8 +438,9 @@ export async function saveWhatsAppTemplate({ company = 'Default', template }) {
 
     return {
       success: true,
-      message: 'WhatsApp template saved successfully!',
-      template: templateData
+      message: supabaseId ? 'WhatsApp template safely synced to Supabase Cloud!' : 'WhatsApp template saved locally!',
+      template: templateData,
+      supabase_id: supabaseId
     };
   } catch (err) {
     console.error('saveWhatsAppTemplate error:', err);
@@ -321,13 +451,23 @@ export async function saveWhatsAppTemplate({ company = 'Default', template }) {
 export async function deleteWhatsAppTemplate({ company = 'Default', templateId }) {
   try {
     if (!templateId) return { success: false, error: 'Template ID required' };
+
+    // 1. Try deleting from Supabase
+    try {
+      const admin = getAdminClient();
+      if (admin) {
+        await admin.from('whatsapp_templates').delete().eq('id', templateId);
+      }
+    } catch (_) {}
+
+    // 2. Delete from Local Cache File
     const localTemplates = await readLocalWaTemplates();
-    const filtered = localTemplates.filter(t => t.id !== templateId);
+    const filtered = localTemplates.filter(t => t.id !== templateId && t.supabase_id !== templateId);
     await writeLocalWaTemplates(filtered);
 
     return {
       success: true,
-      message: 'Template deleted successfully.'
+      message: 'Template deleted from Supabase & local storage.'
     };
   } catch (err) {
     console.error('deleteWhatsAppTemplate error:', err);

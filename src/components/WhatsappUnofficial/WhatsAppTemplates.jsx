@@ -335,7 +335,24 @@ export default function WhatsAppTemplates({ userId, isAdmin }) {
   };
 
   const handleStartEdit = (tpl) => {
-    setEditForm({ ...tpl });
+    setEditForm({
+      id: tpl?.id || '',
+      supabase_id: tpl?.supabase_id || undefined,
+      title: tpl?.title || '',
+      category: tpl?.category || 'General',
+      type: tpl?.type || 'TEXT',
+      content: tpl?.content || '',
+      media_url: tpl?.media_url || '',
+      filename: tpl?.filename || 'document.pdf',
+      poll_question: tpl?.poll_question || '',
+      poll_options: Array.isArray(tpl?.poll_options) ? [...tpl.poll_options] : ['Option 1', 'Option 2'],
+      poll_multiple_choice: !!tpl?.poll_multiple_choice,
+      event_title: tpl?.event_title || '',
+      event_description: tpl?.event_description || '',
+      event_venue: tpl?.event_venue || '',
+      event_start_time: tpl?.event_start_time || '',
+      event_rsvp_url: tpl?.event_rsvp_url || ''
+    });
     setSelectedTemplate(tpl);
     setIsEditing(true);
     setTestResult(null);
@@ -806,7 +823,7 @@ export default function WhatsAppTemplates({ userId, isAdmin }) {
                       <input
                         type="text"
                         disabled={!isEditing}
-                        value={isEditing ? editForm.title : activeTemplate.title}
+                        value={(isEditing ? editForm?.title : activeTemplate?.title) || ''}
                         onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
                         placeholder="e.g. Lead Welcome & Greeting"
                         style={{ width: '100%', padding: '0.55rem 0.75rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem' }}
@@ -820,7 +837,7 @@ export default function WhatsAppTemplates({ userId, isAdmin }) {
                       <input
                         type="text"
                         disabled={!isEditing}
-                        value={isEditing ? editForm.category : activeTemplate.category}
+                        value={(isEditing ? editForm?.category : activeTemplate?.category) || ''}
                         onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}
                         placeholder="e.g. Marketing, Greeting"
                         style={{ width: '100%', padding: '0.55rem 0.75rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem' }}
@@ -985,7 +1002,7 @@ export default function WhatsAppTemplates({ userId, isAdmin }) {
                         <input
                           type="text"
                           disabled={!isEditing}
-                          value={isEditing ? editForm.media_url : activeTemplate.media_url}
+                          value={(isEditing ? editForm?.media_url : activeTemplate?.media_url) || ''}
                           onChange={(e) => setEditForm({ ...editForm, media_url: e.target.value })}
                           placeholder="https://example.com/images/crop_implement.jpg"
                           style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid #86efac', fontSize: '0.82rem' }}
@@ -1007,7 +1024,7 @@ export default function WhatsAppTemplates({ userId, isAdmin }) {
                         <input
                           type="text"
                           disabled={!isEditing}
-                          value={isEditing ? editForm.media_url : activeTemplate.media_url}
+                          value={(isEditing ? editForm?.media_url : activeTemplate?.media_url) || ''}
                           onChange={(e) => setEditForm({ ...editForm, media_url: e.target.value })}
                           placeholder="https://example.com/videos/rotavator_demo.mp4"
                           style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid #d8b4fe', fontSize: '0.82rem' }}
@@ -1030,7 +1047,7 @@ export default function WhatsAppTemplates({ userId, isAdmin }) {
                           <input
                             type="text"
                             disabled={!isEditing}
-                            value={isEditing ? editForm.media_url : activeTemplate.media_url}
+                            value={(isEditing ? editForm?.media_url : activeTemplate?.media_url) || ''}
                             onChange={(e) => setEditForm({ ...editForm, media_url: e.target.value })}
                             placeholder="https://example.com/catalog.pdf"
                             style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid #fdba74', fontSize: '0.82rem' }}
@@ -1043,7 +1060,7 @@ export default function WhatsAppTemplates({ userId, isAdmin }) {
                           <input
                             type="text"
                             disabled={!isEditing}
-                            value={isEditing ? editForm.filename : activeTemplate.filename}
+                            value={(isEditing ? editForm?.filename : activeTemplate?.filename) || ''}
                             onChange={(e) => setEditForm({ ...editForm, filename: e.target.value })}
                             placeholder="e.g. Catalog_2026.pdf"
                             style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid #fdba74', fontSize: '0.82rem' }}
@@ -1066,7 +1083,7 @@ export default function WhatsAppTemplates({ userId, isAdmin }) {
                         <input
                           type="text"
                           disabled={!isEditing}
-                          value={isEditing ? editForm.poll_question : activeTemplate.poll_question}
+                          value={(isEditing ? editForm?.poll_question : activeTemplate?.poll_question) || ''}
                           onChange={(e) => setEditForm({ ...editForm, poll_question: e.target.value })}
                           placeholder="e.g. Which tractor HP do you operate?"
                           style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid #93c5fd', fontSize: '0.82rem' }}
@@ -1089,13 +1106,13 @@ export default function WhatsAppTemplates({ userId, isAdmin }) {
                           )}
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                          {((isEditing ? editForm.poll_options : activeTemplate.poll_options) || []).map((opt, i) => (
+                          {((isEditing ? editForm?.poll_options : activeTemplate?.poll_options) || []).map((opt, i) => (
                             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                               <span style={{ fontSize: '0.75rem', color: '#64748b', width: '20px' }}>{i + 1}.</span>
                               <input
                                 type="text"
                                 disabled={!isEditing}
-                                value={opt}
+                                value={opt || ''}
                                 onChange={(e) => handlePollOptionChange(i, e.target.value)}
                                 style={{ flex: 1, padding: '0.45rem', borderRadius: '4px', border: '1px solid #93c5fd', fontSize: '0.8rem' }}
                               />
@@ -1129,7 +1146,7 @@ export default function WhatsAppTemplates({ userId, isAdmin }) {
                           <input
                             type="text"
                             disabled={!isEditing}
-                            value={isEditing ? editForm.event_title : activeTemplate.event_title}
+                            value={(isEditing ? editForm?.event_title : activeTemplate?.event_title) || ''}
                             onChange={(e) => setEditForm({ ...editForm, event_title: e.target.value })}
                             placeholder="e.g. Swan Agro Annual Farmers Meet"
                             style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid #fcd34d', fontSize: '0.82rem' }}
@@ -1142,7 +1159,7 @@ export default function WhatsAppTemplates({ userId, isAdmin }) {
                           <input
                             type="text"
                             disabled={!isEditing}
-                            value={isEditing ? editForm.event_start_time : activeTemplate.event_start_time}
+                            value={(isEditing ? editForm?.event_start_time : activeTemplate?.event_start_time) || ''}
                             onChange={(e) => setEditForm({ ...editForm, event_start_time: e.target.value })}
                             placeholder="e.g. 2026-10-25 10:00 AM IST"
                             style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid #fcd34d', fontSize: '0.82rem' }}
@@ -1158,7 +1175,7 @@ export default function WhatsAppTemplates({ userId, isAdmin }) {
                           <input
                             type="text"
                             disabled={!isEditing}
-                            value={isEditing ? editForm.event_venue : activeTemplate.event_venue}
+                            value={(isEditing ? editForm?.event_venue : activeTemplate?.event_venue) || ''}
                             onChange={(e) => setEditForm({ ...editForm, event_venue: e.target.value })}
                             placeholder="e.g. Swan Agro Grounds, Ludhiana"
                             style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid #fcd34d', fontSize: '0.82rem' }}
@@ -1171,7 +1188,7 @@ export default function WhatsAppTemplates({ userId, isAdmin }) {
                           <input
                             type="text"
                             disabled={!isEditing}
-                            value={isEditing ? editForm.event_rsvp_url : activeTemplate.event_rsvp_url}
+                            value={(isEditing ? editForm?.event_rsvp_url : activeTemplate?.event_rsvp_url) || ''}
                             onChange={(e) => setEditForm({ ...editForm, event_rsvp_url: e.target.value })}
                             placeholder="https://newswangroup.com/rsvp"
                             style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid #fcd34d', fontSize: '0.82rem' }}
@@ -1190,7 +1207,7 @@ export default function WhatsAppTemplates({ userId, isAdmin }) {
                       ref={textareaRef}
                       rows={6}
                       disabled={!isEditing}
-                      value={isEditing ? editForm.content : activeTemplate.content}
+                      value={(isEditing ? editForm?.content : activeTemplate?.content) || ''}
                       onChange={(e) => setEditForm({ ...editForm, content: e.target.value })}
                       placeholder="Type your WhatsApp message content with {{variables}} and emojis..."
                       style={{
@@ -1502,7 +1519,7 @@ export default function WhatsAppTemplates({ userId, isAdmin }) {
                   <Phone size={13} color="#94a3b8" style={{ position: 'absolute', left: '8px' }} />
                   <input
                     type="text"
-                    value={testNumber}
+                    value={testNumber || ''}
                     onChange={(e) => setTestNumber(e.target.value)}
                     placeholder="916283362279"
                     style={{ width: '100%', padding: '0.4rem 0.4rem 0.4rem 1.8rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.8rem' }}
