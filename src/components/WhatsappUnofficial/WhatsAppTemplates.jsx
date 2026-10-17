@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   FileText, Image as ImageIcon, Video, File, BarChart2, Calendar, 
   Plus, Search, Send, Copy, Trash2, Check, RefreshCw, Sparkles, 
   Eye, CheckCircle2, AlertCircle, Phone, X, HelpCircle, Layers,
-  ChevronRight, ExternalLink, ArrowRight, Download, Play, CheckCheck
+  ChevronRight, ExternalLink, ArrowRight, Download, Play, CheckCheck,
+  User, Briefcase, MapPin, Tag, DollarSign, Clock, Sparkle
 } from 'lucide-react';
 import { 
   getWhatsAppTemplates, 
@@ -17,28 +18,100 @@ import { getInstances } from '@/app/actions/whatsappUnofficialDb';
 
 function compileTemplateVariables(rawText, variables = {}) {
   let text = String(rawText || '');
+  const istDate = new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium' }).format(new Date());
+  const istTime = new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', timeStyle: 'short' }).format(new Date());
+
   const defaults = {
-    name: 'Sujit Kumar',
-    company: 'Swan Agro',
+    // 👤 Contact Person 1 (Primary)
+    name: 'Ramesh Patel',
     phone: '+91 98765 43210',
-    date: '17 Oct 2026',
-    time: '10:45 AM',
-    amount: '45,000',
+    cp1_name: 'Ramesh Patel',
+    cp1_mobile_1: '+91 98765 43210',
+    cp1_mobile_2: '+91 98765 43211',
+    cp1_alt_1: '+91 98765 43212',
+    cp1_alt_2: '',
+    email: 'ramesh.patel@example.com',
+    cp1_email_1: 'ramesh.patel@example.com',
+    cp1_email_2: '',
+
+    // 👥 Contact Person 2
+    cp2_name: 'Suresh Patel',
+    cp2_mobile_1: '+91 98765 43213',
+    cp2_mobile_2: '',
+    cp2_alt_1: '',
+    cp2_alt_2: '',
+    cp2_email_1: 'suresh@example.com',
+    cp2_email_2: '',
+
+    // 👥 Contact Person 3
+    cp3_name: 'Amit Kumar',
+    cp3_mobile_1: '+91 98765 43214',
+    cp3_mobile_2: '',
+    cp3_alt_1: '',
+    cp3_alt_2: '',
+    cp3_email_1: '',
+    cp3_email_2: '',
+
+    // 🏢 Business Details
+    company: 'Patel Agro Traders',
+    business_type: 'Dealer',
+    business_gst: '07AAAAA1111A1Z1',
+    business_contact_1: '+91 98765 00001',
+    business_contact_2: '+91 98765 00002',
+    business_alt_1: '',
+    business_alt_2: '',
+    business_email_1: 'contact@patelagro.com',
+    business_email_2: 'sales@patelagro.com',
+    business_alt_email_1: '',
+    business_alt_email_2: '',
+
+    // 📍 Location
+    state_name: 'Punjab',
+    district_name: 'Ludhiana',
+    city_name: 'Ludhiana',
+    tehsil_name: 'Ludhiana West',
+    block_name: 'Ludhiana',
+    pin_code: '141001',
+    address: 'GT Road, Near Grain Market, Ludhiana, Punjab',
+
+    // 🎯 Lead Status & Source
+    lead_ref_id: '202610170000042',
+    lead_date: istDate,
+    source: 'IndiaMART',
+    source_name: 'Direct Campaign',
+    status: '01 - New Stage > New Lead',
+    priority: 'LP01: Immediate',
+    assigned_to: 'Nitya Verma',
+    entry_by: 'Admin Office',
+    follow_up_date: istDate,
+
+    // 💰 Commercial & Deal
+    requirement: 'Heavy-Duty Rotavator 7 Feet',
+    investment: '₹1 Lakh - ₹5 Lakh',
+    buying_timeline: 'Immediate (Within 7 Days)',
+    deal_value: '₹1,45,000',
+    amount: '₹1,45,000',
     quote_no: 'SA-QT-2026',
     invoice_no: 'SA-INV-1092',
+
+    // ⚡ System & Brand
+    our_company: 'Swan Agro',
+    date: istDate,
+    time: istTime,
     link: 'https://newswangroup.com'
   };
 
   const merged = { ...defaults, ...variables };
 
   Object.entries(merged).forEach(([k, v]) => {
-    const regex = new RegExp(`\\{\\{${k}\\}\\}`, 'gi');
-    text = text.replace(regex, String(v));
+    if (v !== undefined && v !== null) {
+      const regex = new RegExp(`\\{\\{${k}\\}\\}`, 'gi');
+      text = text.replace(regex, String(v));
+    }
   });
 
   return text;
 }
-
 
 const TYPE_CONFIG = {
   TEXT: { label: 'Text Message', icon: FileText, color: '#0284c7', bg: '#e0f2fe' },
@@ -49,16 +122,111 @@ const TYPE_CONFIG = {
   EVENT: { label: 'Event / Invitation', icon: Calendar, color: '#d97706', bg: '#fef3c7' }
 };
 
-const VARIABLE_TAGS = [
-  { tag: '{{name}}', label: 'Customer Name' },
-  { tag: '{{company}}', label: 'Company Name' },
-  { tag: '{{phone}}', label: 'Mobile Number' },
-  { tag: '{{date}}', label: 'Current / Event Date' },
-  { tag: '{{time}}', label: 'Time' },
-  { tag: '{{amount}}', label: 'Quote / Invoice ₹' },
-  { tag: '{{quote_no}}', label: 'Quotation Ref' },
-  { tag: '{{link}}', label: 'Web / Catalog URL' }
+export const VARIABLE_CATEGORIES = [
+  {
+    id: 'cp1',
+    label: '👤 Primary Contact',
+    tags: [
+      { tag: '{{name}}', label: 'Primary Contact Name' },
+      { tag: '{{phone}}', label: 'Primary Mobile 1' },
+      { tag: '{{email}}', label: 'Primary Email' },
+      { tag: '{{cp1_mobile_2}}', label: 'CP1 Mobile 2' },
+      { tag: '{{cp1_alt_1}}', label: 'CP1 Alt Phone 1' },
+      { tag: '{{cp1_alt_2}}', label: 'CP1 Alt Phone 2' },
+      { tag: '{{cp1_email_2}}', label: 'CP1 Email 2' }
+    ]
+  },
+  {
+    id: 'cp2_3',
+    label: '👥 CP2 & CP3 Contacts',
+    tags: [
+      { tag: '{{cp2_name}}', label: 'CP2 Name' },
+      { tag: '{{cp2_mobile_1}}', label: 'CP2 Mobile 1' },
+      { tag: '{{cp2_mobile_2}}', label: 'CP2 Mobile 2' },
+      { tag: '{{cp2_alt_1}}', label: 'CP2 Alt Phone 1' },
+      { tag: '{{cp2_alt_2}}', label: 'CP2 Alt Phone 2' },
+      { tag: '{{cp2_email_1}}', label: 'CP2 Email 1' },
+      { tag: '{{cp2_email_2}}', label: 'CP2 Email 2' },
+      { tag: '{{cp3_name}}', label: 'CP3 Name' },
+      { tag: '{{cp3_mobile_1}}', label: 'CP3 Mobile 1' },
+      { tag: '{{cp3_mobile_2}}', label: 'CP3 Mobile 2' },
+      { tag: '{{cp3_alt_1}}', label: 'CP3 Alt Phone 1' },
+      { tag: '{{cp3_alt_2}}', label: 'CP3 Alt Phone 2' },
+      { tag: '{{cp3_email_1}}', label: 'CP3 Email 1' },
+      { tag: '{{cp3_email_2}}', label: 'CP3 Email 2' }
+    ]
+  },
+  {
+    id: 'business',
+    label: '🏢 Business & Firm',
+    tags: [
+      { tag: '{{company}}', label: 'Business / Firm Name' },
+      { tag: '{{business_type}}', label: 'Business Type' },
+      { tag: '{{business_gst}}', label: 'Business GST No' },
+      { tag: '{{business_contact_1}}', label: 'Business Phone 1' },
+      { tag: '{{business_contact_2}}', label: 'Business Phone 2' },
+      { tag: '{{business_alt_1}}', label: 'Business Alt Phone 1' },
+      { tag: '{{business_alt_2}}', label: 'Business Alt Phone 2' },
+      { tag: '{{business_email_1}}', label: 'Business Email 1' },
+      { tag: '{{business_email_2}}', label: 'Business Email 2' },
+      { tag: '{{business_alt_email_1}}', label: 'Business Alt Email 1' },
+      { tag: '{{business_alt_email_2}}', label: 'Business Alt Email 2' }
+    ]
+  },
+  {
+    id: 'location',
+    label: '📍 Location Details',
+    tags: [
+      { tag: '{{state_name}}', label: 'State Name' },
+      { tag: '{{district_name}}', label: 'District Name' },
+      { tag: '{{city_name}}', label: 'City Name' },
+      { tag: '{{tehsil_name}}', label: 'Tehsil Name' },
+      { tag: '{{block_name}}', label: 'Block Name' },
+      { tag: '{{pin_code}}', label: 'PIN Code' },
+      { tag: '{{address}}', label: 'Full Street Address' }
+    ]
+  },
+  {
+    id: 'lifecycle',
+    label: '🎯 Lead Status & Source',
+    tags: [
+      { tag: '{{lead_ref_id}}', label: 'Lead Ref ID' },
+      { tag: '{{lead_date}}', label: 'Lead Date' },
+      { tag: '{{source}}', label: 'Lead Source' },
+      { tag: '{{source_name}}', label: 'Source Campaign / Ref' },
+      { tag: '{{status}}', label: 'Lead Status (Stage)' },
+      { tag: '{{priority}}', label: 'Lead Priority Type' },
+      { tag: '{{assigned_to}}', label: 'Assigned Agent' },
+      { tag: '{{entry_by}}', label: 'Entry By (User)' },
+      { tag: '{{follow_up_date}}', label: 'Follow Up Date' }
+    ]
+  },
+  {
+    id: 'commercial',
+    label: '💰 Requirement & Deal',
+    tags: [
+      { tag: '{{requirement}}', label: 'Requirement / Machine' },
+      { tag: '{{investment}}', label: 'Investment Budget' },
+      { tag: '{{buying_timeline}}', label: 'Buying Timeline' },
+      { tag: '{{deal_value}}', label: 'Deal Value (₹)' },
+      { tag: '{{amount}}', label: 'Quote / Invoice Amount (₹)' },
+      { tag: '{{quote_no}}', label: 'Quotation Ref No' },
+      { tag: '{{invoice_no}}', label: 'Invoice Ref No' }
+    ]
+  },
+  {
+    id: 'system',
+    label: '⚡ Brand & System (IST)',
+    tags: [
+      { tag: '{{our_company}}', label: 'Our Brand / Company' },
+      { tag: '{{date}}', label: 'Current Date (IST)' },
+      { tag: '{{time}}', label: 'Current Time (IST)' },
+      { tag: '{{link}}', label: 'Catalog / Web URL' }
+    ]
+  }
 ];
+
+export const ALL_VARIABLE_TAGS = VARIABLE_CATEGORIES.flatMap(cat => cat.tags);
 
 export default function WhatsAppTemplates({ userId, isAdmin }) {
   const [templates, setTemplates] = useState([]);
@@ -72,6 +240,11 @@ export default function WhatsAppTemplates({ userId, isAdmin }) {
   const [editForm, setEditForm] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+
+  // Dynamic Variable Toolbar States
+  const [selectedVariableCategory, setSelectedVariableCategory] = useState('all');
+  const [variableSearch, setVariableSearch] = useState('');
+  const textareaRef = useRef(null);
 
   // Test Dispatch State
   const [testNumber, setTestNumber] = useState('916283362279');
@@ -110,6 +283,20 @@ export default function WhatsAppTemplates({ userId, isAdmin }) {
       }
     }
   };
+
+  const filteredVariableTags = useMemo(() => {
+    let list = selectedVariableCategory === 'all'
+      ? ALL_VARIABLE_TAGS
+      : (VARIABLE_CATEGORIES.find(c => c.id === selectedVariableCategory)?.tags || ALL_VARIABLE_TAGS);
+    
+    if (variableSearch.trim()) {
+      const q = variableSearch.toLowerCase();
+      list = ALL_VARIABLE_TAGS.filter(v => 
+        v.tag.toLowerCase().includes(q) || v.label.toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [selectedVariableCategory, variableSearch]);
 
   const filteredTemplates = templates.filter(t => {
     const matchesType = activeFilterType === 'ALL' || t.type === activeFilterType;
@@ -156,35 +343,59 @@ export default function WhatsAppTemplates({ userId, isAdmin }) {
 
   const handleInsertTag = (tag) => {
     if (!editForm) return;
-    const current = editForm.content || '';
-    setEditForm({
-      ...editForm,
-      content: current + (current.endsWith(' ') || current.endsWith('\n') ? '' : ' ') + tag + ' '
-    });
+    const el = textareaRef.current;
+    if (el) {
+      const start = el.selectionStart ?? (editForm.content || '').length;
+      const end = el.selectionEnd ?? (editForm.content || '').length;
+      const current = editForm.content || '';
+      const before = current.substring(0, start);
+      const after = current.substring(end);
+      const insert = (before.endsWith(' ') || before.endsWith('\n') || before === '' ? '' : ' ') + tag + ' ';
+      const newText = before + insert + after;
+      setEditForm({ ...editForm, content: newText });
+      setTimeout(() => {
+        el.focus();
+        const nextPos = start + insert.length;
+        el.setSelectionRange(nextPos, nextPos);
+      }, 0);
+    } else {
+      const current = editForm.content || '';
+      setEditForm({
+        ...editForm,
+        content: current + (current.endsWith(' ') || current.endsWith('\n') ? '' : ' ') + tag + ' '
+      });
+    }
   };
 
   const handleSave = async (e) => {
     if (e) e.preventDefault();
-    if (!editForm.title.trim()) {
+    if (!editForm || !editForm.title?.trim()) {
       alert('Please enter a template title.');
       return;
     }
     setSaving(true);
     setSaveSuccess(false);
 
-    const res = await saveWhatsAppTemplate({ template: editForm });
-    setSaving(false);
+    try {
+      const res = await saveWhatsAppTemplate({ template: editForm });
+      setSaving(false);
 
-    if (res.success) {
-      setSaveSuccess(true);
-      await loadData();
-      if (res.template) {
-        setSelectedTemplate(res.template);
+      if (res && res.success) {
+        setSaveSuccess(true);
+        await loadData();
+        if (res.template) {
+          setSelectedTemplate(res.template);
+          setEditForm(res.template);
+        }
+        setIsEditing(false);
+        setTimeout(() => setSaveSuccess(false), 4000);
+      } else {
+        alert(res?.error || 'Failed to save template.');
       }
-      setIsEditing(false);
-      setTimeout(() => setSaveSuccess(false), 3000);
-    } else {
-      alert(res.error || 'Failed to save template.');
+    } catch (err) {
+      setSaving(false);
+      console.error('handleSave error:', err);
+      alert('Error saving template: ' + (err.message || 'Unknown network error'));
     }
   };
 
@@ -654,33 +865,107 @@ export default function WhatsAppTemplates({ userId, isAdmin }) {
                     </div>
                   </div>
 
-                  {/* Variable Insertion Chips */}
+                  {/* Dynamic Lead Registration Variable Toolbar with Quick Filter & Category Tabs */}
                   {isEditing && (
-                    <div style={{ background: '#f8fafc', padding: '0.75rem', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                      <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#475569', display: 'flex', alignItems: 'center', gap: '0.3rem', marginBottom: '0.4rem' }}>
-                        <Sparkles size={13} color="#00a884" /> Click to Insert Dynamic Variable into Content:
-                      </span>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
-                        {VARIABLE_TAGS.map(v => (
+                    <div style={{ background: '#f8fafc', padding: '0.85rem', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.65rem' }}>
+                        <span style={{ fontSize: '0.78rem', fontWeight: 800, color: '#1e293b', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                          <Sparkles size={15} color="#00a884" /> Lead Registration Variables ({filteredVariableTags.length}):
+                        </span>
+                        
+                        {/* Quick Search */}
+                        <div style={{ position: 'relative', width: '220px' }}>
+                          <Search size={13} style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+                          <input
+                            type="text"
+                            value={variableSearch}
+                            onChange={(e) => setVariableSearch(e.target.value)}
+                            placeholder="Search variable (gst, phone, etc)..."
+                            style={{ width: '100%', padding: '0.3rem 0.6rem 0.3rem 1.6rem', fontSize: '0.75rem', borderRadius: '5px', border: '1px solid #cbd5e1', outline: 'none', background: '#fff' }}
+                          />
+                          {variableSearch && (
+                            <button 
+                              type="button" 
+                              onClick={() => setVariableSearch('')}
+                              style={{ position: 'absolute', right: '6px', top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '0.8rem', color: '#94a3b8' }}
+                            >
+                              &times;
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Category Tabs */}
+                      <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap', marginBottom: '0.65rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.5rem' }}>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedVariableCategory('all')}
+                          style={{
+                            padding: '3px 8px',
+                            borderRadius: '5px',
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                            border: selectedVariableCategory === 'all' ? '1px solid #00a884' : '1px solid #e2e8f0',
+                            background: selectedVariableCategory === 'all' ? '#dcfce7' : '#fff',
+                            color: selectedVariableCategory === 'all' ? '#15803d' : '#64748b',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          All ({ALL_VARIABLE_TAGS.length})
+                        </button>
+                        {VARIABLE_CATEGORIES.map(cat => (
+                          <button
+                            key={cat.id}
+                            type="button"
+                            onClick={() => setSelectedVariableCategory(cat.id)}
+                            style={{
+                              padding: '3px 8px',
+                              borderRadius: '5px',
+                              fontSize: '0.72rem',
+                              fontWeight: 700,
+                              border: selectedVariableCategory === cat.id ? '1px solid #00a884' : '1px solid #e2e8f0',
+                              background: selectedVariableCategory === cat.id ? '#dcfce7' : '#fff',
+                              color: selectedVariableCategory === cat.id ? '#15803d' : '#64748b',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            {cat.label} ({cat.tags.length})
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Variable Chips List */}
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', maxHeight: '150px', overflowY: 'auto', paddingRight: '4px' }}>
+                        {filteredVariableTags.map(v => (
                           <button
                             key={v.tag}
                             type="button"
                             onClick={() => handleInsertTag(v.tag)}
-                            title={`Insert ${v.label}`}
+                            title={`Click to insert ${v.label} into message text`}
                             style={{
-                              padding: '2px 7px',
-                              borderRadius: '4px',
+                              padding: '3px 7px',
+                              borderRadius: '5px',
                               background: '#fff',
                               border: '1px solid #cbd5e1',
                               fontSize: '0.72rem',
-                              color: '#1e40af',
+                              color: '#1d4ed8',
                               cursor: 'pointer',
-                              fontWeight: 600
+                              fontWeight: 600,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.25rem',
+                              boxShadow: '0 1px 2px rgba(0,0,0,0.02)'
                             }}
+                            onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#2563eb'; e.currentTarget.style.background = '#eff6ff'; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#cbd5e1'; e.currentTarget.style.background = '#fff'; }}
                           >
-                            {v.tag}
+                            <span>{v.tag}</span>
+                            <span style={{ fontSize: '0.65rem', color: '#64748b', fontWeight: 500 }}>({v.label})</span>
                           </button>
                         ))}
+                        {filteredVariableTags.length === 0 && (
+                          <span style={{ fontSize: '0.75rem', color: '#94a3b8', padding: '0.2rem' }}>No variable matches "{variableSearch}"</span>
+                        )}
                       </div>
                     </div>
                   )}
@@ -902,6 +1187,7 @@ export default function WhatsAppTemplates({ userId, isAdmin }) {
                       {['IMAGE', 'VIDEO', 'DOCUMENT'].includes(activeTemplate.type) ? 'Media Caption (WhatsApp Text)' : 'Message Body Content *'}
                     </label>
                     <textarea
+                      ref={textareaRef}
                       rows={6}
                       disabled={!isEditing}
                       value={isEditing ? editForm.content : activeTemplate.content}
@@ -923,6 +1209,40 @@ export default function WhatsAppTemplates({ userId, isAdmin }) {
                       <span>{(isEditing ? editForm.content : activeTemplate.content)?.length || 0} characters</span>
                     </div>
                   </div>
+
+                  {/* Bottom Save Action Controls */}
+                  {isEditing && (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.6rem', marginTop: '0.5rem', paddingTop: '0.85rem', borderTop: '1px solid #e2e8f0' }}>
+                      <button
+                        type="button"
+                        onClick={() => setIsEditing(false)}
+                        style={{ padding: '0.5rem 1rem', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#fff', fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer' }}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={saving}
+                        style={{
+                          padding: '0.5rem 1.35rem',
+                          borderRadius: '6px',
+                          border: 'none',
+                          background: '#00a884',
+                          color: '#fff',
+                          fontSize: '0.85rem',
+                          fontWeight: 700,
+                          cursor: saving ? 'not-allowed' : 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.4rem',
+                          boxShadow: '0 1px 3px rgba(0,168,132,0.3)'
+                        }}
+                      >
+                        {saving ? <RefreshCw size={14} className="animate-spin" /> : <Check size={14} />}
+                        Save Template
+                      </button>
+                    </div>
+                  )}
 
                 </form>
               </div>

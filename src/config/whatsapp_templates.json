@@ -1,0 +1,90 @@
+{
+  "templates": [
+    {
+      "title": "Verified Full Schema Template",
+      "category": "Testing",
+      "type": "TEXT",
+      "content": "Namaste {{name}} Ji from {{company}} in {{district_name}}, {{state_name}}! CP1 phone: {{phone}}, Lead Ref: {{lead_ref_id}}",
+      "id": "tpl_wa_1792259839972",
+      "updated_at": "2026-10-17T17:57:19.971Z",
+      "created_at": "2026-10-17T17:57:19.971Z"
+    },
+    {
+      "title": "Test",
+      "type": "TEXT",
+      "content": "Hello",
+      "id": "tpl_wa_1792259552483",
+      "updated_at": "2026-10-17T17:52:32.483Z",
+      "created_at": "2026-10-17T17:52:32.483Z"
+    },
+    {
+      "id": "tpl_wa_welcome",
+      "title": "Lead Welcome & Initial Greeting",
+      "category": "Greeting",
+      "type": "TEXT",
+      "content": "Namaste {{name}} Ji! 🙏\n\nThank you for getting in touch with *{{company}}*.\n\nOur agricultural machinery specialist will connect with you shortly. You can also reply directly to this message for immediate assistance or questions.\n\nWarm regards,\n*Team {{company}}*",
+      "created_at": "2026-10-17T18:00:00.000Z"
+    },
+    {
+      "id": "tpl_wa_flagship_implements",
+      "title": "Swan Agro Flagship Implements Showcase",
+      "category": "Marketing",
+      "type": "IMAGE",
+      "media_url": "https://images.unsplash.com/photo-1592982537447-7440770cbfc9?w=900&auto=format&fit=crop&q=80",
+      "filename": "swan_agro_implements.jpg",
+      "content": "🚜 *SWAN AGRO - Engineering Excellence for Maximum Farm Yield*\n\nDear {{name}} Ji,\n\nDiscover our complete range of tractor-mounted implements manufactured with Italian Boron Steel for heavy-duty soil performance:\n\n• *Rotavators* (Multi-speed & Single-speed)\n• *Laser Land Levellers* (High-precision hydraulic transmitter)\n• *Straw Reapers & Mulchers* (Clean field residue management)\n\n🌐 Explore catalog: {{link}}\n📞 Helpline: {{phone}}\n\n*Swan Agro - A Unit of New Swan Group*",
+      "created_at": "2026-10-17T18:00:00.000Z"
+    },
+    {
+      "id": "tpl_wa_rotavator_demo",
+      "title": "Heavy-Duty Rotavator In-Field Demo Video",
+      "category": "Demonstration",
+      "type": "VIDEO",
+      "media_url": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
+      "filename": "rotavator_field_demo.mp4",
+      "content": "🎬 *Watch the Swan Agro Heavy-Duty Rotavator in Action!*\n\nHello {{name}} Ji,\n\nWitness deep soil pulverization in harsh field conditions with 20% lower tractor diesel consumption.\n\n✅ Italian Boron Steel Blades\n✅ Heavy-duty cast iron gearbox\n✅ Factory warranty & doorstep support\n\nWould you like a live demo at your nearest dealership? Reply *DEMO* to schedule today!",
+      "created_at": "2026-10-17T18:00:00.000Z"
+    },
+    {
+      "id": "tpl_wa_catalog_pdf",
+      "title": "Comprehensive 2026 Machinery Catalog & Specifications",
+      "category": "Documentation",
+      "type": "DOCUMENT",
+      "media_url": "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
+      "filename": "Swan_Agro_Full_Catalog_2026.pdf",
+      "content": "📄 *Swan Agro 2026 Full Implement Catalog & Technical Specs*\n\nDear {{name}},\n\nPlease find attached the official 2026 Machinery Catalog for *{{company}}*.\n\nIncludes complete HP compatibility charts, gear ratios, soil depth guidelines, and genuine spare parts breakdown.\n\nFor pricing or quotation, feel free to reply directly!",
+      "created_at": "2026-10-17T18:00:00.000Z"
+    },
+    {
+      "id": "tpl_wa_tractor_hp_poll",
+      "title": "Customer Tractor HP & Equipment Preference Poll",
+      "category": "Survey",
+      "type": "POLL",
+      "poll_question": "Which tractor HP range do you operate, {{name}} Ji?",
+      "poll_options": [
+        "35 HP - 45 HP (Utility / Compact)",
+        "50 HP - 65 HP (Medium / Standard)",
+        "75 HP - 90 HP (Heavy-Duty Farming)",
+        "100+ HP (Commercial / Custom Hiring)"
+      ],
+      "poll_multiple_choice": false,
+      "content": "📊 *Help us recommend the optimal implement size for your tractor!* Please cast your vote in the poll above.",
+      "created_at": "2026-10-17T18:00:00.000Z"
+    },
+    {
+      "id": "tpl_wa_annual_expo_event",
+      "title": "Annual Farmers & Dealers Machinery Expo 2026",
+      "category": "Event & Invitation",
+      "type": "EVENT",
+      "event_title": "🌾 Swan Agro Annual Machinery Expo & Farmers Meet 2026",
+      "event_description": "Join us for live field machinery demonstrations, new model launches, exclusive dealer festive discounts, and direct interaction with senior agricultural engineers.",
+      "event_venue": "Swan Agro Demonstration Grounds, G.T. Road, Ludhiana, Punjab",
+      "event_start_time": "2026-10-25 10:00 AM IST",
+      "event_end_time": "2026-10-25 05:00 PM IST",
+      "event_rsvp_url": "https://newswangroup.com/expo-rsvp",
+      "content": "🎟️ *Official VIP Invitation for {{name}}*\n\nYou are cordially invited to our flagship annual machinery showcase. Click the registration link below to claim your complimentary delegate pass!",
+      "created_at": "2026-10-17T18:00:00.000Z"
+    }
+  ],
+  "updated_at": "2026-10-17T17:57:19.972Z"
+}

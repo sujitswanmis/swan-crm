@@ -178,7 +178,7 @@ export async function saveTenantMessageTemplates({
 
 const WA_TEMPLATES_FILE_PATH = path.join(process.cwd(), 'src', 'config', 'whatsapp_templates.json');
 
-export const PREBUILT_WHATSAPP_TEMPLATES = [
+const PREBUILT_WHATSAPP_TEMPLATES = [
   {
     id: 'tpl_wa_welcome',
     title: 'Lead Welcome & Initial Greeting',
@@ -340,23 +340,96 @@ export async function deleteWhatsAppTemplate({ company = 'Default', templateId }
 // -------------------------------------------------------------
 function compileTemplateVariables(rawText, variables = {}) {
   let text = String(rawText || '');
+  const istDate = new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium' }).format(new Date());
+  const istTime = new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', timeStyle: 'short' }).format(new Date());
+
   const defaults = {
-    name: 'Valued Customer',
-    company: 'Swan Agro',
+    // 👤 Contact Person 1 (Primary)
+    name: 'Ramesh Patel',
     phone: '+91 98765 43210',
-    date: new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium' }).format(new Date()),
-    time: new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', timeStyle: 'short' }).format(new Date()),
-    amount: '45,000',
+    cp1_name: 'Ramesh Patel',
+    cp1_mobile_1: '+91 98765 43210',
+    cp1_mobile_2: '+91 98765 43211',
+    cp1_alt_1: '+91 98765 43212',
+    cp1_alt_2: '',
+    email: 'ramesh.patel@example.com',
+    cp1_email_1: 'ramesh.patel@example.com',
+    cp1_email_2: '',
+
+    // 👥 Contact Person 2
+    cp2_name: 'Suresh Patel',
+    cp2_mobile_1: '+91 98765 43213',
+    cp2_mobile_2: '',
+    cp2_alt_1: '',
+    cp2_alt_2: '',
+    cp2_email_1: 'suresh@example.com',
+    cp2_email_2: '',
+
+    // 👥 Contact Person 3
+    cp3_name: 'Amit Kumar',
+    cp3_mobile_1: '+91 98765 43214',
+    cp3_mobile_2: '',
+    cp3_alt_1: '',
+    cp3_alt_2: '',
+    cp3_email_1: '',
+    cp3_email_2: '',
+
+    // 🏢 Business Details
+    company: 'Patel Agro Traders',
+    business_type: 'Dealer',
+    business_gst: '07AAAAA1111A1Z1',
+    business_contact_1: '+91 98765 00001',
+    business_contact_2: '+91 98765 00002',
+    business_alt_1: '',
+    business_alt_2: '',
+    business_email_1: 'contact@patelagro.com',
+    business_email_2: 'sales@patelagro.com',
+    business_alt_email_1: '',
+    business_alt_email_2: '',
+
+    // 📍 Location
+    state_name: 'Punjab',
+    district_name: 'Ludhiana',
+    city_name: 'Ludhiana',
+    tehsil_name: 'Ludhiana West',
+    block_name: 'Ludhiana',
+    pin_code: '141001',
+    address: 'GT Road, Near Grain Market, Ludhiana, Punjab',
+
+    // 🎯 Lead Status & Source
+    lead_ref_id: '202610170000042',
+    lead_date: istDate,
+    source: 'IndiaMART',
+    source_name: 'Direct Campaign',
+    status: '01 - New Stage > New Lead',
+    priority: 'LP01: Immediate',
+    assigned_to: 'Nitya Verma',
+    entry_by: 'Admin Office',
+    follow_up_date: istDate,
+
+    // 💰 Commercial & Deal
+    requirement: 'Heavy-Duty Rotavator 7 Feet',
+    investment: '₹1 Lakh - ₹5 Lakh',
+    buying_timeline: 'Immediate (Within 7 Days)',
+    deal_value: '₹1,45,000',
+    amount: '₹1,45,000',
     quote_no: 'SA-QT-2026',
     invoice_no: 'SA-INV-1092',
+
+    // ⚡ System & Brand
+    our_company: 'Swan Agro',
+    date: istDate,
+    time: istTime,
     link: 'https://newswangroup.com'
   };
 
   const merged = { ...defaults, ...variables };
 
   Object.entries(merged).forEach(([k, v]) => {
-    const regex = new RegExp(`\\{\\{${k}\\}\\}`, 'gi');
-    text = text.replace(regex, String(v));
+    if (v !== undefined && v !== null) {
+      const regex = new RegExp(`\\{\\{${k}\\}\\}`, 'gi');
+      text = text.replace(regex, String(v));
+    }
   });
 
   return text;
