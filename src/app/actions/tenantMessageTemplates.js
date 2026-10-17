@@ -171,3 +171,284 @@ export async function saveTenantMessageTemplates({
     return { success: false, error: err.message };
   }
 }
+
+// =========================================================================
+// WhatsApp Rich Templates Management (Text, Image, Video, Docs, Poll, Event)
+// =========================================================================
+
+const WA_TEMPLATES_FILE_PATH = path.join(process.cwd(), 'src', 'config', 'whatsapp_templates.json');
+
+export const PREBUILT_WHATSAPP_TEMPLATES = [
+  {
+    id: 'tpl_wa_welcome',
+    title: 'Lead Welcome & Initial Greeting',
+    category: 'Greeting',
+    type: 'TEXT',
+    content: 'Namaste {{name}} Ji! 🙏\n\nThank you for getting in touch with *{{company}}*.\n\nOur agricultural machinery specialist will connect with you shortly. You can also reply directly to this message for immediate assistance or questions.\n\nWarm regards,\n*Team {{company}}*',
+    created_at: '2026-10-17T18:00:00.000Z'
+  },
+  {
+    id: 'tpl_wa_flagship_implements',
+    title: 'Swan Agro Flagship Implements Showcase',
+    category: 'Marketing',
+    type: 'IMAGE',
+    media_url: 'https://images.unsplash.com/photo-1592982537447-7440770cbfc9?w=900&auto=format&fit=crop&q=80',
+    filename: 'swan_agro_implements.jpg',
+    content: '🚜 *SWAN AGRO - Engineering Excellence for Maximum Farm Yield*\n\nDear {{name}} Ji,\n\nDiscover our complete range of tractor-mounted implements manufactured with Italian Boron Steel for heavy-duty soil performance:\n\n• *Rotavators* (Multi-speed & Single-speed)\n• *Laser Land Levellers* (High-precision hydraulic transmitter)\n• *Straw Reapers & Mulchers* (Clean field residue management)\n\n🌐 Explore catalog: {{link}}\n📞 Helpline: {{phone}}\n\n*Swan Agro - A Unit of New Swan Group*',
+    created_at: '2026-10-17T18:00:00.000Z'
+  },
+  {
+    id: 'tpl_wa_rotavator_demo',
+    title: 'Heavy-Duty Rotavator In-Field Demo Video',
+    category: 'Demonstration',
+    type: 'VIDEO',
+    media_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+    filename: 'rotavator_field_demo.mp4',
+    content: '🎬 *Watch the Swan Agro Heavy-Duty Rotavator in Action!*\n\nHello {{name}} Ji,\n\nWitness deep soil pulverization in harsh field conditions with 20% lower tractor diesel consumption.\n\n✅ Italian Boron Steel Blades\n✅ Heavy-duty cast iron gearbox\n✅ Factory warranty & doorstep support\n\nWould you like a live demo at your nearest dealership? Reply *DEMO* to schedule today!',
+    created_at: '2026-10-17T18:00:00.000Z'
+  },
+  {
+    id: 'tpl_wa_catalog_pdf',
+    title: 'Comprehensive 2026 Machinery Catalog & Specifications',
+    category: 'Documentation',
+    type: 'DOCUMENT',
+    media_url: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
+    filename: 'Swan_Agro_Full_Catalog_2026.pdf',
+    content: '📄 *Swan Agro 2026 Full Implement Catalog & Technical Specs*\n\nDear {{name}},\n\nPlease find attached the official 2026 Machinery Catalog for *{{company}}*.\n\nIncludes complete HP compatibility charts, gear ratios, soil depth guidelines, and genuine spare parts breakdown.\n\nFor pricing or quotation, feel free to reply directly!',
+    created_at: '2026-10-17T18:00:00.000Z'
+  },
+  {
+    id: 'tpl_wa_tractor_hp_poll',
+    title: 'Customer Tractor HP & Equipment Preference Poll',
+    category: 'Survey',
+    type: 'POLL',
+    poll_question: 'Which tractor HP range do you operate, {{name}} Ji?',
+    poll_options: [
+      '35 HP - 45 HP (Utility / Compact)',
+      '50 HP - 65 HP (Medium / Standard)',
+      '75 HP - 90 HP (Heavy-Duty Farming)',
+      '100+ HP (Commercial / Custom Hiring)'
+    ],
+    poll_multiple_choice: false,
+    content: '📊 *Help us recommend the optimal implement size for your tractor!* Please cast your vote in the poll above.',
+    created_at: '2026-10-17T18:00:00.000Z'
+  },
+  {
+    id: 'tpl_wa_annual_expo_event',
+    title: 'Annual Farmers & Dealers Machinery Expo 2026',
+    category: 'Event & Invitation',
+    type: 'EVENT',
+    event_title: '🌾 Swan Agro Annual Machinery Expo & Farmers Meet 2026',
+    event_description: 'Join us for live field machinery demonstrations, new model launches, exclusive dealer festive discounts, and direct interaction with senior agricultural engineers.',
+    event_venue: 'Swan Agro Demonstration Grounds, G.T. Road, Ludhiana, Punjab',
+    event_start_time: '2026-10-25 10:00 AM IST',
+    event_end_time: '2026-10-25 05:00 PM IST',
+    event_rsvp_url: 'https://newswangroup.com/expo-rsvp',
+    content: '🎟️ *Official VIP Invitation for {{name}}*\n\nYou are cordially invited to our flagship annual machinery showcase. Click the registration link below to claim your complimentary delegate pass!',
+    created_at: '2026-10-17T18:00:00.000Z'
+  }
+];
+
+async function readLocalWaTemplates() {
+  try {
+    await ensureConfigFile(WA_TEMPLATES_FILE_PATH, { templates: PREBUILT_WHATSAPP_TEMPLATES });
+    const content = await fs.readFile(WA_TEMPLATES_FILE_PATH, 'utf-8');
+    const parsed = JSON.parse(content || '{}');
+    return Array.isArray(parsed?.templates) ? parsed.templates : PREBUILT_WHATSAPP_TEMPLATES;
+  } catch {
+    return PREBUILT_WHATSAPP_TEMPLATES;
+  }
+}
+
+async function writeLocalWaTemplates(templates) {
+  try {
+    await ensureConfigFile(WA_TEMPLATES_FILE_PATH, { templates });
+    await fs.writeFile(WA_TEMPLATES_FILE_PATH, JSON.stringify({ templates, updated_at: new Date().toISOString() }, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Error writing local WhatsApp templates:', err);
+  }
+}
+
+export async function getWhatsAppTemplates(companyOrTenantId = 'Default') {
+  try {
+    const localTemplates = await readLocalWaTemplates();
+    return {
+      success: true,
+      templates: localTemplates && localTemplates.length > 0 ? localTemplates : PREBUILT_WHATSAPP_TEMPLATES
+    };
+  } catch (err) {
+    console.error('getWhatsAppTemplates error:', err);
+    return { success: false, error: err.message, templates: PREBUILT_WHATSAPP_TEMPLATES };
+  }
+}
+
+export async function saveWhatsAppTemplate({ company = 'Default', template }) {
+  try {
+    if (!template || !template.title) {
+      return { success: false, error: 'Template title is required.' };
+    }
+
+    const localTemplates = await readLocalWaTemplates();
+    const existingIdx = localTemplates.findIndex(t => t.id === template.id);
+
+    const nowIso = new Date().toISOString();
+    const templateData = {
+      ...template,
+      id: template.id || `tpl_wa_${Date.now()}`,
+      updated_at: nowIso
+    };
+
+    if (existingIdx >= 0) {
+      localTemplates[existingIdx] = templateData;
+    } else {
+      templateData.created_at = nowIso;
+      localTemplates.unshift(templateData);
+    }
+
+    await writeLocalWaTemplates(localTemplates);
+
+    return {
+      success: true,
+      message: 'WhatsApp template saved successfully!',
+      template: templateData
+    };
+  } catch (err) {
+    console.error('saveWhatsAppTemplate error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function deleteWhatsAppTemplate({ company = 'Default', templateId }) {
+  try {
+    if (!templateId) return { success: false, error: 'Template ID required' };
+    const localTemplates = await readLocalWaTemplates();
+    const filtered = localTemplates.filter(t => t.id !== templateId);
+    await writeLocalWaTemplates(filtered);
+
+    return {
+      success: true,
+      message: 'Template deleted successfully.'
+    };
+  } catch (err) {
+    console.error('deleteWhatsAppTemplate error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+// -------------------------------------------------------------
+// Universal Variable Compiler (Internal)
+// -------------------------------------------------------------
+function compileTemplateVariables(rawText, variables = {}) {
+  let text = String(rawText || '');
+  const defaults = {
+    name: 'Valued Customer',
+    company: 'Swan Agro',
+    phone: '+91 98765 43210',
+    date: new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium' }).format(new Date()),
+    time: new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', timeStyle: 'short' }).format(new Date()),
+    amount: '45,000',
+    quote_no: 'SA-QT-2026',
+    invoice_no: 'SA-INV-1092',
+    link: 'https://newswangroup.com'
+  };
+
+  const merged = { ...defaults, ...variables };
+
+  Object.entries(merged).forEach(([k, v]) => {
+    const regex = new RegExp(`\\{\\{${k}\\}\\}`, 'gi');
+    text = text.replace(regex, String(v));
+  });
+
+  return text;
+}
+
+// -------------------------------------------------------------
+// SEND TEST WHATSAPP TEMPLATE (Text, Image, Video, Docs, Poll, Event)
+// -------------------------------------------------------------
+export async function sendTestWhatsAppTemplate({ template, toNumber, instanceId, sampleData = {} }) {
+  try {
+    const adapter = await import('./whatsappUnofficialAdapter');
+    const cleanNumber = await adapter.formatWhatsAppNumber(toNumber);
+    if (!cleanNumber || cleanNumber.length < 10) {
+      return { success: false, error: 'Please enter a valid 10-digit mobile number with country code.' };
+    }
+
+    const instKey = instanceId || process.env.WHATSAPP_UNOFFICIAL_DEFAULT_INSTANCE || '6AD37BDFCEDF5';
+    const tType = String(template.type || 'TEXT').toUpperCase();
+
+    // 1. Text Template
+    if (tType === 'TEXT') {
+      const compiled = compileTemplateVariables(template.content, sampleData);
+      return adapter.sendText(instKey, cleanNumber, compiled);
+    }
+
+    // 2. Image Template
+    if (tType === 'IMAGE') {
+      if (!template.media_url) return { success: false, error: 'Image URL is missing.' };
+      const compiled = compileTemplateVariables(template.content, sampleData);
+      return adapter.sendMedia(instKey, cleanNumber, template.media_url, 'image', compiled, template.filename || 'image.jpg');
+    }
+
+    // 3. Video Template
+    if (tType === 'VIDEO') {
+      if (!template.media_url) return { success: false, error: 'Video URL is missing.' };
+      const compiled = compileTemplateVariables(template.content, sampleData);
+      return adapter.sendMedia(instKey, cleanNumber, template.media_url, 'video', compiled, template.filename || 'video.mp4');
+    }
+
+    // 4. Document / PDF Template
+    if (tType === 'DOCUMENT') {
+      if (!template.media_url) return { success: false, error: 'Document URL is missing.' };
+      const compiled = compileTemplateVariables(template.content, sampleData);
+      return adapter.sendMedia(instKey, cleanNumber, template.media_url, 'document', compiled, template.filename || 'document.pdf');
+    }
+
+    // 5. Poll Template
+    if (tType === 'POLL') {
+      const q = compileTemplateVariables(template.poll_question || 'Survey Question', sampleData);
+      const opts = Array.isArray(template.poll_options) ? template.poll_options : ['Option 1', 'Option 2'];
+
+      // Construct formatted WhatsApp interactive poll representation
+      const numberEmojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
+      const pollText = [
+        `📊 *POLL: ${q}*`,
+        '',
+        ...opts.map((opt, i) => `${numberEmojis[i] || `${i + 1}.`} ${compileTemplateVariables(opt, sampleData)}`),
+        '',
+        template.content ? compileTemplateVariables(template.content, sampleData) : '👉 _Reply with the option number or text to vote._'
+      ].join('\n');
+
+      return adapter.sendText(instKey, cleanNumber, pollText);
+    }
+
+    // 6. Event / Invitation Template
+    if (tType === 'EVENT') {
+      const evTitle = compileTemplateVariables(template.event_title || 'Event Invitation', sampleData);
+      const evDesc = compileTemplateVariables(template.event_description || '', sampleData);
+      const evVenue = compileTemplateVariables(template.event_venue || '', sampleData);
+      const evTime = compileTemplateVariables(template.event_start_time || '', sampleData);
+      const evLink = compileTemplateVariables(template.event_rsvp_url || '', sampleData);
+
+      const eventText = [
+        `🎟️ *INVITATION: ${evTitle}*`,
+        '',
+        evDesc ? `📝 *About Event:*\n${evDesc}\n` : '',
+        evVenue ? `📍 *Venue:*\n${evVenue}` : '',
+        evTime ? `⏰ *Date & Time:*\n${evTime}` : '',
+        evLink ? `🔗 *RSVP / Details:*\n${evLink}` : '',
+        '',
+        template.content ? compileTemplateVariables(template.content, sampleData) : 'We look forward to welcoming you!'
+      ].filter(Boolean).join('\n');
+
+      return adapter.sendText(instKey, cleanNumber, eventText);
+    }
+
+    // Fallback
+    const fallbackText = compileTemplateVariables(template.content || '', sampleData);
+    return adapter.sendText(instKey, cleanNumber, fallbackText);
+  } catch (err) {
+    console.error('sendTestWhatsAppTemplate error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
