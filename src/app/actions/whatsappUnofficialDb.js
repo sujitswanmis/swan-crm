@@ -706,11 +706,16 @@ export async function simulateIncomingCustomerMessage({ instanceId, contactNumbe
     // Resolve instance
     let targetInstance = null;
     if (instanceId) {
-      const { data: inst } = await adminDb
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(instanceId);
+      let instQuery = adminDb
         .from('whatsapp_instances')
-        .select('id, instance_key, instance_name, status')
-        .or(`id.eq.${instanceId},instance_key.eq.${instanceId}`)
-        .maybeSingle();
+        .select('id, instance_key, instance_name, status');
+      if (isUUID) {
+        instQuery = instQuery.or(`id.eq.${instanceId},instance_key.eq.${instanceId}`);
+      } else {
+        instQuery = instQuery.eq('instance_key', instanceId);
+      }
+      const { data: inst } = await instQuery.maybeSingle();
       targetInstance = inst;
     }
     if (!targetInstance) {

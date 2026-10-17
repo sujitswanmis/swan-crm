@@ -140,7 +140,7 @@ export async function getAdminMessageConfig() {
       .select('*')
       .order('created_at', { ascending: false })
       .limit(1)
-      .single();
+      .maybeSingle();
 
     if (!error && data && data.config) {
       return {
@@ -223,7 +223,7 @@ export async function saveAdminMessageConfig(channelKey, channelConfig) {
         .from('admin_message_settings')
         .select('id')
         .limit(1)
-        .single();
+        .maybeSingle();
 
       if (existing) {
         await adminClient

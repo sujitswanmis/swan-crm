@@ -266,15 +266,12 @@ export async function getTransferredLeads(tenantId = DEFAULT_TENANT_ID) {
   try {
     // 0. Auto-Heal: Ensure any leads marked "Transfer to Party Master" in leads table are recorded in handoffs
     try {
-      let markedQuery = adminClient
+      // NOTE: leads table has no tenant_id column; tenant scoping is strictly applied via lead_party_handoffs and party_master
+      const { data: markedLeads } = await adminClient
         .from('leads')
         .select('id')
-        .ilike('status', '%transfer to party master%');
-
-      if (tenantId) {
-        markedQuery = markedQuery.eq('tenant_id', tenantId);
-      }
-      const { data: markedLeads } = await markedQuery.limit(50);
+        .ilike('status', '%transfer to party master%')
+        .limit(50);
 
       if (markedLeads && markedLeads.length > 0) {
         const { data: existingHandoffs } = await adminClient
