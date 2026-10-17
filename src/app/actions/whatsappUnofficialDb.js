@@ -689,3 +689,138 @@ export async function saveCustomBspProvider(providerData) {
   }
 }
 
+// =========================================================================
+// Universal Incoming Simulation & Webhook Registration
+// =========================================================================
+
+export async function simulateIncomingCustomerMessage({ instanceId, contactNumber, messageText, contactName = '' }) {
+  try {
+    const adminDb = getAdminClient();
+    
+    // Resolve instance
+    let targetInstance = null;
+    if (instanceId) {
+      const { data: inst } = await adminDb
+        .from('whatsapp_instances')
+        .select('id, instance_key, instance_name, status')
+        .or(`id.eq.${instanceId},instance_key.eq.${instanceId}`)
+        .maybeSingle();
+      targetInstance = inst;
+    }
+    if (!targetInstance) {
+      const { data: fallback } = await adminDb
+        .from('whatsapp_instances')
+        .select('id, instance_key, instance_name, status')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      targetInstance = fallback;
+    }
+    if (!targetInstance) {
+      return { success: false, error: 'No WhatsApp instance found to receive message.' };
+    }
+
+    const cleanNumber = await adapter.formatWhatsAppNumber(contactNumber);
+    if (!cleanNumber || cleanNumber.length < 10) {
+      return { success: false, error: 'Valid phone number required (e.g. 919876543210).' };
+    }
+
+    const text = (messageText || 'Hello from customer!').trim();
+    const nowIso = new Date().toISOString();
+
+    // Find or create chat
+    let { data: chat } = await adminDb
+      .from('wa_chats')
+      .select('id, contact_name, unread_count')
+      .eq('instance_id', targetInstance.id)
+      .eq('contact_number', cleanNumber)
+      .maybeSingle();
+
+    if (!chat) {
+      const { data: newChat, error: chatErr } = await adminDb
+        .from('wa_chats')
+        .insert([{
+          instance_id: targetInstance.id,
+          contact_number: cleanNumber,
+          contact_name: contactName || cleanNumber,
+          last_message: text,
+          last_message_type: 'TEXT',
+          last_message_at: nowIso,
+          unread_count: 1,
+          status: 'OPEN'
+        }])
+        .select()
+        .single();
+
+      if (chatErr) return { success: false, error: chatErr.message };
+      chat = newChat;
+    } else {
+      const nextUnread = (chat.unread_count || 0) + 1;
+      const updateData = {
+        last_message: text,
+        last_message_type: 'TEXT',
+        last_message_at: nowIso,
+        unread_count: nextUnread
+      };
+      if (contactName && (!chat.contact_name || chat.contact_name === cleanNumber)) {
+        updateData.contact_name = contactName;
+      }
+      await adminDb.from('wa_chats').update(updateData).eq('id', chat.id);
+    }
+
+    // Insert incoming message
+    const msgId = `sim_in_${Date.now()}`;
+    const { data: newMsg, error: msgErr } = await adminDb
+      .from('wa_messages')
+      .insert([{
+        chat_id: chat.id,
+        instance_id: targetInstance.id,
+        whatsapp_message_id: msgId,
+        direction: 'INCOMING',
+        message_type: 'TEXT',
+        message_text: text,
+        from_number: cleanNumber,
+        to_number: 'system',
+        status: 'RECEIVED',
+        received_at: nowIso
+      }])
+      .select()
+      .single();
+
+    if (msgErr) return { success: false, error: msgErr.message };
+
+    return {
+      success: true,
+      message: 'Simulated customer message received successfully!',
+      data: newMsg,
+      chat
+    };
+  } catch (err) {
+    console.error('simulateIncomingCustomerMessage error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function registerInstanceWebhook(instanceId, webhookUrl) {
+  try {
+    const adminDb = getAdminClient();
+    let targetKey = instanceId;
+
+    if (instanceId && instanceId.includes('-')) {
+      const { data: inst } = await adminDb
+        .from('whatsapp_instances')
+        .select('instance_key')
+        .eq('id', instanceId)
+        .maybeSingle();
+      if (inst?.instance_key) targetKey = inst.instance_key;
+    }
+
+    const res = await adapter.setWebhook(targetKey, webhookUrl);
+    return res;
+  } catch (err) {
+    console.error('registerInstanceWebhook error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+

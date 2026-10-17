@@ -1,5 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { getInstances, getInstanceAuths, getChats, getMessages, sendLiveMessage, startNewChat } from '@/app/actions/whatsappUnofficialDb';
+import { 
+  getInstances, 
+  getInstanceAuths, 
+  getChats, 
+  getMessages, 
+  sendLiveMessage, 
+  startNewChat,
+  simulateIncomingCustomerMessage 
+} from '@/app/actions/whatsappUnofficialDb';
 import { createClient } from '@/utils/supabase/client';
 import { Search, Send, Paperclip, Loader2, Check, CheckCheck, Clock, MessageSquare, Plus, X, Phone, User, Sparkles, RefreshCw } from 'lucide-react';
 import { PremiumProgressLoader } from '../PremiumProgressLoader';
@@ -25,8 +33,16 @@ export default function LiveChat({ userId, isAdmin }) {
   const [creatingChat, setCreatingChat] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Simulate Inbound Modal State
+  const [isSimulateModalOpen, setIsSimulateModalOpen] = useState(false);
+  const [simulateNumber, setSimulateNumber] = useState('');
+  const [simulateName, setSimulateName] = useState('');
+  const [simulateText, setSimulateText] = useState('');
+  const [simulating, setSimulating] = useState(false);
+
   const messagesEndRef = useRef(null);
   const supabase = createClient();
+
 
   useEffect(() => {
     loadInstances();
@@ -202,7 +218,63 @@ export default function LiveChat({ userId, isAdmin }) {
     }
   };
 
+  const handleOpenSimulateModal = (chat = null) => {
+    if (chat) {
+      setSimulateNumber(chat.contact_number || '');
+      setSimulateName(chat.contact_name || '');
+      setSimulateText('Hello! I received your message. Please share more details.');
+    } else if (selectedChat) {
+      setSimulateNumber(selectedChat.contact_number || '');
+      setSimulateName(selectedChat.contact_name || '');
+      setSimulateText('Hello! I received your message. Please share more details.');
+    } else {
+      setSimulateNumber('916283362279');
+      setSimulateName('NSG');
+      setSimulateText('Hello, I am interested in your services!');
+    }
+    setIsSimulateModalOpen(true);
+  };
+
+  const handleSimulateSubmit = async (e) => {
+    if (e) e.preventDefault();
+    if (!selectedInstance) {
+      alert("Please select a WhatsApp instance first.");
+      return;
+    }
+
+    const cleanNum = String(simulateNumber || '').replace(/[^0-9]/g, '');
+    if (!cleanNum || cleanNum.length < 10) {
+      alert("Please enter a valid phone number (at least 10 digits).");
+      return;
+    }
+
+    setSimulating(true);
+    try {
+      const res = await simulateIncomingCustomerMessage({
+        instanceId: selectedInstance.id,
+        contactNumber: cleanNum,
+        contactName: simulateName.trim() || undefined,
+        messageText: simulateText.trim() || undefined
+      });
+
+      if (res?.success) {
+        setIsSimulateModalOpen(false);
+        await loadChats(selectedInstance.id);
+        if (res.chat) {
+          handleChatSelect(res.chat);
+        }
+      } else {
+        alert(res?.error || "Simulation failed.");
+      }
+    } catch (err) {
+      alert(err.message || "Error during simulation.");
+    } finally {
+      setSimulating(false);
+    }
+  };
+
   const filteredChats = chats.filter(chat => {
+
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase().trim();
     return (
@@ -280,8 +352,18 @@ export default function LiveChat({ userId, isAdmin }) {
                 </button>
                 <button 
                   type="button"
+                  onClick={() => handleOpenSimulateModal(selectedChat || null)}
+                  disabled={!selectedInstance}
+                  title="Simulate Inbound Customer Reply"
+                  style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '6px', padding: '0.35rem 0.55rem', cursor: selectedInstance ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.78rem', color: '#1e40af', fontWeight: 600 }}
+                >
+                  <Sparkles size={13} color="#2563eb" /> Inbound Test
+                </button>
+                <button 
+                  type="button"
                   onClick={() => setIsNewChatModalOpen(true)}
                   disabled={!selectedInstance}
+
                   style={{ 
                     display: 'flex', 
                     alignItems: 'center', 
@@ -394,13 +476,38 @@ export default function LiveChat({ userId, isAdmin }) {
           {selectedChat ? (
             <>
               {/* Chat Header */}
-              <div style={{ padding: '1rem', background: '#f0f2f5', borderBottom: '1px solid var(--border-light)', display: 'flex', alignItems: 'center' }}>
-                <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#ccc', marginRight: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 'bold' }}>
-                  {selectedChat.contact_name ? selectedChat.contact_name[0] : '#'}
+              <div style={{ padding: '0.85rem 1.25rem', background: '#f0f2f5', borderBottom: '1px solid var(--border-light)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center' }}>
+                  <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#00a884', marginRight: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 'bold' }}>
+                    {selectedChat.contact_name ? selectedChat.contact_name[0] : '#'}
+                  </div>
+                  <div>
+                    <h4 style={{ margin: 0, fontSize: '0.98rem' }}>{selectedChat.contact_name || selectedChat.contact_number}</h4>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{selectedChat.contact_number}</span>
+                  </div>
                 </div>
-                <div>
-                  <h4 style={{ margin: 0 }}>{selectedChat.contact_name || selectedChat.contact_number}</h4>
-                  <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{selectedChat.contact_number}</span>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenSimulateModal(selectedChat)}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.4rem',
+                      background: '#eff6ff',
+                      color: '#2563eb',
+                      border: '1px solid #bfdbfe',
+                      borderRadius: '6px',
+                      padding: '0.4rem 0.8rem',
+                      fontSize: '0.8rem',
+                      fontWeight: 600,
+                      cursor: 'pointer'
+                    }}
+                    title="Simulate incoming reply from this customer"
+                  >
+                    <Sparkles size={14} /> Simulate Customer Reply
+                  </button>
                 </div>
               </div>
 
@@ -635,6 +742,176 @@ export default function LiveChat({ userId, isAdmin }) {
                 >
                   {creatingChat ? <Loader2 size={16} className="spin" /> : <Send size={15} />}
                   {newChatFirstMsg.trim() ? 'Send & Start Chat' : 'Create Chat Thread'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Simulate Customer Reply Modal */}
+      {isSimulateModalOpen && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(15, 23, 42, 0.65)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '1rem'
+        }}>
+          <div style={{
+            background: '#fff',
+            borderRadius: '14px',
+            width: '100%',
+            maxWidth: '460px',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column'
+          }}>
+            {/* Modal Header */}
+            <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border-light)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f8fafc' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <div style={{ width: '34px', height: '34px', borderRadius: '8px', background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Sparkles size={18} color="#2563eb" />
+                </div>
+                <div>
+                  <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                    Simulate Customer Inbound Reply
+                  </h4>
+                  <p style={{ margin: '0.15rem 0 0 0', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                    Test incoming customer message pipeline & live notifications
+                  </p>
+                </div>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => setIsSimulateModalOpen(false)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.25rem', color: '#64748b' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <form onSubmit={handleSimulateSubmit} style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              {/* Customer Phone */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.35rem', color: 'var(--text-primary)' }}>
+                  Customer Phone Number *
+                </label>
+                <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                  <Phone size={16} color="#64748b" style={{ position: 'absolute', left: '0.85rem' }} />
+                  <input 
+                    type="text"
+                    required
+                    placeholder="e.g. 916283362279"
+                    value={simulateNumber}
+                    onChange={(e) => setSimulateNumber(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '0.65rem 0.85rem 0.65rem 2.4rem',
+                      border: '1px solid var(--border-light)',
+                      borderRadius: '8px',
+                      fontSize: '0.9rem',
+                      outline: 'none'
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Customer Name */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.35rem', color: 'var(--text-primary)' }}>
+                  Customer Name (Optional)
+                </label>
+                <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                  <User size={16} color="#64748b" style={{ position: 'absolute', left: '0.85rem' }} />
+                  <input 
+                    type="text"
+                    placeholder="e.g. NSG Customer"
+                    value={simulateName}
+                    onChange={(e) => setSimulateName(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '0.65rem 0.85rem 0.65rem 2.4rem',
+                      border: '1px solid var(--border-light)',
+                      borderRadius: '8px',
+                      fontSize: '0.9rem',
+                      outline: 'none'
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Message Text */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.35rem', color: 'var(--text-primary)' }}>
+                  Incoming Message Content *
+                </label>
+                <textarea 
+                  required
+                  rows={3}
+                  placeholder="Enter simulated reply from customer..."
+                  value={simulateText}
+                  onChange={(e) => setSimulateText(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '0.65rem 0.85rem',
+                    border: '1px solid var(--border-light)',
+                    borderRadius: '8px',
+                    fontSize: '0.9rem',
+                    outline: 'none',
+                    resize: 'none'
+                  }}
+                />
+              </div>
+
+              <div style={{ background: '#f8fafc', padding: '0.75rem', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.75rem', color: '#64748b', lineHeight: 1.5 }}>
+                <strong style={{ color: '#0f172a' }}>Localhost Testing Tip:</strong> This injects an incoming message payload into <code style={{ color: '#0284c7' }}>wa_chats</code> and <code style={{ color: '#0284c7' }}>wa_messages</code> via the backend pipeline, testing realtime chat sync, sound, unread badges, and auto-replies.
+              </div>
+
+              {/* Modal Actions */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.25rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setIsSimulateModalOpen(false)}
+                  style={{
+                    padding: '0.6rem 1.1rem',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-light)',
+                    background: '#f8fafc',
+                    color: 'var(--text-secondary)',
+                    fontWeight: 600,
+                    fontSize: '0.85rem',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={simulating || !simulateNumber || !simulateText.trim()}
+                  style={{
+                    padding: '0.6rem 1.25rem',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: '#2563eb',
+                    color: '#fff',
+                    fontWeight: 700,
+                    fontSize: '0.85rem',
+                    cursor: (simulating || !simulateNumber || !simulateText.trim()) ? 'not-allowed' : 'pointer',
+                    opacity: (simulating || !simulateNumber || !simulateText.trim()) ? 0.6 : 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.4rem'
+                  }}
+                >
+                  {simulating ? <Loader2 size={16} className="spin" /> : <Sparkles size={15} />}
+                  Simulate Inbound Message
                 </button>
               </div>
             </form>

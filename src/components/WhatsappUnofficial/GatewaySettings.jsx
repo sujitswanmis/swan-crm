@@ -9,13 +9,16 @@ import {
 import {
   getSaaSTenantsAndAllocations,
   saveSaaSTenantAllocation,
-  saveCustomBspProvider
+  saveCustomBspProvider,
+  registerInstanceWebhook,
+  simulateIncomingCustomerMessage
 } from '@/app/actions/whatsappUnofficialDb';
 import { 
   Phone, Settings, Save, RefreshCw, Send, 
   CheckCircle2, AlertCircle, Shield, Globe, Key, HelpCircle,
-  Plus, Building2, ExternalLink, X, Sliders, Check, Layers, Hash
+  Plus, Building2, ExternalLink, X, Sliders, Check, Layers, Hash, Sparkles
 } from 'lucide-react';
+
 
 // Built-in Default BSP Catalog with standard endpoints & descriptions
 const DEFAULT_BSP_PROVIDERS = [
@@ -100,7 +103,24 @@ export default function GatewaySettings({ isAdmin = true, onNavigateToInstances 
   const [testing, setTesting] = useState(false);
   const [testResponse, setTestResponse] = useState(null);
 
+  // Webhook and Inbound Simulation State
+  const [webhookUrl, setWebhookUrl] = useState('');
+  const [webhookRegistering, setWebhookRegistering] = useState(false);
+  const [webhookResult, setWebhookResult] = useState(null);
+
+  const [simPhone, setSimPhone] = useState('916283362279');
+  const [simText, setSimText] = useState('Hello! I received your test message.');
+  const [simulating, setSimulating] = useState(false);
+  const [simResult, setSimResult] = useState(null);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setWebhookUrl(`${window.location.origin}/api/wa-webhook`);
+    }
+  }, []);
+
   // SaaS Tenants Matrix State
+
   const [tenants, setTenants] = useState([]);
   const [tenantAllocations, setTenantAllocations] = useState({});
   const [tenantSaving, setTenantSaving] = useState({});
@@ -333,6 +353,46 @@ export default function GatewaySettings({ isAdmin = true, onNavigateToInstances 
     setTesting(false);
     setTestResponse(res);
   };
+
+  const handleRegisterWebhook = async () => {
+    if (!webhookUrl.trim()) {
+      alert('Please enter a webhook URL.');
+      return;
+    }
+    setWebhookRegistering(true);
+    setWebhookResult(null);
+    try {
+      const res = await registerInstanceWebhook(config.instance_id, webhookUrl.trim());
+      setWebhookResult(res);
+    } catch (err) {
+      setWebhookResult({ success: false, error: err.message });
+    } finally {
+      setWebhookRegistering(false);
+    }
+  };
+
+  const handleSimulateInbound = async () => {
+    if (!simPhone.trim() || !simText.trim()) {
+      alert('Please enter customer phone and message text.');
+      return;
+    }
+    setSimulating(true);
+    setSimResult(null);
+    try {
+      const res = await simulateIncomingCustomerMessage({
+        instanceId: config.instance_id,
+        contactNumber: simPhone.trim(),
+        messageText: simText.trim(),
+        contactName: 'Customer'
+      });
+      setSimResult(res);
+    } catch (err) {
+      setSimResult({ success: false, error: err.message });
+    } finally {
+      setSimulating(false);
+    }
+  };
+
 
   if (loading) {
     return (
@@ -731,6 +791,159 @@ export default function GatewaySettings({ isAdmin = true, onNavigateToInstances 
                 </div>
                 <div style={{ fontSize: '0.75rem', lineHeight: '1.4' }}>
                   {testResponse.message || testResponse.error}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Webhook Configuration & Sync Card */}
+          <div className="card" style={{ padding: '1.5rem', borderRadius: '12px' }}>
+            <h3 style={{ margin: '0 0 0.35rem 0', fontSize: '1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <Globe size={16} style={{ color: '#2563eb' }} /> Inbound Webhook Configuration
+            </h3>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.78rem', margin: '0 0 1rem 0' }}>
+              Gateways push incoming customer replies to this endpoint. Register the callback URI with your gateway engine.
+            </p>
+
+            <div style={{ marginBottom: '0.75rem' }}>
+              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, marginBottom: '0.3rem' }}>
+                CRM Webhook URL
+              </label>
+              <input
+                type="text"
+                value={webhookUrl}
+                onChange={(e) => setWebhookUrl(e.target.value)}
+                placeholder="https://yourcrm.com/api/wa-webhook"
+                style={{ width: '100%', padding: '0.55rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.85rem' }}
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={handleRegisterWebhook}
+              disabled={webhookRegistering || !webhookUrl.trim()}
+              className="btn-secondary"
+              style={{
+                width: '100%',
+                padding: '0.6rem',
+                borderRadius: '6px',
+                borderColor: '#2563eb',
+                color: '#2563eb',
+                fontWeight: 600,
+                fontSize: '0.82rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.4rem',
+                cursor: (webhookRegistering || !webhookUrl.trim()) ? 'not-allowed' : 'pointer'
+              }}
+            >
+              {webhookRegistering ? <RefreshCw size={14} className="animate-spin" /> : <Globe size={14} />}
+              {webhookRegistering ? 'Registering...' : 'Register Webhook with Gateway'}
+            </button>
+
+            {webhookResult && (
+              <div style={{
+                marginTop: '1rem',
+                padding: '0.75rem',
+                borderRadius: '6px',
+                fontSize: '0.8rem',
+                backgroundColor: webhookResult.success ? '#f0fdf4' : '#fef2f2',
+                border: `1px solid ${webhookResult.success ? '#a7f3d0' : '#fecaca'}`,
+                color: webhookResult.success ? '#15803d' : '#b91c1c'
+              }}>
+                <div style={{ fontWeight: 700, marginBottom: '0.2rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  {webhookResult.success ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}
+                  {webhookResult.success ? 'Webhook Registered' : 'Registration Notice'}
+                </div>
+                <div style={{ fontSize: '0.75rem', lineHeight: '1.4' }}>
+                  {webhookResult.message || webhookResult.error || (webhookResult.data?.message)}
+                </div>
+              </div>
+            )}
+
+            <div style={{ marginTop: '0.85rem', background: '#f8fafc', padding: '0.65rem 0.75rem', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '0.72rem', color: '#64748b', lineHeight: 1.4 }}>
+              <strong>Localhost & Cloud Gateways:</strong> When running locally (<code style={{ color: '#0284c7' }}>localhost:3000</code>), remote gateways cannot reach your private IP directly. Use a public tunnel (like ngrok or Cloudflare tunnel) or use the <strong>Inbound Simulator</strong> below to test incoming customer chats.
+            </div>
+          </div>
+
+          {/* Simulate Inbound Customer Reply Card */}
+          <div className="card" style={{ padding: '1.5rem', borderRadius: '12px' }}>
+            <h3 style={{ margin: '0 0 0.35rem 0', fontSize: '1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <Sparkles size={16} style={{ color: '#7c3aed' }} /> Simulate Inbound Customer Reply
+            </h3>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.78rem', margin: '0 0 1rem 0' }}>
+              Simulate an incoming WhatsApp customer reply directly into the CRM database to test Live Chat, notifications, and badges without sending real SMS/WhatsApp.
+            </p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', marginBottom: '0.85rem' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, marginBottom: '0.25rem' }}>
+                  Customer Mobile Number
+                </label>
+                <input
+                  type="text"
+                  value={simPhone}
+                  onChange={(e) => setSimPhone(e.target.value)}
+                  placeholder="e.g. 916283362279"
+                  style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.85rem' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, marginBottom: '0.25rem' }}>
+                  Simulated Customer Message
+                </label>
+                <input
+                  type="text"
+                  value={simText}
+                  onChange={(e) => setSimText(e.target.value)}
+                  placeholder="e.g. Hello, I received your message!"
+                  style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.85rem' }}
+                />
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleSimulateInbound}
+              disabled={simulating || !simPhone.trim() || !simText.trim()}
+              style={{
+                width: '100%',
+                padding: '0.6rem',
+                borderRadius: '6px',
+                backgroundColor: '#7c3aed',
+                color: '#fff',
+                border: 'none',
+                fontWeight: 600,
+                fontSize: '0.82rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.4rem',
+                cursor: (simulating || !simPhone.trim() || !simText.trim()) ? 'not-allowed' : 'pointer'
+              }}
+            >
+              {simulating ? <RefreshCw size={14} className="animate-spin" /> : <Sparkles size={14} />}
+              {simulating ? 'Injecting Message...' : 'Inject Simulated Customer Message'}
+            </button>
+
+            {simResult && (
+              <div style={{
+                marginTop: '1rem',
+                padding: '0.75rem',
+                borderRadius: '6px',
+                fontSize: '0.8rem',
+                backgroundColor: simResult.success ? '#f0fdf4' : '#fef2f2',
+                border: `1px solid ${simResult.success ? '#a7f3d0' : '#fecaca'}`,
+                color: simResult.success ? '#15803d' : '#b91c1c'
+              }}>
+                <div style={{ fontWeight: 700, marginBottom: '0.2rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  {simResult.success ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}
+                  {simResult.success ? 'Message Injected into Inbox!' : 'Simulation Failed'}
+                </div>
+                <div style={{ fontSize: '0.75rem', lineHeight: '1.4' }}>
+                  {simResult.message || simResult.error}
                 </div>
               </div>
             )}
