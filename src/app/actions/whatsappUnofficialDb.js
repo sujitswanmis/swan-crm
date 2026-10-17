@@ -696,6 +696,188 @@ export async function saveCustomBspProvider(providerData) {
 }
 
 // =========================================================================
+// 🏢 Tenant Self-Service (BYOK - Bring Your Own Key) Gateway Actions
+// =========================================================================
+
+export async function getMyTenantGatewayConfig(requestedTenantId = null) {
+  try {
+    const supabase = await createClient();
+    const { data: { user }, error: authErr } = await supabase.auth.getUser();
+    if (authErr || !user) {
+      return { success: false, error: 'Unauthorized: Please sign in.' };
+    }
+
+    const adminDb = getAdminClient();
+    const { data: userRoleRow } = await adminDb
+      .from('user_roles')
+      .select('role, company, tenant_id, module_access')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    const emailLower = (user.email || '').toLowerCase().trim();
+    const isMasterAdmin = 
+      emailLower === 'supujacreations@gmail.com' ||
+      emailLower === 'sujitswanmis@gmail.com' ||
+      userRoleRow?.role?.toLowerCase() === 'masteradmin' ||
+      userRoleRow?.module_access?.is_master_admin === true;
+
+    // Resolve effective tenant ID
+    const effectiveTenantId = requestedTenantId || userRoleRow?.tenant_id || userRoleRow?.module_access?._tenantId || null;
+
+    let tenantDetails = null;
+    if (effectiveTenantId) {
+      const { data: tData } = await adminDb
+        .from('tenants')
+        .select('id, name, tenant_code, status')
+        .eq('id', effectiveTenantId)
+        .maybeSingle();
+      tenantDetails = tData;
+    }
+
+    const configRes = await getAdminMessageConfig();
+    const wa = configRes?.data?.wa_unofficial || {};
+    const tenantAllocations = wa.tenant_allocations || {};
+    const alloc = effectiveTenantId ? tenantAllocations[effectiveTenantId] : null;
+
+    const hasCustomConfig = !!(alloc && (alloc.api_token || alloc.instance_id || alloc.server_url));
+    const useCustom = alloc ? (alloc.use_custom !== false && hasCustomConfig) : false;
+
+    return {
+      success: true,
+      isMasterAdmin,
+      tenantId: effectiveTenantId,
+      tenant: tenantDetails || (effectiveTenantId ? { id: effectiveTenantId, name: userRoleRow?.company || 'My Organization' } : null),
+      hasCustomConfig,
+      use_custom: useCustom,
+      config: {
+        provider: alloc?.provider || wa.provider || 'wasender',
+        api_token: alloc?.api_token || '',
+        instance_id: alloc?.instance_id || '',
+        phone_id: alloc?.phone_id || '',
+        server_url: alloc?.server_url || '',
+        max_scanned_instances: typeof alloc?.max_scanned_instances === 'number' ? alloc.max_scanned_instances : (wa.max_scanned_instances || 5),
+        is_active: alloc?.is_active !== false
+      },
+      globalDefaults: {
+        provider: wa.provider || 'wasender',
+        server_url: wa.server_url || 'https://wasenderapi.com/api',
+        max_scanned_instances: wa.max_scanned_instances || 5,
+        has_global_token: !!wa.api_token
+      },
+      custom_providers: wa.custom_providers || []
+    };
+  } catch (err) {
+    console.error('getMyTenantGatewayConfig error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function saveMyTenantGatewayConfig(payload) {
+  try {
+    const supabase = await createClient();
+    const { data: { user }, error: authErr } = await supabase.auth.getUser();
+    if (authErr || !user) {
+      return { success: false, error: 'Unauthorized: Please sign in.' };
+    }
+
+    const adminDb = getAdminClient();
+    const { data: userRoleRow } = await adminDb
+      .from('user_roles')
+      .select('role, company, tenant_id, module_access')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    const emailLower = (user.email || '').toLowerCase().trim();
+    const isMasterAdmin = 
+      emailLower === 'supujacreations@gmail.com' ||
+      emailLower === 'sujitswanmis@gmail.com' ||
+      userRoleRow?.role?.toLowerCase() === 'masteradmin' ||
+      userRoleRow?.module_access?.is_master_admin === true;
+
+    const isTenantAdmin = ['admin', 'superadmin', 'manager'].includes(userRoleRow?.role?.toLowerCase());
+
+    if (!isMasterAdmin && !isTenantAdmin) {
+      return { success: false, error: 'Permission denied: Only Organization Admins can manage Gateway credentials.' };
+    }
+
+    const effectiveTenantId = payload.tenantId || userRoleRow?.tenant_id || userRoleRow?.module_access?._tenantId;
+    if (!effectiveTenantId) {
+      return { success: false, error: 'No workspace or tenant ID associated with your account.' };
+    }
+
+    // Security check: non-master admins can only update their own tenant
+    if (!isMasterAdmin) {
+      const userTenant = userRoleRow?.tenant_id || userRoleRow?.module_access?._tenantId;
+      if (userTenant && userTenant !== effectiveTenantId) {
+        return { success: false, error: "Forbidden: You cannot modify another organization's settings." };
+      }
+    }
+
+    const configRes = await getAdminMessageConfig();
+    const wa = configRes?.data?.wa_unofficial || {};
+    const tenantAllocations = { ...(wa.tenant_allocations || {}) };
+
+    const useCustom = payload.use_custom === true;
+
+    tenantAllocations[effectiveTenantId] = {
+      ...(tenantAllocations[effectiveTenantId] || {}),
+      provider: payload.provider || (useCustom ? 'wasender' : wa.provider || 'wasender'),
+      api_token: useCustom && payload.api_token ? payload.api_token.trim() : '',
+      instance_id: useCustom && payload.instance_id ? payload.instance_id.trim() : '',
+      phone_id: useCustom && payload.phone_id ? payload.phone_id.trim() : '',
+      server_url: useCustom && payload.server_url ? payload.server_url.trim() : '',
+      max_scanned_instances: typeof payload.max_scanned_instances === 'number' ? payload.max_scanned_instances : 5,
+      is_active: payload.is_active !== false,
+      use_custom: useCustom,
+      updated_at: new Date().toISOString()
+    };
+
+    const res = await saveAdminMessageConfig('wa_unofficial', {
+      tenant_allocations: tenantAllocations
+    });
+
+    revalidatePath('/');
+    return res;
+  } catch (err) {
+    console.error('saveMyTenantGatewayConfig error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function testTenantGatewayChannel({ tenantId = null, config = {}, recipientNumber }) {
+  try {
+    if (!recipientNumber) {
+      return { success: false, error: 'Recipient mobile number is required.' };
+    }
+
+    const cleanNum = await adapter.formatWhatsAppNumber(recipientNumber);
+    const timeIst = new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      dateStyle: 'short',
+      timeStyle: 'medium'
+    }).format(new Date());
+
+    const text = `SuPuja Swan CRM Gateway Test: Your custom WhatsApp BSP credentials (${config.provider || 'Wasender'}) are configured and operational! Time (IST): ${timeIst}`;
+
+    const overrideConfig = {
+      baseUrl: (config.server_url || (config.provider === 'wasender' ? 'https://wasenderapi.com/api' : 'https://app.aknexus.in/api')).replace(/\/+$/, ''),
+      token: (config.api_token || '').trim(),
+      defaultInst: (config.instance_id || '').trim(),
+      phoneId: (config.phone_id || '').trim(),
+      provider: config.provider || 'wasender'
+    };
+
+    const targetInst = overrideConfig.defaultInst || 'test_instance';
+    const sendRes = await adapter.sendText(targetInst, cleanNum, text, tenantId, overrideConfig);
+
+    return sendRes;
+  } catch (err) {
+    console.error('testTenantGatewayChannel error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+// =========================================================================
 // Universal Incoming Simulation & Webhook Registration
 // =========================================================================
 

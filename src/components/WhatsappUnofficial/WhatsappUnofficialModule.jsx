@@ -22,7 +22,14 @@ const MODULE_TABS = [
   { id: 'logs', label: 'Message Logs', icon: <MessageSquare size={18} /> },
 ];
 
-export default function WhatsappUnofficialModule({ userRole, userId, moduleAccess = {}, isAdmin: propIsAdmin }) {
+export default function WhatsappUnofficialModule({ 
+  userRole, 
+  userId, 
+  moduleAccess = {}, 
+  isAdmin: propIsAdmin,
+  isMasterAdmin = false,
+  tenantId = null
+}) {
   const isAdmin = propIsAdmin !== undefined ? propIsAdmin : (checkIsAdminRole ? checkIsAdminRole(userRole) : false);
   const visibleTabs = filterVisibleSubTabs(moduleAccess, userRole, 'whatsapp_unofficial', MODULE_TABS);
 
@@ -137,6 +144,8 @@ export default function WhatsappUnofficialModule({ userRole, userId, moduleAcces
         {activeTab === 'settings' && (
           <GatewaySettings 
             isAdmin={isAdmin} 
+            isMasterAdmin={isMasterAdmin}
+            tenantId={tenantId}
             onNavigateToInstances={() => handleTabChange('instances')} 
           />
         )}

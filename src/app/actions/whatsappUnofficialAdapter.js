@@ -8,7 +8,17 @@ import { getAdminMessageConfig } from './adminMessageConfig.js';
 // With Built-in Auto-Healing for Expired/Invalidated Sessions
 // ==========================================
 
-async function getGatewayConfig(tenantId = null) {
+async function getGatewayConfig(tenantId = null, overrideConfig = null) {
+  if (overrideConfig && typeof overrideConfig === 'object') {
+    return {
+      baseUrl: (overrideConfig.server_url || overrideConfig.baseUrl || 'https://wasenderapi.com/api').replace(/\/+$/, ''),
+      token: overrideConfig.api_token || overrideConfig.token || '',
+      defaultInst: overrideConfig.instance_id || overrideConfig.defaultInst || '',
+      phoneId: overrideConfig.phone_id || overrideConfig.phoneId || '',
+      maxLimit: typeof overrideConfig.max_scanned_instances === 'number' ? overrideConfig.max_scanned_instances : (overrideConfig.maxLimit || 5),
+      provider: overrideConfig.provider || 'wasender'
+    };
+  }
   try {
     const cfgRes = await getAdminMessageConfig();
     const wa = cfgRes?.data?.wa_unofficial || {};
@@ -471,12 +481,12 @@ export async function logout(instanceKey, tenantId = null) {
 // -------------------------------------------------------------
 // SEND TEXT MESSAGE
 // -------------------------------------------------------------
-export async function sendText(instanceKey, toNumber, messageText, tenantId = null) {
+export async function sendText(instanceKey, toNumber, messageText, tenantId = null, overrideConfig = null) {
   if (!toNumber || !messageText) {
     return { success: false, error: 'Recipient number and message text are required.' };
   }
 
-  const config = await getGatewayConfig(tenantId);
+  const config = await getGatewayConfig(tenantId, overrideConfig);
   const prov = (config.provider || 'aknexus').toLowerCase();
   const cleanNumber = await formatWhatsAppNumber(toNumber);
 

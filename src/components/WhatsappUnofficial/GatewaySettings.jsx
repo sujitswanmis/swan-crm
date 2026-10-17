@@ -11,7 +11,10 @@ import {
   saveSaaSTenantAllocation,
   saveCustomBspProvider,
   registerInstanceWebhook,
-  simulateIncomingCustomerMessage
+  simulateIncomingCustomerMessage,
+  getMyTenantGatewayConfig,
+  saveMyTenantGatewayConfig,
+  testTenantGatewayChannel
 } from '@/app/actions/whatsappUnofficialDb';
 import { 
   Phone, Settings, Save, RefreshCw, Send, 
@@ -80,14 +83,22 @@ const DEFAULT_BSP_PROVIDERS = [
   }
 ];
 
-export default function GatewaySettings({ isAdmin = true, onNavigateToInstances }) {
+export default function GatewaySettings({ 
+  isAdmin = true, 
+  isMasterAdmin = false, 
+  tenantId = null, 
+  onNavigateToInstances 
+}) {
+  // View Toggle for Master Admin (Matrix vs BYOK)
+  const [activeViewTab, setActiveViewTab] = useState(isMasterAdmin ? 'matrix' : 'byok');
+
   // Global config state
   const [config, setConfig] = useState({
     enabled: true,
-    provider: 'aknexus',
-    server_url: 'https://app.aknexus.in/api',
-    instance_id: '6AD37BDFCEDF5',
-    api_token: '6abe519e92b26',
+    provider: 'wasender',
+    server_url: 'https://wasenderapi.com/api',
+    instance_id: 'wasender_primary',
+    api_token: '',
     phone_id: '',
     max_scanned_instances: 5,
     custom_providers: []
@@ -97,6 +108,23 @@ export default function GatewaySettings({ isAdmin = true, onNavigateToInstances 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+
+  // Tenant BYOK Self-Service State
+  const [tenantConfigData, setTenantConfigData] = useState(null);
+  const [byokForm, setByokForm] = useState({
+    use_custom: false,
+    provider: 'wasender',
+    api_token: '',
+    instance_id: '',
+    phone_id: '',
+    server_url: 'https://wasenderapi.com/api',
+    max_scanned_instances: 5
+  });
+  const [byokSaving, setByokSaving] = useState(false);
+  const [byokSaved, setByokSaved] = useState(false);
+  const [byokTestPhone, setByokTestPhone] = useState('');
+  const [byokTesting, setByokTesting] = useState(false);
+  const [byokTestResult, setByokTestResult] = useState(null);
 
   // Test Dispatch State
   const [testNumber, setTestNumber] = useState('');
@@ -139,21 +167,22 @@ export default function GatewaySettings({ isAdmin = true, onNavigateToInstances 
 
   // Column Resizing for SaaS Allocation Matrix Table (Lead Data Pattern)
   const defaultColWidths = {
-    tenant: 190,
-    provider: 160,
-    maxLimit: 100,
-    instanceId: 150,
-    apiToken: 150,
-    phoneId: 140,
-    serverUrl: 180,
-    status: 90,
-    actions: 110
+    tenant: 180,
+    routingMode: 140,
+    provider: 150,
+    maxLimit: 90,
+    instanceId: 140,
+    apiToken: 140,
+    phoneId: 120,
+    serverUrl: 160,
+    status: 80,
+    actions: 100
   };
 
   const [colWidths, setColWidths] = useState(() => {
     if (typeof window !== 'undefined') {
       try {
-        const saved = localStorage.getItem('wa_unofficial_tenant_table_col_widths_v2');
+        const saved = localStorage.getItem('wa_unofficial_tenant_table_col_widths_v3');
         if (saved) return { ...defaultColWidths, ...JSON.parse(saved) };
       } catch (e) {}
     }
@@ -165,7 +194,7 @@ export default function GatewaySettings({ isAdmin = true, onNavigateToInstances 
   useEffect(() => {
     if (typeof window !== 'undefined') {
       try {
-        localStorage.setItem('wa_unofficial_tenant_table_col_widths_v2', JSON.stringify(colWidths));
+        localStorage.setItem('wa_unofficial_tenant_table_col_widths_v3', JSON.stringify(colWidths));
       } catch (e) {}
     }
   }, [colWidths]);
@@ -201,24 +230,25 @@ export default function GatewaySettings({ isAdmin = true, onNavigateToInstances 
   // Load Initial Settings & Tenants
   useEffect(() => {
     loadAllData();
-  }, []);
+  }, [tenantId]);
 
   const loadAllData = async () => {
     setLoading(true);
     try {
-      const [cfgRes, tenantRes] = await Promise.all([
+      const [cfgRes, tenantRes, myTenantRes] = await Promise.all([
         getAdminMessageConfig(),
-        getSaaSTenantsAndAllocations()
+        getSaaSTenantsAndAllocations(),
+        getMyTenantGatewayConfig(tenantId)
       ]);
 
       if (cfgRes.success && cfgRes.data?.wa_unofficial) {
         const wa = cfgRes.data.wa_unofficial;
         setConfig({
           enabled: wa.enabled !== false,
-          provider: wa.provider || 'aknexus',
-          server_url: wa.server_url || 'https://app.aknexus.in/api',
-          instance_id: wa.instance_id || '6AD37BDFCEDF5',
-          api_token: wa.api_token || '6abe519e92b26',
+          provider: wa.provider || 'wasender',
+          server_url: wa.server_url || 'https://wasenderapi.com/api',
+          instance_id: wa.instance_id || 'wasender_primary',
+          api_token: wa.api_token || '',
           phone_id: wa.phone_id || '',
           max_scanned_instances: typeof wa.max_scanned_instances === 'number' ? wa.max_scanned_instances : 5,
           custom_providers: Array.isArray(wa.custom_providers) ? wa.custom_providers : []
@@ -234,7 +264,7 @@ export default function GatewaySettings({ isAdmin = true, onNavigateToInstances 
         const allocMap = {};
         (tenantRes.tenants || []).forEach(t => {
           allocMap[t.id] = {
-            provider: t.assigned_provider || 'aknexus',
+            provider: t.assigned_provider || 'wasender',
             max_scanned_instances: t.max_scanned_instances,
             instance_id: t.instance_id || '',
             api_token: t.api_token || '',
@@ -244,6 +274,19 @@ export default function GatewaySettings({ isAdmin = true, onNavigateToInstances 
           };
         });
         setTenantAllocations(allocMap);
+      }
+
+      if (myTenantRes && myTenantRes.success) {
+        setTenantConfigData(myTenantRes);
+        setByokForm({
+          use_custom: myTenantRes.use_custom === true,
+          provider: myTenantRes.config?.provider || 'wasender',
+          api_token: myTenantRes.config?.api_token || '',
+          instance_id: myTenantRes.config?.instance_id || '',
+          phone_id: myTenantRes.config?.phone_id || '',
+          server_url: myTenantRes.config?.server_url || '',
+          max_scanned_instances: myTenantRes.config?.max_scanned_instances || 5
+        });
       }
     } catch (err) {
       console.error('loadAllData error:', err);
@@ -277,6 +320,69 @@ export default function GatewaySettings({ isAdmin = true, onNavigateToInstances 
     } else {
       alert(`Failed to save configuration: ${res.error}`);
     }
+  };
+
+  // BYOK Handlers
+  const handleByokProviderChange = (newProvider) => {
+    const prov = allProviders.find(p => p.id === newProvider);
+    setByokForm(prev => ({
+      ...prev,
+      provider: newProvider,
+      server_url: prov && prov.url ? prov.url : prev.server_url
+    }));
+  };
+
+  const handleSaveByok = async (e) => {
+    if (e) e.preventDefault();
+    setByokSaving(true);
+    setByokSaved(false);
+
+    const targetTenantId = tenantId || tenantConfigData?.tenantId || tenantConfigData?.tenant?.id;
+    const res = await saveMyTenantGatewayConfig({
+      tenantId: targetTenantId,
+      use_custom: byokForm.use_custom,
+      provider: byokForm.provider,
+      api_token: byokForm.api_token,
+      instance_id: byokForm.instance_id,
+      phone_id: byokForm.phone_id,
+      server_url: byokForm.server_url,
+      max_scanned_instances: byokForm.max_scanned_instances
+    });
+
+    setByokSaving(false);
+    if (res.success) {
+      setByokSaved(true);
+      setTimeout(() => setByokSaved(false), 3500);
+      loadAllData();
+    } else {
+      alert(`Failed to save configuration: ${res.error}`);
+    }
+  };
+
+  const handleTestByok = async () => {
+    if (!byokTestPhone.trim()) {
+      alert('Please enter a recipient mobile number (e.g. 917261902348).');
+      return;
+    }
+    setByokTesting(true);
+    setByokTestResult(null);
+
+    const cleanNum = byokTestPhone.replace(/[^0-9]/g, '');
+    const targetTenantId = tenantId || tenantConfigData?.tenantId || tenantConfigData?.tenant?.id;
+    const res = await testTenantGatewayChannel({
+      tenantId: targetTenantId,
+      config: {
+        provider: byokForm.provider,
+        api_token: byokForm.api_token,
+        instance_id: byokForm.instance_id,
+        phone_id: byokForm.phone_id,
+        server_url: byokForm.server_url
+      },
+      recipientNumber: cleanNum
+    });
+
+    setByokTesting(false);
+    setByokTestResult(res);
   };
 
   const handleTenantFieldChange = (tenantId, field, value) => {
@@ -454,11 +560,58 @@ export default function GatewaySettings({ isAdmin = true, onNavigateToInstances 
         </div>
       </div>
 
-      {/* Top Grid: Master Global Setup + Test Box */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(450px, 1.4fr) minmax(300px, 0.8fr)', gap: '1.5rem', marginBottom: '2rem' }}>
-        
-        {/* Left Column: Global Provider Config */}
-        <div className="card" style={{ padding: '1.75rem', borderRadius: '12px' }}>
+      {/* View Switcher for Master Admin */}
+      {isMasterAdmin && (
+        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem' }}>
+          <button
+            type="button"
+            onClick={() => setActiveViewTab('matrix')}
+            style={{
+              padding: '0.5rem 1.15rem',
+              borderRadius: '8px',
+              border: 'none',
+              cursor: 'pointer',
+              fontWeight: 700,
+              fontSize: '0.85rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.45rem',
+              backgroundColor: activeViewTab === 'matrix' ? '#059669' : '#f1f5f9',
+              color: activeViewTab === 'matrix' ? '#ffffff' : 'var(--text-secondary)'
+            }}
+          >
+            <Building2 size={16} /> SaaS Multi-Tenant Control Matrix
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveViewTab('byok')}
+            style={{
+              padding: '0.5rem 1.15rem',
+              borderRadius: '8px',
+              border: 'none',
+              cursor: 'pointer',
+              fontWeight: 700,
+              fontSize: '0.85rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.45rem',
+              backgroundColor: activeViewTab === 'byok' ? '#059669' : '#f1f5f9',
+              color: activeViewTab === 'byok' ? '#ffffff' : 'var(--text-secondary)'
+            }}
+          >
+            <Key size={16} /> My Organization BYOK Gateway
+          </button>
+        </div>
+      )}
+
+      {/* View Tab 1: Master Admin SaaS Matrix */}
+      {activeViewTab === 'matrix' && isMasterAdmin && (
+        <div>
+          {/* Top Grid: Master Global Setup + Test Box */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(450px, 1.4fr) minmax(300px, 0.8fr)', gap: '1.5rem', marginBottom: '2rem' }}>
+            
+            {/* Left Column: Global Provider Config */}
+            <div className="card" style={{ padding: '1.75rem', borderRadius: '12px' }}>
           
           <form onSubmit={handleSaveGlobal}>
             
@@ -1137,6 +1290,26 @@ export default function GatewaySettings({ isAdmin = true, onNavigateToInstances 
                   />
                 </th>
 
+                {/* Column: Gateway Mode */}
+                <th style={{ width: `${colWidths.routingMode}px`, padding: '0.75rem 0.85rem', position: 'relative', fontWeight: 700, color: '#1e293b' }}>
+                  <span>Gateway Mode</span>
+                  <div
+                    onMouseDown={(e) => handleMouseDownResize('routingMode', e)}
+                    onDoubleClick={() => handleDoubleClickReset('routingMode')}
+                    title="Drag to resize | Double click to reset"
+                    style={{
+                      position: 'absolute',
+                      right: 0,
+                      top: 0,
+                      bottom: 0,
+                      width: '6px',
+                      cursor: 'col-resize',
+                      userSelect: 'none',
+                      backgroundColor: activeResizingCol === 'routingMode' ? '#059669' : 'transparent'
+                    }}
+                  />
+                </th>
+
                 {/* Column: Status */}
                 <th style={{ width: `${colWidths.status}px`, padding: '0.75rem 0.85rem', position: 'relative', fontWeight: 700, color: '#1e293b' }}>
                   <span>Status</span>
@@ -1314,6 +1487,43 @@ export default function GatewaySettings({ isAdmin = true, onNavigateToInstances 
                       />
                     </td>
 
+                    {/* Gateway Mode Badge */}
+                    <td style={{ padding: '0.75rem 0.85rem' }}>
+                      {alloc.api_token ? (
+                        <span style={{ 
+                          display: 'inline-flex', 
+                          alignItems: 'center', 
+                          gap: '0.25rem',
+                          padding: '0.2rem 0.55rem', 
+                          borderRadius: '9999px', 
+                          fontSize: '0.72rem', 
+                          fontWeight: 700, 
+                          backgroundColor: '#dcfce7', 
+                          color: '#15803d',
+                          border: '1px solid #bbf7d0',
+                          whiteSpace: 'nowrap'
+                        }}>
+                          <Check size={11} /> Dedicated BYOK
+                        </span>
+                      ) : (
+                        <span style={{ 
+                          display: 'inline-flex', 
+                          alignItems: 'center', 
+                          gap: '0.25rem',
+                          padding: '0.2rem 0.55rem', 
+                          borderRadius: '9999px', 
+                          fontSize: '0.72rem', 
+                          fontWeight: 600, 
+                          backgroundColor: '#f1f5f9', 
+                          color: '#475569',
+                          border: '1px solid #e2e8f0',
+                          whiteSpace: 'nowrap'
+                        }}>
+                          <Globe size={11} /> Global ({config.provider})
+                        </span>
+                      )}
+                    </td>
+
                     {/* Active Status Switch */}
                     <td style={{ padding: '0.75rem 0.85rem' }}>
                       <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 600 }}>
@@ -1360,6 +1570,317 @@ export default function GatewaySettings({ isAdmin = true, onNavigateToInstances 
         </div>
 
       </div>
+      </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* View Tab 2: 🏢 My Organization BYOK Gateway Setup                         */}
+      {/* ========================================================================= */}
+      {activeViewTab === 'byok' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', marginBottom: '2rem' }}>
+          
+          {/* Workspace Information Banner */}
+          <div className="card" style={{ padding: '1.25rem 1.5rem', borderRadius: '12px', background: 'linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%)', border: '1px solid #a7f3d0' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Building2 size={20} style={{ color: '#059669' }} />
+                  <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: '#065f46' }}>
+                    {tenantConfigData?.tenant?.name || 'Your Organization'} &bull; WhatsApp Gateway
+                  </h3>
+                  <span style={{ fontSize: '0.72rem', background: '#d1fae5', color: '#047857', padding: '0.15rem 0.5rem', borderRadius: '4px', fontWeight: 700 }}>
+                    Tenant Code: {tenantConfigData?.tenant?.tenant_code || 'DEFAULT'}
+                  </span>
+                </div>
+                <p style={{ margin: '0.35rem 0 0 0', fontSize: '0.82rem', color: '#047857' }}>
+                  {byokForm.use_custom && byokForm.api_token ? (
+                    <span>🚀 <strong>Active:</strong> Your workspace is using a dedicated <strong>{byokForm.provider.toUpperCase()}</strong> gateway with custom credentials.</span>
+                  ) : (
+                    <span>🛡️ <strong>Active:</strong> Your workspace is using the platform default <strong>{config.provider.toUpperCase()}</strong> gateway (no separate key required).</span>
+                  )}
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{ fontSize: '0.75rem', fontWeight: 700, padding: '0.3rem 0.75rem', borderRadius: '9999px', background: byokForm.use_custom ? '#dcfce7' : '#e0e7ff', color: byokForm.use_custom ? '#15803d' : '#3730a3' }}>
+                  {byokForm.use_custom ? 'Dedicated BYOK Mode' : 'Platform Default Mode'}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Mode Selector Cards */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
+            
+            {/* Option A: Platform Default */}
+            <div 
+              onClick={() => setByokForm(prev => ({ ...prev, use_custom: false }))}
+              style={{
+                padding: '1.25rem',
+                borderRadius: '12px',
+                border: !byokForm.use_custom ? '2px solid #059669' : '1px solid var(--border-light)',
+                backgroundColor: !byokForm.use_custom ? '#f0fdf4' : 'var(--bg-surface)',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                position: 'relative'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Shield size={20} style={{ color: !byokForm.use_custom ? '#059669' : '#64748b' }} />
+                  <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700, color: !byokForm.use_custom ? '#065f46' : 'inherit' }}>
+                    Use Platform Default Gateway
+                  </h4>
+                </div>
+                {!byokForm.use_custom && (
+                  <span style={{ background: '#059669', color: '#fff', borderRadius: '9999px', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Check size={12} />
+                  </span>
+                )}
+              </div>
+              <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
+                No external API key needed. Outbound lead messages and templates will automatically route through our central verified high-speed WhatsApp gateway (<strong>{config.provider.toUpperCase()}</strong>).
+              </p>
+            </div>
+
+            {/* Option B: BYOK */}
+            <div 
+              onClick={() => setByokForm(prev => ({ ...prev, use_custom: true }))}
+              style={{
+                padding: '1.25rem',
+                borderRadius: '12px',
+                border: byokForm.use_custom ? '2px solid #059669' : '1px solid var(--border-light)',
+                backgroundColor: byokForm.use_custom ? '#f0fdf4' : 'var(--bg-surface)',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                position: 'relative'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Key size={20} style={{ color: byokForm.use_custom ? '#059669' : '#64748b' }} />
+                  <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700, color: byokForm.use_custom ? '#065f46' : 'inherit' }}>
+                    Bring Your Own Key (BYOK)
+                  </h4>
+                </div>
+                {byokForm.use_custom && (
+                  <span style={{ background: '#059669', color: '#fff', borderRadius: '9999px', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Check size={12} />
+                  </span>
+                )}
+              </div>
+              <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
+                Connect your own <strong>Wasender</strong>, <strong>AK Nexus</strong>, <strong>MyTAPI</strong>, or custom WhatsApp session. Messages send from your dedicated number and use your own provider subscription.
+              </p>
+            </div>
+
+          </div>
+
+          {/* BYOK Configuration Form */}
+          {byokForm.use_custom && (
+            <div className="card" style={{ padding: '1.75rem', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+              
+              <div style={{ marginBottom: '1.25rem' }}>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.5rem' }}>
+                  Select Your WhatsApp BSP Provider *
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '0.6rem' }}>
+                  {allProviders.map(prov => {
+                    const isSelected = byokForm.provider === prov.id;
+                    return (
+                      <div
+                        key={prov.id}
+                        onClick={() => handleByokProviderChange(prov.id)}
+                        style={{
+                          padding: '0.65rem 0.85rem',
+                          borderRadius: '8px',
+                          border: isSelected ? '2px solid #059669' : '1px solid var(--border-light)',
+                          backgroundColor: isSelected ? '#f0fdf4' : 'var(--bg-surface)',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <span style={{ fontWeight: 700, fontSize: '0.82rem', color: isSelected ? '#065f46' : 'inherit' }}>
+                            {prov.label}
+                          </span>
+                          {isSelected && <Check size={14} style={{ color: '#059669' }} />}
+                        </div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '0.2rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {prov.authType}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1rem', marginBottom: '1.25rem' }}>
+                
+                {/* API Token / Key */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.35rem' }}>
+                    API Key / Access Token *
+                  </label>
+                  <input
+                    type="password"
+                    value={byokForm.api_token}
+                    onChange={(e) => setByokForm(prev => ({ ...prev, api_token: e.target.value }))}
+                    placeholder={byokForm.provider === 'wasender' ? 'e.g. 7fe5c5edd292379b08ac5db...' : 'Access Token'}
+                    style={{ width: '100%', padding: '0.55rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.82rem', fontFamily: 'monospace' }}
+                  />
+                  <span style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '0.2rem', display: 'block' }}>
+                    {byokForm.provider === 'wasender' 
+                      ? 'Found in Wasender Dashboard > Sessions or Profile API key'
+                      : 'Found in your provider console / dashboard'}
+                  </span>
+                </div>
+
+                {/* Instance ID / Session Name */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.35rem' }}>
+                    Instance ID / Session Key
+                  </label>
+                  <input
+                    type="text"
+                    value={byokForm.instance_id}
+                    onChange={(e) => setByokForm(prev => ({ ...prev, instance_id: e.target.value }))}
+                    placeholder={byokForm.provider === 'wasender' ? 'e.g. wasender_primary or Session ID' : 'e.g. 6AD37BDFCEDF5'}
+                    style={{ width: '100%', padding: '0.55rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.82rem', fontFamily: 'monospace' }}
+                  />
+                  <span style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '0.2rem', display: 'block' }}>
+                    Identifier for your linked WhatsApp Web session
+                  </span>
+                </div>
+
+                {/* Phone ID (if MyTAPI) */}
+                {byokForm.provider === 'mytapi' && (
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.35rem' }}>
+                      Phone ID (MyTAPI) *
+                    </label>
+                    <input
+                      type="text"
+                      value={byokForm.phone_id}
+                      onChange={(e) => setByokForm(prev => ({ ...prev, phone_id: e.target.value }))}
+                      placeholder="e.g. 8881119276"
+                      style={{ width: '100%', padding: '0.55rem', borderRadius: '6px', border: '1px solid #93c5fd', backgroundColor: '#eff6ff', fontSize: '0.82rem' }}
+                    />
+                  </div>
+                )}
+
+                {/* Server URL */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.35rem' }}>
+                    Gateway Server URL
+                  </label>
+                  <input
+                    type="text"
+                    value={byokForm.server_url}
+                    onChange={(e) => setByokForm(prev => ({ ...prev, server_url: e.target.value }))}
+                    placeholder="https://wasenderapi.com/api"
+                    style={{ width: '100%', padding: '0.55rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.82rem' }}
+                  />
+                </div>
+
+              </div>
+
+              {/* Test Section */}
+              <div style={{ background: '#f8fafc', padding: '1.25rem', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '1.5rem' }}>
+                <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.88rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <Send size={15} style={{ color: '#059669' }} /> Test Your Custom Credentials
+                </h4>
+                <p style={{ margin: '0 0 0.75rem 0', fontSize: '0.78rem', color: '#64748b' }}>
+                  Send a verification WhatsApp to check that your API Key and Session are live before saving.
+                </p>
+
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  <input
+                    type="text"
+                    value={byokTestPhone}
+                    onChange={(e) => setByokTestPhone(e.target.value)}
+                    placeholder="Recipient Mobile (e.g. 917261902348)"
+                    style={{ flex: 1, minWidth: '220px', padding: '0.5rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.82rem' }}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleTestByok}
+                    disabled={byokTesting || !byokTestPhone.trim() || !byokForm.api_token.trim()}
+                    className="btn-secondary"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.4rem',
+                      padding: '0.5rem 1rem',
+                      borderRadius: '6px',
+                      borderColor: '#059669',
+                      color: '#059669',
+                      fontWeight: 700,
+                      fontSize: '0.82rem',
+                      cursor: (byokTesting || !byokTestPhone.trim() || !byokForm.api_token.trim()) ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    {byokTesting ? <RefreshCw size={14} className="animate-spin" /> : <Send size={14} />}
+                    {byokTesting ? 'Sending Test...' : 'Send Test WhatsApp'}
+                  </button>
+                </div>
+
+                {byokTestResult && (
+                  <div style={{
+                    marginTop: '0.75rem',
+                    padding: '0.65rem 0.85rem',
+                    borderRadius: '6px',
+                    fontSize: '0.78rem',
+                    backgroundColor: byokTestResult.success ? '#f0fdf4' : '#fef2f2',
+                    border: `1px solid ${byokTestResult.success ? '#a7f3d0' : '#fecaca'}`,
+                    color: byokTestResult.success ? '#15803d' : '#b91c1c'
+                  }}>
+                    <div style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      {byokTestResult.success ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}
+                      {byokTestResult.success ? 'Message Dispatched Successfully!' : 'Test Failed'}
+                    </div>
+                    <div style={{ marginTop: '0.2rem' }}>
+                      {byokTestResult.message || byokTestResult.error || JSON.stringify(byokTestResult.data || '')}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+            </div>
+          )}
+
+          {/* Save Button Bar */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '0.75rem' }}>
+            {byokSaved && (
+              <span style={{ color: '#059669', fontSize: '0.82rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <CheckCircle2 size={16} /> Organization Gateway Saved!
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={handleSaveByok}
+              disabled={byokSaving}
+              className="btn-primary"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                padding: '0.65rem 1.4rem',
+                borderRadius: '8px',
+                fontWeight: 700,
+                backgroundColor: '#059669',
+                color: '#ffffff',
+                border: 'none',
+                cursor: byokSaving ? 'not-allowed' : 'pointer'
+              }}
+            >
+              {byokSaving ? <RefreshCw size={16} className="animate-spin" /> : <Save size={16} />}
+              {byokSaving ? 'Saving Settings...' : 'Save Organization Gateway'}
+            </button>
+          </div>
+
+        </div>
+      )}
 
       {/* ========================================================================= */}
       {/* Dynamic "+ Add New BSP Provider" Modal */}
