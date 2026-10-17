@@ -90,14 +90,20 @@ export async function createNewInstance(instanceName) {
   }
 
   // 3. Save in DB
+  const initialStatus = adapterRes.status === 'CONNECTED' ? 'CONNECTED' : 'QR_REQUIRED';
+  const insertPayload = {
+    owner_user_id: userData.user.id,
+    instance_name: instanceName || `WhatsApp Instance ${Date.now()}`,
+    instance_key: adapterRes.instanceKey,
+    status: initialStatus
+  };
+  if (initialStatus === 'CONNECTED') {
+    insertPayload.last_connected_at = new Date().toISOString();
+  }
+
   const { data, error } = await supabase
     .from('whatsapp_instances')
-    .insert([{
-      owner_user_id: userData.user.id,
-      instance_name: instanceName || `WhatsApp Instance ${Date.now()}`,
-      instance_key: adapterRes.instanceKey,
-      status: 'QR_REQUIRED'
-    }])
+    .insert([insertPayload])
     .select()
     .single();
 

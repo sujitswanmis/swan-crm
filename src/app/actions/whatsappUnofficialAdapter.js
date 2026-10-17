@@ -1,6 +1,6 @@
 'use server';
 
-import { getAdminMessageConfig } from './adminMessageConfig';
+import { getAdminMessageConfig } from './adminMessageConfig.js';
 
 // ==========================================
 // WhatsApp Unofficial Multi-BSP Gateway Adapter
@@ -123,6 +123,19 @@ export async function createInstance(instanceName = 'WhatsApp Instance', tenantI
   // 1. Wasender API
   if (prov === 'wasender') {
     try {
+      // Check if this token is a pre-connected session API Key
+      const statusRes = await fetch(`${config.baseUrl}/status`, {
+        headers: {
+          'Authorization': `Bearer ${config.token}`,
+          'Accept': 'application/json'
+        }
+      });
+      const statusData = await statusRes.json().catch(() => null);
+      if (statusData?.status === 'connected') {
+        const id = config.defaultInst || `wasender_${Date.now()}`;
+        return { success: true, instanceKey: id, instanceId: id, status: 'CONNECTED', alreadyConnected: true };
+      }
+
       const url = `${config.baseUrl}/whatsapp-sessions`;
       const res = await fetch(url, {
         method: 'POST',
@@ -223,6 +236,18 @@ export async function regenerateQr(instanceKey, tenantId = null) {
   // 1. Wasender API
   if (prov === 'wasender') {
     try {
+      // Check if session is already connected on Wasender
+      const statusRes = await fetch(`${config.baseUrl}/status`, {
+        headers: {
+          'Authorization': `Bearer ${config.token}`,
+          'Accept': 'application/json'
+        }
+      });
+      const statusData = await statusRes.json().catch(() => null);
+      if (statusData?.status === 'connected') {
+        return { success: true, status: 'CONNECTED', alreadyConnected: true, message: 'Wasender WhatsApp session is connected and active!' };
+      }
+
       const url = `${config.baseUrl}/whatsapp-sessions/${instanceKey}/connect`;
       const res = await fetch(url, {
         method: 'POST',
@@ -363,6 +388,21 @@ export async function getStatus(instanceKey, tenantId = null) {
   if (!instanceKey) return { success: false, status: 'LOGGED_OUT' };
   const config = await getGatewayConfig(tenantId);
   const prov = (config.provider || 'aknexus').toLowerCase();
+  if (prov === 'wasender') {
+    try {
+      const res = await fetch(`${config.baseUrl}/status`, {
+        headers: {
+          'Authorization': `Bearer ${config.token}`,
+          'Accept': 'application/json'
+        }
+      });
+      const data = await res.json().catch(() => null);
+      if (data?.status === 'connected') return { success: true, status: 'CONNECTED' };
+      return { success: true, status: data?.status || 'LOGGED_OUT' };
+    } catch {
+      return { success: false, status: 'UNKNOWN' };
+    }
+  }
 
   if (prov === 'ultramsg') {
     try {
@@ -570,7 +610,44 @@ export async function sendMedia(instanceKey, toNumber, mediaUrl, messageType = '
   }
 
   const config = await getGatewayConfig(tenantId);
+  const prov = (config.provider || 'aknexus').toLowerCase();
   const cleanNumber = await formatWhatsAppNumber(toNumber);
+
+  // 1. Wasender API Media Dispatch
+  if (prov === 'wasender') {
+    try {
+      const url = `${config.baseUrl}/send-message`;
+      const bodyPayload = {
+        to: cleanNumber,
+        text: caption || ''
+      };
+      const t = String(messageType || '').toLowerCase();
+      if (t === 'image' || t === 'photo') {
+        bodyPayload.imageUrl = mediaUrl;
+      } else if (t === 'video') {
+        bodyPayload.videoUrl = mediaUrl;
+      } else {
+        bodyPayload.documentUrl = mediaUrl;
+        bodyPayload.fileName = filename || 'document.pdf';
+      }
+
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${config.token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(bodyPayload)
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok || data?.success || data?.data?.msgId || data?.id) {
+        return { success: true, messageId: String(data?.data?.msgId || data?.id || `msg_${Date.now()}`), data };
+      }
+      return { success: false, error: data?.message || 'Wasender media dispatch error' };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  }
 
   const payload = {
     number: cleanNumber,

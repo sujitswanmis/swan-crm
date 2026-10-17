@@ -26,8 +26,10 @@ function parseWebhookPayload(payload) {
   // 2. Event name
   const event = payload.event || payload.event_type || payload.type || 'message_received';
 
-  // 3. Sender information & fromMe flag
+  // 3. Sender information & fromMe flag (Supports Wasender data.messages)
+  const wasenderMsg = payload.data?.messages;
   const fromMe = Boolean(
+    wasenderMsg?.key?.fromMe ??
     payload.data?.key?.fromMe ??
     payload.fromMe ??
     payload.message?.fromMe ??
@@ -35,8 +37,11 @@ function parseWebhookPayload(payload) {
     false
   );
 
-  // Raw sender string (e.g. "916283362279@s.whatsapp.net" or "916283362279@c.us" or "916283362279")
+  // Raw sender string (e.g. "916283362279@s.whatsapp.net" or cleanedSenderPn)
   const rawSender = 
+    wasenderMsg?.key?.cleanedSenderPn ||
+    wasenderMsg?.key?.cleanedParticipantPn ||
+    wasenderMsg?.key?.remoteJid ||
     payload.data?.key?.remoteJid ||
     payload.contactNumber ||
     payload.message?.from ||
@@ -55,6 +60,7 @@ function parseWebhookPayload(payload) {
   // Contact name
   const pushName = 
     payload.contactName ||
+    wasenderMsg?.pushName ||
     payload.data?.pushName ||
     payload.pushName ||
     payload.data?.verifiedBizName ||
@@ -63,8 +69,9 @@ function parseWebhookPayload(payload) {
     '';
 
   // 4. Message Content (Text & Media)
-  const messageObj = payload.data?.message || payload.message || {};
+  const messageObj = wasenderMsg?.message || payload.data?.message || payload.message || {};
   const text = (
+    wasenderMsg?.messageBody ||
     payload.messageText ||
     messageObj.conversation ||
     messageObj.extendedTextMessage?.text ||

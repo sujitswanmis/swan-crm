@@ -10,11 +10,13 @@
   },
   "wa_unofficial": {
     "enabled": true,
-    "provider": "aknexus",
-    "server_url": "https://app.aknexus.in/api",
-    "instance_id": "6AD37D9D501B2",
-    "api_token": "6abe519e92b26",
-    "max_scanned_instances": 5
+    "provider": "wasender",
+    "server_url": "https://www.wasenderapi.com/api",
+    "instance_id": "wasender_primary",
+    "api_token": "7fe5c5edd292379b08ac5db6df06de52f250d0c91d73126aa00044081273f179",
+    "phone_id": "",
+    "max_scanned_instances": 5,
+    "custom_providers": []
   },
   "sms": {
     "enabled": true,
