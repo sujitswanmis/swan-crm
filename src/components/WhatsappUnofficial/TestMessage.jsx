@@ -10,7 +10,7 @@ const PRESET_MESSAGES = [
   { id: '3', title: 'Payment & Billing Confirmation', text: 'Hi, this is a confirmation that your payment has been processed successfully. Thank you for your business!' }
 ];
 
-export default function TestMessage() {
+export default function TestMessage({ onNavigateToLiveChat }) {
   const [instances, setInstances] = useState([]);
   const [selectedInstanceId, setSelectedInstanceId] = useState('');
   const [recipientNumber, setRecipientNumber] = useState('');
@@ -19,6 +19,10 @@ export default function TestMessage() {
   const [fetchingInstances, setFetchingInstances] = useState(true);
   const [response, setResponse] = useState(null);
   const [history, setHistory] = useState([]);
+
+  const cleanInputNumber = String(recipientNumber || '').replace(/[^0-9]/g, '');
+  const isTenDigit = cleanInputNumber.length === 10 && /^[6-9]/.test(cleanInputNumber);
+  const autoFormattedNumber = isTenDigit ? `91${cleanInputNumber}` : cleanInputNumber;
 
   useEffect(() => {
     loadInstances();
@@ -54,10 +58,9 @@ export default function TestMessage() {
     setLoading(true);
     setResponse(null);
 
-    const cleanNumber = recipientNumber.replace(/[^0-9]/g, '');
     const res = await sendDirectTestMessage({
       instanceId: selectedInstanceId,
-      toNumber: cleanNumber,
+      toNumber: autoFormattedNumber,
       messageText: messageText.trim()
     });
 
@@ -67,7 +70,7 @@ export default function TestMessage() {
     if (res.success) {
       const newHistoryItem = {
         id: Date.now(),
-        number: cleanNumber,
+        number: res.cleanNumber || autoFormattedNumber,
         text: messageText.trim(),
         time: new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date()),
         messageId: res.messageId
@@ -142,9 +145,15 @@ export default function TestMessage() {
                   style={{ width: '100%', padding: '0.6rem 0.6rem 0.6rem 2.2rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.85rem' }}
                 />
               </div>
-              <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: '0.25rem', display: 'block' }}>
-                Include country code without &apos;+&apos; sign (e.g. 91 for India followed by 10-digit number).
-              </span>
+              {isTenDigit ? (
+                <div style={{ fontSize: '0.75rem', color: '#16a34a', marginTop: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.35rem', fontWeight: 600 }}>
+                  <CheckCircle2 size={13} color="#16a34a" /> Auto-formatting for WhatsApp India (+91): <strong>{autoFormattedNumber}</strong>
+                </div>
+              ) : (
+                <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: '0.25rem', display: 'block' }}>
+                  Include country code without &apos;+&apos; sign (e.g. 91 for India). 10-digit Indian numbers are auto-formatted with 91.
+                </span>
+              )}
             </div>
 
             {/* Quick Templates */}
@@ -248,6 +257,32 @@ export default function TestMessage() {
               {response.messageId && (
                 <div style={{ fontSize: '0.75rem', marginTop: '0.35rem', opacity: 0.85 }}>
                   Message ID: <code>{response.messageId}</code>
+                </div>
+              )}
+              {response.success && onNavigateToLiveChat && (
+                <div style={{ marginTop: '0.75rem', paddingTop: '0.65rem', borderTop: '1px solid #bbf7d0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: '0.75rem', color: '#166534', fontWeight: 500 }}>
+                    Synced to Live Chat Inbox!
+                  </span>
+                  <button
+                    type="button"
+                    onClick={onNavigateToLiveChat}
+                    style={{
+                      background: '#15803d',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: '6px',
+                      padding: '0.35rem 0.75rem',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.3rem'
+                    }}
+                  >
+                    Open in Live Chat &rarr;
+                  </button>
                 </div>
               )}
             </div>

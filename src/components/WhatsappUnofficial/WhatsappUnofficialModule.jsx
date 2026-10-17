@@ -138,7 +138,7 @@ export default function WhatsappUnofficialModule({ userRole, userId, moduleAcces
           />
         )}
         {activeTab === 'auth' && <UserAuthorization />}
-        {activeTab === 'test' && <TestMessage />}
+        {activeTab === 'test' && <TestMessage onNavigateToLiveChat={() => handleTabChange('live_chat')} />}
         {activeTab === 'logs' && <MessageLogs userId={userId} isAdmin={isAdmin} />}
       </div>
 

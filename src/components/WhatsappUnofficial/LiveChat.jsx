@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { getInstances, getInstanceAuths, getChats, getMessages, sendLiveMessage } from '@/app/actions/whatsappUnofficialDb';
+import { getInstances, getInstanceAuths, getChats, getMessages, sendLiveMessage, startNewChat } from '@/app/actions/whatsappUnofficialDb';
 import { createClient } from '@/utils/supabase/client';
-import { Search, Send, Paperclip, Loader2, Check, CheckCheck, Clock, MessageSquare } from 'lucide-react';
+import { Search, Send, Paperclip, Loader2, Check, CheckCheck, Clock, MessageSquare, Plus, X, Phone, User, Sparkles, RefreshCw } from 'lucide-react';
 import { PremiumProgressLoader } from '../PremiumProgressLoader';
 
 export default function LiveChat({ userId, isAdmin }) {
@@ -16,6 +16,14 @@ export default function LiveChat({ userId, isAdmin }) {
   const [newMessage, setNewMessage] = useState('');
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  // New Chat Modal & Search State
+  const [isNewChatModalOpen, setIsNewChatModalOpen] = useState(false);
+  const [newChatNumber, setNewChatNumber] = useState('');
+  const [newChatName, setNewChatName] = useState('');
+  const [newChatFirstMsg, setNewChatFirstMsg] = useState('');
+  const [creatingChat, setCreatingChat] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const messagesEndRef = useRef(null);
   const supabase = createClient();
@@ -140,6 +148,53 @@ export default function LiveChat({ userId, isAdmin }) {
     setSending(false);
   };
 
+  const cleanNewChatNum = String(newChatNumber || '').replace(/[^0-9]/g, '');
+  const isTenDigit = cleanNewChatNum.length === 10 && /^[6-9]/.test(cleanNewChatNum);
+  const formattedPreview = isTenDigit ? `91${cleanNewChatNum}` : cleanNewChatNum;
+
+  const handleCreateChat = async (e) => {
+    if (e) e.preventDefault();
+    if (!selectedInstance) {
+      alert("Please select a WhatsApp instance first.");
+      return;
+    }
+
+    if (!cleanNewChatNum || cleanNewChatNum.length < 10) {
+      alert("Please enter a valid mobile number (at least 10 digits).");
+      return;
+    }
+
+    setCreatingChat(true);
+    const res = await startNewChat({
+      instanceId: selectedInstance.id,
+      contactNumber: formattedPreview,
+      contactName: newChatName.trim() || undefined,
+      initialMessage: newChatFirstMsg.trim() || undefined
+    });
+    setCreatingChat(false);
+
+    if (res.success && res.chat) {
+      setIsNewChatModalOpen(false);
+      setNewChatNumber('');
+      setNewChatName('');
+      setNewChatFirstMsg('');
+      await loadChats(selectedInstance.id);
+      handleChatSelect(res.chat);
+    } else {
+      alert(res.error || "Failed to initiate chat.");
+    }
+  };
+
+  const filteredChats = chats.filter(chat => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase().trim();
+    return (
+      (chat.contact_name && chat.contact_name.toLowerCase().includes(q)) ||
+      (chat.contact_number && chat.contact_number.includes(q)) ||
+      (chat.last_message && chat.last_message.toLowerCase().includes(q))
+    );
+  });
+
   const formatTime = (isoString) => {
     if (!isoString) return '';
     const date = new Date(isoString);
@@ -160,14 +215,14 @@ export default function LiveChat({ userId, isAdmin }) {
   if (loading) return <PremiumProgressLoader message="Loading Chat Interface" active={loading} />;
 
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', position: 'relative' }}>
       
       {/* Top Bar for Instance Selection */}
-      <div style={{ padding: '1rem', borderBottom: '1px solid var(--border-light)', background: '#fff', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-        <h3 style={{ margin: 0 }}>Live Chat</h3>
+      <div style={{ padding: '0.85rem 1rem', borderBottom: '1px solid var(--border-light)', background: '#fff', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+        <h3 style={{ margin: 0, fontSize: '1.15rem' }}>Live WhatsApp Chat</h3>
         <select 
           className="input-field" 
-          style={{ width: 'auto', padding: '0.5rem' }}
+          style={{ width: 'auto', padding: '0.45rem 0.75rem', fontSize: '0.85rem' }}
           value={selectedInstance?.id || ''}
           onChange={(e) => {
             const inst = instances.find(i => i.id === e.target.value);
@@ -181,7 +236,7 @@ export default function LiveChat({ userId, isAdmin }) {
         </select>
         
         {selectedInstance && selectedInstance.status !== 'CONNECTED' && (
-          <div style={{ padding: '0.4rem 0.8rem', background: '#fef2f2', color: '#ef4444', borderRadius: '4px', fontSize: '0.875rem' }}>
+          <div style={{ padding: '0.35rem 0.75rem', background: '#fef2f2', color: '#ef4444', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 600 }}>
             Offline - {selectedInstance.status}
           </div>
         )}
@@ -190,24 +245,103 @@ export default function LiveChat({ userId, isAdmin }) {
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         
         {/* Left Panel: Chat List */}
-        <div style={{ width: '320px', borderRight: '1px solid var(--border-light)', background: '#f9fafb', display: 'flex', flexDirection: 'column' }}>
-          <div style={{ padding: '1rem', borderBottom: '1px solid var(--border-light)' }}>
-            <div className="search-box" style={{ display: 'flex', alignItems: 'center', background: '#fff', border: '1px solid var(--border-light)', borderRadius: '8px', padding: '0.5rem' }}>
-              <Search size={16} color="var(--text-secondary)" />
-              <input type="text" placeholder="Search chats..." style={{ border: 'none', outline: 'none', background: 'transparent', marginLeft: '0.5rem', width: '100%' }} />
+        <div style={{ width: '330px', borderRight: '1px solid var(--border-light)', background: '#f9fafb', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ padding: '0.85rem 1rem', borderBottom: '1px solid var(--border-light)', background: '#fff', display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)' }}>Chats</span>
+                <span style={{ fontSize: '0.75rem', background: '#e2e8f0', color: '#475569', padding: '2px 7px', borderRadius: '10px', fontWeight: 600 }}>{filteredChats.length}</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <button 
+                  type="button"
+                  onClick={() => selectedInstance && loadChats(selectedInstance.id)}
+                  title="Refresh Chats"
+                  style={{ background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '0.35rem 0.45rem', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                >
+                  <RefreshCw size={14} color="#64748b" />
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => setIsNewChatModalOpen(true)}
+                  disabled={!selectedInstance}
+                  style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '0.3rem', 
+                    background: '#00a884', 
+                    color: '#fff', 
+                    border: 'none', 
+                    borderRadius: '6px', 
+                    padding: '0.35rem 0.7rem', 
+                    fontSize: '0.8rem', 
+                    fontWeight: 600, 
+                    cursor: selectedInstance ? 'pointer' : 'not-allowed',
+                    opacity: selectedInstance ? 1 : 0.6
+                  }}
+                >
+                  <Plus size={15} /> New Chat
+                </button>
+              </div>
+            </div>
+
+            <div className="search-box" style={{ display: 'flex', alignItems: 'center', background: '#f8fafc', border: '1px solid var(--border-light)', borderRadius: '8px', padding: '0.45rem 0.65rem' }}>
+              <Search size={15} color="var(--text-secondary)" />
+              <input 
+                type="text" 
+                placeholder="Search chats by name or number..." 
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                style={{ border: 'none', outline: 'none', background: 'transparent', marginLeft: '0.5rem', width: '100%', fontSize: '0.82rem' }} 
+              />
+              {searchQuery && (
+                <button onClick={() => setSearchQuery('')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                  <X size={14} color="var(--text-secondary)" />
+                </button>
+              )}
             </div>
           </div>
           
           <div style={{ flex: 1, overflowY: 'auto' }}>
-            {chats.length === 0 ? (
-              <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>No chats found</div>
+            {filteredChats.length === 0 ? (
+              <div style={{ padding: '2.5rem 1.25rem', textAlign: 'center', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
+                <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <MessageSquare size={22} color="#94a3b8" />
+                </div>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: '0.875rem', color: 'var(--text-primary)' }}>No conversations found</div>
+                  <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                    Start a direct WhatsApp chat with any customer or lead.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsNewChatModalOpen(true)}
+                  disabled={!selectedInstance}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.35rem',
+                    background: '#00a884',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '6px',
+                    padding: '0.45rem 0.9rem',
+                    fontSize: '0.8rem',
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  <Plus size={15} /> Start First Chat
+                </button>
+              </div>
             ) : (
-              chats.map(chat => (
+              filteredChats.map(chat => (
                 <div 
                   key={chat.id}
                   onClick={() => handleChatSelect(chat)}
                   style={{ 
-                    padding: '1rem', 
+                    padding: '0.85rem 1rem', 
                     borderBottom: '1px solid var(--border-light)', 
                     cursor: 'pointer',
                     background: selectedChat?.id === chat.id ? '#e0f2fe' : 'transparent',
@@ -219,15 +353,15 @@ export default function LiveChat({ userId, isAdmin }) {
                   onMouseOut={(e) => { if (selectedChat?.id !== chat.id) e.currentTarget.style.background = 'transparent' }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{chat.contact_name || chat.contact_number}</span>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{formatTime(chat.last_message_at)}</span>
+                    <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.88rem' }}>{chat.contact_name || chat.contact_number}</span>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{formatTime(chat.last_message_at)}</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '220px' }}>
-                      {chat.last_message}
+                    <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '230px' }}>
+                      {chat.last_message || <em style={{ color: '#94a3b8' }}>No messages yet</em>}
                     </span>
                     {chat.unread_count > 0 && (
-                      <span style={{ background: '#3b82f6', color: '#fff', fontSize: '0.75rem', padding: '2px 6px', borderRadius: '10px', fontWeight: 600 }}>
+                      <span style={{ background: '#3b82f6', color: '#fff', fontSize: '0.72rem', padding: '2px 6px', borderRadius: '10px', fontWeight: 600 }}>
                         {chat.unread_count}
                       </span>
                     )}
@@ -324,6 +458,172 @@ export default function LiveChat({ userId, isAdmin }) {
           )}
         </div>
       </div>
+
+      {/* Start New Chat Modal */}
+      {isNewChatModalOpen && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(15, 23, 42, 0.65)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '1rem'
+        }}>
+          <div style={{
+            background: '#fff',
+            borderRadius: '14px',
+            width: '100%',
+            maxWidth: '440px',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column'
+          }}>
+            {/* Modal Header */}
+            <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border-light)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f8fafc' }}>
+              <div>
+                <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  Start New WhatsApp Chat
+                </h4>
+                <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                  Active Instance: <strong>{selectedInstance?.instance_name || 'Selected Account'}</strong>
+                </p>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => setIsNewChatModalOpen(false)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.25rem', color: '#64748b' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <form onSubmit={handleCreateChat} style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              {/* Recipient Phone */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.35rem', color: 'var(--text-primary)' }}>
+                  Recipient Mobile Number *
+                </label>
+                <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                  <Phone size={16} color="#64748b" style={{ position: 'absolute', left: '0.85rem' }} />
+                  <input 
+                    type="text"
+                    required
+                    placeholder="e.g. 9876543210 or 919876543210"
+                    value={newChatNumber}
+                    onChange={(e) => setNewChatNumber(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '0.65rem 0.85rem 0.65rem 2.4rem',
+                      border: '1px solid var(--border-light)',
+                      borderRadius: '8px',
+                      fontSize: '0.9rem',
+                      outline: 'none'
+                    }}
+                  />
+                </div>
+                {isTenDigit && (
+                  <div style={{ fontSize: '0.75rem', color: '#16a34a', marginTop: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.3rem', fontWeight: 600 }}>
+                    <Check size={14} /> Auto-prefixed: +91 {cleanNewChatNum} ({formattedPreview})
+                  </div>
+                )}
+              </div>
+
+              {/* Contact Name */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.35rem', color: 'var(--text-primary)' }}>
+                  Contact Name (Optional)
+                </label>
+                <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                  <User size={16} color="#64748b" style={{ position: 'absolute', left: '0.85rem' }} />
+                  <input 
+                    type="text"
+                    placeholder="e.g. Rahul Sharma"
+                    value={newChatName}
+                    onChange={(e) => setNewChatName(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '0.65rem 0.85rem 0.65rem 2.4rem',
+                      border: '1px solid var(--border-light)',
+                      borderRadius: '8px',
+                      fontSize: '0.9rem',
+                      outline: 'none'
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Initial Message */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.35rem', color: 'var(--text-primary)' }}>
+                  Initial Message (Optional)
+                </label>
+                <textarea 
+                  rows={3}
+                  placeholder="Type an opening message to dispatch immediately, or leave empty to just open the thread..."
+                  value={newChatFirstMsg}
+                  onChange={(e) => setNewChatFirstMsg(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '0.65rem 0.85rem',
+                    border: '1px solid var(--border-light)',
+                    borderRadius: '8px',
+                    fontSize: '0.88rem',
+                    outline: 'none',
+                    resize: 'none',
+                    fontFamily: 'inherit'
+                  }}
+                />
+              </div>
+
+              {/* Modal Actions */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.5rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setIsNewChatModalOpen(false)}
+                  style={{
+                    padding: '0.6rem 1.1rem',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-light)',
+                    background: '#f8fafc',
+                    color: 'var(--text-secondary)',
+                    fontWeight: 600,
+                    fontSize: '0.85rem',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={creatingChat || !cleanNewChatNum}
+                  style={{
+                    padding: '0.6rem 1.25rem',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: '#00a884',
+                    color: '#fff',
+                    fontWeight: 700,
+                    fontSize: '0.85rem',
+                    cursor: (creatingChat || !cleanNewChatNum) ? 'not-allowed' : 'pointer',
+                    opacity: (creatingChat || !cleanNewChatNum) ? 0.6 : 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.4rem'
+                  }}
+                >
+                  {creatingChat ? <Loader2 size={16} className="spin" /> : <Send size={15} />}
+                  {newChatFirstMsg.trim() ? 'Send & Start Chat' : 'Create Chat Thread'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

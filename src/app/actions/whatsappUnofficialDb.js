@@ -267,27 +267,132 @@ export async function getMessages(chatId) {
   return { success: true, data };
 }
 
+// -------------------------------------------------------------
+// GET OR CREATE CHAT THREAD
+// -------------------------------------------------------------
+export async function getOrCreateChat(instanceId, contactNumber, contactName = '') {
+  try {
+    const supabase = await createClient();
+    const cleanNumber = await adapter.formatWhatsAppNumber(contactNumber);
+    if (!instanceId || !cleanNumber) {
+      return { success: false, error: 'Instance ID and Contact Number are required.' };
+    }
+
+    // Check if chat exists
+    const { data: existingChat, error: fetchErr } = await supabase
+      .from('wa_chats')
+      .select('*')
+      .eq('instance_id', instanceId)
+      .eq('contact_number', cleanNumber)
+      .maybeSingle();
+
+    if (fetchErr) {
+      console.warn('Error querying wa_chats:', fetchErr.message);
+    }
+
+    if (existingChat) {
+      // Update contact_name if provided and not previously set
+      if (contactName && (!existingChat.contact_name || existingChat.contact_name === cleanNumber)) {
+        await supabase.from('wa_chats').update({ contact_name: contactName }).eq('id', existingChat.id);
+        existingChat.contact_name = contactName;
+      }
+      return { success: true, chat: existingChat, isNew: false };
+    }
+
+    // Create new chat row
+    const { data: newChat, error: insertErr } = await supabase
+      .from('wa_chats')
+      .insert([{
+        instance_id: instanceId,
+        contact_number: cleanNumber,
+        contact_name: contactName || cleanNumber,
+        status: 'OPEN',
+        unread_count: 0,
+        last_message_at: new Date().toISOString()
+      }])
+      .select()
+      .single();
+
+    if (insertErr) {
+      console.error('Error creating wa_chats row:', insertErr);
+      return { success: false, error: insertErr.message };
+    }
+
+    return { success: true, chat: newChat, isNew: true };
+  } catch (err) {
+    console.error('getOrCreateChat exception:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+// -------------------------------------------------------------
+// START NEW CHAT (From Live Chat UI or Lead Detail)
+// -------------------------------------------------------------
+export async function startNewChat({ instanceId, contactNumber, contactName = '', initialMessage = '' }) {
+  try {
+    const cleanNumber = await adapter.formatWhatsAppNumber(contactNumber);
+    if (!cleanNumber || cleanNumber.length < 10) {
+      return { success: false, error: 'Please enter a valid phone number (at least 10 digits).' };
+    }
+
+    const chatRes = await getOrCreateChat(instanceId, cleanNumber, contactName);
+    if (!chatRes.success || !chatRes.chat) {
+      return chatRes;
+    }
+
+    // If an initial message was provided, send it right away
+    if (initialMessage && initialMessage.trim()) {
+      const sendRes = await sendLiveMessage(instanceId, chatRes.chat.id, initialMessage.trim());
+      if (!sendRes.success) {
+        return {
+          success: true,
+          chat: chatRes.chat,
+          warning: `Chat thread opened, but message delivery failed: ${sendRes.error}`
+        };
+      }
+    }
+
+    return { success: true, chat: chatRes.chat };
+  } catch (err) {
+    console.error('startNewChat error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
 export async function sendDirectTestMessage({ instanceId, toNumber, messageText }) {
   const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();
 
   let targetInstanceKey = instanceId;
+  let targetDbInstanceId = null;
 
   // If instanceId is a UUID from DB, get the instance_key
   if (instanceId && instanceId.includes('-')) {
-    const { data: inst } = await supabase.from('whatsapp_instances').select('instance_key').eq('id', instanceId).single();
+    targetDbInstanceId = instanceId;
+    const { data: inst } = await supabase.from('whatsapp_instances').select('id, instance_key').eq('id', instanceId).single();
     if (inst?.instance_key) {
       targetInstanceKey = inst.instance_key;
     }
   }
 
-  // If no instanceId passed, use the first connected instance or default config
-  if (!targetInstanceKey) {
-    const { data: firstInst } = await supabase.from('whatsapp_instances').select('id, instance_key').limit(1).single();
-    targetInstanceKey = firstInst?.instance_key || process.env.WHATSAPP_UNOFFICIAL_DEFAULT_INSTANCE || '6AD37D9D501B2';
+  // If no instanceId passed or not UUID, find the first connected or matching instance
+  if (!targetInstanceKey || !targetDbInstanceId) {
+    const { data: matchedInst } = await supabase
+      .from('whatsapp_instances')
+      .select('id, instance_key')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (matchedInst) {
+      targetDbInstanceId = targetDbInstanceId || matchedInst.id;
+      targetInstanceKey = targetInstanceKey || matchedInst.instance_key;
+    } else {
+      targetInstanceKey = targetInstanceKey || process.env.WHATSAPP_UNOFFICIAL_DEFAULT_INSTANCE || '6AD37D9D501B2';
+    }
   }
 
-  const cleanNumber = String(toNumber).replace(/[^0-9]/g, '');
+  const cleanNumber = await adapter.formatWhatsAppNumber(toNumber);
   if (!cleanNumber || cleanNumber.length < 10) {
     return { success: false, error: 'Please enter a valid phone number with country code (e.g. 917261902348).' };
   }
@@ -303,27 +408,47 @@ export async function sendDirectTestMessage({ instanceId, toNumber, messageText 
     return { success: false, error: adapterRes.error };
   }
 
-  // Try logging to wa_messages if DB schema permits
-  try {
-    await supabase.from('wa_messages').insert([{
-      instance_id: instanceId && instanceId.includes('-') ? instanceId : null,
-      sender_user_id: userData?.user?.id || null,
-      direction: 'OUTGOING',
-      message_type: 'TEXT',
-      message_text: messageText,
-      to_number: cleanNumber,
-      whatsapp_message_id: adapterRes.messageId,
-      status: 'SENT',
-      sent_at: new Date().toISOString()
-    }]);
-  } catch (logErr) {
-    console.warn('Notice: Test message sent but could not save to wa_messages:', logErr.message);
+  let createdChat = null;
+
+  // Ensure chat thread exists in wa_chats so it appears in Live Chat!
+  if (targetDbInstanceId) {
+    try {
+      const chatRes = await getOrCreateChat(targetDbInstanceId, cleanNumber, `WhatsApp Recipient (${cleanNumber})`);
+      if (chatRes.success && chatRes.chat) {
+        createdChat = chatRes.chat;
+        
+        // Update last message in wa_chats
+        await supabase.from('wa_chats').update({
+          last_message: messageText,
+          last_message_at: new Date().toISOString(),
+          last_message_type: 'TEXT'
+        }).eq('id', createdChat.id);
+
+        // Save into wa_messages linked to chat_id
+        await supabase.from('wa_messages').insert([{
+          chat_id: createdChat.id,
+          instance_id: targetDbInstanceId,
+          sender_user_id: userData?.user?.id || null,
+          direction: 'OUTGOING',
+          message_type: 'TEXT',
+          message_text: messageText,
+          to_number: cleanNumber,
+          whatsapp_message_id: adapterRes.messageId,
+          status: 'SENT',
+          sent_at: new Date().toISOString()
+        }]);
+      }
+    } catch (logErr) {
+      console.warn('Notice: Test message sent but could not sync to wa_chats/wa_messages:', logErr.message);
+    }
   }
 
   return {
     success: true,
     messageId: adapterRes.messageId,
     message: `Message dispatched successfully to ${cleanNumber}!`,
+    chatId: createdChat?.id,
+    cleanNumber,
     data: adapterRes.data
   };
 }

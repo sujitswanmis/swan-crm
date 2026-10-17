@@ -42,9 +42,21 @@ async function getGatewayConfig(tenantId = null) {
 }
 
 // -------------------------------------------------------------
+// Phone Number Formatter: Auto-detects 10-digit Indian numbers and prefixes 91
+// -------------------------------------------------------------
+export async function formatWhatsAppNumber(phone) {
+  let clean = String(phone || '').replace(/[^0-9]/g, '');
+  // If 10 digits starting with 6-9, assume Indian mobile and prepend 91
+  if (clean.length === 10 && /^[6-9]/.test(clean)) {
+    clean = `91${clean}`;
+  }
+  return clean;
+}
+
+// -------------------------------------------------------------
 // Core Request Dispatcher for Standard Gateway (AK Nexus / Saasyto / MyTAPI)
 // -------------------------------------------------------------
-async function callStandardGateway(endpoint, queryParams = {}, postBody = null, overrideConfig = null) {
+async function callStandardGateway(endpoint, queryParams = {}, postBody = null, overrideConfig = null, retryCount = 0) {
   const config = overrideConfig || (await getGatewayConfig());
   const params = new URLSearchParams({
     access_token: config.token,
@@ -78,7 +90,16 @@ async function callStandardGateway(endpoint, queryParams = {}, postBody = null, 
       if (json.status === 'success' || json.success === true || json.base64 || json.instance_id) {
         return { success: true, data: json };
       }
-      return { success: false, error: json.message || 'Gateway returned error', raw: json };
+
+      const errorMsg = json.message || json.error || json.msg || json.reason || (json.status && json.status !== 'success' ? `Gateway Status: ${json.status}` : 'Gateway returned error');
+
+      // Auto-retry once on connection lag / handshake delay if endpoint is /send
+      if (retryCount === 0 && endpoint === '/send' && (String(errorMsg).includes('Connection') || String(errorMsg).includes('handshake') || String(errorMsg).includes('timed out'))) {
+        await new Promise(r => setTimeout(r, 1500));
+        return callStandardGateway(endpoint, queryParams, postBody, overrideConfig, 1);
+      }
+
+      return { success: false, error: errorMsg, raw: json };
     }
 
     if (!res.ok) {
@@ -417,7 +438,7 @@ export async function sendText(instanceKey, toNumber, messageText, tenantId = nu
 
   const config = await getGatewayConfig(tenantId);
   const prov = (config.provider || 'aknexus').toLowerCase();
-  const cleanNumber = String(toNumber).replace(/[^0-9]/g, '');
+  const cleanNumber = await formatWhatsAppNumber(toNumber);
 
   // 1. Wasender API
   if (prov === 'wasender') {
@@ -549,7 +570,7 @@ export async function sendMedia(instanceKey, toNumber, mediaUrl, messageType = '
   }
 
   const config = await getGatewayConfig(tenantId);
-  const cleanNumber = String(toNumber).replace(/[^0-9]/g, '');
+  const cleanNumber = await formatWhatsAppNumber(toNumber);
 
   const payload = {
     number: cleanNumber,
@@ -572,4 +593,23 @@ export async function sendMedia(instanceKey, toNumber, mediaUrl, messageType = '
   }
 
   return { success: false, error: res.error || 'Failed to dispatch media message' };
+}
+
+// -------------------------------------------------------------
+// SET WEBHOOK
+// -------------------------------------------------------------
+export async function setWebhook(instanceKey, webhookUrl, tenantId = null) {
+  if (!webhookUrl) return { success: false, error: 'Webhook URL required' };
+  const config = await getGatewayConfig(tenantId);
+  const prov = (config.provider || 'aknexus').toLowerCase();
+
+  if (prov === 'ultramsg') {
+    return callStandardGateway(`/${instanceKey}/settings`, {}, { webhookUrl }, config);
+  }
+
+  return callStandardGateway('/set_webhook', {
+    webhook_url: webhookUrl,
+    enable: 'true',
+    instance_id: instanceKey || config.defaultInst
+  }, null, config);
 }
