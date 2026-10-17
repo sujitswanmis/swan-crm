@@ -69,49 +69,60 @@ export default function WhatsappUnofficialModule({ userRole, userId, moduleAcces
   }
 
   return (
-    <div style={{ display: 'flex', height: '100%', gap: '1.5rem', padding: '1rem', backgroundColor: 'var(--bg-default)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: '0.75rem', padding: '0.75rem 1rem', backgroundColor: 'var(--bg-default)', overflow: 'hidden' }}>
       
-      {/* Module Sidebar */}
-      <div className="card" style={{ width: '250px', flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <div style={{ padding: '1.25rem', borderBottom: '1px solid var(--border-light)', background: 'var(--th-filtered-bg)' }}>
-          <h2 style={{ margin: 0, fontSize: '1rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <MessageSquare size={18} color="var(--accent-color)" />
-            WhatsApp Module
-          </h2>
-        </div>
-        
-        <div style={{ padding: '0.75rem', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-          {visibleTabs.map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => handleTabChange(tab.id)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: '0.75rem',
-                padding: '0.75rem 1rem', width: '100%', textAlign: 'left',
-                border: 'none', borderRadius: '8px', cursor: 'pointer',
-                background: activeTab === tab.id ? 'var(--accent-color)' : 'transparent',
-                color: activeTab === tab.id ? 'white' : 'var(--text-primary)',
-                fontWeight: activeTab === tab.id ? 600 : 400,
-                transition: 'all 0.2s',
-              }}
-              onMouseOver={(e) => {
-                if (activeTab !== tab.id) e.currentTarget.style.background = 'var(--th-filtered-bg)';
-              }}
-              onMouseOut={(e) => {
-                if (activeTab !== tab.id) e.currentTarget.style.background = 'transparent';
-              }}
-            >
-              <div style={{ color: activeTab === tab.id ? 'white' : 'var(--accent-color)' }}>
-                {tab.icon}
-              </div>
-              {tab.label}
-            </button>
-          ))}
+      {/* Horizontal Tabs Bar */}
+      <div className="card" style={{ 
+        padding: '0.4rem 0.6rem', 
+        borderRadius: '10px', 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: '0.5rem',
+        flexShrink: 0
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', overflowX: 'auto', flex: 1, paddingBottom: '2px' }}>
+          {visibleTabs.map(tab => {
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => handleTabChange(tab.id)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  padding: '0.5rem 1rem',
+                  borderRadius: '8px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  background: isActive ? 'var(--accent-color)' : 'transparent',
+                  color: isActive ? '#ffffff' : 'var(--text-primary)',
+                  fontWeight: isActive ? 700 : 500,
+                  fontSize: '0.85rem',
+                  whiteSpace: 'nowrap',
+                  transition: 'all 0.15s ease'
+                }}
+                onMouseOver={(e) => {
+                  if (!isActive) e.currentTarget.style.background = 'var(--th-filtered-bg)';
+                }}
+                onMouseOut={(e) => {
+                  if (!isActive) e.currentTarget.style.background = 'transparent';
+                }}
+              >
+                <div style={{ color: isActive ? '#ffffff' : 'var(--accent-color)', display: 'flex', alignItems: 'center' }}>
+                  {tab.icon}
+                </div>
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
       {/* Module Content Area */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
         {activeTab === 'dashboard' && <Dashboard userId={userId} isAdmin={isAdmin} />}
         {activeTab === 'live_chat' && <LiveChat userId={userId} isAdmin={isAdmin} />}
         {activeTab === 'instances' && (
