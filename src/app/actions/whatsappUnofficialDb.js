@@ -3,7 +3,7 @@
 import { createClient } from '@/utils/supabase/server';
 import { revalidatePath } from 'next/cache';
 import * as adapter from './whatsappUnofficialAdapter';
-import { getAdminMessageConfig } from './adminMessageConfig';
+import { getAdminMessageConfig, saveAdminMessageConfig } from './adminMessageConfig';
 
 // Helper to fetch Master Admin capacity limit and current connected instances
 export async function getInstanceLimitInfo() {
@@ -156,13 +156,18 @@ export async function regenerateInstanceQr(instanceId) {
     return { success: true, data: updated, status: 'CONNECTED', alreadyConnected: true };
   }
 
-  // 3. Update DB with new QR and status
+  // 3. Update DB with new QR and status (and auto-heal instance_key if adapter refreshed expired key)
+  const updatePayload = { 
+    qr_code: adapterRes.qrCode, 
+    status: 'QR_PENDING'
+  };
+  if (adapterRes.freshInstanceKey) {
+    updatePayload.instance_key = adapterRes.freshInstanceKey;
+  }
+
   const { data, error } = await supabase
     .from('whatsapp_instances')
-    .update({ 
-      qr_code: adapterRes.qrCode, 
-      status: 'QR_PENDING'
-    })
+    .update(updatePayload)
     .eq('id', instanceId)
     .select()
     .single();
@@ -410,3 +415,103 @@ export async function removeInstanceAuth(id) {
   if (error) return { success: false, error: error.message };
   return { success: true };
 }
+
+// =========================================================================
+// SaaS Tenant Allocation & Custom BSP Management
+// =========================================================================
+
+export async function getSaaSTenantsAndAllocations() {
+  try {
+    const supabase = await createClient();
+    const { data: tenants, error: tErr } = await supabase
+      .from('tenants')
+      .select('id, name, tenant_code, status')
+      .order('name', { ascending: true });
+
+    if (tErr) {
+      console.error('getSaaSTenantsAndAllocations tErr:', tErr);
+      return { success: false, error: tErr.message, tenants: [] };
+    }
+
+    const configRes = await getAdminMessageConfig();
+    const wa = configRes?.data?.wa_unofficial || {};
+    const tenantAllocations = wa.tenant_allocations || {};
+
+    const enrichedTenants = (tenants || []).map(t => {
+      const alloc = tenantAllocations[t.id] || {};
+      return {
+        ...t,
+        assigned_provider: alloc.provider || wa.provider || 'aknexus',
+        max_scanned_instances: typeof alloc.max_scanned_instances === 'number' ? alloc.max_scanned_instances : (wa.max_scanned_instances || 5),
+        server_url: alloc.server_url || '',
+        api_token: alloc.api_token || '',
+        is_allocated_active: alloc.is_active !== false
+      };
+    });
+
+    return { 
+      success: true, 
+      tenants: enrichedTenants,
+      global_provider: wa.provider || 'aknexus',
+      global_max_instances: wa.max_scanned_instances || 5,
+      custom_providers: wa.custom_providers || []
+    };
+  } catch (err) {
+    console.error('getSaaSTenantsAndAllocations error:', err);
+    return { success: false, error: err.message, tenants: [] };
+  }
+}
+
+export async function saveSaaSTenantAllocation(tenantId, allocationData) {
+  try {
+    const configRes = await getAdminMessageConfig();
+    const wa = configRes?.data?.wa_unofficial || {};
+    const tenantAllocations = { ...(wa.tenant_allocations || {}) };
+
+    tenantAllocations[tenantId] = {
+      ...(tenantAllocations[tenantId] || {}),
+      provider: allocationData.provider || wa.provider || 'aknexus',
+      max_scanned_instances: Number(allocationData.max_scanned_instances) || 0,
+      server_url: allocationData.server_url ? allocationData.server_url.trim() : '',
+      api_token: allocationData.api_token ? allocationData.api_token.trim() : '',
+      is_active: allocationData.is_active !== false,
+      updated_at: new Date().toISOString()
+    };
+
+    const res = await saveAdminMessageConfig('wa_unofficial', {
+      tenant_allocations: tenantAllocations
+    });
+
+    revalidatePath('/');
+    return res;
+  } catch (err) {
+    console.error('saveSaaSTenantAllocation error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function saveCustomBspProvider(providerData) {
+  try {
+    const configRes = await getAdminMessageConfig();
+    const wa = configRes?.data?.wa_unofficial || {};
+    const customProviders = Array.isArray(wa.custom_providers) ? [...wa.custom_providers] : [];
+
+    const existingIdx = customProviders.findIndex(p => p.id === providerData.id);
+    if (existingIdx >= 0) {
+      customProviders[existingIdx] = { ...customProviders[existingIdx], ...providerData };
+    } else {
+      customProviders.push(providerData);
+    }
+
+    const res = await saveAdminMessageConfig('wa_unofficial', {
+      custom_providers: customProviders
+    });
+
+    revalidatePath('/');
+    return { success: true, customProviders };
+  } catch (err) {
+    console.error('saveCustomBspProvider error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
