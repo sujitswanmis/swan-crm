@@ -26,10 +26,12 @@ const DEFAULT_CONFIG = {
     invite_template_name: 'supuja_admin_employee_invite'
   },
   wa_unofficial: {
-    enabled: false,
-    server_url: 'http://localhost:3001',
-    instance_id: 'supuja_admin_instance_01',
-    api_token: ''
+    enabled: true,
+    provider: 'aknexus',
+    server_url: 'https://app.aknexus.in/api',
+    instance_id: '6AD37D9D501B2',
+    api_token: '6abe519e92b26',
+    max_scanned_instances: 5
   },
   sms: {
     enabled: true,
@@ -323,11 +325,55 @@ export async function testAdminChannel(channelKey, config, recipient) {
       };
     }
 
-    if (channelKey === 'wa_official' || channelKey === 'wa_unofficial') {
+    if (channelKey === 'wa_official') {
       return {
         success: true,
-        message: `✅ Test WhatsApp message dispatched to ${recipient} via SuPuja Admin Gateway!`
+        message: `✅ Test WhatsApp Official message dispatched to ${recipient} via SuPuja Admin Gateway!`
       };
+    }
+
+    if (channelKey === 'wa_unofficial') {
+      const waConfig = config?.wa_unofficial || (await getAdminMessageConfig()).data?.wa_unofficial;
+      const baseUrl = (waConfig?.server_url || 'https://app.aknexus.in/api').replace(/\/+$/, '');
+      const token = waConfig?.api_token || '6abe519e92b26';
+      const instId = waConfig?.instance_id || '6AD37D9D501B2';
+
+      if (!baseUrl || !token) {
+        return { success: false, error: 'Gateway Server URL and API Token are required.' };
+      }
+
+      try {
+        const sendUrl = `${baseUrl}/send`;
+        const res = await fetch(sendUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            number: recipient.replace(/[^0-9]/g, ''),
+            type: 'text',
+            message: `Hello! This is a test WhatsApp message from Swan CRM (${waConfig?.provider || 'Unofficial Gateway'}). Setup verified at ${new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' }).format(new Date())}.`,
+            instance_id: instId,
+            access_token: token
+          })
+        });
+
+        const json = await res.json().catch(() => null);
+        if (json && (json.status === 'success' || json.success)) {
+          return {
+            success: true,
+            message: `✅ Test WhatsApp message dispatched to ${recipient}! Response: ${json.message || 'Success'}`
+          };
+        } else {
+          return {
+            success: false,
+            error: json?.message || `Gateway returned status ${res.status}`
+          };
+        }
+      } catch (callErr) {
+        return {
+          success: false,
+          error: `Failed to connect to WhatsApp Gateway at ${baseUrl}: ${callErr.message}`
+        };
+      }
     }
 
     if (channelKey === 'rcs') {

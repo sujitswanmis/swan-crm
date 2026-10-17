@@ -564,58 +564,191 @@ export default function AdminMessageConfig({ moduleAccess = {}, userRole = 'admi
       {/* ========================================================================= */}
       {/* 3. WHATSAPP UNOFFICIAL TAB */}
       {/* ========================================================================= */}
+      {/* ========================================================================= */}
+      {/* 3. WHATSAPP UNOFFICIAL TAB */}
+      {/* ========================================================================= */}
       {activeTab === 'wa_unofficial' && (
-        <div className="card" style={{ padding: '1.75rem', borderRadius: '12px', maxWidth: '800px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.25rem' }}>
-            <Phone size={22} style={{ color: '#059669' }} />
-            <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700 }}>
-              SuPuja Creations WhatsApp Unofficial Instance
-            </h3>
+        <div className="card" style={{ padding: '1.75rem', borderRadius: '12px', maxWidth: '850px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+              <Phone size={24} style={{ color: '#059669' }} />
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.18rem', fontWeight: 700 }}>
+                  WhatsApp Unofficial Gateway &amp; BSP Setup
+                </h3>
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                  Configure external WhatsApp Web engines (AK Nexus, Saasyto, MyTAPI, Baileys) and manage account scan limits.
+                </span>
+              </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>
+                <input
+                  type="checkbox"
+                  checked={config.wa_unofficial?.enabled !== false}
+                  onChange={e => setConfig({
+                    ...config,
+                    wa_unofficial: { ...config.wa_unofficial, enabled: e.target.checked }
+                  })}
+                  style={{ width: '16px', height: '16px', accentColor: '#059669' }}
+                />
+                Service Active
+              </label>
+            </div>
           </div>
 
-          <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: 0, marginBottom: '1.5rem' }}>
-            Connect dedicated Admin WhatsApp instances for automated employee dispatch without template approvals.
-          </p>
-
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem', marginBottom: '1.5rem' }}>
+            {/* BSP Provider Selection */}
             <div>
               <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: '0.3rem' }}>
-                Gateway Server URL *
+                Select BSP Provider *
               </label>
-              <input
-                type="text"
-                value={config.wa_unofficial.server_url}
-                onChange={e => setConfig({ ...config, wa_unofficial: { ...config.wa_unofficial, server_url: e.target.value } })}
-                placeholder="http://localhost:3001"
-                style={{ width: '100%', padding: '0.55rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.85rem' }}
-              />
+              <select
+                value={config.wa_unofficial?.provider || 'aknexus'}
+                onChange={e => {
+                  const prov = e.target.value;
+                  let defaultUrl = config.wa_unofficial?.server_url;
+                  if (prov === 'aknexus') defaultUrl = 'https://app.aknexus.in/api';
+                  else if (prov === 'saasyto') defaultUrl = 'https://web.saasyto.com/api';
+                  else if (prov === 'mytapi') defaultUrl = 'https://api.mytapi.com/api';
+                  setConfig({
+                    ...config,
+                    wa_unofficial: {
+                      ...config.wa_unofficial,
+                      provider: prov,
+                      server_url: defaultUrl
+                    }
+                  });
+                }}
+                style={{ width: '100%', padding: '0.55rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.85rem', background: 'var(--bg-surface)' }}
+              >
+                <option value="aknexus">AK Nexus (https://app.aknexus.in/api)</option>
+                <option value="saasyto">Saasyto (https://web.saasyto.com/api)</option>
+                <option value="mytapi">MyTAPI (https://api.mytapi.com/api)</option>
+                <option value="custom">Custom / Other WhatsApp Engine</option>
+              </select>
             </div>
 
+            {/* Max Scanned Accounts Limit */}
             <div>
               <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: '0.3rem' }}>
-                Admin Instance Identifier *
+                Max Allowed Scanned Accounts (Master Limit) *
               </label>
-              <input
-                type="text"
-                value={config.wa_unofficial.instance_id}
-                onChange={e => setConfig({ ...config, wa_unofficial: { ...config.wa_unofficial, instance_id: e.target.value } })}
-                placeholder="supuja_admin_instance_01"
-                style={{ width: '100%', padding: '0.55rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.85rem' }}
-              />
+              <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={config.wa_unofficial?.max_scanned_instances ?? 5}
+                  onChange={e => setConfig({
+                    ...config,
+                    wa_unofficial: {
+                      ...config.wa_unofficial,
+                      max_scanned_instances: parseInt(e.target.value, 10) || 0
+                    }
+                  })}
+                  style={{ width: '90px', padding: '0.55rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.85rem' }}
+                />
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                  (0 = Unlimited accounts allowed)
+                </span>
+              </div>
             </div>
 
+            {/* Gateway Server Base URL */}
             <div style={{ gridColumn: 'span 2' }}>
               <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: '0.3rem' }}>
-                Instance Bearer Token
+                Gateway Server Base URL *
               </label>
               <input
-                type="password"
-                value={config.wa_unofficial.api_token}
+                type="text"
+                value={config.wa_unofficial?.server_url || ''}
+                onChange={e => setConfig({ ...config, wa_unofficial: { ...config.wa_unofficial, server_url: e.target.value } })}
+                placeholder="https://app.aknexus.in/api"
+                style={{ width: '100%', padding: '0.55rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.85rem' }}
+              />
+              <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: '0.2rem', display: 'block' }}>
+                API endpoints like <code>/create_instance</code>, <code>/get_qrcode</code>, and <code>/send</code> are queried from this base.
+              </span>
+            </div>
+
+            {/* Gateway Access Token */}
+            <div>
+              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: '0.3rem' }}>
+                Gateway Access Token / API Key *
+              </label>
+              <input
+                type="text"
+                value={config.wa_unofficial?.api_token || ''}
                 onChange={e => setConfig({ ...config, wa_unofficial: { ...config.wa_unofficial, api_token: e.target.value } })}
-                placeholder="supuja_bearer_sec_..."
+                placeholder="e.g. 6abe519e92b26"
                 style={{ width: '100%', padding: '0.55rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.85rem' }}
               />
             </div>
+
+            {/* Default / Admin Instance ID */}
+            <div>
+              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: '0.3rem' }}>
+                Default / Master Instance ID
+              </label>
+              <input
+                type="text"
+                value={config.wa_unofficial?.instance_id || ''}
+                onChange={e => setConfig({ ...config, wa_unofficial: { ...config.wa_unofficial, instance_id: e.target.value } })}
+                placeholder="e.g. 6AD37D9D501B2"
+                style={{ width: '100%', padding: '0.55rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.85rem' }}
+              />
+            </div>
+          </div>
+
+          {/* Test Dispatch Form */}
+          <div style={{ background: '#f8fafc', padding: '1rem', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '1.25rem' }}>
+            <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#334155', marginBottom: '0.4rem' }}>
+              Test WhatsApp Unofficial Gateway Dispatch
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <input
+                type="text"
+                value={testRecipient}
+                onChange={e => setTestRecipient(e.target.value)}
+                placeholder="Enter recipient mobile with country code (e.g. 917261902348)..."
+                style={{ flex: 1, padding: '0.5rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.85rem', background: '#fff' }}
+              />
+              <button
+                type="button"
+                onClick={() => handleTestDispatch('wa_unofficial')}
+                disabled={testingChannel || !testRecipient}
+                style={{
+                  padding: '0.5rem 1rem',
+                  borderRadius: '6px',
+                  backgroundColor: '#059669',
+                  color: '#fff',
+                  border: 'none',
+                  fontWeight: 600,
+                  fontSize: '0.82rem',
+                  cursor: (testingChannel || !testRecipient) ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem'
+                }}
+              >
+                {testingChannel ? <RefreshCw size={14} className="animate-spin" /> : <Send size={14} />}
+                Test Gateway
+              </button>
+            </div>
+
+            {testResponse && (
+              <div style={{
+                marginTop: '0.75rem',
+                padding: '0.5rem',
+                borderRadius: '6px',
+                fontSize: '0.8rem',
+                backgroundColor: testResponse.success ? '#dcfce7' : '#fee2e2',
+                color: testResponse.success ? '#166534' : '#991b1b'
+              }}>
+                {testResponse.success ? testResponse.message : testResponse.error}
+              </div>
+            )}
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
@@ -627,7 +760,7 @@ export default function AdminMessageConfig({ moduleAccess = {}, userRole = 'admi
               style={{ backgroundColor: '#059669', border: 'none', padding: '0.6rem 1.5rem', borderRadius: '6px', display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 600, color: '#fff' }}
             >
               <Save size={16} />
-              {savingTab ? 'Saving...' : 'Save Unofficial Instance'}
+              {savingTab ? 'Saving...' : 'Save Unofficial WhatsApp Settings'}
             </button>
           </div>
         </div>
