@@ -136,16 +136,25 @@ export default function LiveChat({ userId, isAdmin }) {
     setNewMessage('');
     setSending(true);
 
-    const { success, data, error, status, message } = await sendLiveMessage(selectedInstance.id, selectedChat.id, textToSend);
-    
-    if (success && data) {
-      // Optimistically add to list (might be duplicated by realtime, but UI handles it or we let realtime do it)
-      // Actually, relying on realtime is safer to prevent duplicates.
-    } else {
-      alert(error || message || "Failed to send message.");
+    try {
+      const res = await sendLiveMessage(selectedInstance.id, selectedChat.id, textToSend);
+      if (res?.success && res.data) {
+        // Optimistically add to message list if not already present
+        setMessages(prev => {
+          if (prev.some(m => m.id === res.data.id)) return prev;
+          return [...prev, res.data];
+        });
+        scrollToBottom();
+      } else {
+        setNewMessage(textToSend); // Restore text so user does not lose their draft
+        alert(res?.error || res?.message || "Failed to send message.");
+      }
+    } catch (err) {
+      setNewMessage(textToSend);
+      alert(err.message || "Network error while sending message.");
+    } finally {
+      setSending(false);
     }
-    
-    setSending(false);
   };
 
   const cleanNewChatNum = String(newChatNumber || '').replace(/[^0-9]/g, '');
@@ -165,23 +174,31 @@ export default function LiveChat({ userId, isAdmin }) {
     }
 
     setCreatingChat(true);
-    const res = await startNewChat({
-      instanceId: selectedInstance.id,
-      contactNumber: formattedPreview,
-      contactName: newChatName.trim() || undefined,
-      initialMessage: newChatFirstMsg.trim() || undefined
-    });
-    setCreatingChat(false);
+    try {
+      const res = await startNewChat({
+        instanceId: selectedInstance.id,
+        contactNumber: formattedPreview,
+        contactName: newChatName.trim() || undefined,
+        initialMessage: newChatFirstMsg.trim() || undefined
+      });
 
-    if (res.success && res.chat) {
-      setIsNewChatModalOpen(false);
-      setNewChatNumber('');
-      setNewChatName('');
-      setNewChatFirstMsg('');
-      await loadChats(selectedInstance.id);
-      handleChatSelect(res.chat);
-    } else {
-      alert(res.error || "Failed to initiate chat.");
+      if (res?.success && res.chat) {
+        setIsNewChatModalOpen(false);
+        setNewChatNumber('');
+        setNewChatName('');
+        setNewChatFirstMsg('');
+        await loadChats(selectedInstance.id);
+        handleChatSelect(res.chat);
+        if (res.warning) {
+          alert(res.warning);
+        }
+      } else {
+        alert(res?.error || "Failed to initiate chat.");
+      }
+    } catch (err) {
+      alert(err.message || "Error creating chat.");
+    } finally {
+      setCreatingChat(false);
     }
   };
 
