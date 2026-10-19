@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Clock, ShieldAlert, Activity, CheckCircle2, RefreshCw, AlertTriangle, UserCheck, Coffee, Utensils, Play, X, ChevronRight, Droplets, Users, BedDouble } from 'lucide-react';
+import { Clock, ShieldAlert, Activity, CheckCircle2, RefreshCw, AlertTriangle, UserCheck, Coffee, Utensils, Play, X, ChevronRight, Droplets, Users, BedDouble, Sliders } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { getSessionSecuritySettings, recordUserActivityHeartbeat, startEmployeeBreak, endEmployeeBreak, getCurrentEmployeeStatus } from '@/app/actions/sessionSettings';
 
@@ -693,6 +693,38 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
                   >
                     <RefreshCw size={13} /> Reset / Extend Session
                   </button>
+
+                  {/* Setup Rules Link for Admin */}
+                  {(userRole === 'admin' || userRole === 'Admin' || userRole === 'master_admin') && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsDropdownOpen(false);
+                        window.history.pushState(null, '', '/settings/sessions');
+                        window.dispatchEvent(new CustomEvent('setting_subtab_change', { detail: 'sessions' }));
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '0.45rem',
+                        backgroundColor: 'transparent',
+                        color: 'var(--accent-color, #4338ca)',
+                        border: '1px dashed var(--border-light, #cbd5e1)',
+                        borderRadius: '8px',
+                        fontWeight: 600,
+                        fontSize: '0.75rem',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '0.35rem',
+                        marginTop: '0.1rem'
+                      }}
+                      title="Setup Inactivity Timeout, Work Hours & Break Rules"
+                    >
+                      <Sliders size={13} />
+                      <span>Setup Work & Break Rules</span>
+                    </button>
+                  )}
                 </div>
               </div>
             )}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Building2, Settings2, FormInput, Bell, Database, Target, FileType, MessageSquare } from 'lucide-react';
+import { Building2, Settings2, FormInput, Bell, Database, Target, FileType, MessageSquare, Monitor } from 'lucide-react';
 
 // Subcomponents
 import BusinessProfile from './BusinessProfile';
@@ -11,6 +11,7 @@ import DataManagement from './DataManagement';
 import TargetPerformance from './TargetPerformance';
 import FileMedia from './FileMedia';
 import ManageDepartments from './ManageDepartments';
+import ActiveSessionsConfig from './ActiveSessionsConfig';
 import { filterVisibleSubTabs } from '@/utils/permissionUtils';
 
 const SETTINGS_TABS = [
@@ -21,6 +22,7 @@ const SETTINGS_TABS = [
   { id: 'notifications', label: 'Notifications & Alerts', icon: <Bell size={18} /> },
   { id: 'departments', label: 'Manage Departments', icon: <Building2 size={18} /> },
   { id: 'targets', label: 'Targets & Performance', icon: <Target size={18} /> },
+  { id: 'sessions', label: 'Work & Session Rules', icon: <Monitor size={18} /> },
   { id: 'data', label: 'Data Management', icon: <Database size={18} /> },
   { id: 'media', label: 'File & Media Settings', icon: <FileType size={18} /> }
 ];
@@ -48,6 +50,7 @@ export default function SettingsContainer({
         if (['alerts', 'notification'].includes(sub)) return 'notifications';
         if (['manage-departments', 'dept'].includes(sub)) return 'departments';
         if (['performance', 'target'].includes(sub)) return 'targets';
+        if (['sessions', 'active-sessions', 'work-session', 'breaks', 'shift-monitoring'].includes(sub)) return 'sessions';
         if (['data-management'].includes(sub)) return 'data';
         if (['file-media', 'files'].includes(sub)) return 'media';
         if (sub) return sub;
@@ -142,6 +145,7 @@ export default function SettingsContainer({
         {activeTab === 'notifications' && <NotificationsConfig />}
         {activeTab === 'departments' && <ManageDepartments />}
         {activeTab === 'targets' && <TargetPerformance />}
+        {activeTab === 'sessions' && <ActiveSessionsConfig userCompany={userCompany} />}
         {activeTab === 'data' && <DataManagement />}
         {activeTab === 'media' && <FileMedia />}
       </div>

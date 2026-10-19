@@ -92,9 +92,11 @@ const SETTINGS_MODULE_ITEMS = [
   { id: 'business', label: 'Business Profile & Branches', icon: Building2 },
   { id: 'crm', label: 'CRM & Lead Config', icon: Settings2 },
   { id: 'fields', label: 'Custom Fields', icon: FormInput },
+  { id: 'templates', label: 'Message & WhatsApp Templates', icon: MessageSquare },
   { id: 'notifications', label: 'Notifications & Alerts', icon: Bell },
   { id: 'departments', label: 'Manage Departments', icon: Layers },
   { id: 'targets', label: 'Targets & Performance', icon: Target },
+  { id: 'sessions', label: 'Session & Break Rules', icon: Monitor },
   { id: 'data', label: 'Data Management', icon: Database },
   { id: 'media', label: 'File & Media Settings', icon: FileType }
 ];
@@ -3089,6 +3091,7 @@ export default function CRMContainer({
     if (cleanSub === 'crm-config' || cleanSub === 'crm_config') cleanSub = 'crm';
     if (cleanSub === 'custom-fields' || cleanSub === 'custom_fields') cleanSub = 'fields';
     if (cleanSub === 'business-profile' || cleanSub === 'branches') cleanSub = 'business';
+    if (cleanSub === 'sessions' || cleanSub === 'active-sessions' || cleanSub === 'breaks' || cleanSub === 'work-session') cleanSub = 'sessions';
 
     setCurrentSettingSubTab(cleanSub);
     if (activeTab !== 'settings') {

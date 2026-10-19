@@ -5,7 +5,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   Monitor, Smartphone, Laptop, LogOut, RefreshCw, Search, ShieldCheck, 
   AlertCircle, CheckCircle2, Clock, Globe, User, ShieldAlert, Wifi, Filter,
-  Calendar, Check, UserCheck, UserX, Coffee, Activity, Zap
+  Calendar, Check, UserCheck, UserX, Coffee, Activity, Zap, Sliders
 } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { getEmployeeDailyActivitySummary } from '@/app/actions/sessionSettings';
@@ -395,6 +395,32 @@ export default function ActiveSessionsTab({ currentUserCompany = '' }) {
           >
             <RefreshCw size={14} className={loading ? 'spin' : ''} />
             Refresh
+          </button>
+
+          {/* Session & Break Rules Setup shortcut */}
+          <button
+            type="button"
+            onClick={() => {
+              window.history.pushState(null, '', '/settings/sessions');
+              window.dispatchEvent(new CustomEvent('setting_subtab_change', { detail: 'sessions' }));
+            }}
+            style={{
+              padding: '0.45rem 0.85rem',
+              borderRadius: '8px',
+              border: '1px solid #bfdbfe',
+              backgroundColor: '#eff6ff',
+              color: '#1d4ed8',
+              fontSize: '0.78rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.35rem'
+            }}
+            title="Configure Inactivity Timeout, Auto-Logout & Custom Break Rules"
+          >
+            <Sliders size={14} />
+            Session & Break Rules Setup
           </button>
         </div>
       </div>
