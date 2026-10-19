@@ -6626,7 +6626,9 @@ export default function CRMContainer({
                 {/* User Details (Desktop) */}
                 <div className="desktop-only" style={{ display: 'flex', flexDirection: 'column', textAlign: 'left', margin: '0 0.15rem' }}>
                   <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.15 }}>{userName || 'User'}</span>
-                  <span style={{ fontSize: '0.66rem', color: 'var(--text-secondary)', textTransform: 'capitalize', fontWeight: 500 }}>{userRole}</span>
+                  <span style={{ fontSize: '0.66rem', color: isMasterAdmin ? '#d97706' : 'var(--text-secondary)', textTransform: 'capitalize', fontWeight: isMasterAdmin ? 700 : 500 }}>
+                    {isMasterAdmin ? '👑 Master Admin' : userRole}
+                  </span>
                 </div>
                 <ChevronDown size={13} className="desktop-only" style={{ color: 'var(--text-secondary)', marginLeft: '1px' }} />
               </button>
@@ -6777,8 +6779,8 @@ export default function CRMContainer({
                   <div style={{ padding: '0.5rem 0' }}>
                     <div style={{ padding: '0.5rem 1rem', display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
                       <span style={{ color: 'var(--text-secondary)' }}>Role</span>
-                      <span style={{ fontWeight: 700, color: (userEmail?.toLowerCase() === 'supujacreations@gmail.com') ? '#854d0e' : 'var(--text-primary)', textTransform: 'capitalize' }}>
-                        {(userEmail?.toLowerCase() === 'supujacreations@gmail.com') ? '👑 Master Admin' : userRole}
+                      <span style={{ fontWeight: 700, color: isMasterAdmin ? '#854d0e' : 'var(--text-primary)', textTransform: 'capitalize' }}>
+                        {isMasterAdmin ? '👑 Master Admin' : userRole}
                       </span>
                     </div>
                     {userCompany && (
@@ -7341,7 +7343,17 @@ export default function CRMContainer({
                   <SettingsContainer 
                     moduleAccess={moduleAccess} 
                     userRole={userRole} 
-                    userCompany={userCompany} 
+                    userCompany={(() => {
+                      const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl'];
+                      const compLower = String(userCompany || '').toLowerCase().trim();
+                      if (userCompany && !SWAN_COMPANIES.includes(compLower)) {
+                        return userCompany;
+                      }
+                      if (adminCompanyFilter && adminCompanyFilter !== 'All') {
+                        return adminCompanyFilter;
+                      }
+                      return userCompany || 'New Swan Group';
+                    })()} 
                     isMasterAdmin={isMasterAdmin}
                     currentSubTab={currentSettingSubTab}
                     onSubTabChange={handleSettingSubTabChange}

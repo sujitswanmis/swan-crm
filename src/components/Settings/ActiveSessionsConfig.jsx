@@ -111,7 +111,7 @@ function getInitialSessionTab() {
   return 'report';
 }
 
-export default function ActiveSessionsConfig() {
+export default function ActiveSessionsConfig({ userCompany = '' }) {
   const [activeTab, setActiveTab] = useState(getInitialSessionTab);
 
   const handleTabChange = (newTab) => {
@@ -256,7 +256,7 @@ export default function ActiveSessionsConfig() {
   const fetchDailyReport = useCallback(async (startToFetch = startDate, endToFetch = endDate) => {
     setReportLoading(true);
     try {
-      const res = await getEmployeeDailyActivitySummary(startToFetch, endToFetch);
+      const res = await getEmployeeDailyActivitySummary(startToFetch, endToFetch, userCompany);
       if (res?.success && res?.employees) {
         setDailyEmployees(res.employees);
       } else {
@@ -267,7 +267,7 @@ export default function ActiveSessionsConfig() {
     } finally {
       setReportLoading(false);
     }
-  }, [startDate, endDate]);
+  }, [startDate, endDate, userCompany]);
 
   // 3. Fetch Live User Sessions
   const fetchSessions = useCallback(async (isManualRefresh = false) => {
@@ -279,10 +279,23 @@ export default function ActiveSessionsConfig() {
       
       const { data: userRoles } = await supabase
         .from('user_roles')
-        .select('user_id, email, emp_name');
+        .select('user_id, email, emp_name, company');
         
       const userMap = {};
+      const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl'];
+      const reqLower = String(userCompany || '').toLowerCase().trim();
+      const isSwanRequester = !userCompany || userCompany === 'All' || SWAN_COMPANIES.includes(reqLower);
+
+      const allowedUserIds = new Set();
+      const allowedEmails = new Set();
+
       (userRoles || []).forEach(u => {
+        const uComp = String(u.company || '').toLowerCase().trim();
+        const matchesCompany = isSwanRequester ? (SWAN_COMPANIES.includes(uComp) || !uComp) : (uComp === reqLower);
+        if (matchesCompany) {
+          if (u.user_id) allowedUserIds.add(u.user_id);
+          if (u.email) allowedEmails.add(u.email.toLowerCase());
+        }
         if (u.user_id && u.emp_name) userMap[u.user_id] = u.emp_name;
         if (u.email && u.emp_name) userMap[u.email.toLowerCase()] = u.emp_name;
       });
@@ -310,7 +323,11 @@ export default function ActiveSessionsConfig() {
         const now = Date.now();
         const THIRTY_MINUTES_MS = 30 * 60 * 1000;
 
-        const formattedSessions = sessionsData.map(s => {
+        const filteredByTenant = (userCompany && userCompany !== 'All')
+          ? sessionsData.filter(s => (s.user_id && allowedUserIds.has(s.user_id)) || (s.email && allowedEmails.has(s.email.toLowerCase())))
+          : sessionsData;
+
+        const formattedSessions = filteredByTenant.map(s => {
           let resolvedName = s.emp_name;
           if (!resolvedName || resolvedName === 'System User') {
             if (s.user_id && userMap[s.user_id]) resolvedName = userMap[s.user_id];
@@ -357,7 +374,7 @@ export default function ActiveSessionsConfig() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [dateFrom, dateTo]);
+  }, [dateFrom, dateTo, userCompany]);
 
   useEffect(() => {
     fetchSettings();
@@ -369,13 +386,13 @@ export default function ActiveSessionsConfig() {
       const timer = setInterval(() => fetchSessions(false), 20000);
       return () => clearInterval(timer);
     }
-  }, [activeTab, fetchSessions]);
+  }, [activeTab, fetchSessions, userCompany]);
 
   useEffect(() => {
     if (activeTab === 'report' || activeTab === 'breakdown') {
       fetchDailyReport(startDate, endDate);
     }
-  }, [startDate, endDate, activeTab, fetchDailyReport]);
+  }, [startDate, endDate, activeTab, fetchDailyReport, userCompany]);
 
   useEffect(() => {
     let filtered = allSessions;
@@ -959,8 +976,13 @@ export default function ActiveSessionsConfig() {
                 <span style={{ fontSize: '0.9rem', opacity: 0.8 }}>+</span>
                 <span>🍱 30 Mins Lunch Break</span>
               </h3>
-              <div style={{ fontSize: '0.85rem', opacity: 0.9, marginTop: '0.35rem' }}>
-                Total Shift Duration: <b>9 Hours 30 Minutes (570 Mins)</b>
+              <div style={{ fontSize: '0.85rem', opacity: 0.9, marginTop: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                <span>Total Shift Duration: <b>9 Hours 30 Minutes (570 Mins)</b></span>
+                {userCompany && (
+                  <span style={{ padding: '0.15rem 0.55rem', borderRadius: '4px', backgroundColor: 'rgba(255, 255, 255, 0.2)', fontSize: '0.75rem', fontWeight: 600 }}>
+                    🏢 {userCompany}
+                  </span>
+                )}
               </div>
             </div>
 
@@ -1146,8 +1168,13 @@ export default function ActiveSessionsConfig() {
 
           {/* Detailed Employee 9-Hour Shift Table */}
           <div style={{ background: 'var(--bg-primary)', padding: '1.25rem', borderRadius: '12px', border: '1px solid var(--border-light)' }}>
-            <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.1rem', color: 'var(--text-primary)', fontWeight: 600 }}>
-              Company Employee Shift & Productivity Breakdown ({filteredDailyEmployees.length})
+            <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.1rem', color: 'var(--text-primary)', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <span>Company Employee Shift & Productivity Breakdown ({filteredDailyEmployees.length})</span>
+              {userCompany && (
+                <span style={{ fontSize: '0.78rem', padding: '0.25rem 0.65rem', borderRadius: '6px', backgroundColor: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', fontWeight: 600 }}>
+                  🏢 Workspace: {userCompany}
+                </span>
+              )}
             </h3>
 
             {reportLoading ? (
