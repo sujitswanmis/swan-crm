@@ -1482,7 +1482,6 @@ export default function GlobalSoftphoneWidget({ userId }) {
         stopRingingAudio(clientRoomName);
         setOptimisticCall(null);
         optimisticCallRef.current = null;
-        setCallStatus('failed');
         setErrorMessage(errText);
         alert(`Failed to start call: ${errText}`);
         return;
@@ -1531,7 +1530,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
       stopRingingAudio(clientRoomName);
       setOptimisticCall(null);
       optimisticCallRef.current = null;
-      setCallStatus('failed');
+      console.error('[Softphone] Outbound start-call error:', err);
       const errDetail = err?.message || 'Server connection error';
       setErrorMessage(`Failed to start call: ${errDetail}`);
       alert(`Failed to start call: ${errDetail}`);
