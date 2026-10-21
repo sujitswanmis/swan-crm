@@ -39,13 +39,14 @@ export async function POST(req) {
 
     const { data: userRole } = await adminClient
       .from('user_roles')
-      .select('company')
+      .select('company, tenant_id')
       .eq('user_id', user.id)
       .maybeSingle();
 
     const userCompany = userRole?.company || '';
+    const userTenantId = userRole?.tenant_id || null;
     const { getWorkspaceTelephonyConfig } = await import('@/utils/telephonyConfig');
-    const { authId, authToken, fromNumber } = await getWorkspaceTelephonyConfig(userCompany);
+    const { authId, authToken, fromNumber } = await getWorkspaceTelephonyConfig(userCompany, userTenantId);
 
     if (!authId || !authToken) {
       return NextResponse.json({ error: 'Plivo credentials not configured for this workspace' }, { status: 500 });
@@ -105,6 +106,9 @@ export async function POST(req) {
     if (agentData?.agent_code && /^\+?[0-9]{8,15}$/.test(agentData.agent_code.trim())) {
       effectiveFromNumber = agentData.agent_code.trim();
     }
+    if (effectiveFromNumber) {
+      effectiveFromNumber = effectiveFromNumber.replace(/[^0-9+]/g, '');
+    }
 
     let response;
     try {
@@ -126,9 +130,12 @@ export async function POST(req) {
       );
       if (!response?.requestUuid) throw new Error('Provider did not accept the agent call');
     } catch (dialError) {
+      const errMsg = dialError?.message || String(dialError);
+      console.error('Plivo agent dial error:', errMsg);
       await adminClient.from('call_sessions').update({
         status: 'failed',
         hangup_cause: 'agent_dial_error',
+        hangup_source: errMsg.slice(0, 255),
         end_time: new Date().toISOString()
       }).eq('id', sessionData.id);
       throw dialError;

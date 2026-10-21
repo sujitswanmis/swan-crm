@@ -47,13 +47,13 @@ export async function POST(req) {
       } else if (ag?.user_id) {
         const { data: ur } = await adminClient
           .from('user_roles')
-          .select('company')
+          .select('company, tenant_id')
           .eq('user_id', ag.user_id)
           .maybeSingle();
 
-        if (ur?.company) {
+        if (ur?.company || ur?.tenant_id) {
           const { getWorkspaceTelephonyConfig } = await import('@/utils/telephonyConfig');
-          const wsTel = await getWorkspaceTelephonyConfig(ur.company);
+          const wsTel = await getWorkspaceTelephonyConfig(ur?.company || '', ur?.tenant_id || null);
           if (wsTel?.fromNumber) effectiveCallerId = wsTel.fromNumber;
         }
       }

@@ -1216,10 +1216,37 @@ export async function updateTenantTelephonyConfig(tenantId, companyName, {
     const admin = getAdminClient();
     const cleanMode = mode === 'byoc' ? 'byoc' : 'managed';
     const cleanAuthId = (authId || '').trim();
-    const cleanAuthToken = (authToken || '').trim();
+    let cleanAuthToken = (authToken || '').trim();
     const cleanFromNumber = (fromNumber || '').trim() || process.env.PLIVO_FROM_NUMBER || '+918035340622';
     const cleanDefaultForward = (defaultForward || '').trim();
     const cleanSeatLimit = Math.max(1, parseInt(callingSeatLimit, 10) || 5);
+    const slug = (companyName || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '_');
+
+    // If authToken was not provided in this update, preserve existing saved token so it is not wiped
+    if (!cleanAuthToken) {
+      if (tenantId) {
+        const { data: existingEnt } = await admin
+          .from('tenant_entitlements')
+          .select('config_json')
+          .eq('tenant_id', tenantId)
+          .eq('module_key', 'TELEPHONY_CONFIG')
+          .maybeSingle();
+        if (existingEnt?.config_json?.auth_token) {
+          cleanAuthToken = existingEnt.config_json.auth_token;
+        }
+      }
+      if (!cleanAuthToken && slug) {
+        const { data: existingAg } = await admin
+          .from('call_agents')
+          .select('plivo_password')
+          .eq('plivo_username', `system_telephony_config_${slug}`)
+          .maybeSingle();
+        try {
+          const parsed = JSON.parse(existingAg?.plivo_password || '{}');
+          if (parsed.auth_token) cleanAuthToken = parsed.auth_token;
+        } catch (_) {}
+      }
+    }
 
     const configPayload = {
       mode: cleanMode,
@@ -1248,7 +1275,6 @@ export async function updateTenantTelephonyConfig(tenantId, companyName, {
     }
 
     // 2. Also sync to call_agents system_telephony_config_{slug} and forward number
-    const slug = (companyName || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '_');
     if (slug) {
       const configKey = `system_telephony_config_${slug}`;
       const forwardKey = `system_settings_forward_${slug}`;

@@ -7,6 +7,7 @@ import { getRecentCalls } from '@/app/actions/team';
 import { createClient } from '@/utils/supabase/client';
 import { normalizeIndianPhoneNumber } from '@/app/api/plivo/phone-number';
 import { incomingMatchesOutboundRoom, shouldAutoAnswerOutbound } from '@/app/api/plivo/outbound-intent';
+import { createIncomingCallGuard, incomingCallUuid } from '@/lib/softphoneIncomingCall';
 
 // Web Audio API tone generator for instant audio cues
 // Authentic Indian Standard Telecom Ringback Tone Generator (400 Hz + 450 Hz Dual Frequency)
@@ -144,7 +145,7 @@ if (typeof window !== 'undefined') {
   window.__crm_stop_all_ringing = (room) => globalRingController.stop(room);
 }
 
-const SOFTPHONE_VERSION = 'v1.0.691';
+const SOFTPHONE_VERSION = 'v2.1';
 
 // Pre-warm SpeechSynthesis voices on page load
 if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
@@ -351,6 +352,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
 
   const durationTimerRef = useRef(null);
   const plivoClientRef = useRef(null);
+  const incomingGuardRef = useRef(createIncomingCallGuard());
   const nodeRef = useRef(null);
   const activeSessionRef = useRef(null);
   const optimisticCallRef = useRef(null);
@@ -1031,6 +1033,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
     setErrorMessage('');
     try {
       const res = await fetch('/api/plivo/token', { method: 'POST' });
+      if (plivoClientRef.current !== clientInstance) return;
       const contentType = res.headers.get('content-type') || '';
 
       if (!res.ok || !contentType.includes('application/json')) {
@@ -1049,6 +1052,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
       }
 
       const data = await res.json();
+      if (plivoClientRef.current !== clientInstance) return;
       if (data.username && data.password) {
         clientInstance.login(data.username, data.password);
       } else if (data.token) {
@@ -1061,6 +1065,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
         setErrorMessage(data.error || 'Failed to fetch credentials');
       }
     } catch (err) {
+      if (plivoClientRef.current !== clientInstance) return;
       setConnectionState('error');
       setErrorMessage(err.message || 'Failed to fetch credentials');
     }
@@ -1068,9 +1073,12 @@ export default function GlobalSoftphoneWidget({ userId }) {
 
   useEffect(() => {
     let activeClient = null;
+    let disposed = false;
+    const incomingGuard = incomingGuardRef.current;
     const initPlivo = async () => {
       try {
         const PlivoModule = await import('plivo-browser-sdk');
+        if (disposed) return;
         const Plivo = PlivoModule.default || PlivoModule;
         
         const plivoObj = new Plivo({
@@ -1088,6 +1096,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
         if (typeof client.setRingToneBack === 'function') client.setRingToneBack(false);
 
         client.on('onLogin', () => {
+          if (plivoClientRef.current !== client) return;
           setConnectionState('online');
           setSdkStatus({ isRegistered: true, isConnected: true });
           if (agentDataRef.current?.id) {
@@ -1100,12 +1109,16 @@ export default function GlobalSoftphoneWidget({ userId }) {
         });
 
         client.on('onLoginFailed', (reason) => {
+          if (plivoClientRef.current !== client) return;
           setConnectionState('error');
           setErrorMessage('Login failed: ' + reason);
           setSdkStatus({ isRegistered: false, isConnected: false });
         });
 
         client.on('onLogout', () => {
+          if (plivoClientRef.current && plivoClientRef.current !== client) return;
+          incomingGuardRef.current.clear(client);
+          setIncomingCall(null);
           setConnectionState('offline');
           setSdkStatus({ isRegistered: false, isConnected: false });
           if (agentDataRef.current?.id) {
@@ -1118,6 +1131,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
         });
 
         client.on('onConnectionChange', (state) => {
+          if (plivoClientRef.current !== client) return;
           if (state && (state.status === 'disconnected' || state.status === 'failed')) {
             setConnectionState('error');
             setErrorMessage('Connection lost: ' + (state.reason || 'Disconnected'));
@@ -1128,6 +1142,10 @@ export default function GlobalSoftphoneWidget({ userId }) {
         });
 
         client.on('onIncomingCall', async (callerName, extraHeaders, callInfo, incomingCallerName) => {
+          if (plivoClientRef.current !== client) return;
+          const guard = incomingGuardRef.current;
+          const ticket = guard.begin(client, callInfo);
+          if (!ticket) return;
           const resolvedCaller = callerName || incomingCallerName || '';
           const pending = pendingOutboundCallRef.current;
           const activeRoom = optimisticCallRef.current?.roomName || activeSessionRef.current?.room_name || pending?.roomName;
@@ -1135,7 +1153,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
             incomingMatchesOutboundRoom(room, extraHeaders, resolvedCaller)
           );
           if (isCancelledOutbound) {
-            try { client.reject(callInfo?.callUUID); } catch (_e) {}
+            guard.act(client, callInfo, 'reject');
             return;
           }
           const isFreshPending = pending && activeRoom === pending.roomName && (Date.now() - pending.startedAt < 18000);
@@ -1144,13 +1162,13 @@ export default function GlobalSoftphoneWidget({ userId }) {
             pendingOutboundCallRef.current = null;
             try {
               if (typeof client.stopRingTone === 'function') client.stopRingTone();
-              const callUuid = callInfo?.callUUID || callInfo?.callId;
-              if (client.answer(callUuid) !== false) {
+              if (guard.act(client, callInfo, 'answer').success) {
                 setActiveCall({ direction: 'inbound', remote: callerName });
                 setIncomingCall(null);
                 return;
               }
             } catch (e) { console.error('Outbound auto-answer failed:', e); }
+            return;
           }
           if (pending && Date.now() - pending.startedAt >= 20000) pendingOutboundCallRef.current = null;
 
@@ -1167,6 +1185,11 @@ export default function GlobalSoftphoneWidget({ userId }) {
               leadId = extraHeaders['X-Lead-Id'] || extraHeaders['x-lead-id'] || '';
             } catch (e) {}
           }
+
+          // Show the live invitation immediately. Lead lookup only enriches
+          // this exact invite; it cannot recreate a cancelled/answered one.
+          setIncomingCall({ callerName, callerNumber, leadName, leadCompany, leadId, extraHeaders, callInfo });
+          setIsMinimized(false);
 
           // 2. If not in extraHeaders, perform fast database lookup by 10-digit number
           if (!leadName && !leadCompany) {
@@ -1189,44 +1212,58 @@ export default function GlobalSoftphoneWidget({ userId }) {
             }
           }
 
-          setIncomingCall({
-            callerName,
-            callerNumber,
-            leadName,
-            leadCompany,
-            leadId,
-            extraHeaders,
-            callInfo
-          });
-          setIsMinimized(false); // Auto-expand on incoming call
+          if (plivoClientRef.current !== client || !guard.isCurrent(ticket)) {
+            if (guard.current() === ticket) {
+              guard.clear(client, callInfo);
+              setIncomingCall(previous => incomingCallUuid(previous) === ticket.uuid ? null : previous);
+            }
+            return;
+          }
+          setIncomingCall(previous => incomingCallUuid(previous) === ticket.uuid
+            ? { ...previous, leadName, leadCompany, leadId } : previous);
         });
 
-        client.on('onIncomingCallCanceled', () => {
-          setIncomingCall(null);
+        client.on('onIncomingCallCanceled', (callInfo) => {
+          if (plivoClientRef.current !== client) return;
+          if (incomingGuardRef.current.clear(client, callInfo)) {
+            const uuid = incomingCallUuid(callInfo);
+            setIncomingCall(previous => !uuid || incomingCallUuid(previous) === uuid ? null : previous);
+          }
         });
 
         client.on('onMediaPermission', (event) => {
+          if (plivoClientRef.current !== client) return;
           if (event?.error) {
             setErrorMessage('Microphone permission nahi mili. Browser settings check karein.');
           }
         });
 
-        client.on('onCallFailed', (reason) => {
+        client.on('onCallFailed', (reason, callInfo) => {
+          if (plivoClientRef.current !== client) return;
+          incomingGuardRef.current.clear(client, callInfo);
           stopRingingAudio();
           setActiveCall(null);
-          setIncomingCall(null);
+          const uuid = incomingCallUuid(callInfo);
+          setIncomingCall(previous => !uuid || incomingCallUuid(previous) === uuid ? null : previous);
           setErrorMessage(`Call failed: ${String(reason?.message || reason?.cause || reason || 'connection error')}`);
         });
 
-        client.on('onCallAnswered', () => {
+        client.on('onCallAnswered', (callInfo) => {
+          if (plivoClientRef.current !== client) return;
+          incomingGuardRef.current.clear(client, callInfo);
+          const uuid = incomingCallUuid(callInfo);
+          setIncomingCall(previous => !uuid || incomingCallUuid(previous) === uuid ? null : previous);
           startDurationTimer();
         });
 
-        client.on('onCallTerminated', async () => {
+        client.on('onCallTerminated', async (callInfo) => {
+          if (plivoClientRef.current !== client) return;
+          incomingGuardRef.current.clear(client, callInfo);
           pendingOutboundCallRef.current = null;
           stopRingingAudio();
           setActiveCall(null);
-          setIncomingCall(null);
+          const uuid = incomingCallUuid(callInfo);
+          setIncomingCall(previous => !uuid || incomingCallUuid(previous) === uuid ? null : previous);
           stopDurationTimer();
           setCallDuration(0);
 
@@ -1289,7 +1326,10 @@ export default function GlobalSoftphoneWidget({ userId }) {
     initPlivo();
 
     return () => {
+      disposed = true;
       if (activeClient) {
+        incomingGuard.clear(activeClient);
+        if (plivoClientRef.current === activeClient) plivoClientRef.current = null;
         activeClient.logout();
       }
     };
@@ -1340,38 +1380,26 @@ export default function GlobalSoftphoneWidget({ userId }) {
   };
 
   const answerCall = () => {
-    if (plivoClient && incomingCall) {
-      try {
-        const callUuid = incomingCall.callInfo?.callUUID || incomingCall?.callUUID;
-        if (callUuid) {
-          plivoClient.answer(callUuid);
-        } else {
-          plivoClient.answer();
-        }
+    const client = plivoClientRef.current;
+    if (client && incomingCall) {
+      const uuid = incomingCallUuid(incomingCall);
+      const result = incomingGuardRef.current.act(client, incomingCall, 'answer');
+      if (result.success) {
         setActiveCall({ direction: 'inbound', remote: incomingCall.callerName });
         startDurationTimer();
-      } catch (err) {
-        console.warn('[Softphone] answerCall warning:', err);
-      } finally {
-        setIncomingCall(null);
+      } else if (result.reason === 'failed') {
+        setErrorMessage('Call could not be answered. Please try a fresh call.');
       }
+      setIncomingCall(previous => incomingCallUuid(previous) === uuid ? null : previous);
     }
   };
 
   const rejectCall = () => {
-    if (plivoClient && incomingCall) {
-      try {
-        const callUuid = incomingCall.callInfo?.callUUID || incomingCall?.callUUID;
-        if (callUuid) {
-          plivoClient.reject(callUuid);
-        } else {
-          plivoClient.reject();
-        }
-      } catch (err) {
-        console.warn('[Softphone] rejectCall warning:', err);
-      } finally {
-        setIncomingCall(null);
-      }
+    const client = plivoClientRef.current;
+    if (client && incomingCall) {
+      const uuid = incomingCallUuid(incomingCall);
+      incomingGuardRef.current.act(client, incomingCall, 'reject');
+      setIncomingCall(previous => incomingCallUuid(previous) === uuid ? null : previous);
     }
   };
 
@@ -1450,8 +1478,13 @@ export default function GlobalSoftphoneWidget({ userId }) {
             errText = errJson.error || errJson.message || errText;
           }
         } catch (_) {}
+        pendingOutboundCallRef.current = null;
+        stopRingingAudio(clientRoomName);
+        setOptimisticCall(null);
+        optimisticCallRef.current = null;
         setCallStatus('failed');
         setErrorMessage(errText);
+        alert(`Failed to start call: ${errText}`);
         return;
       }
       const result = await res.json();
@@ -1498,7 +1531,10 @@ export default function GlobalSoftphoneWidget({ userId }) {
       stopRingingAudio(clientRoomName);
       setOptimisticCall(null);
       optimisticCallRef.current = null;
-      alert("Failed to start call");
+      setCallStatus('failed');
+      const errDetail = err?.message || 'Server connection error';
+      setErrorMessage(`Failed to start call: ${errDetail}`);
+      alert(`Failed to start call: ${errDetail}`);
     } finally {
       if (startCallInFlightRef.current === clientRoomName) startCallInFlightRef.current = null;
     }
