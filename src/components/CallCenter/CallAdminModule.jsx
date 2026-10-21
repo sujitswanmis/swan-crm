@@ -70,8 +70,9 @@ const CALL_ADMIN_PLIVO_MIN_COL_WIDTHS = {
 
 const CALL_ADMIN_AGENTS_DEFAULT_COL_WIDTHS = {
   agent: 200,
-  calling_mode: 180,
-  sip_endpoint: 240,
+  calling_mode: 160,
+  sip_endpoint: 200,
+  assigned_caller_id: 200,
   password_set: 130,
   status: 120,
   actions: 90
@@ -79,8 +80,9 @@ const CALL_ADMIN_AGENTS_DEFAULT_COL_WIDTHS = {
 
 const CALL_ADMIN_AGENTS_MIN_COL_WIDTHS = {
   agent: 130,
-  calling_mode: 130,
-  sip_endpoint: 160,
+  calling_mode: 120,
+  sip_endpoint: 140,
+  assigned_caller_id: 150,
   password_set: 90,
   status: 80,
   actions: 70
@@ -108,6 +110,7 @@ const CALL_ADMIN_TELEPHONY_DEFAULT_COL_WIDTHS = {
   tenant: 200,
   status: 100,
   mode: 130,
+  wallet: 165,
   auth_id: 170,
   auth_token: 130,
   caller_id: 150,
@@ -120,6 +123,7 @@ const CALL_ADMIN_TELEPHONY_MIN_COL_WIDTHS = {
   tenant: 130,
   status: 75,
   mode: 90,
+  wallet: 140,
   auth_id: 110,
   auth_token: 90,
   caller_id: 110,
@@ -277,8 +281,29 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
   const [saving, setSaving] = useState({});
   const [selectedUserId, setSelectedUserId] = useState('');
   const [adding, setAdding] = useState(false);
+  const [workspaceNumbers, setWorkspaceNumbers] = useState([]);
+  const [defaultCallerId, setDefaultCallerId] = useState('');
   const unassigned = users.filter(u => !agents.some(a => a.user_id === u.user_id));
   const userMap = new Map((users || []).map(u => [u.user_id, u]));
+
+  // Load rented phone numbers for the workspace
+  useEffect(() => {
+    let isMounted = true;
+    async function fetchNumbers() {
+      try {
+        const q = userCompany ? `?company=${encodeURIComponent(userCompany)}` : '';
+        const res = await fetch(`/api/plivo/admin/numbers${q}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (isMounted && data.success && Array.isArray(data.numbers)) {
+            setWorkspaceNumbers(data.numbers);
+          }
+        }
+      } catch (_) {}
+    }
+    fetchNumbers();
+    return () => { isMounted = false; };
+  }, [userCompany]);
 
   // Column Resizing Hook (Lead Data Pattern)
   const {
@@ -288,7 +313,7 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
     resetColWidth,
     getTotalTableWidth
   } = useTableColumnResize(
-    'calladmin_agents_col_widths',
+    'calladmin_agents_col_widths_v2',
     CALL_ADMIN_AGENTS_DEFAULT_COL_WIDTHS,
     CALL_ADMIN_AGENTS_MIN_COL_WIDTHS
   );
@@ -436,6 +461,12 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
                     <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>SIP Endpoint</span>
                   </div>
                   <ColumnResizer colKey="sip_endpoint" isResizing={resizingCol === 'sip_endpoint'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
+                </th>
+                <th style={{ width: `${colWidths.assigned_caller_id || 200}px`, padding: '0.75rem 1rem', textAlign: 'left', fontWeight: 600, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                    <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Outgoing Caller ID</span>
+                  </div>
+                  <ColumnResizer colKey="assigned_caller_id" isResizing={resizingCol === 'assigned_caller_id'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
                 </th>
                 <th style={{ width: `${colWidths.password_set}px`, padding: '0.75rem 1rem', textAlign: 'left', fontWeight: 600, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
@@ -2337,7 +2368,7 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
     resetColWidth,
     getTotalTableWidth
   } = useTableColumnResize(
-    'calladmin_saas_telephony_col_widths',
+    'calladmin_saas_telephony_col_widths_v2',
     CALL_ADMIN_TELEPHONY_DEFAULT_COL_WIDTHS,
     CALL_ADMIN_TELEPHONY_MIN_COL_WIDTHS
   );
@@ -2606,16 +2637,16 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
             <thead style={{ backgroundColor: '#f8fafc', borderBottom:'1px solid #e2e8f0' }}>
               <tr style={{ fontSize:'0.76rem', textTransform:'uppercase', color:'#64748b', letterSpacing:'0.05em' }}>
                 {[
-                  { key: 'tenant', label: 'Tenant / Workspace', width: colWidths.tenant },
-                  { key: 'status', label: 'Status', width: colWidths.status },
-                  { key: 'mode', label: 'Telephony Mode', width: colWidths.mode },
-                  { key: 'wallet', label: 'Plivo Wallet', width: colWidths.wallet },
-                  { key: 'auth_id', label: 'Plivo Auth ID', width: colWidths.auth_id },
-                  { key: 'auth_token', label: 'Auth Token', width: colWidths.auth_token },
-                  { key: 'caller_id', label: 'Caller ID (From)', width: colWidths.caller_id },
-                  { key: 'default_forward', label: 'Default Forward', width: colWidths.default_forward },
-                  { key: 'seats', label: 'Calling Seats', width: colWidths.seats },
-                  { key: 'actions', label: 'Actions', width: colWidths.actions },
+                  { key: 'tenant', label: 'Tenant / Workspace', width: colWidths.tenant || 200 },
+                  { key: 'status', label: 'Status', width: colWidths.status || 100 },
+                  { key: 'mode', label: 'Telephony Mode', width: colWidths.mode || 130 },
+                  { key: 'wallet', label: 'Plivo Wallet', width: colWidths.wallet || 165 },
+                  { key: 'auth_id', label: 'Plivo Auth ID', width: colWidths.auth_id || 170 },
+                  { key: 'auth_token', label: 'Auth Token', width: colWidths.auth_token || 130 },
+                  { key: 'caller_id', label: 'Caller ID (From)', width: colWidths.caller_id || 150 },
+                  { key: 'default_forward', label: 'Default Forward', width: colWidths.default_forward || 150 },
+                  { key: 'seats', label: 'Calling Seats', width: colWidths.seats || 150 },
+                  { key: 'actions', label: 'Actions', width: colWidths.actions || 170 },
                 ].map(col => (
                   <th
                     key={col.key}
@@ -2644,7 +2675,7 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
             <tbody>
               {filteredTenants.length === 0 ? (
                 <tr>
-                  <td colSpan={9} style={{ padding:'3rem', textAlign:'center', color:'#94a3b8' }}>
+                  <td colSpan={10} style={{ padding:'3rem', textAlign:'center', color:'#94a3b8' }}>
                     No tenants found matching criteria.
                   </td>
                 </tr>
@@ -2665,7 +2696,7 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
                       }}
                     >
                       {/* Tenant Name & Code */}
-                      <td style={{ width: `${colWidths.tenant}px`, padding:'0.9rem 1rem', boxSizing:'border-box', verticalAlign:'top' }}>
+                      <td style={{ width: `${colWidths.tenant || 200}px`, padding:'0.9rem 1rem', boxSizing:'border-box', verticalAlign:'top' }}>
                         <div style={{ fontWeight:700, color:'#1e293b', fontSize:'0.9rem', wordBreak:'break-word' }}>
                           {t.name}
                         </div>
@@ -2680,7 +2711,7 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
                       </td>
 
                       {/* Status */}
-                      <td style={{ width: `${colWidths.status}px`, padding:'0.9rem 1rem', boxSizing:'border-box', verticalAlign:'top' }}>
+                      <td style={{ width: `${colWidths.status || 100}px`, padding:'0.9rem 1rem', boxSizing:'border-box', verticalAlign:'top' }}>
                         <span style={{
                           display:'inline-block', padding:'0.2rem 0.55rem', borderRadius:'6px',
                           fontSize:'0.72rem', fontWeight:700,
@@ -2692,7 +2723,7 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
                       </td>
 
                       {/* Mode */}
-                      <td style={{ width: `${colWidths.mode}px`, padding:'0.9rem 1rem', boxSizing:'border-box', verticalAlign:'top' }}>
+                      <td style={{ width: `${colWidths.mode || 130}px`, padding:'0.9rem 1rem', boxSizing:'border-box', verticalAlign:'top' }}>
                         <span style={{
                           display:'inline-flex', alignItems:'center', gap:'0.3rem',
                           padding:'0.25rem 0.6rem', borderRadius:'6px',
@@ -2707,18 +2738,18 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
                       </td>
 
                       {/* Plivo Wallet Balance */}
-                      <td style={{ width: `${colWidths.wallet}px`, padding:'0.9rem 1rem', boxSizing:'border-box', verticalAlign:'top' }}>
+                      <td style={{ width: `${colWidths.wallet || 165}px`, padding:'0.9rem 1rem', boxSizing:'border-box', verticalAlign:'top' }}>
                         {t.wallet ? (
                           <div style={{ display:'flex', flexDirection:'column', gap:'0.2rem' }}>
                             <span style={{
                               display:'inline-flex', alignItems:'center', gap:'0.35rem',
                               padding:'0.25rem 0.6rem', borderRadius:'6px',
-                              fontSize:'0.78rem', fontWeight:800,
+                              fontSize:'0.76rem', fontWeight:800, whiteSpace:'nowrap',
                               background: t.wallet.cash_credits > 10 ? '#ecfdf5' : (t.wallet.cash_credits > 2 ? '#fffbeb' : '#fef2f2'),
                               color: t.wallet.cash_credits > 10 ? '#047857' : (t.wallet.cash_credits > 2 ? '#b45309' : '#dc2626'),
                               border: t.wallet.cash_credits > 10 ? '1px solid #a7f3d0' : (t.wallet.cash_credits > 2 ? '1px solid #fde68a' : '1px solid #fecaca')
                             }}>
-                              💰 {t.wallet.formatted_credits} {t.wallet.currency || 'USD'}
+                              💰 {t.wallet.formatted_credits || `₹${(t.wallet.cash_credits * 80).toFixed(2)} ($${t.wallet.cash_credits.toFixed(2)})`}
                             </span>
                             {t.wallet.cash_credits <= 2 && (
                               <span style={{ fontSize:'0.68rem', color:'#dc2626', fontWeight:600 }}>
@@ -2734,7 +2765,7 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
                       </td>
 
                       {/* Plivo Auth ID */}
-                      <td style={{ width: `${colWidths.auth_id}px`, padding:'0.9rem 1rem', boxSizing:'border-box', verticalAlign:'top' }}>
+                      <td style={{ width: `${colWidths.auth_id || 170}px`, padding:'0.9rem 1rem', boxSizing:'border-box', verticalAlign:'top' }}>
                         {t.plivoAuthId ? (
                           <div style={{ fontFamily:'monospace', fontSize:'0.78rem', color:'#334155', wordBreak:'break-all', background:'#f1f5f9', padding:'0.2rem 0.45rem', borderRadius:'4px' }}>
                             {t.plivoAuthId}
@@ -2747,7 +2778,7 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
                       </td>
 
                       {/* Auth Token (Masked) */}
-                      <td style={{ width: `${colWidths.auth_token}px`, padding:'0.9rem 1rem', boxSizing:'border-box', verticalAlign:'top' }}>
+                      <td style={{ width: `${colWidths.auth_token || 130}px`, padding:'0.9rem 1rem', boxSizing:'border-box', verticalAlign:'top' }}>
                         {t.hasCustomToken || t.plivoAuthToken ? (
                           <span style={{ fontFamily:'monospace', fontSize:'0.8rem', color:'#16a34a', fontWeight:700 }}>
                             ••••••••••••
@@ -2760,14 +2791,14 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
                       </td>
 
                       {/* Caller ID */}
-                      <td style={{ width: `${colWidths.caller_id}px`, padding:'0.9rem 1rem', boxSizing:'border-box', verticalAlign:'top' }}>
+                      <td style={{ width: `${colWidths.caller_id || 150}px`, padding:'0.9rem 1rem', boxSizing:'border-box', verticalAlign:'top' }}>
                         <div style={{ fontSize:'0.82rem', fontWeight:600, color:'#1e293b' }}>
                           {t.callerId || process.env.PLIVO_FROM_NUMBER || '+918035340622'}
                         </div>
                       </td>
 
                       {/* Default Forward */}
-                      <td style={{ width: `${colWidths.default_forward}px`, padding:'0.9rem 1rem', boxSizing:'border-box', verticalAlign:'top' }}>
+                      <td style={{ width: `${colWidths.default_forward || 150}px`, padding:'0.9rem 1rem', boxSizing:'border-box', verticalAlign:'top' }}>
                         {t.defaultForward ? (
                           <div style={{ fontSize:'0.82rem', fontWeight:600, color:'#0284c7' }}>
                             {t.defaultForward}
@@ -2780,7 +2811,7 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
                       </td>
 
                       {/* Calling Seats Quota */}
-                      <td style={{ width: `${colWidths.seats}px`, padding:'0.9rem 1rem', boxSizing:'border-box', verticalAlign:'top' }}>
+                      <td style={{ width: `${colWidths.seats || 150}px`, padding:'0.9rem 1rem', boxSizing:'border-box', verticalAlign:'top' }}>
                         <div style={{ display:'flex', flexDirection:'column', gap:'0.3rem' }}>
                           <span style={{
                             display:'inline-flex', alignItems:'center', gap:'0.35rem',
@@ -2803,7 +2834,7 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
                       </td>
 
                       {/* Actions */}
-                      <td style={{ width: `${colWidths.actions}px`, padding:'0.9rem 1rem', boxSizing:'border-box', verticalAlign:'top' }}>
+                      <td style={{ width: `${colWidths.actions || 170}px`, padding:'0.9rem 1rem', boxSizing:'border-box', verticalAlign:'top' }}>
                         <div style={{ display:'flex', gap:'0.4rem', flexWrap:'wrap' }}>
                           <button
                             onClick={() => handleOpenEdit(t)}
@@ -2889,7 +2920,7 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
                   <div>
                     <div style={{ fontSize:'0.72rem', color:'#166534', fontWeight:700, textTransform:'uppercase' }}>Live Plivo Wallet Balance</div>
                     <div style={{ fontSize:'1.15rem', fontWeight:800, color:'#14532d' }}>
-                      {editingTenant.wallet?.formatted_credits || '$0.00'} {editingTenant.wallet?.currency || 'USD'}
+                      {editingTenant.wallet?.formatted_credits || (editingTenant.wallet?.cash_credits !== undefined ? `₹${(editingTenant.wallet.cash_credits * 80).toFixed(2)} ($${editingTenant.wallet.cash_credits.toFixed(2)})` : '$0.00')}
                     </div>
                   </div>
                 </div>

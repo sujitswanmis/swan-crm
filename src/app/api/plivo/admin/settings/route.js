@@ -35,11 +35,17 @@ export async function GET(req) {
             });
             if (accRes.ok) {
               const accData = await accRes.json();
-              const credits = parseFloat(accData.cash_credits) || 0;
+              const creditsUSD = parseFloat(accData.cash_credits) || 0;
+              const creditsINR = Math.round(creditsUSD * 80 * 100) / 100;
+              const formattedINR = "₹" + creditsINR.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+              const formattedUSD = "$" + creditsUSD.toFixed(2);
               wallet = {
-                cash_credits: credits,
-                formatted_credits: `${credits.toFixed(2)}`,
-                currency: accData.currency || 'USD',
+                cash_credits: creditsUSD,
+                inr_credits: creditsINR,
+                formatted_credits: `${formattedINR} (${formattedUSD})`,
+                formatted_inr: formattedINR,
+                formatted_usd: formattedUSD,
+                currency: 'INR / USD',
                 account_name: accData.name || targetAuthId
               };
             }
@@ -101,11 +107,17 @@ export async function GET(req) {
       }
       if (accRes && accRes.ok) {
         const accData = await accRes.json().catch(() => ({}));
-        const credits = parseFloat(accData.cash_credits) || 0;
+        const creditsUSD = parseFloat(accData.cash_credits) || 0;
+        const creditsINR = Math.round(creditsUSD * 80 * 100) / 100;
+        const formattedINR = "₹" + creditsINR.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const formattedUSD = "$" + creditsUSD.toFixed(2);
         wallet = {
-          cash_credits: credits,
-          formatted_credits: `${credits.toFixed(2)}`,
-          currency: accData.currency || 'USD',
+          cash_credits: creditsUSD,
+          inr_credits: creditsINR,
+          formatted_credits: `${formattedINR} (${formattedUSD})`,
+          formatted_inr: formattedINR,
+          formatted_usd: formattedUSD,
+          currency: 'INR / USD',
           account_name: accData.name || authId
         };
       }
@@ -241,9 +253,13 @@ export async function POST(req) {
       if (!testRes.ok) {
         return NextResponse.json({ success: false, error: testData?.error || testData?.message || 'Invalid Plivo credentials' }, { status: 400 });
       }
+      const testCreditsUSD = parseFloat(testData.cash_credits) || 0;
+      const testCreditsINR = Math.round(testCreditsUSD * 80 * 100) / 100;
+      const testFormattedINR = "₹" + testCreditsINR.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const testFormattedUSD = "$" + testCreditsUSD.toFixed(2);
       return NextResponse.json({
         success: true,
-        message: `Plivo Connection Verified! Account: ${testData.name || testId} (Credits: ${testData.cash_credits || '0'} ${testData.currency || 'USD'})`
+        message: `Plivo Connection Verified! Account: ${testData.name || testId} (Credits: ${testFormattedINR} (${testFormattedUSD}))`
       });
     }
 

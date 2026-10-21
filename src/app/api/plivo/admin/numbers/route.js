@@ -55,11 +55,17 @@ export async function GET(req) {
       };
     });
 
-    const credits = parseFloat(accountData.cash_credits) || 0;
+    const creditsUSD = parseFloat(accountData.cash_credits) || 0;
+    const creditsINR = Math.round(creditsUSD * 80 * 100) / 100;
+    const formattedINR = "₹" + creditsINR.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const formattedUSD = "$" + creditsUSD.toFixed(2);
     const wallet = {
-      cash_credits: credits,
-      formatted_credits: `$${credits.toFixed(2)}`,
-      currency: accountData.currency || 'USD',
+      cash_credits: creditsUSD,
+      inr_credits: creditsINR,
+      formatted_credits: `${formattedINR} (${formattedUSD})`,
+      formatted_inr: formattedINR,
+      formatted_usd: formattedUSD,
+      currency: 'INR / USD',
       account_name: accountData.name || authId,
       account_type: accountData.account_type || 'standard'
     };
