@@ -4403,6 +4403,27 @@ export default function CRMContainer({
                       </button>
                     </>
                   )}
+                  <button
+                    onClick={() => handleAttendanceSubTabChange('shift_rules')}
+                    className="submenu-item"
+                    data-active={activeTab === 'attendance' && attendanceSubTab === 'shift_rules'}
+                  >
+                    📖 Shift Rules
+                  </button>
+                  <button
+                    onClick={() => handleAttendanceSubTabChange('leave_policy')}
+                    className="submenu-item"
+                    data-active={activeTab === 'attendance' && attendanceSubTab === 'leave_policy'}
+                  >
+                    🌴 Company Leave Policy
+                  </button>
+                  <button
+                    onClick={() => handleAttendanceSubTabChange('geofencing')}
+                    className="submenu-item"
+                    data-active={activeTab === 'attendance' && attendanceSubTab === 'geofencing'}
+                  >
+                    📍 Office Geofencing Policy
+                  </button>
                 </div>
               </div>
             </SidebarSubmenu>
@@ -7160,6 +7181,7 @@ export default function CRMContainer({
                     onSubTabChange={handleCallAdminSubTabChange}
                     userCompany={userCompany}
                     tenantId={effectiveTenantId}
+                    isMasterAdmin={isMasterAdmin}
                   />
                 </ErrorBoundary>
               </KeepAliveTab>

@@ -445,6 +445,34 @@ export async function getAllTenantsWithSubscriptions() {
       .from('user_roles')
       .select('company, user_id, role, emp_official_mail_id');
 
+    // Load telephony & forward settings from call_agents for enrichment
+    const { data: systemAgents } = await admin
+      .from('call_agents')
+      .select('plivo_username, mobile_number, agent_code, plivo_endpoint_key, plivo_password')
+      .or('plivo_username.like.system_telephony_config_%,plivo_username.like.system_settings_forward_%');
+
+    const systemTelMap = {};
+    const systemFwdMap = {};
+    (systemAgents || []).forEach(sa => {
+      const u = sa.plivo_username || '';
+      if (u.startsWith('system_telephony_config_')) {
+        const key = u.replace('system_telephony_config_', '').toLowerCase();
+        let parsed = {};
+        try { parsed = JSON.parse(sa.plivo_password || '{}'); } catch (_) {}
+        systemTelMap[key] = {
+          mode: sa.agent_code || parsed.mode || 'managed',
+          from_number: sa.mobile_number || parsed.from_number || '',
+          calling_seat_limit: parseInt(sa.plivo_endpoint_key, 10) || parsed.calling_seat_limit || 5,
+          auth_id: parsed.auth_id || '',
+          auth_token: parsed.auth_token || '',
+          default_forward: parsed.default_forward || ''
+        };
+      } else if (u.startsWith('system_settings_forward')) {
+        const key = u.replace('system_settings_forward_', '').replace('system_settings_forward', '').toLowerCase();
+        systemFwdMap[key] = sa.mobile_number || '';
+      }
+    });
+
     // Load tenant SMTP limits map
     const limitsRes = await getTenantSmtpLimitsMap();
     const smtpLimitsMap = limitsRes?.limits || {};
@@ -504,14 +532,23 @@ export async function getAllTenantsWithSubscriptions() {
 
       const telEnt = (entitlementsList || []).find(e => e.tenant_id === t.id && e.module_key === 'TELEPHONY_CONFIG');
       const telConfig = telEnt?.config_json || {};
-      const callingSeatLimit = isMasterHq ? 300 : (Number(telConfig.calling_seat_limit) || 5);
-      const callingMode = isMasterHq ? 'managed' : (telConfig.mode || 'managed');
+      const slug = String(t.name || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '_');
+      const fallbackTel = systemTelMap[slug] || {};
+      const fallbackFwd = systemFwdMap[slug] || (t.id === DEFAULT_TENANT_ID ? (systemFwdMap[''] || process.env.DEFAULT_FORWARD_TO || '') : '');
+
+      const callingSeatLimit = isMasterHq ? 300 : (Number(telConfig.calling_seat_limit) || fallbackTel.calling_seat_limit || 5);
+      const callingMode = isMasterHq ? 'managed' : (telConfig.mode || fallbackTel.mode || 'managed');
+      const defaultForward = telConfig.default_forward || fallbackTel.default_forward || fallbackFwd || '';
+      const authId = telConfig.auth_id || fallbackTel.auth_id || (isMasterHq ? (process.env.PLIVO_AUTH_ID || '') : '');
+      const authToken = telConfig.auth_token || fallbackTel.auth_token || (isMasterHq ? (process.env.PLIVO_AUTH_TOKEN || '') : '');
+      const fromNumber = telConfig.from_number || fallbackTel.from_number || process.env.PLIVO_FROM_NUMBER || '+918035340622';
 
       return {
         id: t.id,
         tenant_code: t.tenant_code,
         name: t.name,
         primary_contact_email: t.primary_contact_email || (t.id === DEFAULT_TENANT_ID ? 'admin@newswangroup.com' : null),
+        primary_contact_mobile: t.primary_contact_mobile || null,
         branches,
         status: resolvedStatus,
         raw_status: t.status,
@@ -532,9 +569,11 @@ export async function getAllTenantsWithSubscriptions() {
         telephony_config: {
           mode: callingMode,
           calling_seat_limit: callingSeatLimit,
-          auth_id: telConfig.auth_id || '',
-          auth_token: telConfig.auth_token || '',
-          from_number: telConfig.from_number || process.env.PLIVO_FROM_NUMBER || '+918035340622'
+          auth_id: authId,
+          auth_token: authToken ? '••••••••••••••••••••••••' : '',
+          has_custom_token: Boolean(authToken),
+          from_number: fromNumber,
+          default_forward: defaultForward
         }
       };
     });
@@ -1095,6 +1134,12 @@ export async function getTenantTelephonyConfig(tenantId, companyName = '') {
         .maybeSingle();
 
       if (ent?.config_json) {
+        let fwd = ent.config_json.default_forward || '';
+        if (!fwd && companyName) {
+          const slug = (companyName || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '_');
+          const { data: fwdRow } = await admin.from('call_agents').select('mobile_number').eq('plivo_username', `system_settings_forward_${slug}`).maybeSingle();
+          if (fwdRow?.mobile_number) fwd = fwdRow.mobile_number;
+        }
         return {
           success: true,
           config: {
@@ -1102,6 +1147,7 @@ export async function getTenantTelephonyConfig(tenantId, companyName = '') {
             auth_id: ent.config_json.auth_id || '',
             auth_token: ent.config_json.auth_token || '',
             from_number: ent.config_json.from_number || process.env.PLIVO_FROM_NUMBER || '+918035340622',
+            default_forward: fwd,
             calling_seat_limit: Number(ent.config_json.calling_seat_limit) || 5
           }
         };
@@ -1112,11 +1158,11 @@ export async function getTenantTelephonyConfig(tenantId, companyName = '') {
     const slug = (companyName || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '_');
     if (slug) {
       const configKey = `system_telephony_config_${slug}`;
-      const { data: agentRow } = await admin
-        .from('call_agents')
-        .select('agent_code, mobile_number, plivo_endpoint_key, plivo_password')
-        .eq('plivo_username', configKey)
-        .maybeSingle();
+      const forwardKey = `system_settings_forward_${slug}`;
+      const [{ data: agentRow }, { data: fwdRow }] = await Promise.all([
+        admin.from('call_agents').select('agent_code, mobile_number, plivo_endpoint_key, plivo_password').eq('plivo_username', configKey).maybeSingle(),
+        admin.from('call_agents').select('mobile_number').eq('plivo_username', forwardKey).maybeSingle()
+      ]);
 
       if (agentRow) {
         let parsed = {};
@@ -1131,6 +1177,7 @@ export async function getTenantTelephonyConfig(tenantId, companyName = '') {
             auth_id: parsed.auth_id || '',
             auth_token: parsed.auth_token || '',
             from_number: agentRow.mobile_number || parsed.from_number || process.env.PLIVO_FROM_NUMBER || '+918035340622',
+            default_forward: parsed.default_forward || fwdRow?.mobile_number || '',
             calling_seat_limit: parseInt(agentRow.plivo_endpoint_key, 10) || parsed.calling_seat_limit || 5
           }
         };
@@ -1144,6 +1191,7 @@ export async function getTenantTelephonyConfig(tenantId, companyName = '') {
         auth_id: '',
         auth_token: '',
         from_number: process.env.PLIVO_FROM_NUMBER || '+918035340622',
+        default_forward: '',
         calling_seat_limit: 5
       }
     };
@@ -1161,6 +1209,7 @@ export async function updateTenantTelephonyConfig(tenantId, companyName, {
   authId = '',
   authToken = '',
   fromNumber = '',
+  defaultForward = '',
   callingSeatLimit = 5
 }) {
   try {
@@ -1169,6 +1218,7 @@ export async function updateTenantTelephonyConfig(tenantId, companyName, {
     const cleanAuthId = (authId || '').trim();
     const cleanAuthToken = (authToken || '').trim();
     const cleanFromNumber = (fromNumber || '').trim() || process.env.PLIVO_FROM_NUMBER || '+918035340622';
+    const cleanDefaultForward = (defaultForward || '').trim();
     const cleanSeatLimit = Math.max(1, parseInt(callingSeatLimit, 10) || 5);
 
     const configPayload = {
@@ -1176,6 +1226,7 @@ export async function updateTenantTelephonyConfig(tenantId, companyName, {
       auth_id: cleanAuthId,
       auth_token: cleanAuthToken,
       from_number: cleanFromNumber,
+      default_forward: cleanDefaultForward,
       calling_seat_limit: cleanSeatLimit,
       updated_at: new Date().toISOString()
     };
@@ -1196,17 +1247,17 @@ export async function updateTenantTelephonyConfig(tenantId, companyName, {
       }
     }
 
-    // 2. Also sync to call_agents system_telephony_config_{slug} for backward compatibility
+    // 2. Also sync to call_agents system_telephony_config_{slug} and forward number
     const slug = (companyName || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '_');
     if (slug) {
       const configKey = `system_telephony_config_${slug}`;
+      const forwardKey = `system_settings_forward_${slug}`;
       const payloadString = JSON.stringify(configPayload);
 
-      const { data: existingAgent } = await admin
-        .from('call_agents')
-        .select('id')
-        .eq('plivo_username', configKey)
-        .maybeSingle();
+      const [{ data: existingAgent }, { data: existingFwd }] = await Promise.all([
+        admin.from('call_agents').select('id').eq('plivo_username', configKey).maybeSingle(),
+        admin.from('call_agents').select('id').eq('plivo_username', forwardKey).maybeSingle()
+      ]);
 
       if (existingAgent) {
         await admin
@@ -1231,6 +1282,26 @@ export async function updateTenantTelephonyConfig(tenantId, companyName, {
             plivo_password: payloadString,
             is_active: true
           });
+      }
+
+      if (cleanDefaultForward !== undefined) {
+        if (existingFwd) {
+          await admin
+            .from('call_agents')
+            .update({ mobile_number: cleanDefaultForward })
+            .eq('id', existingFwd.id);
+        } else if (cleanDefaultForward) {
+          await admin
+            .from('call_agents')
+            .insert({
+              display_name: `System Forwarding (${companyName || slug})`,
+              plivo_username: forwardKey,
+              mobile_number: cleanDefaultForward,
+              default_calling_mode: 'mobile',
+              is_active: false,
+              status: 'offline'
+            });
+        }
       }
     }
 

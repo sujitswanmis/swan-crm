@@ -4,6 +4,45 @@ import { createClient } from '@supabase/supabase-js';
 // GET /api/plivo/admin/settings - Fetch current Plivo app settings
 export async function GET(req) {
   try {
+    // ── Master Admin: Fetch All Tenants Telephony & Seats Overview ──
+    if (req.nextUrl?.searchParams?.get('all_tenants') === 'true') {
+      const { getAllTenantsWithSubscriptions } = await import('@/app/actions/saasSubscription');
+      const { getWorkspaceCallingSeatQuota } = await import('@/utils/telephonyConfig');
+      const tenantsRes = await getAllTenantsWithSubscriptions();
+      const rawTenants = tenantsRes?.tenants || [];
+
+      // Calculate seat quotas in parallel for all tenants
+      const enrichedTenants = await Promise.all(rawTenants.map(async (t) => {
+        let seatQuota = null;
+        try {
+          seatQuota = await getWorkspaceCallingSeatQuota(t.name, t.id);
+        } catch (_) {}
+
+        return {
+          id: t.id,
+          name: t.name,
+          tenant_code: t.tenant_code,
+          status: t.status,
+          primary_contact_email: t.primary_contact_email,
+          primary_contact_mobile: t.primary_contact_mobile,
+          created_at: t.created_at,
+          calling_mode: t.calling_mode || t.telephony_config?.mode || 'managed',
+          calling_seats_limit: t.calling_seats_limit || t.telephony_config?.calling_seat_limit || 5,
+          plivoAuthId: t.telephony_config?.auth_id || '',
+          plivoAuthToken: t.telephony_config?.auth_token || '',
+          hasCustomToken: Boolean(t.telephony_config?.has_custom_token),
+          callerId: t.telephony_config?.from_number || process.env.PLIVO_FROM_NUMBER || '+918035340622',
+          defaultForward: t.telephony_config?.default_forward || '',
+          seatQuota: seatQuota || { used: 0, total: t.calling_seats_limit || 5, available: t.calling_seats_limit || 5 }
+        };
+      }));
+
+      return NextResponse.json({
+        success: true,
+        tenants: enrichedTenants
+      });
+    }
+
     const authId = (process.env.PLIVO_AUTH_ID || '').trim().replace(/['"]/g, '');
     const authToken = (process.env.PLIVO_AUTH_TOKEN || '').trim().replace(/['"]/g, '');
     const b64 = Buffer.from(`${authId}:${authToken}`).toString('base64');
@@ -99,12 +138,38 @@ export async function POST(req) {
       stickyAgent,
       inboundAgentIds,
       company,
+      tenantId: rawTenantId,
       telephonyMode,
       plivoAuthId,
       plivoAuthToken,
       callerId,
       callingSeatLimit
     } = body;
+    const tenantId = rawTenantId || body.tenant_id || null;
+
+    // ── Master Admin: Save Tenant Telephony & Calling Seats ──
+    if (action === 'save_tenant_telephony') {
+      const { updateTenantTelephonyConfig } = await import('@/app/actions/saasSubscription');
+      const targetCompany = company || body.name || '';
+      const res = await updateTenantTelephonyConfig(tenantId, targetCompany, {
+        mode: telephonyMode,
+        authId: plivoAuthId,
+        authToken: plivoAuthToken,
+        fromNumber: callerId,
+        defaultForward: defaultForward,
+        callingSeatLimit: callingSeatLimit
+      });
+
+      if (!res.success) {
+        return NextResponse.json({ success: false, error: res.error || 'Failed to update telephony configuration.' }, { status: 400 });
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: res.message || 'Tenant telephony settings updated successfully!',
+        config: res.config
+      });
+    }
 
     const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl'];
     const compLower = (company || '').toLowerCase().trim();

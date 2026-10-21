@@ -178,10 +178,16 @@ export async function GET(req) {
       });
     }
 
+    const { getWorkspaceTelephonyConfig: getTelConfigHelper } = await import('@/utils/telephonyConfig');
+    const wsTelConfig = await getTelConfigHelper(company, tenantId);
+    const callingSeatLimit = isSwan ? 300 : (wsTelConfig?.callingSeatLimit || 5);
+
     return NextResponse.json({
       endpoints,
       total: endpoints.length,
       fetched: endpoints.length,
+      callingSeatLimit,
+      isSwan
     });
   } catch (error) {
     console.error('Admin endpoints error:', error);
@@ -312,13 +318,57 @@ export async function POST(req) {
       );
     }
 
-    const { authId, authToken } = await getWorkspaceTelephonyConfig(company, tenantId);
+    const telConfig = await getWorkspaceTelephonyConfig(company, tenantId);
+    const { authId, authToken, isSwan, callingSeatLimit } = telConfig;
 
     if (!authId || !authToken) {
       return NextResponse.json(
         { error: 'Plivo credentials are not configured for this workspace.' },
         { status: 500 }
       );
+    }
+
+    // Enforce Tenant Calling Seat Quota on SIP Endpoint creation
+    if (!isSwan) {
+      const seatLimit = Math.max(1, parseInt(callingSeatLimit, 10) || 5);
+      const adminCheckClient = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL,
+        process.env.SUPABASE_SERVICE_ROLE_KEY
+      );
+      const slug = getCompanySlug(company || '');
+      const compLower = String(company || '').toLowerCase().trim();
+
+      const [{ data: compUsers }, { data: allRegEndpoints }] = await Promise.all([
+        compLower ? adminCheckClient.from('user_roles').select('user_id').ilike('company', `%${compLower}%`) : Promise.resolve({ data: [] }),
+        adminCheckClient.from('agent_endpoint_registry').select('id, endpoint_key, alias, username, assigned_agent_id')
+      ]);
+
+      const compUserIds = new Set((compUsers || []).map(u => u.user_id));
+      let compAgentIds = new Set();
+      if (compUserIds.size > 0) {
+        const { data: compAgents } = await adminCheckClient
+          .from('call_agents')
+          .select('id')
+          .in('user_id', Array.from(compUserIds));
+        compAgentIds = new Set((compAgents || []).map(a => a.id));
+      }
+
+      const existingEndpointsCount = (allRegEndpoints || []).filter(ep => {
+        const aliasOrKey = `${ep.endpoint_key || ''} ${ep.alias || ''}`.toLowerCase();
+        if (aliasOrKey.includes('nsmlr') || String(ep.username || '').toLowerCase().includes('nsmlr')) return false;
+        const belongsByText = (compLower && aliasOrKey.includes(compLower)) || (slug && aliasOrKey.includes(slug));
+        const belongsByAgent = ep.assigned_agent_id && compAgentIds.has(ep.assigned_agent_id);
+        return belongsByText || belongsByAgent;
+      }).length;
+
+      if (existingEndpointsCount >= seatLimit) {
+        return NextResponse.json(
+          {
+            error: `Calling seat limit reached (${existingEndpointsCount}/${seatLimit}). You cannot create more than ${seatLimit} SIP endpoints. Please upgrade your calling plan or contact Master Admin to increase seats.`
+          },
+          { status: 403 }
+        );
+      }
     }
 
     const b64 = Buffer.from(`${authId}:${authToken}`).toString('base64');

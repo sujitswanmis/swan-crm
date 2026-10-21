@@ -9,7 +9,7 @@ import {
   UserPlus, Edit2, Trash2, ChevronRight, Server, Radio,
   PhoneIncoming, PhoneOutgoing, ArrowRight, Eye, Filter,
   Calendar, Search, ToggleLeft, ToggleRight, Save, Bell, FileSpreadsheet,
-  Plus, X, Key, KeyRound, ShieldCheck, Cpu, Copy
+  Plus, X, Key, KeyRound, ShieldCheck, Cpu, Copy, Building2, Globe, EyeOff, ExternalLink
 } from 'lucide-react';
 import { getTeamMembers, getCallAdminData, addCallAgentAdmin, updateCallAgentAdmin } from '@/app/actions/team';
 import { PremiumProgressLoader } from '../PremiumProgressLoader';
@@ -102,6 +102,30 @@ const CALL_ADMIN_ENDPOINTS_MIN_COL_WIDTHS = {
   password: 130,
   app_linked: 90,
   status: 90
+};
+
+const CALL_ADMIN_TELEPHONY_DEFAULT_COL_WIDTHS = {
+  tenant: 200,
+  status: 100,
+  mode: 130,
+  auth_id: 170,
+  auth_token: 130,
+  caller_id: 150,
+  default_forward: 150,
+  seats: 150,
+  actions: 170
+};
+
+const CALL_ADMIN_TELEPHONY_MIN_COL_WIDTHS = {
+  tenant: 130,
+  status: 75,
+  mode: 90,
+  auth_id: 110,
+  auth_token: 90,
+  caller_id: 110,
+  default_forward: 110,
+  seats: 110,
+  actions: 140
 };
 
 // ─── Helpers ────────────────────────────────────────────────
@@ -518,10 +542,12 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
 }
 
 // ── Tab: SIP Endpoints ────────────────────────────────────────
-function TabEndpoints({ userCompany = '', tenantId = null, agents = [], onRefresh = null }) {
+function TabEndpoints({ userCompany = '', tenantId = null, agents = [], onRefresh = null, seatQuota = null, isMasterAdmin = false }) {
   const [endpoints, setEndpoints] = useState([]);
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(null);
+  const [seatLimit, setSeatLimit] = useState(5);
+  const [isSwanWs, setIsSwanWs] = useState(false);
 
   // Endpoint Creation Modal State
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -636,6 +662,8 @@ function TabEndpoints({ userCompany = '', tenantId = null, agents = [], onRefres
       const res = await fetch(`/api/plivo/admin/endpoints?${q.toString()}`);
       const data = await res.json();
       setEndpoints(data.endpoints || []);
+      if (data.callingSeatLimit) setSeatLimit(data.callingSeatLimit);
+      if (data.isSwan !== undefined) setIsSwanWs(Boolean(data.isSwan));
       setLastRefresh(new Date());
     } catch (e) { console.error(e); }
     setLoading(false);
@@ -650,8 +678,15 @@ function TabEndpoints({ userCompany = '', tenantId = null, agents = [], onRefres
     setNewPassword(`Sip#${Math.random().toString(36).substring(2, 8)}!${Math.floor(100 + Math.random() * 900)}`);
   };
 
+  const effectiveLimit = seatQuota?.total || seatLimit || 5;
+  const isQuotaReached = !isSwanWs && (endpoints.length >= effectiveLimit);
+
   const handleCreateEndpoint = async (e) => {
     if (e) e.preventDefault();
+    if (isQuotaReached) {
+      setCreateError(`Calling seat quota reached (${endpoints.length}/${effectiveLimit}). You cannot create more than ${effectiveLimit} SIP endpoints.`);
+      return;
+    }
     if (!newAlias.trim()) { setCreateError('Alias is required'); return; }
     if (!newUsername.trim()) { setCreateError('Username is required'); return; }
     if (!newPassword.trim()) { setCreateError('Password is required'); return; }
@@ -718,19 +753,39 @@ function TabEndpoints({ userCompany = '', tenantId = null, agents = [], onRefres
             <Server size={18} color="#3b82f6" /> Plivo SIP Endpoints
           </h3>
           <div style={{ display:'flex', alignItems:'center', gap:'0.75rem' }}>
+            <div style={{
+              display: 'inline-flex', alignItems: 'center', gap: '0.4rem',
+              padding: '0.35rem 0.85rem', borderRadius: '8px',
+              fontSize: '0.82rem', fontWeight: 700,
+              background: isQuotaReached ? '#fef2f2' : '#eff6ff',
+              color: isQuotaReached ? '#dc2626' : '#1e40af',
+              border: isQuotaReached ? '1px solid #fecaca' : '1px solid #bfdbfe'
+            }}>
+              <Users size={14} />
+              Calling Seats Quota: {endpoints.length} / {effectiveLimit} Endpoints {isQuotaReached ? '(FULL)' : ''}
+            </div>
             {lastRefresh && <span style={{ fontSize:'0.75rem', color:'#94a3b8' }}>Updated {lastRefresh.toLocaleTimeString()}</span>}
             <button
               onClick={() => {
+                if (isQuotaReached) {
+                  alert(`Calling seat quota reached (${endpoints.length}/${effectiveLimit}). You cannot create more than ${effectiveLimit} SIP endpoints. Please upgrade your calling plan or contact Master Admin to increase seats.`);
+                  return;
+                }
                 generateRandomCredentials();
                 setCreateError('');
                 setShowCreateModal(true);
               }}
               style={{
                 display:'flex', alignItems:'center', gap:'0.4rem',
-                padding:'0.5rem 1rem', background:'#2563eb', color:'white',
-                border:'none', borderRadius:'8px', cursor:'pointer', fontSize:'0.85rem', fontWeight:600,
+                padding:'0.5rem 1rem',
+                background: isQuotaReached ? '#94a3b8' : '#2563eb',
+                color:'white',
+                border:'none', borderRadius:'8px',
+                cursor: isQuotaReached ? 'not-allowed' : 'pointer',
+                fontSize:'0.85rem', fontWeight:600,
                 boxShadow:'0 1px 2px rgba(37,99,235,0.2)'
               }}
+              title={isQuotaReached ? `Seat limit reached (${endpoints.length}/${effectiveLimit})` : 'Create SIP Endpoint'}
             >
               <Plus size={15} /> Create SIP Endpoint
             </button>
@@ -1892,8 +1947,8 @@ function TabMonitor({ agents, onRefresh }) {
   );
 }
 
-// ── Tab: Telephony & Seats (Workspace Telephony Authorization) ───────
-function TabTelephonyGateway({ userCompany = '', tenantId = null, onRefresh = null }) {
+// ── Tab: Telephony & Seats (Workspace Telephony Authorization - Single Workspace) ───────
+function TabTelephonyGatewaySingle({ userCompany = '', tenantId = null, onRefresh = null }) {
   const [loading, setLoading] = useState(true);
   const [telephonyMode, setTelephonyMode] = useState('managed'); // 'byoc' | 'managed'
   const [plivoAuthId, setPlivoAuthId] = useState('');
@@ -2228,6 +2283,832 @@ function TabTelephonyGateway({ userCompany = '', tenantId = null, onRefresh = nu
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── Tab: Telephony & Seats (SaaS Multi-Tenant Master Admin Management) ───────
+function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh = null }) {
+  const [tenants, setTenants] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterMode, setFilterMode] = useState('all'); // 'all' | 'managed' | 'byoc'
+  const [filterStatus, setFilterStatus] = useState('all');
+
+  // Edit Modal State
+  const [editingTenant, setEditingTenant] = useState(null);
+  const [editForm, setEditForm] = useState({
+    telephonyMode: 'managed',
+    plivoAuthId: '',
+    plivoAuthToken: '',
+    callerId: '',
+    defaultForward: '',
+    callingSeatLimit: 5
+  });
+  const [showEditToken, setShowEditToken] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editSuccessMsg, setEditSuccessMsg] = useState('');
+  const [editErrorMsg, setEditErrorMsg] = useState('');
+
+  // Row Test Connection State
+  const [testingTenantId, setTestingTenantId] = useState(null);
+  const [testNotice, setTestNotice] = useState(null);
+
+  // Column Resizing (Lead Data Pattern)
+  const {
+    colWidths,
+    resizingCol,
+    handleResizeStart,
+    resetColWidth,
+    getTotalTableWidth
+  } = useTableColumnResize(
+    'calladmin_saas_telephony_col_widths',
+    CALL_ADMIN_TELEPHONY_DEFAULT_COL_WIDTHS,
+    CALL_ADMIN_TELEPHONY_MIN_COL_WIDTHS
+  );
+
+  const fetchAllTenantsTelephony = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/plivo/admin/settings?all_tenants=true');
+      const data = await res.json();
+      if (data.success && Array.isArray(data.tenants)) {
+        setTenants(data.tenants);
+      }
+    } catch (err) {
+      console.error('Failed to load all tenants telephony:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchAllTenantsTelephony();
+  }, [fetchAllTenantsTelephony]);
+
+  // Open Edit Modal for a Tenant
+  const handleOpenEdit = (t) => {
+    setEditingTenant(t);
+    setEditForm({
+      telephonyMode: t.calling_mode || 'managed',
+      plivoAuthId: t.plivoAuthId || '',
+      plivoAuthToken: '',
+      callerId: t.callerId || '',
+      defaultForward: t.defaultForward || '',
+      callingSeatLimit: t.calling_seats_limit || 5
+    });
+    setShowEditToken(false);
+    setEditSuccessMsg('');
+    setEditErrorMsg('');
+  };
+
+  // Test Plivo Connection for a Tenant (Row or inside Modal)
+  const handleTestConnection = async (targetAuthId, targetAuthToken, tenantObj) => {
+    const tid = tenantObj?.id || 'modal';
+    setTestingTenantId(tid);
+    setTestNotice(null);
+    try {
+      const res = await fetch('/api/plivo/admin/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'test_connection',
+          company: tenantObj?.name || '',
+          tenantId: tenantObj?.id || null,
+          plivoAuthId: targetAuthId,
+          plivoAuthToken: targetAuthToken
+        })
+      });
+      const data = await res.json();
+      setTestNotice({
+        tenantId: tid,
+        success: data.success,
+        message: data.success ? data.message : (data.error || 'Connection failed')
+      });
+      setTimeout(() => setTestNotice(null), 6000);
+    } catch (err) {
+      setTestNotice({
+        tenantId: tid,
+        success: false,
+        message: 'Network error: ' + err.message
+      });
+      setTimeout(() => setTestNotice(null), 6000);
+    } finally {
+      setTestingTenantId(null);
+    }
+  };
+
+  // Save Tenant Telephony Configuration
+  const handleSaveEdit = async (e) => {
+    if (e) e.preventDefault();
+    if (!editingTenant) return;
+    setEditSaving(true);
+    setEditSuccessMsg('');
+    setEditErrorMsg('');
+
+    try {
+      const res = await fetch('/api/plivo/admin/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'save_tenant_telephony',
+          tenantId: editingTenant.id,
+          company: editingTenant.name,
+          telephonyMode: editForm.telephonyMode,
+          plivoAuthId: editForm.plivoAuthId,
+          plivoAuthToken: editForm.plivoAuthToken,
+          callerId: editForm.callerId,
+          defaultForward: editForm.defaultForward,
+          callingSeatLimit: parseInt(editForm.callingSeatLimit, 10) || 5
+        })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to save tenant telephony settings');
+      }
+
+      setEditSuccessMsg('Settings saved successfully!');
+      setTimeout(() => {
+        setEditingTenant(null);
+        setEditSuccessMsg('');
+      }, 1200);
+
+      await fetchAllTenantsTelephony();
+      if (onRefresh) onRefresh();
+    } catch (err) {
+      setEditErrorMsg(err.message);
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  // Metrics calculation
+  const totalTenants = tenants.length;
+  const byocCount = tenants.filter(t => t.calling_mode === 'byoc').length;
+  const managedCount = tenants.filter(t => t.calling_mode !== 'byoc').length;
+  const totalSeats = tenants.reduce((acc, t) => acc + (Number(t.calling_seats_limit) || 5), 0);
+
+  // Filtered tenants list
+  const filteredTenants = tenants.filter(t => {
+    const q = searchQuery.toLowerCase().trim();
+    if (q) {
+      const matchName = (t.name || '').toLowerCase().includes(q);
+      const matchCode = (t.tenant_code || '').toLowerCase().includes(q);
+      const matchAuth = (t.plivoAuthId || '').toLowerCase().includes(q);
+      const matchCaller = (t.callerId || '').toLowerCase().includes(q);
+      const matchFwd = (t.defaultForward || '').toLowerCase().includes(q);
+      if (!matchName && !matchCode && !matchAuth && !matchCaller && !matchFwd) return false;
+    }
+    if (filterMode !== 'all') {
+      const m = t.calling_mode || 'managed';
+      if (filterMode === 'byoc' && m !== 'byoc') return false;
+      if (filterMode === 'managed' && m === 'byoc') return false;
+    }
+    if (filterStatus !== 'all') {
+      if ((t.status || '').toUpperCase() !== filterStatus) return false;
+    }
+    return true;
+  });
+
+  if (loading) return <PremiumProgressLoader message="Loading SaaS Multi-Tenant Telephony & Seats" active={loading} />;
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:'1.5rem', width:'100%' }}>
+      {/* Header Banner */}
+      <div style={{
+        background:'white', borderRadius:'12px', padding:'1.25rem 1.5rem',
+        boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0',
+        display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:'1rem'
+      }}>
+        <div>
+          <div style={{ display:'flex', alignItems:'center', gap:'0.6rem' }}>
+            <span style={{ background:'#eff6ff', color:'#2563eb', padding:'0.2rem 0.55rem', borderRadius:'6px', fontSize:'0.75rem', fontWeight:800, textTransform:'uppercase' }}>
+              Master Admin Control
+            </span>
+            <h2 style={{ fontSize:'1.2rem', fontWeight:800, color:'#1e293b', margin:0, display:'flex', alignItems:'center', gap:'0.5rem' }}>
+              <Globe size={22} color="#2563eb" /> Multi-Tenant Telephony &amp; Cloud Calling Seats
+            </h2>
+          </div>
+          <p style={{ color:'#64748b', fontSize:'0.85rem', margin:'0.35rem 0 0 0' }}>
+            Configure and assign Plivo credentials, caller IDs, fallback forwarding numbers, and calling seat limits across all client workspaces.
+          </p>
+        </div>
+        <div style={{ display:'flex', alignItems:'center', gap:'0.75rem' }}>
+          <button
+            onClick={fetchAllTenantsTelephony}
+            style={{
+              display:'flex', alignItems:'center', gap:'0.4rem',
+              padding:'0.55rem 1rem', background:'#f8fafc', border:'1px solid #cbd5e1',
+              borderRadius:'8px', fontSize:'0.85rem', fontWeight:600, color:'#334155', cursor:'pointer'
+            }}
+          >
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh List
+          </button>
+        </div>
+      </div>
+
+      {/* Global Notice Toast */}
+      {testNotice && (
+        <div style={{
+          padding:'0.85rem 1.25rem', borderRadius:'10px',
+          background: testNotice.success ? '#ecfdf5' : '#fef2f2',
+          border: testNotice.success ? '1px solid #a7f3d0' : '1px solid #fecaca',
+          color: testNotice.success ? '#065f46' : '#991b1b',
+          fontSize:'0.88rem', fontWeight:600, display:'flex', alignItems:'center', gap:'0.5rem',
+          boxShadow:'0 2px 4px rgba(0,0,0,0.05)'
+        }}>
+          {testNotice.success ? <CheckCircle size={18} color="#10b981" /> : <XCircle size={18} color="#ef4444" />}
+          <span>{testNotice.message}</span>
+        </div>
+      )}
+
+      {/* Stats Cards */}
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(210px, 1fr))', gap:'1rem' }}>
+        {[
+          { label: 'Registered Tenants', value: totalTenants, color: '#3b82f6', icon: Building2 },
+          { label: 'BYOC Direct Plivo', value: byocCount, color: '#8b5cf6', icon: KeyRound },
+          { label: 'Managed Gateway', value: managedCount, color: '#06b6d4', icon: Cpu },
+          { label: 'Total Calling Seats', value: totalSeats, color: '#10b981', icon: Users },
+        ].map(stat => (
+          <div key={stat.label} style={{ background:'white', borderRadius:'12px', padding:'1.1rem 1.35rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0', display:'flex', alignItems:'center', gap:'1rem' }}>
+            <div style={{ width:42, height:42, borderRadius:'10px', background: stat.color+'15', display:'flex', alignItems:'center', justifyContent:'center' }}>
+              <stat.icon size={20} color={stat.color} />
+            </div>
+            <div>
+              <div style={{ fontSize:'1.45rem', fontWeight:800, color:'#1e293b' }}>{stat.value}</div>
+              <div style={{ fontSize:'0.76rem', color:'#64748b', fontWeight:500 }}>{stat.label}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Filter & Search Bar */}
+      <div style={{ background:'white', borderRadius:'12px', padding:'1rem 1.25rem', border:'1px solid #e2e8f0', display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:'0.85rem' }}>
+        <div style={{ display:'flex', alignItems:'center', gap:'0.75rem', flex:1, minWidth:'260px' }}>
+          <div style={{ position:'relative', width:'100%', maxWidth:'360px' }}>
+            <Search size={16} color="#94a3b8" style={{ position:'absolute', left:'10px', top:'50%', transform:'translateY(-50%)' }} />
+            <input
+              type="text"
+              placeholder="Search tenant name, code, auth ID, phone..."
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              style={{
+                width:'100%', padding:'0.5rem 0.75rem 0.5rem 2.2rem', borderRadius:'8px',
+                border:'1px solid #cbd5e1', fontSize:'0.85rem', background:'#f8fafc'
+              }}
+            />
+          </div>
+        </div>
+        <div style={{ display:'flex', alignItems:'center', gap:'0.75rem', flexWrap:'wrap' }}>
+          <select
+            value={filterMode}
+            onChange={e => setFilterMode(e.target.value)}
+            style={{ padding:'0.5rem 0.75rem', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'0.85rem', background:'white' }}
+          >
+            <option value="all">All Telephony Modes</option>
+            <option value="managed">Managed Platform</option>
+            <option value="byoc">Client BYOC</option>
+          </select>
+          <select
+            value={filterStatus}
+            onChange={e => setFilterStatus(e.target.value)}
+            style={{ padding:'0.5rem 0.75rem', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'0.85rem', background:'white' }}
+          >
+            <option value="all">All Statuses</option>
+            <option value="ACTIVE">Active</option>
+            <option value="TRIAL">Trial</option>
+          </select>
+          <span style={{ fontSize:'0.8rem', color:'#64748b', fontWeight:500 }}>
+            Showing {filteredTenants.length} of {totalTenants}
+          </span>
+        </div>
+      </div>
+
+      {/* Main Table with Interactive Column Resizing (Lead Data Pattern) */}
+      <div style={{ background:'white', borderRadius:'12px', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0', overflow:'hidden' }}>
+        <div style={{ overflowX:'auto' }}>
+          <table style={{ width: `${getTotalTableWidth()}px`, borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+            <thead style={{ backgroundColor: '#f8fafc', borderBottom:'1px solid #e2e8f0' }}>
+              <tr style={{ fontSize:'0.76rem', textTransform:'uppercase', color:'#64748b', letterSpacing:'0.05em' }}>
+                {[
+                  { key: 'tenant', label: 'Tenant / Workspace', width: colWidths.tenant },
+                  { key: 'status', label: 'Status', width: colWidths.status },
+                  { key: 'mode', label: 'Telephony Mode', width: colWidths.mode },
+                  { key: 'auth_id', label: 'Plivo Auth ID', width: colWidths.auth_id },
+                  { key: 'auth_token', label: 'Auth Token', width: colWidths.auth_token },
+                  { key: 'caller_id', label: 'Caller ID (From)', width: colWidths.caller_id },
+                  { key: 'default_forward', label: 'Default Forward', width: colWidths.default_forward },
+                  { key: 'seats', label: 'Calling Seats', width: colWidths.seats },
+                  { key: 'actions', label: 'Actions', width: colWidths.actions },
+                ].map(col => (
+                  <th
+                    key={col.key}
+                    style={{
+                      width: `${col.width}px`,
+                      padding: '0.85rem 1rem',
+                      textAlign: 'left',
+                      fontWeight: 700,
+                      position: 'relative',
+                      boxSizing: 'border-box'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                      <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>{col.label}</span>
+                    </div>
+                    <ColumnResizer
+                      colKey={col.key}
+                      isResizing={resizingCol === col.key}
+                      onResizeStart={handleResizeStart}
+                      onReset={resetColWidth}
+                    />
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filteredTenants.length === 0 ? (
+                <tr>
+                  <td colSpan={9} style={{ padding:'3rem', textAlign:'center', color:'#94a3b8' }}>
+                    No tenants found matching criteria.
+                  </td>
+                </tr>
+              ) : (
+                filteredTenants.map((t, idx) => {
+                  const isByoc = t.calling_mode === 'byoc';
+                  const seatsUsed = t.seatQuota?.used || 0;
+                  const seatsTotal = t.calling_seats_limit || 5;
+                  const isQuotaFull = seatsUsed >= seatsTotal;
+
+                  return (
+                    <tr
+                      key={t.id || idx}
+                      style={{
+                        borderBottom:'1px solid #f1f5f9',
+                        background: idx % 2 === 0 ? 'white' : '#fafafa',
+                        transition:'background 0.15s'
+                      }}
+                    >
+                      {/* Tenant Name & Code */}
+                      <td style={{ width: `${colWidths.tenant}px`, padding:'0.9rem 1rem', boxSizing:'border-box', verticalAlign:'top' }}>
+                        <div style={{ fontWeight:700, color:'#1e293b', fontSize:'0.9rem', wordBreak:'break-word' }}>
+                          {t.name}
+                        </div>
+                        <div style={{ fontSize:'0.72rem', color:'#64748b', fontFamily:'monospace', marginTop:'0.2rem' }}>
+                          {t.tenant_code}
+                        </div>
+                        {t.primary_contact_email && (
+                          <div style={{ fontSize:'0.74rem', color:'#94a3b8', marginTop:'0.2rem' }}>
+                            {t.primary_contact_email}
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Status */}
+                      <td style={{ width: `${colWidths.status}px`, padding:'0.9rem 1rem', boxSizing:'border-box', verticalAlign:'top' }}>
+                        <span style={{
+                          display:'inline-block', padding:'0.2rem 0.55rem', borderRadius:'6px',
+                          fontSize:'0.72rem', fontWeight:700,
+                          background: t.status === 'ACTIVE' ? '#dcfce7' : '#fef3c7',
+                          color: t.status === 'ACTIVE' ? '#15803d' : '#b45309'
+                        }}>
+                          {t.status || 'ACTIVE'}
+                        </span>
+                      </td>
+
+                      {/* Mode */}
+                      <td style={{ width: `${colWidths.mode}px`, padding:'0.9rem 1rem', boxSizing:'border-box', verticalAlign:'top' }}>
+                        <span style={{
+                          display:'inline-flex', alignItems:'center', gap:'0.3rem',
+                          padding:'0.25rem 0.6rem', borderRadius:'6px',
+                          fontSize:'0.74rem', fontWeight:700,
+                          background: isByoc ? '#f3e8ff' : '#eff6ff',
+                          color: isByoc ? '#7e22ce' : '#1d4ed8',
+                          border: isByoc ? '1px solid #d8b4fe' : '1px solid #bfdbfe'
+                        }}>
+                          {isByoc ? <KeyRound size={12} /> : <Cpu size={12} />}
+                          {isByoc ? 'Client BYOC' : 'Managed'}
+                        </span>
+                      </td>
+
+                      {/* Plivo Auth ID */}
+                      <td style={{ width: `${colWidths.auth_id}px`, padding:'0.9rem 1rem', boxSizing:'border-box', verticalAlign:'top' }}>
+                        {t.plivoAuthId ? (
+                          <div style={{ fontFamily:'monospace', fontSize:'0.78rem', color:'#334155', wordBreak:'break-all', background:'#f1f5f9', padding:'0.2rem 0.45rem', borderRadius:'4px' }}>
+                            {t.plivoAuthId}
+                          </div>
+                        ) : (
+                          <span style={{ fontSize:'0.75rem', color:'#94a3b8', fontStyle:'italic' }}>
+                            {isByoc ? 'Not configured' : 'Default Platform Gateway'}
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Auth Token (Masked) */}
+                      <td style={{ width: `${colWidths.auth_token}px`, padding:'0.9rem 1rem', boxSizing:'border-box', verticalAlign:'top' }}>
+                        {t.hasCustomToken || t.plivoAuthToken ? (
+                          <span style={{ fontFamily:'monospace', fontSize:'0.8rem', color:'#16a34a', fontWeight:700 }}>
+                            ••••••••••••
+                          </span>
+                        ) : (
+                          <span style={{ fontSize:'0.75rem', color:'#94a3b8' }}>
+                            {isByoc ? 'None' : 'Managed'}
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Caller ID */}
+                      <td style={{ width: `${colWidths.caller_id}px`, padding:'0.9rem 1rem', boxSizing:'border-box', verticalAlign:'top' }}>
+                        <div style={{ fontSize:'0.82rem', fontWeight:600, color:'#1e293b' }}>
+                          {t.callerId || process.env.PLIVO_FROM_NUMBER || '+918035340622'}
+                        </div>
+                      </td>
+
+                      {/* Default Forward */}
+                      <td style={{ width: `${colWidths.default_forward}px`, padding:'0.9rem 1rem', boxSizing:'border-box', verticalAlign:'top' }}>
+                        {t.defaultForward ? (
+                          <div style={{ fontSize:'0.82rem', fontWeight:600, color:'#0284c7' }}>
+                            {t.defaultForward}
+                          </div>
+                        ) : (
+                          <span style={{ fontSize:'0.75rem', color:'#94a3b8', fontStyle:'italic' }}>
+                            Not configured
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Calling Seats Quota */}
+                      <td style={{ width: `${colWidths.seats}px`, padding:'0.9rem 1rem', boxSizing:'border-box', verticalAlign:'top' }}>
+                        <div style={{ display:'flex', flexDirection:'column', gap:'0.3rem' }}>
+                          <span style={{
+                            display:'inline-flex', alignItems:'center', gap:'0.35rem',
+                            padding:'0.2rem 0.55rem', borderRadius:'6px',
+                            fontSize:'0.75rem', fontWeight:700,
+                            background: isQuotaFull ? '#fef2f2' : '#eff6ff',
+                            color: isQuotaFull ? '#dc2626' : '#1d4ed8'
+                          }}>
+                            <Users size={12} />
+                            {seatsUsed} / {seatsTotal} Seats
+                          </span>
+                          <div style={{ width:'100%', height:'4px', background:'#e2e8f0', borderRadius:'2px', overflow:'hidden' }}>
+                            <div style={{
+                              width: `${Math.min(100, Math.round((seatsUsed / seatsTotal) * 100))}%`,
+                              height:'100%',
+                              background: isQuotaFull ? '#dc2626' : '#2563eb'
+                            }} />
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Actions */}
+                      <td style={{ width: `${colWidths.actions}px`, padding:'0.9rem 1rem', boxSizing:'border-box', verticalAlign:'top' }}>
+                        <div style={{ display:'flex', gap:'0.4rem', flexWrap:'wrap' }}>
+                          <button
+                            onClick={() => handleOpenEdit(t)}
+                            style={{
+                              display:'inline-flex', alignItems:'center', gap:'0.25rem',
+                              padding:'0.35rem 0.65rem', borderRadius:'6px',
+                              background:'#2563eb', color:'white', border:'none',
+                              fontSize:'0.75rem', fontWeight:700, cursor:'pointer'
+                            }}
+                            title="Edit Telephony Settings & Seat Limits"
+                          >
+                            <Edit2 size={12} /> Edit
+                          </button>
+                          <button
+                            onClick={() => handleTestConnection(t.plivoAuthId, t.plivoAuthToken, t)}
+                            disabled={testingTenantId === t.id}
+                            style={{
+                              display:'inline-flex', alignItems:'center', gap:'0.25rem',
+                              padding:'0.35rem 0.65rem', borderRadius:'6px',
+                              background:'#f1f5f9', color:'#334155', border:'1px solid #cbd5e1',
+                              fontSize:'0.75rem', fontWeight:600, cursor:'pointer'
+                            }}
+                            title="Test Plivo Connection Live"
+                          >
+                            {testingTenantId === t.id ? (
+                              <Loader2 size={12} className="animate-spin" />
+                            ) : (
+                              <Key size={12} />
+                            )}
+                            Test
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Edit Tenant Telephony Modal */}
+      {editingTenant && (
+        <div style={{
+          position:'fixed', top:0, left:0, right:0, bottom:0,
+          background:'rgba(15, 23, 42, 0.65)', backdropFilter:'blur(4px)',
+          display:'flex', alignItems:'center', justifyContent:'center',
+          zIndex:9999, padding:'1rem'
+        }}>
+          <div style={{
+            background:'white', borderRadius:'14px', maxWidth:'620px', width:'100%',
+            maxHeight:'90vh', overflowY:'auto', boxShadow:'0 20px 25px -5px rgba(0,0,0,0.2)',
+            border:'1px solid #e2e8f0', display:'flex', flexDirection:'column'
+          }}>
+            {/* Modal Header */}
+            <div style={{ padding:'1.25rem 1.5rem', borderBottom:'1px solid #f1f5f9', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+              <div>
+                <h3 style={{ margin:0, fontSize:'1.1rem', fontWeight:800, color:'#1e293b', display:'flex', alignItems:'center', gap:'0.5rem' }}>
+                  <Globe size={18} color="#2563eb" /> Edit Telephony &amp; Seats
+                </h3>
+                <p style={{ margin:'0.25rem 0 0 0', fontSize:'0.82rem', color:'#64748b' }}>
+                  {editingTenant.name} ({editingTenant.tenant_code})
+                </p>
+              </div>
+              <button
+                onClick={() => setEditingTenant(null)}
+                style={{ background:'transparent', border:'none', cursor:'pointer', color:'#94a3b8', padding:'0.25rem' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Modal Form */}
+            <form onSubmit={handleSaveEdit} style={{ padding:'1.5rem', display:'flex', flexDirection:'column', gap:'1.25rem' }}>
+              {editSuccessMsg && (
+                <div style={{ padding:'0.75rem 1rem', background:'#dcfce7', border:'1px solid #bbf7d0', borderRadius:'8px', color:'#166534', fontSize:'0.85rem', fontWeight:600, display:'flex', alignItems:'center', gap:'0.4rem' }}>
+                  <CheckCircle size={16} /> {editSuccessMsg}
+                </div>
+              )}
+              {editErrorMsg && (
+                <div style={{ padding:'0.75rem 1rem', background:'#fef2f2', border:'1px solid #fecaca', borderRadius:'8px', color:'#991b1b', fontSize:'0.85rem', fontWeight:600, display:'flex', alignItems:'center', gap:'0.4rem' }}>
+                  <AlertCircle size={16} /> {editErrorMsg}
+                </div>
+              )}
+
+              {/* Mode Selection */}
+              <div>
+                <label style={{ display:'block', fontSize:'0.82rem', fontWeight:700, color:'#334155', marginBottom:'0.5rem' }}>
+                  Telephony Connection Mode
+                </label>
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.75rem' }}>
+                  <label
+                    onClick={() => setEditForm(p => ({ ...p, telephonyMode: 'managed' }))}
+                    style={{
+                      padding:'0.85rem', borderRadius:'8px', cursor:'pointer',
+                      border: editForm.telephonyMode === 'managed' ? '2px solid #2563eb' : '1px solid #e2e8f0',
+                      background: editForm.telephonyMode === 'managed' ? '#eff6ff' : '#f8fafc',
+                      display:'flex', alignItems:'flex-start', gap:'0.5rem'
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="modalTelMode"
+                      value="managed"
+                      checked={editForm.telephonyMode === 'managed'}
+                      onChange={() => setEditForm(p => ({ ...p, telephonyMode: 'managed' }))}
+                      style={{ marginTop:'0.2rem', accentColor:'#2563eb' }}
+                    />
+                    <div>
+                      <div style={{ fontWeight:700, fontSize:'0.85rem', color:'#1e293b' }}>Managed Platform</div>
+                      <div style={{ fontSize:'0.74rem', color:'#64748b', marginTop:'0.15rem' }}>Shared CRM Plivo Gateway</div>
+                    </div>
+                  </label>
+
+                  <label
+                    onClick={() => setEditForm(p => ({ ...p, telephonyMode: 'byoc' }))}
+                    style={{
+                      padding:'0.85rem', borderRadius:'8px', cursor:'pointer',
+                      border: editForm.telephonyMode === 'byoc' ? '2px solid #2563eb' : '1px solid #e2e8f0',
+                      background: editForm.telephonyMode === 'byoc' ? '#eff6ff' : '#f8fafc',
+                      display:'flex', alignItems:'flex-start', gap:'0.5rem'
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="modalTelMode"
+                      value="byoc"
+                      checked={editForm.telephonyMode === 'byoc'}
+                      onChange={() => setEditForm(p => ({ ...p, telephonyMode: 'byoc' }))}
+                      style={{ marginTop:'0.2rem', accentColor:'#2563eb' }}
+                    />
+                    <div>
+                      <div style={{ fontWeight:700, fontSize:'0.85rem', color:'#1e293b' }}>Client BYOC</div>
+                      <div style={{ fontSize:'0.74rem', color:'#64748b', marginTop:'0.15rem' }}>Direct Tenant Plivo Account</div>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              {/* Plivo Auth ID */}
+              <div>
+                <label style={{ display:'block', fontSize:'0.82rem', fontWeight:700, color:'#334155', marginBottom:'0.35rem' }}>
+                  Plivo Authentication ID (Auth ID)
+                </label>
+                <input
+                  type="text"
+                  placeholder={editForm.telephonyMode === 'byoc' ? 'e.g. MAMZIZNJAZ...' : 'Optional (leave blank for platform default)'}
+                  value={editForm.plivoAuthId}
+                  onChange={e => setEditForm(p => ({ ...p, plivoAuthId: e.target.value }))}
+                  style={{
+                    width:'100%', padding:'0.6rem 0.85rem', borderRadius:'8px',
+                    border:'1px solid #cbd5e1', fontSize:'0.88rem', fontFamily:'monospace', background:'#f8fafc'
+                  }}
+                />
+              </div>
+
+              {/* Plivo Auth Token */}
+              <div>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'0.35rem' }}>
+                  <label style={{ fontSize:'0.82rem', fontWeight:700, color:'#334155' }}>
+                    Plivo Authentication Token
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowEditToken(p => !p)}
+                    style={{ background:'transparent', border:'none', color:'#2563eb', fontSize:'0.75rem', fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:'0.25rem' }}
+                  >
+                    {showEditToken ? <EyeOff size={14} /> : <Eye size={14} />}
+                    {showEditToken ? 'Hide Token' : 'Show Token'}
+                  </button>
+                </div>
+                <input
+                  type={showEditToken ? 'text' : 'password'}
+                  placeholder={editingTenant.hasCustomToken ? '•••••••••••••••• (Leave blank to keep existing)' : 'Enter Plivo Auth Token'}
+                  value={editForm.plivoAuthToken}
+                  onChange={e => setEditForm(p => ({ ...p, plivoAuthToken: e.target.value }))}
+                  style={{
+                    width:'100%', padding:'0.6rem 0.85rem', borderRadius:'8px',
+                    border:'1px solid #cbd5e1', fontSize:'0.88rem', fontFamily:'monospace', background:'#f8fafc'
+                  }}
+                />
+              </div>
+
+              {/* Caller ID & Default Forward */}
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.75rem' }}>
+                <div>
+                  <label style={{ display:'block', fontSize:'0.82rem', fontWeight:700, color:'#334155', marginBottom:'0.35rem' }}>
+                    Outgoing Caller ID (From)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. +918035340622"
+                    value={editForm.callerId}
+                    onChange={e => setEditForm(p => ({ ...p, callerId: e.target.value }))}
+                    style={{
+                      width:'100%', padding:'0.6rem 0.85rem', borderRadius:'8px',
+                      border:'1px solid #cbd5e1', fontSize:'0.88rem', background:'#f8fafc'
+                    }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display:'block', fontSize:'0.82rem', fontWeight:700, color:'#334155', marginBottom:'0.35rem' }}>
+                    Default Forward Number
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. +919876543210"
+                    value={editForm.defaultForward}
+                    onChange={e => setEditForm(p => ({ ...p, defaultForward: e.target.value }))}
+                    style={{
+                      width:'100%', padding:'0.6rem 0.85rem', borderRadius:'8px',
+                      border:'1px solid #cbd5e1', fontSize:'0.88rem', background:'#f8fafc'
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Calling Seats Limit */}
+              <div>
+                <label style={{ display:'block', fontSize:'0.82rem', fontWeight:700, color:'#334155', marginBottom:'0.35rem' }}>
+                  Assigned Calling Seats Limit (Max Cloud Endpoints)
+                </label>
+                <div style={{ display:'flex', alignItems:'center', gap:'1rem' }}>
+                  <input
+                    type="number"
+                    min="1"
+                    max="1000"
+                    value={editForm.callingSeatLimit}
+                    onChange={e => setEditForm(p => ({ ...p, callingSeatLimit: Math.max(1, parseInt(e.target.value, 10) || 1) }))}
+                    style={{
+                      width:'120px', padding:'0.6rem 0.85rem', borderRadius:'8px',
+                      border:'1px solid #cbd5e1', fontSize:'1rem', fontWeight:700, textAlign:'center', background:'#f8fafc'
+                    }}
+                  />
+                  <span style={{ fontSize:'0.8rem', color:'#64748b' }}>
+                    This controls the maximum SIP endpoints the tenant can create and concurrent callers allowed.
+                  </span>
+                </div>
+              </div>
+
+              {/* Modal Action Buttons */}
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', paddingTop:'1rem', borderTop:'1px solid #f1f5f9', marginTop:'0.5rem' }}>
+                <button
+                  type="button"
+                  onClick={() => handleTestConnection(editForm.plivoAuthId, editForm.plivoAuthToken, editingTenant)}
+                  disabled={testingTenantId === 'modal'}
+                  style={{
+                    display:'inline-flex', alignItems:'center', gap:'0.4rem',
+                    padding:'0.6rem 1rem', borderRadius:'8px',
+                    border:'1px solid #cbd5e1', background:'#f8fafc',
+                    color:'#334155', fontWeight:600, fontSize:'0.85rem', cursor:'pointer'
+                  }}
+                >
+                  {testingTenantId === 'modal' ? <Loader2 size={15} className="animate-spin" /> : <Key size={15} />}
+                  Test Connection
+                </button>
+
+                <div style={{ display:'flex', gap:'0.75rem' }}>
+                  <button
+                    type="button"
+                    onClick={() => setEditingTenant(null)}
+                    style={{
+                      padding:'0.6rem 1.25rem', borderRadius:'8px',
+                      border:'1px solid #cbd5e1', background:'white',
+                      color:'#64748b', fontWeight:600, fontSize:'0.85rem', cursor:'pointer'
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={editSaving}
+                    style={{
+                      display:'inline-flex', alignItems:'center', gap:'0.4rem',
+                      padding:'0.6rem 1.4rem', borderRadius:'8px', border:'none',
+                      background:'#2563eb', color:'white', fontWeight:700, fontSize:'0.85rem',
+                      cursor:'pointer', opacity: editSaving ? 0.7 : 1,
+                      boxShadow:'0 2px 4px rgba(37,99,235,0.2)'
+                    }}
+                  >
+                    {editSaving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
+                    {editSaving ? 'Saving...' : 'Save Settings'}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Tab: Telephony & Seats (Main Gateway Container with Master Admin Switcher) ──
+function TabTelephonyGateway({ userCompany = '', tenantId = null, onRefresh = null, isMasterAdmin = false }) {
+  const [viewMode, setViewMode] = useState(isMasterAdmin ? 'all_tenants' : 'single_workspace');
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:'1.5rem', maxWidth:'1440px', margin:'0 auto', width:'100%' }}>
+      {isMasterAdmin && (
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', background:'white', padding:'0.75rem 1.25rem', borderRadius:'10px', border:'1px solid #e2e8f0', flexWrap:'wrap', gap:'0.75rem' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:'0.6rem' }}>
+            <span style={{ fontSize:'0.75rem', fontWeight:800, textTransform:'uppercase', letterSpacing:'0.05em', color:'#1e40af', background:'#eff6ff', border:'1px solid #bfdbfe', padding:'0.25rem 0.55rem', borderRadius:'6px' }}>
+              🛡️ Master Admin View
+            </span>
+            <span style={{ fontSize:'0.82rem', color:'#64748b' }}>
+              Manage multi-tenant telephony credentials or switch to active workspace view
+            </span>
+          </div>
+          <div style={{ display:'flex', gap:'0.5rem' }}>
+            <button
+              type="button"
+              onClick={() => setViewMode('all_tenants')}
+              style={{
+                display:'flex', alignItems:'center', gap:'0.4rem',
+                padding:'0.45rem 0.95rem', borderRadius:'7px',
+                border: viewMode === 'all_tenants' ? '2px solid #2563eb' : '1px solid #cbd5e1',
+                background: viewMode === 'all_tenants' ? '#eff6ff' : 'white',
+                color: viewMode === 'all_tenants' ? '#1d4ed8' : '#475569',
+                fontWeight: viewMode === 'all_tenants' ? 700 : 500, fontSize:'0.82rem', cursor:'pointer'
+              }}
+            >
+              <Globe size={14} /> All Tenants (SaaS Master)
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('single_workspace')}
+              style={{
+                display:'flex', alignItems:'center', gap:'0.4rem',
+                padding:'0.45rem 0.95rem', borderRadius:'7px',
+                border: viewMode === 'single_workspace' ? '2px solid #2563eb' : '1px solid #cbd5e1',
+                background: viewMode === 'single_workspace' ? '#eff6ff' : 'white',
+                color: viewMode === 'single_workspace' ? '#1d4ed8' : '#475569',
+                fontWeight: viewMode === 'single_workspace' ? 700 : 500, fontSize:'0.82rem', cursor:'pointer'
+              }}
+            >
+              <Building2 size={14} /> Single Workspace ({userCompany || 'Active'})
+            </button>
+          </div>
+        </div>
+      )}
+
+      {viewMode === 'all_tenants' && isMasterAdmin ? (
+        <TabTelephonyGatewaySaaS userCompany={userCompany} tenantId={tenantId} onRefresh={onRefresh} />
+      ) : (
+        <TabTelephonyGatewaySingle userCompany={userCompany} tenantId={tenantId} onRefresh={onRefresh} />
+      )}
     </div>
   );
 }
@@ -2780,7 +3661,8 @@ export default function CallAdminModule({
   activeSubTab = null, 
   onSubTabChange = null,
   userCompany = '',
-  tenantId = null
+  tenantId = null,
+  isMasterAdmin = false
 }) {
   const visibleTabs = filterVisibleSubTabs(moduleAccess, userRole, 'calladmin', TABS);
 
@@ -2907,8 +3789,8 @@ export default function CallAdminModule({
             seatQuota={seatQuota}
           />
         )}
-        {activeTab === 'endpoints' && <TabEndpoints userCompany={userCompany} tenantId={tenantId} agents={agents} onRefresh={fetchData} />}
-        {activeTab === 'telephony' && <TabTelephonyGateway userCompany={userCompany} tenantId={tenantId} onRefresh={fetchData} />}
+        {activeTab === 'endpoints' && <TabEndpoints userCompany={userCompany} tenantId={tenantId} agents={agents} onRefresh={fetchData} seatQuota={seatQuota} isMasterAdmin={isMasterAdmin} />}
+        {activeTab === 'telephony' && <TabTelephonyGateway userCompany={userCompany} tenantId={tenantId} onRefresh={fetchData} isMasterAdmin={isMasterAdmin} />}
         {activeTab === 'calllogs' && <TabCallLogs userCompany={userCompany} tenantId={tenantId} />}
         {activeTab === 'monitor' && <TabMonitor agents={agents} onRefresh={fetchData} />}
         {activeTab === 'settings' && <TabSettings agents={agents} userCompany={userCompany} tenantId={tenantId} />}
