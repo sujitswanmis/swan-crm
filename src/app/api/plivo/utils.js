@@ -1,21 +1,67 @@
 /**
+ * Check if a host/domain is a private IP, local development host, or internal network.
+ * Plivo requires a public, internet-routable domain for webhook delivery.
+ */
+export function isPrivateOrLocalHost(host = '') {
+  if (!host) return true;
+  const clean = host.toLowerCase().trim().replace(/^https?:\/\//, '').split('/')[0];
+  const hostname = clean.split(':')[0]; // strip port
+
+  if (
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname === '0.0.0.0' ||
+    hostname === '::1' ||
+    clean.includes('localhost') ||
+    clean.includes('127.0.0.1')
+  ) {
+    return true;
+  }
+
+  // Private IPv4 ranges: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16
+  if (
+    /^10\./.test(hostname) ||
+    /^192\.168\./.test(hostname) ||
+    /^169\.254\./.test(hostname) ||
+    /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname)
+  ) {
+    return true;
+  }
+
+  // Local domains: *.local, *.internal, *.lan
+  if (hostname.endsWith('.local') || hostname.endsWith('.internal') || hostname.endsWith('.lan')) {
+    return true;
+  }
+
+  // Non-FQDN single-word hostnames (e.g. "DESKTOP-ABC" or internal names)
+  if (!hostname.includes('.')) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
  * Shared utility for generating valid public webhook URLs for Plivo.
  * Ensures Plivo webhooks NEVER hit localhost or internal private IP addresses.
  */
 export function getPlivoWebhookBaseUrl(req) {
-  // 1. If explicit environment variable is set, prioritize it
+  // 1. If explicit environment variable is set and not private/local, prioritize it
   if (process.env.NEXT_PUBLIC_APP_URL) {
-    return process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, '');
+    const candidate = process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, '');
+    if (!isPrivateOrLocalHost(candidate)) {
+      return candidate;
+    }
   }
 
-  // 2. Extract from request headers (x-forwarded-host / host)
+  // 2. Extract from request headers (x-forwarded-host / host) if it is a real public domain
   if (req) {
     try {
       const headers = req.headers;
       const host = (typeof headers?.get === 'function' ? headers.get('x-forwarded-host') || headers.get('host') : headers?.['x-forwarded-host'] || headers?.host) || '';
       const proto = (typeof headers?.get === 'function' ? headers.get('x-forwarded-proto') : headers?.['x-forwarded-proto']) || 'https';
 
-      if (host && !host.includes('localhost') && !host.includes('127.0.0.1')) {
+      if (host && !isPrivateOrLocalHost(host)) {
         return `${proto}://${host}`;
       }
     } catch (_e) {}
