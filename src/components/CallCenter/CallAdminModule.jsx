@@ -3282,22 +3282,16 @@ function TabSettings({ agents = [], userCompany = '', tenantId = null }) {
     setSaving(true);
     setSaveSuccess(false);
     try {
-      const cleanNum = (defaultForward || '').replace(/['"]/g, '').trim();
       const res = await fetch('/api/plivo/admin/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          action: 'save_settings',
           company: userCompany,
           tenantId,
-          defaultForward: cleanNum,
           routingMode,
           stickyAgent,
-          inboundAgentIds,
-          telephonyMode,
-          plivoAuthId,
-          plivoAuthToken,
-          callerId,
-          callingSeatLimit: parseInt(callingSeatLimit, 10) || 5
+          inboundAgentIds
         })
       });
       const data = await res.json();
@@ -3619,75 +3613,35 @@ function TabSettings({ agents = [], userCompany = '', tenantId = null }) {
         </div>
       </div>
 
-      {/* Account Info & Fallback Forward Settings */}
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(480px, 1fr))', gap:'1.5rem' }}>
-        
-        {/* Plivo Account & Fallback */}
-        <div style={{ background:'white', borderRadius:'12px', padding:'1.5rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0' }}>
-          <h3 style={{ fontSize:'1rem', fontWeight:700, marginBottom:'1.25rem', color:'#1e293b', display:'flex', alignItems:'center', gap:'0.5rem' }}>
-            <Shield size={18} color="#3b82f6" /> Plivo Account & Fallback Forwarding
-          </h3>
-          <div style={{ display:'flex', flexDirection:'column', gap:'1rem' }}>
-            {[
-              { label: 'Auth ID',          value: process.env.NEXT_PUBLIC_PLIVO_AUTH_ID || 'MAMJFH***' },
-              { label: 'Company Plivo Number', value: settings?.fromNumber || '+918035340622' },
-              { label: 'Data Region',      value: 'India 🇮🇳' },
-            ].map(row => (
-              <div key={row.label} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'0.75rem', background:'#f8fafc', borderRadius:'8px' }}>
-                <span style={{ fontSize:'0.85rem', color:'#64748b', fontWeight:500 }}>{row.label}</span>
-                <span style={{ fontSize:'0.85rem', color:'#1e293b', fontWeight:600, fontFamily: row.label.includes('ID')||row.label.includes('Number') ? 'monospace' : 'inherit' }}>{row.value}</span>
-              </div>
-            ))}
-
-            {/* Edit Default Forward */}
-            <div style={{ display:'flex', flexDirection:'column', gap:'0.5rem', padding:'0.85rem', background:'#f8fafc', borderRadius:'8px', border:'1px solid #e2e8f0' }}>
-              <label style={{ fontSize:'0.85rem', color:'#1e293b', fontWeight:600, display:'flex', alignItems:'center', gap:'0.35rem' }}>
-                <PhoneCall size={14} color="#ef4444" /> Final Fallback Forward Mobile Number
-              </label>
-              <div style={{ display:'flex', gap:'0.5rem', marginTop:'0.25rem' }}>
-                <input 
-                  type="text" 
-                  value={defaultForward} 
-                  onChange={e => setDefaultForward(e.target.value)}
-                  placeholder="+91XXXXXXXXXX"
-                  style={{
-                    flex: 1,
-                    padding: '0.45rem 0.75rem',
-                    borderRadius: '6px',
-                    border: '1px solid #cbd5e1',
-                    fontSize: '0.85rem',
-                    fontFamily: 'monospace',
-                    boxSizing: 'border-box',
-                    background: 'white'
-                  }}
-                />
-              </div>
-              <span style={{ fontSize:'0.72rem', color:'#64748b', marginTop:'0.2rem' }}>
-                If no softphones are online or the incoming call is not answered within 30 seconds, the call forwards automatically to this phone.
-              </span>
-            </div>
+      {/* Central Telephony Link Notice & Plivo Webhooks */}
+      <div style={{ background:'white', borderRadius:'12px', padding:'1.5rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0', display:'flex', flexDirection:'column', gap:'1.25rem' }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:'0.75rem', paddingBottom:'1rem', borderBottom:'1px solid #f1f5f9' }}>
+          <div>
+            <h3 style={{ fontSize:'1rem', fontWeight:700, margin:0, color:'#1e293b', display:'flex', alignItems:'center', gap:'0.5rem' }}>
+              <Radio size={18} color="#3b82f6" /> Plivo Webhook Applications
+            </h3>
+            <p style={{ color:'#64748b', fontSize:'0.8rem', margin:'0.25rem 0 0 0' }}>
+              Registered Plivo XML webhook endpoints handling inbound call routing and real-time audio bridging.
+            </p>
+          </div>
+          <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', background:'#eff6ff', border:'1px solid #bfdbfe', padding:'0.45rem 0.85rem', borderRadius:'8px', fontSize:'0.78rem', color:'#1d4ed8', fontWeight:600 }}>
+            <KeyRound size={14} /> Telephony Gateway, Caller ID &amp; Fallback Mobile are managed under <strong>Telephony &amp; Seats</strong>
           </div>
         </div>
 
-        {/* Applications */}
-        <div style={{ background:'white', borderRadius:'12px', padding:'1.5rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0' }}>
-          <h3 style={{ fontSize:'1rem', fontWeight:700, marginBottom:'1.25rem', color:'#1e293b', display:'flex', alignItems:'center', gap:'0.5rem' }}>
-            <Radio size={18} color="#3b82f6" /> Plivo Webhook Applications
-          </h3>
-          {settings?.apps?.length > 0 ? (
-            <div style={{ display:'flex', flexDirection:'column', gap:'0.75rem' }}>
-              {settings.apps.map(app => (
-                <div key={app.app_id} style={{ padding:'0.75rem 1rem', background:'#f8fafc', borderRadius:'8px', borderLeft:'3px solid #3b82f6' }}>
-                  <div style={{ fontWeight:600, color:'#1e293b', fontSize:'0.9rem' }}>{app.app_name}</div>
-                  <div style={{ fontSize:'0.75rem', color:'#64748b', marginTop:'0.25rem', fontFamily:'monospace' }}>ID: {app.app_id}</div>
-                  <div style={{ fontSize:'0.72rem', color:'#94a3b8', marginTop:'0.2rem', wordBreak:'break-all' }}>Answer URL: {app.answer_url}</div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p style={{ color:'#94a3b8', fontSize:'0.85rem' }}>No applications found.</p>
-          )}
-        </div>
+        {settings?.apps?.length > 0 ? (
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(320px, 1fr))', gap:'0.75rem' }}>
+            {settings.apps.map(app => (
+              <div key={app.app_id} style={{ padding:'0.75rem 1rem', background:'#f8fafc', borderRadius:'8px', borderLeft:'3px solid #3b82f6' }}>
+                <div style={{ fontWeight:600, color:'#1e293b', fontSize:'0.9rem' }}>{app.app_name}</div>
+                <div style={{ fontSize:'0.75rem', color:'#64748b', marginTop:'0.25rem', fontFamily:'monospace' }}>ID: {app.app_id}</div>
+                <div style={{ fontSize:'0.72rem', color:'#94a3b8', marginTop:'0.2rem', wordBreak:'break-all' }}>Answer URL: {app.answer_url}</div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p style={{ color:'#94a3b8', fontSize:'0.85rem', margin:0 }}>No applications found.</p>
+        )}
       </div>
 
       {/* Routing Rules Diagram */}
