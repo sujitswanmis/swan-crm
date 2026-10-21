@@ -33,10 +33,36 @@ export async function POST(req) {
       return new NextResponse(hangupXml, { headers: { 'Content-Type': 'application/xml' } });
     }
 
+    // Look up agent-specific assigned caller ID or workspace fallback
+    let effectiveCallerId = process.env.PLIVO_FROM_NUMBER || '+918035340622';
+    if (session.agent_id) {
+      const { data: ag } = await adminClient
+        .from('call_agents')
+        .select('agent_code, user_id')
+        .eq('id', session.agent_id)
+        .maybeSingle();
+
+      if (ag?.agent_code && /^\+?[0-9]{8,15}$/.test(ag.agent_code.trim())) {
+        effectiveCallerId = ag.agent_code.trim();
+      } else if (ag?.user_id) {
+        const { data: ur } = await adminClient
+          .from('user_roles')
+          .select('company')
+          .eq('user_id', ag.user_id)
+          .maybeSingle();
+
+        if (ur?.company) {
+          const { getWorkspaceTelephonyConfig } = await import('@/utils/telephonyConfig');
+          const wsTel = await getWorkspaceTelephonyConfig(ur.company);
+          if (wsTel?.fromNumber) effectiveCallerId = wsTel.fromNumber;
+        }
+      }
+    }
+
     const xml = buildOutboundDialXml({
       roomName,
       customerNumber: session.customer_number,
-      callerId: process.env.PLIVO_FROM_NUMBER || '+918035340622',
+      callerId: effectiveCallerId,
       baseUrl: getPlivoWebhookBaseUrl(req)
     });
     return new NextResponse(xml, { headers: { 'Content-Type': 'application/xml', 'Cache-Control': 'no-store' } });

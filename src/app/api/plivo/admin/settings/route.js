@@ -11,12 +11,40 @@ export async function GET(req) {
       const tenantsRes = await getAllTenantsWithSubscriptions();
       const rawTenants = tenantsRes?.tenants || [];
 
-      // Calculate seat quotas in parallel for all tenants
+      // Calculate seat quotas and live Plivo wallet balance in parallel for all tenants
+      const defaultAuthId = (process.env.PLIVO_AUTH_ID || '').trim().replace(/['"]/g, '');
+      const defaultAuthToken = (process.env.PLIVO_AUTH_TOKEN || '').trim().replace(/['"]/g, '');
+
       const enrichedTenants = await Promise.all(rawTenants.map(async (t) => {
         let seatQuota = null;
         try {
           seatQuota = await getWorkspaceCallingSeatQuota(t.name, t.id);
         } catch (_) {}
+
+        // Fetch live wallet cash credits
+        let wallet = null;
+        const targetAuthId = (t.telephony_config?.auth_id || (t.calling_mode === 'managed' ? defaultAuthId : '')).trim();
+        const targetAuthToken = (t.telephony_config?.raw_auth_token || (t.calling_mode === 'managed' ? defaultAuthToken : '')).trim();
+
+        if (targetAuthId && targetAuthToken) {
+          try {
+            const b64 = Buffer.from(`${targetAuthId}:${targetAuthToken}`).toString('base64');
+            const accRes = await fetch(`https://api.plivo.com/v1/Account/${targetAuthId}/`, {
+              headers: { 'Authorization': 'Basic ' + b64 },
+              signal: AbortSignal.timeout(3000)
+            });
+            if (accRes.ok) {
+              const accData = await accRes.json();
+              const credits = parseFloat(accData.cash_credits) || 0;
+              wallet = {
+                cash_credits: credits,
+                formatted_credits: `${credits.toFixed(2)}`,
+                currency: accData.currency || 'USD',
+                account_name: accData.name || targetAuthId
+              };
+            }
+          } catch (_) {}
+        }
 
         return {
           id: t.id,
@@ -33,6 +61,8 @@ export async function GET(req) {
           hasCustomToken: Boolean(t.telephony_config?.has_custom_token),
           callerId: t.telephony_config?.from_number || process.env.PLIVO_FROM_NUMBER || '+918035340622',
           defaultForward: t.telephony_config?.default_forward || '',
+          phoneNumbers: t.telephony_config?.phone_numbers || [],
+          wallet,
           seatQuota: seatQuota || { used: 0, total: t.calling_seats_limit || 5, available: t.calling_seats_limit || 5 }
         };
       }));
@@ -55,16 +85,32 @@ export async function GET(req) {
     const inboundKey = isSwan ? 'system_settings_inbound' : `system_settings_inbound_${scopeSlug}`;
 
     let appsList = [];
-    if (isSwan) {
-      try {
-        const appsRes = await fetch(`https://api.plivo.com/v1/Account/${authId}/Application/`, {
+    let wallet = null;
+    try {
+      const [appsRes, accRes] = await Promise.all([
+        isSwan ? fetch(`https://api.plivo.com/v1/Account/${authId}/Application/`, {
           headers: { 'Authorization': 'Basic ' + b64 }
-        });
-        const appsData = await appsRes.json();
+        }) : Promise.resolve(null),
+        fetch(`https://api.plivo.com/v1/Account/${authId}/`, {
+          headers: { 'Authorization': 'Basic ' + b64 }
+        })
+      ]);
+      if (appsRes) {
+        const appsData = await appsRes.json().catch(() => ({}));
         appsList = appsData.objects || [];
-      } catch (err) {
-        console.warn('Plivo apps fetch warning:', err);
       }
+      if (accRes && accRes.ok) {
+        const accData = await accRes.json().catch(() => ({}));
+        const credits = parseFloat(accData.cash_credits) || 0;
+        wallet = {
+          cash_credits: credits,
+          formatted_credits: `${credits.toFixed(2)}`,
+          currency: accData.currency || 'USD',
+          account_name: accData.name || authId
+        };
+      }
+    } catch (err) {
+      console.warn('Plivo apps/wallet fetch warning:', err);
     }
 
     const adminClient = createClient(
@@ -119,6 +165,7 @@ export async function GET(req) {
       plivoAuthToken: parsedTel.auth_token ? '••••••••••••••••••••••••' : (isSwan && process.env.PLIVO_AUTH_TOKEN ? '••••••••••••••••••••••••' : ''),
       hasCustomToken: Boolean(parsedTel.auth_token),
       seatQuota,
+      wallet,
       isSwan
     });
   } catch (error) {

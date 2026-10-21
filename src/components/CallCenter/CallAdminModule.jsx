@@ -507,6 +507,21 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
                       </div>
                     )}
                   </td>
+                  <td style={{ width: `${colWidths.assigned_caller_id || 190}px`, padding:'1rem', boxSizing: 'border-box' }}>
+                    <select
+                      value={agent.agent_code || ''}
+                      onChange={e => handleUpdate(agent.id, 'agent_code', e.target.value || null)}
+                      style={{ padding:'0.4rem 0.6rem', borderRadius:'6px', border:'1px solid #cbd5e1', fontSize:'0.82rem', background:'white', cursor:'pointer', width: '100%', maxWidth: '100%' }}
+                      title="Select specific Outgoing Caller ID for this agent"
+                    >
+                      <option value="">🏢 Workspace Default ({defaultCallerId || '+918035340622'})</option>
+                      {workspaceNumbers.map(n => (
+                        <option key={n.number} value={n.number}>
+                          📞 {n.number} {n.alias ? `(${n.alias})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
                   <td style={{ width: `${colWidths.password_set}px`, padding:'1rem', boxSizing: 'border-box' }}>
                     <div style={{ display:'flex', alignItems:'center', gap:'0.5rem' }}>
                       {agent.plivo_password
@@ -2594,6 +2609,7 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
                   { key: 'tenant', label: 'Tenant / Workspace', width: colWidths.tenant },
                   { key: 'status', label: 'Status', width: colWidths.status },
                   { key: 'mode', label: 'Telephony Mode', width: colWidths.mode },
+                  { key: 'wallet', label: 'Plivo Wallet', width: colWidths.wallet },
                   { key: 'auth_id', label: 'Plivo Auth ID', width: colWidths.auth_id },
                   { key: 'auth_token', label: 'Auth Token', width: colWidths.auth_token },
                   { key: 'caller_id', label: 'Caller ID (From)', width: colWidths.caller_id },
@@ -2688,6 +2704,33 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
                           {isByoc ? <KeyRound size={12} /> : <Cpu size={12} />}
                           {isByoc ? 'Client BYOC' : 'Managed'}
                         </span>
+                      </td>
+
+                      {/* Plivo Wallet Balance */}
+                      <td style={{ width: `${colWidths.wallet}px`, padding:'0.9rem 1rem', boxSizing:'border-box', verticalAlign:'top' }}>
+                        {t.wallet ? (
+                          <div style={{ display:'flex', flexDirection:'column', gap:'0.2rem' }}>
+                            <span style={{
+                              display:'inline-flex', alignItems:'center', gap:'0.35rem',
+                              padding:'0.25rem 0.6rem', borderRadius:'6px',
+                              fontSize:'0.78rem', fontWeight:800,
+                              background: t.wallet.cash_credits > 10 ? '#ecfdf5' : (t.wallet.cash_credits > 2 ? '#fffbeb' : '#fef2f2'),
+                              color: t.wallet.cash_credits > 10 ? '#047857' : (t.wallet.cash_credits > 2 ? '#b45309' : '#dc2626'),
+                              border: t.wallet.cash_credits > 10 ? '1px solid #a7f3d0' : (t.wallet.cash_credits > 2 ? '1px solid #fde68a' : '1px solid #fecaca')
+                            }}>
+                              💰 {t.wallet.formatted_credits} {t.wallet.currency || 'USD'}
+                            </span>
+                            {t.wallet.cash_credits <= 2 && (
+                              <span style={{ fontSize:'0.68rem', color:'#dc2626', fontWeight:600 }}>
+                                ⚠️ Low Balance
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span style={{ fontSize:'0.75rem', color:'#94a3b8', fontStyle:'italic' }}>
+                            {isByoc ? 'Check credentials' : 'Platform Wallet'}
+                          </span>
+                        )}
                       </td>
 
                       {/* Plivo Auth ID */}
@@ -2836,6 +2879,24 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
 
             {/* Modal Form */}
             <form onSubmit={handleSaveEdit} style={{ padding:'1.5rem', display:'flex', flexDirection:'column', gap:'1.25rem' }}>
+              {/* Plivo Live Wallet Credits Banner */}
+              <div style={{
+                padding:'0.85rem 1rem', background:'#f0fdf4', borderRadius:'8px', border:'1px solid #bbf7d0',
+                display:'flex', justifyContent:'space-between', alignItems:'center'
+              }}>
+                <div style={{ display:'flex', alignItems:'center', gap:'0.6rem' }}>
+                  <span style={{ fontSize:'1.3rem' }}>💰</span>
+                  <div>
+                    <div style={{ fontSize:'0.72rem', color:'#166534', fontWeight:700, textTransform:'uppercase' }}>Live Plivo Wallet Balance</div>
+                    <div style={{ fontSize:'1.15rem', fontWeight:800, color:'#14532d' }}>
+                      {editingTenant.wallet?.formatted_credits || '$0.00'} {editingTenant.wallet?.currency || 'USD'}
+                    </div>
+                  </div>
+                </div>
+                <div style={{ fontSize:'0.75rem', color:'#15803d', textAlign:'right' }}>
+                  Account: <strong>{editingTenant.wallet?.account_name || editingTenant.name}</strong>
+                </div>
+              </div>
               {editSuccessMsg && (
                 <div style={{ padding:'0.75rem 1rem', background:'#dcfce7', border:'1px solid #bbf7d0', borderRadius:'8px', color:'#166534', fontSize:'0.85rem', fontWeight:600, display:'flex', alignItems:'center', gap:'0.4rem' }}>
                   <CheckCircle size={16} /> {editSuccessMsg}

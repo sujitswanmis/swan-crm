@@ -58,7 +58,7 @@ export async function POST(req) {
     // Get Agent ID
     const { data: agentData } = await adminClient
       .from('call_agents')
-      .select('id, plivo_sip_uri')
+      .select('id, plivo_sip_uri, agent_code')
       .eq('user_id', user.id)
       .maybeSingle();
 
@@ -100,10 +100,16 @@ export async function POST(req) {
       ? `/api/plivo/answer?room=${roomName}&role=agent`
       : `/api/plivo/outbound-dial?room=${roomName}`;
     
+    // Use agent's specific assigned caller ID if set, otherwise fallback to workspace default
+    let effectiveFromNumber = fromNumber;
+    if (agentData?.agent_code && /^\+?[0-9]{8,15}$/.test(agentData.agent_code.trim())) {
+      effectiveFromNumber = agentData.agent_code.trim();
+    }
+
     let response;
     try {
       response = await client.calls.create(
-        fromNumber,
+        effectiveFromNumber,
         dialTo,
         `${appBaseUrl}${answerPath}`,
         {
