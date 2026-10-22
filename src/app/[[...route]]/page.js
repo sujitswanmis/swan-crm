@@ -43,8 +43,7 @@ export default async function Home({ params, searchParams }) {
     .single();
 
   const userEmailLower = (user.email || '').toLowerCase().trim();
-  const isMasterAdminEmail = userEmailLower === 'supujacreations@gmail.com' ||
-    userEmailLower === 'sujitswanmis@gmail.com';
+  const isMasterAdminEmail = userEmailLower === 'supujacreations@gmail.com';
   const callerRole = isMasterAdminEmail ? 'Admin' : (roleData?.role || 'agent');
   const isAdmin = isMasterAdminEmail || callerRole === 'admin' || callerRole === 'Admin';
 

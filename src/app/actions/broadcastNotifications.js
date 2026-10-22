@@ -8,7 +8,7 @@ import { getAdminClient } from '@/utils/supabase/adminClient';
 
 const DEFAULT_TENANT = '00000000-0000-0000-0000-000000000001';
 const SWAN_CODES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl'];
-const MASTER_EMAILS = ['supujacreations@gmail.com', 'admin@newswangroup.com', 'sujitswanmis@gmail.com'];
+const MASTER_EMAILS = ['supujacreations@gmail.com', 'admin@newswangroup.com'];
 const uuid = value => /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(String(value || ''));
 const norm = value => String(value || '').trim().toLowerCase();
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');

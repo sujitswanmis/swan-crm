@@ -7,7 +7,7 @@ import { ROLE_PRESETS } from '@/components/UserManagement/utils/rolePresets';
 import { logAuditAction } from './audit';
 
 const SWAN_COMPANIES = new Set(['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl']);
-const MASTER_EMAILS = new Set(['supujacreations@gmail.com', 'admin@newswangroup.com', 'sujitswanmis@gmail.com']);
+const MASTER_EMAILS = new Set(['supujacreations@gmail.com', 'admin@newswangroup.com']);
 const MODULE_BY_ID = new Map(MODULES_CONFIG.map(module => [module.id, module]));
 const PERMISSION_FLAGS = ['view', 'read', 'write', 'edit', 'export', 'delete'];
 const GLOBAL_PERMISSION_KEYS = Object.keys(ROLE_PRESETS[0].presetData).filter(key => typeof ROLE_PRESETS[0].presetData[key] === 'boolean' && key !== 'is_master_admin');

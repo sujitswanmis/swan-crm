@@ -134,7 +134,7 @@ export async function saveOfflineRuleSettings(newSettings) {
       .maybeSingle();
 
     const userRole = (roleData?.role || '').toLowerCase();
-    if (!['admin', 'superadmin', 'manager'].includes(userRole) && user.email !== 'sujitswanmis@gmail.com') {
+    if (!['admin', 'superadmin', 'manager'].includes(userRole)) {
       return { success: false, error: 'Permission Denied: Only Admins can update Offline Rules.' };
     }
 

@@ -482,7 +482,7 @@ export async function sendLiveMessage(instanceId, chatId, text) {
       roleName === 'masteradmin' || 
       roleName === 'superadmin' || 
       userRole?.module_access?.is_master_admin === true ||
-      ['supujacreations@gmail.com', 'admin@newswangroup.com', 'sujitswanmis@gmail.com'].includes(userEmail);
+      ['supujacreations@gmail.com', 'admin@newswangroup.com'].includes(userEmail);
 
     // 2. Get Chat and Instance Details
     const { data: chat } = await adminDb.from('wa_chats').select('contact_number').eq('id', chatId).maybeSingle();
@@ -717,7 +717,6 @@ export async function getMyTenantGatewayConfig(requestedTenantId = null) {
     const emailLower = (user.email || '').toLowerCase().trim();
     const isMasterAdmin = 
       emailLower === 'supujacreations@gmail.com' ||
-      emailLower === 'sujitswanmis@gmail.com' ||
       userRoleRow?.role?.toLowerCase() === 'masteradmin' ||
       userRoleRow?.module_access?.is_master_admin === true;
 
@@ -790,7 +789,6 @@ export async function saveMyTenantGatewayConfig(payload) {
     const emailLower = (user.email || '').toLowerCase().trim();
     const isMasterAdmin = 
       emailLower === 'supujacreations@gmail.com' ||
-      emailLower === 'sujitswanmis@gmail.com' ||
       userRoleRow?.role?.toLowerCase() === 'masteradmin' ||
       userRoleRow?.module_access?.is_master_admin === true;
 

@@ -175,11 +175,10 @@ export function isTabPermitted(tabId, moduleAccess = {}, userRole = '', tenantEn
     return false;
   }
 
-  // 2. SaaS Studio, Workflow Builder & Admin Message Gate: STRICTLY restricted to Master Admin (supujacreations@gmail.com / sujitswanmis@gmail.com)
+  // 2. SaaS Studio, Workflow Builder & Admin Message Gate: STRICTLY restricted to Master Admin (supujacreations@gmail.com)
   if (tabId === 'saas_studio' || tabId === 'saas_master' || tabId === 'config_master' || tabId === 'workplace' || tabId === 'workflow' || tabId === 'admin_message_config') {
     const emailLower = (userEmail || moduleAccess?._userEmail || '').toLowerCase().trim();
     const isMaster = emailLower === 'supujacreations@gmail.com' ||
-                     emailLower === 'sujitswanmis@gmail.com' ||
                      (typeof userRole === 'string' && userRole.toLowerCase() === 'masteradmin') ||
                      moduleAccess?.is_master_admin === true;
     return isMaster;
@@ -365,7 +364,6 @@ export default function CRMContainer({
   const emailLower = (userEmail || '').toLowerCase().trim();
   const isMasterAdmin = !isImpersonating && (
     emailLower === 'supujacreations@gmail.com' ||
-    emailLower === 'sujitswanmis@gmail.com' ||
     (typeof userRole === 'string' && userRole.toLowerCase() === 'masteradmin') ||
     moduleAccess?.is_master_admin === true
   );
