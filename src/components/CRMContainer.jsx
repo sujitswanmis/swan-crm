@@ -4787,6 +4787,7 @@ export default function CRMContainer({
                               })()}
 
                               {(() => {
+                                const leadsAccess = moduleAccess?.['leads'];
                                 const canSeeAllLeads = isAdmin || leadsAccess?.is_manager || leadsAccess?.sub_items?.all_leads?.view !== false;
                                 if (!canSeeAllLeads) return null;
                                 return (
