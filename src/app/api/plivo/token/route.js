@@ -15,11 +15,16 @@ export async function POST(req) {
       process.env.SUPABASE_SERVICE_ROLE_KEY
     );
 
-    const { data: agentData } = await adminClient
+    const { data: agentData, error: agentError } = await adminClient
       .from('call_agents')
-      .select('plivo_username, plivo_password')
+      .select('plivo_username, plivo_password, is_active')
       .eq('user_id', user.id)
       .maybeSingle();
+
+    if (agentError) return NextResponse.json({ error: 'Agent authorization could not be verified. Please retry.' }, { status: 503 });
+    if (agentData?.is_active === false) {
+      return NextResponse.json({ enabled: false, revoked: true, message: 'Your call center access has been revoked. Contact your administrator.' }, { status: 403 });
+    }
 
     if (!agentData || !agentData.plivo_username) {
       return NextResponse.json({

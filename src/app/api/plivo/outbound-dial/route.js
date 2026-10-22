@@ -36,14 +36,23 @@ export async function POST(req) {
     // Look up agent-specific assigned caller ID or workspace fallback
     let effectiveCallerId = process.env.PLIVO_FROM_NUMBER || '+918035340622';
     if (session.agent_id) {
-      const { data: ag } = await adminClient
+      let { data: ag, error: agentError } = await adminClient
         .from('call_agents')
-        .select('agent_code, user_id')
+        .select('agent_code, user_id, outgoing_caller_id')
         .eq('id', session.agent_id)
         .maybeSingle();
 
-      if (ag?.agent_code && /^\+?[0-9]{8,15}$/.test(ag.agent_code.trim())) {
-        effectiveCallerId = ag.agent_code.trim();
+      if (agentError?.code === '42703' || agentError?.code === 'PGRST204') {
+        const legacy = await adminClient.from('call_agents').select('agent_code, user_id')
+          .eq('id', session.agent_id).maybeSingle();
+        ag = legacy.data;
+        agentError = legacy.error;
+      }
+      if (agentError || !ag) throw new Error('Agent caller ID could not be verified');
+
+      const assignedCallerId = Object.hasOwn(ag, 'outgoing_caller_id') ? ag.outgoing_caller_id : ag.agent_code;
+      if (assignedCallerId && /^\+?[0-9]{8,15}$/.test(String(assignedCallerId).trim())) {
+        effectiveCallerId = String(assignedCallerId).trim();
       } else if (ag?.user_id) {
         let { data: ur, error: roleError } = await adminClient
           .from('user_roles')

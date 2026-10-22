@@ -146,7 +146,7 @@ if (typeof window !== 'undefined') {
   window.__crm_stop_all_ringing = (room) => globalRingController.stop(room);
 }
 
-const SOFTPHONE_VERSION = 'v2.5';
+const SOFTPHONE_VERSION = 'v2.6';
 
 // Pre-warm SpeechSynthesis voices on page load
 if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
@@ -526,6 +526,12 @@ export default function GlobalSoftphoneWidget({ userId }) {
   }, [activeSession?.status, activeSession?.customer_answer_time, stopRingingAudio]);
 
   const [bounds, setBounds] = useState({ left: -1000, top: -1000, right: 12, bottom: 12 });
+  const [endpointIdLookup, setEndpointIdLookup] = useState(null);
+  const assignedEndpointKey = String(agentData?.plivo_endpoint_key || '').trim();
+  const endpointReference = JSON.stringify([userId, agentData?.id, assignedEndpointKey, agentData?.plivo_username, agentData?.plivo_sip_uri]);
+  const displayEndpointId = /^[0-9]+$/.test(assignedEndpointKey)
+    ? assignedEndpointKey
+    : (endpointIdLookup?.reference === endpointReference ? endpointIdLookup.endpointId : null);
 
   // Dynamically calculate strict screen boundaries based on current window size and widget dimensions
   const updateBounds = useCallback(() => {
@@ -674,6 +680,23 @@ export default function GlobalSoftphoneWidget({ userId }) {
     fetchAgent();
     return () => { cancelled = true; };
   }, [userId]);
+
+  // Resolve the numeric Plivo ID separately so metadata cannot block connecting or dialing.
+  useEffect(() => {
+    if (!userId || !agentData?.id || /^[0-9]+$/.test(assignedEndpointKey)) return;
+    let cancelled = false;
+    const resolveEndpointId = async () => {
+      try {
+        const { getAgentEndpointId } = await import('@/app/actions/team');
+        const result = await getAgentEndpointId(userId);
+        if (!cancelled) setEndpointIdLookup({ reference: endpointReference, endpointId: result.endpointId });
+      } catch {
+        if (!cancelled) setEndpointIdLookup({ reference: endpointReference, endpointId: null });
+      }
+    };
+    resolveEndpointId();
+    return () => { cancelled = true; };
+  }, [userId, agentData?.id, assignedEndpointKey, endpointReference]);
 
   const handleSessionTerminationAnnouncement = useCallback((sessionData, allowGeneric = false) => {
     if (!sessionData) return;
@@ -1693,7 +1716,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
                  connectionState === 'error' ? 'Connection Error' : 'Offline'}
               </span>
               <span className={styles.endpoint}>
-                Endpoint ID: {agentData.plivo_endpoint_key || 'N/A'}
+                Endpoint ID: {displayEndpointId || 'N/A'}
               </span>
             </div>
             <div style={{ flexShrink: 0 }}>

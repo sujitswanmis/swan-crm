@@ -159,11 +159,6 @@ export async function getWorkspaceTelephonyConfig(company = '', tenantId = null)
  * Get active calling seat usage and limits for a company
  */
 export async function getWorkspaceCallingSeatQuota(company = '', tenantId = null) {
-  const isSwan = isSwanCompany(company);
-  if (isSwan) {
-    return { used: 27, total: 300, available: 273, canAdd: true };
-  }
-
   try {
     const adminClient = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -171,28 +166,39 @@ export async function getWorkspaceCallingSeatQuota(company = '', tenantId = null
     );
 
     const reqLower = String(company || '').toLowerCase().trim();
-    const [{ data: users }, { data: agents }, config] = await Promise.all([
-      adminClient.from('user_roles').select('user_id, company, tenant_id'),
+    const isSwan = !reqLower || SWAN_COMPANIES.includes(reqLower);
+    const [userResult, agentResult, config] = await Promise.all([
+      adminClient.from('user_roles').select('user_id, company, tenant_id, module_access'),
       adminClient.from('call_agents').select('id, user_id, is_active, plivo_username'),
       getWorkspaceTelephonyConfig(company, tenantId)
     ]);
+    let { data: users, error: userError } = userResult;
+    if (userError?.code === '42703') {
+      const legacy = await adminClient.from('user_roles').select('user_id, company, module_access');
+      users = legacy.data;
+      userError = legacy.error;
+    }
+    if (userError || agentResult.error) throw userError || agentResult.error;
+    const agents = agentResult.data;
 
     const userCompanyMap = new Map();
     (users || []).forEach(u => {
       if (u.user_id) {
         userCompanyMap.set(u.user_id, {
           company: String(u.company || '').toLowerCase().trim(),
-          tenantId: u.tenant_id
+          tenantId: u.tenant_id || u.module_access?._tenantId || null
         });
       }
     });
 
     const activeWorkspaceAgents = (agents || []).filter(a => {
       if (!a.user_id) return false;
+      if (a.is_active === false) return false;
       if (a.plivo_username?.startsWith('system_')) return false;
       const uInfo = userCompanyMap.get(a.user_id);
       if (!uInfo) return false;
-      if (tenantId && uInfo.tenantId === tenantId) return true;
+      if (tenantId && uInfo.tenantId) return uInfo.tenantId === tenantId;
+      if (isSwan) return !uInfo.company || SWAN_COMPANIES.includes(uInfo.company);
       return uInfo.company === reqLower;
     });
 
@@ -208,6 +214,6 @@ export async function getWorkspaceCallingSeatQuota(company = '', tenantId = null
     };
   } catch (err) {
     console.error('Error in getWorkspaceCallingSeatQuota:', err);
-    return { used: 0, total: 5, available: 5, canAdd: true };
+    return { used: 0, total: 0, available: 0, canAdd: false, error: 'Calling seat usage could not be verified.' };
   }
 }

@@ -78,14 +78,26 @@ export async function POST(req) {
     const outboundToken = outboundRoomToken(roomName);
 
     // Get Agent ID
-    const { data: agentData } = await adminClient
+    let { data: agentData, error: agentError } = await adminClient
       .from('call_agents')
-      .select('id, plivo_sip_uri, agent_code')
+      .select('id, plivo_sip_uri, agent_code, is_active, outgoing_caller_id')
       .eq('user_id', user.id)
       .maybeSingle();
 
+    // Keep calling available on databases where the additive migration is pending.
+    if (agentError?.code === '42703' || agentError?.code === 'PGRST204') {
+      const legacy = await adminClient.from('call_agents').select('id, plivo_sip_uri, agent_code, is_active')
+        .eq('user_id', user.id).maybeSingle();
+      agentData = legacy.data;
+      agentError = legacy.error;
+    }
+    if (agentError) return NextResponse.json({ error: 'Agent authorization could not be verified. Please retry.' }, { status: 503 });
+
     if (!agentData) {
       return NextResponse.json({ error: 'Agent profile not found' }, { status: 404 });
+    }
+    if (agentData.is_active === false) {
+      return NextResponse.json({ error: 'Your call center access has been revoked. Contact your administrator.' }, { status: 403 });
     }
     const dialTo = callingMode === 'mobile'
       ? normalizeIndianPhoneNumber(agentMobile)
@@ -124,8 +136,9 @@ export async function POST(req) {
     
     // Use agent's specific assigned caller ID if set, otherwise fallback to workspace default
     let effectiveFromNumber = fromNumber;
-    if (agentData?.agent_code && /^\+?[0-9]{8,15}$/.test(agentData.agent_code.trim())) {
-      effectiveFromNumber = agentData.agent_code.trim();
+    const assignedCallerId = Object.hasOwn(agentData, 'outgoing_caller_id') ? agentData.outgoing_caller_id : agentData.agent_code;
+    if (assignedCallerId && /^\+?[0-9]{8,15}$/.test(String(assignedCallerId).trim())) {
+      effectiveFromNumber = String(assignedCallerId).trim();
     }
     if (effectiveFromNumber) {
       effectiveFromNumber = effectiveFromNumber.replace(/[^0-9+]/g, '');

@@ -27,7 +27,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - **Independent Counters**: Track the softphone and main CRM versions separately. Increment each affected product's counter once; if the same completed update changes both products, increment both counters once. Do not increment again for intermediate edits, repeated checks, retries, restarts, or publishing the same already-versioned update.
 - **Read Current Values Before Every Bump**: Immediately before a version change, read the relevant current on-disk version source and inspect `git log -n 1`. Follow the existing realtime verification rule; never use an example or an old chat message as the current value, and never downgrade or reset a version.
 - **Last Component Is an Integer**: Keep all preceding version components unchanged. Do not treat a version as a decimal number or automatically roll it into another series: `v2.9` -> `v2.10`, and `1.0.999` -> `1.0.1000`.
-- **Preserve Calling Protection**: References to `v2.1` in the calling architecture protection rules and the golden backup identify the protected working baseline; they do not freeze the future display version. Every later version must preserve those safeguards and the original golden backup.
+- **Preserve Calling Protection**: References to `v2.1` and `v2.5` in the calling architecture protection rules and the golden backups (`CRM-Backups Plivo Calling Perfect 2.1/` and `CRM-Backups Plivo Calling Perfect 2.5/`) identify the protected working baselines; they do not freeze future display versions. Every later version must preserve those safeguards and both golden backups.
 - **Rule-Only Changes**: Editing these version instructions alone does not constitute a softphone or main CRM feature update and must not itself bump either runtime version.
 
 # Production Workflow Protection & Zero-Regression Rules
@@ -57,20 +57,24 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
   3. **Reset on Double-Click**: Double-clicking the resizer handle resets that column back to its default width.
   4. **Persistence & Safe Constraints**: Enforce sensible minimum widths (`minWidth`, e.g. 60px–110px) to prevent column collapse, and persist user-adjusted column widths in `localStorage` so settings survive page navigation and refresh.
 
-# Mandatory CRM Softphone v2.1 Protection & Calling Architecture Rules
-- **Absolute Preservation of CRM Softphone v2.1**: The CRM Softphone architecture (Version `v2.1` in `GlobalSoftphoneWidget.jsx`, Attended Consultation / MPC in `plivoConsultation.js`, Inbound Guard in `softphoneIncomingCall.js`, and test suites in `tests/`) is battle-tested, verified with 46 passing automated tests, and backed up in `CRM-Backups Plivo Calling Perfect 2.1/`. Under NO circumstances should any of these core calling mechanisms be rewritten, degraded, removed, or bypassed.
-- **Strict Calling Architecture Safeguards**:
-  1. **Zero Duplicate UI Cards**: Never render the standalone active call controls card in `GlobalSoftphoneWidget.jsx` simultaneously with `ActiveCallPanel.jsx`. When `activeSession` is active, only `ActiveCallPanel` may render.
-  2. **Realtime Leg Inspection**: The 1-second polling in `/api/plivo/session-status` MUST actively inspect `session.customer_call_uuid` via Plivo SDK (`client.calls.get`) to detect customer decline/hangup with zero webhook latency.
-  3. **Universal Dual-Language Voice Engine**: `speakOutcome(hindiText, englishText)` must ALWAYS support fallback to English speech synthesis (`en-US` / system default) when Hindi voices (`hi-IN`) are not installed on the employee's OS (e.g. Windows OneCore TTS), preventing silent speech errors.
-  4. **Attended Consultation (Hold & Call / Merge)**:
+# Mandatory CRM Softphone v2.5 Protection & Calling Architecture Rules
+- **Absolute Preservation of CRM Softphone v2.5**: The CRM Softphone architecture (Version `v2.5` in `GlobalSoftphoneWidget.jsx`, Attended Consultation / MPC in `plivoConsultation.js`, Inbound Guard in `softphoneIncomingCall.js`, and comprehensive test suites in `tests/`) is battle-tested, verified with 67 passing automated tests, and backed up in `CRM-Backups Plivo Calling Perfect 2.5/`. Under NO circumstances should any of these core calling mechanisms be rewritten, degraded, removed, or bypassed.
+- **Strict Calling Architecture Safeguards (11 Core Pillars)**:
+  1. **Dynamic Dialing Toggle (`browser_webrtc` vs `mobile`)**: The `CallingMethodToggle` in `GlobalSoftphoneWidget.jsx` must cleanly switch between Browser WebRTC and Via Mobile. In Browser mode, no redundant agent mobile number input is rendered. In Mobile mode, the agent's verified mobile number is displayed clearly. External softphone mode is permanently eliminated to prevent operational confusion.
+  2. **Tenant-Isolated Telephony & BYOC Auth**: Plivo credentials MUST always resolve tenant-wise via `getWorkspaceTelephonyConfig(company, tenantId)` reading from `tenant_entitlements`. Secret `auth_token` values must NEVER be wiped or overwritten with empty strings during partial updates (`updateTenantTelephonyConfig`).
+  3. **Cloudflare Tunnel & Public Webhook Guard**: `isPrivateOrLocalHost` in `src/app/api/plivo/utils.js` MUST guard all webhook URLs. Private IPs (`192.168.*`, `10.*`, `172.16-31.*`, `169.254.*`), local development ports (`:3000`, `:8080`), and `.local` domains must NEVER be submitted as Plivo `answer_url`. In local dev, webhooks must automatically route to the active tunnel domain (`*.trycloudflare.com`) or fallback to `https://app.supujacreations.com`.
+  4. **State Freeze Recovery & Dial Error Transparency**: Outbound call initiation failures must immediately clear optimistic state (`setOptimisticCall(null)`, `optimisticCallRef.current = null`), reset `pendingOutboundCallRef.current = null`, and halt ringing audio so the UI never freezes on "Connecting to Line... 00:00". Provider dial errors must be permanently logged to Supabase `call_sessions.hangup_source`.
+  5. **Zero Duplicate UI Cards**: Never render the standalone active call controls card in `GlobalSoftphoneWidget.jsx` simultaneously with `ActiveCallPanel.jsx`. When `activeSession` is active, only `ActiveCallPanel` may render.
+  6. **Realtime Leg Inspection**: The 1-second polling in `/api/plivo/session-status` MUST actively inspect `session.customer_call_uuid` via Plivo SDK (`client.calls.get`) to detect customer decline/hangup with zero webhook latency.
+  7. **Universal Dual-Language Voice Engine**: `speakOutcome(hindiText, englishText)` must ALWAYS support fallback to English speech synthesis (`en-US` / system default) when Hindi voices (`hi-IN`) are not installed on the employee's OS (e.g. Windows OneCore TTS), preventing silent speech errors.
+  8. **Attended Consultation (Hold & Call / Merge / MPC)**:
      - Customer must be isolated on hold with `public/plivo-hold-tone.wav` during 3rd-party dialing.
      - Agent and 3rd party must converse in private consultation first; never auto-merge on pickup.
      - Cancel must drop only the 3rd party and safely resume the customer.
      - Merge must explicitly bridge all parties into the multi-party call.
      - Optimistic concurrency (`revision`, `attempt_id`) in `call_consultations` must never be disabled.
-  5. **Inbound Call Guard**: All incoming WebRTC invites must pass through `createIncomingCallGuard` (`softphoneIncomingCall.js`) to prevent double-answer, stale invite re-creation, and SDK race conditions.
-  6. **Indian Telecom Cause Mapping**: Maintain authoritative mapping in `categorizeHangupCause` (`rejected`, `switched_off`, `busy`, `no_answer`, `customer_hangup`). Never revert to generic `failed` or allow carrier busy codes (Q.850 17) to be misdiagnosed.
-  7. **Preservation of Golden Backup**: The folder `CRM-Backups Plivo Calling Perfect 2.1/` is a permanent golden backup and must never be deleted or modified.
+  9. **Inbound Call Guard**: All incoming WebRTC invites must pass through `createIncomingCallGuard` (`softphoneIncomingCall.js`) to prevent double-answer, stale invite re-creation, and SDK race conditions.
+  10. **Authoritative Indian Telecom Cause Mapping**: Maintain authoritative mapping in `categorizeHangupCause` (`rejected`, `switched_off`, `busy`, `no_answer`, `customer_hangup`). Never revert to generic `failed` or allow carrier busy codes (Q.850 17) to be misdiagnosed.
+  11. **Preservation of Golden Backups**: The folders `CRM-Backups Plivo Calling Perfect 2.1/` and `CRM-Backups Plivo Calling Perfect 2.5/` are permanent golden backups and must NEVER be deleted, overwritten, or modified.
 
 

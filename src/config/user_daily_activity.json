@@ -604,10 +604,43 @@
       "userId": "15e6a4bb-ca0c-4743-bf79-494ae64074ee",
       "email": "supujacreations@gmail.com",
       "empName": "SuPuja Creations",
-      "activeSeconds": 5667,
-      "idleSeconds": 5300,
+      "activeSeconds": 6560,
+      "idleSeconds": 10514,
       "firstSeen": "2026-10-21T18:30:10.433229+00:00",
-      "lastSeen": "2026-10-22T12:28:44.954Z",
+      "lastSeen": "2026-10-22T15:15:23.266Z",
+      "status": "working",
+      "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36"
+    },
+    "7712ec30-c633-4e21-94ca-b12408a8dafa": {
+      "userId": "7712ec30-c633-4e21-94ca-b12408a8dafa",
+      "email": "sujitswanmis@gmail.com",
+      "empName": "Sujit Gupta",
+      "activeSeconds": 993,
+      "idleSeconds": 11128,
+      "firstSeen": "2026-10-21T20:23:05.40628+00:00",
+      "lastSeen": "2026-10-22T13:23:44.172Z",
+      "status": "away",
+      "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36"
+    },
+    "bc6c65b1-6370-4822-bb6f-254af67d0810": {
+      "userId": "bc6c65b1-6370-4822-bb6f-254af67d0810",
+      "email": "tc5-nsmlr@newswangroup.com",
+      "empName": "Tishu Rani - 50701",
+      "activeSeconds": 1185,
+      "idleSeconds": 8904,
+      "firstSeen": "2026-10-22T03:47:16.491464+00:00",
+      "lastSeen": "2026-10-22T14:00:20.767Z",
+      "status": "working",
+      "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36"
+    },
+    "07fa35d3-f50a-4e41-ae15-b2692e393ea0": {
+      "userId": "07fa35d3-f50a-4e41-ae15-b2692e393ea0",
+      "email": "admin@newswangroup.com",
+      "empName": "New Swan Admin",
+      "activeSeconds": 2148,
+      "idleSeconds": 1661,
+      "firstSeen": "2026-10-22T14:18:41.181736+00:00",
+      "lastSeen": "2026-10-22T15:35:49.061Z",
       "status": "away",
       "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36"
     }

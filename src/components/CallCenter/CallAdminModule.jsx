@@ -1,17 +1,17 @@
 'use client';
 import MobileTableView from '@/components/common/MobileTableView';
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Settings, Users, Phone, Loader2, RefreshCw, PhoneCall,
   PhoneOff, Clock, Activity, Shield, Wifi, WifiOff,
   CheckCircle, XCircle, AlertCircle, BarChart2, Download,
   Play, Pause,
-  UserPlus, Edit2, Trash2, ChevronRight, Server, Radio,
+  UserPlus, Edit2, Trash2, ChevronRight, ChevronDown, Server, Radio,
   PhoneIncoming, PhoneOutgoing, ArrowRight, Eye, Filter,
   Calendar, Search, ToggleLeft, ToggleRight, Save, Bell, FileSpreadsheet,
   Plus, X, Key, KeyRound, ShieldCheck, Cpu, Copy, Building2, Globe, EyeOff, ExternalLink
 } from 'lucide-react';
-import { getTeamMembers, getCallAdminData, addCallAgentAdmin, updateCallAgentAdmin } from '@/app/actions/team';
+import { getTeamMembers, getCallAdminData, addCallAgentAdmin, updateCallAgentAdmin, saveCallAgentCallerIdAdmin, setCallAgentAuthorizationAdmin } from '@/app/actions/team';
 import { PremiumProgressLoader } from '../PremiumProgressLoader';
 import { filterVisibleSubTabs, getSubItemPermissions } from '@/utils/permissionUtils';
 import { useTableColumnResize, ColumnResizer } from '@/utils/tableColumnResize';
@@ -75,7 +75,7 @@ const CALL_ADMIN_AGENTS_DEFAULT_COL_WIDTHS = {
   assigned_caller_id: 200,
   password_set: 130,
   status: 120,
-  actions: 90
+  actions: 170
 };
 
 const CALL_ADMIN_AGENTS_MIN_COL_WIDTHS = {
@@ -85,7 +85,7 @@ const CALL_ADMIN_AGENTS_MIN_COL_WIDTHS = {
   assigned_caller_id: 150,
   password_set: 90,
   status: 80,
-  actions: 70
+  actions: 110
 };
 
 const CALL_ADMIN_ENDPOINTS_DEFAULT_COL_WIDTHS = {
@@ -277,22 +277,137 @@ const getISTDateRange = (preset, customStart, customEnd) => {
 // ─── Sub-components ─────────────────────────────────────────
 
 // ── Tab: Agents ──────────────────────────────────────────────
-function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, addCallAgentAdmin, userCompany = '', seatQuota = null }) {
+function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, addCallAgentAdmin, userCompany = '', tenantId = null, defaultCallerId = '', seatQuota = null }) {
   const [saving, setSaving] = useState({});
+  const [rowFeedback, setRowFeedback] = useState({});
+  const [callerIdDrafts, setCallerIdDrafts] = useState({});
+  const [agentSearch, setAgentSearch] = useState('');
   const [selectedUserId, setSelectedUserId] = useState('');
+  const [userSearch, setUserSearch] = useState('');
+  const [userPickerOpen, setUserPickerOpen] = useState(false);
+  const [highlightedUserIndex, setHighlightedUserIndex] = useState(-1);
+  const userPickerRef = useRef(null);
+  const userInputRef = useRef(null);
   const [adding, setAdding] = useState(false);
   const [workspaceNumbers, setWorkspaceNumbers] = useState([]);
-  const [defaultCallerId, setDefaultCallerId] = useState('');
-  const unassigned = users.filter(u => !agents.some(a => a.user_id === u.user_id));
+  const employeeAgents = useMemo(() => agents.filter(agent => agent.user_id && !String(agent.plivo_username || '').startsWith('system_')), [agents]);
+  const assignedUserIds = useMemo(() => new Set(employeeAgents.filter(agent => agent.is_active !== false).map(a => a.user_id)), [employeeAgents]);
+  const activeUsers = useMemo(() => users.filter(u => {
+    // Employee status and login approval are separate settings in User Management.
+    const status = String(u.emp_status || u.module_access?.emp_status || 'Active').trim().toLowerCase();
+    return u.user_id && status === 'active' && String(u.role || '').trim().toLowerCase() !== 'customer';
+  }).sort((a, b) => String(a.emp_name || a.email || '').localeCompare(String(b.emp_name || b.email || ''), 'en-IN')), [users]);
+  const unassigned = useMemo(() => activeUsers.filter(u => !assignedUserIds.has(u.user_id)), [activeUsers, assignedUserIds]);
+  const selectedUser = unassigned.find(u => u.user_id === selectedUserId);
+  const filteredUsers = useMemo(() => {
+    const terms = userSearch.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (!terms.length) return activeUsers;
+    return activeUsers.filter(u => {
+      const searchable = [u.emp_name, u.emp_id, u.emp_code, u.email, u.emp_official_mail_id,
+        u.emp_department, u.emp_designation, u.company, u.work_location_name, u.work_location_type]
+        .map(value => String(value ?? '').toLowerCase()).join(' ');
+      return terms.every(term => searchable.includes(term));
+    });
+  }, [activeUsers, userSearch]);
   const userMap = new Map((users || []).map(u => [u.user_id, u]));
+  const getCallerId = agent => Object.hasOwn(agent, 'outgoing_caller_id')
+    ? (agent.outgoing_caller_id || '')
+    : (/^\+?[0-9]{8,15}$/.test(String(agent.agent_code || '').trim()) ? String(agent.agent_code).trim() : '');
+  const filteredAgents = useMemo(() => {
+    const terms = agentSearch.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (!terms.length) return employeeAgents;
+    const members = new Map(users.map(user => [user.user_id, user]));
+    return employeeAgents.filter(agent => {
+      const user = members.get(agent.user_id) || {};
+      const endpoint = endpoints.find(ep => [ep.endpoint_key, ep.endpoint_id].includes(agent.plivo_endpoint_key));
+      const callerId = Object.hasOwn(agent, 'outgoing_caller_id') ? agent.outgoing_caller_id : agent.agent_code;
+      const text = [agent.display_name, agent.mobile_number, agent.plivo_username, agent.plivo_sip_uri,
+        endpoint?.alias, callerId, !callerId ? defaultCallerId : '', agent.default_calling_mode, agent.status,
+        agent.is_active === false ? 'revoked unauthorized' : 'authorized', user.emp_name, user.emp_id, user.emp_code,
+        user.email, user.emp_official_mail_id, user.emp_department, user.company, user.work_location_name, user.work_location_type]
+        .map(value => String(value ?? '').toLowerCase()).join(' ');
+      return terms.every(term => text.includes(term));
+    });
+  }, [agentSearch, employeeAgents, users, endpoints, defaultCallerId]);
+
+  const getUserLabel = (user) => {
+    const name = user.emp_name || user.email || user.emp_official_mail_id || 'Employee';
+    const employeeId = user.emp_id || user.emp_code;
+    return employeeId && !String(name).includes(String(employeeId)) ? `${name} • #${employeeId}` : name;
+  };
+
+  const selectUser = (user) => {
+    if (adding || assignedUserIds.has(user.user_id)) return;
+    setSelectedUserId(user.user_id);
+    setUserSearch('');
+    setUserPickerOpen(false);
+    setHighlightedUserIndex(-1);
+  };
+
+  const handleUserPickerKeyDown = (event) => {
+    if (event.key === 'Escape' || event.key === 'Tab') {
+      if (event.key === 'Escape') event.preventDefault();
+      setUserPickerOpen(false);
+      setHighlightedUserIndex(-1);
+      return;
+    }
+    if (!userPickerOpen && selectedUser && !event.ctrlKey && !event.metaKey && !event.altKey
+      && (event.key.length === 1 || event.key === 'Backspace' || event.key === 'Delete')) {
+      event.preventDefault();
+      setSelectedUserId('');
+      setUserSearch(event.key.length === 1 ? event.key : '');
+      setUserPickerOpen(true);
+      setHighlightedUserIndex(-1);
+      return;
+    }
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      setUserPickerOpen(true);
+      const selectableIndexes = filteredUsers.reduce((indexes, user, index) => {
+        if (!assignedUserIds.has(user.user_id)) indexes.push(index);
+        return indexes;
+      }, []);
+      if (!selectableIndexes.length) return;
+      const current = selectableIndexes.indexOf(highlightedUserIndex);
+      const next = event.key === 'ArrowDown'
+        ? (current + 1) % selectableIndexes.length
+        : (current <= 0 ? selectableIndexes.length - 1 : current - 1);
+      setHighlightedUserIndex(selectableIndexes[next]);
+    } else if (event.key === 'Enter' && userPickerOpen) {
+      event.preventDefault();
+      const index = highlightedUserIndex >= 0
+        ? highlightedUserIndex
+        : filteredUsers.findIndex(user => !assignedUserIds.has(user.user_id));
+      if (filteredUsers[index]) selectUser(filteredUsers[index]);
+    }
+  };
+
+  useEffect(() => {
+    const closeOnOutsideClick = (event) => {
+      if (userPickerRef.current && !userPickerRef.current.contains(event.target)) {
+        setUserPickerOpen(false);
+        setHighlightedUserIndex(-1);
+      }
+    };
+    document.addEventListener('pointerdown', closeOnOutsideClick);
+    return () => document.removeEventListener('pointerdown', closeOnOutsideClick);
+  }, []);
+
+  useEffect(() => {
+    if (userPickerOpen && highlightedUserIndex >= 0) {
+      document.getElementById(`calladmin-agent-option-${highlightedUserIndex}`)?.scrollIntoView({ block: 'nearest' });
+    }
+  }, [userPickerOpen, highlightedUserIndex]);
 
   // Load rented phone numbers for the workspace
   useEffect(() => {
     let isMounted = true;
     async function fetchNumbers() {
       try {
-        const q = userCompany ? `?company=${encodeURIComponent(userCompany)}` : '';
-        const res = await fetch(`/api/plivo/admin/numbers${q}`);
+        const q = new URLSearchParams();
+        if (userCompany) q.set('company', userCompany);
+        if (tenantId) q.set('tenant_id', tenantId);
+        const res = await fetch(`/api/plivo/admin/numbers?${q.toString()}`);
         if (res.ok) {
           const data = await res.json();
           if (isMounted && data.success && Array.isArray(data.numbers)) {
@@ -303,7 +418,7 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
     }
     fetchNumbers();
     return () => { isMounted = false; };
-  }, [userCompany]);
+  }, [userCompany, tenantId]);
 
   // Column Resizing Hook (Lead Data Pattern)
   const {
@@ -319,47 +434,80 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
   );
 
   const handleAdd = async () => {
-    if (!selectedUserId) return;
+    if (adding || !selectedUser) return;
     if (seatQuota && !seatQuota.canAdd) {
       alert(`Calling seat limit reached (${seatQuota.used}/${seatQuota.total}). Please increase calling seat allocation in Settings before adding more agents.`);
       return;
     }
     setAdding(true);
-    const user = users.find(u => u.user_id === selectedUserId);
-    const res = await addCallAgentAdmin(selectedUserId, user?.emp_name || 'Agent', userCompany);
-    if (!res.success) alert('Failed: ' + res.error);
-    else { setSelectedUserId(''); await onRefresh(); }
-    setAdding(false);
+    setUserPickerOpen(false);
+    try {
+      const res = await addCallAgentAdmin(selectedUser.user_id, selectedUser.emp_name || selectedUser.email || 'Agent', userCompany);
+      if (!res?.success) alert('Failed: ' + (res?.error || 'Could not authorize this user. Please try again.'));
+      else {
+        setSelectedUserId('');
+        setUserSearch('');
+        await onRefresh();
+      }
+    } catch (error) {
+      console.error('Failed to authorize call center user:', error);
+      alert('Could not authorize this user. Please try again.');
+    } finally {
+      setAdding(false);
+    }
   };
 
-  const handleUpdate = async (agentId, field, value) => {
-    setSaving(p => ({ ...p, [agentId]: true }));
-    await updateCallAgentAdmin(agentId, { [field]: value });
-    setSaving(p => ({ ...p, [agentId]: false }));
-    await onRefresh();
+  const saveAgentChange = async (agentId, action, successMessage) => {
+    if (saving[agentId]) return;
+    setSaving(previous => ({ ...previous, [agentId]: true }));
+    setRowFeedback(previous => ({ ...previous, [agentId]: null }));
+    try {
+      const result = await action();
+      if (!result?.success) throw new Error(result?.error || 'The change could not be saved.');
+      await onRefresh();
+      setRowFeedback(previous => ({ ...previous, [agentId]: { success: true, text: successMessage } }));
+    } catch (error) {
+      setRowFeedback(previous => ({ ...previous, [agentId]: { success: false, text: error.message || 'The change could not be saved.' } }));
+    } finally {
+      setSaving(previous => ({ ...previous, [agentId]: false }));
+    }
+  };
+
+  const handleUpdate = (agentId, field, value) => saveAgentChange(agentId,
+    () => updateCallAgentAdmin(agentId, { [field]: value }), 'Saved');
+
+  const handleCallerId = async (agentId, value) => {
+    if (saving[agentId]) return;
+    setCallerIdDrafts(previous => ({ ...previous, [agentId]: value }));
+    await saveAgentChange(agentId, () => saveCallAgentCallerIdAdmin(agentId, value || null), 'Caller ID saved');
+    setCallerIdDrafts(previous => {
+      const next = { ...previous };
+      delete next[agentId];
+      return next;
+    });
+  };
+
+  const handleAuthorization = async (agent) => {
+    const authorize = agent.is_active === false;
+    if (!authorize && !window.confirm(`Revoke call center access for ${agent.display_name || 'this employee'}? Call history and SIP settings will be kept.`)) return;
+    await saveAgentChange(agent.id, () => setCallAgentAuthorizationAdmin(agent.id, authorize), authorize ? 'Access authorized' : 'Access revoked');
   };
 
   const handleEndpoint = async (agentId, endpointKey) => {
-    setSaving(p => ({ ...p, [agentId]: true }));
     const ep = endpoints.find(e => e.endpoint_id === endpointKey || e.endpoint_key === endpointKey);
-    await updateCallAgentAdmin(agentId, {
+    await saveAgentChange(agentId, () => updateCallAgentAdmin(agentId, {
       plivo_endpoint_key: endpointKey || null,
       plivo_username:     ep?.username || null,
       plivo_sip_uri:      ep?.sip_uri  || null,
       plivo_password:     ep?.password || null,
-    });
-    setSaving(p => ({ ...p, [agentId]: false }));
-    await onRefresh();
+    }), 'Endpoint saved');
   };
 
   const handleSetPassword = async (agentId) => {
     const newPassword = prompt("Enter the SIP password for this endpoint:");
     if (!newPassword) return;
 
-    setSaving(p => ({ ...p, [agentId]: true }));
-    await updateCallAgentAdmin(agentId, { plivo_password: newPassword });
-    setSaving(p => ({ ...p, [agentId]: false }));
-    await onRefresh();
+    await saveAgentChange(agentId, () => updateCallAgentAdmin(agentId, { plivo_password: newPassword }), 'Password saved');
   };
 
   return (
@@ -389,60 +537,155 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
             </div>
           )}
         </div>
-        <div style={{ display:'flex', gap:'1rem', alignItems:'center' }}>
-          <select
-            value={selectedUserId}
-            onChange={e => setSelectedUserId(e.target.value)}
-            disabled={seatQuota && !seatQuota.canAdd}
-            style={{ flex:1, padding:'0.65rem 1rem', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'0.9rem', background:'white' }}
+        <label htmlFor="calladmin-agent-select" style={{ display:'block', fontSize:'0.82rem', fontWeight:600, color:'#475569', marginBottom:'0.4rem' }}>
+          Select active employee
+        </label>
+        <div style={{ display:'flex', gap:'1rem', alignItems:'center', flexWrap:'wrap' }}>
+          <div
+            ref={userPickerRef}
+            onBlur={event => {
+              if (!event.currentTarget.contains(event.relatedTarget)) {
+                setUserPickerOpen(false);
+                setHighlightedUserIndex(-1);
+              }
+            }}
+            style={{ position:'relative', flex:'1 1 260px', minWidth:0, maxWidth:'100%' }}
           >
-            <option value="">Select Team Member…</option>
-            {unassigned.map(u => {
-              const loc = u.work_location_name || u.work_location_type || 'Headquarter';
-              const dept = u.emp_department || 'General';
-              return (
-                <option key={u.user_id} value={u.user_id}>
-                  {u.emp_name} ({dept} • 🏢 {loc})
-                </option>
-              );
-            })}
-          </select>
+            <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.2rem 0.5rem 0.2rem 0.85rem', border:`1px solid ${userPickerOpen ? '#3b82f6' : '#cbd5e1'}`, borderRadius:'8px', background:'white', boxShadow:userPickerOpen ? '0 0 0 2px #dbeafe' : 'none' }}>
+              <Search size={17} color="#64748b" aria-hidden="true" />
+              <input
+                ref={userInputRef}
+                id="calladmin-agent-select"
+                type="text"
+                role="combobox"
+                autoComplete="off"
+                value={selectedUser && !userPickerOpen ? getUserLabel(selectedUser) : userSearch}
+                onFocus={() => setUserPickerOpen(true)}
+                onClick={() => setUserPickerOpen(true)}
+                onChange={event => {
+                  setUserSearch(event.target.value);
+                  setSelectedUserId('');
+                  setHighlightedUserIndex(-1);
+                  setUserPickerOpen(true);
+                }}
+                onKeyDown={handleUserPickerKeyDown}
+                placeholder="Search and select employee…"
+                disabled={adding}
+                aria-autocomplete="list"
+                aria-expanded={userPickerOpen}
+                aria-controls={userPickerOpen ? 'calladmin-agent-options' : undefined}
+                aria-activedescendant={userPickerOpen && highlightedUserIndex >= 0 ? `calladmin-agent-option-${highlightedUserIndex}` : undefined}
+                aria-describedby="calladmin-agent-counts"
+                style={{ flex:1, width:'100%', minWidth:0, padding:'0.5rem 0', border:'none', outline:'none', fontSize:'0.9rem', background:'transparent', color:'#1e293b' }}
+              />
+              <button
+                type="button"
+                disabled={adding}
+                aria-label={userPickerOpen ? 'Hide employee list' : 'Show employee list'}
+                onMouseDown={event => event.preventDefault()}
+                onClick={() => {
+                  if (userPickerOpen) setUserPickerOpen(false);
+                  else {
+                    setUserPickerOpen(true);
+                    userInputRef.current?.focus();
+                  }
+                  setHighlightedUserIndex(-1);
+                }}
+                style={{ display:'flex', alignItems:'center', padding:'0.4rem', background:'none', border:'none', borderRadius:'4px', color:'#64748b', cursor:adding ? 'not-allowed' : 'pointer' }}
+              >
+                <ChevronDown size={18} aria-hidden="true" style={{ transform:userPickerOpen ? 'rotate(180deg)' : 'none' }} />
+              </button>
+            </div>
+            {userPickerOpen && (
+              <div
+                id="calladmin-agent-options"
+                role="listbox"
+                aria-label="Active employees"
+                style={{ position:'absolute', top:'calc(100% + 4px)', left:0, right:0, zIndex:50, maxHeight:'280px', overflowY:'auto', background:'white', border:'1px solid #cbd5e1', borderRadius:'8px', boxShadow:'0 8px 24px rgba(15,23,42,0.15)' }}
+              >
+                {filteredUsers.length === 0 && (
+                  <div role="status" style={{ padding:'1rem', fontSize:'0.85rem', color:'#64748b' }}>
+                    No matching active employees. Try another name, employee ID or email.
+                  </div>
+                )}
+                {filteredUsers.map((user, index) => {
+                  const alreadyAuthorized = assignedUserIds.has(user.user_id);
+                  return (
+                    <div
+                      key={user.user_id}
+                      id={`calladmin-agent-option-${index}`}
+                      role="option"
+                      aria-selected={selectedUserId === user.user_id}
+                      aria-disabled={alreadyAuthorized}
+                      onMouseDown={event => event.preventDefault()}
+                      onMouseEnter={() => setHighlightedUserIndex(alreadyAuthorized ? -1 : index)}
+                      onClick={() => selectUser(user)}
+                      style={{ padding:'0.65rem 0.85rem', borderBottom:'1px solid #f1f5f9', cursor:alreadyAuthorized ? 'not-allowed' : 'pointer', background:highlightedUserIndex === index ? '#eff6ff' : 'white', color:alreadyAuthorized ? '#94a3b8' : '#1e293b' }}
+                    >
+                      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:'0.5rem', flexWrap:'wrap', fontSize:'0.88rem', fontWeight:600 }}>
+                        <span>{getUserLabel(user)}</span>
+                        {alreadyAuthorized && <span style={{ fontSize:'0.72rem', fontWeight:500 }}>Already Authorized</span>}
+                      </div>
+                      <div style={{ fontSize:'0.76rem', marginTop:'0.2rem', overflowWrap:'anywhere' }}>
+                        {[user.email || user.emp_official_mail_id, user.emp_department || 'General', user.company, user.work_location_name || user.work_location_type || 'Headquarter'].filter(Boolean).join(' • ')}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
           <button
             onClick={handleAdd}
-            disabled={adding || !selectedUserId || (seatQuota && !seatQuota.canAdd)}
+            disabled={adding || !selectedUser || (seatQuota && !seatQuota.canAdd)}
             style={{
               padding:'0.65rem 1.5rem',
               background: (seatQuota && !seatQuota.canAdd) ? '#94a3b8' : '#3b82f6',
               color:'white', border:'none', borderRadius:'8px', fontWeight:600,
               cursor: (seatQuota && !seatQuota.canAdd) ? 'not-allowed' : 'pointer',
               display:'flex', alignItems:'center', gap:'0.5rem',
-              opacity: (adding || !selectedUserId || (seatQuota && !seatQuota.canAdd)) ? 0.6 : 1
+              opacity: (adding || !selectedUser || (seatQuota && !seatQuota.canAdd)) ? 0.6 : 1
             }}
           >
             {adding ? <Loader2 size={16} className="spin" /> : <UserPlus size={16} />}
             Authorize
           </button>
         </div>
+        <p id="calladmin-agent-counts" role="status" style={{ color:'#64748b', fontSize:'0.82rem', marginTop:'0.75rem', marginBottom:0 }}>
+          {activeUsers.length} active employees • {unassigned.length} available • {activeUsers.length - unassigned.length} already authorized
+          {userSearch.trim() && ` • ${filteredUsers.length} matching`}
+        </p>
         {seatQuota && !seatQuota.canAdd && (
           <p style={{ color:'#dc2626', fontSize:'0.82rem', marginTop:'0.75rem', fontWeight: 500 }}>
             ⚠️ Calling seat allocation full ({seatQuota.used}/{seatQuota.total}). To add more agents, increase the calling seat quota under Settings.
           </p>
         )}
-        {unassigned.length === 0 && (!seatQuota || seatQuota.canAdd) && (
-          <p style={{ color:'#94a3b8', fontSize:'0.85rem', marginTop:'0.75rem' }}>All team members are already in the call center.</p>
+        {activeUsers.length > 0 && unassigned.length === 0 && (!seatQuota || seatQuota.canAdd) && (
+          <p style={{ color:'#94a3b8', fontSize:'0.85rem', marginTop:'0.75rem' }}>All active employees are already authorized in the call center.</p>
         )}
       </div>
 
       {/* Agents Table */}
       <div style={{ background:'white', borderRadius:'12px', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0', overflow:'hidden' }}>
-        <div style={{ padding:'1.25rem 1.5rem', borderBottom:'1px solid #f1f5f9', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+        <div style={{ padding:'1.25rem 1.5rem', borderBottom:'1px solid #f1f5f9', display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:'0.75rem' }}>
           <h3 style={{ fontSize:'1rem', fontWeight:600, color:'#1e293b', display:'flex', alignItems:'center', gap:'0.5rem' }}>
-            <Phone size={18} color="#3b82f6" /> Call Agents ({agents.length})
+            <Phone size={18} color="#3b82f6" /> Call Agents ({filteredAgents.length}{agentSearch.trim() ? ` / ${employeeAgents.length}` : ''})
           </h3>
+          <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', flex:'0 1 420px', minWidth:0, border:'1px solid #cbd5e1', borderRadius:'8px', padding:'0.5rem 0.75rem' }}>
+            <Search size={17} color="#64748b" aria-hidden="true" />
+            <input
+              type="search"
+              aria-label="Search call agents"
+              placeholder="Search agents, employee ID, email, SIP or caller ID…"
+              value={agentSearch}
+              onChange={event => setAgentSearch(event.target.value)}
+              style={{ width:'100%', minWidth:0, border:'none', outline:'none', fontSize:'0.85rem', background:'transparent', color:'#1e293b' }}
+            />
+          </div>
         </div>
-        <div style={{ overflowX:'auto' }}>
-          <MobileTableView id="CallCenter/CallAdminModule-1"><table style={{ width: `${getTotalTableWidth()}px`, borderCollapse: 'collapse', tableLayout: 'fixed' }}>
-            <thead style={{ backgroundColor: 'var(--th-bg)' }}>
+        <div id="calladmin-agents-scroll" role="region" aria-label="Call agents table" tabIndex={0} style={{ overflow:'auto', maxHeight:'65vh', position:'relative' }}>
+          <MobileTableView id="CallCenter/CallAdminModule-1"><table style={{ width: `${getTotalTableWidth()}px`, borderCollapse:'separate', borderSpacing:0, tableLayout: 'fixed' }}>
+            <thead style={{ position:'sticky', top:0, zIndex:2, backgroundColor:'var(--th-bg, #e2e8f0)', boxShadow:'0 2px 0 #cbd5e1' }}>
               <tr style={{ fontSize: '0.78rem', textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>
                 <th style={{ width: `${colWidths.agent}px`, padding: '0.75rem 1rem', textAlign: 'left', fontWeight: 600, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
@@ -489,7 +732,7 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
               </tr>
             </thead>
             <tbody>
-              {agents.map((agent, i) => {
+              {filteredAgents.map((agent, i) => {
                 const u = userMap.get(agent.user_id);
                 const loc = u?.work_location_name || u?.work_location_type || 'Headquarter';
                 const dept = u?.emp_department || '';
@@ -512,6 +755,7 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
                   <td style={{ width: `${colWidths.calling_mode}px`, padding:'1rem', boxSizing: 'border-box' }}>
                     <select
                       value={agent.default_calling_mode || 'browser_webrtc'}
+                      disabled={saving[agent.id] || agent.is_active === false}
                       onChange={e => handleUpdate(agent.id, 'default_calling_mode', e.target.value)}
                       style={{ padding:'0.4rem 0.6rem', borderRadius:'6px', border:'1px solid #cbd5e1', fontSize:'0.85rem', background:'white', cursor:'pointer', width: '100%', maxWidth: '100%' }}
                     >
@@ -523,6 +767,7 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
                   <td style={{ width: `${colWidths.sip_endpoint}px`, padding:'1rem', boxSizing: 'border-box' }}>
                     <select
                       value={agent.plivo_endpoint_key || ''}
+                      disabled={saving[agent.id] || agent.is_active === false}
                       onChange={e => handleEndpoint(agent.id, e.target.value)}
                       style={{ padding:'0.4rem 0.6rem', borderRadius:'6px', border:'1px solid #cbd5e1', fontSize:'0.85rem', background:'white', width: '100%', maxWidth: '100%', cursor:'pointer' }}
                     >
@@ -540,12 +785,16 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
                   </td>
                   <td style={{ width: `${colWidths.assigned_caller_id || 190}px`, padding:'1rem', boxSizing: 'border-box' }}>
                     <select
-                      value={agent.agent_code || ''}
-                      onChange={e => handleUpdate(agent.id, 'agent_code', e.target.value || null)}
+                      value={Object.hasOwn(callerIdDrafts, agent.id) ? callerIdDrafts[agent.id] : getCallerId(agent)}
+                      disabled={saving[agent.id] || agent.is_active === false}
+                      onChange={e => handleCallerId(agent.id, e.target.value)}
                       style={{ padding:'0.4rem 0.6rem', borderRadius:'6px', border:'1px solid #cbd5e1', fontSize:'0.82rem', background:'white', cursor:'pointer', width: '100%', maxWidth: '100%' }}
                       title="Select specific Outgoing Caller ID for this agent"
                     >
                       <option value="">🏢 Workspace Default ({defaultCallerId || '+918035340622'})</option>
+                      {getCallerId(agent) && !workspaceNumbers.some(number => number.number === getCallerId(agent)) && (
+                        <option value={getCallerId(agent)}>{getCallerId(agent)} (Saved caller ID)</option>
+                      )}
                       {workspaceNumbers.map(n => (
                         <option key={n.number} value={n.number}>
                           📞 {n.number} {n.alias ? `(${n.alias})` : ''}
@@ -560,6 +809,7 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
                         : <XCircle size={18} color="#dc2626" />}
                       <button
                         onClick={() => handleSetPassword(agent.id)}
+                        disabled={saving[agent.id] || agent.is_active === false}
                         style={{ padding:'0.2rem 0.5rem', fontSize:'0.75rem', borderRadius:'4px', border:'1px solid #cbd5e1', background:'white', cursor:'pointer', color:'#475569' }}
                         title="Manually set or update SIP Password"
                       >
@@ -567,17 +817,30 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
                       </button>
                     </div>
                   </td>
-                  <td style={{ width: `${colWidths.status}px`, padding:'1rem', boxSizing: 'border-box' }}>{statusBadge(agent.status)}</td>
+                  <td style={{ width: `${colWidths.status}px`, padding:'1rem', boxSizing: 'border-box' }}>
+                    {agent.is_active === false ? <span style={{ color:'#b91c1c', fontSize:'0.8rem', fontWeight:600 }}>Revoked</span> : statusBadge(agent.status)}
+                  </td>
                   <td style={{ width: `${colWidths.actions}px`, padding:'1rem', boxSizing: 'border-box' }}>
-                    {saving[agent.id]
-                      ? <Loader2 size={16} className="spin" color="#3b82f6" />
-                      : <CheckCircle size={16} color="#16a34a" />}
+                    <button
+                      type="button"
+                      onClick={() => handleAuthorization(agent)}
+                      disabled={saving[agent.id] || (agent.is_active === false && seatQuota?.canAdd === false)}
+                      style={{ width:'100%', padding:'0.4rem 0.5rem', border:'1px solid', borderColor:agent.is_active === false ? '#bbf7d0' : '#fecaca', borderRadius:'6px', background:agent.is_active === false ? '#f0fdf4' : '#fff7f7', color:agent.is_active === false ? '#15803d' : '#b91c1c', fontSize:'0.78rem', fontWeight:600, cursor:saving[agent.id] ? 'wait' : 'pointer' }}
+                    >
+                      {agent.is_active === false ? 'Re-authorize' : 'Revoke'}
+                    </button>
+                    {saving[agent.id] && <div role="status" style={{ display:'flex', alignItems:'center', gap:'0.3rem', marginTop:'0.4rem', fontSize:'0.75rem', color:'#3b82f6' }}><Loader2 size={13} className="spin" /> Saving…</div>}
+                    {rowFeedback[agent.id] && (
+                      <div role={rowFeedback[agent.id].success ? 'status' : 'alert'} style={{ marginTop:'0.4rem', fontSize:'0.75rem', color:rowFeedback[agent.id].success ? '#15803d' : '#b91c1c', overflowWrap:'anywhere' }}>
+                        {rowFeedback[agent.id].text}
+                      </div>
+                    )}
                   </td>
                 </tr>
               );
             })}
-              {agents.length === 0 && (
-                <tr><td colSpan="6" style={{ padding:'3rem', textAlign:'center', color:'#94a3b8' }}>No call center agents yet. Add a team member above.</td></tr>
+              {filteredAgents.length === 0 && (
+                <tr><td colSpan="7" style={{ padding:'3rem', textAlign:'center', color:'#94a3b8' }}>{agentSearch.trim() ? 'No call agents match your search.' : 'No call center agents yet. Add a team member above.'}</td></tr>
               )}
             </tbody>
           </table></MobileTableView>
@@ -3742,6 +4005,7 @@ export default function CallAdminModule({
   const [endpoints, setEndpoints] = useState([]);
   const [users, setUsers] = useState([]);
   const [seatQuota, setSeatQuota] = useState(null);
+  const [defaultCallerId, setDefaultCallerId] = useState('');
   const [loading, setLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
@@ -3751,14 +4015,15 @@ export default function CallAdminModule({
       if (tenantId) q.set('tenant_id', tenantId);
 
       const [userData, adminData, endpointsRes, settingsRes] = await Promise.all([
-        getTeamMembers(userCompany),
+        getTeamMembers(userCompany, tenantId),
         getCallAdminData(userCompany, tenantId),
         fetch(`/api/plivo/admin/endpoints?${q.toString()}`).then(r => r.json()).catch(() => ({ endpoints: [] })),
         fetch(`/api/plivo/admin/settings?${q.toString()}`).then(r => r.json()).catch(() => ({}))
       ]);
-      if (userData) setUsers(userData.filter(u => u.emp_name?.trim()));
+      if (Array.isArray(userData)) setUsers(userData.filter(u => u.user_id));
       setEndpoints(adminData.endpoints?.length ? adminData.endpoints : (endpointsRes.endpoints || []));
       setAgents(adminData.agents || []);
+      if (settingsRes?.fromNumber !== undefined) setDefaultCallerId(settingsRes.fromNumber || '');
       if (settingsRes?.seatQuota) {
         setSeatQuota(settingsRes.seatQuota);
       }
@@ -3832,6 +4097,8 @@ export default function CallAdminModule({
             updateCallAgentAdmin={updateCallAgentAdmin}
             addCallAgentAdmin={addCallAgentAdmin}
             userCompany={userCompany}
+            tenantId={tenantId}
+            defaultCallerId={defaultCallerId}
             seatQuota={seatQuota}
           />
         )}

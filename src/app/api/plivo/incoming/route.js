@@ -135,6 +135,7 @@ export async function POST(req) {
           .from('call_agents')
           .select('id, plivo_username, plivo_sip_uri, status')
           .eq('id', candidateAgentId)
+          .eq('is_active', true)
           .maybeSingle();
 
         if (stickyAgent?.plivo_username) {

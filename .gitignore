@@ -41,3 +41,7 @@ yarn-error.log*
 next-env.d.ts
 
 .vercel
+
+# local scratch scripts and heavy binary backups
+scratch/
+/CRM-Backups Plivo Calling Perfect 2.1/

@@ -7,6 +7,7 @@ import { logAuditAction } from './audit';
 import { saveImpersonateToken } from '@/lib/impersonateStore';
 import { getReportingFields } from '@/utils/reportingHierarchy';
 import { normalizeIndianPhoneNumber } from '@/app/api/plivo/phone-number';
+import { getSubItemPermissions } from '@/utils/permissionUtils';
 
 const getAdminClient = () => {
   return createSupabaseClient(
@@ -911,34 +912,135 @@ export async function getCallAdminData(company = null, tenantId = null) {
   return { endpoints: scopedEndpoints, agents: scopedAgents };
 }
 
+// Resolve administration scope from the signed-in profile, never client-supplied company names.
+async function requireCallAdminUser(adminClient, userId, operation = 'edit') {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Please sign in again.');
+  const { data: requester, error } = await adminClient.from('user_roles').select('*').eq('user_id', user.id).maybeSingle();
+  if (error || !requester) throw new Error('Could not verify your administrator profile.');
+  const permissions = getSubItemPermissions(requester.module_access, requester.role, 'calladmin', 'agents');
+  if (!permissions.view || !permissions[operation]) throw new Error('You do not have permission to manage call center agents.');
+  const isMaster = ['masteradmin', 'master_admin'].includes(String(requester.role || '').toLowerCase())
+    || requester.module_access?.is_master_admin === true
+    || String(requester.email || '').toLowerCase() === 'supujacreations@gmail.com';
+  let target;
+  if (isMaster) {
+    const result = await adminClient.from('user_roles').select('*').eq('user_id', userId).maybeSingle();
+    if (result.error) throw new Error('Could not verify the employee workspace.');
+    target = result.data;
+  } else {
+    const tenantId = requester.tenant_id || requester.module_access?._tenantId || null;
+    target = (await getTeamMembers(requester.company || '', tenantId)).find(member => member.user_id === userId);
+  }
+  if (!target || String(target.role || '').toLowerCase() === 'customer') {
+    throw new Error('This employee is not in your call center workspace.');
+  }
+  return target;
+}
+
+async function requireManagedCallAgent(adminClient, agentId) {
+  const { data: agent, error } = await adminClient.from('call_agents').select('*').eq('id', agentId).maybeSingle();
+  if (error || !agent?.user_id || String(agent.plivo_username || '').startsWith('system_')) {
+    throw new Error('Employee calling profile not found. System settings cannot be changed here.');
+  }
+  const target = await requireCallAdminUser(adminClient, agent.user_id);
+  return { agent, target };
+}
+
 export async function addCallAgentAdmin(userId, displayName, company = '') {
-  const adminClient = getAdminClient();
-
-  // If company not passed, resolve from user_roles
-  let comp = company;
-  if (!comp) {
-    const { data: u } = await adminClient.from('user_roles').select('company').eq('user_id', userId).maybeSingle();
-    comp = u?.company || '';
+  try {
+    const adminClient = getAdminClient();
+    const target = await requireCallAdminUser(adminClient, userId, 'add');
+    const employeeStatus = String(target.emp_status || target.module_access?.emp_status || 'Active').trim().toLowerCase();
+    if (employeeStatus !== 'active') return { success: false, error: 'Only active employees can be authorized.' };
+    const { data: existing, error: lookupError } = await adminClient.from('call_agents').select('id, is_active').eq('user_id', userId).maybeSingle();
+    if (lookupError) throw lookupError;
+    if (existing) {
+      if (existing.is_active !== false) return { success: true, data: existing };
+      return setCallAgentAuthorizationAdmin(existing.id, true);
+    }
+    const { getWorkspaceCallingSeatQuota } = await import('@/utils/telephonyConfig');
+    const quota = await getWorkspaceCallingSeatQuota(target.company || '', target.tenant_id || target.module_access?._tenantId || null);
+    if (!quota.canAdd) return { success: false, error: `Calling Seat Limit Reached (${quota.used}/${quota.total} Seats Allocated). Please contact Master Admin to upgrade calling seats.` };
+    const { data, error } = await adminClient.from('call_agents').insert({
+      user_id: userId,
+      display_name: target.emp_name || displayName || 'Agent',
+      default_calling_mode: 'browser_webrtc',
+      is_active: true,
+      status: 'offline'
+    }).select().single();
+    if (error) throw error;
+    return { success: true, data };
+  } catch (error) {
+    return { success: false, error: error.message || 'Could not authorize this employee.' };
   }
+}
 
-  const { getWorkspaceCallingSeatQuota } = await import('@/utils/telephonyConfig');
-  const quota = await getWorkspaceCallingSeatQuota(comp);
-  if (!quota.canAdd) {
-    return {
-      success: false,
-      error: `Calling Seat Limit Reached (${quota.used}/${quota.total} Seats Allocated). Please contact Master Admin to upgrade calling seats.`
-    };
+export async function saveCallAgentCallerIdAdmin(agentId, callerId) {
+  try {
+    const adminClient = getAdminClient();
+    const { target } = await requireManagedCallAgent(adminClient, agentId);
+    const value = callerId == null || callerId === '' ? null : String(callerId).trim();
+    if (value && !/^\+[1-9][0-9]{7,14}$/.test(value)) return { success: false, error: 'Select a valid outgoing caller ID.' };
+    if (value) {
+      const { getWorkspaceTelephonyConfig } = await import('@/utils/telephonyConfig');
+      const config = await getWorkspaceTelephonyConfig(target.company || '', target.tenant_id || target.module_access?._tenantId || null);
+      if (!config.authId || !config.authToken) throw new Error('Calling credentials are not configured for this workspace.');
+      const response = await fetch(`https://api.plivo.com/v1/Account/${encodeURIComponent(config.authId)}/Number/?limit=50`, {
+        headers: { Authorization: `Basic ${Buffer.from(`${config.authId}:${config.authToken}`).toString('base64')}` },
+        cache: 'no-store', signal: AbortSignal.timeout(10000)
+      });
+      if (!response.ok) throw new Error('Could not verify the workspace phone numbers. Please retry.');
+      const numbers = await response.json();
+      if (!(numbers.objects || []).some(number => `+${String(number.number || '').replace(/\D/g, '')}` === value)) {
+        return { success: false, error: 'This caller ID is not available in the employee workspace.' };
+      }
+    }
+    const { data, error } = await adminClient.from('call_agents').update({ outgoing_caller_id: value })
+      .eq('id', agentId).select('id, outgoing_caller_id').single();
+    if (error) {
+      if (['42703', 'PGRST204'].includes(error.code)) {
+        return { success: false, migrationRequired: true, error: 'Caller-ID storage is not ready. Run migration 34_call_agent_outgoing_caller_id.sql in Supabase SQL Editor, then retry.' };
+      }
+      throw error;
+    }
+    if (!data || data.outgoing_caller_id !== value) throw new Error('Caller-ID save could not be verified. Please retry.');
+    return { success: true, data };
+  } catch (error) {
+    return { success: false, error: error.message || 'Could not save the outgoing caller ID.' };
   }
+}
 
-  const { data, error } = await adminClient.from('call_agents').insert({
-    user_id: userId,
-    display_name: displayName,
-    default_calling_mode: 'browser_webrtc',
-    status: 'offline'
-  }).select().single();
-  
-  if (error) return { success: false, error: error.message };
-  return { success: true, data };
+export async function setCallAgentAuthorizationAdmin(agentId, authorized) {
+  try {
+    if (typeof authorized !== 'boolean') throw new Error('Invalid authorization setting.');
+    const adminClient = getAdminClient();
+    const { agent, target } = await requireManagedCallAgent(adminClient, agentId);
+    if (authorized) {
+      const status = String(target.emp_status || target.module_access?.emp_status || 'Active').trim().toLowerCase();
+      if (status !== 'active') throw new Error('Only active employees can be re-authorized.');
+      if (agent.is_active !== false) return { success: true, data: { id: agent.id, is_active: agent.is_active, status: agent.status } };
+      const { getWorkspaceCallingSeatQuota } = await import('@/utils/telephonyConfig');
+      const quota = await getWorkspaceCallingSeatQuota(target.company || '', target.tenant_id || target.module_access?._tenantId || null);
+      if (!quota.canAdd) throw new Error(`Calling seat limit reached (${quota.used}/${quota.total}).`);
+    } else {
+      const { data: sessions, error } = await adminClient.from('call_sessions').select('id').eq('agent_id', agentId)
+        .in('status', ['initiated', 'ringing', 'agent_answered', 'customer_ringing', 'connected']).limit(1);
+      if (error) throw new Error('Could not verify active calls. Please retry.');
+      if (sessions?.length || ['on_call', 'busy'].includes(agent.status)) {
+        throw new Error('This employee has a call in progress. Revoke access after the call ends.');
+      }
+    }
+    let update = adminClient.from('call_agents').update({ is_active: authorized, status: 'offline' }).eq('id', agentId);
+    if (typeof agent.is_active === 'boolean') update = update.eq('is_active', agent.is_active);
+    const { data, error } = await update.select('id, is_active, status').maybeSingle();
+    if (error) throw error;
+    if (!data || data.is_active !== authorized) throw new Error('Authorization changed meanwhile. Refresh the list and retry.');
+    return { success: true, data };
+  } catch (error) {
+    return { success: false, error: error.message || 'Could not update call center authorization.' };
+  }
 }
 
 export async function updateCallAgentAdmin(agentId, updates) {
@@ -968,6 +1070,9 @@ export async function autoProvisionCallAgent(userId, company = '') {
       .eq('user_id', userId)
       .maybeSingle();
 
+    if (existing?.is_active === false) {
+      return { success: false, error: 'Your call center access has been revoked. Contact your administrator.' };
+    }
     if (existing) {
       return { success: true, data: existing };
     }
@@ -1015,6 +1120,69 @@ export async function autoProvisionCallAgent(userId, company = '') {
   } catch (err) {
     console.error('Exception in autoProvisionCallAgent:', err);
     return { success: false, error: err.message };
+  }
+}
+
+const agentEndpointIdCache = new Map();
+
+// Display metadata only. Never replace the saved SIP key or delay agent setup.
+export async function getAgentEndpointId(userId = null) {
+  try {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { endpointId: null, error: 'Please sign in again.' };
+    const targetUserId = userId || user.id;
+    const adminClient = getAdminClient();
+    if (targetUserId !== user.id) await requireCallAdminUser(adminClient, targetUserId);
+
+    const { data: agent, error } = await adminClient.from('call_agents')
+      .select('id, plivo_endpoint_key, plivo_username, plivo_sip_uri').eq('user_id', targetUserId).maybeSingle();
+    if (error || !agent) return { endpointId: null, error: 'Agent profile not found.' };
+    const savedKey = String(agent.plivo_endpoint_key || '').trim();
+    if (/^[0-9]+$/.test(savedKey)) return { endpointId: savedKey, error: null };
+
+    const username = String(agent.plivo_username || agent.plivo_sip_uri?.match(/^sip:([^@]+)@/i)?.[1] || '').trim();
+    if (!username) return { endpointId: null, error: null };
+    const { data: registry } = await adminClient.from('agent_endpoint_registry')
+      .select('endpoint_id').eq('username', username).maybeSingle();
+    const registeredId = String(registry?.endpoint_id || '').trim();
+    if (/^[0-9]+$/.test(registeredId)) return { endpointId: registeredId, error: null };
+
+    const { data: role, error: roleError } = await adminClient.from('user_roles').select('*')
+      .eq('user_id', targetUserId).maybeSingle();
+    if (roleError || !role) return { endpointId: null, error: 'Employee workspace could not be verified.' };
+    const { getWorkspaceTelephonyConfig } = await import('@/utils/telephonyConfig');
+    const config = await getWorkspaceTelephonyConfig(role.company || '', role.tenant_id || role.module_access?._tenantId || null);
+    if (!config.authId || !config.authToken) return { endpointId: null, error: null };
+    const cacheKey = JSON.stringify([targetUserId, config.authId, username]);
+    const cached = agentEndpointIdCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) return { endpointId: cached.endpointId, error: null };
+
+    // A single bounded lookup per assignment; there is no background polling.
+    const signal = AbortSignal.timeout(5000);
+    const authorization = `Basic ${Buffer.from(`${config.authId}:${config.authToken}`).toString('base64')}`;
+    let offset = 0;
+    for (let page = 0; page < 100; page += 1) {
+      const response = await fetch(`https://api.plivo.com/v1/Account/${encodeURIComponent(config.authId)}/Endpoint/?limit=20&offset=${offset}`, {
+        headers: { Authorization: authorization }, cache: 'no-store', signal
+      });
+      if (!response.ok) break;
+      const result = await response.json();
+      const endpoints = Array.isArray(result.objects) ? result.objects : [];
+      const endpoint = endpoints.find(item => String(item.username || '').trim().toLowerCase() === username.toLowerCase());
+      const endpointId = String(endpoint?.endpoint_id || '').trim();
+      if (/^[0-9]+$/.test(endpointId)) {
+        if (agentEndpointIdCache.size < 256 || agentEndpointIdCache.has(cacheKey)) {
+          agentEndpointIdCache.set(cacheKey, { endpointId, expiresAt: Date.now() + 5 * 60 * 1000 });
+        }
+        return { endpointId, error: null };
+      }
+      if (!result.meta?.next || !endpoints.length) break;
+      offset += endpoints.length;
+    }
+    return { endpointId: null, error: null };
+  } catch {
+    return { endpointId: null, error: 'Endpoint ID could not be loaded.' };
   }
 }
 
