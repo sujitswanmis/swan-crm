@@ -188,7 +188,7 @@ export function isTabPermitted(tabId, moduleAccess = {}, userRole = '', tenantEn
   if (isAdmin) return true;
   if (!moduleAccess) return false;
 
-  if (tabId === 'dashboard') return moduleAccess['analytics']?.view !== false;
+  if (tabId === 'dashboard') return moduleAccess['analytics']?.view === true;
   if (tabId === 'ai') return moduleAccess['ai']?.view === true || moduleAccess['new_swan_ai']?.view === true;
   if (tabId === 'callcenter') return moduleAccess['callcenter']?.view === true;
   if (tabId === 'registration') return moduleAccess['registration']?.view === true;
@@ -403,8 +403,20 @@ export default function CRMContainer({
     }
     
     // Check if path is a dashboard subtab or alias
-    if (['scorecard', 'overview', 'pipeline', 'lead-data', 'leads-data'].includes(path) || (path && path.startsWith('dashboard/'))) {
-      return 'dashboard';
+    if (['scorecard', 'overview', 'pipeline', 'lead-data', 'leads-data'].includes(path) || (path && path.startsWith('dashboard/')) || path === 'dashboard') {
+      const isAdmin = userRole === 'admin' || userRole === 'Admin' || (typeof userRole === 'string' && userRole.toLowerCase() === 'masteradmin');
+      const hasAnalyticsAccess = isAdmin || moduleAccess?.['analytics']?.view === true;
+      if (hasAnalyticsAccess) {
+        return 'dashboard';
+      }
+      // If user does not have analytics access, redirect to first allowed module
+      if (moduleAccess?.['callcenter']?.view === true) return 'callcenter';
+      if (moduleAccess?.['leads']?.view === true) return 'leads';
+      if (moduleAccess?.['attendance']?.view !== false) return 'attendance';
+      if (moduleAccess?.['checklist']?.view !== false) return 'checklist';
+      if (moduleAccess?.['delegation']?.view !== false) return 'delegation';
+      const firstAllowed = Object.keys(moduleAccess || {}).find(k => moduleAccess[k]?.view === true);
+      return firstAllowed || 'leads';
     }
     if (['sessions', 'shift-monitoring', 'shift-analytics', 'breakdown'].includes(path) || path === 'settings' || (path && path.startsWith('settings/'))) {
       return 'settings';
@@ -435,19 +447,23 @@ export default function CRMContainer({
     }
 
     if (!path) {
-      const isAdmin = userRole === 'admin' || userRole === 'Admin';
-      if (isAdmin || moduleAccess['analytics']?.view) path = 'dashboard';
-      else if (moduleAccess['new_swan_ai']?.view) path = 'ai';
-      else if (moduleAccess['callcenter']?.view) path = 'callcenter';
-      else if (moduleAccess['aiadmin']?.view) path = 'aiadmin';
-      else if (moduleAccess['aiknowledgebase']?.view) path = 'aiknowledgebase';
-      else if (moduleAccess['calladmin']?.view) path = 'calladmin';
-      else if (moduleAccess['aicallcenter']?.view) path = 'aicallcenter';
+      const isAdmin = userRole === 'admin' || userRole === 'Admin' || (typeof userRole === 'string' && userRole.toLowerCase() === 'masteradmin');
+      if (isAdmin || moduleAccess?.['analytics']?.view === true) path = 'dashboard';
+      else if (moduleAccess?.['callcenter']?.view === true) path = 'callcenter';
+      else if (moduleAccess?.['leads']?.view === true) path = 'leads';
+      else if (moduleAccess?.['attendance']?.view !== false) path = 'attendance';
+      else if (moduleAccess?.['checklist']?.view !== false) path = 'checklist';
+      else if (moduleAccess?.['delegation']?.view !== false) path = 'delegation';
+      else if (moduleAccess?.['new_swan_ai']?.view === true) path = 'ai';
+      else if (moduleAccess?.['aiadmin']?.view === true) path = 'aiadmin';
+      else if (moduleAccess?.['aiknowledgebase']?.view === true) path = 'aiknowledgebase';
+      else if (moduleAccess?.['calladmin']?.view === true) path = 'calladmin';
+      else if (moduleAccess?.['aicallcenter']?.view === true) path = 'aicallcenter';
       else {
         // Fallback to first available module access
         const firstAllowed = Object.keys(moduleAccess || {}).find(k => moduleAccess[k]?.view);
         if (firstAllowed) path = firstAllowed;
-        else path = 'dashboard';
+        else path = 'leads';
       }
     }
     return path;
@@ -2957,7 +2973,16 @@ export default function CRMContainer({
       setLastScreenCapture(null);
     }
 
+    if (tabId === 'dashboard') {
+      if (!isTabPermitted('dashboard', moduleAccess, userRole)) return;
+      setActiveTab('dashboard');
+      window.history.pushState(null, '', '/dashboard');
+      if (window.innerWidth <= 768) setIsSidebarOpen(false);
+      return;
+    }
+
     if (['scorecard', 'overview', 'pipeline', 'lead-data', 'leads-data'].includes(tabId)) {
+      if (!isTabPermitted('dashboard', moduleAccess, userRole)) return;
       const canonical = (tabId === 'pipeline' || tabId === 'leads-data') ? 'lead-data' : tabId;
       setActiveTab('dashboard');
       setDashboardSubTab(canonical);

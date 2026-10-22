@@ -183,7 +183,7 @@ function LoginFormContent() {
     
     // 2. Instant Redirect without blocking for round-trip queries
     const currentSearchParams = new URLSearchParams(window.location.search);
-    const nextPath = currentSearchParams.get('next') || '/dashboard';
+    const nextPath = currentSearchParams.get('next') || '/';
     window.location.href = nextPath;
   };
 
