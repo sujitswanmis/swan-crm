@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import plivo from 'plivo';
 import { categorizeHangupCause } from '@/app/api/plivo/utils';
+import { isConsultationSession, resolveConsultation, consultationEvent } from '@/lib/plivoConsultation';
 
 // All terminal customer-side call status values from Plivo (various spellings)
 const TERMINAL_CUSTOMER_STATUSES = new Set([
@@ -116,6 +117,12 @@ export async function POST(req) {
 
       if (!session) {
         console.log('ring-callback: no session found for room/uuid, returning OK');
+        return new NextResponse('OK', { status: 200 });
+      }
+
+      if (isConsultationSession(session)) {
+        const { ctx } = await resolveConsultation(adminClient, session);
+        await consultationEvent(ctx, event);
         return new NextResponse('OK', { status: 200 });
       }
 
@@ -241,6 +248,12 @@ export async function POST(req) {
           .or(`agent_call_uuid.eq.${callUuid},agent_call_uuid.eq.${requestUuid}`)
           .maybeSingle();
         session = data;
+      }
+
+      if (isConsultationSession(session)) {
+        const { ctx } = await resolveConsultation(adminClient, session);
+        await consultationEvent(ctx, event);
+        return new NextResponse('OK', { status: 200 });
       }
 
       if (session && ['initiated', 'ringing'].includes(session.status)) {

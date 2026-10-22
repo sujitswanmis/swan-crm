@@ -51,6 +51,22 @@ test('ambiguous and app-cancelled calls do not claim the phone was switched off'
   assert.equal(categorizeHangupCause('completed', 'Normal Clearing', 'Carrier', 29), 'failed');
 });
 
+test('a failed Dial with an unknown caller ID is a setup error, not a switched-off customer', () => {
+  // Exact action payload: no B-leg UUID or numeric code was created.
+  assert.equal(categorizeHangupCause('failed', 'PLIVO_UNKNOWN_CALLER_ID', 'plivo_dial', 0, false, null, 'false'), 'setup_error');
+  assert.equal(categorizeHangupCause('failed', 'Unknown Caller ID', 'Plivo', 0, false, 3030, false), 'setup_error');
+  assert.equal(categorizeHangupCause('failed', 'unknown-caller-id', 'Plivo', 0, false, null, '0'), 'setup_error');
+});
+
+test('known provider setup codes retain their meaning even when the destination never rang', () => {
+  for (const code of [2030, 2040, 2050, 2060, 2070, 3030, 3040, 3130, 3140, 5010, 7011, 8011]) {
+    assert.equal(categorizeHangupCause('failed', '', 'Plivo', 0, false, code, 'false'), 'setup_error', String(code));
+  }
+  assert.equal(categorizeHangupCause('failed', 'USER_BUSY', 'Carrier', 0, false, 3010, 'false'), 'busy');
+  assert.equal(categorizeHangupCause('failed', 'Call Rejected', 'Carrier', 0, false, 3020, 'false'), 'rejected');
+  assert.equal(categorizeHangupCause('failed', 'Subscriber Absent', 'Carrier', 0, false, 2010, 'false'), 'unreachable');
+});
+
 test('outbound customer number accepts Indian mobile and landline formats', () => {
   assert.equal(normalizeIndianPhoneNumber('98765 43210'), '+919876543210');
   assert.equal(normalizeIndianPhoneNumber('09876543210'), '+919876543210');

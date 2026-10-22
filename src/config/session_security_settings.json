@@ -1,5 +1,5 @@
 {
-  "inactivityTimeoutMinutes": 60,
+  "inactivityTimeoutMinutes": 120,
   "enableAutoLogout": true,
   "showTimerInHeader": true,
   "warningSeconds": 45,
@@ -97,6 +97,6 @@
       "enabled": true
     }
   ],
-  "updatedAt": "2026-08-28T00:59:00.000Z",
-  "updatedBy": "sujitswanmis@gmail.com"
+  "updatedAt": "2026-10-20T15:41:23.126Z",
+  "updatedBy": "supujacreations@gmail.com"
 }

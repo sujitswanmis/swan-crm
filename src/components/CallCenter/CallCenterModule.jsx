@@ -1,5 +1,5 @@
 'use client';
-import MobileTableView from '@/components/common/MobileTableView';
+import MobileTableView, { TableViewToggle, useTableViewPreference } from '@/components/common/MobileTableView';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   PhoneCall, Users, Clock, Database, Loader2, ShieldAlert,
@@ -154,6 +154,7 @@ export default function CallCenterModule({ userId, userCompany = '', tenantId = 
   const [recentCalls, setRecentCalls] = useState([]);
   const [totalCalls, setTotalCalls] = useState(0);
   const [page, setPage] = useState(0);
+  const [callLogView, setCallLogView] = useTableViewPreference('CallCenter/CallCenterModule-1');
 
   // Interactive Column Resizing
   const {
@@ -606,18 +607,21 @@ export default function CallCenterModule({ userId, userCompany = '', tenantId = 
 
       {/* Main Call Logs Card */}
       <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
-        <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid #f1f5f9', background: '#f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ padding: '0.85rem 1.25rem', borderBottom: '1px solid #f1f5f9', background: '#f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
           <h3 style={{ fontSize: '1rem', fontWeight: 600, color: '#1e293b', display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
             <Clock size={16} color="#3b82f6" /> My Call Logs
           </h3>
-          <span style={{ fontSize: '0.8rem', color: '#64748b' }}>
-            Strict IST (Asia/Kolkata)
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <span style={{ fontSize: '0.8rem', color: '#64748b' }}>
+              Strict IST (Asia/Kolkata)
+            </span>
+            <TableViewToggle view={callLogView} onChange={setCallLogView} />
+          </div>
         </div>
 
         {/* Responsive Table with Draggable Resizable Columns */}
         <div style={{ overflowX: 'auto' }}>
-          <MobileTableView id="CallCenter/CallCenterModule-1"><table style={{ width: `${Math.max(1185, getTotalTableWidth())}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
+          <MobileTableView id="CallCenter/CallCenterModule-1" view={callLogView} hideToggle={true}><table style={{ width: `${Math.max(1185, getTotalTableWidth())}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
             <thead style={{ backgroundColor: 'var(--th-bg, #f8fafc)' }}>
               <tr style={{ fontSize: '0.76rem', textTransform: 'uppercase', color: 'var(--text-secondary, #64748b)', borderBottom: '1px solid #e2e8f0', letterSpacing: '0.04em' }}>
                 <th style={{ width: `${colWidths.time}px`, padding: '0.65rem 0.75rem', fontWeight: 700, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>

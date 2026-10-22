@@ -50,11 +50,16 @@ import {
   getLocalChecklists,
   getLocalDelegationTasks,
   getOfflineRules,
-  saveOfflineRulesToLocal,
-  DEFAULT_OFFLINE_RULES
+  saveOfflineRulesToLocal
 } from '@/utils/offlineSync';
 import { getOfflineRuleSettings, saveOfflineRuleSettings } from '@/app/actions/offlineRules';
 import { createClient } from '@/utils/supabase/client';
+
+const QUEUED_OFFLINE_ACTIONS = new Set([
+  'checklistSubmit', 'delegationStatusUpdate', 'delegationCreate',
+  'attendancePunch', 'attendanceRegularization', 'leadStatusUpdate',
+  'leadNotes', 'leadFollowUp', 'clientRegistration', 'profileEdit', 'leadAssign'
+]);
 
 export default function OfflineRuleModule({ userRole = 'admin' }) {
   const [isOnline, setIsOnline] = useState(true);
@@ -71,14 +76,14 @@ export default function OfflineRuleModule({ userRole = 'admin' }) {
   const [statusMsg, setStatusMsg] = useState({ type: '', text: '' });
 
   // Configurable Rules State
-  const [rules, setRules] = useState(DEFAULT_OFFLINE_RULES);
+  const [rules, setRules] = useState(() => getOfflineRules());
   const [hasChanges, setHasChanges] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState('all');
 
   const supabase = createClient();
 
   // Load cloud rules and device stats
-  const loadAll = useCallback(async () => {
+  const loadAll = useCallback(async (refreshRules = true) => {
     if (typeof window !== 'undefined') {
       setIsOnline(navigator.onLine);
       setOfflineUsage(getDailyOfflineUsage());
@@ -86,14 +91,16 @@ export default function OfflineRuleModule({ userRole = 'admin' }) {
     }
 
     try {
-      // 1. Fetch remote settings
-      const res = await getOfflineRuleSettings();
-      if (res?.success && res.settings) {
-        setRules(res.settings);
-        saveOfflineRulesToLocal(res.settings);
-      } else {
-        const local = getOfflineRules();
-        setRules(local);
+      // Local policy is usable immediately, including after an offline refresh.
+      if (refreshRules) {
+        setRules(getOfflineRules());
+        if (typeof navigator !== 'undefined' && navigator.onLine) {
+          const res = await getOfflineRuleSettings();
+          if (res?.success && res.settings) {
+            setRules(res.settings);
+            saveOfflineRulesToLocal(res.settings);
+          }
+        }
       }
 
       // 2. Queue and cache stats
@@ -140,12 +147,13 @@ export default function OfflineRuleModule({ userRole = 'admin' }) {
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
-    window.addEventListener('supuja_offline_queue_changed', loadAll);
+    const handleQueueChanged = () => { loadAll(false); };
+    window.addEventListener('supuja_offline_queue_changed', handleQueueChanged);
 
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
-      window.removeEventListener('supuja_offline_queue_changed', loadAll);
+      window.removeEventListener('supuja_offline_queue_changed', handleQueueChanged);
     };
   }, [loadAll]);
 
@@ -159,7 +167,7 @@ export default function OfflineRuleModule({ userRole = 'admin' }) {
         saveOfflineRulesToLocal(res.settings);
         setRules(res.settings);
         setHasChanges(false);
-        setStatusMsg({ type: 'success', text: '✅ Offline Rules successfully saved and applied to all users!' });
+        setStatusMsg({ type: 'success', text: '✅ Offline Rules saved. Other devices will load the policy when online.' });
         setOfflineUsage(getDailyOfflineUsage());
         setMonthlyUsage(getMonthlyOfflineUsage());
       } else {
@@ -662,7 +670,7 @@ export default function OfflineRuleModule({ userRole = 'admin' }) {
 
           <p style={{ fontSize: '0.85rem', color: 'var(--text-muted, #64748b)', lineHeight: 1.5, margin: '0 0 1rem 0' }}>
             {rules.isOfflineEnabled 
-              ? '🟢 Offline mode is globally ENABLED. Employees can browse cached leads and perform allowed operations while disconnected.' 
+              ? '🟢 Offline mode is enabled. Previously cached data and implemented device-queued actions can work while disconnected.'
               : '🔴 Offline mode is globally DISABLED. The CRM operates in strict online-only mode; disconnected actions will prompt internet requirement.'}
           </p>
 
@@ -675,7 +683,7 @@ export default function OfflineRuleModule({ userRole = 'admin' }) {
             fontWeight: '600',
             color: rules.isOfflineEnabled ? '#059669' : '#dc2626'
           }}>
-            Status: {rules.isOfflineEnabled ? 'All allowed features operate offline with device IndexedDB' : 'Offline queuing blocked'}
+            Status: {rules.isOfflineEnabled ? 'Supported actions use the device queue when disconnected' : 'Offline queuing blocked'}
           </div>
         </div>
 
@@ -938,6 +946,11 @@ export default function OfflineRuleModule({ userRole = 'admin' }) {
                     {feat.warning && (
                       <div style={{ marginTop: '0.35rem', fontSize: '0.7rem', color: '#d97706', fontWeight: '500' }}>
                         ⚠️ {feat.warning}
+                      </div>
+                    )}
+                    {!QUEUED_OFFLINE_ACTIONS.has(feat.key) && (
+                      <div style={{ marginTop: '0.35rem', fontSize: '0.7rem', color: '#b45309', fontWeight: '600' }}>
+                        No offline save queue for this action. Internet is still required to submit changes.
                       </div>
                     )}
                   </div>

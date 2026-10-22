@@ -537,17 +537,28 @@ function SearchableEmployeeSelect({ teamMembers = [], value, onChange, placehold
 
   const selectedMember = teamMembers.find(m => m.user_id === value || m.id === value);
 
+  const activeMembers = useMemo(() => {
+    return (teamMembers || []).filter(m => {
+      if (m.user_id === value || m.id === value) return true;
+      const status = String(m.emp_status || m.status || 'Active').toLowerCase().trim();
+      if (['inactive', 'terminated', 'resigned', 'trash', 'draft'].includes(status)) return false;
+      if (m.is_approved === false) return false;
+      if (m.role === 'customer') return false;
+      return true;
+    });
+  }, [teamMembers, value]);
+
   const filteredList = useMemo(() => {
     const term = searchTerm.toLowerCase().trim();
-    if (!term) return teamMembers;
-    return teamMembers.filter(m => {
+    if (!term) return activeMembers;
+    return activeMembers.filter(m => {
       const name = (m.emp_name || '').toLowerCase();
       const email = (m.email || '').toLowerCase();
       const dept = (m.emp_department || m.department || '').toLowerCase();
       const code = (m.emp_id || m.emp_code || '').toLowerCase();
       return name.includes(term) || email.includes(term) || dept.includes(term) || code.includes(term);
     });
-  }, [teamMembers, searchTerm]);
+  }, [activeMembers, searchTerm]);
 
   return (
     <div ref={containerRef} style={{ position: 'relative', display: 'inline-block' }}>

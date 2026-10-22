@@ -8,7 +8,7 @@ import {
 import { 
   getTeamMembers, createAccountAdmin, updateEmployeeDetailsAdmin, 
   updateModuleAccess, updateEmpStatus, moveToTrashUser, 
-  restoreUserFromTrash, deleteUserAdmin 
+  restoreUserFromTrash, deleteUserAdmin, toggleUserApproval
 } from '@/app/actions/team';
 import { createClient } from '@/utils/supabase/client';
 import { getRoleTemplates, createRoleTemplate, assignRoleTemplate } from '@/app/actions/roleTemplates';
@@ -25,20 +25,38 @@ import AddEditUserModal from './modals/AddEditUserModal';
 import PermissionMatrixModal from './modals/PermissionMatrixModal';
 import RoleTemplateModal from './modals/RoleTemplateModal';
 import ResetPasswordModal from './modals/ResetPasswordModal';
+import SendResetEmailModal from './modals/SendResetEmailModal';
+import ViewChatModal from './modals/ViewChatModal';
 import ImpersonateModal from './modals/ImpersonateModal';
 import BulkImportExportModal from './modals/BulkImportExportModal';
 import ConfirmActionModal from './modals/ConfirmActionModal';
 
+import { isFeatureEntitled } from '@/utils/saasEntitlements';
 import { DEFAULT_DEPARTMENTS } from './utils/userManagementUtils';
 
 const validSubTabs = ['user_manage', 'roles', 'hierarchy', 'sessions', 'audit'];
 const normalizeSubTab = (tab) => validSubTabs.includes(tab) ? tab : 'user_manage';
 
-export default function UserManagementContainer({ initialUsers = [], activeSubTab = 'user_manage', onTabChange = () => {}, currentUserCompany = '' }) {
+export default function UserManagementContainer({ 
+  initialUsers = [], 
+  activeSubTab = 'user_manage', 
+  onTabChange = () => {}, 
+  currentUserCompany = '',
+  tenantId = null,
+  tenantEntitlements = null,
+  isAdmin = false,
+  isMasterAdmin = false,
+  userId = null,
+  userEmail = null
+}) {
   const [users, setUsers] = useState(initialUsers || []);
   const [loading, setLoading] = useState(!initialUsers || initialUsers.length === 0);
   const [activeTab, setActiveTab] = useState(() => normalizeSubTab(activeSubTab));
   const [departments, setDepartments] = useState(DEFAULT_DEPARTMENTS);
+
+  const hasChatbot = useMemo(() => {
+    return isFeatureEntitled('ai', tenantEntitlements, tenantId);
+  }, [tenantEntitlements, tenantId]);
 
   useEffect(() => {
     const nextTab = normalizeSubTab(activeSubTab);
@@ -62,7 +80,7 @@ export default function UserManagementContainer({ initialUsers = [], activeSubTa
   const [roleTemplates, setRoleTemplates] = useState([]);
   const [rolesLoading, setRolesLoading] = useState(false);
   const [rolesError, setRolesError] = useState('');
-  const [canManageRoles, setCanManageRoles] = useState(false);
+  const [canManageRoles, setCanManageRoles] = useState(Boolean(isAdmin || isMasterAdmin));
   const [roleModalOpen, setRoleModalOpen] = useState(false);
   const [savingRole, setSavingRole] = useState(false);
   const [assigningRoleUserId, setAssigningRoleUserId] = useState(null);
@@ -70,8 +88,18 @@ export default function UserManagementContainer({ initialUsers = [], activeSubTa
   const [resetPasswordModal, setResetPasswordModal] = useState({ isOpen: false, user: null });
   const [savingPassword, setSavingPassword] = useState(false);
 
+  const [sendResetEmailModal, setSendResetEmailModal] = useState({ isOpen: false, user: null });
+  const [viewChatModal, setViewChatModal] = useState({ isOpen: false, user: null });
+
   const [impersonateModal, setImpersonateModal] = useState({ isOpen: false, user: null });
   const [bulkImportModalOpen, setBulkImportModalOpen] = useState(false);
+
+  // Sync canManageRoles if isAdmin or isMasterAdmin prop changes
+  useEffect(() => {
+    if (isAdmin || isMasterAdmin) {
+      setCanManageRoles(true);
+    }
+  }, [isAdmin, isMasterAdmin]);
 
   // Confirm modal for dangerous actions (status, trash, restore, delete)
   const [confirmModal, setConfirmModal] = useState({
@@ -97,32 +125,69 @@ export default function UserManagementContainer({ initialUsers = [], activeSubTa
     if (activeTab !== 'roles' && !permissionModal.isOpen) return;
     let active = true;
     setRolesLoading(true);
-    React.startTransition(() => {
-      getRoleTemplates().then(result => {
+
+    getRoleTemplates(userId, userEmail, currentUserCompany)
+      .then(result => {
         if (!active) return;
         setRoleTemplates(result.roles || []);
-        setCanManageRoles(result.canManageRoles === true);
+        if (result.canManageRoles !== undefined) {
+          setCanManageRoles(result.canManageRoles === true || isAdmin || isMasterAdmin);
+        } else {
+          setCanManageRoles(Boolean(isAdmin || isMasterAdmin));
+        }
         setRolesError(result.success ? '' : result.error || 'Could not load saved roles.');
-      }).catch(error => {
+      })
+      .catch(error => {
         if (!active) return;
         setRoleTemplates([]);
-        setCanManageRoles(false);
         setRolesError(error.message || 'Could not load saved roles.');
-      }).finally(() => {
-        if (active) setRolesLoading(false);
+      })
+      .finally(() => {
+        setRolesLoading(false);
       });
-    });
+
     return () => { active = false; };
-  }, [activeTab, permissionModal.isOpen]);
+  }, [activeTab, permissionModal.isOpen, isAdmin, isMasterAdmin, userId, userEmail, currentUserCompany]);
 
   const handleCreateRole = async details => {
     setSavingRole(true);
     try {
-      const result = await createRoleTemplate(details);
+      const { assignedUserIds = [], ...rolePayload } = details;
+      const result = await createRoleTemplate(rolePayload);
       if (!result.success) throw new Error(result.error || 'Could not create role.');
       setRoleTemplates(previous => [...previous, result.role].sort((a, b) => a.name.localeCompare(b.name)));
+
+      // If user selected staff members to assign this role to immediately
+      if (Array.isArray(assignedUserIds) && assignedUserIds.length > 0) {
+        let assignedCount = 0;
+        for (const uid of assignedUserIds) {
+          try {
+            const assignRes = await assignRoleTemplate(uid, result.role.id);
+            if (assignRes.success) {
+              assignedCount++;
+              setUsers(previous => previous.map(m => m.user_id === uid ? { ...m, module_access: assignRes.moduleAccess } : m));
+              try {
+                const supabase = createClient();
+                await supabase.channel('crm_realtime_permission_sync').send({
+                  type: 'broadcast',
+                  event: 'permission_updated',
+                  payload: { userId: uid, moduleAccess: assignRes.moduleAccess, timestamp: Date.now() }
+                });
+              } catch (broadcastErr) {
+                console.warn('Realtime sync unavailable for user:', uid, broadcastErr);
+              }
+            }
+          } catch (assignErr) {
+            console.warn('Failed assigning role to user:', uid, assignErr);
+          }
+        }
+        showToast(`Role "${result.role.name}" created and assigned to ${assignedCount} staff member(s)!`, 'success');
+        fetchUsers(false);
+      } else {
+        showToast(`Role "${result.role.name}" created.`);
+      }
+
       setRoleModalOpen(false);
-      showToast(`Role "${result.role.name}" created.`);
     } finally {
       setSavingRole(false);
     }
@@ -157,7 +222,7 @@ export default function UserManagementContainer({ initialUsers = [], activeSubTa
   const fetchUsers = useCallback(async (showLoader = true) => {
     if (showLoader) setLoading(true);
     try {
-      const data = await getTeamMembers(currentUserCompany);
+      const data = await getTeamMembers(currentUserCompany, tenantId);
       setUsers(data || []);
     } catch (err) {
       console.error('Error fetching users:', err);
@@ -165,7 +230,7 @@ export default function UserManagementContainer({ initialUsers = [], activeSubTa
     } finally {
       if (showLoader) setLoading(false);
     }
-  }, []);
+  }, [currentUserCompany, tenantId]);
 
   // Fetch departments
   const fetchDepartments = useCallback(async () => {
@@ -284,29 +349,70 @@ export default function UserManagementContainer({ initialUsers = [], activeSubTa
     }
   };
 
-  // Handler: Change Status
-  const handleChangeStatus = (targetUser) => {
-    const nextStatus = (targetUser.emp_status || '').toLowerCase() === 'active' ? 'InActive' : 'Active';
-    setConfirmModal({
-      isOpen: true,
-      title: `Change Status to "${nextStatus}"?`,
-      message: `Are you sure you want to mark ${targetUser.emp_name || targetUser.email} as ${nextStatus}?`,
-      confirmText: `Set to ${nextStatus}`,
-      type: nextStatus === 'Active' ? 'success' : 'warning',
-      onConfirm: async () => {
-        setConfirmLoading(true);
-        try {
-          await updateEmpStatus(targetUser.user_id, nextStatus);
-          showToast(`Status updated to ${nextStatus}`, 'success');
-          setConfirmModal(prev => ({ ...prev, isOpen: false }));
-          fetchUsers(false);
-        } catch (err) {
-          alert('Failed to change status: ' + err.message);
-        } finally {
-          setConfirmLoading(false);
-        }
+  // Handler: Change Status (supports direct select from EMP_STATUS_OPTIONS or toggle)
+  const handleChangeStatus = async (targetUser, newStatus) => {
+    if (!targetUser?.user_id) return;
+    const current = targetUser.emp_status || (targetUser.module_access?.emp_status) || 'Active';
+    const nextStatus = newStatus || (current.toLowerCase() === 'active' ? 'InActive' : 'Active');
+    if (current === nextStatus) return;
+
+    // Optimistically update local users state
+    setUsers(prev => prev.map(u => u.user_id === targetUser.user_id ? { ...u, emp_status: nextStatus } : u));
+    try {
+      await updateEmpStatus(targetUser.user_id, nextStatus);
+      showToast(`Status updated to "${nextStatus}" for ${targetUser.emp_name || targetUser.email}`, 'success');
+      fetchUsers(false);
+    } catch (err) {
+      alert('Failed to change status: ' + err.message);
+      fetchUsers(false);
+    }
+  };
+
+  // Handler: Toggle Approval Status
+  const handleToggleApproval = async (targetUser) => {
+    if (!targetUser?.user_id) return;
+    const nextApproved = !targetUser.is_approved;
+    // Optimistic update
+    setUsers(prev => prev.map(u => u.user_id === targetUser.user_id ? { ...u, is_approved: nextApproved } : u));
+    try {
+      await toggleUserApproval(targetUser.user_id, nextApproved);
+      showToast(`Approval status set to ${nextApproved ? 'Approved' : 'Pending'} for ${targetUser.emp_name || targetUser.email}`, 'success');
+      fetchUsers(false);
+    } catch (err) {
+      alert('Failed to update approval: ' + err.message);
+      fetchUsers(false);
+    }
+  };
+
+  // Handler: Save User as Draft (Partial creation)
+  const handleSaveDraft = async (draftData) => {
+    setSavingAddEdit(true);
+    try {
+      const fallbackId = draftData.emp_id?.trim() || `DRAFT-${Date.now().toString().slice(-6)}`;
+      const fallbackEmail = draftData.email?.trim() || `${fallbackId.toLowerCase()}@draft.local`;
+      const fallbackPassword = draftData.password || 'DraftPass@123';
+
+      const payload = {
+        ...draftData,
+        emp_id: fallbackId,
+        emp_status: 'Draft',
+        emp_name: draftData.emp_name || 'Draft Employee',
+        company: draftData.company || currentUserCompany || 'SuPuja Creations'
+      };
+
+      const res = await createAccountAdmin(fallbackEmail, fallbackPassword, payload);
+      if (res && res.success) {
+        showToast(`Draft created for ${payload.emp_name}!`, 'success');
+        setAddEditModal({ isOpen: false, user: null });
+        fetchUsers(false);
+      } else {
+        alert(res?.error || 'Failed to save draft account');
       }
-    });
+    } catch (err) {
+      alert('Error saving draft: ' + err.message);
+    } finally {
+      setSavingAddEdit(false);
+    }
   };
 
   // Handler: Move to Trash
@@ -438,10 +544,10 @@ export default function UserManagementContainer({ initialUsers = [], activeSubTa
     <div style={{
       width: '100%',
       minHeight: '80vh',
-      padding: '1.25rem 1.5rem',
+      padding: '0.75rem 1.5rem 1.5rem',
       display: 'flex',
       flexDirection: 'column',
-      gap: '1.25rem',
+      gap: '1rem',
       backgroundColor: 'transparent',
       boxSizing: 'border-box'
     }}>
@@ -469,14 +575,25 @@ export default function UserManagementContainer({ initialUsers = [], activeSubTa
         </div>
       )}
 
-      {/* Clean Navigation Bar */}
+      {/* Clean Sticky Navigation Bar */}
       <div style={{
+        position: 'sticky',
+        top: 0,
+        zIndex: 20,
+        backgroundColor: 'var(--bg-surface, #ffffff)',
+        paddingTop: '0.65rem',
+        paddingBottom: '0.65rem',
+        marginTop: '-0.75rem',
+        marginLeft: '-1.5rem',
+        marginRight: '-1.5rem',
+        paddingLeft: '1.5rem',
+        paddingRight: '1.5rem',
         display: 'flex',
         alignItems: 'center',
         gap: '0.5rem',
         borderBottom: '1px solid var(--border-light)',
-        paddingBottom: '0.5rem',
-        overflowX: 'auto'
+        overflowX: 'auto',
+        boxShadow: '0 2px 4px rgba(0,0,0,0.02)'
       }}>
         {subpages.map(sub => {
           const Icon = sub.icon;
@@ -534,8 +651,12 @@ export default function UserManagementContainer({ initialUsers = [], activeSubTa
             onEditUser={(u) => setAddEditModal({ isOpen: true, user: u })}
             onManagePermissions={(u) => setPermissionModal({ isOpen: true, user: u })}
             onResetPassword={(u) => setResetPasswordModal({ isOpen: true, user: u })}
+            onSendResetEmail={(u) => setSendResetEmailModal({ isOpen: true, user: u })}
+            onViewChat={(u) => setViewChatModal({ isOpen: true, user: u })}
+            hasChatbot={hasChatbot}
             onImpersonate={(u) => setImpersonateModal({ isOpen: true, user: u })}
             onChangeStatus={handleChangeStatus}
+            onToggleApproval={handleToggleApproval}
             onMoveToTrash={handleMoveToTrash}
             onRestoreFromTrash={handleRestoreFromTrash}
             onHardDelete={handleHardDelete}
@@ -581,6 +702,7 @@ export default function UserManagementContainer({ initialUsers = [], activeSubTa
         onClose={() => setAddEditModal({ isOpen: false, user: null })}
         user={addEditModal.user}
         onSave={handleSaveAddEditUser}
+        onSaveDraft={handleSaveDraft}
         departments={departments}
         allEmployees={users}
         saving={savingAddEdit}
@@ -600,6 +722,7 @@ export default function UserManagementContainer({ initialUsers = [], activeSubTa
           onClose={() => setRoleModalOpen(false)}
           onSave={handleCreateRole}
           saving={savingRole}
+          users={users}
         />
       )}
 
@@ -609,6 +732,18 @@ export default function UserManagementContainer({ initialUsers = [], activeSubTa
         user={resetPasswordModal.user}
         onSavePassword={handleSavePassword}
         saving={savingPassword}
+      />
+
+      <SendResetEmailModal
+        isOpen={sendResetEmailModal.isOpen}
+        onClose={() => setSendResetEmailModal({ isOpen: false, user: null })}
+        user={sendResetEmailModal.user}
+      />
+
+      <ViewChatModal
+        isOpen={viewChatModal.isOpen}
+        onClose={() => setViewChatModal({ isOpen: false, user: null })}
+        user={viewChatModal.user}
       />
 
       <ImpersonateModal

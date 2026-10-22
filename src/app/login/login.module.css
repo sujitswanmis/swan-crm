@@ -1,0 +1,42 @@
+.passwordField {
+  position: relative;
+}
+
+/* Keep the eye in a fixed hit area; global button :active must not move it. */
+.passwordField button.passwordToggle[type='button'] {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 44px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+  color: var(--text-secondary);
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  z-index: 2;
+  transform: none !important;
+  transition: none !important;
+}
+
+.passwordField button.passwordToggle[type='button']:hover,
+.passwordField button.passwordToggle[type='button']:active {
+  transform: none !important;
+  filter: none;
+  box-shadow: none;
+}
+
+.passwordField button.passwordToggle[type='button']:focus-visible {
+  outline: 2px solid #4338ca;
+  outline-offset: -3px;
+}
+
+.passwordField input::-ms-reveal,
+.passwordField input::-ms-clear {
+  display: none;
+}

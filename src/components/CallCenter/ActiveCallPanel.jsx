@@ -1,34 +1,49 @@
 'use client';
-import React, { useState, useEffect } from 'react';
-import { PhoneOff, Mic, MicOff, UserX, UserPlus, Loader2, Users, Pause, Play } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { PhoneOff, PhoneCall, Mic, MicOff, UserX, UserPlus, Loader2, Users, Pause, Play, UserRound, Headset } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
+import styles from './Softphone.module.css';
 
-export default function ActiveCallPanel({ session, onCallEnded, agentData }) {
+export default function ActiveCallPanel({ session, onCallEnded, agentData, onToggleMute, microphoneMuted = false, shortcutControlsRef }) {
+  return <ActiveCallContent key={session?.room_name} session={session} onCallEnded={onCallEnded} agentData={agentData}
+    onToggleMute={onToggleMute} microphoneMuted={microphoneMuted} shortcutControlsRef={shortcutControlsRef} />;
+}
+
+function ActiveCallContent({ session, onCallEnded, agentData, onToggleMute, microphoneMuted, shortcutControlsRef }) {
   const [members, setMembers] = useState([]);
   const [newParticipant, setNewParticipant] = useState('');
   const [loadingAction, setLoadingAction] = useState(null);
   const [heldMembers, setHeldMembers] = useState({});
   const [showAddParticipant, setShowAddParticipant] = useState(false);
+  const [consultation, setConsultation] = useState(null);
+  const [consultationError, setConsultationError] = useState('');
+  const consultationRef = useRef(null);
+  const membersRequestRef = useRef(false);
+  const currentRoomRef = useRef(session?.room_name);
+  const hangupInFlightRef = useRef(false);
+  const usesConsultation = () => session?.conference_name?.startsWith('mpc_') || !!consultationRef.current;
+  const consultationPhases = ['preparing', 'dialing', 'ringing', 'consulting', 'merging', 'cancelling', 'failed'];
+  const consultationBusy = consultation?.busy || consultationPhases.includes(consultation?.phase) || loadingAction === 'add_participant';
+  const canMerge = consultation?.canMerge || consultation?.phase === 'consulting';
+  const showMerge = !consultation?.controlsOnly || loadingAction === 'add_participant';
+  const agentMember = members.find(member => member.callUuid === session.agent_call_uuid || member.memberId === 'agent_leg');
+  const customerMember = members.find(member => member.callUuid === session.customer_call_uuid || member.memberId === 'customer_leg');
+  const agentMuted = onToggleMute ? microphoneMuted : !!agentMember?.muted;
+  const customerHeld = !!heldMembers[customerMember?.memberId];
+  const isConnected = session.status === 'connected' || !!session.customer_answer_time;
+  const canMute = isConnected && (!!onToggleMute || (!!agentMember && !consultationBusy && !loadingAction));
+  const canHold = isConnected && !!customerMember && !consultationBusy && !loadingAction;
+  const extraParties = members.filter(member => member.callUuid !== session.agent_call_uuid &&
+    member.callUuid !== session.customer_call_uuid && !['agent_leg', 'customer_leg'].includes(member.memberId));
+  const requiresEndConfirmation = extraParties.length > 0 ||
+    (!!consultation && !consultation.controlsOnly && consultationPhases.includes(consultation.phase)) ||
+    (!!session.conference_name && !consultation && members.length === 0);
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
     title: '',
     message: '',
     onConfirm: null
   });
-  
-  useEffect(() => {
-    let interval;
-    if (session && session.room_name) {
-      fetchMembers();
-      interval = setInterval(fetchMembers, 2500); // Poll every 2.5s for live updates
-    }
-    return () => {
-      clearInterval(interval);
-      if (typeof window !== 'undefined' && window.__crm_stop_all_ringing) {
-        window.__crm_stop_all_ringing(session?.room_name);
-      }
-    };
-  }, [session]);
 
   // Also listen to supabase changes for this session
   useEffect(() => {
@@ -52,13 +67,34 @@ export default function ActiveCallPanel({ session, onCallEnded, agentData }) {
     };
   }, [session, onCallEnded]);
 
-  const fetchMembers = async () => {
+  const roomName = session?.room_name;
+  const conferenceName = session?.conference_name;
+  const fetchMembers = useCallback(async () => {
+    if (membersRequestRef.current) return;
+    const room = roomName;
+    if (!room) return;
+    membersRequestRef.current = true;
     try {
-      const res = await fetch(`/api/plivo/controls/members?room=${session.room_name}`);
+      if (conferenceName?.startsWith('mpc_') || consultationRef.current) {
+        const res = await fetch(`/api/plivo/consultation?room=${encodeURIComponent(room)}`, { cache: 'no-store' });
+        const data = await res.json();
+        if (currentRoomRef.current !== room) return;
+        if (!res.ok || data.error) throw new Error(data.error || 'Call status is unavailable.');
+        if (data.consultation) {
+          consultationRef.current = data.consultation;
+          setConsultation(data.consultation);
+          setMembers(data.consultation.members || []);
+          setHeldMembers(Object.fromEntries((data.consultation.members || []).map(member => [member.memberId, member.held])));
+          setConsultationError('');
+        }
+        return;
+      }
+      const res = await fetch(`/api/plivo/controls/members?room=${encodeURIComponent(room)}`);
       const data = await res.json();
+      if (currentRoomRef.current !== room) return;
       if (data.members) {
         if (data.members.length >= 2 && typeof window !== 'undefined' && window.__crm_stop_all_ringing) {
-          window.__crm_stop_all_ringing(session?.room_name);
+          window.__crm_stop_all_ringing(room);
         }
         setMembers(prev => {
           if (prev.length === data.members.length) {
@@ -72,14 +108,74 @@ export default function ActiveCallPanel({ session, onCallEnded, agentData }) {
         });
       }
     } catch (err) {
-      console.error(err);
+      if ((conferenceName?.startsWith('mpc_') || consultationRef.current) && currentRoomRef.current === room) setConsultationError(err.message);
+      else console.error(err);
+    } finally {
+      membersRequestRef.current = false;
+    }
+  }, [roomName, conferenceName]);
+
+  useEffect(() => {
+    currentRoomRef.current = roomName;
+    const initialFetch = setTimeout(fetchMembers, 0);
+    const interval = setInterval(fetchMembers, 2500);
+    return () => {
+      currentRoomRef.current = null;
+      clearTimeout(initialFetch);
+      clearInterval(interval);
+      window.__crm_stop_all_ringing?.(roomName);
+    };
+  }, [fetchMembers, roomName]);
+
+  const requestConsultation = async (action, extra = {}) => {
+    const room = session.room_name;
+    const res = await fetch('/api/plivo/consultation', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ roomName: room, action, attemptId: consultationRef.current?.attemptId, ...extra }),
+    });
+    const data = await res.json();
+    if (currentRoomRef.current !== room) return;
+    if (!res.ok || data.error) throw new Error(data.error || 'Call action could not complete.');
+    if (data.consultation) {
+      consultationRef.current = data.consultation;
+      setConsultation(data.consultation);
+      setMembers(data.consultation.members || []);
+      setHeldMembers(Object.fromEntries((data.consultation.members || []).map(member => [member.memberId, member.held])));
+    }
+    setConsultationError('');
+  };
+
+  const handleConsultationAction = async action => {
+    setLoadingAction(`consultation_${action}`);
+    try {
+      await requestConsultation(action);
+    } catch (error) {
+      setConsultationError(error.message);
+      await fetchMembers();
+    } finally {
+      setLoadingAction(null);
     }
   };
 
   const handleMuteToggle = async (memberId, isMuted) => {
+    const member = members.find(item => item.memberId === memberId);
+    if (onToggleMute && (memberId === 'agent_leg' || member?.callUuid === session.agent_call_uuid)) {
+      try { onToggleMute(); } catch (error) { setConsultationError(error.message); }
+      return;
+    }
     setLoadingAction(`mute_${memberId}`);
     try {
-      await fetch('/api/plivo/controls/mute', {
+      if (['agent_leg', 'customer_leg'].includes(memberId)) {
+        await requestConsultation('prepare-controls', {
+          role: memberId === 'agent_leg' ? 'agent' : 'customer', control: isMuted ? 'unmute' : 'mute',
+        });
+        return;
+      }
+      if (usesConsultation()) {
+        await requestConsultation(isMuted ? 'unmute' : 'mute', { memberId });
+        return;
+      }
+      const response = await fetch('/api/plivo/controls/mute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -88,7 +184,10 @@ export default function ActiveCallPanel({ session, onCallEnded, agentData }) {
           action: isMuted ? 'unmute' : 'mute'
         })
       });
+      if (!response.ok) throw new Error('Mute could not complete. Please retry.');
       await fetchMembers();
+    } catch (error) {
+      setConsultationError(error.message);
     } finally {
       setLoadingAction(null);
     }
@@ -97,7 +196,17 @@ export default function ActiveCallPanel({ session, onCallEnded, agentData }) {
   const handleHoldToggle = async (memberId, isHeld) => {
     setLoadingAction(`hold_${memberId}`);
     try {
-      await fetch('/api/plivo/controls/hold', {
+      if (['agent_leg', 'customer_leg'].includes(memberId)) {
+        await requestConsultation('prepare-controls', {
+          role: memberId === 'agent_leg' ? 'agent' : 'customer', control: isHeld ? 'unhold' : 'hold',
+        });
+        return;
+      }
+      if (usesConsultation()) {
+        await requestConsultation(isHeld ? 'unhold' : 'hold', { memberId });
+        return;
+      }
+      const response = await fetch('/api/plivo/controls/hold', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -106,10 +215,12 @@ export default function ActiveCallPanel({ session, onCallEnded, agentData }) {
           action: isHeld ? 'unhold' : 'hold'
         })
       });
+      if (!response.ok) throw new Error('Hold could not complete. Please retry.');
       setHeldMembers(prev => ({ ...prev, [memberId]: !isHeld }));
       await fetchMembers();
     } catch (e) {
-      console.error(e);
+      setConsultationError(e.message);
+      await fetchMembers();
     } finally {
       setLoadingAction(null);
     }
@@ -123,6 +234,10 @@ export default function ActiveCallPanel({ session, onCallEnded, agentData }) {
       onConfirm: async () => {
         setLoadingAction(`kick_${memberId}`);
         try {
+          if (usesConsultation()) {
+            await requestConsultation('kick', { memberId });
+            return;
+          }
           await fetch('/api/plivo/controls/kick', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -132,6 +247,8 @@ export default function ActiveCallPanel({ session, onCallEnded, agentData }) {
             })
           });
           await fetchMembers();
+        } catch (error) {
+          setConsultationError(error.message);
         } finally {
           setLoadingAction(null);
         }
@@ -139,25 +256,33 @@ export default function ActiveCallPanel({ session, onCallEnded, agentData }) {
     });
   };
 
+  const endCurrentCall = async () => {
+    if (hangupInFlightRef.current) return;
+    hangupInFlightRef.current = true;
+    setLoadingAction('hangup_all');
+    try {
+      const response = await fetch('/api/plivo/controls/hangup-conference', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roomName: session.room_name }),
+      });
+      if (!response.ok) throw new Error('Call could not be ended. Please retry.');
+      onCallEnded?.();
+    } catch (error) {
+      setConsultationError(error.message);
+    } finally {
+      hangupInFlightRef.current = false;
+      setLoadingAction(null);
+    }
+  };
+
   const handleHangupAll = () => {
-    setConfirmModal({
-      isOpen: true,
-      title: 'End Call For All?',
-      message: 'This will hang up the call for all participants and end the call session. Are you sure?',
-      onConfirm: async () => {
-        setLoadingAction('hangup_all');
-        try {
-          await fetch('/api/plivo/controls/hangup-conference', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ roomName: session.room_name })
-          });
-          if (onCallEnded) onCallEnded();
-        } finally {
-          setLoadingAction(null);
-        }
-      }
-    });
+    if (requiresEndConfirmation) {
+      setConfirmModal({ isOpen: true, title: 'End All Calls?',
+        message: 'This will disconnect everyone in this call. End all calls?',
+        confirmLabel: 'End All Calls', onConfirm: endCurrentCall });
+      return;
+    }
+    return endCurrentCall();
   };
 
   const handleAddParticipant = async (e) => {
@@ -165,77 +290,136 @@ export default function ActiveCallPanel({ session, onCallEnded, agentData }) {
     if (!newParticipant || newParticipant.length < 10) return;
     
     setLoadingAction('add_participant');
+    setConsultationError('');
     try {
-      const res = await fetch('/api/plivo/controls/add-participant', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          roomName: session.room_name,
-          participantNumber: newParticipant
-        })
-      });
-      const data = await res.json();
-      if (data.error) {
-        alert('Failed to add participant: ' + data.error);
-      } else {
-        setNewParticipant('');
-        setTimeout(fetchMembers, 1000);
-      }
+      await requestConsultation('start', { participantNumber: newParticipant });
+      setNewParticipant('');
     } catch (err) {
-      alert('Failed to add participant: ' + (err.message || err));
+      setConsultationError(err.message || 'Add Call could not complete.');
     } finally {
       setLoadingAction(null);
     }
   };
 
+  // Register the same guarded actions used by the visible buttons. The parent
+  // keeps this panel mounted while docked/minimized so shortcuts stay current.
+  useEffect(() => {
+    if (!shortcutControlsRef) return;
+    const controls = {
+      mute: () => handleMuteToggle(agentMember?.memberId || 'agent_leg', agentMuted),
+      hold: () => handleHoldToggle(customerMember?.memberId || 'customer_leg', customerHeld),
+      end: handleHangupAll, canMute, canHold,
+      canEnd: loadingAction !== 'hangup_all', modalOpen: confirmModal.isOpen, requiresEndConfirmation,
+    };
+    shortcutControlsRef.current = controls;
+    return () => { if (shortcutControlsRef.current === controls) shortcutControlsRef.current = null; };
+  });
+
   return (
-    <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '10px', padding: '0.85rem 1rem', boxShadow: 'var(--neumorphic-shadow-flat)', marginBottom: '0.75rem', color: 'var(--text-primary)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', paddingBottom: '0.75rem', borderBottom: '1px solid var(--border-light)' }}>
-        <div>
-          <h2 style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.45rem', margin: 0 }}>
-            <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: (session.status === 'connected' || session.customer_answer_time) ? '#10b981' : '#f59e0b', animation: 'pulse 2s infinite' }} />
+    <div className={styles.activePanel}>
+      <div className={styles.callHeader}>
+        <span className={styles.callEmblem}><PhoneCall size={20} /></span>
+        <div className={styles.callSummary}>
+          <h2 className={styles.callState} data-connected={!!(session.status === 'connected' || session.customer_answer_time)}>
+            <span className={styles.callStateDot} />
             {(session.status === 'connected' || session.customer_answer_time) ? 'Call Connected' : (session.status === 'customer_ringing' ? 'Carrier is trying customer line...' : 'Connecting to Line...')}
           </h2>
-          <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--accent-color)', marginTop: '0.2rem' }}>
-            Customer: +91 {(session.customer_number || '').replace(/[^0-9]/g, '').slice(-10) || 'Target Number'}
+          <div className={styles.customerNumber}>
+            +91 {(session.customer_number || '').replace(/[^0-9]/g, '').slice(-10) || 'Target Number'}
           </div>
+          <div className={styles.customerCaption}>Customer</div>
         </div>
-        <button 
-          onClick={handleHangupAll}
-          disabled={loadingAction === 'hangup_all'}
-          style={{ background: '#ef4444', color: 'white', border: 'none', padding: '0.45rem 0.85rem', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer' }}
-        >
-          {loadingAction === 'hangup_all' ? <Loader2 size={14} className="spin" /> : <PhoneOff size={14} />}
-          End Call For All
-        </button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '0.5rem' }}>
-        <h3 style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.4rem', margin: '0 0 0.25rem 0' }}>
+      <div className={styles.callTools}>
+        <div className={styles.callControls} aria-label="Call controls">
+          <button type="button" className={styles.secondaryButton} aria-pressed={agentMuted}
+            onClick={() => handleMuteToggle(agentMember?.memberId || 'agent_leg', agentMuted)}
+            disabled={!canMute} title="Mute / Unmute (Ctrl+M)" aria-keyshortcuts="Control+m">
+            {loadingAction === `mute_${agentMember?.memberId}` ? <Loader2 size={15} className="spin" /> : agentMuted ? <MicOff size={15} /> : <Mic size={15} />}
+            {agentMuted ? 'Unmute' : 'Mute'}
+          </button>
+          <button type="button" className={styles.secondaryButton} aria-pressed={customerHeld}
+            onClick={() => handleHoldToggle(customerMember?.memberId || 'customer_leg', customerHeld)}
+            disabled={!canHold} title="Hold / Resume (Ctrl+H)" aria-keyshortcuts="Control+h">
+            {loadingAction === `hold_${customerMember?.memberId}` ? <Loader2 size={15} className="spin" /> : customerHeld ? <Play size={15} /> : <Pause size={15} />}
+            {customerHeld ? 'Resume' : 'Hold'}
+          </button>
+          <button type="button" onClick={handleHangupAll} disabled={loadingAction === 'hangup_all'}
+            className={styles.dangerButton} title={`${requiresEndConfirmation ? 'End All Calls' : 'End Call'} (Ctrl+E)`} aria-keyshortcuts="Control+e">
+            {loadingAction === 'hangup_all' ? <Loader2 size={15} className="spin" /> : <PhoneOff size={15} />}
+            {requiresEndConfirmation ? 'End All' : 'End Call'}
+          </button>
+        </div>
+        {(consultationBusy || canMerge || consultation?.phase === 'merged' || consultation?.error) && (
+          <div role="status" aria-live="polite" className={styles.consultationStatus}>
+            <strong>{consultation?.controlsOnly && consultation?.error ? 'Call control needs attention' : loadingAction === 'add_participant' ? 'Preparing Add Call…' : ({
+              preparing: 'Preparing call controls…', dialing: 'Calling third person…',
+              ringing: 'Third person is ringing…', consulting: 'Private call with third person',
+              merging: 'Merging calls…', cancelling: 'Ending third-party call and resuming caller…',
+              merged: 'Conference connected', active: 'Call connected', failed: 'Call controls need attention',
+            })[consultation?.phase] || 'Preparing call controls…'}</strong>
+            {consultation?.customerHeld && <div className={styles.consultationHint}>Existing caller is on hold and cannot hear this conversation.</div>}
+            {(consultationBusy || canMerge) && (
+              <>
+                {showMerge && <div className={styles.consultationHint}>
+                  {canMerge ? 'Select Merge to connect everyone.' : 'Merge becomes available when the third person connects.'}
+                </div>}
+                <div className={styles.consultationActions}>
+                  {showMerge && <button type="button" onClick={() => handleConsultationAction('merge')}
+                    disabled={!canMerge || !!loadingAction} className={styles.primaryButton}>
+                    {loadingAction === 'consultation_merge' ? 'Merging…' : 'Merge Calls'}
+                  </button>}
+                  <button type="button" onClick={() => handleConsultationAction('cancel')}
+                    disabled={!consultation || !!loadingAction || ['merging', 'cancelling'].includes(consultation?.phase)}
+                    className={styles.secondaryButton}>Cancel & Resume</button>
+                </div>
+              </>
+            )}
+            {consultation?.error && <div className={styles.inlineError}>{consultation.error}</div>}
+          </div>
+        )}
+        {consultationError && <div role="alert" className={styles.inlineError}>{consultationError}</div>}
+      </div>
+
+      <div>
+        <h3 className={styles.participantsHeading}>
           <Users size={14} /> Live Participants ({members.length})
         </h3>
         
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+        <div className={styles.participants}>
           {/* Customer is pending until they actually join the conference. */}
           {(!session.customer_answer_time && session.status !== 'connected' && session.customer_number) && (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.6rem 0.85rem', background: 'var(--bg-primary)', borderRadius: '6px', borderLeft: '3px solid #f59e0b' }}>
-              <div style={{ flex: 1, minWidth: 0, paddingRight: '0.5rem', overflow: 'hidden' }}>
-                <div style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-primary)' }}>
+            <div className={styles.participant}>
+              <span className={styles.avatar}><UserRound size={16} /></span>
+              <div className={styles.participantInfo}>
+                <div className={styles.participantName}>
                   Customer: +91 {(session.customer_number || '').replace(/[^0-9]/g, '').slice(-10)}
                 </div>
-                <div style={{ fontSize: '0.72rem', color: '#f59e0b', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '0.3rem', marginTop: '0.1rem' }}>
+                <div className={styles.pendingStatus}>
                   <Loader2 size={11} className="spin" /> {session.status === 'customer_ringing' ? 'Carrier connecting customer line...' : 'Connecting to telecom line...'}
                 </div>
               </div>
             </div>
           )}
 
-          {members.map(member => (
-              <div key={member.memberId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.6rem 0.85rem', background: 'var(--bg-primary)', borderRadius: '6px', borderLeft: '3px solid var(--accent-color)' }}>
-                <div style={{ flex: 1, minWidth: 0, paddingRight: '0.5rem', overflow: 'hidden' }}>
-                  <div style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={member.callerName || (member.direction === 'inbound' ? member.from : member.to) || member.callUuid}>
+          {members.map(member => {
+            const isAgent = member.callUuid === session.agent_call_uuid || member.memberId === 'agent_leg';
+            const memberMuted = isAgent && onToggleMute ? microphoneMuted : member.muted;
+            const rawPhone = member.phoneNumber ||
+              ((member.callUuid === session.customer_call_uuid || member.memberId === 'customer_leg') ? session.customer_number : '');
+            const digits = String(rawPhone || '').replace(/\D/g, '');
+            const phoneNumber = digits.length >= 10 ? `+91 ${digits.slice(-10)}` : '';
+            return (
+              <div key={member.memberId} className={styles.participant}>
+                <span className={styles.avatar} data-agent={member.callUuid === session.agent_call_uuid || member.memberId === 'agent_leg'}>
+                  {member.callUuid === session.agent_call_uuid || member.memberId === 'agent_leg' ? <Headset size={16} /> : <UserRound size={16} />}
+                </span>
+                <div className={styles.participantInfo}>
+                  <div className={styles.participantName} title={member.callerName || (member.direction === 'inbound' ? member.from : member.to) || member.callUuid}>
                     {(() => {
-                      let name = member.callerName || (member.direction === 'inbound' ? member.from : member.to) || member.callUuid;
+                      let name = phoneNumber && (member.callUuid === session.customer_call_uuid || member.memberId === 'customer_leg')
+                        ? 'Customer' : member.callerName || (member.direction === 'inbound' ? member.from : member.to) || member.callUuid;
                       if (name && typeof name === 'string') {
                         if (name.startsWith('sip:')) {
                           name = name.replace('sip:', '').split('@')[0];
@@ -243,74 +427,90 @@ export default function ActiveCallPanel({ session, onCallEnded, agentData }) {
                         if (agentData && (name === agentData.plivo_username || name === agentData.plivo_sip_uri)) {
                           name = 'Agent (Me)';
                         }
-                        if (name.length > 15 && name !== 'Agent (Me)') {
+                        if (!phoneNumber && name.length > 15 && name !== 'Agent (Me)') {
                           name = name.substring(0, 15) + '...';
                         }
                       }
                       return name;
                     })()}
                   </div>
-                  <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>ID: {member.memberId} • Joined: {member.joinTime}</div>
+                  {phoneNumber && <div className={styles.participantNumber}>{phoneNumber}</div>}
+                  {heldMembers[member.memberId] && <span className={styles.heldBadge}>On hold</span>}
+                  <div className={styles.participantMeta} title={`ID: ${member.memberId} • Joined: ${member.joinTime}`}>ID: {member.memberId} • Joined: {member.joinTime}</div>
                 </div>
-                {!['agent_leg', 'customer_leg'].includes(member.memberId) && <div style={{ display: 'flex', gap: '0.35rem', flexShrink: 0 }}>
+                {!['agent_leg', 'customer_leg'].includes(member.memberId) && <div className={styles.participantControls}>
                   <button 
                     onClick={() => handleHoldToggle(member.memberId, heldMembers[member.memberId] || false)}
-                    disabled={loadingAction === `hold_${member.memberId}`}
+                    disabled={consultationBusy || !!loadingAction}
                     title={heldMembers[member.memberId] ? "Resume Call" : "Hold Call"}
-                    style={{ background: heldMembers[member.memberId] ? 'var(--status-contacted-bg)' : 'var(--bg-surface)', color: heldMembers[member.memberId] ? 'var(--status-contacted-text)' : 'var(--text-secondary)', border: '1px solid var(--border-light)', padding: '0.35rem 0.45rem', borderRadius: '5px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    className={styles.participantButton}
+                    data-action="hold"
+                    aria-pressed={!!heldMembers[member.memberId]}
+                    aria-label={heldMembers[member.memberId] ? 'Resume Call' : 'Hold Call'}
                   >
                     {loadingAction === `hold_${member.memberId}` ? <Loader2 size={14} className="spin" /> : (heldMembers[member.memberId] ? <Play size={14} /> : <Pause size={14} />)}
                   </button>
                   <button 
-                    onClick={() => handleMuteToggle(member.memberId, member.muted)}
-                    disabled={loadingAction === `mute_${member.memberId}`}
-                    title={member.muted ? "Unmute" : "Mute"}
-                    style={{ background: member.muted ? 'var(--status-new-bg)' : 'var(--bg-surface)', color: member.muted ? 'var(--status-new-text)' : 'var(--text-secondary)', border: '1px solid var(--border-light)', padding: '0.35rem 0.45rem', borderRadius: '5px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    onClick={() => handleMuteToggle(member.memberId, memberMuted)}
+                    disabled={!(isAgent && onToggleMute) && (consultationBusy || !!loadingAction)}
+                    title={memberMuted ? "Unmute" : "Mute"}
+                    className={styles.participantButton}
+                    aria-pressed={!!memberMuted}
+                    aria-label={memberMuted ? 'Unmute' : 'Mute'}
                   >
-                    {loadingAction === `mute_${member.memberId}` ? <Loader2 size={14} className="spin" /> : (member.muted ? <MicOff size={14} /> : <Mic size={14} />)}
+                    {loadingAction === `mute_${member.memberId}` ? <Loader2 size={14} className="spin" /> : (memberMuted ? <MicOff size={14} /> : <Mic size={14} />)}
                   </button>
                   <button 
                     onClick={() => handleKick(member.memberId)}
-                    disabled={loadingAction === `kick_${member.memberId}`}
+                    disabled={consultationBusy || !!loadingAction}
                     title="Kick Participant"
-                    style={{ background: 'var(--bg-surface)', color: '#ef4444', border: '1px solid var(--border-light)', padding: '0.35rem 0.45rem', borderRadius: '5px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    className={styles.participantButton}
+                    data-action="remove"
+                    aria-label="Kick Participant"
                   >
                     {loadingAction === `kick_${member.memberId}` ? <Loader2 size={14} className="spin" /> : <UserX size={14} />}
                   </button>
                 </div>}
               </div>
-            ))}
+            );
+          })}
           </div>
       </div>
 
-      <div style={{ marginTop: '0.75rem', paddingTop: '0.65rem', borderTop: '1px solid var(--border-light)' }}>
+      <div className={styles.consultationSection}>
+        <div className={styles.activeActions}>
         <button
           type="button"
           onClick={() => setShowAddParticipant(!showAddParticipant)}
-          style={{ background: 'transparent', border: 'none', color: 'var(--accent-color)', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '2px 0' }}
+          className={styles.secondaryButton}
+          disabled={!!loadingAction}
         >
-          <UserPlus size={14} /> {showAddParticipant ? 'Hide Add Participant' : '+ Merge 3rd Party (Add to Call)'}
+          <UserPlus size={14} /> {showAddParticipant ? 'Hide Add Call' : '+ Add Call'}
         </button>
+        </div>
         {showAddParticipant && (
-          <form onSubmit={handleAddParticipant} style={{ display: 'flex', gap: '0.4rem', marginTop: '0.45rem' }}>
-            <div style={{ display: 'flex', flex: 1, border: '1px solid var(--border-light)', borderRadius: '6px', overflow: 'hidden', background: 'var(--bg-surface)' }}>
-              <span style={{ background: 'var(--bg-primary)', padding: '0.35rem 0.55rem', color: 'var(--text-secondary)', fontSize: '0.8rem', fontWeight: 500, borderRight: '1px solid var(--border-light)', display: 'flex', alignItems: 'center' }}>+91</span>
+          <form onSubmit={handleAddParticipant} className={styles.addCallForm}>
+            <div className={styles.numberField}>
+              <span className={styles.countryCode}>+91</span>
               <input 
                 type="text" 
                 value={newParticipant}
+                disabled={consultationBusy || !!loadingAction || session.status !== 'connected'}
                 onChange={(e) => setNewParticipant(e.target.value.replace(/[^0-9]/g, ''))}
                 placeholder="10 digit number"
                 maxLength={10}
-                style={{ flex: 1, padding: '0.35rem 0.55rem', border: 'none', outline: 'none', fontSize: '0.82rem', background: 'transparent', color: 'var(--text-primary)' }}
+                className={styles.textInput}
+                aria-label="Third person phone number"
+                inputMode="numeric"
               />
             </div>
             <button 
               type="submit"
-              disabled={loadingAction === 'add_participant' || newParticipant.length < 10}
-              style={{ background: 'var(--accent-color)', color: 'white', border: 'none', padding: '0 0.75rem', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer', opacity: newParticipant.length < 10 ? 0.5 : 1 }}
+              disabled={consultationBusy || !!loadingAction || session.status !== 'connected' || newParticipant.length < 10}
+              className={styles.primaryButton}
             >
               {loadingAction === 'add_participant' ? <Loader2 size={13} className="spin" /> : <UserPlus size={13} />}
-              Dial
+              Hold & Call
             </button>
           </form>
         )}
@@ -318,108 +518,37 @@ export default function ActiveCallPanel({ session, onCallEnded, agentData }) {
 
       {/* Custom Premium Confirmation Modal */}
       {confirmModal.isOpen && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(15, 23, 42, 0.6)',
-          backdropFilter: 'blur(6px)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 100000,
-          animation: 'fadeIn 0.2s ease-out'
-        }}>
-          <div style={{
-            background: '#1e293b',
-            border: '1px solid #334155',
-            borderRadius: '12px',
-            padding: '1.75rem',
-            width: '90%',
-            maxWidth: '400px',
-            boxShadow: '0 20px 25px -5px rgba(0,0,0,0.5), 0 10px 10px -5px rgba(0,0,0,0.4)',
-            textAlign: 'center',
-            animation: 'scaleIn 0.25s cubic-bezier(0.34, 1.56, 0.64, 1)'
-          }}>
-            <h3 style={{ fontSize: '1.2rem', fontWeight: 700, color: '#f8fafc', marginBottom: '0.75rem' }}>
+        <div className={styles.modalBackdrop}>
+          <div className={styles.modal} role="dialog" aria-modal="true" aria-label={confirmModal.title}>
+            <h3 className={styles.modalTitle}>
               {confirmModal.title}
             </h3>
-            <p style={{ color: '#94a3b8', fontSize: '0.9rem', lineHeight: 1.5, marginBottom: '1.75rem' }}>
+            <p className={styles.modalMessage}>
               {confirmModal.message}
             </p>
-            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center' }}>
+            <div className={styles.modalActions}>
               <button
                 type="button"
-                className="confirm-btn-cancel"
+                className={styles.secondaryButton}
                 onClick={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
-                style={{
-                  flex: 1,
-                  padding: '0.6rem 1rem',
-                  background: '#334155',
-                  color: '#cbd5e1',
-                  border: '1px solid #475569',
-                  borderRadius: '6px',
-                  fontWeight: 600,
-                  fontSize: '0.85rem',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease'
-                }}
               >
                 Cancel
               </button>
               <button
                 type="button"
-                className="confirm-btn-danger"
+                className={styles.dangerButton}
                 onClick={() => {
                   if (confirmModal.onConfirm) confirmModal.onConfirm();
                   setConfirmModal(prev => ({ ...prev, isOpen: false }));
                 }}
-                style={{
-                  flex: 1,
-                  padding: '0.6rem 1rem',
-                  background: '#ef4444',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '6px',
-                  fontWeight: 600,
-                  fontSize: '0.85rem',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease'
-                }}
               >
-                Confirm
+                {confirmModal.confirmLabel || 'Confirm'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      <style jsx>{`
-        @keyframes pulse {
-          0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
-          70% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
-          100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
-        }
-        @keyframes fadeIn {
-          from { opacity: 0; }
-          to { opacity: 1; }
-        }
-        @keyframes scaleIn {
-          from { transform: scale(0.9); opacity: 0; }
-          to { transform: scale(1); opacity: 1; }
-        }
-        .confirm-btn-cancel:hover {
-          background: #475569 !important;
-          color: #f8fafc !important;
-          border-color: #64748b !important;
-        }
-        .confirm-btn-danger:hover {
-          background: #dc2626 !important;
-          box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3) !important;
-        }
-      `}</style>
     </div>
   );
 }

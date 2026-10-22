@@ -45,11 +45,27 @@ export async function POST(req) {
       if (ag?.agent_code && /^\+?[0-9]{8,15}$/.test(ag.agent_code.trim())) {
         effectiveCallerId = ag.agent_code.trim();
       } else if (ag?.user_id) {
-        const { data: ur } = await adminClient
+        let { data: ur, error: roleError } = await adminClient
           .from('user_roles')
           .select('company, tenant_id')
           .eq('user_id', ag.user_id)
           .maybeSingle();
+
+        // Match start-call on databases that still scope users by company.
+        // A missing tenant_id must not switch the customer leg to a caller ID
+        // from the platform account or another workspace.
+        if (roleError?.code === '42703') {
+          const legacyRole = await adminClient
+            .from('user_roles')
+            .select('company')
+            .eq('user_id', ag.user_id)
+            .maybeSingle();
+          ur = legacyRole.data;
+          roleError = legacyRole.error;
+        }
+        if (roleError || !ur) {
+          throw new Error('Calling workspace could not be verified for the customer leg');
+        }
 
         if (ur?.company || ur?.tenant_id) {
           const { getWorkspaceTelephonyConfig } = await import('@/utils/telephonyConfig');

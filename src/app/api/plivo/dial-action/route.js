@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import plivo from 'plivo';
 import { categorizeHangupCause, getPlivoWebhookBaseUrl } from '@/app/api/plivo/utils';
+import { isConsultationSession, resolveConsultation, consultationAnswerXml, consultationRetryXml } from '@/lib/plivoConsultation';
 
 const hangupXml = '<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>';
 
@@ -15,6 +16,7 @@ export async function GET() {
 }
 
 export async function POST(req) {
+  let attendedCall = false;
   try {
     const url = new URL(req.url);
     const roomName = url.searchParams.get('room') || '';
@@ -25,6 +27,14 @@ export async function POST(req) {
     const adminClient = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
     const { data: session } = await adminClient.from('call_sessions').select('*').eq('room_name', roomName).maybeSingle();
     if (!session) return new NextResponse(hangupXml, { headers: { 'Content-Type': 'application/xml' } });
+
+    // Only the new attended-call marker changes this branch. Ordinary Dial
+    // callbacks keep their original carrier-outcome and announcement path.
+    if (isConsultationSession(session)) {
+      attendedCall = true;
+      const { ctx, row } = await resolveConsultation(adminClient, session);
+      return new NextResponse(consultationAnswerXml(ctx, row, 'agent'), { headers: { 'Content-Type': 'application/xml' } });
+    }
 
     // Transfer to the conference ends the original Dial. It is not a call end.
     if (session.conference_name) {
@@ -93,12 +103,18 @@ export async function POST(req) {
     const { data: latestSession } = await adminClient.from('call_sessions')
       .select('conference_name, status').eq('id', session.id).maybeSingle();
     if (latestSession?.conference_name && latestSession.status === 'connected') {
+      if (isConsultationSession(latestSession)) {
+        attendedCall = true;
+        const { ctx, row } = await resolveConsultation(adminClient, { ...session, ...latestSession });
+        return new NextResponse(consultationAnswerXml(ctx, row, 'agent'), { headers: { 'Content-Type': 'application/xml' } });
+      }
       const xml = conferenceRedirectXml(roomName, getPlivoWebhookBaseUrl(req));
       return new NextResponse(xml, { headers: { 'Content-Type': 'application/xml' } });
     }
     return new NextResponse(hangupXml, { headers: { 'Content-Type': 'application/xml' } });
   } catch (error) {
     console.error('Dial action error:', error);
+    if (attendedCall) return new NextResponse(consultationRetryXml(req), { headers: { 'Content-Type': 'application/xml' } });
     return new NextResponse(hangupXml, { headers: { 'Content-Type': 'application/xml' } });
   }
 }

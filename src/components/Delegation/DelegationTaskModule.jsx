@@ -23,7 +23,7 @@ import { getEmployeesMaster } from '@/app/actions/employee';
 import { getReportingTeam } from '@/utils/reportingHierarchy';
 import { createClient } from '@/utils/supabase/client';
 import SearchableEmployeeSelect from '@/components/common/SearchableEmployeeSelect';
-import { enqueueOfflineAction, canPerformOfflineAction, saveDelegationTasksLocally, getLocalDelegationTasks } from '@/utils/offlineSync';
+import { enqueueOfflineAction, canPerformOfflineAction, saveDelegationTasksLocally, getLocalDelegationTasks, getPendingQueue } from '@/utils/offlineSync';
 import { useTableColumnResize, ColumnResizer } from '@/utils/tableColumnResize';
 
 const DELEGATION_DEFAULT_COL_WIDTHS = {
@@ -248,22 +248,43 @@ export default function DelegationTaskModule({
   });
   const [drilldownSearch, setDrilldownSearch] = useState('');
 
+  const getOfflineTasks = async () => {
+    const cached = await getLocalDelegationTasks(userEmail);
+    const queue = await getPendingQueue();
+    const email = String(userEmail || '').trim().toLowerCase();
+    const tasksById = new Map((cached || []).map((task) => [String(task.id), task]));
+    for (const entry of [...queue].sort((a, b) => a.timestamp - b.timestamp)) {
+      const payload = entry?.payload || {};
+      if (entry?.entityType === 'delegation_task' &&
+          String(payload.delegated_by_email || '').trim().toLowerCase() === email) {
+        tasksById.set(String(payload.id), payload);
+      } else if (entry?.entityType === 'delegation_update' && tasksById.has(String(payload.taskId))) {
+        const task = tasksById.get(String(payload.taskId));
+        tasksById.set(String(payload.taskId), {
+          ...task,
+          status: payload.status || task.status,
+          subtasks: payload.subtasks || task.subtasks,
+          completion_notes: payload.completionNotes ?? task.completion_notes,
+          completion_proof: payload.completionProof ?? task.completion_proof
+        });
+      }
+    }
+    return [...tasksById.values()];
+  };
+
   useEffect(() => {
     // 0ms Instant Offline Hydration from IndexedDB
-    getLocalDelegationTasks().then((cached) => {
+    getOfflineTasks().then((cached) => {
       if (Array.isArray(cached) && cached.length > 0) {
         setTasks(cached);
       }
     }).catch(() => {});
 
-    loadEmployees();
+    if (typeof navigator === 'undefined' || navigator.onLine) loadEmployees();
     // Default deadline to tomorrow 6 PM
-    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
-    const yyyy = tomorrow.getFullYear();
-    const mm = String(tomorrow.getMonth() + 1).padStart(2, '0');
-    const dd = String(tomorrow.getDate()).padStart(2, '0');
-    setCreateForm(prev => ({ ...prev, deadlineDate: `${yyyy}-${mm}-${dd}` }));
-  }, [effectiveTenantId, userCompany]);
+    const tomorrowKey = getISTDateKey(new Date(Date.now() + 24 * 60 * 60 * 1000));
+    setCreateForm(prev => ({ ...prev, deadlineDate: tomorrowKey }));
+  }, [effectiveTenantId, userCompany, userEmail]);
 
   useEffect(() => {
     loadTasks();
@@ -292,6 +313,12 @@ export default function DelegationTaskModule({
   const loadTasks = async () => {
     if (tasks.length === 0) setLoading(true);
     try {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        const cached = await getOfflineTasks();
+        if (cached.length > 0) setTasks(cached);
+        else showNotification('No delegation tasks are cached on this device. Open them once while online.', true);
+        return;
+      }
       const teamEmails = myReportingTeam.map(e => e.email).filter(Boolean);
       const isTeamView = activeTab === 'all' && (teamBoardFilter === 'MY_TEAM' || !isAdmin);
 
@@ -321,11 +348,11 @@ export default function DelegationTaskModule({
       });
       if (res.success && Array.isArray(res.data)) {
         setTasks(res.data);
-        saveDelegationTasksLocally(res.data);
+        saveDelegationTasksLocally(res.data, userEmail);
       }
     } catch (e) {
       console.warn('Network loadTasks failed, reading offline IndexedDB cache:', e);
-      const cached = await getLocalDelegationTasks();
+      const cached = await getOfflineTasks();
       if (cached && cached.length > 0) {
         setTasks(cached);
       } else {
@@ -337,6 +364,7 @@ export default function DelegationTaskModule({
   };
 
   const loadAnalytics = async () => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return;
     try {
       const res = await getDelegationAnalytics(userEmail, effectiveTenantId);
       if (res.success) {
@@ -831,7 +859,7 @@ export default function DelegationTaskModule({
       return;
     }
 
-    const deadlineIso = new Date(`${createForm.deadlineDate}T${createForm.deadlineTime || '18:00'}:00`).toISOString();
+    const deadlineIso = new Date(`${createForm.deadlineDate}T${createForm.deadlineTime || '18:00'}:00+05:30`).toISOString();
     const cleanSubtasks = createForm.subtasks.filter(s => s.title && s.title.trim() !== '');
 
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
@@ -840,8 +868,14 @@ export default function DelegationTaskModule({
         showNotification(check.reason, true);
         return;
       }
+      const offlineTaskId = typeof crypto !== 'undefined' ? crypto.randomUUID?.() : null;
+      if (!offlineTaskId) {
+        showNotification('This browser cannot create a secure offline task ID.', true);
+        return;
+      }
       const offlineTask = {
-        id: `local_del_${Date.now()}`,
+        id: offlineTaskId,
+        tenantId: effectiveTenantId,
         title: createForm.title,
         description: createForm.description,
         priority: createForm.priority,
@@ -856,7 +890,11 @@ export default function DelegationTaskModule({
         status: 'PENDING',
         created_at: new Date().toISOString()
       };
-      await enqueueOfflineAction('create', 'delegation_task', offlineTask);
+      const queued = await enqueueOfflineAction('create', 'delegation_task', offlineTask);
+      if (!queued) {
+        showNotification('Task could not be saved on this device. Please retry.', true);
+        return;
+      }
       setTasks(prev => [offlineTask, ...prev]);
       showNotification(`⚡ Offline Mode: Task delegated to ${createForm.assigned_to_name}! Saved to device.`);
       setCreateModalOpen(false);
@@ -890,8 +928,14 @@ export default function DelegationTaskModule({
       console.warn('Network createDelegationTask failed, checking offline fallback:', e);
       const check = canPerformOfflineAction('delegationCreate');
       if (check.allowed) {
+        const offlineTaskId = typeof crypto !== 'undefined' ? crypto.randomUUID?.() : null;
+        if (!offlineTaskId) {
+          showNotification('This browser cannot create a secure offline task ID.', true);
+          return;
+        }
         const offlineTask = {
-          id: `local_del_${Date.now()}`,
+          id: offlineTaskId,
+          tenantId: effectiveTenantId,
           title: createForm.title,
           description: createForm.description,
           priority: createForm.priority,
@@ -906,7 +950,11 @@ export default function DelegationTaskModule({
           status: 'PENDING',
           created_at: new Date().toISOString()
         };
-        await enqueueOfflineAction('create', 'delegation_task', offlineTask);
+        const queued = await enqueueOfflineAction('create', 'delegation_task', offlineTask);
+        if (!queued) {
+          showNotification('Task could not be saved on this device. Please retry.', true);
+          return;
+        }
         setTasks(prev => [offlineTask, ...prev]);
         showNotification(`⚡ Network Issue: Task delegated and saved to device!`);
         setCreateModalOpen(false);
@@ -927,11 +975,16 @@ export default function DelegationTaskModule({
         showNotification(check.reason, true);
         return;
       }
-      await enqueueOfflineAction('update', 'delegation_update', {
+      const queued = await enqueueOfflineAction('update', 'delegation_update', {
         taskId: task.id,
         status: 'IN_PROGRESS',
-        user: { name: userName, email: userEmail }
+        user: { name: userName, email: userEmail },
+        tenantId: effectiveTenantId
       });
+      if (!queued) {
+        showNotification('Task update could not be saved on this device. Please retry.', true);
+        return;
+      }
       setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: 'IN_PROGRESS' } : t));
       showNotification('⚡ Offline: Task marked as In Progress (saved to device)');
       return;
@@ -970,13 +1023,18 @@ export default function DelegationTaskModule({
         showNotification(check.reason, true);
         return;
       }
-      await enqueueOfflineAction('update', 'delegation_update', {
+      const queued = await enqueueOfflineAction('update', 'delegation_update', {
         taskId: submittingTask.id,
         status: 'SUBMITTED',
         completionNotes: submissionNotes,
         completionProof: submissionProof,
-        user: { name: userName, email: userEmail }
+        user: { name: userName, email: userEmail },
+        tenantId: effectiveTenantId
       });
+      if (!queued) {
+        showNotification('Task submission could not be saved on this device. Please retry.', true);
+        return;
+      }
       setTasks(prev => prev.map(t => t.id === submittingTask.id ? { ...t, status: 'SUBMITTED', completion_notes: submissionNotes, completion_proof: submissionProof } : t));
       showNotification('⚡ Offline Mode: Task submission saved to device! Will sync when connected.');
       setSubmitModalOpen(false);
@@ -1018,12 +1076,17 @@ export default function DelegationTaskModule({
         showNotification(check.reason, true);
         return;
       }
-      await enqueueOfflineAction('update', 'delegation_update', {
+      const queued = await enqueueOfflineAction('update', 'delegation_update', {
         taskId: task.id,
         status: task.status === 'PENDING' ? 'IN_PROGRESS' : task.status,
         subtasks: updatedSubtasks,
-        user: { name: userName, email: userEmail }
+        user: { name: userName, email: userEmail },
+        tenantId: effectiveTenantId
       });
+      if (!queued) {
+        showNotification('Subtask update could not be saved on this device. Please retry.', true);
+        return;
+      }
       setTasks(prev => prev.map(t => t.id === task.id ? { ...t, subtasks: updatedSubtasks } : t));
       return;
     }
@@ -1288,88 +1351,6 @@ export default function DelegationTaskModule({
             <RefreshCw size={16} className={loading ? 'spin' : ''} /> Refresh
           </button>
         </div>
-      </div>
-
-      {/* Main Tabs Navigation */}
-      <div style={{ display: 'flex', gap: '1rem', borderBottom: '1px solid var(--border-color, #e2e8f0)', paddingBottom: '0.5rem', flexWrap: 'wrap' }}>
-        <button
-          onClick={() => handleTabChange('dashboard')}
-          style={{
-            background: 'none',
-            border: 'none',
-            padding: '0.6rem 1.2rem',
-            fontWeight: 600,
-            fontSize: '0.95rem',
-            cursor: 'pointer',
-            borderBottom: activeTab === 'dashboard' ? '3px solid #3b82f6' : '3px solid transparent',
-            color: activeTab === 'dashboard' ? '#3b82f6' : 'var(--text-secondary, #64748b)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.5rem'
-          }}
-        >
-          <BarChart3 size={18} />
-          <span>📊 Delegation Dashboard</span>
-        </button>
-
-        <button
-          onClick={() => handleTabChange('to_me')}
-          style={{
-            background: 'none',
-            border: 'none',
-            padding: '0.6rem 1.2rem',
-            fontWeight: 600,
-            fontSize: '0.95rem',
-            cursor: 'pointer',
-            borderBottom: activeTab === 'to_me' ? '3px solid #3b82f6' : '3px solid transparent',
-            color: activeTab === 'to_me' ? '#3b82f6' : 'var(--text-secondary, #64748b)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.5rem'
-          }}
-        >
-          <span>📥 Tasks Delegated To Me</span>
-        </button>
-
-        <button
-          onClick={() => handleTabChange('by_me')}
-          style={{
-            background: 'none',
-            border: 'none',
-            padding: '0.6rem 1.2rem',
-            fontWeight: 600,
-            fontSize: '0.95rem',
-            cursor: 'pointer',
-            borderBottom: activeTab === 'by_me' ? '3px solid #3b82f6' : '3px solid transparent',
-            color: activeTab === 'by_me' ? '#3b82f6' : 'var(--text-secondary, #64748b)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.5rem'
-          }}
-        >
-          <span>📤 Tasks Delegated By Me</span>
-        </button>
-
-        {canAccessTeamBoard && (
-          <button
-            onClick={() => handleTabChange('all')}
-            style={{
-              background: 'none',
-              border: 'none',
-              padding: '0.6rem 1.2rem',
-              fontWeight: 600,
-              fontSize: '0.95rem',
-              cursor: 'pointer',
-              borderBottom: activeTab === 'all' ? '3px solid #3b82f6' : '3px solid transparent',
-              color: activeTab === 'all' ? '#3b82f6' : 'var(--text-secondary, #64748b)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem'
-            }}
-          >
-            <Users size={18} /> Company Task Board
-          </button>
-        )}
       </div>
 
       {/* ==================================================== */}

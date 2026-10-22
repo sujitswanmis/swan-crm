@@ -108,18 +108,19 @@ export function saveOfflineRulesToLocal(rules) {
 }
 
 function getTodayQuotaKey() {
-  const d = new Date();
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `supuja_offline_sec_${year}-${month}-${day}`;
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(new Date());
+  const value = (type) => parts.find((part) => part.type === type)?.value;
+  return `supuja_offline_sec_${value('year')}-${value('month')}-${value('day')}`;
 }
 
 function getMonthQuotaKey() {
-  const d = new Date();
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  return `supuja_offline_month_${year}-${month}`;
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit'
+  }).formatToParts(new Date());
+  const value = (type) => parts.find((part) => part.type === type)?.value;
+  return `supuja_offline_month_${value('year')}-${value('month')}`;
 }
 
 /**
@@ -975,7 +976,7 @@ export async function getLocalLeads({ onPreview, onTiming } = {}) {
 /**
  * Cache current checklists array to IndexedDB for offline browsing
  */
-export async function saveChecklistsLocally(checklists) {
+export async function saveChecklistsLocally(checklists, userEmail = '') {
   if (!Array.isArray(checklists) || checklists.length === 0) return;
   try {
     const db = await openOfflineDB();
@@ -988,7 +989,7 @@ export async function saveChecklistsLocally(checklists) {
     checklists.forEach((item, idx) => {
       if (item) {
         const id = item.id || (item.template?.id ? `${item.template.id}_${item.currentPeriodKey || item.slotInfo?.slot_id || item.slotIndex || idx}` : `chk_${idx}`);
-        store.put({ ...item, id });
+        store.put({ ...item, id, __offlineUserEmail: String(userEmail).trim().toLowerCase() });
       }
     });
 
@@ -1004,7 +1005,7 @@ export async function saveChecklistsLocally(checklists) {
 /**
  * Read cached checklists from IndexedDB when offline
  */
-export async function getLocalChecklists() {
+export async function getLocalChecklists(userEmail = '') {
   try {
     const db = await openOfflineDB();
     if (!db) return [];
@@ -1014,7 +1015,11 @@ export async function getLocalChecklists() {
     const request = store.getAll();
 
     return new Promise((resolve) => {
-      request.onsuccess = () => resolve(request.result || []);
+      request.onsuccess = () => {
+        const rows = request.result || [];
+        const scope = String(userEmail).trim().toLowerCase();
+        resolve(scope ? rows.filter((row) => row.__offlineUserEmail === scope) : rows);
+      };
       request.onerror = () => resolve([]);
     });
   } catch (e) {
@@ -1025,7 +1030,7 @@ export async function getLocalChecklists() {
 /**
  * Cache current delegation tasks array to IndexedDB for offline browsing
  */
-export async function saveDelegationTasksLocally(tasks) {
+export async function saveDelegationTasksLocally(tasks, userEmail = '') {
   if (!Array.isArray(tasks) || tasks.length === 0) return;
   try {
     const db = await openOfflineDB();
@@ -1038,7 +1043,7 @@ export async function saveDelegationTasksLocally(tasks) {
     tasks.forEach((t, idx) => {
       if (t) {
         const id = t.id || t.task_id || t.uuid || `del_${idx}`;
-        store.put({ ...t, id });
+        store.put({ ...t, id, __offlineUserEmail: String(userEmail).trim().toLowerCase() });
       }
     });
 
@@ -1054,7 +1059,7 @@ export async function saveDelegationTasksLocally(tasks) {
 /**
  * Read cached delegation tasks from IndexedDB when offline
  */
-export async function getLocalDelegationTasks() {
+export async function getLocalDelegationTasks(userEmail = '') {
   try {
     const db = await openOfflineDB();
     if (!db) return [];
@@ -1064,7 +1069,11 @@ export async function getLocalDelegationTasks() {
     const request = store.getAll();
 
     return new Promise((resolve) => {
-      request.onsuccess = () => resolve(request.result || []);
+      request.onsuccess = () => {
+        const rows = request.result || [];
+        const scope = String(userEmail).trim().toLowerCase();
+        resolve(scope ? rows.filter((row) => row.__offlineUserEmail === scope) : rows);
+      };
       request.onerror = () => resolve([]);
     });
   } catch (e) {
@@ -1102,7 +1111,17 @@ export async function enqueueOfflineAction(actionType, entityType, payload) {
 
     const tx = db.transaction(STORES.SYNC_QUEUE, 'readwrite');
     const store = tx.objectStore(STORES.SYNC_QUEUE);
+    const committed = new Promise((resolve) => {
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+      tx.onabort = () => resolve(false);
+    });
     store.put(queueItem);
+
+    if (!await committed) {
+      console.warn('Offline action could not be committed to IndexedDB');
+      return null;
+    }
 
     // Also optimistically save to local leads cache if it's a lead
     if (entityType === 'lead') {
@@ -1318,12 +1337,35 @@ export function sanitizeLeadPayloadForDb(payload, isUpdate = false) {
 /**
  * Synchronizes all pending items with Supabase Postgres database
  */
+function toAttendanceDbPayload(payload = {}) {
+  const userId = String(payload.userId || payload.user_id || '');
+  return {
+    tenant_id: payload.tenantId || payload.tenant_id || '00000000-0000-0000-0000-000000000001',
+    user_id: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId) ? userId : null,
+    emp_code: payload.emp_code || '',
+    emp_name: payload.empName || payload.emp_name || '',
+    email: String(payload.email || '').trim().toLowerCase(),
+    department: payload.department || '',
+    attendance_date: payload.attendance_date,
+    in_time: payload.in_time || null,
+    out_time: payload.out_time || null,
+    in_location: payload.in_location || 'Office Web Terminal',
+    out_location: payload.out_location || null,
+    in_method: payload.in_method || 'WEB_PUNCH',
+    out_method: payload.out_method || null,
+    total_working_minutes: payload.total_working_minutes || 0,
+    status: payload.status || 'PRESENT',
+    is_regularized: false,
+    remarks: payload.remarks || null
+  };
+}
+
 export async function syncPendingQueue(supabaseClient, onProgress = null) {
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
     return { success: false, reason: 'offline', count: 0 };
   }
 
-  const queue = await getPendingQueue();
+  const queue = (await getPendingQueue()).sort((a, b) => a.timestamp - b.timestamp);
   if (queue.length === 0) {
     return { success: true, count: 0 };
   }
@@ -1432,9 +1474,9 @@ export async function syncPendingQueue(supabaseClient, onProgress = null) {
           successCount++;
         }
       } else if (item.entityType === 'attendance') {
-        const payload = item.payload;
+        const payload = toAttendanceDbPayload(item.payload);
         if (payload.out_time) {
-          const { error } = await supabaseClient
+          const { data, error } = await supabaseClient
             .from('attendance_records')
             .update({
               out_time: payload.out_time,
@@ -1444,9 +1486,11 @@ export async function syncPendingQueue(supabaseClient, onProgress = null) {
               status: payload.status,
               remarks: payload.remarks
             })
-            .match({ email: payload.email, attendance_date: payload.attendance_date });
+            .match({ email: payload.email, attendance_date: payload.attendance_date, tenant_id: payload.tenant_id })
+            .select('id');
 
           if (error) throw error;
+          if (!data?.length) throw new Error('Matching attendance punch-in was not found for punch-out');
           await removeQueueItem(item.queueId, { ...item, title: `Punch-Out: ${payload.empName}` });
           successCount++;
         } else {
@@ -1486,6 +1530,7 @@ export async function syncPendingQueue(supabaseClient, onProgress = null) {
             .from('checklist_submissions')
             .select('id')
             .eq('id', payload.id)
+            .eq('tenant_id', payload.tenant_id || payload.tenantId || '00000000-0000-0000-0000-000000000001')
             .maybeSingle();
           if (existById) alreadyExists = true;
         }
@@ -1497,6 +1542,7 @@ export async function syncPendingQueue(supabaseClient, onProgress = null) {
             .eq('template_id', templateId)
             .eq('employee_email', emailClean)
             .eq('period_key', periodKey)
+            .eq('tenant_id', payload.tenant_id || payload.tenantId || '00000000-0000-0000-0000-000000000001')
             .maybeSingle();
           if (existByKey) alreadyExists = true;
         }
@@ -1544,9 +1590,12 @@ export async function syncPendingQueue(supabaseClient, onProgress = null) {
 
         if (upsertErr) {
           const { submitChecklistResponse } = await import('@/app/actions/checklist');
-          const res = await submitChecklistResponse({ ...payload, employee_email: emailClean, isOfflineSync: true });
-          if (res && !res.success && res.error) {
-            throw new Error(res.error);
+          const res = await submitChecklistResponse(
+            { ...payload, employee_email: emailClean, isOfflineSync: true },
+            payload.tenant_id || payload.tenantId
+          );
+          if (!res?.success) {
+            throw new Error(res?.error || 'Checklist sync was not confirmed');
           }
         }
 
@@ -1555,9 +1604,9 @@ export async function syncPendingQueue(supabaseClient, onProgress = null) {
       } else if (item.entityType === 'delegation_task') {
         const payload = item.payload;
         const { createDelegationTask } = await import('@/app/actions/delegationTask');
-        const res = await createDelegationTask(payload);
-        if (res && !res.success && res.error) {
-          throw new Error(res.error);
+        const res = await createDelegationTask(payload, payload.tenantId || payload.tenant_id);
+        if (!res?.success) {
+          throw new Error(res?.error || 'Delegation task sync was not confirmed');
         }
         await removeQueueItem(item.queueId, { ...item, title: `Task: ${payload.title}` });
         successCount++;
@@ -1565,8 +1614,8 @@ export async function syncPendingQueue(supabaseClient, onProgress = null) {
         const payload = item.payload;
         const { updateTaskStatus } = await import('@/app/actions/delegationTask');
         const res = await updateTaskStatus(payload);
-        if (res && !res.success && res.error) {
-          throw new Error(res.error);
+        if (!res?.success) {
+          throw new Error(res?.error || 'Delegation update sync was not confirmed');
         }
         await removeQueueItem(item.queueId, { ...item, title: `Task Status: ${payload.status || 'Updated'}` });
         successCount++;
@@ -1574,24 +1623,30 @@ export async function syncPendingQueue(supabaseClient, onProgress = null) {
         const payload = item.payload;
         const { applyMissingAttendance } = await import('@/app/actions/attendance');
         const res = await applyMissingAttendance(payload);
-        if (res && !res.success && res.error) {
-          throw new Error(res.error);
+        if (!res?.success) {
+          throw new Error(res?.error || 'Attendance request sync was not confirmed');
         }
         await removeQueueItem(item.queueId, { ...item, title: `Regularize: ${payload.attendanceDate}` });
         successCount++;
       }
     } catch (itemErr) {
-      // Layer 2 Auto-Fallback: Dynamic Server-Side Force Sync to guarantee 99.99% sync rate
-      try {
-        const { forceSyncOfflineItem } = await import('@/app/actions/offlineForceSync');
-        const fallbackRes = await forceSyncOfflineItem(item);
-        if (fallbackRes && fallbackRes.success) {
-          await removeQueueItem(item.queueId, fallbackRes.item || item);
-          successCount++;
-          continue;
+      // The force action implements only these entity types. An unsupported
+      // item must stay queued if its primary sync failed.
+      if (['lead', 'attendance', 'lead_note'].includes(item.entityType)) {
+        try {
+          const { forceSyncOfflineItem } = await import('@/app/actions/offlineForceSync');
+          const fallbackItem = item.entityType === 'attendance'
+            ? { ...item, payload: toAttendanceDbPayload(item.payload) }
+            : item;
+          const fallbackRes = await forceSyncOfflineItem(fallbackItem);
+          if (fallbackRes && fallbackRes.success) {
+            await removeQueueItem(item.queueId, fallbackRes.item || item);
+            successCount++;
+            continue;
+          }
+        } catch (fbErr) {
+          console.warn('Layer 2 force-sync fallback notice:', fbErr);
         }
-      } catch (fbErr) {
-        console.warn('Layer 2 force-sync fallback notice:', fbErr);
       }
 
       const errMsg = itemErr?.message || itemErr?.details || String(itemErr);

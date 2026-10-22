@@ -87,7 +87,12 @@ export async function getOfflineRuleSettings() {
       .eq('id', 'offline_rule_config')
       .maybeSingle();
 
-    if (error || !data?.permissions) {
+    if (error) {
+      console.warn('getOfflineRuleSettings read error:', error);
+      return { success: false, error: 'Offline policy could not be loaded.' };
+    }
+
+    if (!data?.permissions) {
       return { success: true, settings: DEFAULT_OFFLINE_RULES };
     }
 
@@ -103,8 +108,8 @@ export async function getOfflineRuleSettings() {
       }
     };
   } catch (err) {
-    console.warn('getOfflineRuleSettings error, returning defaults:', err);
-    return { success: true, settings: DEFAULT_OFFLINE_RULES };
+    console.warn('getOfflineRuleSettings error:', err);
+    return { success: false, error: 'Offline policy could not be loaded.' };
   }
 }
 
@@ -133,26 +138,34 @@ export async function saveOfflineRuleSettings(newSettings) {
       return { success: false, error: 'Permission Denied: Only Admins can update Offline Rules.' };
     }
 
+    // Older clients may submit only a subset of flags. Preserve the saved values
+    // for omitted flags while accepting every feature shown by the policy center.
+    const { data: existing, error: existingError } = await adminClient
+      .from('global_role_permissions')
+      .select('permissions')
+      .eq('id', 'offline_rule_config')
+      .maybeSingle();
+    if (existingError) {
+      return { success: false, error: 'Could not read the current offline policy.' };
+    }
+    const previousFeatures = existing?.permissions?.features || {};
+    const requestedFeatures = newSettings?.features || {};
+    const features = Object.fromEntries(
+      Object.keys(DEFAULT_OFFLINE_RULES.features).map((key) => [
+        key,
+        typeof requestedFeatures[key] === 'boolean'
+          ? requestedFeatures[key]
+          : typeof previousFeatures[key] === 'boolean'
+            ? previousFeatures[key]
+            : DEFAULT_OFFLINE_RULES.features[key]
+      ])
+    );
+
     const cleanSettings = {
       isOfflineEnabled: Boolean(newSettings.isOfflineEnabled),
       dailyQuotaHours: Math.min(24, Math.max(1, Number(newSettings.dailyQuotaHours) || 5)),
       monthlyQuotaHours: Math.min(300, Math.max(5, Number(newSettings.monthlyQuotaHours) || 50)),
-      features: {
-        checklistSubmit: Boolean(newSettings.features?.checklistSubmit),
-        checklistTemplateEdit: Boolean(newSettings.features?.checklistTemplateEdit),
-        delegationStatusUpdate: Boolean(newSettings.features?.delegationStatusUpdate),
-        delegationCreate: Boolean(newSettings.features?.delegationCreate),
-        delegationApproval: Boolean(newSettings.features?.delegationApproval),
-        leadStatusUpdate: Boolean(newSettings.features?.leadStatusUpdate),
-        leadNotes: Boolean(newSettings.features?.leadNotes),
-        leadFollowUp: Boolean(newSettings.features?.leadFollowUp),
-        clientRegistration: Boolean(newSettings.features?.clientRegistration),
-        profileEdit: Boolean(newSettings.features?.profileEdit),
-        leadAssign: Boolean(newSettings.features?.leadAssign),
-        attendancePunch: Boolean(newSettings.features?.attendancePunch),
-        attendanceRegularization: Boolean(newSettings.features?.attendanceRegularization),
-        partyMasterEdit: Boolean(newSettings.features?.partyMasterEdit)
-      },
+      features,
       autoSyncOnReconnect: Boolean(newSettings.autoSyncOnReconnect),
       maxQueueItemsPerDevice: Number(newSettings.maxQueueItemsPerDevice) || 500,
       updated_at: new Date().toISOString(),

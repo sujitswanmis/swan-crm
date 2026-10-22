@@ -118,25 +118,7 @@ export default function SettingsContainer({
 
   return (
     <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
-      {/* Mobile Horizontal Scrollable Sub-Tabs Pill Bar */}
-      <div className="mobile-subtabs-scroll">
-        {visibleTabs.map((tab) => {
-          const isActive = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => handleTabChange(tab.id)}
-              className={`mobile-subtab-pill ${isActive ? 'active' : ''}`}
-            >
-              <span style={{ display: 'flex', alignItems: 'center', fontSize: '0.9rem' }}>{tab.icon}</span>
-              <span>{tab.label}</span>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Settings Content Area (Full Width) */}
+      {/* Settings Content Area (Full Clean Width) */}
       <div className="card" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', width: '100%', borderRadius: 0, border: 'none', boxShadow: 'none' }}>
         {activeTab === 'business' && <BusinessProfile userCompany={userCompany} />}
         {activeTab === 'crm' && <CRMConfig userCompany={userCompany} />}

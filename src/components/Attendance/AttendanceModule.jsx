@@ -6,7 +6,8 @@ import {
   Clock, Calendar, CheckCircle2, XCircle, AlertCircle, RefreshCw, Send,
   UserCheck, ShieldCheck, FileSpreadsheet, Filter, Search, ChevronLeft,
   ChevronRight, ArrowRight, Check, X, Building, MapPin, Laptop, Smartphone,
-  Info, AlertTriangle, FileText, User, Users, Download, Volume2, VolumeX, Play, Sparkles, BookOpen
+  Info, AlertTriangle, FileText, User, Users, Download, Volume2, VolumeX, Play, Sparkles, BookOpen,
+  Award, Sliders, Settings, Plus, Edit2, Trash2, Navigation
 } from 'lucide-react';
 import DateRangePicker from '@/components/common/DateRangePicker';
 import {
@@ -22,7 +23,19 @@ import {
   bulkApproveRegularizationRequests,
   bulkRejectRegularizationRequests,
   getTeamAttendanceMaster,
-  getTeamMonthlyMatrix
+  getTeamMonthlyMatrix,
+  getEmployeeLeaveBalance,
+  applyEmployeeLeave,
+  getMyLeaveRequests,
+  getHodPendingLeaveRequests,
+  approveLeaveRequest,
+  rejectLeaveRequest,
+  grantEmployeeCPLCredit,
+  updateTenantLeavePolicy,
+  getAllTenantLeavePolicies,
+  getTeamLeaveReport,
+  getTenantAttendancePolicy,
+  saveTenantAttendancePolicy
 } from '@/app/actions/attendance';
 import { 
   formatMinutesToHours, 
@@ -32,7 +45,8 @@ import {
   calculateMonthlyShortLeaveUsage,
   SHIFT_RULES
 } from '@/utils/attendanceUtils';
-import { getCurrentGPSLocation } from '@/utils/geoAttendance';
+import { getTenantBranches } from '@/app/actions/tenantBranches';
+import { getCurrentGPSLocation, calculateDistanceMeters } from '@/utils/geoAttendance';
 import { enqueueOfflineAction, canPerformOfflineAction } from '@/utils/offlineSync';
 import { useTableColumnResize, ColumnResizer } from '@/utils/tableColumnResize';
 
@@ -60,6 +74,68 @@ const ATTENDANCE_TEAM_MIN_COL_WIDTHS = {
   duration: 80,
   status: 100,
   regularization: 90
+};
+
+const ATTENDANCE_SHIFTS_DEFAULT_COL_WIDTHS = {
+  code: 110,
+  shift_name: 190,
+  timings: 170,
+  grace: 100,
+  short_leave_1: 160,
+  short_leave_2: 160,
+  min_hours: 150,
+  status: 120,
+  actions: 140
+};
+
+const ATTENDANCE_SHIFTS_MIN_COL_WIDTHS = {
+  code: 80,
+  shift_name: 130,
+  timings: 120,
+  grace: 80,
+  short_leave_1: 120,
+  short_leave_2: 120,
+  min_hours: 110,
+  status: 90,
+  actions: 90
+};
+
+const ATTENDANCE_GEOFENCE_DEFAULT_COL_WIDTHS = {
+  name: 210,
+  coordinates: 190,
+  radius: 130,
+  address: 230,
+  status: 120,
+  actions: 140
+};
+
+const ATTENDANCE_GEOFENCE_MIN_COL_WIDTHS = {
+  name: 140,
+  coordinates: 130,
+  radius: 90,
+  address: 140,
+  status: 90,
+  actions: 100
+};
+
+const ATTENDANCE_LEAVE_POLICIES_DEFAULT_COL_WIDTHS = {
+  company: 210,
+  cl_sl: 140,
+  el: 200,
+  cpl: 240,
+  rules: 250,
+  updated: 180,
+  actions: 130
+};
+
+const ATTENDANCE_LEAVE_POLICIES_MIN_COL_WIDTHS = {
+  company: 140,
+  cl_sl: 100,
+  el: 150,
+  cpl: 170,
+  rules: 180,
+  updated: 130,
+  actions: 100
 };
 
 const REASON_CATEGORIES = [
@@ -123,6 +199,348 @@ export default function AttendanceModule({
   // Active Sub-Tab: 'my_attendance' | 'monthly_logs' | 'regularization' | 'hod_approvals' | 'team_report'
   const [activeTab, setActiveTab] = useState(initialSubTab || 'my_attendance');
 
+  // Dynamic Multi-Tenant & Multi-Shift Policy State
+  const initialCompany = (userCompany && userCompany.toLowerCase().includes('supuja'))
+    ? 'SuPuja Creations'
+    : (userCompany && userCompany.toLowerCase().includes('testing'))
+      ? 'Testing New Swan Group'
+      : 'New Swan Group';
+  const [selectedShiftPolicyCompany, setSelectedShiftPolicyCompany] = useState(initialCompany);
+  const [selectedShiftPolicyBranch, setSelectedShiftPolicyBranch] = useState('All Branches');
+  const [availablePolicyBranches, setAvailablePolicyBranches] = useState([]);
+  const [tenantShiftPolicy, setTenantShiftPolicy] = useState(null);
+  const [loadingShiftPolicy, setLoadingShiftPolicy] = useState(false);
+  const [activeShiftIndex, setActiveShiftIndex] = useState(0);
+  const [showShiftConfigModal, setShowShiftConfigModal] = useState(false);
+  const [shiftConfigForm, setShiftConfigForm] = useState(null);
+  const [savingShiftConfig, setSavingShiftConfig] = useState(false);
+  const [shiftConfigToast, setShiftConfigToast] = useState(null);
+
+  // Office Geofencing Policy State
+  const [geofenceSettings, setGeofenceSettings] = useState({
+    enable_geofence: false,
+    require_gps: 'OFF',
+    geofence_mode: 'STRICT_BLOCK',
+    geofence_locations: []
+  });
+  const [savingGeofence, setSavingGeofence] = useState(false);
+  const [geofenceToast, setGeofenceToast] = useState(null);
+  const [showLocationModal, setShowLocationModal] = useState(false);
+  const [editingLocationIndex, setEditingLocationIndex] = useState(null);
+  const [locationForm, setLocationForm] = useState({
+    name: '',
+    latitude: '',
+    longitude: '',
+    radius_meters: 200,
+    address: '',
+    is_active: true
+  });
+  const [testingGps, setTestingGps] = useState(false);
+  const [liveGpsResult, setLiveGpsResult] = useState(null);
+
+  // Time formatter helper
+  const formatTime12h = (time24) => {
+    if (!time24) return '—';
+    const parts = String(time24).split(':');
+    const h = parseInt(parts[0], 10);
+    const m = parts[1] || '00';
+    if (isNaN(h)) return time24;
+    const period = h >= 12 ? 'PM' : 'AM';
+    const h12 = h % 12 || 12;
+    return `${String(h12).padStart(2, '0')}:${m} ${period}`;
+  };
+
+  // Helper to resolve specific tenant ID by company name
+  const getCompanyTenantId = (comp) => {
+    const c = (comp || '').toLowerCase().trim();
+    if (c.includes('supuja')) return '0a37b8e8-1c28-4e19-8891-951fc3f8f8af';
+    if (c.includes('testing')) return '922d3e72-6588-457f-a562-4f1bdbf10d98';
+    return '00000000-0000-0000-0000-000000000001';
+  };
+
+  // Fetch branches for selected company
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await getTenantBranches(selectedShiftPolicyCompany);
+        const branchList = Array.isArray(res) ? res : (res?.branches || []);
+        setAvailablePolicyBranches(branchList);
+      } catch (e) {
+        console.warn('Failed to load branches for shift policy:', e);
+      }
+    })();
+  }, [selectedShiftPolicyCompany]);
+
+  // Fetch dynamic shift policy from backend
+  const fetchTenantShiftPolicy = async (comp = selectedShiftPolicyCompany, branch = selectedShiftPolicyBranch) => {
+    setLoadingShiftPolicy(true);
+    try {
+      const targetTenantId = getCompanyTenantId(comp);
+      const res = await getTenantAttendancePolicy(targetTenantId, comp, branch);
+      if (res?.success && res.data) {
+        setTenantShiftPolicy(res.data);
+      }
+    } catch (e) {
+      console.warn('Failed to fetch tenant shift policy:', e);
+    } finally {
+      setLoadingShiftPolicy(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'shift_rules' || activeTab === 'geofencing') {
+      fetchTenantShiftPolicy(selectedShiftPolicyCompany, selectedShiftPolicyBranch);
+    } else if (activeTab === 'my_attendance') {
+      fetchTenantShiftPolicy(initialCompany, 'All Branches');
+    }
+  }, [activeTab, selectedShiftPolicyCompany, selectedShiftPolicyBranch, initialCompany]);
+
+  // Sync Geofence Settings with Loaded Policy
+  useEffect(() => {
+    if (tenantShiftPolicy) {
+      setGeofenceSettings({
+        enable_geofence: Boolean(tenantShiftPolicy.enable_geofence),
+        require_gps: tenantShiftPolicy.require_gps || 'OFF',
+        geofence_mode: tenantShiftPolicy.geofence_mode || 'STRICT_BLOCK',
+        geofence_locations: Array.isArray(tenantShiftPolicy.geofence_locations) ? tenantShiftPolicy.geofence_locations : []
+      });
+    }
+  }, [tenantShiftPolicy]);
+
+  // Fetch policy when entering geofencing tab
+  useEffect(() => {
+    if (activeTab === 'geofencing') {
+      fetchTenantShiftPolicy(selectedShiftPolicyCompany, selectedShiftPolicyBranch);
+    }
+  }, [activeTab, selectedShiftPolicyCompany, selectedShiftPolicyBranch]);
+
+  // Save Geofence Policy
+  const handleSaveGeofencePolicy = async () => {
+    setSavingGeofence(true);
+    setGeofenceToast(null);
+    try {
+      const targetTenantId = getCompanyTenantId(selectedShiftPolicyCompany);
+      const updatedPolicyData = {
+        ...(tenantShiftPolicy || {}),
+        company_name: selectedShiftPolicyCompany,
+        branch_name: selectedShiftPolicyBranch,
+        enable_geofence: Boolean(geofenceSettings.enable_geofence),
+        require_gps: geofenceSettings.require_gps,
+        geofence_mode: geofenceSettings.geofence_mode,
+        geofence_locations: geofenceSettings.geofence_locations || []
+      };
+
+      const res = await saveTenantAttendancePolicy(
+        targetTenantId,
+        selectedShiftPolicyCompany,
+        updatedPolicyData,
+        userName || 'Admin',
+        selectedShiftPolicyBranch
+      );
+
+      if (res?.success) {
+        setGeofenceToast({ type: 'success', message: '🎉 Office Geofencing Policy & GPS Rules saved successfully!' });
+        await fetchTenantShiftPolicy(selectedShiftPolicyCompany, selectedShiftPolicyBranch);
+        setTimeout(() => setGeofenceToast(null), 3000);
+      } else {
+        setGeofenceToast({ type: 'error', message: res?.error || 'Failed to save geofence policy' });
+      }
+    } catch (err) {
+      setGeofenceToast({ type: 'error', message: err.message });
+    } finally {
+      setSavingGeofence(false);
+    }
+  };
+
+  // Test Device Live GPS
+  const handleTestLiveGPS = async () => {
+    setTestingGps(true);
+    setLiveGpsResult(null);
+    try {
+      const loc = await getCurrentGPSLocation({ timeout: 5000, enableHighAccuracy: true });
+      if (!loc.success) {
+        setLiveGpsResult({ success: false, error: loc.error || 'Failed to capture GPS coordinates' });
+      } else {
+        const activeLocations = (geofenceSettings.geofence_locations || []).filter(l => l.is_active !== false && l.latitude && l.longitude);
+        let nearestOffice = null;
+        let minDistance = Infinity;
+        for (const office of activeLocations) {
+          const d = calculateDistanceMeters(loc.latitude, loc.longitude, Number(office.latitude), Number(office.longitude));
+          if (d < minDistance) {
+            minDistance = d;
+            nearestOffice = office;
+          }
+        }
+        setLiveGpsResult({
+          success: true,
+          latitude: loc.latitude,
+          longitude: loc.longitude,
+          accuracy: loc.accuracy,
+          mapsUrl: loc.mapsUrl,
+          nearestOffice,
+          minDistance: minDistance === Infinity ? null : minDistance,
+          isWithin: nearestOffice ? (minDistance <= Number(nearestOffice.radius_meters || 200)) : null
+        });
+      }
+    } catch (err) {
+      setLiveGpsResult({ success: false, error: err.message });
+    } finally {
+      setTestingGps(false);
+    }
+  };
+
+  // Office Location Handlers
+  const handleOpenAddLocation = () => {
+    setEditingLocationIndex(null);
+    setLocationForm({
+      name: '',
+      latitude: '',
+      longitude: '',
+      radius_meters: 200,
+      address: '',
+      is_active: true
+    });
+    setShowLocationModal(true);
+  };
+
+  const handleEditLocation = (index) => {
+    setEditingLocationIndex(index);
+    const loc = geofenceSettings.geofence_locations[index];
+    setLocationForm({
+      name: loc.name || '',
+      latitude: loc.latitude || '',
+      longitude: loc.longitude || '',
+      radius_meters: loc.radius_meters || 200,
+      address: loc.address || '',
+      is_active: loc.is_active !== false
+    });
+    setShowLocationModal(true);
+  };
+
+  const handleSaveLocationForm = (e) => {
+    e.preventDefault();
+    if (!locationForm.name.trim() || !locationForm.latitude || !locationForm.longitude) {
+      alert('Please provide Campus Name, Latitude, and Longitude');
+      return;
+    }
+    const cleanLocation = {
+      id: editingLocationIndex !== null ? (geofenceSettings.geofence_locations[editingLocationIndex]?.id || `loc_${Date.now()}`) : `loc_${Date.now()}`,
+      name: locationForm.name.trim(),
+      latitude: Number(locationForm.latitude),
+      longitude: Number(locationForm.longitude),
+      radius_meters: Number(locationForm.radius_meters || 200),
+      address: locationForm.address.trim(),
+      is_active: Boolean(locationForm.is_active)
+    };
+
+    let updatedLocations = [...(geofenceSettings.geofence_locations || [])];
+    if (editingLocationIndex !== null) {
+      updatedLocations[editingLocationIndex] = cleanLocation;
+    } else {
+      updatedLocations.push(cleanLocation);
+    }
+
+    setGeofenceSettings({
+      ...geofenceSettings,
+      geofence_locations: updatedLocations
+    });
+    setShowLocationModal(false);
+  };
+
+  const handleRemoveLocation = (index) => {
+    if (!confirm('Are you sure you want to remove this office geofence location?')) return;
+    const updated = (geofenceSettings.geofence_locations || []).filter((_, i) => i !== index);
+    setGeofenceSettings({
+      ...geofenceSettings,
+      geofence_locations: updated
+    });
+  };
+
+  const handleFetchCurrentCoordsForForm = async () => {
+    try {
+      const loc = await getCurrentGPSLocation({ timeout: 5000, enableHighAccuracy: true });
+      if (loc.success) {
+        setLocationForm(prev => ({
+          ...prev,
+          latitude: loc.latitude,
+          longitude: loc.longitude
+        }));
+      } else {
+        alert(loc.error || 'Failed to get current GPS location');
+      }
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  // Active shifts list
+  const activeShiftsList = useMemo(() => {
+    if (tenantShiftPolicy?.shifts && Array.isArray(tenantShiftPolicy.shifts) && tenantShiftPolicy.shifts.length > 0) {
+      return tenantShiftPolicy.shifts;
+    }
+    return [{
+      id: 'default_shift',
+      shift_code: 'GEN',
+      shift_name: tenantShiftPolicy?.shift_name || 'Regular Shift',
+      is_default: true,
+      start_time: tenantShiftPolicy?.start_time || '09:00',
+      end_time: tenantShiftPolicy?.end_time || '18:30',
+      grace_minutes: tenantShiftPolicy?.grace_minutes ?? 5,
+      short_leave_1_name: tenantShiftPolicy?.short_leave_1_name || '20-Minute Short Leave',
+      short_leave_1_minutes: tenantShiftPolicy?.short_leave_1_minutes ?? 20,
+      short_leave_1_quota: tenantShiftPolicy?.short_leave_1_quota ?? 2,
+      short_leave_2_name: tenantShiftPolicy?.short_leave_2_name || '2-Hour Short Leave',
+      short_leave_2_minutes: tenantShiftPolicy?.short_leave_2_minutes ?? 120,
+      short_leave_2_quota: tenantShiftPolicy?.short_leave_2_quota ?? 2,
+      min_half_day_minutes: tenantShiftPolicy?.min_half_day_minutes ?? 270,
+      min_full_day_minutes: tenantShiftPolicy?.min_full_day_minutes ?? 450
+    }];
+  }, [tenantShiftPolicy]);
+
+  const currentShift = activeShiftsList[activeShiftIndex] || activeShiftsList[0] || {};
+
+
+  // Open Shift Config Modal
+  const handleOpenShiftConfig = (indexToFocus = null) => {
+    if (typeof indexToFocus === 'number' && indexToFocus >= 0) {
+      setActiveShiftIndex(indexToFocus);
+    }
+    setShiftConfigForm({
+      company_name: selectedShiftPolicyCompany,
+      branch_name: selectedShiftPolicyBranch,
+      shifts: JSON.parse(JSON.stringify(activeShiftsList))
+    });
+    setShowShiftConfigModal(true);
+  };
+
+  // Save Shift Policy
+  const handleSaveShiftConfig = async (e) => {
+    e.preventDefault();
+    setSavingShiftConfig(true);
+    setShiftConfigToast(null);
+    try {
+      const targetTenantId = getCompanyTenantId(selectedShiftPolicyCompany);
+      const res = await saveTenantAttendancePolicy(
+        targetTenantId,
+        selectedShiftPolicyCompany,
+        shiftConfigForm,
+        userName || 'Admin',
+        selectedShiftPolicyBranch
+      );
+      if (res?.success) {
+        setShiftConfigToast({ type: 'success', message: '🎉 Shift Policy & Timings saved successfully!' });
+        await fetchTenantShiftPolicy(selectedShiftPolicyCompany, selectedShiftPolicyBranch);
+        setTimeout(() => setShowShiftConfigModal(false), 900);
+      } else {
+        setShiftConfigToast({ type: 'error', message: res?.error || 'Failed to save shift policy' });
+      }
+    } catch (err) {
+      setShiftConfigToast({ type: 'error', message: err.message });
+    } finally {
+      setSavingShiftConfig(false);
+    }
+  };
+
   useEffect(() => {
     if (initialSubTab && initialSubTab !== activeTab) {
       setActiveTab(initialSubTab);
@@ -145,6 +563,45 @@ export default function AttendanceModule({
     'attendance_team_master_col_widths',
     ATTENDANCE_TEAM_DEFAULT_COL_WIDTHS,
     ATTENDANCE_TEAM_MIN_COL_WIDTHS
+  );
+
+  // Office Geofence Locations Table Column Resizing
+  const {
+    colWidths: geofenceColWidths,
+    resizingCol: geofenceResizingCol,
+    handleResizeStart: handleGeofenceResizeStart,
+    resetColWidth: resetGeofenceColWidth,
+    getTotalTableWidth: getGeofenceTotalWidth
+  } = useTableColumnResize(
+    'attendance_geofence_col_widths',
+    ATTENDANCE_GEOFENCE_DEFAULT_COL_WIDTHS,
+    ATTENDANCE_GEOFENCE_MIN_COL_WIDTHS
+  );
+
+  // Configured Shifts Master Table Column Resizing
+  const {
+    colWidths: shiftColWidths,
+    resizingCol: shiftResizingCol,
+    handleResizeStart: handleShiftResizeStart,
+    resetColWidth: resetShiftColWidth,
+    getTotalTableWidth: getShiftTotalWidth
+  } = useTableColumnResize(
+    'attendance_configured_shifts_col_widths',
+    ATTENDANCE_SHIFTS_DEFAULT_COL_WIDTHS,
+    ATTENDANCE_SHIFTS_MIN_COL_WIDTHS
+  );
+
+  // Configured Company Leave Policies Master Table Column Resizing
+  const {
+    colWidths: leaveColWidths,
+    resizingCol: leaveResizingCol,
+    handleResizeStart: handleLeaveResizeStart,
+    resetColWidth: resetLeaveColWidth,
+    getTotalTableWidth: getLeaveTotalWidth
+  } = useTableColumnResize(
+    'attendance_leave_policies_master_col_widths',
+    ATTENDANCE_LEAVE_POLICIES_DEFAULT_COL_WIDTHS,
+    ATTENDANCE_LEAVE_POLICIES_MIN_COL_WIDTHS
   );
 
   // Today's punch state (with 0ms instant localStorage cache synced on mount)
@@ -171,6 +628,51 @@ export default function AttendanceModule({
       } catch {}
     }
   };
+
+  // Active Selected Shift for Daily Punch Station (Tab 1)
+  const [selectedPunchShiftIndex, setSelectedPunchShiftIndex] = useState(0);
+
+  const activePunchShift = useMemo(() => {
+    if (todayRecord?.shift_name) {
+      const match = activeShiftsList.find(s => s.shift_name === todayRecord.shift_name);
+      if (match) return match;
+    }
+    if (activeShiftsList[selectedPunchShiftIndex]) {
+      return activeShiftsList[selectedPunchShiftIndex];
+    }
+    const def = activeShiftsList.find(s => s.is_default);
+    return def || activeShiftsList[0] || {};
+  }, [todayRecord?.shift_name, activeShiftsList, selectedPunchShiftIndex]);
+
+  const punchShiftGraceInfo = useMemo(() => {
+    const s = activePunchShift || {};
+    const startStr = s.start_time || '09:00';
+    const endStr = s.end_time || '18:30';
+    const graceMins = Number(s.grace_minutes ?? 5);
+
+    const parts = startStr.split(':').map(Number);
+    const startTotalMins = (parts[0] || 9) * 60 + (parts[1] || 0);
+    const graceEndTotalMins = startTotalMins + graceMins;
+    const gH = Math.floor(graceEndTotalMins / 60) % 24;
+    const gM = graceEndTotalMins % 60;
+    const graceEndFormatted = `${String(gH).padStart(2, '0')}:${String(gM).padStart(2, '0')}:59`;
+
+    return {
+      startTime12: formatTime12h(startStr),
+      endTime12: formatTime12h(endStr),
+      graceMins,
+      graceRange: `${graceMins}m Grace (${startStr} - ${graceEndFormatted})`,
+      sl1Name: s.short_leave_1_name || '20-Minute Short Leave',
+      sl1Mins: Number(s.short_leave_1_minutes ?? 20),
+      sl1Quota: Number(s.short_leave_1_quota ?? 2),
+      sl2Name: s.short_leave_2_name || '2-Hour Short Leave',
+      sl2Mins: Number(s.short_leave_2_minutes ?? 120),
+      sl2Quota: Number(s.short_leave_2_quota ?? 2),
+      minAbsentHours: formatMinutesToHours(s.min_half_day_minutes ?? 270),
+      totalSlQuota: Number(tenantShiftPolicy?.short_leave_total_monthly ?? 4)
+    };
+  }, [activePunchShift, tenantShiftPolicy]);
+
 
   // Sync cache if userEmail changes or on mount
   useEffect(() => {
@@ -348,6 +850,484 @@ export default function AttendanceModule({
   const [applyError, setApplyError] = useState(null);
   const [applySuccess, setApplySuccess] = useState(null);
 
+  // Leave Management State
+  const [leaveBalance, setLeaveBalance] = useState(null);
+  const [loadingLeaveBalance, setLoadingLeaveBalance] = useState(false);
+  const [showApplyLeaveModal, setShowApplyLeaveModal] = useState(false);
+  const [leaveForm, setLeaveForm] = useState({
+    leave_type: 'CL',
+    from_date: getTodayDateString(),
+    to_date: getTodayDateString(),
+    reason: '',
+    half_day_session: 'FIRST_HALF'
+  });
+  const [applyingLeave, setApplyingLeave] = useState(false);
+  const [leaveToast, setLeaveToast] = useState(null);
+  const [myLeaves, setMyLeaves] = useState([]);
+  const [hodLeaveRequests, setHodLeaveRequests] = useState([]);
+  const [loadingHodLeaves, setLoadingHodLeaves] = useState(false);
+  const [hodApprovalSubTab, setHodApprovalSubTab] = useState('regularization'); // 'regularization' | 'leaves'
+  const [hodLeaveFilter, setHodLeaveFilter] = useState('PENDING'); // 'PENDING' | 'APPROVED' | 'REJECTED' | 'ALL'
+  const [hodLeaveSearch, setHodLeaveSearch] = useState('');
+  const [leaveActionModal, setLeaveActionModal] = useState(null); // { type: 'APPROVE' | 'REJECT', request: null, remarks: '' }
+  const [processingLeaveAction, setProcessingLeaveAction] = useState(false);
+
+  // Leave Adjustment in Monthly Payroll Report (User Requested!)
+  const [adjustLeavesInReport, setAdjustLeavesInReport] = useState(true);
+  const [showLeaveAdjustPromptModal, setShowLeaveAdjustPromptModal] = useState(false);
+
+  // CPL (Compensatory Off) Grant Modal State
+  const [cplGrantModal, setCplGrantModal] = useState({
+    show: false,
+    email: '',
+    empName: '',
+    days: 1.0,
+    reason: '',
+    workDate: getTodayDateString(),
+    validityDays: 60
+  });
+  const [processingCplGrant, setProcessingCplGrant] = useState(false);
+
+  // Leave Report & Ledger State
+  const [teamLeaveReportData, setTeamLeaveReportData] = useState(null);
+  const [loadingLeaveReport, setLoadingLeaveReport] = useState(false);
+  const [leaveReportDept, setLeaveReportDept] = useState('All');
+  const [leaveReportSearch, setLeaveReportSearch] = useState('');
+
+  // Shift & Leave Policy Tabs State (Tab 6)
+  const [policySubTab, setPolicySubTab] = useState('shift_policy'); // 'shift_policy' | 'leave_policy'
+  const [leavePolicyForm, setLeavePolicyForm] = useState({
+    cl_quota_annual: 8,
+    sl_quota_annual: 6,
+    el_quota_annual: 15,
+    el_lockin_months: 12,
+    el_validity_years: 3,
+    el_encashable: true,
+    enable_min_weekly_days_for_sunday: false,
+    min_weekly_working_days: 3,
+    enable_sandwich_rule: true,
+    sandwich_mode: 'UNAPPROVED_ONLY',
+    cpl_enabled: true,
+    cpl_validity_days: 60,
+    cpl_auto_sunday: true,
+    cpl_min_hours_full: 8.0,
+    cpl_min_hours_half: 4.5
+  });
+  const [savingLeavePolicy, setSavingLeavePolicy] = useState(false);
+  const [selectedLeaveCompany, setSelectedLeaveCompany] = useState(initialCompany);
+  const [loadingCompanyLeavePolicy, setLoadingCompanyLeavePolicy] = useState(false);
+  const [allTenantLeavePolicies, setAllTenantLeavePolicies] = useState([]);
+  const [loadingAllLeavePolicies, setLoadingAllLeavePolicies] = useState(false);
+
+  // Fetch Leave Balance for Current Employee
+  const fetchLeaveBalance = async () => {
+    if (!userEmail) return;
+    setLoadingLeaveBalance(true);
+    try {
+      const res = await getEmployeeLeaveBalance({ email: userEmail, tenantId: effectiveTenantId, userCompany });
+      if (res?.success && res.data) {
+        setLeaveBalance(res.data);
+      }
+    } catch (e) {
+      console.warn('Failed to fetch leave balance:', e);
+    } finally {
+      setLoadingLeaveBalance(false);
+    }
+  };
+
+  // Fetch Employee's own leaves
+  const fetchMyLeaves = async () => {
+    if (!userEmail) return;
+    try {
+      const res = await getMyLeaveRequests({ email: userEmail, tenantId: effectiveTenantId });
+      if (res?.success && res.data) {
+        setMyLeaves(res.data);
+      }
+    } catch (e) {}
+  };
+
+  // Fetch Pending Leaves for HOD
+  const fetchHodLeaves = async () => {
+    if (!isHodOrManager) return;
+    setLoadingHodLeaves(true);
+    try {
+      const res = await getHodPendingLeaveRequests({ tenantId: effectiveTenantId, userCompany });
+      if (res?.success && res.data) {
+        setHodLeaveRequests(res.data);
+      }
+    } catch (e) {
+      console.warn('Failed to fetch HOD leaves:', e);
+    } finally {
+      setLoadingHodLeaves(false);
+    }
+  };
+
+  // Fetch Comprehensive Team Leave Report
+  const fetchTeamLeaveReport = async () => {
+    if (!isHodOrManager) return;
+    setLoadingLeaveReport(true);
+    try {
+      const res = await getTeamLeaveReport({
+        tenantId: effectiveTenantId,
+        userCompany,
+        department: leaveReportDept,
+        year: matrixYear
+      });
+      if (res?.success && res.data) {
+        setTeamLeaveReportData(res.data);
+      }
+    } catch (e) {
+      console.warn('Failed to fetch team leave report:', e);
+    } finally {
+      setLoadingLeaveReport(false);
+    }
+  };
+
+  // Fetch All Tenant Leave Policies (for Directory Table below Form)
+  const fetchAllTenantLeavePolicies = async () => {
+    setLoadingAllLeavePolicies(true);
+    try {
+      const res = await getAllTenantLeavePolicies();
+      if (res?.success && Array.isArray(res.data)) {
+        setAllTenantLeavePolicies(res.data);
+      }
+    } catch (e) {
+      console.warn('Failed to fetch all tenant leave policies:', e);
+    } finally {
+      setLoadingAllLeavePolicies(false);
+    }
+  };
+
+  // leavePolicyForm is now exclusively driven by selected company policy (fetchLeavePolicyForCompany)
+
+  // Fetch leave policy for selected company (Multi-Tenant Master Admin)
+  const fetchLeavePolicyForCompany = async (comp = selectedLeaveCompany) => {
+    setLoadingCompanyLeavePolicy(true);
+    try {
+      const targetTenantId = getCompanyTenantId(comp);
+      const res = await getTenantAttendancePolicy(targetTenantId, comp);
+      if (res?.success && res.data?.leave_policy) {
+        const lp = res.data.leave_policy;
+        const cp = lp.cpl_policy || {};
+        setLeavePolicyForm({
+          cl_quota_annual: lp.cl_quota_annual ?? 8,
+          sl_quota_annual: lp.sl_quota_annual ?? 6,
+          el_quota_annual: lp.el_quota_annual ?? 15,
+          el_lockin_months: lp.el_lockin_months ?? 12,
+          el_validity_years: lp.el_validity_years ?? 3,
+          el_encashable: lp.el_encashable !== false,
+          enable_min_weekly_days_for_sunday: Boolean(lp.enable_min_weekly_days_for_sunday),
+          min_weekly_working_days: lp.min_weekly_working_days ?? 3,
+          enable_sandwich_rule: lp.enable_sandwich_rule !== false,
+          sandwich_mode: lp.sandwich_mode || 'UNAPPROVED_ONLY',
+          cpl_enabled: cp.enabled !== false,
+          cpl_validity_days: cp.validity_days ?? 60,
+          cpl_auto_sunday: cp.auto_credit_on_sunday_work !== false,
+          cpl_min_hours_full: cp.min_work_hours_full_cpl ?? 8.0,
+          cpl_min_hours_half: cp.min_work_hours_half_cpl ?? 4.5
+        });
+      }
+    } catch (e) {
+      console.warn('Failed to fetch company leave policy:', e);
+    } finally {
+      setLoadingCompanyLeavePolicy(false);
+    }
+  };
+
+  // Fetch tenant leave policy when activeTab is 'leave_policy' or selectedLeaveCompany changes
+  useEffect(() => {
+    if (activeTab === 'leave_policy') {
+      fetchLeavePolicyForCompany(selectedLeaveCompany);
+    }
+  }, [activeTab, selectedLeaveCompany]);
+
+  // Handle Save Leave Policy (Admin/HOD)
+  const handleSaveLeavePolicy = async (e) => {
+    e.preventDefault();
+    setSavingLeavePolicy(true);
+    try {
+      const payload = {
+        cl_quota_annual: Number(leavePolicyForm.cl_quota_annual),
+        sl_quota_annual: Number(leavePolicyForm.sl_quota_annual),
+        el_quota_annual: Number(leavePolicyForm.el_quota_annual),
+        el_lockin_months: Number(leavePolicyForm.el_lockin_months),
+        el_validity_years: Number(leavePolicyForm.el_validity_years),
+        el_encashable: Boolean(leavePolicyForm.el_encashable),
+        enable_min_weekly_days_for_sunday: Boolean(leavePolicyForm.enable_min_weekly_days_for_sunday),
+        min_weekly_working_days: Number(leavePolicyForm.min_weekly_working_days),
+        enable_sandwich_rule: Boolean(leavePolicyForm.enable_sandwich_rule),
+        sandwich_mode: leavePolicyForm.sandwich_mode,
+        cpl_policy: {
+          enabled: Boolean(leavePolicyForm.cpl_enabled),
+          validity_days: Number(leavePolicyForm.cpl_validity_days),
+          min_work_hours_full_cpl: Number(leavePolicyForm.cpl_min_hours_full),
+          min_work_hours_half_cpl: Number(leavePolicyForm.cpl_min_hours_half),
+          auto_credit_on_sunday_work: Boolean(leavePolicyForm.cpl_auto_sunday),
+          max_cpl_accumulation: 10
+        }
+      };
+
+      const targetTenantId = getCompanyTenantId(selectedLeaveCompany);
+      const res = await updateTenantLeavePolicy({
+        tenantId: targetTenantId,
+        userCompany: selectedLeaveCompany,
+        leavePolicy: payload,
+        updatedBy: userEmail || userName || 'Admin'
+      });
+
+      if (res?.success) {
+        setLeaveToast({ type: 'success', message: `✅ ${selectedLeaveCompany} Leave & CPL Policy updated successfully!` });
+        await fetchLeavePolicyForCompany(selectedLeaveCompany);
+        await fetchAllTenantLeavePolicies();
+        fetchTeamLeaveReport();
+        if (getCompanyTenantId(selectedLeaveCompany) === effectiveTenantId) {
+          fetchLeaveBalance();
+        }
+      } else {
+        setLeaveToast({ type: 'error', message: res?.error || 'Failed to update leave policy' });
+      }
+    } catch (err) {
+      setLeaveToast({ type: 'error', message: err.message });
+    } finally {
+      setSavingLeavePolicy(false);
+    }
+  };
+
+  // Handle Grant CPL Credit Submit
+  const handleGrantCplSubmit = async (e) => {
+    e.preventDefault();
+    if (!cplGrantModal.email) {
+      alert('Please select or enter employee email.');
+      return;
+    }
+    setProcessingCplGrant(true);
+    try {
+      const res = await grantEmployeeCPLCredit({
+        tenantId: effectiveTenantId,
+        userCompany,
+        email: cplGrantModal.email,
+        empName: cplGrantModal.empName,
+        days: cplGrantModal.days,
+        reason: cplGrantModal.reason,
+        workDate: cplGrantModal.workDate,
+        validityDays: cplGrantModal.validityDays,
+        grantedBy: userEmail,
+        grantedByName: userName || userEmail
+      });
+
+      if (res?.success) {
+        setLeaveToast({ type: 'success', message: res.message || 'CPL credited successfully!' });
+        setCplGrantModal({ show: false, email: '', empName: '', days: 1.0, reason: '', workDate: getTodayDateString(), validityDays: 60 });
+        fetchTeamLeaveReport();
+        fetchLeaveBalance();
+      } else {
+        setLeaveToast({ type: 'error', message: res?.error || 'Failed to grant CPL' });
+      }
+    } catch (err) {
+      setLeaveToast({ type: 'error', message: err.message });
+    } finally {
+      setProcessingCplGrant(false);
+    }
+  };
+
+  // Export Leave Balances Roster CSV
+  const handleExportLeaveRosterCSV = () => {
+    if (!teamLeaveReportData || !teamLeaveReportData.roster || teamLeaveReportData.roster.length === 0) {
+      alert('No leave report data available to export.');
+      return;
+    }
+
+    const headers = [
+      'Emp Code',
+      'Employee Name',
+      'Email',
+      'Department',
+      'Role',
+      'Joining Date',
+      'Tenure (Months)',
+      'CL Quota',
+      'CL Availed',
+      'CL Balance',
+      'SL Quota',
+      'SL Availed',
+      'SL Balance',
+      'EL Quota',
+      'EL Availed',
+      'EL Balance',
+      'EL Lock Status',
+      'CPL Earned',
+      'CPL Availed',
+      'CPL Balance',
+      'LWP Availed (Days)',
+      'Total Leaves Taken'
+    ];
+
+    const rows = (teamLeaveReportData.roster || []).map(r => [
+      `"${r.empCode || ''}"`,
+      `"${r.empName || ''}"`,
+      `"${r.email || ''}"`,
+      `"${r.department || ''}"`,
+      `"${r.role || ''}"`,
+      `"${r.doj || '—'}"`,
+      `"${r.tenureMonths || 0}"`,
+      `"${r.cl?.quota ?? 8}"`,
+      `"${r.cl?.availed ?? 0}"`,
+      `"${r.cl?.balance ?? 8}"`,
+      `"${r.sl?.quota ?? 6}"`,
+      `"${r.sl?.availed ?? 0}"`,
+      `"${r.sl?.balance ?? 6}"`,
+      `"${r.el?.quota ?? 15}"`,
+      `"${r.el?.availed ?? 0}"`,
+      `"${r.el?.balance ?? 15}"`,
+      `"${r.el?.status === 'LOCKED' ? 'LOCKED (1-Yr Probation)' : 'UNLOCKED'}"`,
+      `"${r.cpl?.earned ?? 0}"`,
+      `"${r.cpl?.availed ?? 0}"`,
+      `"${r.cpl?.balance ?? 0}"`,
+      `"${r.lwp?.availed ?? 0}"`,
+      `"${r.totalLeavesAvailed ?? 0}"`
+    ]);
+
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `Leave_Balances_Ledger_Report_${teamLeaveReportData.year || new Date().getFullYear()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Export Leave History Audit CSV
+  const handleExportLeaveHistoryCSV = () => {
+    if (!teamLeaveReportData || !teamLeaveReportData.history || teamLeaveReportData.history.length === 0) {
+      alert('No leave application history found.');
+      return;
+    }
+
+    const headers = [
+      'Request ID',
+      'Employee Name',
+      'Email',
+      'Department',
+      'Leave Type',
+      'From Date',
+      'To Date',
+      'Total Days',
+      'Reason',
+      'Status',
+      'Applied At (IST)',
+      'Approver Name',
+      'Approver Remarks',
+      'Action At (IST)'
+    ];
+
+    const rows = (teamLeaveReportData.history || []).map(r => [
+      `"${r.id || ''}"`,
+      `"${r.emp_name || ''}"`,
+      `"${r.email || ''}"`,
+      `"${r.department || ''}"`,
+      `"${r.leave_type || ''}"`,
+      `"${r.from_date || ''}"`,
+      `"${r.to_date || ''}"`,
+      `"${r.total_days || 1}"`,
+      `"${(r.reason || '').replace(/"/g, '""')}"`,
+      `"${r.status || 'PENDING'}"`,
+      `"${formatDateIST(r.applied_at, { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })}"`,
+      `"${r.approver_name || '—'}"`,
+      `"${(r.approver_remarks || '').replace(/"/g, '""')}"`,
+      `"${r.action_at ? formatDateIST(r.action_at, { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }) : '—'}"`
+    ]);
+
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `Leave_Applications_Audit_Report_${teamLeaveReportData.year || new Date().getFullYear()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Handle Apply Leave submit
+  const handleApplyLeaveSubmit = async (e) => {
+    e.preventDefault();
+    setApplyingLeave(true);
+    try {
+      const res = await applyEmployeeLeave({
+        userId,
+        email: userEmail,
+        empName: userName,
+        empCode: '',
+        department: '',
+        tenantId: effectiveTenantId,
+        userCompany,
+        leaveType: leaveForm.leave_type,
+        fromDate: leaveForm.from_date,
+        toDate: leaveForm.to_date,
+        reason: leaveForm.reason,
+        halfDaySession: leaveForm.half_day_session
+      });
+
+      if (res?.success) {
+        setLeaveToast({ type: 'success', message: res.message || 'Leave applied successfully!' });
+        setShowApplyLeaveModal(false);
+        fetchLeaveBalance();
+        fetchMyLeaves();
+        if (isHodOrManager) fetchHodLeaves();
+      } else {
+        setLeaveToast({ type: 'error', message: res?.error || 'Failed to apply leave' });
+      }
+    } catch (err) {
+      setLeaveToast({ type: 'error', message: err?.message || 'Error submitting leave request' });
+    } finally {
+      setApplyingLeave(false);
+    }
+  };
+
+  // Handle HOD Leave Approve / Reject
+  const handleProcessLeaveAction = async () => {
+    if (!leaveActionModal?.request) return;
+    setProcessingLeaveAction(true);
+    try {
+      const { type, request, remarks } = leaveActionModal;
+      let res;
+      if (type === 'APPROVE') {
+        res = await approveLeaveRequest({
+          requestId: request.id,
+          approverId: userId,
+          approverName: userName || 'HOD',
+          remarks
+        });
+      } else {
+        res = await rejectLeaveRequest({
+          requestId: request.id,
+          approverId: userId,
+          approverName: userName || 'HOD',
+          remarks
+        });
+      }
+
+      if (res?.success) {
+        setLeaveToast({ type: 'success', message: res.message || `Leave request ${type.toLowerCase()}d successfully!` });
+        setLeaveActionModal(null);
+        fetchHodLeaves();
+        fetchMyLeaves();
+        fetchLeaveBalance();
+        if (teamReportView === 'MONTHLY_MATRIX') {
+          fetchTeamMonthlyMatrix();
+        } else {
+          fetchTeamMaster();
+        }
+      } else {
+        setLeaveToast({ type: 'error', message: res?.error || `Failed to ${type.toLowerCase()} leave` });
+      }
+    } catch (err) {
+      setLeaveToast({ type: 'error', message: err?.message || 'Action failed' });
+    } finally {
+      setProcessingLeaveAction(false);
+    }
+  };
+
   // HOD Approvals State
   const [hodRequests, setHodRequests] = useState([]);
   const [hodPendingCount, setHodPendingCount] = useState(0);
@@ -368,6 +1348,38 @@ export default function AttendanceModule({
     }
     return { all, pending, approved, rejected };
   }, [hodRequests]);
+
+  // Dynamic in-memory counts for HOD leave applications
+  const hodLeaveCounts = useMemo(() => {
+    const all = (hodLeaveRequests || []).length;
+    let pending = 0;
+    let approved = 0;
+    let rejected = 0;
+    for (const r of (hodLeaveRequests || [])) {
+      if (r.status === 'PENDING') pending++;
+      else if (r.status === 'APPROVED') approved++;
+      else if (r.status === 'REJECTED') rejected++;
+    }
+    return { all, pending, approved, rejected };
+  }, [hodLeaveRequests]);
+
+  // Filtered HOD leave requests
+  const filteredHodLeaveRequests = useMemo(() => {
+    let list = hodLeaveRequests || [];
+    if (hodLeaveFilter !== 'ALL') {
+      list = list.filter(r => r.status === hodLeaveFilter);
+    }
+    if (hodLeaveSearch.trim()) {
+      const q = hodLeaveSearch.toLowerCase().trim();
+      list = list.filter(r => 
+        (r.emp_name && r.emp_name.toLowerCase().includes(q)) ||
+        (r.emp_email && r.emp_email.toLowerCase().includes(q)) ||
+        (r.leave_type && r.leave_type.toLowerCase().includes(q)) ||
+        (r.reason && r.reason.toLowerCase().includes(q))
+      );
+    }
+    return list;
+  }, [hodLeaveRequests, hodLeaveFilter, hodLeaveSearch]);
   const [actionModal, setActionModal] = useState(null); // { type: 'APPROVE' | 'REJECT', request: obj }
   const [actionRemarks, setActionRemarks] = useState('');
   const [processingAction, setProcessingAction] = useState(false);
@@ -447,7 +1459,7 @@ export default function AttendanceModule({
     if (!userEmail) return;
     setLoadingToday(true);
     try {
-      const res = await getTodayAttendance(userEmail, userId, effectiveTenantId);
+      const res = await getTodayAttendance(userEmail, userId, effectiveTenantId, userCompany);
       if (res.success) {
         updateTodayRecord(res.data);
         if (res.monthlyUsage) setShortLeaveUsage(res.monthlyUsage);
@@ -464,7 +1476,7 @@ export default function AttendanceModule({
     if (!userEmail) return;
     setLoadingHistory(true);
     try {
-      const res = await getMyAttendanceHistory(userEmail, historyYear, historyMonth, effectiveTenantId);
+      const res = await getMyAttendanceHistory(userEmail, historyYear, historyMonth, effectiveTenantId, userCompany);
       if (res.success) {
         setHistoryRecords(res.records || []);
         setHistorySummary(res.summary || {});
@@ -556,7 +1568,8 @@ export default function AttendanceModule({
         month: matrixMonth,
         department: teamMasterDepartment,
         tenantId: effectiveTenantId,
-        company: userCompany
+        company: userCompany,
+        adjustLeaves: adjustLeavesInReport
       });
       if (res.success) {
         setMonthlyMatrixData(res);
@@ -578,9 +1591,14 @@ export default function AttendanceModule({
 
     fetchTodayAttendance();
     fetchHistory();
+    fetchTenantShiftPolicy(initialCompany, 'All Branches');
     fetchMyRequests();
+    fetchLeaveBalance();
+    fetchMyLeaves();
     if (isHodOrManager) {
       fetchHodRequests();
+      fetchHodLeaves();
+      fetchTeamLeaveReport();
     }
   }, [userEmail, historyYear, historyMonth, effectiveTenantId, userCompany]);
 
@@ -596,7 +1614,7 @@ export default function AttendanceModule({
         fetchTeamMonthlyMatrix();
       }
     }
-  }, [activeTab, teamReportView, teamDatePreset, teamStartDate, teamEndDate, teamMasterDepartment, matrixYear, matrixMonth, effectiveTenantId, userCompany]);
+  }, [activeTab, teamReportView, teamDatePreset, teamStartDate, teamEndDate, teamMasterDepartment, matrixYear, matrixMonth, effectiveTenantId, userCompany, adjustLeavesInReport]);
 
   // Handle Punch In click — show confirm popup first
   const handlePunchIn = () => {
@@ -630,7 +1648,7 @@ export default function AttendanceModule({
     const inTimeFormatted = formatTimeIST(inDate);
     
     // Evaluate shift rules immediately on client for instant voice feedback
-    const evaluation = evaluateMorningInPunch(inDate, shortLeaveUsage, userName);
+    const evaluation = evaluateMorningInPunch(inDate, shortLeaveUsage, userName, activePunchShift || tenantShiftPolicy);
 
     // Optimistic record update so the Live Stopwatch Timer starts ticking IMMEDIATELY (0ms)
     const optimisticRecord = {
@@ -650,7 +1668,7 @@ export default function AttendanceModule({
     setLiveDuration('00h 00m 01s');
 
     speakHumanFemaleAnnouncement(
-      `Welcome ${userName}. Your punch in time is ${inTimeFormatted}. ${evaluation.ruleTitle}`,
+      `Welcome ${userName}. Your punch in time is ${inTimeFormatted}. Shift: ${activePunchShift.shift_name || "Regular Shift"}. ${evaluation.ruleTitle}`,
       evaluation.voiceMessageHindi
     );
 
@@ -659,8 +1677,8 @@ export default function AttendanceModule({
     setPunchingIn(true);
 
     // 2. Parallel Background Database Persistence
+    let punchLocation = 'Office Web Terminal';
     try {
-      let punchLocation = 'Office Web Terminal';
       try {
         const gps = await getCurrentGPSLocation();
         if (gps.success) {
@@ -672,6 +1690,8 @@ export default function AttendanceModule({
         email: userEmail,
         userId,
         empName: userName,
+        userCompany,
+        shiftName: activePunchShift.shift_name || null,
         location: punchLocation,
         method: punchLocation.startsWith('GPS') ? 'GPS_PUNCH' : 'WEB_PUNCH',
         tenantId: effectiveTenantId
@@ -732,7 +1752,7 @@ export default function AttendanceModule({
     playInstantChime('out');
 
     const outDate = new Date();
-    const evaluation = evaluateEveningOutPunch(outDate, todayRecord?.in_time, todayRecord, shortLeaveUsage, userName);
+    const evaluation = evaluateEveningOutPunch(outDate, todayRecord?.in_time, todayRecord, shortLeaveUsage, userName, activePunchShift || tenantShiftPolicy);
 
     // Optimistic punch out update
     const optimisticRecord = {
@@ -768,6 +1788,7 @@ export default function AttendanceModule({
         email: userEmail,
         userId,
         empName: userName,
+        userCompany,
         location: punchLocation,
         method: punchLocation.startsWith('GPS') ? 'GPS_PUNCH' : 'WEB_PUNCH',
         tenantId: effectiveTenantId
@@ -1229,27 +2250,59 @@ export default function AttendanceModule({
     document.body.removeChild(link);
   };
 
-  // Export Monthly Master Attendance Matrix to CSV / Excel (Filter & Search aware)
+  // 1-Click Export Monthly Matrix: Opens User Prompt Modal to ask if Leaves should be adjusted
   const handleExportMonthlyMatrixCSV = () => {
+    const rowsToExport = filteredMatrixRows || [];
+    if (rowsToExport.length === 0) return;
+    setShowLeaveAdjustPromptModal(true);
+  };
+
+  // Actual CSV Generator executing user's choice: withLeavesAdjusted (true/false)
+  const executeExportMonthlyMatrixCSV = (withLeavesAdjusted) => {
     const rowsToExport = filteredMatrixRows || [];
     if (rowsToExport.length === 0) return;
     
     const datesHeaders = (monthlyMatrixData?.monthDates || []).map(d => `"${d.dayNumber} (${d.dayNameShort})"`);
-    const headers = ['Emp ID', 'Employee Name', 'Email', 'Department', ...datesHeaders, 'Total Present', 'Total Absent', 'Total Half Days', 'Total Short Leaves', 'Total Payable Days', 'Total Hours Logged'];
+    const headers = [
+      'Emp ID',
+      'Employee Name',
+      'Email',
+      'Department',
+      'Leave Adjusted in Salary',
+      ...datesHeaders,
+      'Total Present',
+      'Total Absent',
+      'Total Half Days',
+      'Total Short Leaves',
+      'Approved Leaves (Days)',
+      'Total Payable Days',
+      'Total Hours Logged'
+    ];
 
     const rows = rowsToExport.map(r => {
       const dayCodes = (r.days || []).map(d => `"${d.code}"`);
+      const approvedLeavesCount = r.summary?.totalApprovedLeaves || 0;
+      
+      let payableDays = r.summary?.totalPayableDays || 0;
+      if (!withLeavesAdjusted && r.summary?.leavesAdjusted) {
+        payableDays = Math.max(0, payableDays - (r.summary?.totalLeavePayableDays || 0));
+      } else if (withLeavesAdjusted && !r.summary?.leavesAdjusted) {
+        payableDays += (r.summary?.totalLeavePayableDays || approvedLeavesCount);
+      }
+
       return [
         `"${r.emp_id || ''}"`,
         `"${r.emp_name || ''}"`,
         `"${r.email || ''}"`,
         `"${r.department || ''}"`,
+        `"${withLeavesAdjusted ? 'YES (Paid Leaves Included)' : 'NO (Raw Attendance Only)'}"`,
         ...dayCodes,
         `"${r.summary?.totalPresent || 0}"`,
         `"${r.summary?.totalAbsent || 0}"`,
         `"${r.summary?.totalHalfDays || 0}"`,
         `"${r.summary?.totalShortLeaves || 0}"`,
-        `"${r.summary?.totalPayableDays || 0}"`,
+        `"${approvedLeavesCount}"`,
+        `"${payableDays}"`,
         `"${r.summary?.totalHoursFormatted || '0h'}"`
       ];
     });
@@ -1260,7 +2313,8 @@ export default function AttendanceModule({
     link.setAttribute('href', encodedUri);
     const searchSuffix = teamSearchQuery ? `_${teamSearchQuery.replace(/[^a-zA-Z0-9]/g, '_')}` : '';
     const monthName = new Date(matrixYear, matrixMonth - 1, 1).toLocaleString('en-US', { month: 'long' });
-    link.setAttribute('download', `Monthly_Attendance_Matrix_${monthName}_${matrixYear}${searchSuffix}.csv`);
+    const adjustTag = withLeavesAdjusted ? '_LeaveAdjusted' : '_RawAttendance';
+    link.setAttribute('download', `Monthly_Attendance_Matrix_${monthName}_${matrixYear}${adjustTag}${searchSuffix}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -1707,7 +2761,7 @@ export default function AttendanceModule({
             </button>
           )}
 
-          {/* Tab 6: Shift Rules & Attendance Policy */}
+          {/* Tab 6: Shift Rules */}
           <button
             type="button"
             onClick={() => handleTabSelect('shift_rules')}
@@ -1726,7 +2780,51 @@ export default function AttendanceModule({
               transition: 'all 0.2s'
             }}
           >
-            <BookOpen size={15} /> Shift Rules & Policy
+            <BookOpen size={15} /> Shift Rules
+          </button>
+
+          {/* Tab 7: Company Leave Policy */}
+          <button
+            type="button"
+            onClick={() => handleTabSelect('leave_policy')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.45rem',
+              padding: '0.45rem 0.85rem',
+              borderRadius: '8px',
+              border: 'none',
+              cursor: 'pointer',
+              fontSize: '0.84rem',
+              fontWeight: activeTab === 'leave_policy' ? 600 : 500,
+              backgroundColor: activeTab === 'leave_policy' ? 'var(--accent-color)' : 'transparent',
+              color: activeTab === 'leave_policy' ? '#ffffff' : 'var(--text-secondary)',
+              transition: 'all 0.2s'
+            }}
+          >
+            <Award size={15} /> Company Leave Policy
+          </button>
+
+          {/* Tab 8: Office Geofencing Policy */}
+          <button
+            type="button"
+            onClick={() => handleTabSelect('geofencing')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.45rem',
+              padding: '0.45rem 0.85rem',
+              borderRadius: '8px',
+              border: 'none',
+              cursor: 'pointer',
+              fontSize: '0.84rem',
+              fontWeight: activeTab === 'geofencing' ? 600 : 500,
+              backgroundColor: activeTab === 'geofencing' ? 'var(--accent-color)' : 'transparent',
+              color: activeTab === 'geofencing' ? '#ffffff' : 'var(--text-secondary)',
+              transition: 'all 0.2s'
+            }}
+          >
+            <MapPin size={15} /> Office Geofencing Policy
           </button>
         </div>
       </div>
@@ -1779,7 +2877,7 @@ export default function AttendanceModule({
                     setVoiceEnabled(next);
                     if (next) {
                       playInstantChime('in');
-                      speakInstantAnnouncement(`नमस्ते ${userName} जी! वॉइस अनाउंसमेंट चालू है।`);
+                      speakHumanFemaleAnnouncement('Voice announcements enabled', `नमस्ते ${userName} जी! वॉइस अनाउंसमेंट चालू है।`);
                     }
                   }}
                   style={{
@@ -1967,31 +3065,105 @@ export default function AttendanceModule({
                 </span>
               </div>
 
-              <div style={{ borderTop: '1px dashed var(--border-light)', paddingTop: '0.6rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Missed a punch today?</span>
-                <button
-                  type="button"
-                  onClick={() => handleOpenRegularizeForDate(getTodayDateString(), todayRecord)}
-                  style={{
-                    padding: '0.35rem 0.75rem',
-                    borderRadius: '8px',
-                    border: '1px solid var(--border-light)',
-                    background: 'var(--bg-surface)',
-                    color: 'var(--accent-color)',
-                    fontSize: '0.78rem',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.3rem'
-                  }}
-                >
-                  <FileText size={13} /> Apply Missing Punch
-                </button>
+              <div style={{ borderTop: '1px dashed var(--border-light)', paddingTop: '0.6rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.4rem' }}>
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Missed a punch or taking leave?</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenRegularizeForDate(getTodayDateString(), todayRecord)}
+                    style={{
+                      padding: '0.35rem 0.75rem',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border-light)',
+                      background: 'var(--bg-surface)',
+                      color: 'var(--accent-color)',
+                      fontSize: '0.78rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.3rem'
+                    }}
+                  >
+                    <FileText size={13} /> Apply Missing Punch
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowApplyLeaveModal(true)}
+                    style={{
+                      padding: '0.35rem 0.75rem',
+                      borderRadius: '8px',
+                      border: 'none',
+                      background: 'var(--accent-color, #2563eb)',
+                      color: '#ffffff',
+                      fontSize: '0.78rem',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.3rem',
+                      boxShadow: '0 2px 6px rgba(37, 99, 235, 0.25)'
+                    }}
+                  >
+                    <Calendar size={13} /> 🌴 Apply Leave
+                  </button>
+                </div>
               </div>
             </div>
 
           </div>
+
+          {/* Multi-Shift Selector for Tenant (if multiple shifts configured) */}
+          {activeShiftsList.length > 1 && (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.6rem',
+              flexWrap: 'wrap',
+              padding: '0.65rem 1rem',
+              background: 'var(--bg-surface)',
+              borderRadius: '12px',
+              border: '1px solid var(--border-light)'
+            }}>
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                🏢 Active Shift Policy:
+              </span>
+              {activeShiftsList.map((shift, idx) => {
+                const isSelected = activePunchShift.id === shift.id || activePunchShift.shift_code === shift.shift_code;
+                return (
+                  <button
+                    key={shift.id || idx}
+                    type="button"
+                    onClick={() => setSelectedPunchShiftIndex(idx)}
+                    style={{
+                      padding: '0.3rem 0.75rem',
+                      borderRadius: '20px',
+                      border: isSelected ? '1px solid var(--accent-color, #2563eb)' : '1px solid var(--border-light)',
+                      background: isSelected ? 'rgba(37, 99, 235, 0.12)' : 'var(--bg-primary)',
+                      color: isSelected ? 'var(--accent-color, #2563eb)' : 'var(--text-secondary)',
+                      fontSize: '0.78rem',
+                      fontWeight: isSelected ? 700 : 500,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.4rem',
+                      transition: 'all 0.15s'
+                    }}
+                  >
+                    <span>{shift.shift_name}</span>
+                    <span style={{ opacity: 0.85, fontSize: '0.72rem' }}>
+                      ({formatTime12h(shift.start_time)} – {formatTime12h(shift.end_time)})
+                    </span>
+                    {shift.is_default && (
+                      <span style={{ fontSize: '0.65rem', background: '#10b981', color: '#ffffff', padding: '0.05rem 0.35rem', borderRadius: '4px', fontWeight: 700 }}>
+                        Default
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
           {/* Shift & Short Leave Policy Quota Card */}
           <div style={{
@@ -2010,37 +3182,51 @@ export default function AttendanceModule({
                 <Clock size={18} />
               </div>
               <div>
-                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase' }}>Regular Shift</div>
-                <div style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--text-primary)' }}>09:00 - 18:30</div>
-                <div style={{ fontSize: '0.72rem', color: '#16a34a', fontWeight: 600 }}>5m Grace (09:00 - 09:05:59)</div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase' }}>
+                  {activePunchShift.shift_name || 'Regular Shift'}
+                </div>
+                <div style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  {punchShiftGraceInfo.startTime12} – {punchShiftGraceInfo.endTime12}
+                </div>
+                <div style={{ fontSize: '0.72rem', color: '#16a34a', fontWeight: 600 }}>
+                  {punchShiftGraceInfo.graceRange}
+                </div>
               </div>
             </div>
 
-            {/* 20-Minute Short Leave */}
+            {/* Short Leave 1 */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
               <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: '#f0fdf4', color: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <Sparkles size={18} />
               </div>
               <div>
-                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase' }}>20-Min Short Leave</div>
-                <div style={{ fontSize: '0.92rem', fontWeight: 700, color: '#16a34a' }}>
-                  {shortLeaveUsage.remaining_20_min} / 2 Remaining
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase' }}>
+                  {punchShiftGraceInfo.sl1Name}
                 </div>
-                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>09:06-09:20 • 18:10-18:30</div>
+                <div style={{ fontSize: '0.92rem', fontWeight: 700, color: '#16a34a' }}>
+                  {shortLeaveUsage.remaining_20_min} / {punchShiftGraceInfo.sl1Quota} Remaining
+                </div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                  Allowance: {punchShiftGraceInfo.sl1Mins} Mins Duration
+                </div>
               </div>
             </div>
 
-            {/* 2-Hour Short Leave */}
+            {/* Short Leave 2 */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
               <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: '#f5f3ff', color: '#7c3aed', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <Calendar size={18} />
               </div>
               <div>
-                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase' }}>2-Hour Short Leave</div>
-                <div style={{ fontSize: '0.92rem', fontWeight: 700, color: '#7c3aed' }}>
-                  {shortLeaveUsage.remaining_2_hr} / 2 Remaining
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase' }}>
+                  {punchShiftGraceInfo.sl2Name}
                 </div>
-                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>09:21-11:00 • 16:30-18:30</div>
+                <div style={{ fontSize: '0.92rem', fontWeight: 700, color: '#7c3aed' }}>
+                  {shortLeaveUsage.remaining_2_hr} / {punchShiftGraceInfo.sl2Quota} Remaining
+                </div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                  Allowance: {punchShiftGraceInfo.sl2Mins} Mins Duration
+                </div>
               </div>
             </div>
 
@@ -2050,11 +3236,156 @@ export default function AttendanceModule({
                 <Info size={18} />
               </div>
               <div>
-                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase' }}>Monthly Policy</div>
-                <div style={{ fontSize: '0.92rem', fontWeight: 700, color: '#d97706' }}>
-                  {shortLeaveUsage.total_used} / 4 Used
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase' }}>
+                  Monthly Policy
                 </div>
-                <div style={{ fontSize: '0.72rem', color: '#ef4444', fontWeight: 600 }}>Mon-Sat: &lt; 4h 30m = Absent</div>
+                <div style={{ fontSize: '0.92rem', fontWeight: 700, color: '#d97706' }}>
+                  {shortLeaveUsage.total_used} / {punchShiftGraceInfo.totalSlQuota} Used
+                </div>
+                <div style={{ fontSize: '0.72rem', color: '#ef4444', fontWeight: 600 }}>
+                  Mon-Sat: &lt; {punchShiftGraceInfo.minAbsentHours} = Absent
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Employee Leave Balance Ledger (CL / SL / EL / Encashment Policy) */}
+          <div className="card" style={{
+            padding: '1.25rem',
+            background: 'var(--bg-surface)',
+            borderRadius: '16px',
+            border: '1px solid var(--border-light)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '1rem'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Calendar size={18} color="var(--accent-color, #2563eb)" />
+                <h3 style={{ fontSize: '0.95rem', fontWeight: 700, margin: 0 }}>Leave Quota & Balance Ledger</h3>
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', background: 'var(--bg-primary)', padding: '0.15rem 0.5rem', borderRadius: '6px' }}>Annual Quota</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowApplyLeaveModal(true)}
+                style={{
+                  background: 'rgba(37, 99, 235, 0.1)',
+                  color: 'var(--accent-color, #2563eb)',
+                  border: '1px solid rgba(37, 99, 235, 0.25)',
+                  padding: '0.35rem 0.75rem',
+                  borderRadius: '7px',
+                  fontSize: '0.78rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.3rem'
+                }}
+              >
+                + New Application
+              </button>
+            </div>
+
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
+              gap: '1rem'
+            }}>
+              {/* Casual Leave Card */}
+              <div style={{
+                background: 'var(--bg-primary)',
+                border: '1px solid var(--border-light)',
+                borderRadius: '12px',
+                padding: '1rem',
+                borderTop: '3px solid #2563eb'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                  <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Casual Leave (CL)</span>
+                  <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#2563eb', background: '#eff6ff', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>Day-1 Unlocked</span>
+                </div>
+                <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                  {leaveBalance?.cl?.remaining ?? 8} <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-secondary)' }}>/ {leaveBalance?.cl?.quota ?? 8} days left</span>
+                </div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.35rem' }}>
+                  Availed: {leaveBalance?.cl?.availed ?? 0} days
+                </div>
+              </div>
+
+              {/* Sick Leave Card */}
+              <div style={{
+                background: 'var(--bg-primary)',
+                border: '1px solid var(--border-light)',
+                borderRadius: '12px',
+                padding: '1rem',
+                borderTop: '3px solid #16a34a'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                  <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Sick Leave (SL)</span>
+                  <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#16a34a', background: '#f0fdf4', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>Medical</span>
+                </div>
+                <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                  {leaveBalance?.sl?.remaining ?? 6} <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-secondary)' }}>/ {leaveBalance?.sl?.quota ?? 6} days left</span>
+                </div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.35rem' }}>
+                  Availed: {leaveBalance?.sl?.availed ?? 0} days
+                </div>
+              </div>
+
+              {/* Earned Leave Card (with 1-Yr Lock-in) */}
+              <div style={{
+                background: 'var(--bg-primary)',
+                border: '1px solid var(--border-light)',
+                borderRadius: '12px',
+                padding: '1rem',
+                borderTop: '3px solid #9333ea'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                  <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Earned Leave (EL)</span>
+                  {leaveBalance?.el?.isLocked ? (
+                    <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#d97706', background: '#fef3c7', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>🔒 1-Yr Lockin</span>
+                  ) : (
+                    <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#9333ea', background: '#faf5ff', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>Unlocked</span>
+                  )}
+                </div>
+                {leaveBalance?.el?.isLocked ? (
+                  <div>
+                    <div style={{ fontSize: '1rem', fontWeight: 700, color: '#d97706', marginTop: '0.2rem' }}>
+                      Locked during probation
+                    </div>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.3rem' }}>
+                      Unlocks after 12 months (Accrues {leaveBalance?.el?.quota || 15} days/yr; valid 3 yrs or encashable).
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                      {leaveBalance?.el?.remaining ?? 15} <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-secondary)' }}>/ {leaveBalance?.el?.quota ?? 15} days left</span>
+                    </div>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.35rem' }}>
+                      Availed: {leaveBalance?.el?.availed ?? 0} days • Valid 3 yrs
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Compensatory Off (CPL) Card */}
+              <div style={{
+                background: 'var(--bg-primary)',
+                border: '1px solid var(--border-light)',
+                borderRadius: '12px',
+                padding: '1rem',
+                borderTop: '3px solid #4f46e5'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                  <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Compensatory Off (CPL)</span>
+                  <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#4f46e5', background: '#eef2ff', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>Comp-Off</span>
+                </div>
+                <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                  {leaveBalance?.cpl?.balance ?? 0} <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-secondary)' }}>/ {leaveBalance?.cpl?.earned ?? 0} days earned</span>
+                </div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.35rem' }}>
+                  Availed: {leaveBalance?.cpl?.availed ?? 0} days • Valid {leaveBalance?.cpl?.validityDays ?? 60} days
+                </div>
               </div>
             </div>
           </div>
@@ -2436,12 +3767,94 @@ export default function AttendanceModule({
             <div>
               <h2 style={{ fontSize: '1.2rem', fontWeight: 700, margin: 0 }}>HOD Approval Console</h2>
               <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0 0' }}>
-                Review employee regularization requests. When you click Approve, the employee's attendance record for that date will be updated automatically.
+                Review employee regularization requests and leave applications. Approved actions update attendance records automatically.
               </p>
             </div>
 
-            {/* Interactive Status Tabs / Filter Bar */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.6rem', width: '100%', marginTop: '0.5rem' }}>
+            {/* Top Sub-Tab Switcher: Regularization Requests vs Leave Applications */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              background: 'var(--bg-primary)',
+              padding: '0.3rem',
+              borderRadius: '10px',
+              border: '1px solid var(--border-light)',
+              width: '100%',
+              marginTop: '0.25rem'
+            }}>
+              <button
+                type="button"
+                onClick={() => setHodApprovalSubTab('regularization')}
+                style={{
+                  flex: 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.45rem',
+                  padding: '0.55rem 0.9rem',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: hodApprovalSubTab === 'regularization' ? 'var(--accent-color, #2563eb)' : 'transparent',
+                  color: hodApprovalSubTab === 'regularization' ? '#ffffff' : 'var(--text-secondary)',
+                  fontWeight: 700,
+                  fontSize: '0.84rem',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <Clock size={15} />
+                <span>Punch Regularization Requests</span>
+                <span style={{
+                  background: hodApprovalSubTab === 'regularization' ? 'rgba(255,255,255,0.25)' : 'var(--border-light)',
+                  color: hodApprovalSubTab === 'regularization' ? '#ffffff' : 'var(--text-secondary)',
+                  padding: '0.1rem 0.45rem',
+                  borderRadius: '8px',
+                  fontSize: '0.72rem',
+                  fontWeight: 800
+                }}>
+                  {hodCounts.pending}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setHodApprovalSubTab('leaves')}
+                style={{
+                  flex: 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.45rem',
+                  padding: '0.55rem 0.9rem',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: hodApprovalSubTab === 'leaves' ? 'var(--accent-color, #2563eb)' : 'transparent',
+                  color: hodApprovalSubTab === 'leaves' ? '#ffffff' : 'var(--text-secondary)',
+                  fontWeight: 700,
+                  fontSize: '0.84rem',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <Calendar size={15} />
+                <span>🌴 Leave Applications</span>
+                <span style={{
+                  background: hodApprovalSubTab === 'leaves' ? 'rgba(255,255,255,0.25)' : 'var(--border-light)',
+                  color: hodApprovalSubTab === 'leaves' ? '#ffffff' : 'var(--text-secondary)',
+                  padding: '0.1rem 0.45rem',
+                  borderRadius: '8px',
+                  fontSize: '0.72rem',
+                  fontWeight: 800
+                }}>
+                  {hodLeaveCounts.pending}
+                </span>
+              </button>
+            </div>
+
+            {/* 1. Regularization Filters */}
+            {hodApprovalSubTab === 'regularization' && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.6rem', width: '100%', marginTop: '0.5rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', background: 'var(--bg-primary)', padding: '0.25rem', borderRadius: '10px', border: '1px solid var(--border-light)', gap: '0.25rem', flexWrap: 'wrap' }}>
                 {/* 1. Pending Pill */}
                 <button
@@ -2630,9 +4043,216 @@ export default function AttendanceModule({
                 <RefreshCw size={14} className={loadingHodRequests ? 'animate-spin' : ''} /> Refresh
               </button>
             </div>
+          )}
+
+            {/* 2. Leave Applications Filters */}
+            {hodApprovalSubTab === 'leaves' && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.6rem', width: '100%', marginTop: '0.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', background: 'var(--bg-primary)', padding: '0.25rem', borderRadius: '10px', border: '1px solid var(--border-light)', gap: '0.25rem', flexWrap: 'wrap' }}>
+                  {/* 1. Pending Pill */}
+                  <button
+                    type="button"
+                    onClick={() => setHodLeaveFilter('PENDING')}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.4rem',
+                      padding: '0.4rem 0.85rem',
+                      borderRadius: '7px',
+                      border: 'none',
+                      background: hodLeaveFilter === 'PENDING' ? '#fef3c7' : 'transparent',
+                      color: hodLeaveFilter === 'PENDING' ? '#92400e' : 'var(--text-secondary)',
+                      fontWeight: 700,
+                      fontSize: '0.82rem',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s'
+                    }}
+                  >
+                    <Clock size={14} />
+                    <span>Pending Leave Approval</span>
+                    <span style={{
+                      background: hodLeaveFilter === 'PENDING' ? '#f59e0b' : 'var(--border-light)',
+                      color: hodLeaveFilter === 'PENDING' ? '#ffffff' : 'var(--text-secondary)',
+                      padding: '0.1rem 0.45rem',
+                      borderRadius: '10px',
+                      fontSize: '0.72rem',
+                      fontWeight: 800
+                    }}>
+                      {hodLeaveCounts.pending}
+                    </span>
+                  </button>
+
+                  {/* 2. Approved Pill */}
+                  <button
+                    type="button"
+                    onClick={() => setHodLeaveFilter('APPROVED')}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.4rem',
+                      padding: '0.4rem 0.85rem',
+                      borderRadius: '7px',
+                      border: 'none',
+                      background: hodLeaveFilter === 'APPROVED' ? '#dcfce7' : 'transparent',
+                      color: hodLeaveFilter === 'APPROVED' ? '#166534' : 'var(--text-secondary)',
+                      fontWeight: 700,
+                      fontSize: '0.82rem',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s'
+                    }}
+                  >
+                    <CheckCircle2 size={14} />
+                    <span>Approved Leaves</span>
+                    <span style={{
+                      background: hodLeaveFilter === 'APPROVED' ? '#16a34a' : 'var(--border-light)',
+                      color: hodLeaveFilter === 'APPROVED' ? '#ffffff' : 'var(--text-secondary)',
+                      padding: '0.1rem 0.45rem',
+                      borderRadius: '10px',
+                      fontSize: '0.72rem',
+                      fontWeight: 800
+                    }}>
+                      {hodLeaveCounts.approved}
+                    </span>
+                  </button>
+
+                  {/* 3. Rejected Pill */}
+                  <button
+                    type="button"
+                    onClick={() => setHodLeaveFilter('REJECTED')}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.4rem',
+                      padding: '0.4rem 0.85rem',
+                      borderRadius: '7px',
+                      border: 'none',
+                      background: hodLeaveFilter === 'REJECTED' ? '#fee2e2' : 'transparent',
+                      color: hodLeaveFilter === 'REJECTED' ? '#991b1b' : 'var(--text-secondary)',
+                      fontWeight: 700,
+                      fontSize: '0.82rem',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s'
+                    }}
+                  >
+                    <XCircle size={14} />
+                    <span>Rejected</span>
+                    <span style={{
+                      background: hodLeaveFilter === 'REJECTED' ? '#dc2626' : 'var(--border-light)',
+                      color: hodLeaveFilter === 'REJECTED' ? '#ffffff' : 'var(--text-secondary)',
+                      padding: '0.1rem 0.45rem',
+                      borderRadius: '10px',
+                      fontSize: '0.72rem',
+                      fontWeight: 800
+                    }}>
+                      {hodLeaveCounts.rejected}
+                    </span>
+                  </button>
+
+                  {/* 4. All Leaves Pill */}
+                  <button
+                    type="button"
+                    onClick={() => setHodLeaveFilter('ALL')}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.4rem',
+                      padding: '0.4rem 0.85rem',
+                      borderRadius: '7px',
+                      border: 'none',
+                      background: hodLeaveFilter === 'ALL' ? 'var(--accent-color, #2563eb)' : 'transparent',
+                      color: hodLeaveFilter === 'ALL' ? '#ffffff' : 'var(--text-secondary)',
+                      fontWeight: 700,
+                      fontSize: '0.82rem',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s'
+                    }}
+                  >
+                    <FileSpreadsheet size={14} />
+                    <span>All Applications</span>
+                    <span style={{
+                      background: hodLeaveFilter === 'ALL' ? 'rgba(255,255,255,0.3)' : 'var(--border-light)',
+                      color: hodLeaveFilter === 'ALL' ? '#ffffff' : 'var(--text-secondary)',
+                      padding: '0.1rem 0.45rem',
+                      borderRadius: '10px',
+                      fontSize: '0.72rem',
+                      fontWeight: 800
+                    }}>
+                      {hodLeaveCounts.all}
+                    </span>
+                  </button>
+                </div>
+
+                {/* Search Box */}
+                <div style={{ position: 'relative', marginLeft: 'auto' }}>
+                  <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
+                  <input
+                    type="text"
+                    placeholder="Search employee, leave type, reason..."
+                    value={hodLeaveSearch}
+                    onChange={(e) => setHodLeaveSearch(e.target.value)}
+                    style={{
+                      padding: '0.45rem 0.75rem 0.45rem 2rem',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border-light)',
+                      background: 'var(--bg-primary)',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.82rem',
+                      outline: 'none',
+                      width: '240px'
+                    }}
+                  />
+                </div>
+
+                {/* Refresh Button */}
+                <button
+                  type="button"
+                  onClick={() => fetchHodLeaves()}
+                  style={{
+                    padding: '0.45rem 0.85rem',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-light)',
+                    background: 'var(--bg-primary)',
+                    color: 'var(--text-primary)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.35rem',
+                    fontSize: '0.82rem',
+                    fontWeight: 600
+                  }}
+                >
+                  <RefreshCw size={14} className={loadingHodLeaves ? 'animate-spin' : ''} /> Refresh
+                </button>
+
+                {/* Grant CPL Credit Button */}
+                <button
+                  type="button"
+                  onClick={() => setCplGrantModal({ show: true, email: '', empName: '', days: 1.0, reason: '', workDate: getTodayDateString(), validityDays: 60 })}
+                  style={{
+                    padding: '0.45rem 0.85rem',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: '#4f46e5',
+                    color: '#ffffff',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.35rem',
+                    fontSize: '0.82rem',
+                    fontWeight: 700,
+                    boxShadow: '0 2px 6px rgba(79, 70, 229, 0.25)'
+                  }}
+                >
+                  <Award size={14} /> ➕ Grant CPL Credit
+                </button>
+              </div>
+            )}
           </div>
 
-          {/* Bulk Action Toolbar */}
+          {/* Conditional Sub-Tab Views */}
+          {hodApprovalSubTab === 'regularization' && (
+            <>
+              {/* Bulk Action Toolbar */}
           {selectedHodRequests.size > 0 && (
             <div style={{
               display: 'flex',
@@ -2895,6 +4515,179 @@ export default function AttendanceModule({
               </table></MobileTableView>
             </div>
           </div>
+        </>
+      )}
+
+      {/* 2. Leave Applications Sub-Tab Content */}
+      {hodApprovalSubTab === 'leaves' && (
+        <div className="card" style={{
+          padding: '1.25rem',
+          background: 'var(--bg-surface)',
+          borderRadius: '16px',
+          border: '1px solid var(--border-light)'
+        }}>
+          <div style={{ overflowX: 'auto', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
+            <MobileTableView tableId="hod_leave_applications_table">
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
+                <thead>
+                  <tr style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontSize: '0.78rem' }}>
+                    <th style={{ padding: '0.85rem 1rem', fontWeight: 600 }}>Employee</th>
+                    <th style={{ padding: '0.85rem 1rem', fontWeight: 600 }}>Leave Type</th>
+                    <th style={{ padding: '0.85rem 1rem', fontWeight: 600 }}>Duration</th>
+                    <th style={{ padding: '0.85rem 1rem', fontWeight: 600 }}>Reason</th>
+                    <th style={{ padding: '0.85rem 1rem', fontWeight: 600 }}>Applied On</th>
+                    <th style={{ padding: '0.85rem 1rem', fontWeight: 600 }}>Status</th>
+                    <th style={{ padding: '0.85rem 1rem', fontWeight: 600, textAlign: 'right' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredHodLeaveRequests.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} style={{ padding: '3rem 1rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                        <Calendar size={36} style={{ margin: '0 auto 0.75rem auto', opacity: 0.35, display: 'block' }} />
+                        <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>No leave applications found</div>
+                        <div style={{ fontSize: '0.8rem', marginTop: '0.25rem' }}>
+                          {hodLeaveFilter === 'PENDING' ? 'All leave applications have been reviewed.' : 'No records match the current filter.'}
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredHodLeaveRequests.map((r) => {
+                      const typeColor = r.leave_type === 'CL' ? '#2563eb' : r.leave_type === 'SL' ? '#16a34a' : r.leave_type === 'EL' ? '#9333ea' : r.leave_type === 'HD-L' ? '#d97706' : '#6b7280';
+                      const typeBg = r.leave_type === 'CL' ? '#eff6ff' : r.leave_type === 'SL' ? '#f0fdf4' : r.leave_type === 'EL' ? '#faf5ff' : r.leave_type === 'HD-L' ? '#fef3c7' : '#f3f4f6';
+                      return (
+                        <tr key={r.id} style={{ borderBottom: '1px solid var(--border-light)' }}>
+                          <td style={{ padding: '0.85rem 1rem' }}>
+                            <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{r.emp_name || 'Employee'}</div>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{r.emp_email}</div>
+                          </td>
+                          <td style={{ padding: '0.85rem 1rem' }}>
+                            <span style={{
+                              display: 'inline-block',
+                              padding: '0.2rem 0.6rem',
+                              borderRadius: '6px',
+                              background: typeBg,
+                              color: typeColor,
+                              fontSize: '0.78rem',
+                              fontWeight: 800
+                            }}>
+                              {r.leave_type} {r.half_day_session ? `(${r.half_day_session === 'FIRST_HALF' ? '1st Half' : '2nd Half'})` : ''}
+                            </span>
+                          </td>
+                          <td style={{ padding: '0.85rem 1rem' }}>
+                            <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                              {r.from_date === r.to_date ? r.from_date : `${r.from_date} to ${r.to_date}`}
+                            </div>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                              {r.days_count} day(s)
+                            </div>
+                          </td>
+                          <td style={{ padding: '0.85rem 1rem', maxWidth: '240px' }}>
+                            <div style={{ fontSize: '0.82rem', color: 'var(--text-primary)', wordBreak: 'break-word' }}>
+                              {r.reason || '—'}
+                            </div>
+                          </td>
+                          <td style={{ padding: '0.85rem 1rem', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                            {formatDateIST(r.applied_at, { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })}
+                          </td>
+                          <td style={{ padding: '0.85rem 1rem' }}>
+                            <span style={{
+                              display: 'inline-block',
+                              padding: '0.2rem 0.55rem',
+                              borderRadius: '6px',
+                              fontSize: '0.75rem',
+                              fontWeight: 700,
+                              background: r.status === 'APPROVED' ? '#dcfce7' : r.status === 'REJECTED' ? '#fee2e2' : '#fef3c7',
+                              color: r.status === 'APPROVED' ? '#166534' : r.status === 'REJECTED' ? '#991b1b' : '#92400e'
+                            }}>
+                              {r.status}
+                            </span>
+                          </td>
+                          <td style={{ padding: '0.85rem 1rem', textAlign: 'right' }}>
+                            {r.status === 'PENDING' ? (
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.4rem' }}>
+                                <button
+                                  type="button"
+                                  disabled={processingLeaveAction}
+                                  onClick={() => setLeaveActionModal({ type: 'APPROVE', request: r, remarks: '' })}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.25rem',
+                                    padding: '0.35rem 0.75rem',
+                                    borderRadius: '6px',
+                                    border: 'none',
+                                    background: '#16a34a',
+                                    color: '#ffffff',
+                                    fontSize: '0.78rem',
+                                    fontWeight: 700,
+                                    cursor: processingLeaveAction ? 'not-allowed' : 'pointer',
+                                    boxShadow: '0 2px 6px rgba(22, 163, 74, 0.25)'
+                                  }}
+                                >
+                                  <Check size={14} /> Approve
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={processingLeaveAction}
+                                  onClick={() => setLeaveActionModal({ type: 'REJECT', request: r, remarks: '' })}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.25rem',
+                                    padding: '0.35rem 0.75rem',
+                                    borderRadius: '6px',
+                                    border: '1px solid #fecaca',
+                                    background: '#fef2f2',
+                                    color: '#dc2626',
+                                    fontSize: '0.78rem',
+                                    fontWeight: 700,
+                                    cursor: processingLeaveAction ? 'not-allowed' : 'pointer'
+                                  }}
+                                >
+                                  <X size={14} /> Reject
+                                </button>
+                              </div>
+                            ) : r.status === 'APPROVED' ? (
+                              <div style={{ textAlign: 'right' }}>
+                                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#166534' }}>
+                                  ✓ Approved by {r.approver_name || 'HOD'}
+                                </div>
+                                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                                  {formatDateIST(r.action_at, { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })}
+                                </div>
+                                {r.remarks && (
+                                  <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
+                                    "{r.remarks}"
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <div style={{ textAlign: 'right' }}>
+                                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#991b1b' }}>
+                                  ✕ Rejected by {r.approver_name || 'HOD'}
+                                </div>
+                                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                                  {formatDateIST(r.action_at, { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })}
+                                </div>
+                                {r.remarks && (
+                                  <div style={{ fontSize: '0.72rem', color: '#dc2626', fontWeight: 600 }}>
+                                    Reason: "{r.remarks}"
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </MobileTableView>
+          </div>
+        </div>
+      )}
 
         </div>
       )}
@@ -2918,12 +4711,12 @@ export default function AttendanceModule({
             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '1rem' }}>
               <div>
                 <h2 style={{ fontSize: '1.2rem', fontWeight: 700, margin: 0 }}>
-                  {teamReportView === 'DAILY' ? 'Team Daily Attendance Report' : 'All-Employee Monthly Attendance Matrix'}
+                  {teamReportView === 'DAILY' ? 'Team Daily Attendance Report' : (teamReportView === 'LEAVE_LEDGER' ? 'All-Employee Leave Balances & Ledger Report' : 'All-Employee Monthly Attendance Matrix')}
                 </h2>
                 <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0 0' }}>
                   {teamReportView === 'DAILY' 
                     ? 'Live daily punch log and present/absent summary for all team members' 
-                    : 'Complete 1st to 31st master monthly attendance sheet with payable days & payroll calculations'}
+                    : (teamReportView === 'LEAVE_LEDGER' ? 'Annual leave quotas, availed days, locked/unlocked EL, CPL credits, and complete transaction history' : 'Complete 1st to 31st master monthly attendance sheet with payable days & payroll calculations')}
                 </p>
               </div>
 
@@ -2983,6 +4776,29 @@ export default function AttendanceModule({
                   }}
                 >
                   <Calendar size={14} /> Monthly Master Matrix (1-31st)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTeamReportView('LEAVE_LEDGER');
+                    fetchTeamLeaveReport();
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.35rem',
+                    padding: '0.45rem 0.9rem',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: teamReportView === 'LEAVE_LEDGER' ? 'var(--accent-color)' : 'transparent',
+                    color: teamReportView === 'LEAVE_LEDGER' ? '#ffffff' : 'var(--text-secondary)',
+                    fontWeight: 600,
+                    fontSize: '0.8rem',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  <Award size={14} /> 🌴 Leave Ledger & Reports
                 </button>
               </div>
             </div>
@@ -3075,6 +4891,29 @@ export default function AttendanceModule({
                         <option key={y} value={y}>{y}</option>
                       ))}
                     </select>
+
+                    {/* Leave Adjustment in Salary Toggle Button */}
+                    <button
+                      type="button"
+                      onClick={() => setAdjustLeavesInReport(!adjustLeavesInReport)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.35rem',
+                        padding: '0.4rem 0.75rem',
+                        borderRadius: '8px',
+                        border: '1px solid ' + (adjustLeavesInReport ? '#86efac' : 'var(--border-light)'),
+                        background: adjustLeavesInReport ? '#f0fdf4' : 'var(--bg-primary)',
+                        color: adjustLeavesInReport ? '#166534' : 'var(--text-secondary)',
+                        fontSize: '0.76rem',
+                        fontWeight: 700,
+                        cursor: 'pointer'
+                      }}
+                      title="Toggle whether approved employee leaves count as Paid working days in Salary"
+                    >
+                      <Calendar size={13} />
+                      <span>Leaves in Salary: <strong>{adjustLeavesInReport ? '🟢 Adjusted (Paid)' : '⚪ Raw Attendance'}</strong></span>
+                    </button>
                   </>
                 )}
 
@@ -3317,6 +5156,390 @@ export default function AttendanceModule({
             </>
           )}
 
+          {/* VIEW 3: TEAM LEAVE BALANCES & AUDIT LEDGER REPORT */}
+          {teamReportView === 'LEAVE_LEDGER' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              {/* KPI Summary Cards */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                gap: '1rem'
+              }}>
+                <div className="card" style={{ padding: '1rem', background: 'var(--bg-surface)', borderRadius: '12px', border: '1px solid var(--border-light)' }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase' }}>Total Employees</div>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: '0.2rem' }}>
+                    {teamLeaveReportData?.kpis?.totalEmployees ?? 0}
+                  </div>
+                </div>
+                <div className="card" style={{ padding: '1rem', background: 'var(--bg-surface)', borderRadius: '12px', border: '1px solid var(--border-light)', borderLeft: '4px solid #16a34a' }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase' }}>Total Leaves Availed</div>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#16a34a', marginTop: '0.2rem' }}>
+                    {teamLeaveReportData?.kpis?.totalLeavesTaken ?? 0} <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-secondary)' }}>days</span>
+                  </div>
+                </div>
+                <div className="card" style={{ padding: '1rem', background: 'var(--bg-surface)', borderRadius: '12px', border: '1px solid var(--border-light)', borderLeft: '4px solid #f59e0b' }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase' }}>Pending Approvals</div>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#d97706', marginTop: '0.2rem' }}>
+                    {teamLeaveReportData?.kpis?.pendingApprovals ?? 0}
+                  </div>
+                </div>
+                <div className="card" style={{ padding: '1rem', background: 'var(--bg-surface)', borderRadius: '12px', border: '1px solid var(--border-light)', borderLeft: '4px solid #4f46e5' }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase' }}>Active CPL Pool</div>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#4f46e5', marginTop: '0.2rem' }}>
+                    {teamLeaveReportData?.kpis?.activeCplPool ?? 0} <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-secondary)' }}>days</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action & Export Bar */}
+              <div className="card" style={{
+                padding: '1rem 1.25rem',
+                background: 'var(--bg-surface)',
+                borderRadius: '12px',
+                border: '1px solid var(--border-light)',
+                display: 'flex',
+                flexWrap: 'wrap',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '0.75rem'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  {/* Department Filter */}
+                  <select
+                    value={leaveReportDept}
+                    onChange={(e) => {
+                      setLeaveReportDept(e.target.value);
+                    }}
+                    style={{
+                      padding: '0.45rem 0.75rem',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border-light)',
+                      background: 'var(--bg-primary)',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.82rem',
+                      outline: 'none'
+                    }}
+                  >
+                    <option value="All">All Departments</option>
+                    {availableDepartments.map(d => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+
+                  {/* Search Input */}
+                  <div style={{ position: 'relative' }}>
+                    <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
+                    <input
+                      type="text"
+                      placeholder="Search employee or code..."
+                      value={leaveReportSearch}
+                      onChange={(e) => setLeaveReportSearch(e.target.value)}
+                      style={{
+                        padding: '0.45rem 0.75rem 0.45rem 2rem',
+                        borderRadius: '8px',
+                        border: '1px solid var(--border-light)',
+                        background: 'var(--bg-primary)',
+                        color: 'var(--text-primary)',
+                        fontSize: '0.82rem',
+                        outline: 'none',
+                        width: '200px'
+                      }}
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => fetchTeamLeaveReport()}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.35rem',
+                      padding: '0.45rem 0.75rem',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border-light)',
+                      background: 'var(--bg-primary)',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.82rem',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <RefreshCw size={13} className={loadingLeaveReport ? 'animate-spin' : ''} /> Refresh
+                  </button>
+                </div>
+
+                {/* CSV Export Actions */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <button
+                    type="button"
+                    onClick={handleExportLeaveRosterCSV}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.35rem',
+                      padding: '0.45rem 0.85rem',
+                      borderRadius: '8px',
+                      border: '1px solid #bbf7d0',
+                      background: '#f0fdf4',
+                      color: '#166534',
+                      fontWeight: 700,
+                      fontSize: '0.8rem',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <Download size={14} /> 📥 Export Balances CSV
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleExportLeaveHistoryCSV}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.35rem',
+                      padding: '0.45rem 0.85rem',
+                      borderRadius: '8px',
+                      border: '1px solid #e9d5ff',
+                      background: '#faf5ff',
+                      color: '#6b21a8',
+                      fontWeight: 700,
+                      fontSize: '0.8rem',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <Download size={14} /> 📥 Export Audit Log CSV
+                  </button>
+                </div>
+              </div>
+
+              {/* Table 1: All-Employee Leave Balance Ledger */}
+              <div className="card" style={{
+                padding: '1.25rem',
+                background: 'var(--bg-surface)',
+                borderRadius: '16px',
+                border: '1px solid var(--border-light)'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <Users size={18} color="var(--accent-color, #2563eb)" />
+                    <h3 style={{ fontSize: '1rem', fontWeight: 700, margin: 0 }}>All-Employee Leave Balances Ledger</h3>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', background: 'var(--bg-primary)', padding: '0.15rem 0.5rem', borderRadius: '6px' }}>Annual Quota vs Balance</span>
+                  </div>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                    Total: {teamLeaveReportData?.roster?.length || 0} employees
+                  </span>
+                </div>
+
+                <div style={{ overflowX: 'auto', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
+                  <MobileTableView tableId="team_leave_balances_roster">
+                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem' }}>
+                      <thead>
+                        <tr style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontSize: '0.75rem' }}>
+                          <th style={{ padding: '0.75rem 0.85rem', fontWeight: 600 }}>Employee</th>
+                          <th style={{ padding: '0.75rem 0.85rem', fontWeight: 600 }}>Department</th>
+                          <th style={{ padding: '0.75rem 0.85rem', fontWeight: 600 }}>Joining & Tenure</th>
+                          <th style={{ padding: '0.75rem 0.85rem', fontWeight: 600, color: '#2563eb' }}>CL (Left / Quota)</th>
+                          <th style={{ padding: '0.75rem 0.85rem', fontWeight: 600, color: '#16a34a' }}>SL (Left / Quota)</th>
+                          <th style={{ padding: '0.75rem 0.85rem', fontWeight: 600, color: '#9333ea' }}>EL (Left / Quota)</th>
+                          <th style={{ padding: '0.75rem 0.85rem', fontWeight: 600, color: '#4f46e5' }}>CPL (Avail / Earned)</th>
+                          <th style={{ padding: '0.75rem 0.85rem', fontWeight: 600, color: '#4b5563' }}>LWP</th>
+                          <th style={{ padding: '0.75rem 0.85rem', fontWeight: 700 }}>Total Availed</th>
+                          <th style={{ padding: '0.75rem 0.85rem', fontWeight: 600, textAlign: 'right' }}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(!teamLeaveReportData?.roster || teamLeaveReportData.roster.length === 0) ? (
+                          <tr>
+                            <td colSpan={10} style={{ padding: '3rem 1rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                              <Users size={32} style={{ margin: '0 auto 0.5rem auto', opacity: 0.35, display: 'block' }} />
+                              <div>No employee records found.</div>
+                            </td>
+                          </tr>
+                        ) : (
+                          teamLeaveReportData.roster
+                            .filter(r => {
+                              if (!leaveReportSearch.trim()) return true;
+                              const q = leaveReportSearch.toLowerCase().trim();
+                              return (
+                                (r.empName && r.empName.toLowerCase().includes(q)) ||
+                                (r.empCode && r.empCode.toLowerCase().includes(q)) ||
+                                (r.email && r.email.toLowerCase().includes(q)) ||
+                                (r.department && r.department.toLowerCase().includes(q))
+                              );
+                            })
+                            .map((r, idx) => (
+                              <tr key={r.userId || idx} style={{ borderBottom: '1px solid var(--border-light)' }}>
+                                <td style={{ padding: '0.75rem 0.85rem' }}>
+                                  <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{r.empName}</div>
+                                  <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{r.email} {r.empCode ? `• ${r.empCode}` : ''}</div>
+                                </td>
+                                <td style={{ padding: '0.75rem 0.85rem' }}>
+                                  <span style={{ fontSize: '0.75rem', padding: '0.15rem 0.5rem', borderRadius: '6px', background: 'var(--bg-primary)', border: '1px solid var(--border-light)' }}>
+                                    {r.department}
+                                  </span>
+                                </td>
+                                <td style={{ padding: '0.75rem 0.85rem', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                                  <div>{r.doj ? formatDateIST(r.doj, { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</div>
+                                  <div>{r.tenureMonths} month(s)</div>
+                                </td>
+                                <td style={{ padding: '0.75rem 0.85rem', fontWeight: 700, color: '#2563eb' }}>
+                                  {r.cl?.balance ?? 8} <span style={{ fontSize: '0.7rem', fontWeight: 500, color: 'var(--text-secondary)' }}>/ {r.cl?.quota ?? 8}</span>
+                                </td>
+                                <td style={{ padding: '0.75rem 0.85rem', fontWeight: 700, color: '#16a34a' }}>
+                                  {r.sl?.balance ?? 6} <span style={{ fontSize: '0.7rem', fontWeight: 500, color: 'var(--text-secondary)' }}>/ {r.sl?.quota ?? 6}</span>
+                                </td>
+                                <td style={{ padding: '0.75rem 0.85rem' }}>
+                                  {r.el?.status === 'LOCKED' ? (
+                                    <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#d97706', background: '#fef3c7', padding: '0.15rem 0.4rem', borderRadius: '4px' }}>
+                                      🔒 1-Yr Lock
+                                    </span>
+                                  ) : (
+                                    <span style={{ fontWeight: 700, color: '#9333ea' }}>
+                                      {r.el?.balance ?? 15} <span style={{ fontSize: '0.7rem', fontWeight: 500, color: 'var(--text-secondary)' }}>/ {r.el?.quota ?? 15}</span>
+                                    </span>
+                                  )}
+                                </td>
+                                <td style={{ padding: '0.75rem 0.85rem', fontWeight: 700, color: '#4f46e5' }}>
+                                  {r.cpl?.balance ?? 0} <span style={{ fontSize: '0.7rem', fontWeight: 500, color: 'var(--text-secondary)' }}>/ {r.cpl?.earned ?? 0}</span>
+                                </td>
+                                <td style={{ padding: '0.75rem 0.85rem', color: '#4b5563' }}>
+                                  {r.lwp?.availed ?? 0} d
+                                </td>
+                                <td style={{ padding: '0.75rem 0.85rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                                  {r.totalLeavesAvailed ?? 0} d
+                                </td>
+                                <td style={{ padding: '0.75rem 0.85rem', textAlign: 'right' }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => setCplGrantModal({
+                                      show: true,
+                                      email: r.email,
+                                      empName: r.empName,
+                                      days: 1.0,
+                                      reason: 'Sunday / Holiday extra work credit',
+                                      workDate: getTodayDateString(),
+                                      validityDays: 60
+                                    })}
+                                    style={{
+                                      padding: '0.25rem 0.55rem',
+                                      borderRadius: '6px',
+                                      border: '1px solid #c7d2fe',
+                                      background: '#eef2ff',
+                                      color: '#4338ca',
+                                      fontSize: '0.75rem',
+                                      fontWeight: 700,
+                                      cursor: 'pointer'
+                                    }}
+                                  >
+                                    + Grant CPL
+                                  </button>
+                                </td>
+                              </tr>
+                            ))
+                        )}
+                      </tbody>
+                    </table>
+                  </MobileTableView>
+                </div>
+              </div>
+
+              {/* Table 2: Leave Applications Transaction Audit Log */}
+              <div className="card" style={{
+                padding: '1.25rem',
+                background: 'var(--bg-surface)',
+                borderRadius: '16px',
+                border: '1px solid var(--border-light)'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <Calendar size={18} color="#9333ea" />
+                    <h3 style={{ fontSize: '1rem', fontWeight: 700, margin: 0 }}>Leave Applications Audit History Log</h3>
+                  </div>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                    Total requests: {teamLeaveReportData?.history?.length || 0}
+                  </span>
+                </div>
+
+                <div style={{ overflowX: 'auto', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
+                  <MobileTableView tableId="team_leave_history_audit">
+                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem' }}>
+                      <thead>
+                        <tr style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontSize: '0.75rem' }}>
+                          <th style={{ padding: '0.75rem 0.85rem', fontWeight: 600 }}>Employee</th>
+                          <th style={{ padding: '0.75rem 0.85rem', fontWeight: 600 }}>Type</th>
+                          <th style={{ padding: '0.75rem 0.85rem', fontWeight: 600 }}>Duration</th>
+                          <th style={{ padding: '0.75rem 0.85rem', fontWeight: 600 }}>Days</th>
+                          <th style={{ padding: '0.75rem 0.85rem', fontWeight: 600 }}>Reason</th>
+                          <th style={{ padding: '0.75rem 0.85rem', fontWeight: 600 }}>Status</th>
+                          <th style={{ padding: '0.75rem 0.85rem', fontWeight: 600 }}>Action Details</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(!teamLeaveReportData?.history || teamLeaveReportData.history.length === 0) ? (
+                          <tr>
+                            <td colSpan={7} style={{ padding: '2.5rem 1rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                              <div>No leave history records logged yet.</div>
+                            </td>
+                          </tr>
+                        ) : (
+                          teamLeaveReportData.history.map((h) => (
+                            <tr key={h.id} style={{ borderBottom: '1px solid var(--border-light)' }}>
+                              <td style={{ padding: '0.75rem 0.85rem' }}>
+                                <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{h.emp_name}</div>
+                                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{h.email}</div>
+                              </td>
+                              <td style={{ padding: '0.75rem 0.85rem' }}>
+                                <span style={{
+                                  display: 'inline-block',
+                                  padding: '0.15rem 0.5rem',
+                                  borderRadius: '5px',
+                                  fontSize: '0.75rem',
+                                  fontWeight: 800,
+                                  background: h.leave_type === 'CL' ? '#eff6ff' : h.leave_type === 'SL' ? '#f0fdf4' : h.leave_type === 'EL' ? '#faf5ff' : h.leave_type === 'CPL' ? '#eef2ff' : '#f3f4f6',
+                                  color: h.leave_type === 'CL' ? '#2563eb' : h.leave_type === 'SL' ? '#16a34a' : h.leave_type === 'EL' ? '#9333ea' : h.leave_type === 'CPL' ? '#4f46e5' : '#4b5563'
+                                }}>
+                                  {h.leave_type}
+                                </span>
+                              </td>
+                              <td style={{ padding: '0.75rem 0.85rem', fontSize: '0.78rem' }}>
+                                {h.from_date === h.to_date ? h.from_date : `${h.from_date} to ${h.to_date}`}
+                              </td>
+                              <td style={{ padding: '0.75rem 0.85rem', fontWeight: 700 }}>
+                                {h.total_days} d
+                              </td>
+                              <td style={{ padding: '0.75rem 0.85rem', fontSize: '0.78rem', color: 'var(--text-secondary)', maxWidth: '220px' }}>
+                                {h.reason || '—'}
+                              </td>
+                              <td style={{ padding: '0.75rem 0.85rem' }}>
+                                <span style={{
+                                  display: 'inline-block',
+                                  padding: '0.15rem 0.5rem',
+                                  borderRadius: '5px',
+                                  fontSize: '0.72rem',
+                                  fontWeight: 700,
+                                  background: h.status === 'APPROVED' ? '#dcfce7' : h.status === 'REJECTED' ? '#fee2e2' : '#fef3c7',
+                                  color: h.status === 'APPROVED' ? '#166534' : h.status === 'REJECTED' ? '#991b1b' : '#92400e'
+                                }}>
+                                  {h.status}
+                                </span>
+                              </td>
+                              <td style={{ padding: '0.75rem 0.85rem', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                                {h.approver_name ? (
+                                  <div>
+                                    <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{h.approver_name}</div>
+                                    <div>{h.approver_remarks || ''}</div>
+                                  </div>
+                                ) : '—'}
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </MobileTableView>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* ========================================================================= */}
           {/* VIEW 2: MONTHLY MASTER MATRIX VIEW (1-31ST GRID) */}
           {/* ========================================================================= */}
@@ -3433,6 +5656,7 @@ export default function AttendanceModule({
                         <th style={{ padding: '0.65rem 0.5rem', fontWeight: 700, color: '#ef4444', minWidth: '45px' }}>A</th>
                         <th style={{ padding: '0.65rem 0.5rem', fontWeight: 700, color: '#ea580c', minWidth: '45px' }}>HD</th>
                         <th style={{ padding: '0.65rem 0.5rem', fontWeight: 700, color: '#7e22ce', minWidth: '45px' }}>SL</th>
+                        <th style={{ padding: '0.65rem 0.5rem', fontWeight: 700, color: '#059669', minWidth: '45px' }} title="Approved Paid Leaves (CL/SL/EL)">L</th>
                         <th style={{ padding: '0.65rem 0.75rem', fontWeight: 800, color: '#16a34a', background: 'rgba(22, 163, 74, 0.08)', minWidth: '70px' }}>Payable</th>
                         <th style={{ padding: '0.65rem 0.75rem', fontWeight: 700, color: 'var(--accent-color)', minWidth: '75px' }}>Hours</th>
                       </tr>
@@ -3499,6 +5723,26 @@ export default function AttendanceModule({
                                 cellBg = '#dcfce7';
                                 cellColor = '#166534';
                                 cellFontWeight = 700;
+                              } else if (day.code === 'CL') {
+                                cellBg = '#eff6ff';
+                                cellColor = '#2563eb';
+                                cellFontWeight = 700;
+                              } else if (day.code === 'SL') {
+                                cellBg = '#f0fdf4';
+                                cellColor = '#16a34a';
+                                cellFontWeight = 700;
+                              } else if (day.code === 'EL') {
+                                cellBg = '#faf5ff';
+                                cellColor = '#9333ea';
+                                cellFontWeight = 700;
+                              } else if (day.code === 'LWP') {
+                                cellBg = '#f3f4f6';
+                                cellColor = '#4b5563';
+                                cellFontWeight = 700;
+                              } else if (day.code === 'HD-L') {
+                                cellBg = '#ffedd5';
+                                cellColor = '#d97706';
+                                cellFontWeight = 700;
                               }
 
                               return (
@@ -3544,6 +5788,9 @@ export default function AttendanceModule({
                             <td style={{ padding: '0.55rem 0.5rem', fontWeight: 700, color: '#7e22ce' }}>
                               {row.summary?.totalShortLeaves || 0}
                             </td>
+                            <td style={{ padding: '0.55rem 0.5rem', fontWeight: 700, color: '#059669', fontSize: '0.82rem' }}>
+                              {row.summary?.totalApprovedLeaves || 0}
+                            </td>
                             <td style={{ padding: '0.55rem 0.75rem', fontWeight: 800, color: '#16a34a', background: 'rgba(22, 163, 74, 0.08)', fontSize: '0.85rem' }}>
                               {row.summary?.totalPayableDays || 0}
                             </td>
@@ -3564,12 +5811,13 @@ export default function AttendanceModule({
       )}
 
       {/* ========================================================================================= */}
-      {/* TAB 6: SHIFT RULES & ATTENDANCE POLICY */}
+      {/* ========================================================================================= */}
+      {/* TAB 6: SHIFT RULES */}
       {/* ========================================================================================= */}
       {activeTab === 'shift_rules' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
           
-          {/* Header Banner */}
+          {/* Header Banner with Multi-Tenant & Branch Selectors */}
           <div className="card" style={{
             padding: '1.5rem',
             background: 'linear-gradient(135deg, var(--bg-surface) 0%, rgba(37, 99, 235, 0.08) 100%)',
@@ -3600,47 +5848,195 @@ export default function AttendanceModule({
                   Official Shift Policy & Attendance Rules
                 </h2>
                 <p style={{ fontSize: '0.84rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0 0' }}>
-                  SuPuja Creations Enterprise Attendance Guidelines, Grace Periods, Short Leave Quotas & Penalties
+                  {tenantShiftPolicy?.company_name || selectedShiftPolicyCompany} Enterprise Guidelines • {selectedShiftPolicyBranch}
                 </p>
               </div>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            {/* Tenant, Branch & Admin Controls */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+              {/* Company Selector for Master Admin / Admin */}
+              {(isAdmin || isMasterAdmin) && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <Building size={15} style={{ color: 'var(--text-secondary)' }} />
+                  <select
+                    value={selectedShiftPolicyCompany}
+                    onChange={(e) => {
+                      setSelectedShiftPolicyCompany(e.target.value);
+                      setSelectedShiftPolicyBranch('All Branches');
+                      setActiveShiftIndex(0);
+                    }}
+                    style={{
+                      padding: '0.45rem 0.75rem',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border-light)',
+                      background: 'var(--bg-primary)',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.82rem',
+                      fontWeight: 600,
+                      outline: 'none'
+                    }}
+                    title="Select Company / Tenant"
+                  >
+                    <option value="New Swan Group">New Swan Group</option>
+                    <option value="SuPuja Creations">SuPuja Creations</option>
+                    <option value="Testing New Swan Group">Testing New Swan Group</option>
+                  </select>
+                </div>
+              )}
+
+              {/* Branch / Plant Selector */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <MapPin size={15} style={{ color: 'var(--text-secondary)' }} />
+                <select
+                  value={selectedShiftPolicyBranch}
+                  onChange={(e) => {
+                    setSelectedShiftPolicyBranch(e.target.value);
+                    setActiveShiftIndex(0);
+                  }}
+                  style={{
+                    padding: '0.45rem 0.75rem',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-light)',
+                    background: 'var(--bg-primary)',
+                    color: 'var(--text-primary)',
+                    fontSize: '0.82rem',
+                    fontWeight: 600,
+                    outline: 'none'
+                  }}
+                  title="Select Branch / Plant"
+                >
+                  <option value="All Branches">All Branches (Default)</option>
+                  {availablePolicyBranches.map((b) => {
+                    const bName = typeof b === 'string' ? b : (b.name || b.branch_name || b.code);
+                    return <option key={b.id || bName} value={bName}>{bName}</option>;
+                  })}
+                </select>
+              </div>
+
+              {/* Configure Shifts Button (Admin / Master Admin) */}
+              {(isAdmin || isMasterAdmin) && (
+                <button
+                  type="button"
+                  onClick={handleOpenShiftConfig}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.4rem',
+                    padding: '0.45rem 0.85rem',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: 'var(--accent-color)',
+                    color: '#ffffff',
+                    fontSize: '0.82rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    boxShadow: '0 2px 6px rgba(37,99,235,0.25)'
+                  }}
+                  title="Configure Shift Timings & Quotas"
+                >
+                  <Settings size={15} /> Configure Shifts
+                </button>
+              )}
+
               <span style={{ fontSize: '0.8rem', padding: '0.35rem 0.85rem', borderRadius: '20px', background: 'rgba(22, 163, 74, 0.15)', color: '#16a34a', fontWeight: 700, border: '1px solid rgba(22, 163, 74, 0.3)' }}>
-                ✅ Active Policy v2.4
+                ✅ Active Policy {tenantShiftPolicy?.policy_version || 'v2.4'}
               </span>
             </div>
           </div>
 
-          {/* Grid Layout: Shift Timings & Grace Period */}
+          {/* Multi-Shift Selector Navigation Bar */}
+          {activeShiftsList.length > 1 && (
+            <div className="card" style={{
+              padding: '0.75rem 1rem',
+              background: 'var(--bg-surface)',
+              borderRadius: '12px',
+              border: '1px solid var(--border-light)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.6rem',
+              flexWrap: 'wrap'
+            }}>
+              <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
+                Configured Shifts ({activeShiftsList.length}):
+              </span>
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                {activeShiftsList.map((shift, idx) => (
+                  <button
+                    key={shift.id || idx}
+                    type="button"
+                    onClick={() => setActiveShiftIndex(idx)}
+                    style={{
+                      padding: '0.4rem 0.85rem',
+                      borderRadius: '8px',
+                      border: activeShiftIndex === idx ? '1px solid var(--accent-color)' : '1px solid var(--border-light)',
+                      background: activeShiftIndex === idx ? 'var(--accent-color)' : 'var(--bg-primary)',
+                      color: activeShiftIndex === idx ? '#ffffff' : 'var(--text-primary)',
+                      fontSize: '0.82rem',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.35rem'
+                    }}
+                  >
+                    <span>{shift.shift_name}</span>
+                    <span style={{ opacity: 0.85, fontSize: '0.74rem', fontWeight: 500 }}>
+                      ({formatTime12h(shift.start_time)} – {formatTime12h(shift.end_time)})
+                    </span>
+                    {shift.is_default && (
+                      <span style={{ fontSize: '0.68rem', padding: '0.1rem 0.35rem', borderRadius: '4px', background: activeShiftIndex === idx ? 'rgba(255,255,255,0.25)' : 'rgba(22,163,74,0.15)', color: activeShiftIndex === idx ? '#fff' : '#16a34a', fontWeight: 800 }}>
+                        Default
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Grid Layout: Active Shift Timings & Short Leaves */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.25rem' }}>
             
             {/* Card 1: Shift Hours */}
             <div className="card" style={{ padding: '1.5rem', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '16px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '1rem' }}>
-                <Clock style={{ color: 'var(--accent-color)' }} size={20} />
-                <h3 style={{ fontSize: '1.05rem', fontWeight: 700, margin: 0 }}>Regular Shift Timings</h3>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                  <Clock style={{ color: 'var(--accent-color)' }} size={20} />
+                  <h3 style={{ fontSize: '1.05rem', fontWeight: 700, margin: 0 }}>
+                    {currentShift.shift_name || 'Regular Shift'} Timings
+                  </h3>
+                </div>
+                {currentShift.is_default && (
+                  <span style={{ fontSize: '0.75rem', padding: '0.2rem 0.55rem', borderRadius: '12px', background: 'rgba(37,99,235,0.1)', color: 'var(--accent-color)', fontWeight: 700 }}>
+                    Primary Shift
+                  </span>
+                )}
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.75rem 1rem', background: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
                   <div>
                     <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>Shift Start Time</span>
-                    <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#16a34a' }}>09:00 AM</div>
+                    <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#16a34a' }}>
+                      {formatTime12h(currentShift.start_time)}
+                    </div>
                   </div>
                   <ArrowRight size={18} style={{ color: 'var(--text-secondary)' }} />
                   <div>
                     <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>Shift End Time</span>
-                    <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#2563eb' }}>06:30 PM</div>
+                    <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#2563eb' }}>
+                      {formatTime12h(currentShift.end_time)}
+                    </div>
                   </div>
                 </div>
 
                 <div style={{ padding: '0.75rem 1rem', background: 'rgba(22, 163, 74, 0.08)', borderRadius: '10px', border: '1px solid rgba(22, 163, 74, 0.25)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: '#16a34a', fontWeight: 700, fontSize: '0.85rem' }}>
-                    <Sparkles size={15} /> 5-Minute Morning Grace Period
+                    <Sparkles size={15} /> {currentShift.grace_minutes ?? 5}-Minute Morning Grace Period
                   </div>
                   <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0.25rem 0 0 0', lineHeight: 1.4 }}>
-                    Punching in between <strong>09:00:00 AM and 09:05:59 AM</strong> is marked as <strong>Present (0 deduction)</strong>. No short leave is consumed.
+                    Punching in within <strong>{currentShift.grace_minutes ?? 5} minutes</strong> of shift start time ({formatTime12h(currentShift.start_time)}) is marked as <strong>Present (0 deduction)</strong>. No short leave is consumed.
                   </p>
                 </div>
               </div>
@@ -3654,40 +6050,40 @@ export default function AttendanceModule({
                   <h3 style={{ fontSize: '1.05rem', fontWeight: 700, margin: 0 }}>Monthly Short Leaves</h3>
                 </div>
                 <span style={{ fontSize: '0.78rem', padding: '0.2rem 0.6rem', borderRadius: '12px', background: '#fef3c7', color: '#b45309', fontWeight: 800 }}>
-                  Total: 4 / Month
+                  Total: {Number(currentShift.short_leave_1_quota ?? 2) + Number(currentShift.short_leave_2_quota ?? 2)} / Month
                 </span>
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                {/* 20-Min Short Leave */}
+                {/* Short Leave 1 */}
                 <div style={{ padding: '0.75rem 1rem', background: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <span style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                      20-Minute Short Leave
+                      {currentShift.short_leave_1_name || '20-Minute Short Leave'}
                     </span>
                     <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#2563eb', background: 'rgba(37,99,235,0.1)', padding: '0.15rem 0.5rem', borderRadius: '6px' }}>
-                      Quota: 2 Allowed
+                      Quota: {currentShift.short_leave_1_quota ?? 2} Allowed
                     </span>
                   </div>
                   <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.35rem', lineHeight: 1.4 }}>
-                    • Morning Window: <strong>09:06 AM – 09:20 AM</strong><br />
-                    • Evening Window: <strong>06:10 PM – 06:30 PM</strong>
+                    • Duration Allowance: <strong>{currentShift.short_leave_1_minutes ?? 20} Minutes</strong><br />
+                    • Permitted for morning late arrivals or evening early departures.
                   </div>
                 </div>
 
-                {/* 2-Hour Short Leave */}
+                {/* Short Leave 2 */}
                 <div style={{ padding: '0.75rem 1rem', background: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <span style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                      2-Hour Short Leave
+                      {currentShift.short_leave_2_name || '2-Hour Short Leave'}
                     </span>
                     <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#7e22ce', background: 'rgba(126,34,206,0.1)', padding: '0.15rem 0.5rem', borderRadius: '6px' }}>
-                      Quota: 2 Allowed
+                      Quota: {currentShift.short_leave_2_quota ?? 2} Allowed
                     </span>
                   </div>
                   <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.35rem', lineHeight: 1.4 }}>
-                    • Morning Window: <strong>09:21 AM – 11:00 AM</strong><br />
-                    • Evening Window: <strong>04:30 PM – 06:30 PM</strong>
+                    • Duration Allowance: <strong>{currentShift.short_leave_2_minutes ?? 120} Minutes</strong><br />
+                    • Permitted for emergency doctor visits or official external duties.
                   </div>
                 </div>
               </div>
@@ -3695,11 +6091,227 @@ export default function AttendanceModule({
 
           </div>
 
-          {/* Rules Matrix & Penalties Table */}
+          {/* Configured Shifts Master Table (Interactive Column Resizing & Multi-Shift Overview) */}
           <div className="card" style={{ padding: '1.5rem', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '1rem' }}>
-              <AlertTriangle style={{ color: '#ea580c' }} size={20} />
-              <h3 style={{ fontSize: '1.05rem', fontWeight: 700, margin: 0 }}>Attendance Status & Penalty Evaluation Matrix</h3>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                  <FileSpreadsheet style={{ color: 'var(--accent-color)' }} size={20} />
+                  <h3 style={{ fontSize: '1.1rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
+                    Configured Shifts Master Table
+                  </h3>
+                  <span style={{ fontSize: '0.75rem', padding: '0.2rem 0.6rem', borderRadius: '12px', background: 'rgba(37,99,235,0.1)', color: 'var(--accent-color)', fontWeight: 700 }}>
+                    {activeShiftsList.length} {activeShiftsList.length === 1 ? 'Shift' : 'Shifts'} Registered
+                  </span>
+                </div>
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: '0.25rem 0 0 0' }}>
+                  {tenantShiftPolicy?.company_name || selectedShiftPolicyCompany} • Plant: {selectedShiftPolicyBranch}. Click any row to view its penalty matrix or click Edit to modify.
+                </p>
+              </div>
+
+              {(isAdmin || isMasterAdmin) && (
+                <button
+                  type="button"
+                  onClick={() => handleOpenShiftConfig()}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.4rem',
+                    padding: '0.45rem 0.85rem',
+                    borderRadius: '8px',
+                    border: '1px solid var(--accent-color)',
+                    background: 'rgba(37, 99, 235, 0.08)',
+                    color: 'var(--accent-color)',
+                    fontSize: '0.82rem',
+                    fontWeight: 700,
+                    cursor: 'pointer'
+                  }}
+                  title="Add or Edit Shifts"
+                >
+                  <Plus size={15} /> Add / Manage Shifts
+                </button>
+              )}
+            </div>
+
+            <div style={{ overflowX: 'auto', border: '1px solid var(--border-light)', borderRadius: '10px' }}>
+              <MobileTableView id="Attendance/AttendanceModule-ShiftsMaster">
+                <table style={{ width: '100%', minWidth: `${getShiftTotalWidth()}px`, borderCollapse: 'collapse', fontSize: '0.83rem' }}>
+                  <thead>
+                    <tr style={{ background: 'var(--bg-primary)', borderBottom: '2px solid var(--border-light)', textAlign: 'left' }}>
+                      <th style={{ width: `${shiftColWidths.code}px`, padding: '0.75rem 0.85rem', fontWeight: 700, position: 'relative', boxSizing: 'border-box' }}>
+                        <span>Shift Code</span>
+                        <ColumnResizer colKey="code" isResizing={shiftResizingCol === 'code'} onResizeStart={handleShiftResizeStart} onReset={resetShiftColWidth} />
+                      </th>
+                      <th style={{ width: `${shiftColWidths.shift_name}px`, padding: '0.75rem 0.85rem', fontWeight: 700, position: 'relative', boxSizing: 'border-box' }}>
+                        <span>Shift Name</span>
+                        <ColumnResizer colKey="shift_name" isResizing={shiftResizingCol === 'shift_name'} onResizeStart={handleShiftResizeStart} onReset={resetShiftColWidth} />
+                      </th>
+                      <th style={{ width: `${shiftColWidths.timings}px`, padding: '0.75rem 0.85rem', fontWeight: 700, position: 'relative', boxSizing: 'border-box' }}>
+                        <span>Timings (Start – End)</span>
+                        <ColumnResizer colKey="timings" isResizing={shiftResizingCol === 'timings'} onResizeStart={handleShiftResizeStart} onReset={resetShiftColWidth} />
+                      </th>
+                      <th style={{ width: `${shiftColWidths.grace}px`, padding: '0.75rem 0.85rem', fontWeight: 700, position: 'relative', boxSizing: 'border-box' }}>
+                        <span>Grace Period</span>
+                        <ColumnResizer colKey="grace" isResizing={shiftResizingCol === 'grace'} onResizeStart={handleShiftResizeStart} onReset={resetShiftColWidth} />
+                      </th>
+                      <th style={{ width: `${shiftColWidths.short_leave_1}px`, padding: '0.75rem 0.85rem', fontWeight: 700, position: 'relative', boxSizing: 'border-box' }}>
+                        <span>Short Leave 1</span>
+                        <ColumnResizer colKey="short_leave_1" isResizing={shiftResizingCol === 'short_leave_1'} onResizeStart={handleShiftResizeStart} onReset={resetShiftColWidth} />
+                      </th>
+                      <th style={{ width: `${shiftColWidths.short_leave_2}px`, padding: '0.75rem 0.85rem', fontWeight: 700, position: 'relative', boxSizing: 'border-box' }}>
+                        <span>Short Leave 2</span>
+                        <ColumnResizer colKey="short_leave_2" isResizing={shiftResizingCol === 'short_leave_2'} onResizeStart={handleShiftResizeStart} onReset={resetShiftColWidth} />
+                      </th>
+                      <th style={{ width: `${shiftColWidths.min_hours}px`, padding: '0.75rem 0.85rem', fontWeight: 700, position: 'relative', boxSizing: 'border-box' }}>
+                        <span>Min Work Mins</span>
+                        <ColumnResizer colKey="min_hours" isResizing={shiftResizingCol === 'min_hours'} onResizeStart={handleShiftResizeStart} onReset={resetShiftColWidth} />
+                      </th>
+                      <th style={{ width: `${shiftColWidths.status}px`, padding: '0.75rem 0.85rem', fontWeight: 700, position: 'relative', boxSizing: 'border-box' }}>
+                        <span>Default Status</span>
+                        <ColumnResizer colKey="status" isResizing={shiftResizingCol === 'status'} onResizeStart={handleShiftResizeStart} onReset={resetShiftColWidth} />
+                      </th>
+                      <th style={{ width: `${shiftColWidths.actions}px`, padding: '0.75rem 0.85rem', fontWeight: 700, position: 'relative', boxSizing: 'border-box' }}>
+                        <span>Action</span>
+                        <ColumnResizer colKey="actions" isResizing={shiftResizingCol === 'actions'} onResizeStart={handleShiftResizeStart} onReset={resetShiftColWidth} />
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {activeShiftsList.map((shift, idx) => {
+                      const isSelected = activeShiftIndex === idx;
+                      return (
+                        <tr
+                          key={shift.id || idx}
+                          onClick={() => setActiveShiftIndex(idx)}
+                          style={{
+                            borderBottom: '1px solid var(--border-light)',
+                            background: isSelected ? 'rgba(37, 99, 235, 0.08)' : 'transparent',
+                            cursor: 'pointer',
+                            transition: 'background 0.15s'
+                          }}
+                        >
+                          <td style={{ padding: '0.75rem 0.85rem' }}>
+                            <span style={{
+                              fontFamily: 'monospace',
+                              fontWeight: 700,
+                              fontSize: '0.78rem',
+                              padding: '0.2rem 0.45rem',
+                              borderRadius: '4px',
+                              background: 'var(--bg-primary)',
+                              border: '1px solid var(--border-light)',
+                              color: 'var(--text-primary)'
+                            }}>
+                              {shift.shift_code || `SHIFT_${idx + 1}`}
+                            </span>
+                          </td>
+                          <td style={{ padding: '0.75rem 0.85rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                              <span>{shift.shift_name}</span>
+                              {shift.is_default && (
+                                <span style={{ fontSize: '0.68rem', padding: '0.1rem 0.4rem', borderRadius: '10px', background: 'rgba(22,163,74,0.15)', color: '#16a34a', fontWeight: 800 }}>
+                                  Default
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td style={{ padding: '0.75rem 0.85rem' }}>
+                            <span style={{ fontWeight: 700, color: '#2563eb' }}>
+                              {formatTime12h(shift.start_time)}
+                            </span>
+                            <span style={{ margin: '0 0.35rem', color: 'var(--text-secondary)' }}>–</span>
+                            <span style={{ fontWeight: 700, color: '#16a34a' }}>
+                              {formatTime12h(shift.end_time)}
+                            </span>
+                          </td>
+                          <td style={{ padding: '0.75rem 0.85rem', fontWeight: 600 }}>
+                            {shift.grace_minutes ?? 5} Mins
+                          </td>
+                          <td style={{ padding: '0.75rem 0.85rem', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                            <strong style={{ color: 'var(--text-primary)' }}>{shift.short_leave_1_minutes ?? 20}m</strong> ({shift.short_leave_1_quota ?? 2}/mo)
+                          </td>
+                          <td style={{ padding: '0.75rem 0.85rem', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                            <strong style={{ color: 'var(--text-primary)' }}>{shift.short_leave_2_minutes ?? 120}m</strong> ({shift.short_leave_2_quota ?? 2}/mo)
+                          </td>
+                          <td style={{ padding: '0.75rem 0.85rem', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                            Half: {shift.min_half_day_minutes ?? 270}m • Full: {shift.min_full_day_minutes ?? 450}m
+                          </td>
+                          <td style={{ padding: '0.75rem 0.85rem' }}>
+                            {shift.is_default ? (
+                              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#16a34a' }}>✅ Primary Default</span>
+                            ) : (
+                              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Alternative</span>
+                            )}
+                          </td>
+                          <td style={{ padding: '0.75rem 0.85rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveShiftIndex(idx);
+                                }}
+                                style={{
+                                  padding: '0.3rem 0.6rem',
+                                  borderRadius: '6px',
+                                  border: isSelected ? '1px solid var(--accent-color)' : '1px solid var(--border-light)',
+                                  background: isSelected ? 'var(--accent-color)' : 'var(--bg-primary)',
+                                  color: isSelected ? '#ffffff' : 'var(--text-primary)',
+                                  fontSize: '0.74rem',
+                                  fontWeight: 700,
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                {isSelected ? 'Viewing' : 'Select'}
+                              </button>
+                              {(isAdmin || isMasterAdmin) && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleOpenShiftConfig(idx);
+                                  }}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.25rem',
+                                    padding: '0.3rem 0.6rem',
+                                    borderRadius: '6px',
+                                    border: '1px solid var(--border-light)',
+                                    background: 'var(--bg-surface)',
+                                    color: 'var(--text-primary)',
+                                    fontSize: '0.74rem',
+                                    fontWeight: 700,
+                                    cursor: 'pointer'
+                                  }}
+                                  title="Edit Shift"
+                                >
+                                  <Edit2 size={12} /> Edit
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </MobileTableView>
+            </div>
+          </div>
+
+          {/* Rules Matrix & Penalties Table */}
+
+          <div className="card" style={{ padding: '1.5rem', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <AlertTriangle style={{ color: '#ea580c' }} size={20} />
+                <h3 style={{ fontSize: '1.05rem', fontWeight: 700, margin: 0 }}>
+                  Attendance Status & Penalty Evaluation Matrix ({currentShift.shift_name})
+                </h3>
+              </div>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
+                Evaluated against {formatTime12h(currentShift.start_time)} to {formatTime12h(currentShift.end_time)}
+              </span>
             </div>
 
             <div style={{ overflowX: 'auto' }}>
@@ -3707,7 +6319,7 @@ export default function AttendanceModule({
                 <thead>
                   <tr style={{ background: 'var(--bg-primary)', borderBottom: '2px solid var(--border-light)', textAlign: 'left' }}>
                     <th style={{ padding: '0.75rem 1rem', fontWeight: 700 }}>Condition / Scenario</th>
-                    <th style={{ padding: '0.75rem 1rem', fontWeight: 700 }}>Time Window</th>
+                    <th style={{ padding: '0.75rem 1rem', fontWeight: 700 }}>Time Window / Threshold</th>
                     <th style={{ padding: '0.75rem 1rem', fontWeight: 700 }}>Resulting Status</th>
                     <th style={{ padding: '0.75rem 1rem', fontWeight: 700 }}>Payable Credit</th>
                   </tr>
@@ -3715,37 +6327,37 @@ export default function AttendanceModule({
                 <tbody>
                   <tr style={{ borderBottom: '1px solid var(--border-light)' }}>
                     <td style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>On-Time Arrival / Grace Period</td>
-                    <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>09:00:00 – 09:05:59 AM</td>
+                    <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Within {currentShift.grace_minutes ?? 5} mins of {formatTime12h(currentShift.start_time)}</td>
                     <td style={{ padding: '0.75rem 1rem' }}><span style={{ color: '#16a34a', fontWeight: 700 }}>✅ Present</span></td>
                     <td style={{ padding: '0.75rem 1rem', fontWeight: 700 }}>1.0 Day</td>
                   </tr>
                   <tr style={{ borderBottom: '1px solid var(--border-light)' }}>
-                    <td style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>20-Min Short Leave Morning</td>
-                    <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>09:06:00 – 09:20:00 AM</td>
-                    <td style={{ padding: '0.75rem 1rem' }}><span style={{ color: '#2563eb', fontWeight: 700 }}>🔵 Short Leave (20M)</span></td>
+                    <td style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>{currentShift.short_leave_1_name || 'Short Leave 1'}</td>
+                    <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Within {currentShift.short_leave_1_minutes ?? 20} mins after grace period</td>
+                    <td style={{ padding: '0.75rem 1rem' }}><span style={{ color: '#2563eb', fontWeight: 700 }}>🔵 Short Leave ({currentShift.short_leave_1_minutes ?? 20}M)</span></td>
                     <td style={{ padding: '0.75rem 1rem', fontWeight: 700 }}>1.0 Day</td>
                   </tr>
                   <tr style={{ borderBottom: '1px solid var(--border-light)' }}>
-                    <td style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>2-Hour Short Leave Morning</td>
-                    <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>09:20:01 – 11:00:00 AM</td>
-                    <td style={{ padding: '0.75rem 1rem' }}><span style={{ color: '#7e22ce', fontWeight: 700 }}>🟣 Short Leave (2H)</span></td>
+                    <td style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>{currentShift.short_leave_2_name || 'Short Leave 2'}</td>
+                    <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Within {currentShift.short_leave_2_minutes ?? 120} mins of shift start</td>
+                    <td style={{ padding: '0.75rem 1rem' }}><span style={{ color: '#7e22ce', fontWeight: 700 }}>🟣 Short Leave ({Math.round((currentShift.short_leave_2_minutes ?? 120) / 60)}H)</span></td>
                     <td style={{ padding: '0.75rem 1rem', fontWeight: 700 }}>1.0 Day</td>
                   </tr>
                   <tr style={{ borderBottom: '1px solid var(--border-light)', background: 'rgba(234, 88, 12, 0.04)' }}>
-                    <td style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Late Arrival after 11:00 AM</td>
-                    <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>After 11:00:00 AM</td>
+                    <td style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Late Arrival after Short Leave Cutoff</td>
+                    <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Beyond {currentShift.short_leave_2_minutes ?? 120} minutes</td>
                     <td style={{ padding: '0.75rem 1rem' }}><span style={{ color: '#ea580c', fontWeight: 700 }}>⚠️ Half Day</span></td>
                     <td style={{ padding: '0.75rem 1rem', fontWeight: 700, color: '#ea580c' }}>0.5 Day</td>
                   </tr>
                   <tr style={{ borderBottom: '1px solid var(--border-light)', background: 'rgba(234, 88, 12, 0.04)' }}>
-                    <td style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Early Departure before 04:30 PM</td>
-                    <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Before 04:30:00 PM</td>
+                    <td style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Early Departure before Shift End</td>
+                    <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Before {formatTime12h(currentShift.end_time)} without approved leave</td>
                     <td style={{ padding: '0.75rem 1rem' }}><span style={{ color: '#ea580c', fontWeight: 700 }}>⚠️ Half Day</span></td>
                     <td style={{ padding: '0.75rem 1rem', fontWeight: 700, color: '#ea580c' }}>0.5 Day</td>
                   </tr>
                   <tr style={{ borderBottom: '1px solid var(--border-light)', background: 'rgba(239, 68, 68, 0.04)' }}>
-                    <td style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Total Working Hours &lt; 4h 30m</td>
-                    <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Under 270 Total Minutes</td>
+                    <td style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Total Working Hours &lt; {Math.round(((currentShift.min_half_day_minutes ?? 270) / 60) * 10) / 10}h</td>
+                    <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>Under {currentShift.min_half_day_minutes ?? 270} Total Minutes</td>
                     <td style={{ padding: '0.75rem 1rem' }}><span style={{ color: '#dc2626', fontWeight: 700 }}>❌ Absent</span></td>
                     <td style={{ padding: '0.75rem 1rem', fontWeight: 700, color: '#dc2626' }}>0.0 Day</td>
                   </tr>
@@ -3760,12 +6372,1845 @@ export default function AttendanceModule({
               <Info size={18} /> Important Policy Notes
             </div>
             <ul style={{ margin: 0, paddingLeft: '1.2rem', fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-              <li><strong>Max 1 Short Leave Per Day</strong>: An employee can avail only 1 short leave per calendar day (either morning arrival or evening early departure).</li>
-              <li><strong>Quota Exhaustion</strong>: Once all 4 monthly short leaves are consumed, any arrival after 09:05:59 AM will automatically trigger a <strong>Half Day</strong> deduction.</li>
-              <li><strong>Missing Punch Regularization</strong>: If you forgot to punch in/out due to official client visit or technical glitch, submit a regularization request under the <strong>Missing Punch / Regularize</strong> tab for HOD approval.</li>
-              <li><strong>Offline Punching</strong>: In case of no internet, punch your attendance as usual. Your GPS pin and timestamp will be saved locally and auto-synced to cloud.</li>
+              <li><strong>Multi-Shift Assignment</strong>: Employees are evaluated against their assigned shift in User Management. Auto-detect assigns the primary default shift.</li>
+              <li><strong>Max 1 Short Leave Per Day</strong>: An employee can avail only 1 short leave per calendar day (either arrival or departure).</li>
+              <li><strong>Quota Exhaustion</strong>: Once monthly short leaves are consumed, late arrivals automatically trigger a <strong>Half Day</strong> deduction.</li>
+              <li><strong>Missing Punch Regularization</strong>: Submit requests under <strong>Missing Punch / Regularize</strong> tab for HOD approval.</li>
+              <li><strong>Offline Punching</strong>: GPS pin and timestamp will be saved locally and auto-synced when online.</li>
             </ul>
           </div>
+
+          {/* Configure Shift Policy Modal (Admin/Master Admin) */}
+          {showShiftConfigModal && shiftConfigForm && (
+            <div style={{
+              position: 'fixed',
+              inset: 0,
+              backgroundColor: 'rgba(0,0,0,0.65)',
+              backdropFilter: 'blur(4px)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 9999,
+              padding: '1rem'
+            }}>
+              <div className="card" style={{
+                width: '100%',
+                maxWidth: '750px',
+                background: 'var(--bg-surface)',
+                borderRadius: '16px',
+                border: '1px solid var(--border-light)',
+                padding: '1.5rem',
+                boxShadow: '0 20px 40px rgba(0,0,0,0.35)',
+                maxHeight: '90vh',
+                overflowY: 'auto'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                    <Settings size={22} color="var(--accent-color)" />
+                    <div>
+                      <h3 style={{ fontSize: '1.15rem', fontWeight: 800, margin: 0 }}>
+                        Configure Shift Policy ({shiftConfigForm.company_name})
+                      </h3>
+                      <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0.15rem 0 0 0' }}>
+                        Plant/Branch: {shiftConfigForm.branch_name} • Add, update or reconfigure shift timings
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowShiftConfigModal(false)}
+                    style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+
+                {shiftConfigToast && (
+                  <div style={{
+                    padding: '0.75rem 1rem',
+                    borderRadius: '8px',
+                    marginBottom: '1rem',
+                    fontSize: '0.84rem',
+                    fontWeight: 600,
+                    background: shiftConfigToast.type === 'success' ? 'rgba(22,163,74,0.1)' : 'rgba(239,68,68,0.1)',
+                    color: shiftConfigToast.type === 'success' ? '#16a34a' : '#ef4444',
+                    border: shiftConfigToast.type === 'success' ? '1px solid rgba(22,163,74,0.3)' : '1px solid rgba(239,68,68,0.3)'
+                  }}>
+                    {shiftConfigToast.message}
+                  </div>
+                )}
+
+                <form onSubmit={handleSaveShiftConfig} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                  
+                  {/* Shifts List Editor */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    {shiftConfigForm.shifts.map((shift, idx) => (
+                      <div key={shift.id || idx} style={{
+                        padding: '1rem',
+                        borderRadius: '12px',
+                        border: '1px solid var(--border-light)',
+                        background: 'var(--bg-primary)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '0.75rem'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.4rem' }}>
+                          <span style={{ fontSize: '0.88rem', fontWeight: 800, color: 'var(--accent-color)' }}>
+                            Shift #{idx + 1}
+                          </span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                            <label style={{ fontSize: '0.78rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer' }}>
+                              <input
+                                type="checkbox"
+                                checked={!!shift.is_default}
+                                onChange={(e) => {
+                                  const updated = shiftConfigForm.shifts.map((s, i) => ({
+                                    ...s,
+                                    is_default: i === idx ? e.target.checked : false
+                                  }));
+                                  setShiftConfigForm({ ...shiftConfigForm, shifts: updated });
+                                }}
+                              />
+                              Default Shift
+                            </label>
+
+                            {shiftConfigForm.shifts.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const filtered = shiftConfigForm.shifts.filter((_, i) => i !== idx);
+                                  if (filtered.length > 0 && !filtered.some(s => s.is_default)) {
+                                    filtered[0].is_default = true;
+                                  }
+                                  setShiftConfigForm({ ...shiftConfigForm, shifts: filtered });
+                                }}
+                                style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700 }}
+                              >
+                                Remove
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Name & Code */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '0.75rem' }}>
+                          <div>
+                            <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
+                              Shift Name *
+                            </label>
+                            <input
+                              type="text"
+                              required
+                              value={shift.shift_name}
+                              onChange={(e) => {
+                                const updated = [...shiftConfigForm.shifts];
+                                updated[idx].shift_name = e.target.value;
+                                setShiftConfigForm({ ...shiftConfigForm, shifts: updated });
+                              }}
+                              style={{
+                                width: '100%',
+                                padding: '0.45rem 0.65rem',
+                                borderRadius: '6px',
+                                border: '1px solid var(--border-light)',
+                                background: 'var(--bg-surface)',
+                                color: 'var(--text-primary)',
+                                fontSize: '0.82rem'
+                              }}
+                            />
+                          </div>
+
+                          <div>
+                            <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
+                              Shift Code *
+                            </label>
+                            <input
+                              type="text"
+                              required
+                              value={shift.shift_code}
+                              onChange={(e) => {
+                                const updated = [...shiftConfigForm.shifts];
+                                updated[idx].shift_code = e.target.value.toUpperCase();
+                                setShiftConfigForm({ ...shiftConfigForm, shifts: updated });
+                              }}
+                              style={{
+                                width: '100%',
+                                padding: '0.45rem 0.65rem',
+                                borderRadius: '6px',
+                                border: '1px solid var(--border-light)',
+                                background: 'var(--bg-surface)',
+                                color: 'var(--text-primary)',
+                                fontSize: '0.82rem'
+                              }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Start Time, End Time & Grace */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem' }}>
+                          <div>
+                            <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
+                              Start Time (24h) *
+                            </label>
+                            <input
+                              type="time"
+                              required
+                              value={shift.start_time}
+                              onChange={(e) => {
+                                const updated = [...shiftConfigForm.shifts];
+                                updated[idx].start_time = e.target.value;
+                                setShiftConfigForm({ ...shiftConfigForm, shifts: updated });
+                              }}
+                              style={{
+                                width: '100%',
+                                padding: '0.45rem 0.65rem',
+                                borderRadius: '6px',
+                                border: '1px solid var(--border-light)',
+                                background: 'var(--bg-surface)',
+                                color: 'var(--text-primary)',
+                                fontSize: '0.82rem'
+                              }}
+                            />
+                          </div>
+
+                          <div>
+                            <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
+                              End Time (24h) *
+                            </label>
+                            <input
+                              type="time"
+                              required
+                              value={shift.end_time}
+                              onChange={(e) => {
+                                const updated = [...shiftConfigForm.shifts];
+                                updated[idx].end_time = e.target.value;
+                                setShiftConfigForm({ ...shiftConfigForm, shifts: updated });
+                              }}
+                              style={{
+                                width: '100%',
+                                padding: '0.45rem 0.65rem',
+                                borderRadius: '6px',
+                                border: '1px solid var(--border-light)',
+                                background: 'var(--bg-surface)',
+                                color: 'var(--text-primary)',
+                                fontSize: '0.82rem'
+                              }}
+                            />
+                          </div>
+
+                          <div>
+                            <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
+                              Grace Period (Mins) *
+                            </label>
+                            <input
+                              type="number"
+                              min="0"
+                              max="60"
+                              required
+                              value={shift.grace_minutes}
+                              onChange={(e) => {
+                                const updated = [...shiftConfigForm.shifts];
+                                updated[idx].grace_minutes = Number(e.target.value);
+                                setShiftConfigForm({ ...shiftConfigForm, shifts: updated });
+                              }}
+                              style={{
+                                width: '100%',
+                                padding: '0.45rem 0.65rem',
+                                borderRadius: '6px',
+                                border: '1px solid var(--border-light)',
+                                background: 'var(--bg-surface)',
+                                color: 'var(--text-primary)',
+                                fontSize: '0.82rem'
+                              }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Short Leaves 1 & 2 */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                          <div>
+                            <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
+                              Short Leave 1 Mins & Quota
+                            </label>
+                            <div style={{ display: 'flex', gap: '0.4rem' }}>
+                              <input
+                                type="number"
+                                min="5"
+                                max="60"
+                                placeholder="Minutes"
+                                value={shift.short_leave_1_minutes}
+                                onChange={(e) => {
+                                  const updated = [...shiftConfigForm.shifts];
+                                  updated[idx].short_leave_1_minutes = Number(e.target.value);
+                                  setShiftConfigForm({ ...shiftConfigForm, shifts: updated });
+                                }}
+                                style={{ flex: 1, padding: '0.45rem 0.5rem', borderRadius: '6px', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', color: 'var(--text-primary)', fontSize: '0.8rem' }}
+                              />
+                              <input
+                                type="number"
+                                min="0"
+                                max="10"
+                                placeholder="Quota/mo"
+                                value={shift.short_leave_1_quota}
+                                onChange={(e) => {
+                                  const updated = [...shiftConfigForm.shifts];
+                                  updated[idx].short_leave_1_quota = Number(e.target.value);
+                                  setShiftConfigForm({ ...shiftConfigForm, shifts: updated });
+                                }}
+                                style={{ width: '80px', padding: '0.45rem 0.5rem', borderRadius: '6px', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', color: 'var(--text-primary)', fontSize: '0.8rem' }}
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
+                              Short Leave 2 Mins & Quota
+                            </label>
+                            <div style={{ display: 'flex', gap: '0.4rem' }}>
+                              <input
+                                type="number"
+                                min="30"
+                                max="240"
+                                placeholder="Minutes"
+                                value={shift.short_leave_2_minutes}
+                                onChange={(e) => {
+                                  const updated = [...shiftConfigForm.shifts];
+                                  updated[idx].short_leave_2_minutes = Number(e.target.value);
+                                  setShiftConfigForm({ ...shiftConfigForm, shifts: updated });
+                                }}
+                                style={{ flex: 1, padding: '0.45rem 0.5rem', borderRadius: '6px', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', color: 'var(--text-primary)', fontSize: '0.8rem' }}
+                              />
+                              <input
+                                type="number"
+                                min="0"
+                                max="10"
+                                placeholder="Quota/mo"
+                                value={shift.short_leave_2_quota}
+                                onChange={(e) => {
+                                  const updated = [...shiftConfigForm.shifts];
+                                  updated[idx].short_leave_2_quota = Number(e.target.value);
+                                  setShiftConfigForm({ ...shiftConfigForm, shifts: updated });
+                                }}
+                                style={{ width: '80px', padding: '0.45rem 0.5rem', borderRadius: '6px', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', color: 'var(--text-primary)', fontSize: '0.8rem' }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                      </div>
+                    ))}
+
+                    {/* Add Shift Button */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newShift = {
+                          id: `shift_${Date.now()}`,
+                          shift_code: `SHIFT_${shiftConfigForm.shifts.length + 1}`,
+                          shift_name: `Shift ${shiftConfigForm.shifts.length + 1}`,
+                          is_default: false,
+                          start_time: '09:00',
+                          end_time: '18:30',
+                          grace_minutes: 5,
+                          short_leave_1_name: '20-Minute Short Leave',
+                          short_leave_1_minutes: 20,
+                          short_leave_1_quota: 2,
+                          short_leave_2_name: '2-Hour Short Leave',
+                          short_leave_2_minutes: 120,
+                          short_leave_2_quota: 2,
+                          min_half_day_minutes: 270,
+                          min_full_day_minutes: 450
+                        };
+                        setShiftConfigForm({
+                          ...shiftConfigForm,
+                          shifts: [...shiftConfigForm.shifts, newShift]
+                        });
+                      }}
+                      style={{
+                        padding: '0.6rem 1rem',
+                        borderRadius: '8px',
+                        border: '1px dashed var(--accent-color)',
+                        background: 'rgba(37,99,235,0.05)',
+                        color: 'var(--accent-color)',
+                        fontSize: '0.84rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '0.4rem'
+                      }}
+                    >
+                      <Plus size={16} /> Add Another Shift
+                    </button>
+                  </div>
+
+                  {/* Actions */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.75rem', borderTop: '1px solid var(--border-light)', paddingTop: '1rem' }}>
+                    <button
+                      type="button"
+                      onClick={() => setShowShiftConfigModal(false)}
+                      style={{
+                        padding: '0.55rem 1rem',
+                        borderRadius: '8px',
+                        border: '1px solid var(--border-light)',
+                        background: 'var(--bg-primary)',
+                        color: 'var(--text-primary)',
+                        fontSize: '0.85rem',
+                        fontWeight: 600,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={savingShiftConfig}
+                      style={{
+                        padding: '0.55rem 1.25rem',
+                        borderRadius: '8px',
+                        border: 'none',
+                        background: 'var(--accent-color)',
+                        color: '#ffffff',
+                        fontSize: '0.85rem',
+                        fontWeight: 700,
+                        cursor: savingShiftConfig ? 'not-allowed' : 'pointer',
+                        boxShadow: '0 2px 8px rgba(37,99,235,0.3)'
+                      }}
+                    >
+                      {savingShiftConfig ? 'Saving Changes...' : 'Save Shift Policy'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+        </div>
+      )}
+
+      {/* ========================================================================================= */}
+      {/* TAB 7: COMPANY LEAVE POLICY & CPL RULES */}
+      {/* ========================================================================================= */}
+      {activeTab === 'leave_policy' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          
+          {/* Header Banner */}
+          <div className="card" style={{
+            padding: '1.5rem',
+            background: 'linear-gradient(135deg, var(--bg-surface) 0%, rgba(16, 185, 129, 0.08) 100%)',
+            border: '1px solid var(--border-light)',
+            borderRadius: '16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '1rem'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+              <div style={{
+                width: '48px',
+                height: '48px',
+                borderRadius: '12px',
+                background: '#10b981',
+                color: '#ffffff',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)'
+              }}>
+                <Award size={26} />
+              </div>
+              <div>
+                <h2 style={{ fontSize: '1.3rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
+                  Official Company Leave & CPL Policy
+                </h2>
+                <p style={{ fontSize: '0.84rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0 0' }}>
+                  {selectedLeaveCompany} Enterprise Leave Rules: CL, SL, 1-Year EL Probation Lock, CPL Accrual, Sandwich & Weekly Off Policies
+                </p>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+              {(isAdmin || isMasterAdmin) && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <Building size={15} style={{ color: 'var(--text-secondary)' }} />
+                  <select
+                    value={selectedLeaveCompany}
+                    onChange={(e) => setSelectedLeaveCompany(e.target.value)}
+                    style={{
+                      padding: '0.45rem 0.75rem',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border-light)',
+                      background: 'var(--bg-primary)',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.82rem',
+                      fontWeight: 600,
+                      outline: 'none'
+                    }}
+                    title="Select Company / Tenant"
+                  >
+                    <option value="New Swan Group">New Swan Group</option>
+                    <option value="SuPuja Creations">SuPuja Creations</option>
+                    <option value="Testing New Swan Group">Testing New Swan Group</option>
+                  </select>
+                </div>
+              )}
+
+              {(isAdmin || isMasterAdmin) && (
+                <button
+                  type="button"
+                  disabled={savingLeavePolicy}
+                  onClick={handleSaveLeavePolicy}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.4rem',
+                    padding: '0.45rem 0.95rem',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: '#10b981',
+                    color: '#ffffff',
+                    fontSize: '0.82rem',
+                    fontWeight: 700,
+                    cursor: savingLeavePolicy ? 'not-allowed' : 'pointer',
+                    boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)'
+                  }}
+                  title="Save Company Leave Policy"
+                >
+                  <ShieldCheck size={15} /> {savingLeavePolicy ? 'Saving...' : 'Save Policy'}
+                </button>
+              )}
+
+              <span style={{ fontSize: '0.8rem', padding: '0.35rem 0.85rem', borderRadius: '20px', background: 'rgba(16, 185, 129, 0.15)', color: '#059669', fontWeight: 700, border: '1px solid rgba(16, 185, 129, 0.3)' }}>
+                🌴 Active for {selectedLeaveCompany}
+              </span>
+            </div>
+          </div>
+
+          {/* Admin/HOD Policy Configurator Card */}
+              {isHodOrManager ? (
+                <div className="card" style={{ padding: '1.5rem', background: 'var(--bg-surface)', borderRadius: '16px', border: '1px solid var(--border-light)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                      <Settings size={22} color="var(--accent-color, #2563eb)" />
+                      <div>
+                        <h3 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0 }}>Company Leave Policy & Quota Settings ({selectedLeaveCompany})</h3>
+                        <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0.15rem 0 0 0' }}>
+                          Configure annual leave quotas, EL 1-year probation lock-in, CPL earning & validity rules, and weekly attendance rules.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <form onSubmit={handleSaveLeavePolicy} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                    {/* Section 1: Core Annual Quotas */}
+                    <div>
+                      <h4 style={{ fontSize: '0.9rem', fontWeight: 700, margin: '0 0 0.75rem 0', color: 'var(--text-primary)' }}>1. Annual Leave Quotas & Entitlements</h4>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
+                        <div>
+                          <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>
+                            Casual Leave (CL) Quota (Days/Year)
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            max="30"
+                            value={leavePolicyForm.cl_quota_annual}
+                            onChange={(e) => setLeavePolicyForm({ ...leavePolicyForm, cl_quota_annual: e.target.value })}
+                            style={{ width: '100%', padding: '0.5rem 0.75rem', borderRadius: '8px', border: '1px solid var(--border-light)', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontSize: '0.85rem' }}
+                          />
+                          <span style={{ fontSize: '0.7rem', color: '#16a34a' }}>Unlocked from Day-1 of joining</span>
+                        </div>
+
+                        <div>
+                          <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>
+                            Sick Leave (SL) Quota (Days/Year)
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            max="30"
+                            value={leavePolicyForm.sl_quota_annual}
+                            onChange={(e) => setLeavePolicyForm({ ...leavePolicyForm, sl_quota_annual: e.target.value })}
+                            style={{ width: '100%', padding: '0.5rem 0.75rem', borderRadius: '8px', border: '1px solid var(--border-light)', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontSize: '0.85rem' }}
+                          />
+                          <span style={{ fontSize: '0.7rem', color: '#16a34a' }}>Medical and health emergencies</span>
+                        </div>
+
+                        <div>
+                          <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>
+                            Earned Leave (EL) Quota (Days/Year)
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            max="45"
+                            value={leavePolicyForm.el_quota_annual}
+                            onChange={(e) => setLeavePolicyForm({ ...leavePolicyForm, el_quota_annual: e.target.value })}
+                            style={{ width: '100%', padding: '0.5rem 0.75rem', borderRadius: '8px', border: '1px solid var(--border-light)', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontSize: '0.85rem' }}
+                          />
+                          <span style={{ fontSize: '0.7rem', color: '#9333ea' }}>Annual privilege leave accumulation</span>
+                        </div>
+
+                        <div>
+                          <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>
+                            EL Probation Lock-in (Months)
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            max="24"
+                            value={leavePolicyForm.el_lockin_months}
+                            onChange={(e) => setLeavePolicyForm({ ...leavePolicyForm, el_lockin_months: e.target.value })}
+                            style={{ width: '100%', padding: '0.5rem 0.75rem', borderRadius: '8px', border: '1px solid var(--border-light)', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontSize: '0.85rem' }}
+                          />
+                          <span style={{ fontSize: '0.7rem', color: '#d97706' }}>Blocked for first 12 months (probation)</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Section 2: Compensatory Off (CPL) Policy */}
+                    <div style={{ borderTop: '1px dashed var(--border-light)', paddingTop: '1rem' }}>
+                      <h4 style={{ fontSize: '0.9rem', fontWeight: 700, margin: '0 0 0.75rem 0', color: 'var(--text-primary)' }}>2. Compensatory Off (CPL) Earning & Expiry Rules</h4>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
+                        <div>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)', cursor: 'pointer', marginBottom: '0.4rem' }}>
+                            <input
+                              type="checkbox"
+                              checked={leavePolicyForm.cpl_enabled}
+                              onChange={(e) => setLeavePolicyForm({ ...leavePolicyForm, cpl_enabled: e.target.checked })}
+                            />
+                            Enable Compensatory Off (CPL)
+                          </label>
+                          <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>Allows employees to earn and avail comp-off days</span>
+                        </div>
+
+                        <div>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)', cursor: 'pointer', marginBottom: '0.4rem' }}>
+                            <input
+                              type="checkbox"
+                              checked={leavePolicyForm.cpl_auto_sunday}
+                              onChange={(e) => setLeavePolicyForm({ ...leavePolicyForm, cpl_auto_sunday: e.target.checked })}
+                            />
+                            Auto-credit CPL on Sunday / Holiday Work
+                          </label>
+                          <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>Automatically awards CPL credit when working on weekly offs</span>
+                        </div>
+
+                        <div>
+                          <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>
+                            CPL Validity Window (Days)
+                          </label>
+                          <input
+                            type="number"
+                            min="15"
+                            max="365"
+                            value={leavePolicyForm.cpl_validity_days}
+                            onChange={(e) => setLeavePolicyForm({ ...leavePolicyForm, cpl_validity_days: e.target.value })}
+                            style={{ width: '100%', padding: '0.5rem 0.75rem', borderRadius: '8px', border: '1px solid var(--border-light)', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontSize: '0.85rem' }}
+                          />
+                          <span style={{ fontSize: '0.7rem', color: '#4f46e5' }}>CPL expires after 60 days if unavailed</span>
+                        </div>
+
+                        <div>
+                          <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>
+                            Min Hours for 1 CPL / 0.5 CPL
+                          </label>
+                          <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                            <input
+                              type="number"
+                              step="0.5"
+                              value={leavePolicyForm.cpl_min_hours_full}
+                              onChange={(e) => setLeavePolicyForm({ ...leavePolicyForm, cpl_min_hours_full: e.target.value })}
+                              style={{ width: '50%', padding: '0.5rem 0.75rem', borderRadius: '8px', border: '1px solid var(--border-light)', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontSize: '0.85rem' }}
+                              placeholder="Full (8h)"
+                            />
+                            <input
+                              type="number"
+                              step="0.5"
+                              value={leavePolicyForm.cpl_min_hours_half}
+                              onChange={(e) => setLeavePolicyForm({ ...leavePolicyForm, cpl_min_hours_half: e.target.value })}
+                              style={{ width: '50%', padding: '0.5rem 0.75rem', borderRadius: '8px', border: '1px solid var(--border-light)', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontSize: '0.85rem' }}
+                              placeholder="Half (4.5h)"
+                            />
+                          </div>
+                          <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>Full day hours (8h) / Half day hours (4.5h)</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Section 3: Sunday & Sandwich Rules */}
+                    <div style={{ borderTop: '1px dashed var(--border-light)', paddingTop: '1rem' }}>
+                      <h4 style={{ fontSize: '0.9rem', fontWeight: 700, margin: '0 0 0.75rem 0', color: 'var(--text-primary)' }}>3. Weekly Attendance & Sandwich Rule Enforcement</h4>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
+                        <div style={{ padding: '0.85rem', background: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)', cursor: 'pointer', marginBottom: '0.4rem' }}>
+                            <input
+                              type="checkbox"
+                              checked={leavePolicyForm.enable_min_weekly_days_for_sunday}
+                              onChange={(e) => setLeavePolicyForm({ ...leavePolicyForm, enable_min_weekly_days_for_sunday: e.target.checked })}
+                            />
+                            Require Min 3 Working Days for Paid Sunday
+                          </label>
+                          <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: '0 0 0.4rem 0', lineHeight: 1.4 }}>
+                            If employee takes &gt; 3 days leave in a week, Sunday weekly off is deducted as unpaid. (Optional policy toggle).
+                          </p>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Min Days:</span>
+                            <input
+                              type="number"
+                              min="1"
+                              max="6"
+                              value={leavePolicyForm.min_weekly_working_days}
+                              onChange={(e) => setLeavePolicyForm({ ...leavePolicyForm, min_weekly_working_days: e.target.value })}
+                              style={{ width: '70px', padding: '0.35rem 0.5rem', borderRadius: '6px', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', color: 'var(--text-primary)', fontSize: '0.82rem' }}
+                            />
+                          </div>
+                        </div>
+
+                        <div style={{ padding: '0.85rem', background: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)', cursor: 'pointer', marginBottom: '0.4rem' }}>
+                            <input
+                              type="checkbox"
+                              checked={leavePolicyForm.enable_sandwich_rule}
+                              onChange={(e) => setLeavePolicyForm({ ...leavePolicyForm, enable_sandwich_rule: e.target.checked })}
+                            />
+                            Sandwich Rule on Unapproved Leaves
+                          </label>
+                          <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: '0 0 0.4rem 0', lineHeight: 1.4 }}>
+                            Deducts weekend as unpaid if employee is absent without prior approved leave on both Saturday and Monday.
+                          </p>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Mode:</span>
+                            <select
+                              value={leavePolicyForm.sandwich_mode}
+                              onChange={(e) => setLeavePolicyForm({ ...leavePolicyForm, sandwich_mode: e.target.value })}
+                              style={{ padding: '0.35rem 0.5rem', borderRadius: '6px', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', color: 'var(--text-primary)', fontSize: '0.82rem' }}
+                            >
+                              <option value="UNAPPROVED_ONLY">Unapproved Leaves Only (Approved CL/SL protected)</option>
+                              <option value="STRICT">Strict (All Leaves sandwich weekend)</option>
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Submit Button */}
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+                      <button
+                        type="submit"
+                        disabled={savingLeavePolicy}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.4rem',
+                          padding: '0.65rem 1.4rem',
+                          borderRadius: '8px',
+                          border: 'none',
+                          background: 'var(--accent-color, #2563eb)',
+                          color: '#ffffff',
+                          fontWeight: 700,
+                          fontSize: '0.88rem',
+                          cursor: savingLeavePolicy ? 'not-allowed' : 'pointer',
+                          boxShadow: '0 2px 8px rgba(37, 99, 235, 0.3)'
+                        }}
+                      >
+                        <Check size={16} /> {savingLeavePolicy ? 'Saving Changes...' : 'Save Leave Policy'}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              ) : null}
+
+              {/* Employee Handbook & Guidelines Cards */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
+                <div className="card" style={{ padding: '1.25rem', background: 'var(--bg-surface)', borderRadius: '14px', border: '1px solid var(--border-light)', borderTop: '3px solid #2563eb' }}>
+                  <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.95rem', fontWeight: 700, color: '#2563eb' }}>Casual Leave (CL) Guidelines</h4>
+                  <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                    8 days annual entitlement. Unlocked on Day-1 of joining. Used for urgent personal matters, festivals, or family events with prior intimation to HOD.
+                  </p>
+                </div>
+
+                <div className="card" style={{ padding: '1.25rem', background: 'var(--bg-surface)', borderRadius: '14px', border: '1px solid var(--border-light)', borderTop: '3px solid #16a34a' }}>
+                  <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.95rem', fontWeight: 700, color: '#16a34a' }}>Sick Leave (SL) Guidelines</h4>
+                  <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                    6 days annual entitlement. Unlocked on Day-1 of joining for medical illnesses and unexpected health recovery. HOD may request medical certificate for absences &gt; 2 days.
+                  </p>
+                </div>
+
+                <div className="card" style={{ padding: '1.25rem', background: 'var(--bg-surface)', borderRadius: '14px', border: '1px solid var(--border-light)', borderTop: '3px solid #9333ea' }}>
+                  <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.95rem', fontWeight: 700, color: '#9333ea' }}>Earned Leave (EL) & Probation Rules</h4>
+                  <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                    15 days/year accrual. Locked during the 1st year (12 months probation). Unlocks on the 1st work anniversary and remains valid for 3 years, eligible for encashment as per policy.
+                  </p>
+                </div>
+
+                <div className="card" style={{ padding: '1.25rem', background: 'var(--bg-surface)', borderRadius: '14px', border: '1px solid var(--border-light)', borderTop: '3px solid #4f46e5' }}>
+                  <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.95rem', fontWeight: 700, color: '#4f46e5' }}>Compensatory Off (CPL) Policy</h4>
+                  <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                    Earned when working on Sundays or Gazetted Holidays (8h = 1 day, 4.5h = 0.5 day) or granted by HOD. Valid for 60 days from work date. 100% paid when availed.
+                  </p>
+                </div>
+              </div>
+
+              {/* ========================================================================================= */}
+              {/* CONFIGURED COMPANY LEAVE POLICIES MASTER DIRECTORY TABLE */}
+              {/* ========================================================================================= */}
+              <div className="card" style={{
+                padding: '1.25rem',
+                background: 'var(--bg-surface)',
+                borderRadius: '14px',
+                border: '1px solid var(--border-light)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '1rem'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <div style={{
+                      width: '38px',
+                      height: '38px',
+                      borderRadius: '10px',
+                      background: 'rgba(16, 185, 129, 0.12)',
+                      color: '#10b981',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}>
+                      <Building size={20} />
+                    </div>
+                    <div>
+                      <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                        Configured Company Leave Policies Directory
+                      </h3>
+                      <p style={{ margin: '0.15rem 0 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                        Live multi-tenant summary of configured annual leave quotas, CPL accrual rules, and sandwich policies across all entities.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        fetchAllTenantLeavePolicies();
+                        fetchLeavePolicyForCompany(selectedLeaveCompany);
+                      }}
+                      disabled={loadingAllLeavePolicies}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.35rem',
+                        padding: '0.4rem 0.75rem',
+                        borderRadius: '6px',
+                        border: '1px solid var(--border-light)',
+                        background: 'var(--bg-primary)',
+                        color: 'var(--text-secondary)',
+                        fontSize: '0.78rem',
+                        fontWeight: 600,
+                        cursor: loadingAllLeavePolicies ? 'not-allowed' : 'pointer'
+                      }}
+                      title="Refresh Policies"
+                    >
+                      <RefreshCw size={13} className={loadingAllLeavePolicies ? 'spin' : ''} />
+                      Refresh
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ overflowX: 'auto', border: '1px solid var(--border-light)', borderRadius: '10px' }}>
+                  <MobileTableView id="Attendance/AttendanceModule-LeavePoliciesMaster">
+                    <table style={{ width: '100%', minWidth: `${getLeaveTotalWidth()}px`, borderCollapse: 'collapse', fontSize: '0.83rem' }}>
+                      <thead>
+                        <tr style={{ background: 'var(--bg-primary)', borderBottom: '2px solid var(--border-light)', textAlign: 'left' }}>
+                          <th style={{ width: `${leaveColWidths.company}px`, padding: '0.75rem 0.85rem', fontWeight: 700, position: 'relative', boxSizing: 'border-box' }}>
+                            <span>Company / Tenant</span>
+                            <ColumnResizer colKey="company" isResizing={leaveResizingCol === 'company'} onResizeStart={handleLeaveResizeStart} onReset={resetLeaveColWidth} />
+                          </th>
+                          <th style={{ width: `${leaveColWidths.cl_sl}px`, padding: '0.75rem 0.85rem', fontWeight: 700, position: 'relative', boxSizing: 'border-box' }}>
+                            <span>CL & SL Quotas</span>
+                            <ColumnResizer colKey="cl_sl" isResizing={leaveResizingCol === 'cl_sl'} onResizeStart={handleLeaveResizeStart} onReset={resetLeaveColWidth} />
+                          </th>
+                          <th style={{ width: `${leaveColWidths.el}px`, padding: '0.75rem 0.85rem', fontWeight: 700, position: 'relative', boxSizing: 'border-box' }}>
+                            <span>Earned Leave (EL)</span>
+                            <ColumnResizer colKey="el" isResizing={leaveResizingCol === 'el'} onResizeStart={handleLeaveResizeStart} onReset={resetLeaveColWidth} />
+                          </th>
+                          <th style={{ width: `${leaveColWidths.cpl}px`, padding: '0.75rem 0.85rem', fontWeight: 700, position: 'relative', boxSizing: 'border-box' }}>
+                            <span>Comp-Off (CPL)</span>
+                            <ColumnResizer colKey="cpl" isResizing={leaveResizingCol === 'cpl'} onResizeStart={handleLeaveResizeStart} onReset={resetLeaveColWidth} />
+                          </th>
+                          <th style={{ width: `${leaveColWidths.rules}px`, padding: '0.75rem 0.85rem', fontWeight: 700, position: 'relative', boxSizing: 'border-box' }}>
+                            <span>Attendance Rules</span>
+                            <ColumnResizer colKey="rules" isResizing={leaveResizingCol === 'rules'} onResizeStart={handleLeaveResizeStart} onReset={resetLeaveColWidth} />
+                          </th>
+                          <th style={{ width: `${leaveColWidths.updated}px`, padding: '0.75rem 0.85rem', fontWeight: 700, position: 'relative', boxSizing: 'border-box' }}>
+                            <span>Last Updated</span>
+                            <ColumnResizer colKey="updated" isResizing={leaveResizingCol === 'updated'} onResizeStart={handleLeaveResizeStart} onReset={resetLeaveColWidth} />
+                          </th>
+                          <th style={{ width: `${leaveColWidths.actions}px`, padding: '0.75rem 0.85rem', fontWeight: 700, position: 'relative', boxSizing: 'border-box' }}>
+                            <span>Action</span>
+                            <ColumnResizer colKey="actions" isResizing={leaveResizingCol === 'actions'} onResizeStart={handleLeaveResizeStart} onReset={resetLeaveColWidth} />
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {allTenantLeavePolicies.length === 0 ? (
+                          <tr>
+                            <td colSpan={7} style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                              {loadingAllLeavePolicies ? 'Loading configured leave policies...' : 'No leave policies configured yet.'}
+                            </td>
+                          </tr>
+                        ) : (
+                          allTenantLeavePolicies.map((pol) => {
+                            const isSelected = pol.company_name === selectedLeaveCompany;
+                            const lp = pol.leave_policy || {};
+                            const cp = lp.cpl_policy || {};
+
+                            return (
+                              <tr
+                                key={pol.tenant_id}
+                                style={{
+                                  borderBottom: '1px solid var(--border-light)',
+                                  background: isSelected ? 'rgba(16, 185, 129, 0.08)' : 'transparent',
+                                  transition: 'background 0.15s'
+                                }}
+                              >
+                                <td style={{ padding: '0.75rem 0.85rem' }}>
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                      <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+                                        {pol.company_name}
+                                      </span>
+                                      {isSelected && (
+                                        <span style={{
+                                          fontSize: '0.68rem',
+                                          fontWeight: 700,
+                                          padding: '0.15rem 0.45rem',
+                                          borderRadius: '6px',
+                                          background: '#10b981',
+                                          color: '#ffffff'
+                                        }}>
+                                          Active
+                                        </span>
+                                      )}
+                                    </div>
+                                    <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontFamily: 'monospace' }}>
+                                      {pol.tenant_id}
+                                    </span>
+                                  </div>
+                                </td>
+
+                                <td style={{ padding: '0.75rem 0.85rem' }}>
+                                  <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+                                    <span style={{
+                                      fontSize: '0.75rem',
+                                      fontWeight: 700,
+                                      padding: '0.15rem 0.45rem',
+                                      borderRadius: '6px',
+                                      background: 'rgba(37, 99, 235, 0.12)',
+                                      color: '#2563eb'
+                                    }}>
+                                      {lp.cl_quota_annual ?? 8} CL/yr
+                                    </span>
+                                    <span style={{
+                                      fontSize: '0.75rem',
+                                      fontWeight: 700,
+                                      padding: '0.15rem 0.45rem',
+                                      borderRadius: '6px',
+                                      background: 'rgba(22, 163, 74, 0.12)',
+                                      color: '#16a34a'
+                                    }}>
+                                      {lp.sl_quota_annual ?? 6} SL/yr
+                                    </span>
+                                  </div>
+                                </td>
+
+                                <td style={{ padding: '0.75rem 0.85rem' }}>
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                                    <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                                      {lp.el_quota_annual ?? 15} Days/yr
+                                    </span>
+                                    <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
+                                      Lock-in: {lp.el_lockin_months ?? 12}m • Valid: {lp.el_validity_years ?? 3}y
+                                    </span>
+                                  </div>
+                                </td>
+
+                                <td style={{ padding: '0.75rem 0.85rem' }}>
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                                      <span style={{
+                                        display: 'inline-block',
+                                        width: '7px',
+                                        height: '7px',
+                                        borderRadius: '50%',
+                                        background: cp.enabled !== false ? '#10b981' : '#ef4444'
+                                      }} />
+                                      <span style={{ fontWeight: 600, color: cp.enabled !== false ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
+                                        {cp.enabled !== false ? `Active (${cp.validity_days ?? 60}d)` : 'Disabled'}
+                                      </span>
+                                    </div>
+                                    <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
+                                      Full: {cp.min_work_hours_full_cpl ?? 8.0}h • Half: {cp.min_work_hours_half_cpl ?? 4.5}h
+                                      {cp.auto_credit_on_sunday_work !== false ? ' • Sunday Auto' : ''}
+                                    </span>
+                                  </div>
+                                </td>
+
+                                <td style={{ padding: '0.75rem 0.85rem' }}>
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                                    <span style={{ fontSize: '0.76rem', color: 'var(--text-primary)' }}>
+                                      🥪 Sandwich: <strong>{lp.sandwich_mode === 'STRICT' ? 'Strict' : (lp.enable_sandwich_rule !== false ? 'Unapproved' : 'Off')}</strong>
+                                    </span>
+                                    <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
+                                      📅 Sunday: {lp.enable_min_weekly_days_for_sunday ? `Min ${lp.min_weekly_working_days ?? 3}d req` : 'Standard'}
+                                    </span>
+                                  </div>
+                                </td>
+
+                                <td style={{ padding: '0.75rem 0.85rem' }}>
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                                    <span style={{ fontSize: '0.78rem', color: 'var(--text-primary)', fontWeight: 500 }}>
+                                      {pol.updated_at ? new Date(pol.updated_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }) : 'System Default'}
+                                    </span>
+                                    <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                                      By: {pol.updated_by || 'Admin'}
+                                    </span>
+                                  </div>
+                                </td>
+
+                                <td style={{ padding: '0.75rem 0.85rem' }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedLeaveCompany(pol.company_name);
+                                      fetchLeavePolicyForCompany(pol.company_name);
+                                      if (typeof window !== 'undefined') {
+                                        window.scrollTo({ top: 300, behavior: 'smooth' });
+                                      }
+                                    }}
+                                    style={{
+                                      padding: '0.35rem 0.65rem',
+                                      borderRadius: '6px',
+                                      border: '1px solid var(--border-light)',
+                                      background: isSelected ? 'var(--accent-color, #2563eb)' : 'var(--bg-primary)',
+                                      color: isSelected ? '#ffffff' : 'var(--text-primary)',
+                                      fontSize: '0.75rem',
+                                      fontWeight: 600,
+                                      cursor: 'pointer',
+                                      transition: 'all 0.15s'
+                                    }}
+                                  >
+                                    {isSelected ? 'Editing Now' : 'Select to Edit'}
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </MobileTableView>
+                </div>
+              </div>
+
+        </div>
+      )}
+
+      {/* ========================================================================================= */}
+      {/* TAB 8: OFFICE GEOFENCING & GPS BOUNDARY POLICY */}
+      {/* ========================================================================================= */}
+      {activeTab === 'geofencing' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          
+          {/* Header Banner with Multi-Tenant & Branch Selectors */}
+          <div className="card" style={{
+            padding: '1.5rem',
+            background: 'linear-gradient(135deg, var(--bg-surface) 0%, rgba(14, 165, 233, 0.08) 100%)',
+            border: '1px solid var(--border-light)',
+            borderRadius: '16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '1rem'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+              <div style={{
+                width: '48px',
+                height: '48px',
+                borderRadius: '12px',
+                background: '#0ea5e9',
+                color: '#ffffff',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 4px 12px rgba(14, 165, 233, 0.3)'
+              }}>
+                <MapPin size={26} />
+              </div>
+              <div>
+                <h2 style={{ fontSize: '1.3rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
+                  Office GPS Geofencing & Boundary Rules
+                </h2>
+                <p style={{ fontSize: '0.84rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0 0' }}>
+                  {tenantShiftPolicy?.company_name || selectedShiftPolicyCompany} Enterprise Guidelines • {selectedShiftPolicyBranch}
+                </p>
+              </div>
+            </div>
+
+            {/* Tenant, Branch & Save Controls */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+              {(isAdmin || isMasterAdmin) && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <Building size={15} style={{ color: 'var(--text-secondary)' }} />
+                  <select
+                    value={selectedShiftPolicyCompany}
+                    onChange={(e) => {
+                      setSelectedShiftPolicyCompany(e.target.value);
+                      setSelectedShiftPolicyBranch('All Branches');
+                    }}
+                    style={{
+                      padding: '0.45rem 0.75rem',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border-light)',
+                      background: 'var(--bg-primary)',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.82rem',
+                      fontWeight: 600,
+                      outline: 'none'
+                    }}
+                    title="Select Company / Tenant"
+                  >
+                    <option value="New Swan Group">New Swan Group</option>
+                    <option value="SuPuja Creations">SuPuja Creations</option>
+                    <option value="Testing New Swan Group">Testing New Swan Group</option>
+                  </select>
+                </div>
+              )}
+
+              {/* Branch / Plant Selector */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <MapPin size={15} style={{ color: 'var(--text-secondary)' }} />
+                <select
+                  value={selectedShiftPolicyBranch}
+                  onChange={(e) => setSelectedShiftPolicyBranch(e.target.value)}
+                  style={{
+                    padding: '0.45rem 0.75rem',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-light)',
+                    background: 'var(--bg-primary)',
+                    color: 'var(--text-primary)',
+                    fontSize: '0.82rem',
+                    fontWeight: 600,
+                    outline: 'none'
+                  }}
+                  title="Select Branch / Plant"
+                >
+                  <option value="All Branches">All Branches (Default)</option>
+                  {availablePolicyBranches.map((b) => {
+                    const bName = typeof b === 'string' ? b : (b.name || b.branch_name || b.code);
+                    return <option key={b.id || bName} value={bName}>{bName}</option>;
+                  })}
+                </select>
+              </div>
+
+              {(isAdmin || isMasterAdmin) && (
+                <button
+                  type="button"
+                  disabled={savingGeofence}
+                  onClick={handleSaveGeofencePolicy}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.4rem',
+                    padding: '0.45rem 0.95rem',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: '#0ea5e9',
+                    color: '#ffffff',
+                    fontSize: '0.82rem',
+                    fontWeight: 700,
+                    cursor: savingGeofence ? 'not-allowed' : 'pointer',
+                    boxShadow: '0 2px 6px rgba(14, 165, 233, 0.3)'
+                  }}
+                  title="Save Geofence Policy"
+                >
+                  <ShieldCheck size={15} /> {savingGeofence ? 'Saving...' : 'Save Geofence Policy'}
+                </button>
+              )}
+
+              <span style={{
+                fontSize: '0.8rem',
+                padding: '0.35rem 0.85rem',
+                borderRadius: '20px',
+                background: geofenceSettings.enable_geofence ? 'rgba(22, 163, 74, 0.15)' : 'rgba(100, 116, 139, 0.15)',
+                color: geofenceSettings.enable_geofence ? '#16a34a' : '#64748b',
+                fontWeight: 700,
+                border: geofenceSettings.enable_geofence ? '1px solid rgba(22, 163, 74, 0.3)' : '1px solid rgba(100, 116, 139, 0.3)'
+              }}>
+                {geofenceSettings.enable_geofence ? '🟢 Geofencing Active' : '⚪ Geofencing Disabled'}
+              </span>
+            </div>
+          </div>
+
+          {/* Toast Notification */}
+          {geofenceToast && (
+            <div style={{
+              padding: '0.75rem 1rem',
+              borderRadius: '8px',
+              fontSize: '0.85rem',
+              fontWeight: 600,
+              background: geofenceToast.type === 'success' ? 'rgba(22, 163, 74, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+              color: geofenceToast.type === 'success' ? '#16a34a' : '#ef4444',
+              border: geofenceToast.type === 'success' ? '1px solid rgba(22, 163, 74, 0.3)' : '1px solid rgba(239, 68, 68, 0.3)'
+            }}>
+              {geofenceToast.message}
+            </div>
+          )}
+
+          {/* Master Controls & Policy Configuration Cards */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(310px, 1fr))', gap: '1.25rem' }}>
+            
+            {/* Card 1: Master Geofencing Enforcement */}
+            <div className="card" style={{ padding: '1.25rem 1.5rem', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+                <span style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  1. GPS Geofence Enforcement
+                </span>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={geofenceSettings.enable_geofence}
+                    onChange={(e) => setGeofenceSettings({ ...geofenceSettings, enable_geofence: e.target.checked })}
+                    style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                  />
+                  <span style={{ fontSize: '0.8rem', fontWeight: 700, color: geofenceSettings.enable_geofence ? '#16a34a' : 'var(--text-secondary)' }}>
+                    {geofenceSettings.enable_geofence ? 'ENABLED' : 'DISABLED'}
+                  </span>
+                </label>
+              </div>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.45 }}>
+                When enabled, mobile & browser check-ins are verified against the physical GPS perimeter of configured office campuses.
+              </p>
+            </div>
+
+            {/* Card 2: GPS Hardware Requirement Mode */}
+            <div className="card" style={{ padding: '1.25rem 1.5rem', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '16px' }}>
+              <span style={{ display: 'block', fontSize: '0.92rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.5rem' }}>
+                2. Device GPS Capture Mode
+              </span>
+              <select
+                value={geofenceSettings.require_gps}
+                onChange={(e) => setGeofenceSettings({ ...geofenceSettings, require_gps: e.target.value })}
+                style={{
+                  width: '100%',
+                  padding: '0.5rem 0.75rem',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-light)',
+                  background: 'var(--bg-primary)',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.84rem',
+                  fontWeight: 600,
+                  outline: 'none',
+                  marginBottom: '0.4rem'
+                }}
+              >
+                <option value="OFF">OFF — GPS Capture Disabled</option>
+                <option value="AUTO">AUTO — Auto-capture GPS (Recommended with fallback)</option>
+                <option value="ON">ON — Strict Mandatory GPS (Blocks punch without location)</option>
+              </select>
+              <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.4 }}>
+                {geofenceSettings.require_gps === 'ON' ? '⚠️ Strict Mode: Punch will fail if employee denies GPS permission.' : 'Graceful Mode: Device GPS captured in background without blocking offline work.'}
+              </p>
+            </div>
+
+            {/* Card 3: Boundary Violation Action */}
+            <div className="card" style={{ padding: '1.25rem 1.5rem', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '16px' }}>
+              <span style={{ display: 'block', fontSize: '0.92rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.5rem' }}>
+                3. Outside Boundary Violation Rule
+              </span>
+              <select
+                value={geofenceSettings.geofence_mode}
+                onChange={(e) => setGeofenceSettings({ ...geofenceSettings, geofence_mode: e.target.value })}
+                style={{
+                  width: '100%',
+                  padding: '0.5rem 0.75rem',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-light)',
+                  background: 'var(--bg-primary)',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.84rem',
+                  fontWeight: 600,
+                  outline: 'none',
+                  marginBottom: '0.4rem'
+                }}
+              >
+                <option value="STRICT_BLOCK">STRICT BLOCK — Block punch if outside office radius</option>
+                <option value="FLAG_OUTSIDE">FLAG OUTSIDE — Allow punch with [Outside Geofence] flag</option>
+              </select>
+              <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.4 }}>
+                {geofenceSettings.geofence_mode === 'STRICT_BLOCK' ? '🚫 Punch is strictly rejected until employee arrives on campus.' : '⚠️ Allows punch for field staff or remote work, but flags distance in attendance logs.'}
+              </p>
+            </div>
+
+          </div>
+
+          {/* Live Device GPS Tester Card */}
+          <div className="card" style={{
+            padding: '1.25rem 1.5rem',
+            background: 'var(--bg-surface)',
+            border: '1px solid var(--border-light)',
+            borderRadius: '16px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Navigation size={18} color="#0ea5e9" />
+                  <h3 style={{ fontSize: '1rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
+                    Live GPS Terminal & Boundary Tester
+                  </h3>
+                </div>
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0 0' }}>
+                  Test your device GPS receiver right now to verify live coordinates and distance calculation against office campuses.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                disabled={testingGps}
+                onClick={handleTestLiveGPS}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  padding: '0.45rem 1rem',
+                  borderRadius: '8px',
+                  border: '1px solid #0ea5e9',
+                  background: 'rgba(14, 165, 233, 0.1)',
+                  color: '#0ea5e9',
+                  fontSize: '0.82rem',
+                  fontWeight: 700,
+                  cursor: testingGps ? 'not-allowed' : 'pointer'
+                }}
+              >
+                <MapPin size={15} /> {testingGps ? 'Capturing GPS...' : '📍 Test My Current GPS Location'}
+              </button>
+            </div>
+
+            {liveGpsResult && (
+              <div style={{
+                marginTop: '1rem',
+                padding: '1rem',
+                borderRadius: '12px',
+                border: '1px solid var(--border-light)',
+                background: liveGpsResult.success ? 'var(--bg-primary)' : 'rgba(239, 68, 68, 0.08)'
+              }}>
+                {liveGpsResult.success ? (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.75rem', fontSize: '0.82rem' }}>
+                    <div>
+                      <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '0.74rem' }}>DEVICE GPS COORDINATES</span>
+                      <strong style={{ color: 'var(--text-primary)' }}>{Number(liveGpsResult.latitude).toFixed(5)}, {Number(liveGpsResult.longitude).toFixed(5)}</strong>
+                      <span style={{ color: 'var(--text-secondary)', marginLeft: '0.4rem', fontSize: '0.74rem' }}>(±{liveGpsResult.accuracy}m)</span>
+                    </div>
+
+                    <div>
+                      <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '0.74rem' }}>NEAREST OFFICE CAMPUS</span>
+                      <strong style={{ color: 'var(--text-primary)' }}>
+                        {liveGpsResult.nearestOffice ? liveGpsResult.nearestOffice.name : 'No office locations configured yet'}
+                      </strong>
+                    </div>
+
+                    <div>
+                      <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '0.74rem' }}>CALCULATED DISTANCE</span>
+                      {liveGpsResult.minDistance !== null ? (
+                        <strong style={{ color: liveGpsResult.isWithin ? '#16a34a' : '#ea580c' }}>
+                          {liveGpsResult.minDistance} Meters Away
+                        </strong>
+                      ) : (
+                        <span style={{ color: 'var(--text-secondary)' }}>N/A</span>
+                      )}
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                      {liveGpsResult.isWithin !== null && (
+                        <span style={{
+                          padding: '0.3rem 0.65rem',
+                          borderRadius: '8px',
+                          fontWeight: 700,
+                          fontSize: '0.78rem',
+                          background: liveGpsResult.isWithin ? 'rgba(22, 163, 74, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                          color: liveGpsResult.isWithin ? '#16a34a' : '#ef4444'
+                        }}>
+                          {liveGpsResult.isWithin ? '✅ Inside Allowed Boundary' : '🚫 Outside Boundary Radius'}
+                        </span>
+                      )}
+                      {liveGpsResult.mapsUrl && (
+                        <a
+                          href={liveGpsResult.mapsUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{ color: '#0ea5e9', fontWeight: 600, fontSize: '0.78rem', textDecoration: 'none' }}
+                        >
+                          Google Maps ↗
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ color: '#ef4444', fontSize: '0.84rem', fontWeight: 600 }}>
+                    ⚠️ {liveGpsResult.error}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Configured Office Geofence Locations Master Table */}
+          <div className="card" style={{ padding: '1.5rem', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                  <Building style={{ color: '#0ea5e9' }} size={20} />
+                  <h3 style={{ fontSize: '1.1rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
+                    Configured Office Geofence Locations
+                  </h3>
+                  <span style={{ fontSize: '0.75rem', padding: '0.2rem 0.6rem', borderRadius: '12px', background: 'rgba(14, 165, 233, 0.1)', color: '#0ea5e9', fontWeight: 700 }}>
+                    {geofenceSettings.geofence_locations.length} {geofenceSettings.geofence_locations.length === 1 ? 'Location' : 'Locations'} Registered
+                  </span>
+                </div>
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: '0.25rem 0 0 0' }}>
+                  Campuses and manufacturing units where employee GPS punches are verified.
+                </p>
+              </div>
+
+              {(isAdmin || isMasterAdmin) && (
+                <button
+                  type="button"
+                  onClick={handleOpenAddLocation}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.4rem',
+                    padding: '0.45rem 0.85rem',
+                    borderRadius: '8px',
+                    border: '1px solid #0ea5e9',
+                    background: 'rgba(14, 165, 233, 0.08)',
+                    color: '#0ea5e9',
+                    fontSize: '0.82rem',
+                    fontWeight: 700,
+                    cursor: 'pointer'
+                  }}
+                >
+                  <Plus size={15} /> Add Office Campus
+                </button>
+              )}
+            </div>
+
+            {geofenceSettings.geofence_locations.length === 0 ? (
+              <div style={{
+                padding: '2.5rem 1rem',
+                textAlign: 'center',
+                background: 'var(--bg-primary)',
+                borderRadius: '12px',
+                border: '1px dashed var(--border-light)'
+              }}>
+                <MapPin size={36} color="var(--text-secondary)" style={{ margin: '0 auto 0.75rem auto', display: 'block', opacity: 0.6 }} />
+                <h4 style={{ margin: '0 0 0.35rem 0', fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  No Office Locations Configured
+                </h4>
+                <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', margin: '0 0 1rem 0' }}>
+                  Add your office or factory coordinates with an allowed boundary radius (e.g. 200m) to enforce attendance geofencing.
+                </p>
+                {(isAdmin || isMasterAdmin) && (
+                  <button
+                    type="button"
+                    onClick={handleOpenAddLocation}
+                    style={{
+                      padding: '0.5rem 1rem',
+                      borderRadius: '8px',
+                      border: 'none',
+                      background: '#0ea5e9',
+                      color: '#ffffff',
+                      fontSize: '0.84rem',
+                      fontWeight: 700,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    + Add First Office Campus
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div style={{ overflowX: 'auto', border: '1px solid var(--border-light)', borderRadius: '10px' }}>
+                <MobileTableView id="Attendance/AttendanceModule-GeofenceMaster">
+                  <table style={{ width: '100%', minWidth: `${getGeofenceTotalWidth()}px`, borderCollapse: 'collapse', fontSize: '0.83rem' }}>
+                    <thead>
+                      <tr style={{ background: 'var(--bg-primary)', borderBottom: '2px solid var(--border-light)', textAlign: 'left' }}>
+                        <th style={{ width: `${geofenceColWidths.name}px`, padding: '0.75rem 0.85rem', fontWeight: 700, position: 'relative', boxSizing: 'border-box' }}>
+                          <span>Campus Name</span>
+                          <ColumnResizer colKey="name" isResizing={geofenceResizingCol === 'name'} onResizeStart={handleGeofenceResizeStart} onReset={resetGeofenceColWidth} />
+                        </th>
+                        <th style={{ width: `${geofenceColWidths.coordinates}px`, padding: '0.75rem 0.85rem', fontWeight: 700, position: 'relative', boxSizing: 'border-box' }}>
+                          <span>GPS Coordinates</span>
+                          <ColumnResizer colKey="coordinates" isResizing={geofenceResizingCol === 'coordinates'} onResizeStart={handleGeofenceResizeStart} onReset={resetGeofenceColWidth} />
+                        </th>
+                        <th style={{ width: `${geofenceColWidths.radius}px`, padding: '0.75rem 0.85rem', fontWeight: 700, position: 'relative', boxSizing: 'border-box' }}>
+                          <span>Allowed Radius</span>
+                          <ColumnResizer colKey="radius" isResizing={geofenceResizingCol === 'radius'} onResizeStart={handleGeofenceResizeStart} onReset={resetGeofenceColWidth} />
+                        </th>
+                        <th style={{ width: `${geofenceColWidths.address}px`, padding: '0.75rem 0.85rem', fontWeight: 700, position: 'relative', boxSizing: 'border-box' }}>
+                          <span>Address / Landmark</span>
+                          <ColumnResizer colKey="address" isResizing={geofenceResizingCol === 'address'} onResizeStart={handleGeofenceResizeStart} onReset={resetGeofenceColWidth} />
+                        </th>
+                        <th style={{ width: `${geofenceColWidths.status}px`, padding: '0.75rem 0.85rem', fontWeight: 700, position: 'relative', boxSizing: 'border-box' }}>
+                          <span>Status</span>
+                          <ColumnResizer colKey="status" isResizing={geofenceResizingCol === 'status'} onResizeStart={handleGeofenceResizeStart} onReset={resetGeofenceColWidth} />
+                        </th>
+                        <th style={{ width: `${geofenceColWidths.actions}px`, padding: '0.75rem 0.85rem', fontWeight: 700, position: 'relative', boxSizing: 'border-box' }}>
+                          <span>Actions</span>
+                          <ColumnResizer colKey="actions" isResizing={geofenceResizingCol === 'actions'} onResizeStart={handleGeofenceResizeStart} onReset={resetGeofenceColWidth} />
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {geofenceSettings.geofence_locations.map((loc, idx) => (
+                        <tr key={loc.id || idx} style={{ borderBottom: '1px solid var(--border-light)' }}>
+                          <td style={{ padding: '0.75rem 0.85rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                              <MapPin size={16} color="#0ea5e9" />
+                              <span>{loc.name}</span>
+                            </div>
+                          </td>
+                          <td style={{ padding: '0.75rem 0.85rem' }}>
+                            <a
+                              href={`https://www.google.com/maps?q=${loc.latitude},${loc.longitude}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{ fontFamily: 'monospace', fontWeight: 600, color: '#0ea5e9', textDecoration: 'none' }}
+                            >
+                              {Number(loc.latitude).toFixed(4)}, {Number(loc.longitude).toFixed(4)} ↗
+                            </a>
+                          </td>
+                          <td style={{ padding: '0.75rem 0.85rem', fontWeight: 700, color: '#16a34a' }}>
+                            {loc.radius_meters || 200} Meters
+                          </td>
+                          <td style={{ padding: '0.75rem 0.85rem', color: 'var(--text-secondary)' }}>
+                            {loc.address || '—'}
+                          </td>
+                          <td style={{ padding: '0.75rem 0.85rem' }}>
+                            {loc.is_active !== false ? (
+                              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#16a34a' }}>🟢 Active</span>
+                            ) : (
+                              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>⚪ Inactive</span>
+                            )}
+                          </td>
+                          <td style={{ padding: '0.75rem 0.85rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                              {(isAdmin || isMasterAdmin) && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleEditLocation(idx)}
+                                    style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '0.2rem',
+                                      padding: '0.3rem 0.55rem',
+                                      borderRadius: '6px',
+                                      border: '1px solid var(--border-light)',
+                                      background: 'var(--bg-surface)',
+                                      color: 'var(--text-primary)',
+                                      fontSize: '0.75rem',
+                                      cursor: 'pointer'
+                                    }}
+                                    title="Edit Location"
+                                  >
+                                    <Edit2 size={12} /> Edit
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveLocation(idx)}
+                                    style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      padding: '0.3rem 0.55rem',
+                                      borderRadius: '6px',
+                                      border: '1px solid rgba(239, 68, 68, 0.3)',
+                                      background: 'rgba(239, 68, 68, 0.08)',
+                                      color: '#ef4444',
+                                      fontSize: '0.75rem',
+                                      cursor: 'pointer'
+                                    }}
+                                    title="Remove Location"
+                                  >
+                                    <Trash2 size={12} />
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </MobileTableView>
+              </div>
+            )}
+          </div>
+
+          {/* Add / Edit Office Campus Modal */}
+          {showLocationModal && (
+            <div style={{
+              position: 'fixed',
+              inset: 0,
+              backgroundColor: 'rgba(0,0,0,0.65)',
+              backdropFilter: 'blur(4px)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 9999,
+              padding: '1rem'
+            }}>
+              <div className="card" style={{
+                width: '100%',
+                maxWidth: '560px',
+                background: 'var(--bg-surface)',
+                borderRadius: '16px',
+                border: '1px solid var(--border-light)',
+                padding: '1.5rem',
+                boxShadow: '0 20px 40px rgba(0,0,0,0.35)',
+                maxHeight: '90vh',
+                overflowY: 'auto'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                    <MapPin size={22} color="#0ea5e9" />
+                    <div>
+                      <h3 style={{ fontSize: '1.15rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
+                        {editingLocationIndex !== null ? 'Edit Office Geofence' : 'Add Office Geofence Campus'}
+                      </h3>
+                      <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0.15rem 0 0 0' }}>
+                        Set campus coordinates and allowed check-in radius
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowLocationModal(false)}
+                    style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+
+                <form onSubmit={handleSaveLocationForm} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.35rem' }}>
+                      Campus / Unit Name *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Ludhiana Main Plant (NSMLR)"
+                      value={locationForm.name}
+                      onChange={(e) => setLocationForm({ ...locationForm, name: e.target.value })}
+                      style={{
+                        width: '100%',
+                        padding: '0.55rem 0.75rem',
+                        borderRadius: '8px',
+                        border: '1px solid var(--border-light)',
+                        background: 'var(--bg-primary)',
+                        color: 'var(--text-primary)',
+                        fontSize: '0.85rem'
+                      }}
+                    />
+                  </div>
+
+                  {/* Coordinates with Auto-Detect */}
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                      <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                        GPS Coordinates (Latitude & Longitude) *
+                      </label>
+                      <button
+                        type="button"
+                        onClick={handleFetchCurrentCoordsForForm}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.3rem',
+                          background: 'transparent',
+                          border: 'none',
+                          color: '#0ea5e9',
+                          cursor: 'pointer',
+                          fontSize: '0.78rem',
+                          fontWeight: 700
+                        }}
+                      >
+                        <Navigation size={13} /> Auto-Fill Current Device GPS
+                      </button>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                      <input
+                        type="number"
+                        step="any"
+                        required
+                        placeholder="Latitude (e.g. 30.9010)"
+                        value={locationForm.latitude}
+                        onChange={(e) => setLocationForm({ ...locationForm, latitude: e.target.value })}
+                        style={{
+                          width: '100%',
+                          padding: '0.55rem 0.75rem',
+                          borderRadius: '8px',
+                          border: '1px solid var(--border-light)',
+                          background: 'var(--bg-primary)',
+                          color: 'var(--text-primary)',
+                          fontSize: '0.85rem'
+                        }}
+                      />
+                      <input
+                        type="number"
+                        step="any"
+                        required
+                        placeholder="Longitude (e.g. 75.8573)"
+                        value={locationForm.longitude}
+                        onChange={(e) => setLocationForm({ ...locationForm, longitude: e.target.value })}
+                        style={{
+                          width: '100%',
+                          padding: '0.55rem 0.75rem',
+                          borderRadius: '8px',
+                          border: '1px solid var(--border-light)',
+                          background: 'var(--bg-primary)',
+                          color: 'var(--text-primary)',
+                          fontSize: '0.85rem'
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Allowed Radius */}
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.35rem' }}>
+                      Allowed Check-in Radius (Meters) *
+                    </label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.4rem' }}>
+                      <input
+                        type="number"
+                        min="20"
+                        max="10000"
+                        required
+                        value={locationForm.radius_meters}
+                        onChange={(e) => setLocationForm({ ...locationForm, radius_meters: Number(e.target.value) })}
+                        style={{
+                          width: '120px',
+                          padding: '0.55rem 0.75rem',
+                          borderRadius: '8px',
+                          border: '1px solid var(--border-light)',
+                          background: 'var(--bg-primary)',
+                          color: 'var(--text-primary)',
+                          fontSize: '0.85rem',
+                          fontWeight: 700
+                        }}
+                      />
+                      <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>Meters</span>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                      {[100, 200, 300, 500, 1000].map((r) => (
+                        <button
+                          key={r}
+                          type="button"
+                          onClick={() => setLocationForm({ ...locationForm, radius_meters: r })}
+                          style={{
+                            padding: '0.25rem 0.6rem',
+                            borderRadius: '6px',
+                            border: locationForm.radius_meters === r ? '1px solid #0ea5e9' : '1px solid var(--border-light)',
+                            background: locationForm.radius_meters === r ? 'rgba(14, 165, 233, 0.15)' : 'var(--bg-primary)',
+                            color: locationForm.radius_meters === r ? '#0ea5e9' : 'var(--text-secondary)',
+                            fontSize: '0.76rem',
+                            fontWeight: 600,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {r}m {r === 200 ? '(Recommended)' : ''}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Address */}
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.35rem' }}>
+                      Plant Address / Landmark
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Focal Point Phase V, Ludhiana"
+                      value={locationForm.address}
+                      onChange={(e) => setLocationForm({ ...locationForm, address: e.target.value })}
+                      style={{
+                        width: '100%',
+                        padding: '0.55rem 0.75rem',
+                        borderRadius: '8px',
+                        border: '1px solid var(--border-light)',
+                        background: 'var(--bg-primary)',
+                        color: 'var(--text-primary)',
+                        fontSize: '0.85rem'
+                      }}
+                    />
+                  </div>
+
+                  {/* Active Status */}
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer', fontSize: '0.84rem', fontWeight: 600 }}>
+                    <input
+                      type="checkbox"
+                      checked={locationForm.is_active}
+                      onChange={(e) => setLocationForm({ ...locationForm, is_active: e.target.checked })}
+                      style={{ width: '16px', height: '16px' }}
+                    />
+                    Location is Active
+                  </label>
+
+                  {/* Actions */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.75rem', borderTop: '1px solid var(--border-light)', paddingTop: '1rem' }}>
+                    <button
+                      type="button"
+                      onClick={() => setShowLocationModal(false)}
+                      style={{
+                        padding: '0.55rem 1rem',
+                        borderRadius: '8px',
+                        border: '1px solid var(--border-light)',
+                        background: 'var(--bg-primary)',
+                        color: 'var(--text-primary)',
+                        fontSize: '0.85rem',
+                        fontWeight: 600,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      style={{
+                        padding: '0.55rem 1.25rem',
+                        borderRadius: '8px',
+                        border: 'none',
+                        background: '#0ea5e9',
+                        color: '#ffffff',
+                        fontSize: '0.85rem',
+                        fontWeight: 700,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {editingLocationIndex !== null ? 'Save Changes' : 'Add Campus'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
 
         </div>
       )}
@@ -4266,6 +8711,761 @@ export default function AttendanceModule({
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* Modal 1: Apply Leave Modal */}
+      {showApplyLeaveModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.65)',
+          zIndex: 9999,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '1rem',
+          backdropFilter: 'blur(3px)'
+        }}>
+          <div className="card" style={{
+            background: 'var(--bg-surface)',
+            border: '1px solid var(--border-light)',
+            borderRadius: '16px',
+            padding: '1.5rem',
+            maxWidth: '560px',
+            width: '100%',
+            maxHeight: '90vh',
+            overflowY: 'auto',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.3)'
+          }}>
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <div style={{
+                  width: '38px',
+                  height: '38px',
+                  borderRadius: '10px',
+                  background: 'rgba(37, 99, 235, 0.1)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: 'var(--accent-color, #2563eb)'
+                }}>
+                  <Calendar size={20} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-primary)' }}>Apply for Leave</h3>
+                  <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Submit official leave request to your HOD</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowApplyLeaveModal(false)}
+                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Mini Balance Ledger Overview */}
+            {leaveBalance && (
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(3, 1fr)',
+                gap: '0.6rem',
+                padding: '0.75rem',
+                background: 'var(--bg-primary)',
+                borderRadius: '10px',
+                border: '1px solid var(--border-light)',
+                marginBottom: '1.25rem'
+              }}>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Casual (CL)</div>
+                  <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#2563eb' }}>{leaveBalance.cl?.remaining ?? 0} <span style={{ fontSize: '0.7rem', fontWeight: 500, color: 'var(--text-secondary)' }}>/ {leaveBalance.cl?.quota ?? 8}</span></div>
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Sick (SL)</div>
+                  <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#16a34a' }}>{leaveBalance.sl?.remaining ?? 0} <span style={{ fontSize: '0.7rem', fontWeight: 500, color: 'var(--text-secondary)' }}>/ {leaveBalance.sl?.quota ?? 6}</span></div>
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Earned (EL)</div>
+                  {leaveBalance.el?.isLocked ? (
+                    <div>
+                      <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#d97706', background: '#fef3c7', padding: '0.15rem 0.4rem', borderRadius: '4px' }}>🔒 Locked</span>
+                      <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', marginTop: '2px' }}>{leaveBalance.el?.lockReason || '1-Yr Lockin'}</div>
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#9333ea' }}>{leaveBalance.el?.remaining ?? 0} <span style={{ fontSize: '0.7rem', fontWeight: 500, color: 'var(--text-secondary)' }}>/ {leaveBalance.el?.quota ?? 15}</span></div>
+                  )}
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Comp-Off (CPL)</div>
+                  <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#4f46e5' }}>{leaveBalance.cpl?.balance ?? 0} <span style={{ fontSize: '0.7rem', fontWeight: 500, color: 'var(--text-secondary)' }}>/ {leaveBalance.cpl?.earned ?? 0}</span></div>
+                </div>
+              </div>
+            )}
+
+            {/* Form */}
+            <form onSubmit={handleApplyLeaveSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.35rem' }}>
+                  Leave Type *
+                </label>
+                <select
+                  value={leaveForm.leave_type}
+                  onChange={(e) => setLeaveForm({ ...leaveForm, leave_type: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: '0.55rem 0.75rem',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-light)',
+                    background: 'var(--bg-primary)',
+                    color: 'var(--text-primary)',
+                    fontSize: '0.85rem'
+                  }}
+                >
+                  <option value="CL">Casual Leave (CL) - Short notice / Personal</option>
+                  <option value="SL">Sick Leave (SL) - Health & Medical</option>
+                  <option value="EL" disabled={leaveBalance?.el?.isLocked}>Earned / Privilege Leave (EL) {leaveBalance?.el?.isLocked ? '(🔒 Locked - 1 Yr Probation)' : ''}</option>
+                  <option value="CPL" disabled={!leaveBalance?.cpl?.balance || leaveBalance.cpl.balance <= 0}>
+                    Compensatory Off (CPL) {!leaveBalance?.cpl?.balance || leaveBalance.cpl.balance <= 0 ? '(0 Available - Earned on Sundays/Holidays)' : `(${leaveBalance.cpl.balance} Day(s) Available)`}
+                  </option>
+                  <option value="HD-L">Half Day Leave (0.5 Day)</option>
+                  <option value="LWP">Leave Without Pay (LWP / Loss of Pay)</option>
+                </select>
+                {leaveForm.leave_type === 'EL' && leaveBalance?.el?.isLocked && (
+                  <p style={{ margin: '0.3rem 0 0 0', fontSize: '0.75rem', color: '#dc2626' }}>
+                    ⚠️ EL is locked during your 1-year probation period. It will unlock on {leaveBalance.el.unlocksOn || 'completion of 12 months'}.
+                  </p>
+                )}
+              </div>
+
+              {leaveForm.leave_type === 'HD-L' && (
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.35rem' }}>
+                    Session
+                  </label>
+                  <select
+                    value={leaveForm.half_day_session}
+                    onChange={(e) => setLeaveForm({ ...leaveForm, half_day_session: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '0.55rem 0.75rem',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border-light)',
+                      background: 'var(--bg-primary)',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.85rem'
+                    }}
+                  >
+                    <option value="FIRST_HALF">First Half (Morning to Midday)</option>
+                    <option value="SECOND_HALF">Second Half (Post Lunch to Evening)</option>
+                  </select>
+                </div>
+              )}
+
+              <div style={{ display: 'grid', gridTemplateColumns: leaveForm.leave_type === 'HD-L' ? '1fr' : '1fr 1fr', gap: '0.75rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.35rem' }}>
+                    {leaveForm.leave_type === 'HD-L' ? 'Leave Date *' : 'From Date *'}
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={leaveForm.from_date}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setLeaveForm(prev => ({
+                        ...prev,
+                        from_date: val,
+                        to_date: prev.leave_type === 'HD-L' ? val : (prev.to_date < val ? val : prev.to_date)
+                      }));
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '0.55rem 0.75rem',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border-light)',
+                      background: 'var(--bg-primary)',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.85rem'
+                    }}
+                  />
+                </div>
+                {leaveForm.leave_type !== 'HD-L' && (
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.35rem' }}>
+                      To Date *
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      min={leaveForm.from_date}
+                      value={leaveForm.to_date}
+                      onChange={(e) => setLeaveForm({ ...leaveForm, to_date: e.target.value })}
+                      style={{
+                        width: '100%',
+                        padding: '0.55rem 0.75rem',
+                        borderRadius: '8px',
+                        border: '1px solid var(--border-light)',
+                        background: 'var(--bg-primary)',
+                        color: 'var(--text-primary)',
+                        fontSize: '0.85rem'
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.35rem' }}>
+                  Reason for Leave *
+                </label>
+                <textarea
+                  required
+                  rows={3}
+                  placeholder="Please describe reason for leave application..."
+                  value={leaveForm.reason}
+                  onChange={(e) => setLeaveForm({ ...leaveForm, reason: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: '0.55rem 0.75rem',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-light)',
+                    background: 'var(--bg-primary)',
+                    color: 'var(--text-primary)',
+                    fontSize: '0.85rem',
+                    resize: 'vertical'
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.5rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowApplyLeaveModal(false)}
+                  style={{
+                    padding: '0.55rem 1rem',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-light)',
+                    background: 'var(--bg-primary)',
+                    color: 'var(--text-secondary)',
+                    fontSize: '0.85rem',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={applyingLeave || (leaveForm.leave_type === 'EL' && leaveBalance?.el?.isLocked)}
+                  style={{
+                    padding: '0.55rem 1.25rem',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: 'var(--accent-color, #2563eb)',
+                    color: '#ffffff',
+                    fontSize: '0.85rem',
+                    fontWeight: 700,
+                    cursor: (applyingLeave || (leaveForm.leave_type === 'EL' && leaveBalance?.el?.isLocked)) ? 'not-allowed' : 'pointer',
+                    opacity: (applyingLeave || (leaveForm.leave_type === 'EL' && leaveBalance?.el?.isLocked)) ? 0.6 : 1
+                  }}
+                >
+                  {applyingLeave ? 'Submitting...' : 'Submit Application'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal 2: HOD Leave Approve / Reject Action Modal */}
+      {leaveActionModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.65)',
+          zIndex: 9999,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '1rem',
+          backdropFilter: 'blur(3px)'
+        }}>
+          <div className="card" style={{
+            background: 'var(--bg-surface)',
+            border: '1px solid var(--border-light)',
+            borderRadius: '16px',
+            padding: '1.5rem',
+            maxWidth: '480px',
+            width: '100%',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.3)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '1rem' }}>
+              <div style={{
+                width: '38px',
+                height: '38px',
+                borderRadius: '10px',
+                background: leaveActionModal.type === 'APPROVE' ? 'rgba(22, 163, 74, 0.1)' : 'rgba(220, 38, 38, 0.1)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: leaveActionModal.type === 'APPROVE' ? '#16a34a' : '#dc2626'
+              }}>
+                {leaveActionModal.type === 'APPROVE' ? <CheckCircle2 size={22} /> : <XCircle size={22} />}
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  {leaveActionModal.type === 'APPROVE' ? 'Approve Leave Request' : 'Reject Leave Request'}
+                </h3>
+                <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                  Employee: <strong>{leaveActionModal.request?.emp_name}</strong> ({leaveActionModal.request?.emp_email})
+                </p>
+              </div>
+            </div>
+
+            <div style={{
+              background: 'var(--bg-primary)',
+              padding: '0.85rem',
+              borderRadius: '10px',
+              border: '1px solid var(--border-light)',
+              marginBottom: '1rem',
+              fontSize: '0.82rem'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Leave Type:</span>
+                <strong>{leaveActionModal.request?.leave_type}</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Duration:</span>
+                <strong>{leaveActionModal.request?.from_date} to {leaveActionModal.request?.to_date} ({leaveActionModal.request?.days_count} day(s))</strong>
+              </div>
+              <div>
+                <span style={{ color: 'var(--text-secondary)' }}>Reason: </span>
+                <span style={{ fontStyle: 'italic' }}>"{leaveActionModal.request?.reason}"</span>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: '1.25rem' }}>
+              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.35rem' }}>
+                HOD Remarks {leaveActionModal.type === 'REJECT' ? '*' : '(Optional)'}
+              </label>
+              <textarea
+                rows={2}
+                placeholder={leaveActionModal.type === 'APPROVE' ? 'e.g., Approved as per discussion.' : 'e.g., Project delivery pending on selected dates.'}
+                value={leaveActionModal.remarks || ''}
+                onChange={(e) => setLeaveActionModal({ ...leaveActionModal, remarks: e.target.value })}
+                style={{
+                  width: '100%',
+                  padding: '0.55rem 0.75rem',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-light)',
+                  background: 'var(--bg-primary)',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.85rem',
+                  resize: 'vertical'
+                }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              <button
+                type="button"
+                disabled={processingLeaveAction}
+                onClick={() => setLeaveActionModal(null)}
+                style={{
+                  padding: '0.55rem 1rem',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-light)',
+                  background: 'var(--bg-primary)',
+                  color: 'var(--text-secondary)',
+                  fontSize: '0.85rem',
+                  cursor: 'pointer'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={processingLeaveAction || (leaveActionModal.type === 'REJECT' && !leaveActionModal.remarks?.trim())}
+                onClick={handleProcessLeaveAction}
+                style={{
+                  padding: '0.55rem 1.25rem',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: leaveActionModal.type === 'APPROVE' ? '#16a34a' : '#dc2626',
+                  color: '#ffffff',
+                  fontSize: '0.85rem',
+                  fontWeight: 700,
+                  cursor: processingLeaveAction ? 'not-allowed' : 'pointer'
+                }}
+              >
+                {processingLeaveAction ? 'Processing...' : (leaveActionModal.type === 'APPROVE' ? 'Confirm Approval' : 'Confirm Rejection')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal 3: Leave Adjustment in Export Prompt Modal (User Requested!) */}
+      {showLeaveAdjustPromptModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.65)',
+          zIndex: 9999,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '1rem',
+          backdropFilter: 'blur(3px)'
+        }}>
+          <div className="card" style={{
+            background: 'var(--bg-surface)',
+            border: '1px solid var(--border-light)',
+            borderRadius: '16px',
+            padding: '1.75rem',
+            maxWidth: '520px',
+            width: '100%',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.3)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+              <div style={{
+                width: '42px',
+                height: '42px',
+                borderRadius: '12px',
+                background: 'rgba(37, 99, 235, 0.1)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'var(--accent-color, #2563eb)'
+              }}>
+                <Download size={22} />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                  Export Monthly Attendance Report
+                </h3>
+                <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                  Choose how approved employee leaves should be processed in this export
+                </p>
+              </div>
+            </div>
+
+            <div style={{
+              background: 'rgba(37, 99, 235, 0.05)',
+              border: '1px solid rgba(37, 99, 235, 0.2)',
+              borderRadius: '12px',
+              padding: '1rem',
+              marginBottom: '1.25rem'
+            }}>
+              <p style={{ margin: 0, fontSize: '0.86rem', color: 'var(--text-primary)', lineHeight: 1.5 }}>
+                <strong>Aapki report me Approved Leaves ko salary me adjust karna chahte hain ya Raw Attendance nikalni hai?</strong>
+              </p>
+              <p style={{ margin: '0.5rem 0 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                • <strong>Adjust Leaves (Paid)</strong>: CL, SL aur EL ko paid days me count karke Net Salary and Payable Days calculate honge.<br />
+                • <strong>Raw Attendance Only</strong>: Sirf physical/biometric punch aur present/absent data aayega, bina leaves credit ke.
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowLeaveAdjustPromptModal(false);
+                  executeExportMonthlyMatrixCSV(true);
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '0.85rem 1.2rem',
+                  borderRadius: '10px',
+                  border: 'none',
+                  background: '#16a34a',
+                  color: '#ffffff',
+                  fontWeight: 700,
+                  fontSize: '0.88rem',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 12px rgba(22, 163, 74, 0.25)'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <CheckCircle2 size={18} />
+                  <span>🟢 Adjust Approved Leaves (Paid in Salary)</span>
+                </div>
+                <ArrowRight size={16} />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowLeaveAdjustPromptModal(false);
+                  executeExportMonthlyMatrixCSV(false);
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '0.85rem 1.2rem',
+                  borderRadius: '10px',
+                  border: '1px solid var(--border-light)',
+                  background: 'var(--bg-primary)',
+                  color: 'var(--text-primary)',
+                  fontWeight: 600,
+                  fontSize: '0.88rem',
+                  cursor: 'pointer'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <FileSpreadsheet size={18} color="var(--text-secondary)" />
+                  <span>⚪ Raw Attendance Only (Without Leaves)</span>
+                </div>
+                <ArrowRight size={16} color="var(--text-secondary)" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowLeaveAdjustPromptModal(false)}
+                style={{
+                  padding: '0.55rem',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: 'transparent',
+                  color: 'var(--text-secondary)',
+                  fontSize: '0.82rem',
+                  cursor: 'pointer',
+                  textAlign: 'center',
+                  marginTop: '0.25rem'
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast Notification Alert */}
+      {leaveToast && (
+        <div style={{
+          position: 'fixed',
+          bottom: '24px',
+          right: '24px',
+          zIndex: 10000,
+          background: leaveToast.type === 'success' ? '#16a34a' : '#dc2626',
+          color: '#ffffff',
+          padding: '0.75rem 1.25rem',
+          borderRadius: '10px',
+          boxShadow: '0 8px 24px rgba(0,0,0,0.2)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.6rem',
+          fontSize: '0.85rem',
+          fontWeight: 600
+        }}>
+          {leaveToast.type === 'success' ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
+          <span>{leaveToast.message}</span>
+          <button
+            type="button"
+            onClick={() => setLeaveToast(null)}
+            style={{ background: 'transparent', border: 'none', color: '#ffffff', cursor: 'pointer', padding: 0, marginLeft: '0.5rem' }}
+          >
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
+      {/* Modal 4: Grant CPL Credit Modal (Admin / HOD) */}
+      {cplGrantModal.show && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.65)',
+          zIndex: 9999,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '1rem',
+          backdropFilter: 'blur(3px)'
+        }}>
+          <div className="card" style={{
+            background: 'var(--bg-surface)',
+            border: '1px solid var(--border-light)',
+            borderRadius: '16px',
+            padding: '1.5rem',
+            maxWidth: '520px',
+            width: '100%',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.3)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <div style={{
+                  width: '38px',
+                  height: '38px',
+                  borderRadius: '10px',
+                  background: 'rgba(79, 70, 229, 0.1)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#4f46e5'
+                }}>
+                  <Award size={20} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-primary)' }}>Grant Compensatory Off (CPL)</h3>
+                  <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Credit CPL to employee for Sunday or Holiday extra work</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCplGrantModal({ show: false, email: '', empName: '', days: 1.0, reason: '', workDate: getTodayDateString(), validityDays: 60 })}
+                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleGrantCplSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.35rem' }}>
+                  Employee Email *
+                </label>
+                <input
+                  type="email"
+                  required
+                  placeholder="employee@domain.com"
+                  value={cplGrantModal.email}
+                  onChange={(e) => setCplGrantModal({ ...cplGrantModal, email: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: '0.55rem 0.75rem',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-light)',
+                    background: 'var(--bg-primary)',
+                    color: 'var(--text-primary)',
+                    fontSize: '0.85rem'
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.35rem' }}>
+                    Credit Days *
+                  </label>
+                  <select
+                    value={cplGrantModal.days}
+                    onChange={(e) => setCplGrantModal({ ...cplGrantModal, days: Number(e.target.value) })}
+                    style={{
+                      width: '100%',
+                      padding: '0.55rem 0.75rem',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border-light)',
+                      background: 'var(--bg-primary)',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.85rem'
+                    }}
+                  >
+                    <option value={1.0}>1.0 Day (Full CPL)</option>
+                    <option value={0.5}>0.5 Day (Half CPL)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.35rem' }}>
+                    Work Date *
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={cplGrantModal.workDate}
+                    onChange={(e) => setCplGrantModal({ ...cplGrantModal, workDate: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '0.55rem 0.75rem',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border-light)',
+                      background: 'var(--bg-primary)',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.85rem'
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.35rem' }}>
+                  Reason / Assignment Note *
+                </label>
+                <textarea
+                  required
+                  rows={3}
+                  placeholder="e.g. Worked on Sunday for emergency maintenance / inventory audit"
+                  value={cplGrantModal.reason}
+                  onChange={(e) => setCplGrantModal({ ...cplGrantModal, reason: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: '0.55rem 0.75rem',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-light)',
+                    background: 'var(--bg-primary)',
+                    color: 'var(--text-primary)',
+                    fontSize: '0.85rem',
+                    resize: 'none'
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.6rem', marginTop: '0.5rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setCplGrantModal({ show: false, email: '', empName: '', days: 1.0, reason: '', workDate: getTodayDateString(), validityDays: 60 })}
+                  style={{
+                    padding: '0.55rem 1rem',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-light)',
+                    background: 'var(--bg-primary)',
+                    color: 'var(--text-primary)',
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={processingCplGrant}
+                  style={{
+                    padding: '0.55rem 1.25rem',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: '#4f46e5',
+                    color: '#ffffff',
+                    fontSize: '0.85rem',
+                    fontWeight: 700,
+                    cursor: processingCplGrant ? 'not-allowed' : 'pointer',
+                    boxShadow: '0 2px 8px rgba(79, 70, 229, 0.3)'
+                  }}
+                >
+                  {processingCplGrant ? 'Crediting...' : 'Confirm Credit CPL'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

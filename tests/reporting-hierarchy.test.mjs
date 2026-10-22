@@ -100,6 +100,72 @@ test('legacy label with an old spelling resolves only through a unique exact emp
   assert.deepEqual(hierarchy.getReportingTeam([legacyManager, duplicateCode, member], viewer), []);
 });
 
+test('HOD team contains only direct HOD mappings, not primary or secondary reports', () => {
+  const hodReport = { ...agent, hod_person: manager.email };
+  const primaryReport = { ...agent, user_id: 'primary-id', email: 'primary@example.com', primary_reporting_person: manager.email };
+  const secondaryReport = { ...agent, user_id: 'secondary-id', email: 'secondary@example.com', secondary_reporting_person: manager.email };
+  assert.deepEqual(hierarchy.getHodTeam([manager, hodReport, primaryReport, secondaryReport], viewer), [hodReport]);
+});
+
+test('Org Hierarchy displays a separate expandable HOD team', async () => {
+  const OrgHierarchyTab = (await loadModule('src/components/UserManagement/tabs/OrgHierarchyTab.jsx', {
+    react: React,
+    'lucide-react': new Proxy({}, { get: () => () => null }),
+    '../utils/userManagementUtils': { isMasterAdmin: () => false },
+    '@/utils/reportingHierarchy': hierarchy
+  })).default;
+  const html = renderToStaticMarkup(React.createElement(OrgHierarchyTab, {
+    users: [manager, { ...agent, hod_person: manager.email }]
+  }));
+  assert.match(html, /HOD Teams \(1\)/);
+  assert.match(html, /aria-expanded="true"/);
+  assert.match(html, /1 Reports/);
+  assert.match(html, /Agent/);
+});
+
+test('HOD daily and monthly reports return only authenticated mapped employees', async () => {
+  const hod = { ...manager, role: 'hod', is_approved: true, company: 'Acme' };
+  const mapped = { ...agent, is_approved: true, company: 'Acme', hod_person: hod.email };
+  const other = { ...agent, user_id: 'other-id', email: 'other@example.com', is_approved: true, company: 'Acme', primary_reporting_person: hod.email };
+  const users = [hod, mapped, other];
+  let signedIn = true;
+  const db = { from(table) {
+    const query = {
+      select() { return this; },
+      eq() { return this; },
+      gte() { return this; },
+      lte() { return this; },
+      maybeSingle() { return Promise.resolve({ data: hod, error: null }); },
+      then(resolve, reject) { return Promise.resolve({ data: table === 'user_roles' ? users : [], error: null }).then(resolve, reject); }
+    };
+    return query;
+  } };
+  const actions = await loadModule('src/app/actions/attendance.js', {
+    '@supabase/supabase-js': { createClient: () => db },
+    '@/utils/supabase/server': { createClient: async () => ({ auth: { getUser: async () => ({ data: { user: signedIn ? { id: hod.user_id, email: hod.email } : null }, error: null }) } }) },
+    '@/utils/reportingHierarchy': hierarchy,
+    '@/utils/attendanceUtils': { getTodayDateString: () => '2026-10-17', formatMinutesToHours: () => '0h 0m' },
+    './audit': { logAuditAction() {} },
+    'fs/promises': { readFile: async () => { throw new Error('No fallback file'); } },
+    path: require('node:path'),
+    crypto: require('node:crypto')
+  });
+  const access = await actions.getHodTeamReportAccess();
+  assert.equal(access.success, true);
+  assert.equal(access.hasTeam, true);
+  const daily = await actions.getHodTeamAttendanceMaster({ date: '2026-10-17', company: 'Acme' });
+  assert.equal(daily.success, true);
+  assert.deepEqual(Array.from(daily.records, record => record.email), [mapped.email]);
+  assert.equal(daily.summary.totalEmployees, 1);
+  assert.equal(daily.summary.totalAbsent, 1);
+  const monthly = await actions.getHodTeamMonthlyMatrix({ year: 2027, month: 1, company: 'Acme' });
+  assert.equal(monthly.success, true);
+  assert.deepEqual(Array.from(monthly.rows, row => row.email), [mapped.email]);
+  assert.equal(monthly.summary.totalEmployees, 1);
+  signedIn = false;
+  assert.equal((await actions.getHodTeamAttendanceMaster({ date: '2026-10-17' })).success, false);
+});
+
 test('lead scope adds direct reporting-team IDs and names while retaining own/open leads', () => {
   const member = { ...agent, primary_reporting_person: manager.email };
   const team = hierarchy.getReportingTeam([manager, member], viewer);

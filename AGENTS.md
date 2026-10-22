@@ -21,6 +21,15 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - **Verification First**: Always run `npm run build` or local check commands to verify correctness before committing.
 - **No Automatic Pushes**: Do NOT execute `git push` automatically. Always present changes to the user first, allow them to verify locally, and wait for their explicit permission before pushing changes.
 
+# Mandatory Independent Softphone & CRM Version Increment Rules
+- **CRM Softphone Version**: For every completed CRM Softphone update (UI, calling behavior, or related calling fixes), increment the final numeric component of `SOFTPHONE_VERSION` in `src/components/CallCenter/GlobalSoftphoneWidget.jsx` by exactly **+1**, once for that completed update. Example: `v2.1` -> `v2.2` -> `v2.3`.
+- **SuPuja Creations CRM Version**: For every completed main CRM update, increment only the final numeric component of `version` in `package.json` by exactly **+1**, once for that completed update. Example: `1.0.847` -> `1.0.848` -> `1.0.849`. The CRM display must continue to use this package version as its source of truth.
+- **Independent Counters**: Track the softphone and main CRM versions separately. Increment each affected product's counter once; if the same completed update changes both products, increment both counters once. Do not increment again for intermediate edits, repeated checks, retries, restarts, or publishing the same already-versioned update.
+- **Read Current Values Before Every Bump**: Immediately before a version change, read the relevant current on-disk version source and inspect `git log -n 1`. Follow the existing realtime verification rule; never use an example or an old chat message as the current value, and never downgrade or reset a version.
+- **Last Component Is an Integer**: Keep all preceding version components unchanged. Do not treat a version as a decimal number or automatically roll it into another series: `v2.9` -> `v2.10`, and `1.0.999` -> `1.0.1000`.
+- **Preserve Calling Protection**: References to `v2.1` in the calling architecture protection rules and the golden backup identify the protected working baseline; they do not freeze the future display version. Every later version must preserve those safeguards and the original golden backup.
+- **Rule-Only Changes**: Editing these version instructions alone does not constitute a softphone or main CRM feature update and must not itself bump either runtime version.
+
 # Production Workflow Protection & Zero-Regression Rules
 - **Zero Impact on Existing Live Modules**: Active employees continuously work on live modules (Lead Management / Lead Table, Call Center / Softphone, Attendance, User Sessions, Master Records). Any new feature implementation (e.g., Smart Checklist, Delegation, AI Admin, etc.) must NEVER break, slow down, or block these ongoing processes.
 - **Strict Isolation & Decoupling**: Keep new modules and components completely decoupled. Never introduce breaking changes to shared state, global contexts, layout wrappers, or shared utilities that core operational modules rely on.
@@ -47,5 +56,21 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
   2. **Active Drag Feedback**: The resizer bar must visibly highlight (e.g. `var(--accent-color, #2563eb)`) while actively dragging.
   3. **Reset on Double-Click**: Double-clicking the resizer handle resets that column back to its default width.
   4. **Persistence & Safe Constraints**: Enforce sensible minimum widths (`minWidth`, e.g. 60px–110px) to prevent column collapse, and persist user-adjusted column widths in `localStorage` so settings survive page navigation and refresh.
+
+# Mandatory CRM Softphone v2.1 Protection & Calling Architecture Rules
+- **Absolute Preservation of CRM Softphone v2.1**: The CRM Softphone architecture (Version `v2.1` in `GlobalSoftphoneWidget.jsx`, Attended Consultation / MPC in `plivoConsultation.js`, Inbound Guard in `softphoneIncomingCall.js`, and test suites in `tests/`) is battle-tested, verified with 46 passing automated tests, and backed up in `CRM-Backups Plivo Calling Perfect 2.1/`. Under NO circumstances should any of these core calling mechanisms be rewritten, degraded, removed, or bypassed.
+- **Strict Calling Architecture Safeguards**:
+  1. **Zero Duplicate UI Cards**: Never render the standalone active call controls card in `GlobalSoftphoneWidget.jsx` simultaneously with `ActiveCallPanel.jsx`. When `activeSession` is active, only `ActiveCallPanel` may render.
+  2. **Realtime Leg Inspection**: The 1-second polling in `/api/plivo/session-status` MUST actively inspect `session.customer_call_uuid` via Plivo SDK (`client.calls.get`) to detect customer decline/hangup with zero webhook latency.
+  3. **Universal Dual-Language Voice Engine**: `speakOutcome(hindiText, englishText)` must ALWAYS support fallback to English speech synthesis (`en-US` / system default) when Hindi voices (`hi-IN`) are not installed on the employee's OS (e.g. Windows OneCore TTS), preventing silent speech errors.
+  4. **Attended Consultation (Hold & Call / Merge)**:
+     - Customer must be isolated on hold with `public/plivo-hold-tone.wav` during 3rd-party dialing.
+     - Agent and 3rd party must converse in private consultation first; never auto-merge on pickup.
+     - Cancel must drop only the 3rd party and safely resume the customer.
+     - Merge must explicitly bridge all parties into the multi-party call.
+     - Optimistic concurrency (`revision`, `attempt_id`) in `call_consultations` must never be disabled.
+  5. **Inbound Call Guard**: All incoming WebRTC invites must pass through `createIncomingCallGuard` (`softphoneIncomingCall.js`) to prevent double-answer, stale invite re-creation, and SDK race conditions.
+  6. **Indian Telecom Cause Mapping**: Maintain authoritative mapping in `categorizeHangupCause` (`rejected`, `switched_off`, `busy`, `no_answer`, `customer_hangup`). Never revert to generic `failed` or allow carrier busy codes (Q.850 17) to be misdiagnosed.
+  7. **Preservation of Golden Backup**: The folder `CRM-Backups Plivo Calling Perfect 2.1/` is a permanent golden backup and must never be deleted or modified.
 
 

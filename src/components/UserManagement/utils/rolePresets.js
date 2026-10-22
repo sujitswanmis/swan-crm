@@ -33,7 +33,9 @@ export const ROLE_PRESETS = [
           monthly_logs: { view: true },
           regularization: { view: true },
           hod_approvals: { view: true },
-          team_report: { view: true }
+          team_report: { view: true },
+          shift_rules: { view: true },
+          geofencing: { view: true }
         }
       },
       checklist: {
@@ -57,10 +59,11 @@ export const ROLE_PRESETS = [
       report: { view: true, read: true, write: true, edit: true, export: true },
       leads: {
         view: true, read: true, write: true, edit: true, export: true, delete: true,
-        assigned_steps: ['lead_dashboard', 'hourly_work', '01 - New Stage', '02 - Contact Stage', '03 - Qualification Stage', '04 - Follow Up Stage', '05 - Sales Process Stage', '06 - Conversion Stage', '07 - Final Stage', '08 - Transfer to Party'],
+        assigned_steps: ['lead_dashboard', 'hourly_work', 'all_leads', '01 - New Stage', '02 - Contact Stage', '03 - Qualification Stage', '04 - Follow Up Stage', '05 - Sales Process Stage', '06 - Conversion Stage', '07 - Final Stage', '08 - Transfer to Party'],
         sub_items: {
           lead_dashboard: { view: true },
           hourly_work: { view: true },
+          all_leads: { view: true },
           '01 - New Stage': { view: true },
           '02 - Contact Stage': { view: true },
           '03 - Qualification Stage': { view: true },
@@ -71,15 +74,27 @@ export const ROLE_PRESETS = [
           '08 - Transfer to Party': { view: true }
         }
       },
-      party: { view: true, read: true, write: true, edit: true, export: true },
+      party: {
+        view: true, read: true, write: true, edit: true, export: true,
+        sub_items: {
+          dashboard: { view: true },
+          all_party_stage: { view: true },
+          s00: { view: true }, s01: { view: true }, s02: { view: true }, s03: { view: true },
+          s04: { view: true }, s05: { view: true }, s06: { view: true }, s07: { view: true },
+          s08: { view: true }, report: { view: true }, hierarchy_tree: { view: true },
+          order_followup: { view: true }, order_feedback: { view: true },
+          monthly_feedback: { view: true }, complaints: { view: true }
+        }
+      },
       orders: { view: true, read: true, write: true, edit: true, export: true },
       location_master: { view: true, read: true, write: true, edit: true, export: true },
       mrp: { view: true, read: true, write: true, edit: true, export: true },
       mrp_against: { view: true, read: true, write: true, edit: true, export: true },
       recruiter: {
         view: true, read: true, write: true, edit: true, export: true,
-        assigned_steps: ['S00', 'S01', 'S02', 'S03', 'S04', 'S05', 'S06', 'S07', 'S08', 'S09'],
+        assigned_steps: ['dashboard', 'all_stages', 'S00', 'S01', 'S02', 'S03', 'S04', 'S05', 'S06', 'S07', 'S08', 'S09'],
         sub_items: {
+          dashboard: { view: true }, all_stages: { view: true },
           S00: { view: true }, S01: { view: true }, S02: { view: true },
           S03: { view: true }, S04: { view: true }, S05: { view: true },
           S06: { view: true }, S07: { view: true }, S08: { view: true }, S09: { view: true }
@@ -130,7 +145,9 @@ export const ROLE_PRESETS = [
           monthly_logs: { view: true },
           regularization: { view: true },
           hod_approvals: { view: true },
-          team_report: { view: true }
+          team_report: { view: true },
+          shift_rules: { view: true },
+          geofencing: { view: true }
         }
       },
       checklist: {
@@ -189,10 +206,11 @@ export const ROLE_PRESETS = [
       report: { view: true, read: true, write: false, edit: false, export: true },
       leads: {
         view: true, read: true, write: true, edit: true, export: true,
-        assigned_steps: ['lead_dashboard', 'hourly_work', '01 - New Stage', '02 - Contact Stage', '03 - Qualification Stage', '04 - Follow Up Stage', '05 - Sales Process Stage', '06 - Conversion Stage', '07 - Final Stage', '08 - Transfer to Party'],
+        assigned_steps: ['lead_dashboard', 'hourly_work', 'all_leads', '01 - New Stage', '02 - Contact Stage', '03 - Qualification Stage', '04 - Follow Up Stage', '05 - Sales Process Stage', '06 - Conversion Stage', '07 - Final Stage', '08 - Transfer to Party'],
         sub_items: {
           lead_dashboard: { view: true },
           hourly_work: { view: true },
+          all_leads: { view: true },
           '01 - New Stage': { view: true },
           '02 - Contact Stage': { view: true },
           '03 - Qualification Stage': { view: true },
@@ -203,7 +221,18 @@ export const ROLE_PRESETS = [
           '08 - Transfer to Party': { view: true }
         }
       },
-      party: { view: true, read: true, write: true, edit: true, export: true },
+      party: {
+        view: true, read: true, write: true, edit: true, export: true,
+        sub_items: {
+          dashboard: { view: true },
+          all_party_stage: { view: true },
+          s00: { view: true }, s01: { view: true }, s02: { view: true }, s03: { view: true },
+          s04: { view: true }, s05: { view: true }, s06: { view: true }, s07: { view: true },
+          s08: { view: true }, report: { view: true }, hierarchy_tree: { view: true },
+          order_followup: { view: true }, order_feedback: { view: true },
+          monthly_feedback: { view: true }, complaints: { view: true }
+        }
+      },
       orders: { view: true, read: true, write: true, edit: true, export: true },
       attendance: {
         view: true, read: true, write: true, edit: false, export: false,
@@ -247,10 +276,11 @@ export const ROLE_PRESETS = [
       registration: { view: true, read: true, write: true, edit: false, export: false },
       leads: {
         view: true, read: true, write: true, edit: true, export: false,
-        assigned_steps: ['lead_dashboard', 'hourly_work', '01 - New Stage', '02 - Contact Stage', '03 - Qualification Stage', '04 - Follow Up Stage', '05 - Sales Process Stage', '06 - Conversion Stage'],
+        assigned_steps: ['lead_dashboard', 'hourly_work', 'all_leads', '01 - New Stage', '02 - Contact Stage', '03 - Qualification Stage', '04 - Follow Up Stage', '05 - Sales Process Stage', '06 - Conversion Stage'],
         sub_items: {
           lead_dashboard: { view: true },
           hourly_work: { view: true },
+          all_leads: { view: true },
           '01 - New Stage': { view: true },
           '02 - Contact Stage': { view: true },
           '03 - Qualification Stage': { view: true },
@@ -302,8 +332,9 @@ export const ROLE_PRESETS = [
       can_bulk_actions: true,
       recruiter: {
         view: true, read: true, write: true, edit: true, export: true,
-        assigned_steps: ['S00', 'S01', 'S02', 'S03', 'S04', 'S05', 'S06', 'S07', 'S08', 'S09'],
+        assigned_steps: ['dashboard', 'all_stages', 'S00', 'S01', 'S02', 'S03', 'S04', 'S05', 'S06', 'S07', 'S08', 'S09'],
         sub_items: {
+          dashboard: { view: true }, all_stages: { view: true },
           S00: { view: true }, S01: { view: true }, S02: { view: true },
           S03: { view: true }, S04: { view: true }, S05: { view: true },
           S06: { view: true }, S07: { view: true }, S08: { view: true }, S09: { view: true }

@@ -6,7 +6,17 @@ export const MODULES_CONFIG = [
   {
     id: 'analytics', path: 'analytics', label: 'Analytics Dashboard', category: 'General',
     icon: <PieChart size={20} />, viewOnly: true,
+    subItemsType: 'tabs',
     roleDisplayTabs: [
+      { id: 'overview', label: 'Executive Overview' },
+      { id: 'scorecard', label: 'Team Scorecard' },
+      { id: 'lead-data', label: 'Lead Data' },
+      { id: 'delegation', label: 'Delegation Tasks' },
+      { id: 'checklist', label: 'Daily Checklists' },
+      { id: 'attendance', label: 'Attendance Ops' },
+      { id: 'recruiter', label: 'Recruiter Hub' }
+    ],
+    subItems: [
       { id: 'overview', label: 'Executive Overview' },
       { id: 'scorecard', label: 'Team Scorecard' },
       { id: 'lead-data', label: 'Lead Data' },
@@ -17,8 +27,55 @@ export const MODULES_CONFIG = [
     ],
     roleDisplayNote: 'All tabs use Analytics Dashboard access.'
   },
-  { id: 'new_swan_ai', path: 'ai', label: 'New Swan AI', category: 'General', icon: <Bot size={20} /> },
-  { id: 'callcenter', path: 'callcenter', label: 'Call Center', category: 'General', icon: <PhoneCall size={20} /> },
+
+  // AI Chatbot
+  { id: 'new_swan_ai', path: 'ai', label: 'AI Assistant Chat', category: 'AI Chatbot', icon: <Bot size={20} />, viewOnly: true },
+  { 
+    id: 'aiadmin', 
+    path: 'aiadmin', 
+    label: 'AI Admin & Models', 
+    category: 'AI Chatbot', 
+    icon: <Bot size={20} />,
+    subItemsType: 'tabs',
+    subItems: [
+      { id: 'users', label: 'AI Chatbot Users' },
+      { id: 'billing', label: 'API Usage & Billing' },
+      { id: 'models', label: 'AI Model Setup' }
+    ]
+  },
+  { id: 'aiknowledgebase', path: 'aiknowledgebase', label: 'Knowledge Base (RAG)', category: 'AI Chatbot', icon: <Bot size={20} /> },
+
+  // Call Center
+  { id: 'callcenter', path: 'callcenter', label: 'Telecalling Desk', category: 'Call Center', icon: <PhoneCall size={20} />, viewOnly: true },
+  { 
+    id: 'calladmin', 
+    path: 'calladmin', 
+    label: 'Call Admin & SIP', 
+    category: 'Call Center', 
+    icon: <Phone size={20} />,
+    subItemsType: 'tabs',
+    subItems: [
+      { id: 'agents', label: 'Agents & Endpoints' },
+      { id: 'endpoints', label: 'SIP Endpoints' },
+      { id: 'telephony', label: 'Telephony & Seats' },
+      { id: 'calllogs', label: 'Call Logs' },
+      { id: 'monitor', label: 'Live Monitor' },
+      { id: 'settings', label: 'Routing & Rules' }
+    ]
+  },
+  { 
+    id: 'aicallcenter', 
+    path: 'aicallcenter', 
+    label: 'AI Voice Call Center', 
+    category: 'Call Center', 
+    icon: <Bot size={20} />,
+    subItemsType: 'tabs',
+    subItems: [
+      { id: 'dashboard', label: 'Dashboard' },
+      { id: 'campaigns', label: 'Campaigns' },
+      { id: 'settings', label: 'Incoming Settings' }
+    ]
+  },
   { 
     id: 'attendance', 
     path: 'attendance', 
@@ -31,7 +88,10 @@ export const MODULES_CONFIG = [
       { id: 'monthly_logs', label: 'Monthly Attendance Log' },
       { id: 'regularization', label: 'Missing Punch / Regularize' },
       { id: 'hod_approvals', label: 'HOD Approvals' },
-      { id: 'team_report', label: 'Team Attendance Report' }
+      { id: 'team_report', label: 'Team Attendance Report' },
+      { id: 'shift_rules', label: 'Shift Rules' },
+      { id: 'leave_policy', label: 'Company Leave Policy' },
+      { id: 'geofencing', label: 'Office Geofencing Policy' }
     ]
   },
   {
@@ -77,6 +137,7 @@ export const MODULES_CONFIG = [
     subItems: [
       { id: 'lead_dashboard', label: '📊 Lead Dashboard' },
       { id: 'hourly_work', label: '⏰ Hourly Work' },
+      { id: 'all_leads', label: '📋 All Leads' },
       { id: '01 - New Stage', label: '01 - New Stage' },
       { id: '02 - Contact Stage', label: '02 - Contact Stage' },
       { id: '03 - Qualification Stage', label: '03 - Qualification Stage' },
@@ -94,6 +155,11 @@ export const MODULES_CONFIG = [
     category: 'Sales', 
     icon: <Building2 size={20} />,
     subItemsType: 'tabs',
+    roleDisplayTabs: [
+      { id: 'dashboard', label: 'Party Master Dashboard' },
+      { id: 'all_party_stage', label: 'All Party Stage' }
+    ],
+    roleDisplayNote: 'Party Master Dashboard and All Party Stage require manager access or can be explicitly assigned.',
     subItems: [
       { id: 'dashboard', label: '📊 Party Master Dashboard' },
       { id: 'all_party_stage', label: '📋 All Party Stage' },
@@ -153,8 +219,10 @@ export const MODULES_CONFIG = [
       { id: 'dashboard', label: 'Recruiter Dashboard' },
       { id: 'all_stages', label: 'Recruiter All Stage' }
     ],
-    roleDisplayNote: 'Dashboard and All Stage require manager access and cannot be granted by a custom staff role.',
+    roleDisplayNote: 'Dashboard and All Stage require manager access or can be explicitly assigned.',
     subItems: [
+      { id: 'dashboard', label: '📊 Recruiter Dashboard' },
+      { id: 'all_stages', label: '🔍 Recruiter All Stage' },
       { id: 'S00', label: 'S00 — Requirements Received' },
       { id: 'S01', label: 'S01 — JDs Prepared & Posted' },
       { id: 'S02', label: 'S02 — Resume Filtered' },
@@ -192,7 +260,7 @@ export const MODULES_CONFIG = [
     id: 'workplace', 
     path: 'workflow', 
     label: 'Workflow Builder', 
-    category: 'System', 
+    category: 'Workflow Builder', 
     icon: <GitMerge size={20} />,
     roleAssignable: false,
     subItemsType: 'tabs',
@@ -202,43 +270,14 @@ export const MODULES_CONFIG = [
       { id: 'trash', label: 'Trash Bin' }
     ]
   },
-  { id: 'public_users', path: 'public_users', label: 'Public User Management', category: 'System', icon: <Users size={20} />, roleAssignable: false, roleRestrictionLabel: 'Admin only' },
-  { id: 'aiadmin', path: 'aiadmin', label: 'User AI Usage', category: 'System', icon: <Bot size={20} /> },
-  { id: 'aiknowledgebase', path: 'aiknowledgebase', label: 'AI Knowledge Base (RAG)', category: 'System', icon: <Bot size={20} /> },
-  { 
-    id: 'calladmin', 
-    path: 'calladmin', 
-    label: 'Call Admin', 
-    category: 'System', 
-    icon: <Phone size={20} />,
-    subItemsType: 'tabs',
-    subItems: [
-      { id: 'agents', label: 'Agents & Endpoints' },
-      { id: 'endpoints', label: 'SIP Endpoints' },
-      { id: 'telephony', label: 'Telephony & Seats' },
-      { id: 'calllogs', label: 'Call Logs' },
-      { id: 'monitor', label: 'Live Monitor' },
-      { id: 'settings', label: 'Routing & Rules' }
-    ]
-  },
-  { 
-    id: 'aicallcenter', 
-    path: 'aicallcenter', 
-    label: 'AI Call Center', 
-    category: 'System', 
-    icon: <Bot size={20} />,
-    subItemsType: 'tabs',
-    subItems: [
-      { id: 'dashboard', label: 'Dashboard' },
-      { id: 'campaigns', label: 'Campaigns' },
-      { id: 'settings', label: 'Incoming Settings' }
-    ]
-  },
+  { id: 'public_users', path: 'public_users', label: 'Public User Management', category: 'Master Admin', icon: <Users size={20} />, roleAssignable: false, masterAdminOnly: true, roleRestrictionLabel: 'Master Admin only' },
+
+  // Communication Center
   { 
     id: 'whatsapp_official', 
     path: 'whatsapp_official', 
     label: 'WhatsApp Official', 
-    category: 'System', 
+    category: 'Communication Center', 
     icon: <MessageCircle size={20} />,
     subItemsType: 'tabs',
     roleDisplayTabs: [
@@ -256,7 +295,7 @@ export const MODULES_CONFIG = [
     id: 'whatsapp_unofficial', 
     path: 'whatsapp_unofficial', 
     label: 'WhatsApp UnOfficial', 
-    category: 'System', 
+    category: 'Communication Center', 
     icon: <MessageCircle size={20} />,
     subItemsType: 'tabs',
     subItems: [
@@ -269,10 +308,10 @@ export const MODULES_CONFIG = [
       { id: 'logs', label: 'Message Logs' }
     ]
   },
-  { id: 'sms_config', path: 'sms_config', label: 'SMS Configuration', category: 'System', icon: <MessageCircle size={20} /> },
-  { id: 'rcs_config', path: 'rcs_config', label: 'RCS Configuration', category: 'System', icon: <MessageCircle size={20} /> },
+  { id: 'sms_config', path: 'sms_config', label: 'SMS Configuration', category: 'Communication Center', icon: <MessageCircle size={20} />, viewOnly: true },
+  { id: 'rcs_config', path: 'rcs_config', label: 'RCS Configuration', category: 'Communication Center', icon: <MessageCircle size={20} />, viewOnly: true },
   {
-    id: 'email_config', path: 'email_config', label: 'Email Configuration', category: 'System',
+    id: 'email_config', path: 'email_config', label: 'Email Configuration', category: 'Communication Center',
     icon: <MessageCircle size={20} />,
     roleDisplayTabs: [
       { id: 'smtp', label: 'SMTP Server Settings' },
@@ -287,7 +326,7 @@ export const MODULES_CONFIG = [
     id: 'admin_message_config', 
     path: 'admin_message_config', 
     label: 'Admin Message Config', 
-    category: 'System', 
+    category: 'Master Admin', 
     icon: <ShieldCheck size={20} />,
     roleAssignable: false,
     subItemsType: 'tabs',
@@ -303,8 +342,11 @@ export const MODULES_CONFIG = [
     id: 'offline_rule', 
     path: 'offline_rule', 
     label: 'Offline Rule', 
-    category: 'System', 
-    icon: <WifiOff size={20} /> 
+    category: 'Master Admin', 
+    icon: <WifiOff size={20} />,
+    roleAssignable: false,
+    masterAdminOnly: true,
+    roleRestrictionLabel: 'Master Admin only' 
   },
   { 
     id: 'settings', 

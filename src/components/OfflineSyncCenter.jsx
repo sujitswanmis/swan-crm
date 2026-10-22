@@ -10,7 +10,8 @@ import {
   removeQueueItem, 
   getDailyOfflineUsage, 
   incrementDailyOfflineSeconds,
-  saveOfflineRulesToLocal
+  saveOfflineRulesToLocal,
+  getOfflineRules
 } from '@/utils/offlineSync';
 import { getOfflineRuleSettings } from '@/app/actions/offlineRules';
 import { createClient } from '@/utils/supabase/client';
@@ -83,6 +84,9 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
         setToastMessage(`🎉 ${result.count} offline update${result.count > 1 ? 's' : ''} synchronized successfully to Supabase!`, 'success', 5000);
         if (onSyncCompleteRef.current) onSyncCompleteRef.current();
       }
+      if (result?.failed > 0) {
+        setToastMessage(`${result.failed} offline update${result.failed > 1 ? 's' : ''} could not sync. Check the pending queue.`, 'error', 6000);
+      }
       await loadQueueState();
     } catch (err) {
       console.warn('Sync error:', err);
@@ -100,7 +104,8 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
   // Sync latest offline rules from Supabase and listen for custom events
   useEffect(() => {
     let isMounted = true;
-    if (typeof navigator !== 'undefined' && navigator.onLine) {
+    const refreshRemoteRules = () => {
+      if (!navigator.onLine) return;
       getOfflineRuleSettings()
         .then((res) => {
           if (isMounted && res?.success && res?.settings) {
@@ -109,7 +114,8 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
           }
         })
         .catch(() => {});
-    }
+    };
+    refreshRemoteRules();
 
     const handleRulesChanged = () => {
       if (isMounted) {
@@ -118,9 +124,71 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
     };
 
     window.addEventListener('supuja_offline_rules_changed', handleRulesChanged);
+    window.addEventListener('online', refreshRemoteRules);
     return () => {
       isMounted = false;
       window.removeEventListener('supuja_offline_rules_changed', handleRulesChanged);
+      window.removeEventListener('online', refreshRemoteRules);
+    };
+  }, []);
+
+  // Prepare the authenticated page and its loaded chunks for a later offline
+  // refresh. The service worker stores documents under the current user ID.
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return;
+    let stopped = false;
+    let lastPreparedPage = '';
+    let clickTimer;
+    const sessionPromise = createClient().auth.getSession().then(({ data }) => data?.session?.user?.id || '').catch(() => '');
+    const prepareCurrentPage = async () => {
+      if (stopped || !navigator.onLine || lastPreparedPage === window.location.href) return;
+      try {
+        const userId = await sessionPromise;
+        if (!userId || stopped) return;
+        const registration = await navigator.serviceWorker.ready;
+        if (stopped || !registration.active) return;
+        const assetUrls = Array.from(new Set([
+          ...Array.from(document.querySelectorAll('script[src], link[rel="stylesheet"][href]'))
+            .map((node) => node.src || node.href),
+          ...performance.getEntriesByType('resource').map((entry) => entry.name)
+        ].filter((assetUrl) => assetUrl?.startsWith(`${window.location.origin}/_next/static/`))));
+        registration.active.postMessage({
+          type: 'OFFLINE_SESSION_READY',
+          userId,
+          pageUrl: window.location.href,
+          assetUrls: assetUrls.slice(-100)
+        });
+        lastPreparedPage = window.location.href;
+      } catch (error) {
+        console.warn('Offline page preparation notice:', error);
+      }
+    };
+    const afterNavigation = () => {
+      clearTimeout(clickTimer);
+      clickTimer = setTimeout(prepareCurrentPage, 100);
+    };
+    const afterReconnect = () => {
+      lastPreparedPage = '';
+      prepareCurrentPage();
+    };
+    const afterWorkerUpdate = () => {
+      lastPreparedPage = '';
+      prepareCurrentPage();
+    };
+    prepareCurrentPage();
+    navigator.serviceWorker.addEventListener('controllerchange', afterWorkerUpdate);
+    window.addEventListener('online', afterReconnect);
+    window.addEventListener('popstate', afterNavigation);
+    window.addEventListener('click', afterNavigation, true);
+    const interval = setInterval(prepareCurrentPage, 30000);
+    return () => {
+      stopped = true;
+      clearTimeout(clickTimer);
+      clearInterval(interval);
+      window.removeEventListener('online', afterReconnect);
+      window.removeEventListener('popstate', afterNavigation);
+      window.removeEventListener('click', afterNavigation, true);
+      navigator.serviceWorker.removeEventListener('controllerchange', afterWorkerUpdate);
     };
   }, []);
 
@@ -163,8 +231,10 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
     const handleOnline = () => {
       setIsOnline(true);
       setOfflineUsage(getDailyOfflineUsage());
-      setToastMessage('🌐 Internet reconnected! Syncing offline changes...', 'info', 4000);
-      if (triggerSyncRef.current) triggerSyncRef.current();
+      if (getOfflineRules().autoSyncOnReconnect) {
+        setToastMessage('🌐 Internet reconnected! Syncing offline changes...', 'info', 4000);
+        if (triggerSyncRef.current) triggerSyncRef.current();
+      }
     };
 
     const handleOffline = () => {
@@ -177,7 +247,7 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
     const handleQueueChanged = () => {
       loadQueueState();
       // Auto-Sync Debounce: If online, automatically trigger background sync after 5s!
-      if (typeof navigator !== 'undefined' && navigator.onLine) {
+      if (typeof navigator !== 'undefined' && navigator.onLine && getOfflineRules().autoSyncOnReconnect) {
         clearTimeout(autoSyncDebounceRef.current);
         autoSyncDebounceRef.current = setTimeout(() => {
           if (triggerSyncRef.current) triggerSyncRef.current();
@@ -190,7 +260,7 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
     window.addEventListener('supuja_offline_queue_changed', handleQueueChanged);
 
     const interval = setInterval(() => {
-      if (typeof navigator !== 'undefined' && navigator.onLine) {
+      if (typeof navigator !== 'undefined' && navigator.onLine && getOfflineRules().autoSyncOnReconnect) {
         loadQueueState().then(() => {
           getPendingQueue().then(queue => {
             if (queue.length > 0 && triggerSyncRef.current) {

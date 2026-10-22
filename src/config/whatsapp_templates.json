@@ -1,23 +1,6 @@
 {
   "templates": [
     {
-      "title": "Verified Full Schema Template",
-      "category": "Testing",
-      "type": "TEXT",
-      "content": "Namaste {{name}} Ji from {{company}} in {{district_name}}, {{state_name}}! CP1 phone: {{phone}}, Lead Ref: {{lead_ref_id}}",
-      "id": "tpl_wa_1792259839972",
-      "updated_at": "2026-10-17T17:57:19.971Z",
-      "created_at": "2026-10-17T17:57:19.971Z"
-    },
-    {
-      "title": "Test",
-      "type": "TEXT",
-      "content": "Hello",
-      "id": "tpl_wa_1792259552483",
-      "updated_at": "2026-10-17T17:52:32.483Z",
-      "created_at": "2026-10-17T17:52:32.483Z"
-    },
-    {
       "id": "tpl_wa_welcome",
       "title": "Lead Welcome & Initial Greeting",
       "category": "Greeting",
@@ -86,5 +69,5 @@
       "created_at": "2026-10-17T18:00:00.000Z"
     }
   ],
-  "updated_at": "2026-10-17T17:57:19.972Z"
+  "updated_at": "2026-10-17T18:16:15.098Z"
 }

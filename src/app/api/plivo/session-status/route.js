@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import plivo from 'plivo';
 import { categorizeHangupCause } from '@/app/api/plivo/utils';
+import { isConsultationSession, loadConsultation, consultationView } from '@/lib/plivoConsultation';
 
 export async function GET(req) {
   try {
@@ -41,6 +42,20 @@ export async function GET(req) {
     }
 
     let session = sessionData;
+    if (isConsultationSession(session)) {
+      // Native MPC state is reconciled by the consultation controls/callbacks.
+      // A transferred customer's CDR is not evidence that this MPC ended.
+      const ended = ['ended', 'failed'].includes(session.status);
+      const connected = !ended && (session.status === 'connected' || !!session.customer_answer_time);
+      const row = ended ? null : await loadConsultation(adminClient, session.id);
+      return NextResponse.json({ activeSession: session, consultation: consultationView(row),
+        isConnected: connected, customerAnswered: connected, isEnded: ended,
+        status: session.status, hangupCause: session.hangup_cause,
+        customerAnswerTime: session.customer_answer_time, agentAnswerTime: session.agent_answer_time,
+      }, {
+        headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate', 'Pragma': 'no-cache' },
+      });
+    }
     let isConnected = session.status === 'connected' || !!session.customer_answer_time;
     let isEnded = session.status === 'ended' || session.status === 'failed';
     let conferenceChecked = !session.agent_answer_time || !session.conference_name;

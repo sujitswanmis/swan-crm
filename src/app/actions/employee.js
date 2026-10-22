@@ -27,7 +27,39 @@ export async function getEmployeesMaster(tenantId = DEFAULT_TENANT_ID, company =
 
     if (!rolesErr && Array.isArray(userRoles)) {
       let filteredRoles = userRoles;
-      if (company && company !== 'all') {
+      if (tenantId && tenantId !== DEFAULT_TENANT_ID) {
+        let tenantName = '';
+        let tenantCode = '';
+        let tenantAdminEmail = '';
+        try {
+          const { data: tenant } = await adminClient
+            .from('tenants')
+            .select('name, tenant_code, primary_contact_email')
+            .eq('id', tenantId)
+            .maybeSingle();
+          if (tenant) {
+            tenantName = String(tenant.name || '').toLowerCase().trim();
+            tenantCode = String(tenant.tenant_code || '').toLowerCase().trim();
+            tenantAdminEmail = String(tenant.primary_contact_email || '').toLowerCase().trim();
+          }
+        } catch (tErr) {
+          console.warn('Error fetching tenant in getEmployeesMaster:', tErr.message);
+        }
+
+        const compLower = String(company || '').toLowerCase().trim();
+        filteredRoles = userRoles.filter(u => {
+          const userComp = String(u.company || '').toLowerCase().trim();
+          const uEmail = String(u.email || '').toLowerCase().trim();
+          const uOfficialEmail = String(u.emp_official_mail_id || '').toLowerCase().trim();
+
+          if (u.tenant_id && u.tenant_id === tenantId) return true;
+          if (tenantAdminEmail && (uEmail === tenantAdminEmail || uOfficialEmail === tenantAdminEmail)) return true;
+          if (tenantName && userComp === tenantName) return true;
+          if (tenantCode && userComp === tenantCode) return true;
+          if (compLower && userComp === compLower) return true;
+          return false;
+        });
+      } else if (company && company !== 'all') {
         const cLower = company.toLowerCase().trim();
         const isSwan = cLower.includes('swan') || ['nsmlr', 'nstlp', 'nse'].includes(cLower);
         filteredRoles = userRoles.filter(u => {
@@ -43,9 +75,14 @@ export async function getEmployeesMaster(tenantId = DEFAULT_TENANT_ID, company =
         const email = (u.email || '').trim().toLowerCase();
         if (!email) return;
 
+        // Only active & approved users, skip customers
+        if (u.role === 'customer') return;
+        if (u.is_approved === false) return;
+
         const name = u.emp_name || u.name || u.email.split('@')[0];
         const status = u.emp_status || (u.module_access && u.module_access.emp_status) || 'Active';
-        if (status === 'InActive' || status === 'Trash' || status === 'Terminated') return;
+        const normStatus = String(status).toLowerCase().trim();
+        if (['inactive', 'trash', 'terminated', 'resigned', 'draft'].includes(normStatus)) return;
 
         const empObj = {
           id: u.user_id || u.id || email,
@@ -90,6 +127,8 @@ export async function getEmployeesMaster(tenantId = DEFAULT_TENANT_ID, company =
 
     if (!empErr && Array.isArray(empData)) {
       empData.forEach(e => {
+        const eStatus = String(e.status || 'Active').toLowerCase().trim();
+        if (['inactive', 'trash', 'terminated', 'resigned', 'draft'].includes(eStatus)) return;
         const email = (e.work_email || e.personal_email || e.email || '').trim().toLowerCase();
         const fullName = e.emp_name || [e.first_name, e.last_name].filter(Boolean).join(' ') || e.name || email;
         const desigName = e.designation?.designation_name || e.designation || 'Staff';

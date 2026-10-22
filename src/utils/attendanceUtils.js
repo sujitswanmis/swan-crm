@@ -22,6 +22,189 @@ export const SHIFT_RULES = {
   }
 };
 
+/**
+ * Helper to parse "HH:MM" or "HH:MM:SS" into total seconds from midnight
+ */
+export const parseTimeToSeconds = (timeStr, defaultSeconds = 0) => {
+  if (!timeStr) return defaultSeconds;
+  const parts = String(timeStr).trim().split(':');
+  if (parts.length < 2) return defaultSeconds;
+  const h = parseInt(parts[0], 10) || 0;
+  const m = parseInt(parts[1], 10) || 0;
+  const s = parseInt(parts[2] || '0', 10) || 0;
+  return h * 3600 + m * 60 + s;
+};
+
+/**
+ * Helper to format seconds into "09:00 AM" or "06:30:59 PM"
+ */
+export const formatSecondsToTime = (totalSec, includeSeconds = false) => {
+  let sec = Math.max(0, Math.floor(totalSec));
+  let h = Math.floor(sec / 3600) % 24;
+  let m = Math.floor((sec % 3600) / 60);
+  let s = sec % 60;
+  const period = h >= 12 ? 'PM' : 'AM';
+  let displayH = h % 12;
+  if (displayH === 0) displayH = 12;
+  const hh = String(displayH).padStart(2, '0');
+  const mm = String(m).padStart(2, '0');
+  const ss = String(s).padStart(2, '0');
+  if (includeSeconds) {
+    return `${hh}:${mm}:${ss} ${period}`;
+  }
+  return `${hh}:${mm} ${period}`;
+};
+
+/**
+ * Resolve specific shift object from tenant policy
+ */
+export const resolveShiftFromPolicy = (policy, shiftNameOrCodeOrId = null) => {
+  if (!policy) return null;
+  const shifts = Array.isArray(policy.shifts) && policy.shifts.length > 0
+    ? policy.shifts
+    : (Array.isArray(policy) ? policy : null);
+
+  if (shifts && shifts.length > 0) {
+    if (shiftNameOrCodeOrId) {
+      const search = String(shiftNameOrCodeOrId).trim().toLowerCase();
+      const matched = shifts.find(s => 
+        (s.id && String(s.id).toLowerCase() === search) ||
+        (s.shift_code && String(s.shift_code).toLowerCase() === search) ||
+        (s.shift_name && String(s.shift_name).toLowerCase() === search) ||
+        (s.shift_name && s.shift_name.toLowerCase().includes(search))
+      );
+      if (matched) {
+        return { ...policy, ...matched };
+      }
+    }
+    const defaultShift = shifts.find(s => s.is_default) || shifts[0];
+    return { ...policy, ...defaultShift };
+  }
+
+  return policy;
+};
+
+/**
+ * Smart Auto-Match Closest Shift based on current time or employee preference
+ */
+export const matchShiftForPunch = (policyOrShifts, punchDateObj = null, preferredShift = null) => {
+  const shifts = Array.isArray(policyOrShifts) 
+    ? policyOrShifts 
+    : (policyOrShifts?.shifts || []);
+
+  if (!shifts || shifts.length === 0) {
+    return policyOrShifts || null;
+  }
+
+  // 1. If preferred shift specified, match by id, code or name
+  if (preferredShift) {
+    const pref = String(preferredShift).trim().toLowerCase();
+    const found = shifts.find(s => 
+      (s.id && String(s.id).toLowerCase() === pref) ||
+      (s.shift_code && String(s.shift_code).toLowerCase() === pref) ||
+      (s.shift_name && String(s.shift_name).toLowerCase() === pref) ||
+      (s.shift_name && s.shift_name.toLowerCase().includes(pref))
+    );
+    if (found) return found;
+  }
+
+  // 2. Proximity search based on punch timestamp
+  const d = punchDateObj || new Date();
+  const { totalSeconds } = getIstDateParts(d);
+
+  let bestShift = null;
+  let minDiff = Infinity;
+
+  shifts.forEach(s => {
+    const sStartSec = parseTimeToSeconds(s.start_time || '09:00');
+    let diff = Math.abs(totalSeconds - sStartSec);
+    if (diff > 12 * 3600) {
+      diff = 24 * 3600 - diff;
+    }
+    if (diff < minDiff) {
+      minDiff = diff;
+      bestShift = s;
+    }
+  });
+
+  // If within 3.5 hours of a shift start, select that shift
+  if (bestShift && minDiff <= 3.5 * 3600) {
+    return bestShift;
+  }
+
+  // 3. Fallback to default shift or first shift
+  const def = shifts.find(s => s.is_default) || shifts[0];
+  return def || null;
+};
+
+/**
+ * Dynamic Tenant Policy Boundary Resolver
+ * Computes exact start, grace, short leave, and half-day thresholds based on tenant settings & shift
+ */
+export const getPolicyBoundaries = (policy = null, shiftNameOrCodeOrId = null) => {
+  const activeShift = resolveShiftFromPolicy(policy, shiftNameOrCodeOrId);
+
+  const startTimeStr = activeShift?.start_time || '09:00';
+  const endTimeStr = activeShift?.end_time || '18:30';
+  const startSec = parseTimeToSeconds(startTimeStr, 9 * 3600);
+  const endSec = parseTimeToSeconds(endTimeStr, 18 * 3600 + 30 * 60);
+
+  const graceMins = Number(activeShift?.grace_minutes ?? 5);
+  const graceEndSec = startSec + graceMins * 60 + 59; // e.g. 09:05:59
+
+  const sl1Mins = Number(activeShift?.short_leave_1_minutes ?? 20);
+  const sl1EndSec = startSec + sl1Mins * 60 + 59; // e.g. 09:20:59
+
+  const sl2Mins = Number(activeShift?.short_leave_2_minutes ?? 120);
+  const sl2EndSec = startSec + sl2Mins * 60 + 59; // e.g. 11:00:59
+
+  const eveningSl1StartSec = (endSec - sl1Mins * 60 + 86400) % 86400; // e.g. 18:10:00
+  const eveningSl2StartSec = (endSec - sl2Mins * 60 + 86400) % 86400; // e.g. 16:30:00
+
+  const minAbsentMins = Number(activeShift?.min_half_day_minutes ?? 270);
+  const minFullDayMins = Number(activeShift?.min_full_day_minutes ?? 450);
+
+  const sl1Quota = Number(activeShift?.short_leave_1_quota ?? 2);
+  const sl2Quota = Number(activeShift?.short_leave_2_quota ?? 2);
+  const totalSlQuota = Number(activeShift?.short_leave_total_monthly ?? (sl1Quota + sl2Quota));
+  const maxSlPerDay = Number(activeShift?.max_short_leave_per_day ?? 1);
+
+  const sl1Name = activeShift?.short_leave_1_name || `${sl1Mins}-Minute Short Leave`;
+  const sl2Name = activeShift?.short_leave_2_name || `${sl2Mins >= 60 ? Math.round(sl2Mins / 60) + '-Hour' : sl2Mins + '-Minute'} Short Leave`;
+  const shiftName = activeShift?.shift_name || 'Regular Shift';
+  const shiftCode = activeShift?.shift_code || 'GEN';
+  const isDefault = !!activeShift?.is_default;
+  const shiftsList = Array.isArray(policy?.shifts) ? policy.shifts : [activeShift].filter(Boolean);
+
+  return {
+    startTimeStr,
+    endTimeStr,
+    startSec,
+    endSec,
+    graceMins,
+    graceEndSec,
+    sl1Mins,
+    sl1EndSec,
+    sl2Mins,
+    sl2EndSec,
+    eveningSl1StartSec,
+    eveningSl2StartSec,
+    minAbsentMins,
+    minFullDayMins,
+    sl1Quota,
+    sl2Quota,
+    totalSlQuota,
+    maxSlPerDay,
+    sl1Name,
+    sl2Name,
+    shiftName,
+    shiftCode,
+    isDefault,
+    shiftsList,
+    activeShift
+  };
+};
+
 export const getIstDateParts = (dateObj) => {
   const d = dateObj ? new Date(dateObj) : new Date();
   try {
@@ -117,8 +300,14 @@ export const formatMinutesToHours = (totalMinutes = 0) => {
   return `${mins}m`;
 };
 
-// Calculate monthly short leave usage for a user
-export const calculateMonthlyShortLeaveUsage = (records = [], targetYear, targetMonth, excludeDate = null) => {
+// Calculate monthly short leave usage for a user with tenant policy awareness
+export const calculateMonthlyShortLeaveUsage = (
+  records = [], 
+  targetYear, 
+  targetMonth, 
+  excludeDate = null,
+  customPolicy = null
+) => {
   let used20Min = 0;
   let used2Hr = 0;
 
@@ -139,134 +328,127 @@ export const calculateMonthlyShortLeaveUsage = (records = [], targetYear, target
     }
   });
 
+  const b = getPolicyBoundaries(customPolicy);
+
   return {
     used_20_min: used20Min,
-    remaining_20_min: Math.max(0, 2 - used20Min),
+    remaining_20_min: Math.max(0, b.sl1Quota - used20Min),
     used_2_hr: used2Hr,
-    remaining_2_hr: Math.max(0, 2 - used2Hr),
+    remaining_2_hr: Math.max(0, b.sl2Quota - used2Hr),
     total_used: used20Min + used2Hr,
-    total_remaining: Math.max(0, 4 - (used20Min + used2Hr))
+    total_remaining: Math.max(0, b.totalSlQuota - (used20Min + used2Hr))
   };
 };
 
 /**
- * Evaluate Morning Punch In against Regular Shift Rules
- * 
- * Rules:
- * 1. 09:00:00 to 09:05:59 -> ON_TIME (Grace period, 0 Short Leave used)
- * 2. 09:06:00 to 09:20:59 -> 20-Min Short Leave (if available) -> Else 2-Hr Short Leave -> Else Half Day
- * 3. 09:21:00 to 11:00:59 -> 2-Hour Short Leave (if available) -> Else Half Day
- * 4. After 11:01:00 -> Half Day
+ * Evaluate Morning Punch In against Tenant Shift Rules
  */
-export const evaluateMorningInPunch = (inDateObj, monthlyUsage = { used_20_min: 0, used_2_hr: 0 }, userName = 'User') => {
+export const evaluateMorningInPunch = (
+  inDateObj, 
+  monthlyUsage = { used_20_min: 0, used_2_hr: 0 }, 
+  userName = 'User',
+  customPolicy = null
+) => {
   const d = inDateObj || new Date();
   const { totalSeconds } = getIstDateParts(d);
-
   const timeFormatted = d.toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true });
 
-  const SEC_09_00 = 9 * 3600; // 32400
-  const SEC_09_05_59 = 9 * 3600 + 5 * 60 + 59; // 32759
-  const SEC_09_20_59 = 9 * 3600 + 20 * 60 + 59; // 33659
-  const SEC_11_00_59 = 11 * 3600 + 59; // 39659
+  const b = getPolicyBoundaries(customPolicy);
 
-  // Case 1: Early or Within 5-Minute Grace Period (<= 09:05:59)
-  if (totalSeconds <= SEC_09_05_59) {
-    const isGrace = totalSeconds > SEC_09_00;
+  // Case 1: Early or Within Grace Period (<= graceEndSec)
+  if (totalSeconds <= b.graceEndSec) {
+    const isGrace = totalSeconds > b.startSec;
     return {
       status: 'PRESENT',
       short_leave_type: 'NONE',
       is_grace_applied: isGrace,
       remarks: isGrace 
-        ? 'On Time (Within 5-Minute Morning Grace Period: 09:00 - 09:05:59)' 
-        : 'On Time (Morning Regular Shift)',
+        ? `On Time (Within ${b.graceMins}-Minute Morning Grace Period: ${formatSecondsToTime(b.startSec)} - ${formatSecondsToTime(b.graceEndSec, true)})` 
+        : `On Time (${b.shiftName})`,
       voiceMessageHindi: `नमस्ते ${userName} जी! आपका पंच इन समय ${timeFormatted} दर्ज हो गया है। आप समय पर हैं। आपका दिन शुभ और मंगलमय हो!`,
-      ruleTitle: isGrace ? 'On Time (5m Grace)' : 'On Time'
+      ruleTitle: isGrace ? `On Time (${b.graceMins}m Grace)` : 'On Time'
     };
   }
 
-  // Case 2: Arrival between 09:06:00 and 09:20:59 (20-Minute Window)
-  if (totalSeconds <= SEC_09_20_59) {
-    if (monthlyUsage.used_20_min < 2) {
+  // Case 2: Arrival between grace and Short Leave 1 (<= sl1EndSec)
+  if (totalSeconds <= b.sl1EndSec) {
+    if (monthlyUsage.used_20_min < b.sl1Quota) {
       return {
         status: 'PRESENT',
         short_leave_type: '20_MIN_IN',
         is_grace_applied: false,
-        remarks: '20-Minute Short Leave Applied (Morning arrival between 09:06 - 09:20)',
-        voiceMessageHindi: `नमस्ते ${userName} जी! आपका पंच इन समय ${timeFormatted} दर्ज हो गया है। आपका 20 मिनट का शॉर्ट लीव अप्लाई हुआ है। आपका दिन शुभ हो!`,
-        ruleTitle: '20-Min Short Leave Applied'
+        remarks: `${b.sl1Name} Applied (Morning arrival between ${formatSecondsToTime(b.graceEndSec + 1)} - ${formatSecondsToTime(b.sl1EndSec)})`,
+        voiceMessageHindi: `नमस्ते ${userName} जी! आपका पंच इन समय ${timeFormatted} दर्ज हो गया है। आपका ${b.sl1Mins} मिनट का शॉर्ट लीव अप्लाई हुआ है। आपका दिन शुभ हो!`,
+        ruleTitle: `${b.sl1Name} Applied`
       };
-    } else if (monthlyUsage.used_2_hr < 2) {
+    } else if (monthlyUsage.used_2_hr < b.sl2Quota) {
       return {
         status: 'PRESENT',
         short_leave_type: '2_HR_IN',
         is_grace_applied: false,
-        remarks: '2-Hour Short Leave Applied (20-Min Short Leaves exhausted, morning arrival 09:06 - 09:20)',
-        voiceMessageHindi: `नमस्ते ${userName} जी! आपका पंच इन समय ${timeFormatted} दर्ज हो गया है। 20 मिनट का कोटा समाप्त होने पर 2 घंटे का शॉर्ट लीव अप्लाई हुआ है। आपका दिन शुभ हो!`,
-        ruleTitle: '2-Hour Short Leave Applied'
+        remarks: `${b.sl2Name} Applied (${b.sl1Name} quota exhausted, morning arrival ${formatSecondsToTime(b.graceEndSec + 1)} - ${formatSecondsToTime(b.sl1EndSec)})`,
+        voiceMessageHindi: `नमस्ते ${userName} जी! आपका पंच इन समय ${timeFormatted} दर्ज हो गया है। शॉर्ट लीव समाप्त होने पर 2 घंटे का शॉर्ट लीव अप्लाई हुआ है। आपका दिन शुभ हो!`,
+        ruleTitle: `${b.sl2Name} Applied`
       };
     } else {
       return {
         status: 'HALF_DAY',
         short_leave_type: 'NONE',
         is_grace_applied: false,
-        remarks: 'Half Day Marked: Late arrival (09:06 - 09:20) and Monthly Short Leaves Exhausted',
+        remarks: `Half Day Marked: Late arrival (${formatSecondsToTime(b.graceEndSec + 1)} - ${formatSecondsToTime(b.sl1EndSec)}) and Monthly Short Leaves Exhausted`,
         voiceMessageHindi: `नमस्ते ${userName} जी! आपका पंच इन समय ${timeFormatted} दर्ज हो गया है। शॉर्ट लीव समाप्त होने के कारण हाफ डे मार्क हुआ है।`,
         ruleTitle: 'Half Day (Short Leaves Exhausted)'
       };
     }
   }
 
-  // Case 3: Arrival between 09:21:00 and 11:00:59 (2-Hour Window)
-  if (totalSeconds <= SEC_11_00_59) {
-    if (monthlyUsage.used_2_hr < 2) {
+  // Case 3: Arrival between Short Leave 1 and Short Leave 2 (<= sl2EndSec)
+  if (totalSeconds <= b.sl2EndSec) {
+    if (monthlyUsage.used_2_hr < b.sl2Quota) {
       return {
         status: 'PRESENT',
         short_leave_type: '2_HR_IN',
         is_grace_applied: false,
-        remarks: '2-Hour Short Leave Applied (Morning arrival between 09:21 - 11:00)',
-        voiceMessageHindi: `नमस्ते ${userName} जी! आपका पंच इन समय ${timeFormatted} दर्ज हो गया है। आपका 2 घंटे का शॉर्ट लीव अप्लाई हुआ है। आपका दिन शुभ हो!`,
-        ruleTitle: '2-Hour Short Leave Applied'
+        remarks: `${b.sl2Name} Applied (Morning arrival between ${formatSecondsToTime(b.sl1EndSec + 1)} - ${formatSecondsToTime(b.sl2EndSec)})`,
+        voiceMessageHindi: `नमस्ते ${userName} जी! आपका पंच इन समय ${timeFormatted} दर्ज हो गया है। आपका ${b.sl2Name} अप्लाई हुआ है। आपका दिन शुभ हो!`,
+        ruleTitle: `${b.sl2Name} Applied`
       };
     } else {
       return {
         status: 'HALF_DAY',
         short_leave_type: 'NONE',
         is_grace_applied: false,
-        remarks: 'Half Day Marked: Late arrival between 09:21 - 11:00 and 2-Hour Short Leaves Exhausted',
-        voiceMessageHindi: `नमस्ते ${userName} जी! आपका पंच इन समय ${timeFormatted} दर्ज हो गया है। 2 घंटे का शॉर्ट लीव कोटा समाप्त होने के कारण हाफ डे मार्क हुआ है।`,
-        ruleTitle: 'Half Day (2-Hr Short Leave Exhausted)'
+        remarks: `Half Day Marked: Late arrival between ${formatSecondsToTime(b.sl1EndSec + 1)} - ${formatSecondsToTime(b.sl2EndSec)} and Short Leaves Exhausted`,
+        voiceMessageHindi: `नमस्ते ${userName} जी! आपका पंच इन समय ${timeFormatted} दर्ज हो गया है। शॉर्ट लीव कोटा समाप्त होने के कारण हाफ डे मार्क हुआ है।`,
+        ruleTitle: `Half Day (${b.sl2Name} Exhausted)`
       };
     }
   }
 
-  // Case 4: Arrival after 11:01:00 (Beyond 11:00 AM limit)
+  // Case 4: Arrival after Short Leave 2 (> sl2EndSec)
+  const cutoffTime = formatSecondsToTime(b.sl2EndSec);
   return {
     status: 'HALF_DAY',
     short_leave_type: 'NONE',
     is_grace_applied: false,
-    remarks: 'Half Day Marked: Late arrival after 11:00 AM (Beyond permissible Short Leave window)',
-    voiceMessageHindi: `नमस्ते ${userName} जी! आपका पंच इन समय ${timeFormatted} दर्ज हो गया है। 11 बजे के बाद आने के कारण हाफ डे मार्क हुआ है।`,
-    ruleTitle: 'Half Day (After 11:00 AM)'
+    remarks: `Half Day Marked: Late arrival after ${cutoffTime} (Beyond permissible Short Leave window)`,
+    voiceMessageHindi: `नमस्ते ${userName} जी! आपका पंच इन समय ${timeFormatted} दर्ज हो गया है। ${cutoffTime} के बाद आने के कारण हाफ डे मार्क हुआ है।`,
+    ruleTitle: `Half Day (After ${cutoffTime})`
   };
 };
 
 /**
- * Evaluate Evening Punch Out against Regular Shift Rules
- * 
- * Rules:
- * 1. 18:30:00 or later -> Shift Completed on Time (No SL needed)
- * 2. 18:10:00 to 18:29:59 -> 20-Min Short Leave (if no SL used today and quota available) -> Else 2-Hr SL -> Else Half Day
- * 3. 16:30:00 to 18:09:59 -> 2-Hour Short Leave (if no SL used today and quota available) -> Else Half Day
- * 4. Before 16:30:00 -> Half Day (Exceeds permissible early departure)
- * 5. Constraint: Max 1 Short Leave per day.
+ * Evaluate Evening Punch Out against Tenant Shift Rules
  */
 export const evaluateEveningOutPunch = (
   outDateObj, 
   inDateObj, 
   currentRecord = null, 
   monthlyUsage = { used_20_min: 0, used_2_hr: 0 }, 
-  userName = 'User'
+  userName = 'User',
+  customPolicy = null
 ) => {
+  const b = getPolicyBoundaries(customPolicy);
   const outD = outDateObj || new Date();
   const { totalSeconds, isSunday } = getIstDateParts(outD);
 
@@ -280,29 +462,26 @@ export const evaluateEveningOutPunch = (
   const mins = totalMins % 60;
   const hindiDuration = (hrs > 0 && mins > 0) ? `${hrs} घंटे ${mins} मिनट` : (hrs > 0 ? `${hrs} घंटे` : `${mins} मिनट`);
 
-  const SEC_16_30 = 16 * 3600 + 30 * 60; // 59400
-  const SEC_18_10 = 18 * 3600 + 10 * 60; // 65400
-  const SEC_18_30 = 18 * 3600 + 30 * 60; // 66600
-
   const morningSlUsed = currentRecord?.short_leave_type && currentRecord.short_leave_type !== 'NONE';
   const initialStatus = currentRecord?.status || 'PRESENT';
 
   const isMonToSat = !isSunday;
 
-  // RULE: If Monday to Saturday and total worked time < 4 hours 30 minutes (< 270 mins) -> ABSENT
-  if (isMonToSat && totalMins < 270) {
+  // RULE: If Monday to Saturday and total worked time < minAbsentMins (default 270 = 4h 30m) -> ABSENT
+  if (isMonToSat && totalMins < b.minAbsentMins) {
+    const minHoursFormatted = formatMinutesToHours(b.minAbsentMins);
     return {
       status: 'ABSENT',
       short_leave_type: currentRecord?.short_leave_type || 'NONE',
       total_working_minutes: totalMins,
-      remarks: `Absent Marked: Total working time (${durationFormatted}) is less than 4 Hours 30 Minutes on Mon-Sat (< 270 mins)`,
-      voiceMessageHindi: `नमस्ते ${userName} जी! आपका पंच आउट समय ${timeFormatted} दर्ज हो गया है। आज आपने कुल ${hindiDuration} काम किया है, जो कि 4 घंटे 30 मिनट से कम है, इसलिए आज एब्सेंट मार्क हुआ है।`,
-      ruleTitle: 'Absent (< 4h 30m on Mon-Sat)'
+      remarks: `Absent Marked: Total working time (${durationFormatted}) is less than ${minHoursFormatted} on Mon-Sat (< ${b.minAbsentMins} mins)`,
+      voiceMessageHindi: `नमस्ते ${userName} जी! आपका पंच आउट समय ${timeFormatted} दर्ज हो गया है। आज आपने कुल ${hindiDuration} काम किया है, जो कि ${minHoursFormatted} से कम है, इसलिए आज एब्सेंट मार्क हुआ है।`,
+      ruleTitle: `Absent (< ${minHoursFormatted} on Mon-Sat)`
     };
   }
 
-  // Case 1: Shift Completed On Time (>= 18:30:00)
-  if (totalSeconds >= SEC_18_30) {
+  // Case 1: Shift Completed On Time (>= endSec)
+  if (totalSeconds >= b.endSec) {
     const finalStatus = (initialStatus === 'HALF_DAY') ? 'HALF_DAY' : 'PRESENT';
     return {
       status: finalStatus,
@@ -314,11 +493,11 @@ export const evaluateEveningOutPunch = (
     };
   }
 
-  // Case 2: Early Departure between 18:10:00 and 18:29:59 (20-Min Window)
-  if (totalSeconds >= SEC_18_10) {
-    if (morningSlUsed) {
+  // Case 2: Early Departure between eveningSl1StartSec and endSec
+  if (totalSeconds >= b.eveningSl1StartSec) {
+    if (morningSlUsed && b.maxSlPerDay === 1) {
       // Rule: Max 1 Short Leave per day
-      const finalStatus = (initialStatus === 'HALF_DAY' || totalMins < 450) ? 'HALF_DAY' : 'PRESENT';
+      const finalStatus = (initialStatus === 'HALF_DAY' || totalMins < b.minFullDayMins) ? 'HALF_DAY' : 'PRESENT';
       return {
         status: finalStatus,
         short_leave_type: currentRecord.short_leave_type,
@@ -329,77 +508,78 @@ export const evaluateEveningOutPunch = (
       };
     }
 
-    if (monthlyUsage.used_20_min < 2) {
+    if (monthlyUsage.used_20_min < b.sl1Quota) {
       return {
         status: initialStatus === 'HALF_DAY' ? 'HALF_DAY' : 'PRESENT',
         short_leave_type: '20_MIN_OUT',
         total_working_minutes: totalMins,
-        remarks: '20-Minute Short Leave Applied (Evening departure between 18:10 - 18:30)',
-        voiceMessageHindi: `नमस्ते ${userName} जी! आपका पंच आउट समय ${timeFormatted} दर्ज हो गया है। आपका 20 मिनट का शॉर्ट लीव अप्लाई हुआ है। कुल काम ${hindiDuration}। शुभ संध्या!`,
-        ruleTitle: '20-Min Short Leave Applied'
+        remarks: `${b.sl1Name} Applied (Evening departure between ${formatSecondsToTime(b.eveningSl1StartSec)} - ${formatSecondsToTime(b.endSec)})`,
+        voiceMessageHindi: `नमस्ते ${userName} जी! आपका पंच आउट समय ${timeFormatted} दर्ज हो गया है। आपका ${b.sl1Name} अप्लाई हुआ है। कुल काम ${hindiDuration}। शुभ संध्या!`,
+        ruleTitle: `${b.sl1Name} Applied`
       };
-    } else if (monthlyUsage.used_2_hr < 2) {
+    } else if (monthlyUsage.used_2_hr < b.sl2Quota) {
       return {
         status: initialStatus === 'HALF_DAY' ? 'HALF_DAY' : 'PRESENT',
         short_leave_type: '2_HR_OUT',
         total_working_minutes: totalMins,
-        remarks: '2-Hour Short Leave Applied (20-Min SLs exhausted, evening departure 18:10 - 18:30)',
+        remarks: `${b.sl2Name} Applied (${b.sl1Name} quota exhausted, evening departure ${formatSecondsToTime(b.eveningSl1StartSec)} - ${formatSecondsToTime(b.endSec)})`,
         voiceMessageHindi: `नमस्ते ${userName} जी! आपका पंच आउट समय ${timeFormatted} दर्ज हो गया है। आपका 2 घंटे का शॉर्ट लीव अप्लाई हुआ है। कुल काम ${hindiDuration}। शुभ संध्या!`,
-        ruleTitle: '2-Hour Short Leave Applied'
+        ruleTitle: `${b.sl2Name} Applied`
       };
     } else {
       return {
         status: 'HALF_DAY',
         short_leave_type: 'NONE',
         total_working_minutes: totalMins,
-        remarks: 'Half Day Marked: Early departure (18:10 - 18:30) and Short Leaves Exhausted',
+        remarks: `Half Day Marked: Early departure (${formatSecondsToTime(b.eveningSl1StartSec)} - ${formatSecondsToTime(b.endSec)}) and Short Leaves Exhausted`,
         voiceMessageHindi: `नमस्ते ${userName} जी! आपका पंच आउट समय ${timeFormatted} दर्ज हो गया है। शॉर्ट लीव समाप्त होने के कारण हाफ डे मार्क हुआ है। शुभ संध्या!`,
         ruleTitle: 'Half Day (Short Leaves Exhausted)'
       };
     }
   }
 
-  // Case 3: Early Departure between 16:30:00 and 18:09:59 (2-Hour Window)
-  if (totalSeconds >= SEC_16_30) {
-    if (morningSlUsed) {
+  // Case 3: Early Departure between eveningSl2StartSec and eveningSl1StartSec
+  if (totalSeconds >= b.eveningSl2StartSec) {
+    if (morningSlUsed && b.maxSlPerDay === 1) {
       return {
         status: 'HALF_DAY',
         short_leave_type: currentRecord.short_leave_type,
         total_working_minutes: totalMins,
-        remarks: `${currentRecord.remarks || ''} | Half Day: Early departure before 18:10 and Short Leave already used in morning`.trim(),
+        remarks: `${currentRecord.remarks || ''} | Half Day: Early departure before ${formatSecondsToTime(b.eveningSl1StartSec)} and Short Leave already used in morning`.trim(),
         voiceMessageHindi: `नमस्ते ${userName} जी! आपका पंच आउट समय ${timeFormatted} दर्ज हो गया है। सुबह शॉर्ट लीव लेने के कारण शाम को हाफ डे मार्क हुआ है।`,
         ruleTitle: 'Half Day (Multiple SL Not Allowed)'
       };
     }
 
-    if (monthlyUsage.used_2_hr < 2) {
+    if (monthlyUsage.used_2_hr < b.sl2Quota) {
       return {
         status: initialStatus === 'HALF_DAY' ? 'HALF_DAY' : 'PRESENT',
         short_leave_type: '2_HR_OUT',
         total_working_minutes: totalMins,
-        remarks: '2-Hour Short Leave Applied (Evening departure between 16:30 - 18:30)',
+        remarks: `${b.sl2Name} Applied (Evening departure between ${formatSecondsToTime(b.eveningSl2StartSec)} - ${formatSecondsToTime(b.endSec)})`,
         voiceMessageHindi: `नमस्ते ${userName} जी! आपका पंच आउट समय ${timeFormatted} दर्ज हो गया है। आपका 2 घंटे का शॉर्ट लीव अप्लाई हुआ है। कुल काम ${hindiDuration}। शुभ संध्या!`,
-        ruleTitle: '2-Hour Short Leave Applied'
+        ruleTitle: `${b.sl2Name} Applied`
       };
     } else {
       return {
         status: 'HALF_DAY',
         short_leave_type: 'NONE',
         total_working_minutes: totalMins,
-        remarks: 'Half Day Marked: Early departure between 16:30 - 18:10 and 2-Hour Short Leaves Exhausted',
+        remarks: `Half Day Marked: Early departure between ${formatSecondsToTime(b.eveningSl2StartSec)} - ${formatSecondsToTime(b.eveningSl1StartSec)} and Short Leaves Exhausted`,
         voiceMessageHindi: `नमस्ते ${userName} जी! आपका पंच आउट समय ${timeFormatted} दर्ज हो गया है। 2 घंटे का शॉर्ट लीव समाप्त होने के कारण हाफ डे मार्क हुआ है।`,
-        ruleTitle: 'Half Day (2-Hr Short Leave Exhausted)'
+        ruleTitle: `Half Day (${b.sl2Name} Exhausted)`
       };
     }
   }
 
-  // Case 4: Departure before 16:30:00 (Beyond 2-Hour permissible limit)
+  // Case 4: Departure before eveningSl2StartSec
+  const earlyCutoff = formatSecondsToTime(b.eveningSl2StartSec);
   return {
     status: 'HALF_DAY',
     short_leave_type: currentRecord?.short_leave_type || 'NONE',
     total_working_minutes: totalMins,
-    remarks: 'Half Day Marked: Early departure before 16:30 (Exceeds permissible 2-Hour limit)',
-    voiceMessageHindi: `नमस्ते ${userName} जी! आपका पंच आउट समय ${timeFormatted} दर्ज हो गया है। 4:30 बजे से पहले निकलने के कारण हाफ डे मार्क हुआ है।`,
-    ruleTitle: 'Half Day (Left before 4:30 PM)'
+    remarks: `Half Day Marked: Early departure before ${earlyCutoff} (Exceeds permissible Short Leave limit)`,
+    voiceMessageHindi: `नमस्ते ${userName} जी! आपका पंच आउट समय ${timeFormatted} दर्ज हो गया है। ${earlyCutoff} से पहले निकलने के कारण हाफ डे मार्क हुआ है।`,
+    ruleTitle: `Half Day (Left before ${earlyCutoff})`
   };
 };

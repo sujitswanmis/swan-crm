@@ -5,7 +5,8 @@ import React, { useState, useMemo } from 'react';
 import { 
   Search, Plus, Download, Upload, Filter, User, Shield, Key, Pencil, 
   Trash2, RotateCcw, LogIn, ChevronLeft, ChevronRight, CheckSquare, Square, 
-  MoreVertical, RefreshCw, AlertCircle, Users, Building, Mail, Phone, MapPin
+  MoreVertical, RefreshCw, AlertCircle, Users, Building, Mail, Phone, MapPin,
+  MessageSquare, Send
 } from 'lucide-react';
 import { 
   getStatusBadgeStyle, HoverIconButton, isMasterAdmin, EMP_STATUS_OPTIONS 
@@ -13,12 +14,23 @@ import {
 import useTableColumnResize, { ColumnResizer } from '@/utils/tableColumnResize';
 
 const DEFAULT_USER_MANAGE_COL_WIDTHS = {
-  user_employee: 260,
-  dept_role: 180,
-  location: 160,
-  reporting: 180,
-  status: 120,
-  actions: 180
+  user_employee: 210,
+  dept_role: 140,
+  location: 110,
+  reporting: 130,
+  status: 100,
+  approval_status: 105,
+  actions: 140
+};
+
+const USER_MANAGE_COL_MIN_WIDTHS = {
+  user_employee: 150,
+  dept_role: 100,
+  location: 80,
+  reporting: 100,
+  status: 80,
+  approval_status: 85,
+  actions: 90
 };
 
 export default function UserManageTab({
@@ -30,13 +42,17 @@ export default function UserManageTab({
   onEditUser = () => {},
   onManagePermissions = () => {},
   onResetPassword = () => {},
+  onSendResetEmail = () => {},
+  onViewChat = () => {},
   onImpersonate = () => {},
   onChangeStatus = () => {},
+  onToggleApproval = () => {},
   onMoveToTrash = () => {},
   onRestoreFromTrash = () => {},
   onHardDelete = () => {},
   onOpenBulkImport = () => {},
-  onExportCSV = () => {}
+  onExportCSV = () => {},
+  hasChatbot = false
 }) {
   const [selectedStatusTab, setSelectedStatusTab] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
@@ -52,11 +68,11 @@ export default function UserManageTab({
     handleTouchStart: handleUserTouchStart,
     handleDoubleClickReset: handleUserReset,
     getTableTotalWidth: getUserTotalWidth
-  } = useTableColumnResize(DEFAULT_USER_MANAGE_COL_WIDTHS, 'user_mgmt_tab_col_widths');
+  } = useTableColumnResize(DEFAULT_USER_MANAGE_COL_WIDTHS, 'user_mgmt_tab_col_widths_v2', USER_MANAGE_COL_MIN_WIDTHS);
 
   // Status Counts
   const statusCounts = useMemo(() => {
-    const counts = { All: 0, Active: 0, InActive: 0, Hold: 0, Resigned: 0, Terminated: 0, Trash: 0 };
+    const counts = { All: 0, Active: 0, InActive: 0, Hold: 0, Resigned: 0, Terminated: 0, Draft: 0, Trash: 0 };
     (users || []).forEach(u => {
       // Exclude public/customer role from internal User Manage
       if (u.role === 'customer') return;
@@ -132,7 +148,7 @@ export default function UserManageTab({
       }}>
         {/* Status Filter Badges */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', alignItems: 'center' }}>
-          {['All', 'Active', 'InActive', 'Hold', 'Resigned', 'Terminated', 'Trash'].map(st => {
+          {['All', 'Active', 'InActive', 'Hold', 'Resigned', 'Terminated', 'Draft', 'Trash'].map(st => {
             const isSelected = selectedStatusTab === st;
             const count = statusCounts[st] || 0;
             return (
@@ -332,7 +348,7 @@ export default function UserManageTab({
         backgroundColor: 'var(--bg-surface)'
       }}>
         <div style={{ overflowX: 'auto', maxHeight: '68vh' }}>
-          <MobileTableView id="UserManagement/tabs/UserManageTab-1"><table style={{ width: `${getUserTotalWidth()}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem' }}>
+          <MobileTableView id="UserManagement/tabs/UserManageTab-1"><table style={{ width: '100%', minWidth: `${getUserTotalWidth()}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem' }}>
             <thead>
               <tr style={{
                 position: 'sticky',
@@ -365,6 +381,10 @@ export default function UserManageTab({
                   <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Status</div>
                   <ColumnResizer columnKey="status" isResizing={isUserResizing('status')} onMouseDown={(e) => handleUserResizeStart('status', e)} onTouchStart={(e) => handleUserTouchStart('status', e)} onDoubleClick={() => handleUserReset('status')} />
                 </th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 2, padding: '0.75rem 1rem', width: `${userColWidths.approval_status}px`, backgroundColor: 'var(--bg-primary, #f1f5f9)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Approval Status</div>
+                  <ColumnResizer columnKey="approval_status" isResizing={isUserResizing('approval_status')} onMouseDown={(e) => handleUserResizeStart('approval_status', e)} onTouchStart={(e) => handleUserTouchStart('approval_status', e)} onDoubleClick={() => handleUserReset('approval_status')} />
+                </th>
                 <th style={{ position: 'sticky', top: 0, zIndex: 2, padding: '0.75rem 1rem', width: `${userColWidths.actions}px`, textAlign: 'center', backgroundColor: 'var(--bg-primary, #f1f5f9)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Actions</div>
                   <ColumnResizer columnKey="actions" isResizing={isUserResizing('actions')} onMouseDown={(e) => handleUserResizeStart('actions', e)} onTouchStart={(e) => handleUserTouchStart('actions', e)} onDoubleClick={() => handleUserReset('actions')} />
@@ -374,7 +394,7 @@ export default function UserManageTab({
             <tbody>
               {paginatedUsers.length === 0 ? (
                 <tr>
-                  <td colSpan={6} style={{ padding: '3rem 1rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                  <td colSpan={7} style={{ padding: '3rem 1rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
                       <Users size={36} style={{ opacity: 0.35 }} />
                       <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>No users found</span>
@@ -446,6 +466,16 @@ export default function UserManageTab({
                         <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: '0.15rem', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }}>
                           {u.emp_designation || u.role || 'Staff'}
                         </div>
+                        {u.assigned_shift && (
+                          <div style={{ fontSize: '0.68rem', color: '#0369a1', backgroundColor: '#e0f2fe', padding: '0.1rem 0.35rem', borderRadius: '4px', display: 'inline-block', marginTop: '0.2rem', fontWeight: 600 }}>
+                            ⏰ {u.assigned_shift}
+                          </div>
+                        )}
+                        {u.salary_amount !== null && u.salary_amount !== undefined && u.salary_amount !== '' && (
+                          <div style={{ fontSize: '0.72rem', color: '#15803d', fontWeight: 700, marginTop: '0.2rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                            <span>💰 ₹{Number(u.salary_amount).toLocaleString('en-IN')}/mo</span>
+                          </div>
+                        )}
                       </td>
 
                       {/* Location */}
@@ -473,32 +503,72 @@ export default function UserManageTab({
                       </td>
 
                       {/* Status */}
-                      <td style={{ padding: '0.75rem 1rem' }}>
+                      <td style={{ padding: '0.75rem 0.65rem' }}>
+                        {(() => {
+                          const currentStatus = u.emp_status || (u.module_access?.emp_status) || 'Active';
+                          const style = getStatusBadgeStyle(currentStatus);
+                          return (
+                            <select
+                              value={currentStatus}
+                              onChange={(e) => onChangeStatus(u, e.target.value)}
+                              style={{
+                                padding: '0.28rem 0.55rem',
+                                borderRadius: '6px',
+                                fontSize: '0.75rem',
+                                fontWeight: 600,
+                                backgroundColor: style.bg,
+                                color: style.color,
+                                border: `1px solid ${style.border}`,
+                                cursor: 'pointer',
+                                outline: 'none',
+                                width: '100%',
+                                maxWidth: '115px'
+                              }}
+                            >
+                              {EMP_STATUS_OPTIONS.map(opt => (
+                                <option key={opt} value={opt} style={{ background: '#fff', color: '#000' }}>{opt}</option>
+                              ))}
+                            </select>
+                          );
+                        })()}
+                      </td>
+
+                      {/* Approval Status */}
+                      <td style={{ padding: '0.75rem 0.65rem' }}>
                         <button
                           type="button"
-                          onClick={() => onChangeStatus(u)}
+                          onClick={() => onToggleApproval(u)}
+                          disabled={isMaster}
+                          title={isMaster ? 'Master Admin approval is permanent' : (u.is_approved ? 'Click to mark as Pending' : 'Click to Approve user')}
                           style={{
-                            padding: '0.25rem 0.6rem',
-                            borderRadius: '12px',
-                            border: `1px solid ${statusStyle.border}`,
-                            backgroundColor: statusStyle.bg,
-                            color: statusStyle.color,
-                            fontSize: '0.72rem',
+                            padding: '0.28rem 0.65rem',
+                            borderRadius: '99px',
+                            fontSize: '0.74rem',
                             fontWeight: 700,
-                            cursor: 'pointer',
+                            border: 'none',
+                            cursor: isMaster ? 'not-allowed' : 'pointer',
+                            backgroundColor: u.is_approved ? '#dcfce7' : '#fee2e2',
+                            color: u.is_approved ? '#166534' : '#991b1b',
                             display: 'inline-flex',
                             alignItems: 'center',
-                            gap: '0.35rem'
+                            gap: '0.25rem',
+                            whiteSpace: 'nowrap'
                           }}
                         >
-                          <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: statusStyle.dot }} />
-                          {statusStyle.label}
+                          {u.is_approved ? '✓ Approved' : '⏳ Pending'}
                         </button>
                       </td>
 
                       {/* Action Icons */}
-                      <td style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.35rem' }}>
+                      <td style={{ padding: '0.5rem 0.35rem', textAlign: 'center', verticalAlign: 'middle' }}>
+                        <div style={{
+                          display: 'flex',
+                          flexWrap: 'wrap',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '0.25rem',
+                          maxWidth: '100%'
+                        }}>
                           {/* Permissions */}
                           <HoverIconButton
                             icon={Shield}
@@ -508,6 +578,19 @@ export default function UserManageTab({
                             borderColor="#ddd6fe"
                             onClick={() => onManagePermissions(u)}
                           />
+
+                          {/* View Chat - Rendered only when tenant has Chatbot entitled */}
+                          {hasChatbot && (
+                            <HoverIconButton
+                              icon={MessageSquare}
+                              label="View Chat"
+                              bg="#dcfce7"
+                              hoverBg="#bbf7d0"
+                              color="#15803d"
+                              borderColor="#bbf7d0"
+                              onClick={() => onViewChat(u)}
+                            />
+                          )}
 
                           {/* Edit */}
                           <HoverIconButton
@@ -519,7 +602,7 @@ export default function UserManageTab({
                             onClick={() => onEditUser(u)}
                           />
 
-                          {/* Reset Password */}
+                          {/* Reset Password (Direct) */}
                           <HoverIconButton
                             icon={Key}
                             label="Reset Password"
@@ -527,6 +610,17 @@ export default function UserManageTab({
                             color="#d97706"
                             borderColor="#fde68a"
                             onClick={() => onResetPassword(u)}
+                          />
+
+                          {/* Send Reset Email */}
+                          <HoverIconButton
+                            icon={Send}
+                            label="Send Reset Email"
+                            bg="#e0e7ff"
+                            hoverBg="#c7d2fe"
+                            color="#4338ca"
+                            borderColor="#c7d2fe"
+                            onClick={() => onSendResetEmail(u)}
                           />
 
                           {/* Impersonate */}

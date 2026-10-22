@@ -76,10 +76,26 @@ export default function SearchableEmployeeSelect({
     return employees.filter(e => currentMultiEmails.includes((e.email || '').toLowerCase()));
   }, [isMulti, employees, currentMultiEmails]);
 
+  // Keep active & approved employees only across dropdown lists (preserving currently selected)
+  const activeEmployees = useMemo(() => {
+    return (employees || []).filter(e => {
+      const email = (e.email || '').toLowerCase().trim();
+      // Keep if currently selected so existing associations do not display as empty/broken
+      if (!isMulti && singleEmail && email === singleEmail) return true;
+      if (isMulti && currentMultiEmails.includes(email)) return true;
+
+      const status = String(e.emp_status || e.status || 'Active').toLowerCase().trim();
+      if (['inactive', 'terminated', 'resigned', 'trash', 'draft'].includes(status)) return false;
+      if (e.is_approved === false) return false;
+      if (e.role === 'customer') return false;
+      return true;
+    });
+  }, [employees, isMulti, singleEmail, currentMultiEmails]);
+
   const filteredEmployees = useMemo(() => {
-    if (!searchTerm.trim()) return employees;
+    if (!searchTerm.trim()) return activeEmployees;
     const q = searchTerm.trim().toLowerCase();
-    return employees.filter(e => {
+    return activeEmployees.filter(e => {
       const name = (e.name || e.emp_name || '').toLowerCase();
       const email = (e.email || '').toLowerCase();
       const dept = (e.department || e.emp_department || '').toLowerCase();
@@ -87,7 +103,7 @@ export default function SearchableEmployeeSelect({
       const code = (e.emp_code || '').toLowerCase();
       return name.includes(q) || email.includes(q) || dept.includes(q) || desig.includes(q) || code.includes(q);
     });
-  }, [employees, searchTerm]);
+  }, [activeEmployees, searchTerm]);
 
   const handleToggleMulti = (emp) => {
     const targetEmail = (emp.email || '').trim().toLowerCase();

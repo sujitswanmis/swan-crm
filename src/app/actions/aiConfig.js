@@ -66,6 +66,17 @@ export async function getTenantAiConfig(companyOrTenantId) {
       };
     }
 
+    const workspaceKeys = {
+      openai: Boolean(config.openai.api_key && config.openai.api_key.trim().length > 5),
+      gemini: Boolean(config.gemini.api_key && config.gemini.api_key.trim().length > 5),
+      claude: Boolean(config.claude.api_key && config.claude.api_key.trim().length > 5)
+    };
+    const systemKeys = {
+      openai: Boolean(process.env.OPENAI_API_KEY?.trim()),
+      gemini: Boolean((process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY)?.trim()),
+      claude: Boolean((process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY)?.trim())
+    };
+
     // Return safe masked version for UI display
     return {
       success: true,
@@ -74,19 +85,25 @@ export async function getTenantAiConfig(companyOrTenantId) {
         openai: {
           default_model: config.openai.default_model || 'gpt-4o-mini',
           is_active: Boolean(config.openai.is_active),
-          is_configured: Boolean(config.openai.api_key && config.openai.api_key.trim().length > 5),
+          is_configured: workspaceKeys.openai,
+          has_system_fallback: !workspaceKeys.openai && systemKeys.openai,
+          is_available: workspaceKeys.openai || systemKeys.openai,
           masked_key: maskApiKey(config.openai.api_key)
         },
         gemini: {
           default_model: config.gemini.default_model || 'gemini-2.0-flash',
           is_active: Boolean(config.gemini.is_active),
-          is_configured: Boolean(config.gemini.api_key && config.gemini.api_key.trim().length > 5),
+          is_configured: workspaceKeys.gemini,
+          has_system_fallback: !workspaceKeys.gemini && systemKeys.gemini,
+          is_available: workspaceKeys.gemini || systemKeys.gemini,
           masked_key: maskApiKey(config.gemini.api_key)
         },
         claude: {
           default_model: config.claude.default_model || 'claude-3-5-sonnet',
           is_active: Boolean(config.claude.is_active),
-          is_configured: Boolean(config.claude.api_key && config.claude.api_key.trim().length > 5),
+          is_configured: workspaceKeys.claude,
+          has_system_fallback: !workspaceKeys.claude && systemKeys.claude,
+          is_available: workspaceKeys.claude || systemKeys.claude,
           masked_key: maskApiKey(config.claude.api_key)
         }
       }

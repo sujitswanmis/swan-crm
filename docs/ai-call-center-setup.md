@@ -1,0 +1,16 @@
+# AI Voice Call Center setup
+
+This module uses a **separate Plivo AI Agent flow and inbound number**. The existing human call center number remains mapped to `/api/plivo/incoming`.
+
+## Plivo setup
+
+1. Publish an outbound Call Agent flow with an **API Request** trigger and an **Initiate Call** node. Require Basic authentication. Define these trigger inputs: `from`, `to`, `contact_id`, `campaign_id`, `call_log_id`, `customer_name`, `company_name`, `product_interest`, `language`, and `script`. Use the inputs in the flow. Copy the published trigger URL into `PLIVO_AI_AGENT_OUTBOUND_URL`. It must be the Plivo AI Agent trigger URL, not this CRM's answer URL.
+2. Set `PLIVO_AUTH_ID`, `PLIVO_AUTH_TOKEN`, and `PLIVO_FROM_NUMBER` in the deployment environment. Set `AI_CALL_CENTER_WEBHOOK_SECRET` to a random secret of at least 24 characters. Keep these values server-side.
+3. In the outbound AI Conversation node, extract `ai_result` as a single Choice with `Interested`, `Callback`, `Not Interested`, and `Other`. Extract `preferred_callback_datetime` in IST when the customer requests a callback. Configure both Hangup URL and Recording URL as `POST https://YOUR_CRM_HOST/api/ai/call/result?token=YOUR_SECRET`. Plivo's Hangup event posts `Start.http.params.call_log_id`, the conversation node's `ai_result` and callback time, and `call_uuid` inside `data.object`; its Recording event posts `event_data.recording_url` and `call_uuid`. The CRM accepts this nested format and the previous flat callback format. The Hangup event completes the call; a later Recording event enriches the same log without counting another call. Enable **Include Transcription & Summary** if Plivo offers it after a valid Recording URL is entered. Configure the outbound agent's optional context request to `POST https://YOUR_CRM_HOST/api/ai/agent/context?token=YOUR_SECRET` with `contact_id` and `to` only if the flow needs extra CRM data.
+4. Publish a separate inbound Call Agent flow with a **When a call is received** trigger and map a **separate Plivo number** to it. Configure the flow to call `/api/ai/incoming/start?token=YOUR_SECRET` with `From`, `To`, and `CallUUID`. Use returned `context`, `language`, and `transfer_number`. Configure its result callback to `/api/ai/incoming/save?token=YOUR_SECRET` with `call_uuid`, caller details, result, recording, and transcript. Enable incoming AI in the CRM only after this mapping is tested. A human transfer must be configured in the Plivo agent flow using its Transfer Call node; the CRM setting only provides the destination.
+
+## Automatic outbound calls
+
+Set `CRON_SECRET` on the deployment. Schedule an authenticated `GET https://YOUR_CRM_HOST/api/ai/campaign/run` with `Authorization: Bearer YOUR_CRON_SECRET` at the desired interval. Each run attempts at most one pending contact per running campaign, up to five campaigns. Starting a campaign marks it ready; the scheduler must be connected separately. `Dial Next Contact` remains available for a controlled manual test.
+
+Before enabling a real campaign, test one internal phone number end to end: voice conversation, hangup result, callback time in IST, transcript, recording, and duplicate callback behavior. No live call should be placed while `PLIVO_AI_AGENT_OUTBOUND_URL` still contains a placeholder.

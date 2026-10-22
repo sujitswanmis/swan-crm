@@ -1,9 +1,24 @@
 import MobileTableView from '@/components/common/MobileTableView';
-import React, { useState, useEffect, useRef } from 'react';
-import { Bot, Save, Users, Zap, AlertTriangle, CheckCircle2, Edit2, X, FileText, Trash2, Loader2, ChevronDown, Search, Plus, Sparkles, Check, Key, Eye, EyeOff, ShieldCheck, RefreshCw } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
+import { usePathname } from 'next/navigation';
+import { Bot, Save, Users, Zap, AlertTriangle, CheckCircle2, Edit2, X, FileText, Trash2, Loader2, ChevronDown, Search, Plus, Sparkles, Check, Key, Eye, EyeOff, ShieldCheck, RefreshCw, BarChart3 } from 'lucide-react';
 import { PremiumProgressLoader } from '../PremiumProgressLoader';
 import { useTableColumnResize, ColumnResizer } from '@/utils/tableColumnResize';
 import { getTenantAiConfig, saveTenantAiConfig, testAiProviderKey } from '@/app/actions/aiConfig';
+import { getAiBillingSummary } from '@/app/actions/aiBilling';
+
+const AI_ADMIN_TABS = [
+  { id: 'users', label: 'AI Chatbot Users', Icon: Users },
+  { id: 'billing', label: 'API Usage & Billing', Icon: BarChart3 },
+  { id: 'models', label: 'AI Model Setup', Icon: Bot }
+];
+const AI_PROVIDERS = [
+  { id: 'openai', label: 'OpenAI (ChatGPT)', desc: 'GPT models' },
+  { id: 'gemini', label: 'Google Gemini', desc: 'Gemini models' },
+  { id: 'claude', label: 'Anthropic Claude', desc: 'Claude models' }
+];
+const USD_FORMAT = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 4 });
 
 const DEFAULT_AI_USERS_COL_WIDTHS = {
   employee: 240,
@@ -25,7 +40,25 @@ const MIN_AI_USERS_COL_WIDTHS = {
   actions: 90
 };
 
+function getModelDropdownPosition(rect) {
+  const width = Math.min(320, window.innerWidth - 16);
+  const spaceBelow = window.innerHeight - rect.bottom - 8;
+  const spaceAbove = rect.top - 8;
+  const openAbove = spaceBelow < 340 && spaceAbove > spaceBelow;
+  const availableSpace = openAbove ? spaceAbove : spaceBelow;
+  return {
+    left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)),
+    top: openAbove ? 'auto' : rect.bottom + 8,
+    bottom: openAbove ? window.innerHeight - rect.top + 8 : 'auto',
+    width,
+    maxHeight: Math.max(120, Math.min(380, availableSpace - 8))
+  };
+}
+
 export default function AiAdminModule({ userRole, userId, userCompany, tenantId, isMasterAdmin }) {
+  const pathname = usePathname();
+  const sectionPath = pathname?.toLowerCase().replace(/\/$/, '');
+  const activeSection = sectionPath === '/aiadmin/users' ? 'users' : sectionPath === '/aiadmin/billing' ? 'billing' : 'models';
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editingLimit, setEditingLimit] = useState(null);
@@ -47,11 +80,19 @@ export default function AiAdminModule({ userRole, userId, userCompany, tenantId,
   const [savingAiConfig, setSavingAiConfig] = useState(false);
   const [configSaveSuccess, setConfigSaveSuccess] = useState(false);
   const [isConfigExpanded, setIsConfigExpanded] = useState(true);
+  const [availableProviderIds, setAvailableProviderIds] = useState([]);
+  const [addingProvider, setAddingProvider] = useState(null);
+  const [configLoaded, setConfigLoaded] = useState(false);
+  const [configLoadError, setConfigLoadError] = useState('');
+  const [billing, setBilling] = useState(null);
+  const [billingLoading, setBillingLoading] = useState(false);
+  const billingRequestId = useRef(0);
 
   // Dynamic AI Models State
   const [availableModels, setAvailableModels] = useState([]);
   const [liveSynced, setLiveSynced] = useState(false);
   const [openDropdownUserId, setOpenDropdownUserId] = useState(null);
+  const [dropdownPosition, setDropdownPosition] = useState(null);
   const [modelSearch, setModelSearch] = useState("");
   const [userSearchQuery, setUserSearchQuery] = useState("");
   const [customModelInput, setCustomModelInput] = useState("");
@@ -75,6 +116,7 @@ export default function AiAdminModule({ userRole, userId, userCompany, tenantId,
   );
 
   const dropdownRef = useRef(null);
+  const dropdownTriggerRef = useRef(null);
 
   useEffect(() => {
     fetchUsers();
@@ -82,20 +124,44 @@ export default function AiAdminModule({ userRole, userId, userCompany, tenantId,
     fetchModels();
     loadAiConfig();
 
-    // Close dropdown on click outside
+  }, [userCompany, tenantId]);
+
+  useEffect(() => {
+    if (openDropdownUserId === null) return;
+
     const handleClickOutside = (event) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+      if (!dropdownRef.current?.contains(event.target) && !dropdownTriggerRef.current?.contains(event.target)) {
         setOpenDropdownUserId(null);
       }
     };
+    const handleScroll = (event) => {
+      if (dropdownRef.current?.contains(event.target)) return;
+      const trigger = dropdownTriggerRef.current;
+      if (!trigger?.isConnected) {
+        setOpenDropdownUserId(null);
+        return;
+      }
+      setDropdownPosition(getModelDropdownPosition(trigger.getBoundingClientRect()));
+    };
+    const closeDropdown = () => setOpenDropdownUserId(null);
+
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [userCompany, tenantId]);
+    document.addEventListener('scroll', handleScroll, true);
+    window.addEventListener('resize', closeDropdown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('scroll', handleScroll, true);
+      window.removeEventListener('resize', closeDropdown);
+    };
+  }, [openDropdownUserId]);
 
   const loadAiConfig = async () => {
+    setConfigLoaded(false);
+    setConfigLoadError('');
     try {
       const res = await getTenantAiConfig(tenantId || userCompany);
       if (res.success && res.config) {
+        setAvailableProviderIds(AI_PROVIDERS.filter(provider => res.config[provider.id]?.is_available).map(provider => provider.id));
         setAiConfig(prev => ({
           ...prev,
           ...res.config,
@@ -103,13 +169,22 @@ export default function AiAdminModule({ userRole, userId, userCompany, tenantId,
           gemini: { ...prev.gemini, ...res.config.gemini, api_key: res.config.gemini.masked_key || '' },
           claude: { ...prev.claude, ...res.config.claude, api_key: res.config.claude.masked_key || '' }
         }));
+      } else {
+        setConfigLoadError(res.error || 'Could not load workspace AI settings.');
       }
     } catch (err) {
       console.error('Failed to load AI config:', err);
+      setConfigLoadError('Could not load workspace AI settings.');
+    } finally {
+      setConfigLoaded(true);
     }
   };
 
   const handleSaveAiConfig = async () => {
+    if (addingProvider && String(aiConfig[addingProvider]?.api_key || '').trim().length <= 5) {
+      alert('Enter the provider API key before saving.');
+      return;
+    }
     setSavingAiConfig(true);
     setConfigSaveSuccess(false);
     try {
@@ -118,6 +193,7 @@ export default function AiAdminModule({ userRole, userId, userCompany, tenantId,
         setConfigSaveSuccess(true);
         setTimeout(() => setConfigSaveSuccess(false), 3500);
         await loadAiConfig();
+        setAddingProvider(null);
       } else {
         alert(res.error || 'Failed to save AI configuration');
       }
@@ -127,6 +203,27 @@ export default function AiAdminModule({ userRole, userId, userCompany, tenantId,
       setSavingAiConfig(false);
     }
   };
+
+  const loadBilling = useCallback(async () => {
+    const requestId = ++billingRequestId.current;
+    setBillingLoading(true);
+    try {
+      const result = await getAiBillingSummary(tenantId || userCompany);
+      if (requestId === billingRequestId.current) setBilling(result);
+    } catch {
+      if (requestId === billingRequestId.current) setBilling({ success: false, error: 'Billing data unavailable. Try again later.' });
+    } finally {
+      if (requestId === billingRequestId.current) setBillingLoading(false);
+    }
+  }, [tenantId, userCompany]);
+
+  useEffect(() => {
+    if (activeSection === 'billing') {
+      setBilling(null);
+      loadBilling();
+    }
+    return () => { billingRequestId.current += 1; };
+  }, [activeSection, loadBilling]);
 
   const handleTestProvider = async (provider) => {
     setTestingProvider(provider);
@@ -311,6 +408,36 @@ export default function AiAdminModule({ userRole, userId, userCompany, tenantId,
     return name.includes(q) || email.includes(q) || role.includes(q);
   });
 
+  const switchSection = (section) => {
+    setOpenDropdownUserId(null);
+    const route = `/aiadmin/${section}`;
+    if (window.location.pathname !== route) window.history.pushState(null, '', route);
+  };
+
+  const toggleModelDropdown = (event, userId) => {
+    if (openDropdownUserId === userId) {
+      setOpenDropdownUserId(null);
+      return;
+    }
+
+    dropdownTriggerRef.current = event.currentTarget;
+    setDropdownPosition(getModelDropdownPosition(event.currentTarget.getBoundingClientRect()));
+    setModelSearch('');
+    setOpenDropdownUserId(userId);
+  };
+
+  const handleSectionKeyDown = (event) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const currentIndex = AI_ADMIN_TABS.findIndex(tab => tab.id === activeSection);
+    const nextIndex = event.key === 'Home' ? 0
+      : event.key === 'End' ? AI_ADMIN_TABS.length - 1
+      : (currentIndex + (event.key === 'ArrowRight' ? 1 : -1) + AI_ADMIN_TABS.length) % AI_ADMIN_TABS.length;
+    const nextSection = AI_ADMIN_TABS[nextIndex].id;
+    switchSection(nextSection);
+    event.currentTarget.querySelector(`[data-ai-admin-tab="${nextSection}"]`)?.focus();
+  };
+
   if (loading) {
     return <PremiumProgressLoader message="Loading AI Stats" active={loading} />;
   }
@@ -364,6 +491,37 @@ export default function AiAdminModule({ userRole, userId, userCompany, tenantId,
         </div>
       </div>
 
+      <div role="tablist" aria-label="AI admin sections" onKeyDown={handleSectionKeyDown} style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1.25rem', borderBottom: '1px solid var(--border-light)' }}>
+        {AI_ADMIN_TABS.map(({ id, label, Icon }) => {
+          const selected = activeSection === id;
+          return (
+            <button
+              key={id}
+              id={`ai-admin-${id}-tab`}
+              data-ai-admin-tab={id}
+              type="button"
+              role="tab"
+              aria-selected={selected}
+              aria-controls={`ai-admin-${id}-panel`}
+              tabIndex={selected ? 0 : -1}
+              onClick={() => switchSection(id)}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
+                padding: '0.7rem 1rem', border: 'none',
+                borderBottom: selected ? '3px solid var(--accent-color)' : '3px solid transparent',
+                background: selected ? 'var(--bg-surface)' : 'transparent',
+                color: selected ? 'var(--accent-color)' : 'var(--text-secondary)',
+                fontSize: '0.9rem', fontWeight: selected ? 700 : 600,
+                cursor: 'pointer', borderRadius: '8px 8px 0 0'
+              }}
+            >
+              <Icon size={17} aria-hidden="true" /> {label}
+            </button>
+          );
+        })}
+      </div>
+
+      <div id="ai-admin-models-panel" role="tabpanel" aria-labelledby="ai-admin-models-tab" hidden={activeSection !== 'models'}>
       {/* Multi-Provider AI API Keys & Workspace Setup Card */}
       <div style={{
         background: 'var(--bg-primary)',
@@ -381,13 +539,13 @@ export default function AiAdminModule({ userRole, userId, userCompany, tenantId,
             </div>
             <div>
               <div style={{ fontWeight: 700, fontSize: '1.05rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                AI Model API Keys (ChatGPT, Gemini, Claude)
+                Available AI Providers
                 <span style={{ fontSize: '0.72rem', padding: '0.15rem 0.5rem', borderRadius: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
                   Workspace Scoped
                 </span>
               </div>
               <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
-                Enter custom API keys for <strong>{effectiveWorkspace}</strong>. Leave empty to use system default fallback.
+                Workspace keys and active system API keys for <strong>{effectiveWorkspace}</strong> appear here.
               </div>
             </div>
           </div>
@@ -414,7 +572,7 @@ export default function AiAdminModule({ userRole, userId, userCompany, tenantId,
 
             <button
               onClick={handleSaveAiConfig}
-              disabled={savingAiConfig}
+              disabled={savingAiConfig || !configLoaded || Boolean(configLoadError)}
               style={{
                 background: 'var(--accent-color)',
                 color: 'white',
@@ -455,19 +613,47 @@ export default function AiAdminModule({ userRole, userId, userCompany, tenantId,
           </div>
         )}
 
-        {isConfigExpanded && (
+        {configLoadError && (
+          <div role="alert" style={{ padding: '0.75rem', marginBottom: '1rem', borderRadius: '8px', color: '#b91c1c', background: '#fef2f2' }}>
+            {configLoadError}
+          </div>
+        )}
+
+        {isConfigExpanded && configLoaded && !configLoadError && (
           <div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1rem' }}>
+              <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+                {availableProviderIds.length} provider{availableProviderIds.length === 1 ? '' : 's'} available
+              </div>
+              {availableProviderIds.length < AI_PROVIDERS.length && (
+                <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Add Provider:</span>
+                  {AI_PROVIDERS.filter(provider => !availableProviderIds.includes(provider.id)).map(provider => (
+                    <button
+                      key={provider.id}
+                      type="button"
+                      onClick={() => setAddingProvider(provider.id)}
+                      aria-pressed={addingProvider === provider.id}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', padding: '0.45rem 0.65rem', borderRadius: '8px', border: '1px solid var(--border-light)', background: addingProvider === provider.id ? 'rgba(37, 99, 235, 0.08)' : 'var(--bg-primary)', color: 'var(--text-primary)', cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem' }}
+                    >
+                      <Plus size={14} /> {provider.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            {availableProviderIds.length === 0 && !addingProvider && (
+              <div style={{ padding: '1.25rem', marginBottom: '1rem', borderRadius: '10px', background: 'var(--bg-surface)', border: '1px dashed var(--border-light)', color: 'var(--text-secondary)' }}>
+                No workspace or system API key is available. Choose a provider above, enter its key, then save AI settings.
+              </div>
+            )}
             {/* Primary Provider Selector */}
-            <div style={{ marginBottom: '1.25rem', padding: '0.85rem 1rem', borderRadius: '10px', background: 'var(--bg-surface)', border: '1px solid var(--border-light)' }}>
+            {availableProviderIds.length > 0 && <div style={{ marginBottom: '1.25rem', padding: '0.85rem 1rem', borderRadius: '10px', background: 'var(--bg-surface)', border: '1px solid var(--border-light)' }}>
               <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.5rem' }}>
                 Primary Active AI Engine:
               </div>
               <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-                {[
-                  { id: 'openai', label: 'OpenAI (ChatGPT)', desc: 'GPT-4o, GPT-4.1, o3-mini' },
-                  { id: 'gemini', label: 'Google Gemini', desc: 'Gemini 2.5 Flash, 2.0 Flash' },
-                  { id: 'claude', label: 'Anthropic Claude', desc: 'Claude 3.7 Sonnet, 3.5 Sonnet' }
-                ].map(p => {
+                {AI_PROVIDERS.filter(provider => availableProviderIds.includes(provider.id)).map(p => {
                   const isSelected = aiConfig.active_provider === p.id;
                   return (
                     <button
@@ -499,12 +685,18 @@ export default function AiAdminModule({ userRole, userId, userCompany, tenantId,
                   );
                 })}
               </div>
-            </div>
+              {!availableProviderIds.includes(aiConfig.active_provider) && (
+                <div style={{ marginTop: '0.65rem', color: 'var(--text-secondary)', fontSize: '0.78rem' }}>
+                  Current engine uses the system fallback. Select a connected provider and save to change it.
+                </div>
+              )}
+            </div>}
 
             {/* Provider Grid Cards */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1rem' }}>
               
               {/* 1. OpenAI (ChatGPT) Card */}
+              {(availableProviderIds.includes('openai') || addingProvider === 'openai') && (
               <div style={{
                 borderRadius: '10px',
                 border: '1px solid var(--border-light)',
@@ -529,13 +721,15 @@ export default function AiAdminModule({ userRole, userId, userCompany, tenantId,
                     fontWeight: 600,
                     padding: '0.15rem 0.5rem',
                     borderRadius: '10px',
-                    background: aiConfig.openai.is_configured ? '#ecfdf5' : '#f3f4f6',
-                    color: aiConfig.openai.is_configured ? '#047857' : '#6b7280',
-                    border: `1px solid ${aiConfig.openai.is_configured ? '#a7f3d0' : '#e5e7eb'}`
+                    background: aiConfig.openai.is_available ? '#ecfdf5' : '#f3f4f6',
+                    color: aiConfig.openai.is_available ? '#047857' : '#6b7280',
+                    border: `1px solid ${aiConfig.openai.is_available ? '#a7f3d0' : '#e5e7eb'}`
                   }}>
-                    {aiConfig.openai.is_configured ? 'Key Configured' : 'Not Set (Fallback)'}
+                    {aiConfig.openai.is_configured ? 'Workspace Key' : aiConfig.openai.has_system_fallback ? 'System API Key' : 'New Provider'}
                   </span>
                 </div>
+
+                {aiConfig.openai.has_system_fallback && <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>Using the system API key. Enter and save a workspace key here to override it.</div>}
 
                 {/* API Key Input */}
                 <div>
@@ -551,7 +745,7 @@ export default function AiAdminModule({ userRole, userId, userCompany, tenantId,
                         const val = e.target.value;
                         setAiConfig(prev => ({
                           ...prev,
-                          openai: { ...prev.openai, api_key: val, is_configured: Boolean(val && val.length > 5) }
+                          openai: { ...prev.openai, api_key: val }
                         }));
                       }}
                       style={{
@@ -645,8 +839,10 @@ export default function AiAdminModule({ userRole, userId, userCompany, tenantId,
                   )}
                 </div>
               </div>
+              )}
 
               {/* 2. Google Gemini Card */}
+              {(availableProviderIds.includes('gemini') || addingProvider === 'gemini') && (
               <div style={{
                 borderRadius: '10px',
                 border: '1px solid var(--border-light)',
@@ -671,13 +867,15 @@ export default function AiAdminModule({ userRole, userId, userCompany, tenantId,
                     fontWeight: 600,
                     padding: '0.15rem 0.5rem',
                     borderRadius: '10px',
-                    background: aiConfig.gemini.is_configured ? '#ecfdf5' : '#f3f4f6',
-                    color: aiConfig.gemini.is_configured ? '#047857' : '#6b7280',
-                    border: `1px solid ${aiConfig.gemini.is_configured ? '#a7f3d0' : '#e5e7eb'}`
+                    background: aiConfig.gemini.is_available ? '#ecfdf5' : '#f3f4f6',
+                    color: aiConfig.gemini.is_available ? '#047857' : '#6b7280',
+                    border: `1px solid ${aiConfig.gemini.is_available ? '#a7f3d0' : '#e5e7eb'}`
                   }}>
-                    {aiConfig.gemini.is_configured ? 'Key Configured' : 'Not Set'}
+                    {aiConfig.gemini.is_configured ? 'Workspace Key' : aiConfig.gemini.has_system_fallback ? 'System API Key' : 'New Provider'}
                   </span>
                 </div>
+
+                {aiConfig.gemini.has_system_fallback && <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>Using the system API key. Enter and save a workspace key here to override it.</div>}
 
                 {/* API Key Input */}
                 <div>
@@ -693,7 +891,7 @@ export default function AiAdminModule({ userRole, userId, userCompany, tenantId,
                         const val = e.target.value;
                         setAiConfig(prev => ({
                           ...prev,
-                          gemini: { ...prev.gemini, api_key: val, is_configured: Boolean(val && val.length > 5) }
+                          gemini: { ...prev.gemini, api_key: val }
                         }));
                       }}
                       style={{
@@ -785,8 +983,10 @@ export default function AiAdminModule({ userRole, userId, userCompany, tenantId,
                   )}
                 </div>
               </div>
+              )}
 
               {/* 3. Anthropic Claude Card */}
+              {(availableProviderIds.includes('claude') || addingProvider === 'claude') && (
               <div style={{
                 borderRadius: '10px',
                 border: '1px solid var(--border-light)',
@@ -811,13 +1011,15 @@ export default function AiAdminModule({ userRole, userId, userCompany, tenantId,
                     fontWeight: 600,
                     padding: '0.15rem 0.5rem',
                     borderRadius: '10px',
-                    background: aiConfig.claude.is_configured ? '#ecfdf5' : '#f3f4f6',
-                    color: aiConfig.claude.is_configured ? '#047857' : '#6b7280',
-                    border: `1px solid ${aiConfig.claude.is_configured ? '#a7f3d0' : '#e5e7eb'}`
+                    background: aiConfig.claude.is_available ? '#ecfdf5' : '#f3f4f6',
+                    color: aiConfig.claude.is_available ? '#047857' : '#6b7280',
+                    border: `1px solid ${aiConfig.claude.is_available ? '#a7f3d0' : '#e5e7eb'}`
                   }}>
-                    {aiConfig.claude.is_configured ? 'Key Configured' : 'Not Set'}
+                    {aiConfig.claude.is_configured ? 'Workspace Key' : aiConfig.claude.has_system_fallback ? 'System API Key' : 'New Provider'}
                   </span>
                 </div>
+
+                {aiConfig.claude.has_system_fallback && <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>Using the system API key. Enter and save a workspace key here to override it.</div>}
 
                 {/* API Key Input */}
                 <div>
@@ -833,7 +1035,7 @@ export default function AiAdminModule({ userRole, userId, userCompany, tenantId,
                         const val = e.target.value;
                         setAiConfig(prev => ({
                           ...prev,
-                          claude: { ...prev.claude, api_key: val, is_configured: Boolean(val && val.length > 5) }
+                          claude: { ...prev.claude, api_key: val }
                         }));
                       }}
                       style={{
@@ -924,12 +1126,15 @@ export default function AiAdminModule({ userRole, userId, userCompany, tenantId,
                   )}
                 </div>
               </div>
+              )}
 
             </div>
           </div>
         )}
       </div>
+      </div>
 
+      <div id="ai-admin-users-panel" role="tabpanel" aria-labelledby="ai-admin-users-tab" hidden={activeSection !== 'users'}>
       {/* User Search Bar Container */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '1rem' }}>
         <div style={{ position: 'relative', flex: '1', maxWidth: '380px' }}>
@@ -1091,12 +1296,15 @@ export default function AiAdminModule({ userRole, userId, userCompany, tenantId,
                   
                   {/* Multi-Select Dropdown Column */}
                   <td style={{ width: `${colWidths.ai_models}px`, padding: '1rem', position: 'relative', boxSizing: 'border-box' }}>
-                    <div 
-                      onClick={() => {
-                        setModelSearch("");
-                        setOpenDropdownUserId(isDropdownOpen ? null : user.id);
-                      }}
+                    <button
+                      ref={isDropdownOpen ? dropdownTriggerRef : null}
+                      type="button"
+                      aria-label={`Select AI models for ${user.name || 'user'}`}
+                      aria-expanded={isDropdownOpen}
+                      aria-haspopup="dialog"
+                      onClick={(event) => toggleModelDropdown(event, user.id)}
                       style={{
+                        width: '100%',
                         padding: '0.45rem 0.75rem',
                         borderRadius: '8px',
                         border: isDropdownOpen ? '1px solid var(--accent-color)' : '1px solid var(--border-light)',
@@ -1104,7 +1312,7 @@ export default function AiAdminModule({ userRole, userId, userCompany, tenantId,
                         cursor: 'pointer',
                         display: 'flex',
                         alignItems: 'center',
-                        justify: 'space-between',
+                        justifyContent: 'space-between',
                         gap: '0.5rem',
                         minWidth: '200px',
                         maxWidth: '240px',
@@ -1141,17 +1349,19 @@ export default function AiAdminModule({ userRole, userId, userCompany, tenantId,
                         )}
                       </div>
                       <ChevronDown size={16} style={{ color: 'var(--text-secondary)', flexShrink: 0, transform: isDropdownOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
-                    </div>
+                    </button>
 
                     {/* Popover Dropdown Menu */}
-                    {isDropdownOpen && (
+                    {isDropdownOpen && dropdownPosition && typeof document !== 'undefined' && createPortal(
                       <div 
                         ref={dropdownRef}
+                        role="dialog"
+                        aria-label={`AI models for ${user.name || 'user'}`}
                         style={{
-                          position: 'absolute',
-                          top: 'calc(100% - 0.5rem)',
-                          left: '1rem',
-                          width: '280px',
+                          position: 'fixed',
+                          ...dropdownPosition,
+                          overflowY: 'auto',
+                          boxSizing: 'border-box',
                           background: 'var(--bg-primary, #ffffff)',
                           border: '1px solid var(--border-light, #e5e7eb)',
                           borderRadius: '10px',
@@ -1295,7 +1505,7 @@ export default function AiAdminModule({ userRole, userId, userCompany, tenantId,
                             <Plus size={12} /> Add
                           </button>
                         </div>
-                      </div>
+                      </div>, document.body
                     )}
                   </td>
 
@@ -1338,6 +1548,90 @@ export default function AiAdminModule({ userRole, userId, userCompany, tenantId,
             )}
           </tbody>
         </table></MobileTableView>
+      </div>
+      </div>
+
+      <div id="ai-admin-billing-panel" role="tabpanel" aria-labelledby="ai-admin-billing-tab" hidden={activeSection !== 'billing'}>
+        <div style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '14px', padding: '1.25rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.25rem' }}>
+            <div>
+              <h3 style={{ margin: 0, color: 'var(--text-primary)' }}>API Usage & Billing</h3>
+              <p style={{ margin: '0.35rem 0 0', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+                Provider reported spend for connected workspace accounts. This is usage cost, not wallet balance.
+              </p>
+            </div>
+            <button type="button" onClick={loadBilling} disabled={billingLoading} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', color: 'var(--text-primary)', borderRadius: '8px', padding: '0.5rem 0.75rem', fontWeight: 600, cursor: billingLoading ? 'not-allowed' : 'pointer' }}>
+              {billingLoading ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
+              Refresh
+            </button>
+          </div>
+
+          {billingLoading && !billing && <div role="status" style={{ color: 'var(--text-secondary)', padding: '1rem 0' }}>Loading provider billing reports…</div>}
+          {billing && !billing.success && <div role="alert" style={{ color: '#b91c1c', background: '#fef2f2', padding: '0.8rem', borderRadius: '8px' }}>{billing.error}</div>}
+          {billing?.success && (
+            <>
+              <div style={{ padding: '0.7rem 0.85rem', borderRadius: '8px', background: 'var(--bg-surface)', color: 'var(--text-secondary)', fontSize: '0.82rem', marginBottom: '1rem' }}>
+                Provider billing month to date: {billing.periodLabel}. Daily billing buckets begin at 05:30 IST. Reports can arrive with a delay.
+              </div>
+              {Object.keys(billing.providers || {}).length === 0 ? (
+                <div style={{ border: '1px dashed var(--border-light)', borderRadius: '10px', padding: '1.25rem', color: 'var(--text-secondary)' }}>
+                  No workspace API key is saved. Add a provider in AI Model Setup to see its billing setup and usage here.
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1rem' }}>
+                  {AI_PROVIDERS.filter(provider => billing.providers?.[provider.id]).map(provider => {
+                    const report = billing.providers[provider.id];
+                    return (
+                      <section key={provider.id} aria-label={`${provider.label} billing`} style={{ border: '1px solid var(--border-light)', borderRadius: '10px', padding: '1rem', background: 'var(--bg-surface)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', marginBottom: '0.7rem' }}>
+                          <strong style={{ color: 'var(--text-primary)' }}>{provider.label}</strong>
+                          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: report.status === 'ready' ? '#047857' : '#9a3412' }}>
+                            {report.status === 'ready' ? 'Billing connected' : report.status === 'error' ? 'Report unavailable' : 'Setup needed'}
+                          </span>
+                        </div>
+                        {report.status === 'ready' ? (
+                          <>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem' }}>
+                              <div style={{ padding: '0.7rem', background: 'var(--bg-primary)', borderRadius: '8px' }}>
+                                <div style={{ color: 'var(--text-secondary)', fontSize: '0.78rem' }}>Latest available day</div>
+                                <div style={{ color: 'var(--text-primary)', fontWeight: 700, fontSize: '1.15rem', marginTop: '0.2rem' }}>
+                                  {report.latestDay ? USD_FORMAT.format(report.latestDay.amount) : 'No report yet'}
+                                </div>
+                              </div>
+                              <div style={{ padding: '0.7rem', background: 'var(--bg-primary)', borderRadius: '8px' }}>
+                                <div style={{ color: 'var(--text-secondary)', fontSize: '0.78rem' }}>Month to date</div>
+                                <div style={{ color: 'var(--text-primary)', fontWeight: 700, fontSize: '1.15rem', marginTop: '0.2rem' }}>
+                                  {report.monthAmount === null ? 'No report yet' : USD_FORMAT.format(report.monthAmount)}
+                                </div>
+                              </div>
+                            </div>
+                            {report.latestDay && <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', marginTop: '0.5rem' }}>Latest day: {report.latestDay.label}</div>}
+                            {report.daily?.length > 0 && (
+                              <div style={{ marginTop: '0.9rem' }}>
+                                <div style={{ color: 'var(--text-primary)', fontWeight: 600, fontSize: '0.82rem', marginBottom: '0.4rem' }}>Daily spend</div>
+                                <div style={{ maxHeight: '230px', overflowY: 'auto', display: 'grid', gap: '0.3rem' }}>
+                                  {report.daily.map(day => (
+                                    <div key={day.start} style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem', padding: '0.4rem 0.55rem', background: 'var(--bg-primary)', borderRadius: '6px', fontSize: '0.75rem' }}>
+                                      <span style={{ color: 'var(--text-secondary)' }}>{day.label}</span>
+                                      <strong style={{ color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>{USD_FORMAT.format(day.amount)}</strong>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            {provider.id === 'claude' && <p style={{ color: 'var(--text-secondary)', fontSize: '0.74rem', margin: '0.65rem 0 0' }}>Claude Cost API excludes Priority Tier charges.</p>}
+                          </>
+                        ) : (
+                          <div style={{ padding: '0.75rem', borderRadius: '8px', background: 'var(--bg-primary)', color: 'var(--text-secondary)', fontSize: '0.82rem' }}>{report.message}</div>
+                        )}
+                      </section>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
+        </div>
       </div>
 
     </div>

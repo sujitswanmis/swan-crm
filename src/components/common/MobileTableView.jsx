@@ -40,21 +40,52 @@ export function useTableViewPreference(id, { desktopKey } = {}) {
   return [view, setView, mobile];
 }
 
-export function TableViewToggle({ view, onChange }) {
-  return <div role="group" aria-label="Data view" style={{ display: 'inline-flex', alignItems: 'center',
-    gap: 2, padding: 2, borderRadius: 8, border: '1px solid var(--border-light, #fecdd3)',
-    background: 'var(--bg-surface, white)', boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
-    userSelect: 'none', flexShrink: 0 }}>
-    {[['table', 'Table', Table], ['tiles', 'Tiles', LayoutGrid]].map(([mode, label, Icon]) =>
-      <button type="button" key={mode} title={`${label} View`} aria-label={`${label} view`}
-        aria-pressed={view === mode} onClick={() => onChange(mode)} style={{ display: 'inline-flex',
-          alignItems: 'center', justifyContent: 'center', gap: 5, height: 28, padding: '4px 10px',
-          boxSizing: 'border-box', lineHeight: 1.2, border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600,
-          whiteSpace: 'nowrap', background: view === mode ? 'var(--accent-color, #e11d48)' : 'transparent',
-          color: view === mode ? '#ffffff' : 'var(--accent-color, #e11d48)' }}>
-        <Icon size={15} aria-hidden="true" /><span>{label}</span>
-      </button>)}
-  </div>;
+export function TableViewToggle({ view, onChange, style }) {
+  return (
+    <div role="group" aria-label="Data view" style={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      background: '#f1f5f9',
+      padding: '0.2rem',
+      borderRadius: '8px',
+      border: '1px solid #cbd5e1',
+      marginLeft: 'auto',
+      userSelect: 'none',
+      flexShrink: 0,
+      ...style
+    }}>
+      {[['table', 'Table', Table], ['tiles', 'Tiles', LayoutGrid]].map(([mode, label, Icon]) => (
+        <button
+          type="button"
+          key={mode}
+          title={`${label} View`}
+          aria-label={`${label} view`}
+          aria-pressed={view === mode}
+          onClick={() => onChange(mode)}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '0.35rem',
+            border: 'none',
+            borderRadius: '6px',
+            padding: '0.35rem 0.65rem',
+            fontSize: '0.82rem',
+            fontWeight: 600,
+            cursor: 'pointer',
+            lineHeight: 1.2,
+            whiteSpace: 'nowrap',
+            background: view === mode ? '#ffffff' : 'transparent',
+            color: view === mode ? '#1e293b' : '#64748b',
+            boxShadow: view === mode ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+          }}
+        >
+          <Icon size={15} aria-hidden="true" />
+          <span>{label}</span>
+        </button>
+      ))}
+    </div>
+  );
 }
 
 function childNodes(children) {
@@ -177,9 +208,11 @@ export default function MobileTableView({ id, children, view: controlledView, hi
   const pageCount = Math.max(1, Math.ceil((tiles?.length || 0) / 25));
   const pageIndex = Math.min(page.id === id ? page.index : 0, pageCount - 1);
   return <ErrorBoundary key={`${id}:${view}`} fallback={children}><div data-table-view-id={id} style={{ minWidth: 0, width: '100%' }}>
-    {!hideToggle && <div style={{ padding: '6px 4px' }}>
-      <TableViewToggle view={view} onChange={setView} />
-    </div>}
+    {!hideToggle && (
+      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', padding: '4px 6px', marginBottom: '6px' }}>
+        <TableViewToggle view={view} onChange={setView} />
+      </div>
+    )}
     {tiles ? <>
       {tiles[0].labels.some(label => containsControl(label.props.children)) && <details
         style={{ margin: '4px 8px', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>

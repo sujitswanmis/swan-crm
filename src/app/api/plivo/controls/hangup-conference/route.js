@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import plivo from 'plivo';
 import { createClient } from '@supabase/supabase-js';
+import { isConsultationSession, openConsultation, endConsultation } from '@/lib/plivoConsultation';
 
 export async function POST(req) {
   try {
@@ -22,6 +23,16 @@ export async function POST(req) {
       fetchQuery = fetchQuery.eq('agent_id', agentId).in('status', ['initiated', 'ringing', 'agent_answered', 'connected', 'customer_ringing']);
     }
     const { data: session } = await fetchQuery.order('created_at', { ascending: false }).limit(1).maybeSingle();
+
+    if (isConsultationSession(session)) {
+      const { createClient: authClient } = await import('@/utils/supabase/server');
+      const auth = await authClient();
+      const { data: { user } } = await auth.auth.getUser();
+      if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      const ctx = await openConsultation(session.room_name, user.id);
+      await endConsultation(ctx, 'agent_hangup');
+      return NextResponse.json({ success: true });
+    }
 
     const endTime = new Date();
     const preserveCause = session?.hangup_cause && !['agent_hangup', 'failed', 'initiated'].includes(session.hangup_cause);

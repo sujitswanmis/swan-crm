@@ -1,6 +1,8 @@
 'use server';
 
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
+import { createClient as createSessionClient } from '@/utils/supabase/server';
+import { getHodTeam } from '@/utils/reportingHierarchy';
 import { logAuditAction } from './audit';
 import { 
   getTodayDateString, 
@@ -9,8 +11,14 @@ import {
   evaluateMorningInPunch,
   evaluateEveningOutPunch,
   calculateMonthlyShortLeaveUsage,
-  SHIFT_RULES
+  SHIFT_RULES,
+  getPolicyBoundaries,
+  parseTimeToSeconds,
+  formatSecondsToTime,
+  resolveShiftFromPolicy,
+  matchShiftForPunch
 } from '@/utils/attendanceUtils';
+import { calculateDistanceMeters } from '@/utils/geoAttendance';
 import fs from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
@@ -44,6 +52,9 @@ function cleanAttendanceRecordForDb(rec, tenantId = DEFAULT_TENANT_ID) {
     out_method: rec.out_method || null,
     total_working_minutes: rec.total_working_minutes || 0,
     status: rec.status || 'PRESENT',
+    short_leave_type: rec.short_leave_type || 'NONE',
+    is_grace_applied: !!rec.is_grace_applied,
+    shift_name: rec.shift_name || 'Regular Shift',
     is_regularized: !!rec.is_regularized,
     regularization_id: rec.regularization_id && isValidUuid(rec.regularization_id) ? rec.regularization_id : null,
     remarks: rec.remarks || null,
@@ -91,6 +102,426 @@ const getAdminClient = () => {
 
 const DEFAULT_TENANT_ID = '00000000-0000-0000-0000-000000000001';
 const ATTENDANCE_FILE_PATH = path.join(process.cwd(), 'src', 'config', 'attendance_data.json');
+const POLICIES_FILE_PATH = path.join(process.cwd(), 'src', 'config', 'tenant_attendance_policies.json');
+
+const DEFAULT_ATTENDANCE_POLICIES = {
+  '00000000-0000-0000-0000-000000000001': {
+    tenant_id: '00000000-0000-0000-0000-000000000001',
+    company_name: 'New Swan Group',
+    policy_version: 'v2.4',
+    shift_name: 'Regular Shift (NSMLR / New Swan Group)',
+    start_time: '09:00',
+    end_time: '18:30',
+    grace_minutes: 5,
+    short_leave_total_monthly: 4,
+    max_short_leave_per_day: 1,
+    short_leave_1_name: '20-Minute Short Leave',
+    short_leave_1_minutes: 20,
+    short_leave_1_quota: 2,
+    short_leave_2_name: '2-Hour Short Leave',
+    short_leave_2_minutes: 120,
+    short_leave_2_quota: 2,
+    min_half_day_minutes: 270,
+    min_full_day_minutes: 450,
+    half_day_deduction_credit: 0.5,
+    absent_deduction_credit: 0,
+    enable_short_leaves: true,
+    enable_voice_alerts: true,
+    policy_notes: 'Official attendance guidelines for New Swan Group / NSMLR employees. 5-min morning grace period (09:00 - 09:05:59). Maximum 1 short leave per calendar day.',
+    leave_policy: {
+      enable_min_weekly_days_for_sunday: false,
+      min_weekly_working_days: 3,
+      enable_sandwich_rule: true,
+      sandwich_mode: 'UNAPPROVED_ONLY',
+      cl_quota_annual: 8,
+      sl_quota_annual: 6,
+      el_quota_annual: 15,
+      el_lockin_months: 12,
+      el_validity_years: 3,
+      el_encashable: true
+    },
+    updated_by: 'system_default'
+  },
+  '0a37b8e8-1c28-4e19-8891-951fc3f8f8af': {
+    tenant_id: '0a37b8e8-1c28-4e19-8891-951fc3f8f8af',
+    company_name: 'SuPuja Creations',
+    policy_version: 'v1.0',
+    shift_name: 'SuPuja General Shift',
+    start_time: '09:00',
+    end_time: '18:30',
+    grace_minutes: 5,
+    short_leave_total_monthly: 4,
+    max_short_leave_per_day: 1,
+    short_leave_1_name: '20-Minute Short Leave',
+    short_leave_1_minutes: 20,
+    short_leave_1_quota: 2,
+    short_leave_2_name: '2-Hour Short Leave',
+    short_leave_2_minutes: 120,
+    short_leave_2_quota: 2,
+    min_half_day_minutes: 270,
+    min_full_day_minutes: 450,
+    half_day_deduction_credit: 0.5,
+    absent_deduction_credit: 0,
+    enable_short_leaves: true,
+    enable_voice_alerts: true,
+    policy_notes: 'SuPuja Creations Enterprise Attendance Guidelines. Fully customizable by company administration.',
+    leave_policy: {
+      enable_min_weekly_days_for_sunday: false,
+      min_weekly_working_days: 3,
+      enable_sandwich_rule: true,
+      sandwich_mode: 'UNAPPROVED_ONLY',
+      cl_quota_annual: 8,
+      sl_quota_annual: 6,
+      el_quota_annual: 15,
+      el_lockin_months: 12,
+      el_validity_years: 3,
+      el_encashable: true
+    },
+    updated_by: 'system_default'
+  },
+  '922d3e72-6588-457f-a562-4f1bdbf10d98': {
+    tenant_id: '922d3e72-6588-457f-a562-4f1bdbf10d98',
+    company_name: 'Testing New Swan Group',
+    policy_version: 'v1.0',
+    shift_name: 'Testing Regular Shift',
+    start_time: '09:00',
+    end_time: '18:30',
+    grace_minutes: 5,
+    short_leave_total_monthly: 4,
+    max_short_leave_per_day: 1,
+    short_leave_1_name: '20-Minute Short Leave',
+    short_leave_1_minutes: 20,
+    short_leave_1_quota: 2,
+    short_leave_2_name: '2-Hour Short Leave',
+    short_leave_2_minutes: 120,
+    short_leave_2_quota: 2,
+    min_half_day_minutes: 270,
+    min_full_day_minutes: 450,
+    half_day_deduction_credit: 0.5,
+    absent_deduction_credit: 0,
+    enable_short_leaves: true,
+    enable_voice_alerts: true,
+    policy_notes: 'Testing Sandbox Attendance Policy.',
+    leave_policy: {
+      enable_min_weekly_days_for_sunday: false,
+      min_weekly_working_days: 3,
+      enable_sandwich_rule: true,
+      sandwich_mode: 'UNAPPROVED_ONLY',
+      cl_quota_annual: 8,
+      sl_quota_annual: 6,
+      el_quota_annual: 15,
+      el_lockin_months: 12,
+      el_validity_years: 3,
+      el_encashable: true
+    },
+    updated_by: 'system_default'
+  }
+};
+
+async function getFallbackPolicies() {
+  try {
+    const raw = await fs.readFile(POLICIES_FILE_PATH, 'utf8');
+    const parsed = JSON.parse(raw);
+    return { ...DEFAULT_ATTENDANCE_POLICIES, ...parsed };
+  } catch {
+    return DEFAULT_ATTENDANCE_POLICIES;
+  }
+}
+
+async function saveFallbackPolicies(data) {
+  try {
+    await fs.mkdir(path.dirname(POLICIES_FILE_PATH), { recursive: true });
+    await fs.writeFile(POLICIES_FILE_PATH, JSON.stringify(data, null, 2), 'utf8');
+  } catch (err) {
+    console.error('Error saving tenant attendance policies:', err);
+  }
+}
+
+/**
+ * Resolve effective tenant_id from company string if not an explicit UUID
+ */
+function resolveTenantId(tenantId, userCompany = '') {
+  const comp = (userCompany || '').toLowerCase().trim();
+  if (comp) {
+    if (comp.includes('supuja')) return '0a37b8e8-1c28-4e19-8891-951fc3f8f8af';
+    if (comp.includes('testing')) return '922d3e72-6588-457f-a562-4f1bdbf10d98';
+    if (comp.includes('swan')) return '00000000-0000-0000-0000-000000000001';
+  }
+  if (tenantId && isValidUuid(tenantId) && tenantId !== '00000000-0000-0000-0000-000000000001') {
+    return tenantId;
+  }
+  return tenantId || '00000000-0000-0000-0000-000000000001';
+}
+
+/**
+ * 0. Get Tenant Attendance Policy (Dynamic for each company/tenant)
+ */
+export async function getTenantAttendancePolicy(tenantId = null, userCompany = '', branchName = '') {
+  const effectiveTenantId = resolveTenantId(tenantId, userCompany);
+  const cleanBranch = branchName && branchName !== 'All Branches' ? branchName.trim() : '';
+  const adminClient = getAdminClient();
+
+  // 1. Try Supabase Database first
+  try {
+    const fallbackPolicies = await getFallbackPolicies();
+    if (cleanBranch) {
+      const { data: dbBranchPolicy, error: branchErr } = await adminClient
+        .from('attendance_shift_policies')
+        .select('*')
+        .eq('tenant_id', effectiveTenantId)
+        .eq('branch_name', cleanBranch)
+        .maybeSingle();
+
+      if (!branchErr && dbBranchPolicy && dbBranchPolicy.tenant_id) {
+        const fb = fallbackPolicies[`${effectiveTenantId}:${cleanBranch}`] || fallbackPolicies[effectiveTenantId] || {};
+        return {
+          success: true,
+          data: {
+            ...fb,
+            ...dbBranchPolicy,
+            leave_policy: dbBranchPolicy.leave_policy || fb.leave_policy || DEFAULT_ATTENDANCE_POLICIES[effectiveTenantId]?.leave_policy || DEFAULT_ATTENDANCE_POLICIES[DEFAULT_TENANT_ID]?.leave_policy
+          }
+        };
+      }
+    }
+
+    const { data: dbPolicy, error: dbErr } = await adminClient
+      .from('attendance_shift_policies')
+      .select('*')
+      .eq('tenant_id', effectiveTenantId)
+      .is('branch_name', null)
+      .maybeSingle();
+
+    if (!dbErr && dbPolicy && dbPolicy.tenant_id) {
+      const fb = fallbackPolicies[effectiveTenantId] || fallbackPolicies[`${effectiveTenantId}:All Branches`] || {};
+      return {
+        success: true,
+        data: {
+          ...fb,
+          ...dbPolicy,
+          leave_policy: dbPolicy.leave_policy || fb.leave_policy || DEFAULT_ATTENDANCE_POLICIES[effectiveTenantId]?.leave_policy || DEFAULT_ATTENDANCE_POLICIES[DEFAULT_TENANT_ID]?.leave_policy
+        }
+      };
+    }
+
+    const { data: fallbackDbPolicy } = await adminClient
+      .from('attendance_shift_policies')
+      .select('*')
+      .eq('tenant_id', effectiveTenantId)
+      .maybeSingle();
+
+    if (fallbackDbPolicy && fallbackDbPolicy.tenant_id) {
+      const fb = fallbackPolicies[effectiveTenantId] || fallbackPolicies[`${effectiveTenantId}:All Branches`] || {};
+      return {
+        success: true,
+        data: {
+          ...fb,
+          ...fallbackDbPolicy,
+          leave_policy: fallbackDbPolicy.leave_policy || fb.leave_policy || DEFAULT_ATTENDANCE_POLICIES[effectiveTenantId]?.leave_policy || DEFAULT_ATTENDANCE_POLICIES[DEFAULT_TENANT_ID]?.leave_policy
+        }
+      };
+    }
+  } catch (err) {
+    // Database table not created yet or offline, continue to fallback
+  }
+
+  // 2. Try Local File Fallback
+  const fallbackPolicies = await getFallbackPolicies();
+  if (cleanBranch && fallbackPolicies[`${effectiveTenantId}:${cleanBranch}`]) {
+    return {
+      success: true,
+      data: fallbackPolicies[`${effectiveTenantId}:${cleanBranch}`]
+    };
+  }
+
+  if (!cleanBranch && fallbackPolicies[`${effectiveTenantId}:All Branches`]) {
+    return {
+      success: true,
+      data: fallbackPolicies[`${effectiveTenantId}:All Branches`]
+    };
+  }
+
+  if (fallbackPolicies[effectiveTenantId]) {
+    return {
+      success: true,
+      data: fallbackPolicies[effectiveTenantId]
+    };
+  }
+
+  // 3. Match by company name in fallback
+  for (const pol of Object.values(fallbackPolicies)) {
+    if (userCompany && matchesCompany(userCompany, pol.company_name)) {
+      return { success: true, data: pol };
+    }
+  }
+
+  // 4. Default Enterprise Template
+  const defaultPol = {
+    ...DEFAULT_ATTENDANCE_POLICIES['00000000-0000-0000-0000-000000000001'],
+    tenant_id: effectiveTenantId,
+    company_name: userCompany || 'Enterprise'
+  };
+
+  return { success: true, data: defaultPol };
+}
+
+/**
+ * Save / Update Tenant Attendance Policy (Admin / Master Admin)
+ */
+export async function saveTenantAttendancePolicy(tenantId, userCompany, policyData, updatedBy = 'Admin', branchName = '') {
+  if (!policyData) return { success: false, error: 'Policy data is required' };
+  const effectiveTenantId = resolveTenantId(tenantId, userCompany || policyData.company_name);
+  const rawBranch = branchName || policyData.branch_name || '';
+  const cleanBranch = (rawBranch && rawBranch !== 'All Branches' && rawBranch !== 'All Branches (Default)') ? rawBranch.trim() : null;
+
+  // Normalize shifts array if provided
+  const rawShifts = Array.isArray(policyData.shifts) && policyData.shifts.length > 0 
+    ? policyData.shifts 
+    : [];
+
+  let cleanShifts = rawShifts.map((s, idx) => ({
+    id: s.id || `shift_${idx + 1}`,
+    shift_code: s.shift_code || `SHIFT_${idx + 1}`,
+    shift_name: s.shift_name || `Shift ${idx + 1}`,
+    is_default: !!s.is_default,
+    start_time: s.start_time || '09:00',
+    end_time: s.end_time || '18:30',
+    grace_minutes: Number(s.grace_minutes ?? 5),
+    short_leave_1_name: s.short_leave_1_name || '20-Minute Short Leave',
+    short_leave_1_minutes: Number(s.short_leave_1_minutes ?? 20),
+    short_leave_1_quota: Number(s.short_leave_1_quota ?? 2),
+    short_leave_2_name: s.short_leave_2_name || '2-Hour Short Leave',
+    short_leave_2_minutes: Number(s.short_leave_2_minutes ?? 120),
+    short_leave_2_quota: Number(s.short_leave_2_quota ?? 2),
+    min_half_day_minutes: Number(s.min_half_day_minutes ?? 270),
+    min_full_day_minutes: Number(s.min_full_day_minutes ?? 450)
+  }));
+
+  if (cleanShifts.length > 0 && !cleanShifts.some(s => s.is_default)) {
+    cleanShifts[0].is_default = true;
+  }
+
+  const defaultShift = cleanShifts.find(s => s.is_default) || cleanShifts[0] || null;
+
+  const cleanPolicy = {
+    tenant_id: effectiveTenantId,
+    branch_name: cleanBranch || null,
+    company_name: policyData.company_name || userCompany || 'Enterprise',
+    policy_version: policyData.policy_version || 'v1.0',
+    shift_name: defaultShift ? defaultShift.shift_name : (policyData.shift_name || 'Regular Shift'),
+    start_time: defaultShift ? defaultShift.start_time : (policyData.start_time || '09:00'),
+    end_time: defaultShift ? defaultShift.end_time : (policyData.end_time || '18:30'),
+    grace_minutes: defaultShift ? defaultShift.grace_minutes : Number(policyData.grace_minutes ?? 5),
+    short_leave_total_monthly: Number(policyData.short_leave_total_monthly ?? 4),
+    max_short_leave_per_day: Number(policyData.max_short_leave_per_day ?? 1),
+    short_leave_1_name: defaultShift ? defaultShift.short_leave_1_name : (policyData.short_leave_1_name || '20-Minute Short Leave'),
+    short_leave_1_minutes: defaultShift ? defaultShift.short_leave_1_minutes : Number(policyData.short_leave_1_minutes ?? 20),
+    short_leave_1_quota: defaultShift ? defaultShift.short_leave_1_quota : Number(policyData.short_leave_1_quota ?? 2),
+    short_leave_2_name: defaultShift ? defaultShift.short_leave_2_name : (policyData.short_leave_2_name || '2-Hour Short Leave'),
+    short_leave_2_minutes: defaultShift ? defaultShift.short_leave_2_minutes : Number(policyData.short_leave_2_minutes ?? 120),
+    short_leave_2_quota: defaultShift ? defaultShift.short_leave_2_quota : Number(policyData.short_leave_2_quota ?? 2),
+    min_half_day_minutes: defaultShift ? defaultShift.min_half_day_minutes : Number(policyData.min_half_day_minutes ?? 270),
+    min_full_day_minutes: defaultShift ? defaultShift.min_full_day_minutes : Number(policyData.min_full_day_minutes ?? 450),
+    half_day_deduction_credit: Number(policyData.half_day_deduction_credit ?? 0.5),
+    absent_deduction_credit: Number(policyData.absent_deduction_credit ?? 0.0),
+    enable_short_leaves: policyData.enable_short_leaves !== false,
+    enable_voice_alerts: policyData.enable_voice_alerts !== false,
+    shifts: cleanShifts.length > 0 ? cleanShifts : (Array.isArray(policyData.shifts) ? policyData.shifts : []),
+    policy_notes: policyData.policy_notes || '',
+    enable_geofence: Boolean(policyData.enable_geofence),
+    require_gps: (policyData.require_gps === 'AUTO' || policyData.require_gps === 'auto')
+      ? 'AUTO'
+      : (policyData.require_gps === true || policyData.require_gps === 'ON' || policyData.require_gps === 'true' || policyData.require_gps === 'STRICT')
+        ? 'ON'
+        : 'OFF',
+    geofence_mode: policyData.geofence_mode || 'STRICT_BLOCK',
+    geofence_locations: Array.isArray(policyData.geofence_locations) ? policyData.geofence_locations : [],
+    updated_by: updatedBy,
+    updated_at: new Date().toISOString()
+  };
+
+  // 1. Dual-write to local JSON fallback
+  const fallbackPolicies = await getFallbackPolicies();
+  const fileKey = cleanBranch ? `${effectiveTenantId}:${cleanBranch}` : effectiveTenantId;
+  fallbackPolicies[fileKey] = cleanPolicy;
+  if (!cleanBranch) {
+    fallbackPolicies[`${effectiveTenantId}:All Branches`] = cleanPolicy;
+  }
+  await saveFallbackPolicies(fallbackPolicies);
+
+  // 2. Dual-write to Supabase DB
+  try {
+    const adminClient = getAdminClient();
+    if (cleanBranch) {
+      const { data: existing } = await adminClient
+        .from('attendance_shift_policies')
+        .select('id')
+        .eq('tenant_id', effectiveTenantId)
+        .eq('branch_name', cleanBranch)
+        .maybeSingle();
+
+      if (existing?.id) {
+        await adminClient
+          .from('attendance_shift_policies')
+          .update(cleanPolicy)
+          .eq('id', existing.id);
+      } else {
+        await adminClient
+          .from('attendance_shift_policies')
+          .insert(cleanPolicy);
+      }
+    } else {
+      await adminClient
+        .from('attendance_shift_policies')
+        .upsert(cleanPolicy, { onConflict: 'tenant_id' });
+    }
+  } catch (err) {
+    console.warn('Notice: Could not write attendance policy to Supabase table (saved to local config file):', err?.message);
+  }
+
+  // 3. Log Audit
+  try {
+    await logAuditAction({
+      action: 'UPDATE_ATTENDANCE_POLICY',
+      module: 'ATTENDANCE',
+      performedBy: updatedBy,
+      tenantId: effectiveTenantId,
+      details: {
+        branch_name: cleanBranch || 'All Branches',
+        shift_name: cleanPolicy.shift_name,
+        start_time: cleanPolicy.start_time,
+        end_time: cleanPolicy.end_time,
+        grace_minutes: cleanPolicy.grace_minutes,
+        shifts_count: cleanPolicy.shifts.length
+      }
+    });
+  } catch {}
+
+  return { success: true, policy: cleanPolicy };
+}
+
+/**
+ * Get All Tenant Attendance Policies (Master Admin)
+ */
+export async function getAllTenantAttendancePolicies() {
+  const fallbackPolicies = await getFallbackPolicies();
+  try {
+    const adminClient = getAdminClient();
+    const { data: dbPolicies } = await adminClient
+      .from('attendance_shift_policies')
+      .select('*');
+
+    if (dbPolicies && dbPolicies.length > 0) {
+      const merged = { ...fallbackPolicies };
+      dbPolicies.forEach(p => {
+        merged[p.tenant_id] = p;
+      });
+      return { success: true, data: Object.values(merged) };
+    }
+  } catch {}
+
+  return { success: true, data: Object.values(fallbackPolicies) };
+}
 
 /**
  * Helper to match company / workspace branch
@@ -139,10 +570,41 @@ async function saveFallbackData(data) {
   }
 }
 
+const LEAVES_FILE_PATH = path.join(process.cwd(), 'src', 'config', 'employee_leaves.json');
+
+// Helper to read JSON leaves fallback data
+async function getFallbackLeavesData() {
+  try {
+    const raw = await fs.readFile(LEAVES_FILE_PATH, 'utf8');
+    const parsed = JSON.parse(raw);
+    return {
+      requests: Array.isArray(parsed.requests) ? parsed.requests : [],
+      cpl_grants: Array.isArray(parsed.cpl_grants) ? parsed.cpl_grants : []
+    };
+  } catch (err) {
+    const initial = { requests: [] };
+    try {
+      await fs.mkdir(path.dirname(LEAVES_FILE_PATH), { recursive: true });
+      await fs.writeFile(LEAVES_FILE_PATH, JSON.stringify(initial, null, 2), 'utf8');
+    } catch {}
+    return initial;
+  }
+}
+
+// Helper to save JSON leaves fallback data
+async function saveFallbackLeavesData(data) {
+  try {
+    await fs.mkdir(path.dirname(LEAVES_FILE_PATH), { recursive: true });
+    await fs.writeFile(LEAVES_FILE_PATH, JSON.stringify(data, null, 2), 'utf8');
+  } catch (err) {
+    console.error('Error saving fallback leaves data:', err);
+  }
+}
+
 /**
  * 1. Get Today's Attendance for Current User
  */
-export async function getTodayAttendance(userEmail, userId, tenantId = DEFAULT_TENANT_ID) {
+export async function getTodayAttendance(userEmail, userId, tenantId = DEFAULT_TENANT_ID, userCompany = '') {
   if (!userEmail) return { success: false, error: 'User email is required' };
   const adminClient = getAdminClient();
   const today = getTodayDateString();
@@ -195,7 +657,12 @@ export async function getTodayAttendance(userEmail, userId, tenantId = DEFAULT_T
       );
     }
 
-    const monthlyUsage = calculateMonthlyShortLeaveUsage(monthlyRecords, nowYear, nowMonth, today);
+    let tenantPolicy = null;
+    try {
+      const policyRes = await getTenantAttendancePolicy(tenantId, userCompany);
+      tenantPolicy = policyRes?.data || null;
+    } catch {}
+    const monthlyUsage = calculateMonthlyShortLeaveUsage(monthlyRecords, nowYear, nowMonth, today, tenantPolicy);
 
     // Pick best between Supabase and Local (if local has out_time but supabase doesn't, pick local)
     let bestRec = dbToday || localRec || null;
@@ -233,7 +700,9 @@ export async function punchIn({
   department,
   location = 'Web Terminal',
   method = 'WEB_PUNCH',
-  tenantId = DEFAULT_TENANT_ID
+  tenantId = DEFAULT_TENANT_ID,
+  shiftName = null,
+  userCompany = ''
 }) {
   if (!email) return { success: false, error: 'User email is required' };
   const adminClient = getAdminClient();
@@ -303,11 +772,12 @@ export async function punchIn({
   let resolvedEmpCode = empCode || '';
   let resolvedDepartment = department || '';
   let resolvedEmpName = empName || email.split('@')[0];
+  let assignedShiftFromDb = null;
 
   try {
     const { data: userRole } = await adminClient
       .from('user_roles')
-      .select('emp_id, emp_name, emp_department')
+      .select('emp_id, emp_name, emp_department, assigned_shift')
       .ilike('email', normalizedEmail)
       .maybeSingle();
 
@@ -315,11 +785,91 @@ export async function punchIn({
       if (!resolvedEmpCode) resolvedEmpCode = userRole.emp_id || '';
       if (!resolvedDepartment) resolvedDepartment = userRole.emp_department || 'General';
       if (!resolvedEmpName || resolvedEmpName === email.split('@')[0]) resolvedEmpName = userRole.emp_name || resolvedEmpName;
+      if (userRole.assigned_shift) assignedShiftFromDb = userRole.assigned_shift;
     }
   } catch {}
 
-  const monthlyUsage = calculateMonthlyShortLeaveUsage(monthlyRecords, nowYear, nowMonth, today);
-  const evaluation = evaluateMorningInPunch(now, monthlyUsage, resolvedEmpName);
+  const effectiveCompany = userCompany || '';
+  const effectiveTenant = resolveTenantId(tenantId, effectiveCompany);
+  const policyRes = await getTenantAttendancePolicy(effectiveTenant, effectiveCompany);
+  const tenantPolicy = policyRes?.data || null;
+
+  // 1. Mandatory GPS Permission Check (ON / OFF / AUTO)
+  const rawGpsMode = tenantPolicy?.require_gps;
+  const isStrictGps = rawGpsMode === true || rawGpsMode === 'ON' || rawGpsMode === 'true' || rawGpsMode === 'STRICT';
+  const isAutoGps = rawGpsMode === 'AUTO' || rawGpsMode === 'auto';
+  const isGpsPunch = location && typeof location === 'string' && location.startsWith('GPS');
+
+  let geofenceRemarks = '';
+
+  if (!isGpsPunch) {
+    if (isStrictGps) {
+      return {
+        success: false,
+        error: '⚠️ Mandatory GPS Policy Enforced: Location / GPS permission allow karna anivarya hai. Bina location permission ke Punch In nahi ho sakta.'
+      };
+    }
+    if (isAutoGps) {
+      geofenceRemarks = '[⚠️ GPS Unavailable (Punch Allowed via Auto Fallback)]';
+    }
+  }
+
+  // 2. Geofence Boundary Check
+  if (tenantPolicy?.enable_geofence && Array.isArray(tenantPolicy?.geofence_locations) && tenantPolicy.geofence_locations.length > 0) {
+    const activeLocations = tenantPolicy.geofence_locations.filter(loc => loc.is_active !== false && loc.latitude && loc.longitude);
+    if (activeLocations.length > 0) {
+      const gpsMatch = location?.match(/GPS\s*\(\s*([\d.-]+)\s*,\s*([\d.-]+)\s*\)/i);
+      if (gpsMatch) {
+        const userLat = parseFloat(gpsMatch[1]);
+        const userLon = parseFloat(gpsMatch[2]);
+
+        let minDistance = Infinity;
+        let nearestOffice = null;
+
+        for (const loc of activeLocations) {
+          const dist = calculateDistanceMeters(userLat, userLon, Number(loc.latitude), Number(loc.longitude));
+          if (dist < minDistance) {
+            minDistance = dist;
+            nearestOffice = loc;
+          }
+        }
+
+        if (nearestOffice) {
+          const allowedRadius = Number(nearestOffice.radius_meters || 200);
+          const isWithin = minDistance <= allowedRadius;
+
+          if (!isWithin) {
+            if (tenantPolicy.geofence_mode === 'FLAG_OUTSIDE') {
+              geofenceRemarks = (geofenceRemarks ? geofenceRemarks + ' ' : '') + `[Outside Geofence: ${minDistance}m from ${nearestOffice.name || 'Office'}]`;
+            } else {
+              return {
+                success: false,
+                error: `🚫 Office Geofence Violation: Aap "${nearestOffice.name || 'Office'}" se ${minDistance}m door hain (Allowed radius: ${allowedRadius}m). Kripya office campus me aakar punch karein.`
+              };
+            }
+          } else {
+            geofenceRemarks = (geofenceRemarks ? geofenceRemarks + ' ' : '') + `[Inside Geofence: ${minDistance}m from ${nearestOffice.name || 'Office'}]`;
+          }
+        }
+      } else if (isStrictGps) {
+        return {
+          success: false,
+          error: '⚠️ Mandatory GPS Policy Enforced: Valid GPS coordinates prapt nahi ho sake. Kripya location check karein.'
+        };
+      }
+    }
+  }
+
+  // Multi-Shift Resolution:
+  // 1. Explicitly selected shift during punch (shiftName)
+  // 2. Employee's assigned shift in user_roles (assignedShiftFromDb)
+  // 3. Proximity-based auto-matched shift from tenantPolicy based on current time
+  const preferredShift = shiftName || assignedShiftFromDb || null;
+  const activeShift = matchShiftForPunch(tenantPolicy, now, preferredShift);
+  const resolvedShiftName = activeShift?.shift_name || tenantPolicy?.shift_name || 'Regular Shift';
+
+  const monthlyUsage = calculateMonthlyShortLeaveUsage(monthlyRecords, nowYear, nowMonth, today, activeShift || tenantPolicy);
+  const evaluation = evaluateMorningInPunch(now, monthlyUsage, resolvedEmpName, activeShift || tenantPolicy);
 
   let resultRecord = {
     id: ensureUuid(existingLocal?.id),
@@ -340,9 +890,9 @@ export async function punchIn({
     status: evaluation.status,
     short_leave_type: evaluation.short_leave_type,
     is_grace_applied: evaluation.is_grace_applied,
-    shift_name: 'Regular Shift',
+    shift_name: resolvedShiftName,
     is_regularized: false,
-    remarks: evaluation.remarks,
+    remarks: [geofenceRemarks, evaluation.remarks].filter(Boolean).join(' '),
     created_at: nowIso,
     updated_at: nowIso
   };
@@ -401,7 +951,8 @@ export async function punchOut({
   empName,
   location = 'Web Terminal',
   method = 'WEB_PUNCH',
-  tenantId = DEFAULT_TENANT_ID
+  tenantId = DEFAULT_TENANT_ID,
+  userCompany = ''
 }) {
   if (!email) return { success: false, error: 'User email is required' };
   const adminClient = getAdminClient();
@@ -477,8 +1028,91 @@ export async function punchOut({
     }
   } catch {}
 
-  const monthlyUsage = calculateMonthlyShortLeaveUsage(monthlyRecords, nowYear, nowMonth, today);
-  const evaluation = evaluateEveningOutPunch(now, existing.in_time, existing, monthlyUsage, empName || email.split('@')[0]);
+  let effectiveCompany = userCompany || existing.company_name || '';
+  if (!effectiveCompany) {
+    try {
+      const { data: uRole } = await adminClient
+        .from('user_roles')
+        .select('company_name, tenant_id')
+        .ilike('email', normalizedEmail)
+        .maybeSingle();
+      if (uRole?.company_name) effectiveCompany = uRole.company_name;
+    } catch {}
+  }
+  const effectiveTenant = resolveTenantId(tenantId, effectiveCompany);
+  const policyRes = await getTenantAttendancePolicy(effectiveTenant, effectiveCompany);
+  const tenantPolicy = policyRes?.data || null;
+
+  // 1. Mandatory GPS Permission Check (ON / OFF / AUTO)
+  const rawGpsMode = tenantPolicy?.require_gps;
+  const isStrictGps = rawGpsMode === true || rawGpsMode === 'ON' || rawGpsMode === 'true' || rawGpsMode === 'STRICT';
+  const isAutoGps = rawGpsMode === 'AUTO' || rawGpsMode === 'auto';
+  const isGpsPunch = location && typeof location === 'string' && location.startsWith('GPS');
+
+  let geofenceRemarks = '';
+
+  if (!isGpsPunch) {
+    if (isStrictGps) {
+      return {
+        success: false,
+        error: '⚠️ Mandatory GPS Policy Enforced: Location / GPS permission allow karna anivarya hai. Bina location permission ke Punch Out nahi ho sakta.'
+      };
+    }
+    if (isAutoGps) {
+      geofenceRemarks = '[⚠️ GPS Unavailable (Punch Allowed via Auto Fallback)]';
+    }
+  }
+
+  // 2. Geofence Boundary Check
+  if (tenantPolicy?.enable_geofence && Array.isArray(tenantPolicy?.geofence_locations) && tenantPolicy.geofence_locations.length > 0) {
+    const activeLocations = tenantPolicy.geofence_locations.filter(loc => loc.is_active !== false && loc.latitude && loc.longitude);
+    if (activeLocations.length > 0) {
+      const gpsMatch = location?.match(/GPS\s*\(\s*([\d.-]+)\s*,\s*([\d.-]+)\s*\)/i);
+      if (gpsMatch) {
+        const userLat = parseFloat(gpsMatch[1]);
+        const userLon = parseFloat(gpsMatch[2]);
+
+        let minDistance = Infinity;
+        let nearestOffice = null;
+
+        for (const loc of activeLocations) {
+          const dist = calculateDistanceMeters(userLat, userLon, Number(loc.latitude), Number(loc.longitude));
+          if (dist < minDistance) {
+            minDistance = dist;
+            nearestOffice = loc;
+          }
+        }
+
+        if (nearestOffice) {
+          const allowedRadius = Number(nearestOffice.radius_meters || 200);
+          const isWithin = minDistance <= allowedRadius;
+
+          if (!isWithin) {
+            if (tenantPolicy.geofence_mode === 'FLAG_OUTSIDE') {
+              geofenceRemarks = (geofenceRemarks ? geofenceRemarks + ' ' : '') + `[Outside Geofence: ${minDistance}m from ${nearestOffice.name || 'Office'}]`;
+            } else {
+              return {
+                success: false,
+                error: `🚫 Office Geofence Violation: Aap "${nearestOffice.name || 'Office'}" se ${minDistance}m door hain (Allowed radius: ${allowedRadius}m). Kripya office campus me aakar punch out karein.`
+              };
+            }
+          } else {
+            geofenceRemarks = (geofenceRemarks ? geofenceRemarks + ' ' : '') + `[Inside Geofence: ${minDistance}m from ${nearestOffice.name || 'Office'}]`;
+          }
+        }
+      } else if (isStrictGps) {
+        return {
+          success: false,
+          error: '⚠️ Mandatory GPS Policy Enforced: Valid GPS coordinates prapt nahi ho sake. Kripya location check karein.'
+        };
+      }
+    }
+  }
+
+  const activeShift = resolveShiftFromPolicy(tenantPolicy, existing.shift_name);
+
+  const monthlyUsage = calculateMonthlyShortLeaveUsage(monthlyRecords, nowYear, nowMonth, today, activeShift || tenantPolicy);
+  const evaluation = evaluateEveningOutPunch(now, existing.in_time, existing, monthlyUsage, empName || email.split('@')[0], activeShift || tenantPolicy);
 
   let updatedRecord = {
     ...existing,
@@ -489,7 +1123,7 @@ export async function punchOut({
     total_working_minutes: evaluation.total_working_minutes,
     status: evaluation.status,
     short_leave_type: evaluation.short_leave_type,
-    remarks: evaluation.remarks,
+    remarks: [geofenceRemarks, evaluation.remarks].filter(Boolean).join(' '),
     updated_at: nowIso
   };
 
@@ -533,7 +1167,7 @@ export async function punchOut({
       out_method: method,
       total_working_minutes: evaluation.total_working_minutes,
       status: evaluation.status,
-      remarks: evaluation.remarks,
+      remarks: [geofenceRemarks, evaluation.remarks].filter(Boolean).join(' '),
       updated_at: nowIso
     }, tenantId);
 
@@ -581,7 +1215,7 @@ export async function punchOut({
 /**
  * 4. Get Monthly Attendance History for an Employee
  */
-export async function getMyAttendanceHistory(userEmail, year, month, tenantId = DEFAULT_TENANT_ID) {
+export async function getMyAttendanceHistory(userEmail, year, month, tenantId = DEFAULT_TENANT_ID, userCompany = '') {
   if (!userEmail) return { success: false, error: 'User email is required', records: [], summary: {} };
   const adminClient = getAdminClient();
   const normalizedEmail = (userEmail || '').trim().toLowerCase();
@@ -660,7 +1294,14 @@ export async function getMyAttendanceHistory(userEmail, year, month, tenantId = 
     totalMinutesWorked += (r.total_working_minutes || 0);
   });
 
-  const shortLeaveUsage = calculateMonthlyShortLeaveUsage(records, targetYear, targetMonth);
+  let tenantPolicy = null;
+  try {
+    const policyRes = await getTenantAttendancePolicy(tenantId, userCompany);
+    if (policyRes?.success && policyRes.data) {
+      tenantPolicy = policyRes.data;
+    }
+  } catch {}
+  const shortLeaveUsage = calculateMonthlyShortLeaveUsage(records, targetYear, targetMonth, null, tenantPolicy);
 
   // Evaluate Sundays in the month with Sunday rules (Min 3 working days & Sandwich rule)
   const recordsMapByDate = new Map(records.map(r => [r.attendance_date, r]));
@@ -1549,7 +2190,8 @@ export async function resetTodayPunchForTesting(email) {
 function evaluateSundayEligibility({
   sundayDateStr,
   recordsMapByDate,
-  todayStr
+  todayStr,
+  policy = null
 }) {
   const sunday = new Date(`${sundayDateStr}T00:00:00`);
   
@@ -1578,67 +2220,93 @@ function evaluateSundayEligibility({
     };
   }
 
-  // 2. Rule 1: Check working days in Monday to Saturday of that week
-  // Mon-Sat: Monday (Sunday - 6 days) to Saturday (Sunday - 1 day)
-  let weeklyPresentDays = 0;
-  let totalDaysEvaluated = 0;
+  // 2. Rule 1: Weekly Min Working Days Rule (OPTIONAL TOGGLE: Configurable by company)
+  const minWeeklyEnabled = policy?.leave_policy?.enable_min_weekly_days_for_sunday === true;
+  const minRequiredSetting = Number(policy?.leave_policy?.min_weekly_working_days ?? 3);
 
-  for (let offset = 6; offset >= 1; offset--) {
-    const dayDate = new Date(sunday);
-    dayDate.setDate(sunday.getDate() - offset);
-    const dayDateStr = dayDate.toISOString().split('T')[0];
+  if (minWeeklyEnabled) {
+    let weeklyPresentDays = 0;
+    let totalDaysEvaluated = 0;
 
-    // Only evaluate days in the current month / up to today
-    if (dayDate.getMonth() === sunday.getMonth() && dayDateStr <= todayStr) {
-      totalDaysEvaluated++;
-      const dayRec = recordsMapByDate.get(dayDateStr);
-      if (dayRec) {
-        if (dayRec.status === 'PRESENT' || dayRec.status === 'LATE' || dayRec.status === 'REGULARIZED' || dayRec.is_regularized) {
-          weeklyPresentDays += 1;
-        } else if (dayRec.status === 'HALF_DAY') {
-          weeklyPresentDays += 0.5;
+    for (let offset = 6; offset >= 1; offset--) {
+      const dayDate = new Date(sunday);
+      dayDate.setDate(sunday.getDate() - offset);
+      const dayDateStr = dayDate.toISOString().split('T')[0];
+
+      // Only evaluate days in the current month / up to today
+      if (dayDate.getMonth() === sunday.getMonth() && dayDateStr <= todayStr) {
+        totalDaysEvaluated++;
+        const dayRec = recordsMapByDate.get(dayDateStr);
+        if (dayRec) {
+          if (dayRec.status === 'PRESENT' || dayRec.status === 'LATE' || dayRec.status === 'REGULARIZED' || dayRec.is_regularized || dayRec.is_paid_leave) {
+            weeklyPresentDays += 1;
+          } else if (dayRec.status === 'HALF_DAY') {
+            weeklyPresentDays += 0.5;
+          }
         }
       }
     }
+
+    const requiredMinDays = Math.min(minRequiredSetting, totalDaysEvaluated);
+    if (totalDaysEvaluated > 0 && weeklyPresentDays < requiredMinDays) {
+      return {
+        isPaid: false,
+        code: 'A',
+        status: 'ABSENT',
+        label: `Absent (Min ${requiredMinDays} working days not met: only ${weeklyPresentDays} days present in week)`,
+        reason: `Min ${requiredMinDays} days present rule: Only ${weeklyPresentDays} days present in week`,
+        record: sunRec || null
+      };
+    }
   }
 
-  // If full week in month (6 days), required min is 3 days. If partial start of month, min is Math.min(3, totalDaysEvaluated)
-  const requiredMinDays = Math.min(3, totalDaysEvaluated);
-  if (totalDaysEvaluated > 0 && weeklyPresentDays < requiredMinDays) {
-    return {
-      isPaid: false,
-      code: 'A',
-      status: 'ABSENT',
-      label: `Absent (Min ${requiredMinDays} working days not met: only ${weeklyPresentDays} days present in week)`,
-      reason: `Min ${requiredMinDays} days present rule: Only ${weeklyPresentDays} days present in week`,
-      record: sunRec || null
-    };
-  }
+  // 3. Rule 2: Sandwich Rule
+  const sandwichMode = policy?.leave_policy?.sandwich_mode || (policy?.leave_policy?.enable_sandwich_rule !== false ? 'UNAPPROVED_ONLY' : 'OFF');
+  if (sandwichMode !== 'OFF') {
+    const satDate = new Date(sunday);
+    satDate.setDate(sunday.getDate() - 1);
+    const satDateStr = satDate.toISOString().split('T')[0];
 
-  // 3. Rule 2: Sandwich Rule (Both Saturday AND Monday Absent/Leave)
-  const satDate = new Date(sunday);
-  satDate.setDate(sunday.getDate() - 1);
-  const satDateStr = satDate.toISOString().split('T')[0];
+    const monDate = new Date(sunday);
+    monDate.setDate(sunday.getDate() + 1);
+    const monDateStr = monDate.toISOString().split('T')[0];
 
-  const monDate = new Date(sunday);
-  monDate.setDate(sunday.getDate() + 1);
-  const monDateStr = monDate.toISOString().split('T')[0];
+    const satRec = recordsMapByDate.get(satDateStr);
+    const monRec = recordsMapByDate.get(monDateStr);
 
-  const satRec = recordsMapByDate.get(satDateStr);
-  const monRec = recordsMapByDate.get(monDateStr);
+    let isSatAbsent = false;
+    let isMonAbsent = false;
 
-  const isSatAbsent = satDateStr <= todayStr && (!satRec || satRec.status === 'ABSENT' || satRec.status === 'ON_LEAVE' || (!satRec.in_time && !satRec.out_time));
-  const isMonAbsent = monDateStr <= todayStr && (!monRec || monRec.status === 'ABSENT' || monRec.status === 'ON_LEAVE' || (!monRec.in_time && !monRec.out_time));
+    if (satDateStr <= todayStr) {
+      if (!satRec || (!satRec.in_time && !satRec.out_time)) {
+        isSatAbsent = true;
+      } else if (satRec.status === 'ABSENT' || satRec.status === 'LWP') {
+        isSatAbsent = true;
+      } else if (sandwichMode === 'STRICT' && satRec.status === 'ON_LEAVE') {
+        isSatAbsent = true;
+      }
+    }
 
-  if (isSatAbsent && isMonAbsent) {
-    return {
-      isPaid: false,
-      code: 'A',
-      status: 'ABSENT',
-      label: 'Absent (Sandwich Rule: Sat & Mon Absent)',
-      reason: 'Sandwich Rule: Absent on both Saturday and Monday',
-      record: sunRec || null
-    };
+    if (monDateStr <= todayStr) {
+      if (!monRec || (!monRec.in_time && !monRec.out_time)) {
+        isMonAbsent = true;
+      } else if (monRec.status === 'ABSENT' || monRec.status === 'LWP') {
+        isMonAbsent = true;
+      } else if (sandwichMode === 'STRICT' && monRec.status === 'ON_LEAVE') {
+        isMonAbsent = true;
+      }
+    }
+
+    if (isSatAbsent && isMonAbsent) {
+      return {
+        isPaid: false,
+        code: 'A',
+        status: 'ABSENT',
+        label: 'Absent (Sandwich Rule: Sat & Mon Absent)',
+        reason: 'Sandwich Rule: Absent on both Saturday and Monday',
+        record: sunRec || null
+      };
+    }
   }
 
   // 4. Default: Eligible for Paid Sunday Week Off
@@ -1660,7 +2328,9 @@ export async function getTeamMonthlyMatrix({
   month = new Date().getMonth() + 1,
   department = '',
   tenantId = DEFAULT_TENANT_ID,
-  company = ''
+  company = '',
+  periodType = 'FULL_MONTH',
+  adjustLeaves = true
 }) {
   const adminClient = getAdminClient();
   const targetYear = parseInt(year, 10);
@@ -1674,7 +2344,7 @@ export async function getTeamMonthlyMatrix({
   try {
     const { data: usersData, error: uErr } = await adminClient
       .from('user_roles')
-      .select('user_id, emp_name, email, emp_id, emp_department, module_access, created_at, is_approved, role, company');
+      .select('user_id, emp_name, email, emp_id, emp_department, module_access, created_at, is_approved, role, company, salary_amount');
     if (!uErr && Array.isArray(usersData)) {
       let filteredUsers = usersData;
       if (company && company !== 'all') {
@@ -1698,7 +2368,8 @@ export async function getTeamMonthlyMatrix({
           emp_id: u.emp_id || '',
           department: u.emp_department || 'General',
           created_at: u.created_at,
-          module_access: u.module_access
+          module_access: u.module_access,
+          salary_amount: Number(u.salary_amount || u.module_access?.emp_salary || 0)
         }));
     }
   } catch {}
@@ -1765,9 +2436,20 @@ export async function getTeamMonthlyMatrix({
     });
   }
 
-  // Build dates array for the month
+  // Period boundaries: FULL_MONTH (1 to daysInMonth), ADVANCE_HALF (1 to 15), SECOND_HALF (16 to daysInMonth)
+  let startDay = 1;
+  let endDay = daysInMonth;
+  if (periodType === 'ADVANCE_HALF' || periodType === 'FIRST_HALF') {
+    startDay = 1;
+    endDay = Math.min(15, daysInMonth);
+  } else if (periodType === 'SECOND_HALF') {
+    startDay = 16;
+    endDay = daysInMonth;
+  }
+
+  // Build dates array for the chosen period
   const monthDates = [];
-  for (let day = 1; day <= daysInMonth; day++) {
+  for (let day = startDay; day <= endDay; day++) {
     const dateStr = `${targetYear}-${String(targetMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     const d = new Date(`${dateStr}T12:00:00+05:30`);
     const dayOfWeek = d.getDay(); // 0 is Sunday
@@ -1781,6 +2463,33 @@ export async function getTeamMonthlyMatrix({
   }
 
   const todayStr = getTodayDateString();
+
+  // Fetch tenant policy for optional Sunday and Sandwich rules
+  let activePolicy = null;
+  try {
+    const policyRes = await getTenantAttendancePolicy(effectiveTenantId, company);
+    if (policyRes?.success && policyRes.data) {
+      activePolicy = policyRes.data;
+    }
+  } catch {}
+
+  // Load approved leaves for this month
+  const localLeaves = await getFallbackLeavesData();
+  const allLeaveReqs = Array.isArray(localLeaves?.requests) ? localLeaves.requests : [];
+  const approvedLeaves = allLeaveReqs.filter(r => r.status === 'APPROVED');
+  const leavesByEmpDate = new Map();
+
+  approvedLeaves.forEach(l => {
+    const lEmail = (l.email || '').toLowerCase();
+    const lStart = new Date(`${l.from_date}T00:00:00`);
+    const lEnd = new Date(`${l.to_date}T00:00:00`);
+    const iter = new Date(lStart);
+    while (iter <= lEnd) {
+      const iterStr = iter.toISOString().split('T')[0];
+      leavesByEmpDate.set(`${lEmail}_${iterStr}`, l);
+      iter.setDate(iter.getDate() + 1);
+    }
+  });
 
   // Process matrix rows with Sunday Rules (Min 3 working days & Sandwich Leave Rule)
   const matrixRows = targetUsers.map(user => {
@@ -1816,6 +2525,8 @@ export async function getTeamMonthlyMatrix({
     let totalPaidSundays = 0;
     let totalDisallowedSundays = 0;
     let totalMinutesWorked = 0;
+    let totalApprovedLeaves = 0;
+    let totalLeavePayableDays = 0;
 
     const days = monthDates.map(mDate => {
       const rec = recordsMapByDate.get(mDate.dateStr);
@@ -1837,7 +2548,8 @@ export async function getTeamMonthlyMatrix({
         const sunEval = evaluateSundayEligibility({
           sundayDateStr: mDate.dateStr,
           recordsMapByDate,
-          todayStr
+          todayStr,
+          policy: activePolicy
         });
 
         if (sunEval.isPaid) {
@@ -1861,6 +2573,27 @@ export async function getTeamMonthlyMatrix({
         };
       }
 
+      // Check if employee has an Approved Leave for this date
+      const approvedLeave = leavesByEmpDate.get(`${userEmail}_${mDate.dateStr}`);
+      if (approvedLeave) {
+        const isPaidLeave = approvedLeave.leave_type !== 'LWP';
+        const leaveDays = approvedLeave.leave_type === 'HALF_DAY' ? 0.5 : 1;
+        totalApprovedLeaves += leaveDays;
+
+        if (adjustLeaves && isPaidLeave) {
+          totalLeavePayableDays += leaveDays;
+        }
+
+        const leaveCode = approvedLeave.leave_type === 'HALF_DAY' ? 'HD-L' : (approvedLeave.leave_type || 'CL');
+        return {
+          code: leaveCode,
+          status: 'ON_LEAVE',
+          label: `Approved ${approvedLeave.leave_type} (${adjustLeaves ? (isPaidLeave ? 'Paid Adjusted' : 'Unpaid LWP') : 'Raw / Unadjusted'})`,
+          isPaid: adjustLeaves && isPaidLeave,
+          record: rec || null
+        };
+      }
+
       if (rec) {
         totalMinutesWorked += (rec.total_working_minutes || 0);
         if (rec.short_leave_type && rec.short_leave_type !== 'NONE') {
@@ -1873,6 +2606,21 @@ export async function getTeamMonthlyMatrix({
             code: 'R',
             status: 'REGULARIZED',
             label: 'Regularized by HOD',
+            record: rec
+          };
+        } else if (rec.status === 'ON_LEAVE') {
+          const isPaid = rec.is_paid_leave !== false && rec.leave_type !== 'LWP';
+          const lDays = rec.leave_type === 'HALF_DAY' ? 0.5 : 1;
+          totalApprovedLeaves += lDays;
+          if (adjustLeaves && isPaid) {
+            totalLeavePayableDays += lDays;
+          }
+          const lCode = rec.leave_type || 'L';
+          return {
+            code: lCode,
+            status: 'ON_LEAVE',
+            label: rec.remarks || `Approved Leave (${adjustLeaves ? 'Paid Adjusted' : 'Raw / Unadjusted'})`,
+            isPaid: adjustLeaves && isPaid,
             record: rec
           };
         } else if (rec.status === 'PRESENT') {
@@ -1937,7 +2685,10 @@ export async function getTeamMonthlyMatrix({
       }
     });
 
-    const totalPayableDays = totalPresent + (totalHalfDays * 0.5) + totalPaidSundays;
+    const totalPayableDays = totalPresent + (totalHalfDays * 0.5) + totalPaidSundays + (adjustLeaves ? totalLeavePayableDays : 0);
+    const baseSalary = Number(user.salary_amount || 0);
+    const perDayRate = baseSalary > 0 ? (baseSalary / daysInMonth) : 0;
+    const calculatedSalary = Math.round(perDayRate * totalPayableDays);
 
     return {
       emp_id: user.emp_code || '',
@@ -1952,24 +2703,946 @@ export async function getTeamMonthlyMatrix({
         totalShortLeaves,
         totalSundays: totalPaidSundays,
         totalDisallowedSundays,
+        totalApprovedLeaves,
+        totalLeavePayableDays,
+        leavesAdjusted: adjustLeaves,
         totalPayableDays,
         totalMinutesWorked,
-        totalHoursFormatted: formatMinutesToHours(totalMinutesWorked)
+        totalHoursFormatted: formatMinutesToHours(totalMinutesWorked),
+        baseSalary,
+        perDayRate: Math.round(perDayRate),
+        calculatedSalary,
+        periodType,
+        periodDays: (endDay - startDay + 1)
       }
     };
   });
+
+  const totalPayrollAmount = matrixRows.reduce((sum, r) => sum + (r.summary?.calculatedSalary || 0), 0);
+  const totalApprovedLeavesCount = matrixRows.reduce((sum, r) => sum + (r.summary?.totalApprovedLeaves || 0), 0);
+  const grandTotalMinutes = matrixRows.reduce((sum, r) => sum + (r.summary?.totalMinutesWorked || 0), 0);
 
   return {
     success: true,
     year: targetYear,
     month: targetMonth,
     daysInMonth,
+    periodType,
+    startDay,
+    endDay,
+    periodDays: (endDay - startDay + 1),
     monthDates,
     rows: matrixRows,
     summary: {
       totalEmployees: matrixRows.length,
-      daysInMonth
+      daysInMonth,
+      periodDays: (endDay - startDay + 1),
+      totalDepartmentCount: new Set(matrixRows.map(r => r.department)).size,
+      totalHoursLoggedFormatted: formatMinutesToHours(grandTotalMinutes),
+      totalAdvanceAmount: periodType === 'ADVANCE_HALF' ? totalPayrollAmount : 0,
+      totalPayrollAmount,
+      totalApprovedLeavesCount,
+      leavesAdjustedInReport: adjustLeaves
     }
   };
 }
 
+async function getHodReportContext() {
+  try {
+    const session = await createSessionClient();
+    const { data: { user }, error: authError } = await session.auth.getUser();
+    if (authError || !user) return { success: false, error: 'Please sign in again.' };
+
+    const db = getAdminClient();
+    const { data: actor, error: actorError } = await db.from('user_roles').select('*').eq('user_id', user.id).maybeSingle();
+    if (actorError || !actor) return { success: false, error: 'Employee profile unavailable.' };
+    const actorStatus = String(actor.emp_status || actor.module_access?.emp_status || 'Active').toLowerCase();
+    if (['inactive', 'in_active', 'terminated', 'resigned', 'trash', 'draft'].includes(actorStatus)) {
+      return { success: false, error: 'Employee profile unavailable.' };
+    }
+
+    const { data: users, error: usersError } = await db.from('user_roles').select('*');
+    if (usersError || !Array.isArray(users)) return { success: false, error: 'HOD team unavailable.' };
+    const actorTenant = actor.tenant_id || actor.module_access?._tenantId;
+    const eligible = users.filter(employee => {
+      if (employee.is_approved !== true || employee.role === 'customer') return false;
+      const status = String(employee.emp_status || employee.module_access?.emp_status || 'Active').toLowerCase();
+      if (['inactive', 'in_active', 'terminated', 'resigned', 'trash', 'draft'].includes(status)) return false;
+      if (!matchesCompany(employee.company, actor.company)) return false;
+      const employeeTenant = employee.tenant_id || employee.module_access?._tenantId;
+      return !actorTenant || !employeeTenant || actorTenant === employeeTenant;
+    });
+    const team = getHodTeam(eligible.some(employee => employee.user_id === actor.user_id) ? eligible : [actor, ...eligible], actor);
+    return { success: true, team };
+  } catch {
+    return { success: false, error: 'HOD team unavailable.' };
+  }
+}
+
+export async function getHodTeamReportAccess() {
+  const context = await getHodReportContext();
+  return context.success
+    ? { success: true, hasTeam: context.team.length > 0 }
+    : { success: false, hasTeam: false, error: context.error };
+}
+
+export async function getHodTeamAttendanceMaster(options = {}) {
+  const context = await getHodReportContext();
+  if (!context.success) return { success: false, error: context.error };
+  const report = await getTeamAttendanceMaster(options);
+  if (!report.success) return report;
+
+  const team = context.team.filter(employee =>
+    (!options.department || options.department === 'All' || employee.emp_department === options.department) &&
+    (!options.company || matchesCompany(employee.company, options.company))
+  );
+  const ids = new Set(team.map(employee => employee.user_id).filter(Boolean));
+  const emails = new Set(team.map(employee => String(employee.email || '').trim().toLowerCase()).filter(Boolean));
+  const records = report.records.filter(record =>
+    (record.user_id && ids.has(record.user_id)) || emails.has(String(record.email || '').trim().toLowerCase())
+  );
+  return {
+    ...report,
+    records,
+    summary: {
+      ...report.summary,
+      totalEmployees: team.length,
+      totalRecords: records.length,
+      totalPresent: records.filter(record => ['PRESENT', 'LATE', 'REGULARIZED'].includes(record.status)).length,
+      totalHalfDay: records.filter(record => record.status === 'HALF_DAY').length,
+      totalLate: records.filter(record => record.status === 'LATE').length,
+      totalAbsent: records.filter(record => record.status === 'ABSENT').length,
+      totalRegularized: records.filter(record => record.is_regularized).length
+    }
+  };
+}
+
+export async function getHodTeamMonthlyMatrix(options = {}) {
+  const context = await getHodReportContext();
+  if (!context.success) return { success: false, error: context.error };
+  const report = await getTeamMonthlyMatrix(options);
+  if (!report.success) return report;
+
+  const emails = new Set(context.team.filter(employee =>
+    (!options.department || options.department === 'All' || employee.emp_department === options.department) &&
+    (!options.company || matchesCompany(employee.company, options.company))
+  ).map(employee => String(employee.email || '').trim().toLowerCase()).filter(Boolean));
+  const rows = report.rows.filter(row => emails.has(String(row.email || '').trim().toLowerCase()));
+  return { ...report, rows, summary: { ...report.summary, totalEmployees: rows.length } };
+}
+
+/**
+ * Assign Employee Default Shift (Admin / HR)
+ */
+export async function assignEmployeeShift({ email, shiftCodeOrName, assignedBy = 'Admin' }) {
+  if (!email) return { success: false, error: 'Employee email is required' };
+  const adminClient = getAdminClient();
+  const normalizedEmail = email.trim().toLowerCase();
+
+  try {
+    const { data, error } = await adminClient
+      .from('user_roles')
+      .update({ assigned_shift: shiftCodeOrName || null })
+      .ilike('email', normalizedEmail)
+      .select('id, email, emp_name, assigned_shift')
+      .maybeSingle();
+
+    if (error) {
+      console.error('Supabase error assigning employee shift:', error);
+      return { success: false, error: error.message };
+    }
+
+    try {
+      await logAuditAction({
+        module: 'attendance',
+        action: 'ASSIGN_EMPLOYEE_SHIFT',
+        details: `Assigned shift "${shiftCodeOrName || 'Default'}" to employee ${normalizedEmail} by ${assignedBy}`,
+        userEmail: normalizedEmail,
+        userName: data?.emp_name || normalizedEmail
+      });
+    } catch {}
+
+    return {
+      success: true,
+      message: `Shift "${shiftCodeOrName || 'Default'}" successfully assigned to ${normalizedEmail}`,
+      data
+    };
+  } catch (err) {
+    return { success: false, error: err?.message || 'Failed to assign shift' };
+  }
+}
+
+/**
+ * 13. Get Employee Leave Balance & Ledger (with CL, SL, and EL 1-Year Lock-in status)
+ */
+export async function getEmployeeLeaveBalance({
+  email,
+  tenantId = null,
+  userCompany = '',
+  targetYear = null
+}) {
+  if (!email) return { success: false, error: 'Employee email is required' };
+  const normalizedEmail = email.trim().toLowerCase();
+  const effectiveTenantId = resolveTenantId(tenantId, userCompany);
+  const currentYear = targetYear || new Date().getFullYear();
+
+  try {
+    const policyRes = await getTenantAttendancePolicy(effectiveTenantId, userCompany);
+    const policy = policyRes?.data || {};
+    const leavePolicy = policy.leave_policy || {
+      cl_quota_annual: 8,
+      sl_quota_annual: 6,
+      el_quota_annual: 15,
+      el_lockin_months: 12,
+      el_validity_years: 3,
+      el_encashable: true
+    };
+
+    // Get employee joining date from user_roles
+    let doj = null;
+    let empName = '';
+    let empCode = '';
+    let department = '';
+    const adminClient = getAdminClient();
+    try {
+      const { data: userRole } = await adminClient
+        .from('user_roles')
+        .select('created_at, date_of_joining, emp_name, emp_code, department')
+        .ilike('email', normalizedEmail)
+        .maybeSingle();
+
+      if (userRole) {
+        doj = userRole.date_of_joining || userRole.created_at || null;
+        empName = userRole.emp_name || '';
+        empCode = userRole.emp_code || '';
+        department = userRole.department || '';
+      }
+    } catch {}
+
+    // Evaluate EL 1-Year Lock-in
+    let isElLocked = false;
+    let elUnlockDateStr = null;
+    let tenureMonths = 0;
+    const lockinMonths = Number(leavePolicy.el_lockin_months ?? 12);
+
+    if (doj && lockinMonths > 0) {
+      const joinDate = new Date(doj);
+      const now = new Date();
+      tenureMonths = (now.getFullYear() - joinDate.getFullYear()) * 12 + (now.getMonth() - joinDate.getMonth());
+      if (tenureMonths < lockinMonths) {
+        isElLocked = true;
+        const unlockDate = new Date(joinDate);
+        unlockDate.setMonth(unlockDate.getMonth() + lockinMonths);
+        elUnlockDateStr = unlockDate.toISOString().split('T')[0];
+      }
+    }
+
+    // Get availed leaves for this year from employee_leaves.json (and DB)
+    const localLeaves = await getFallbackLeavesData();
+    const allRequests = Array.isArray(localLeaves?.requests) ? localLeaves.requests : [];
+    const userLeavesThisYear = allRequests.filter(req => {
+      if ((req.email || '').toLowerCase() !== normalizedEmail) return false;
+      if (req.status !== 'APPROVED') return false;
+      const reqYear = new Date(req.from_date || req.applied_at).getFullYear();
+      return reqYear === currentYear;
+    });
+
+    let clAvailed = 0;
+    let slAvailed = 0;
+    let elAvailed = 0;
+    let cplAvailed = 0;
+    let lwpAvailed = 0;
+
+    userLeavesThisYear.forEach(req => {
+      const days = Number(req.total_days || 1);
+      if (req.leave_type === 'CL') clAvailed += days;
+      else if (req.leave_type === 'SL') slAvailed += days;
+      else if (req.leave_type === 'EL') elAvailed += days;
+      else if (req.leave_type === 'CPL') cplAvailed += days;
+      else if (req.leave_type === 'LWP') lwpAvailed += days;
+      else if (req.leave_type === 'HALF_DAY') clAvailed += 0.5;
+    });
+
+    const clQuota = Number(leavePolicy.cl_quota_annual ?? 8);
+    const slQuota = Number(leavePolicy.sl_quota_annual ?? 6);
+    const elQuota = Number(leavePolicy.el_quota_annual ?? 15);
+
+    const clBalance = Math.max(0, clQuota - clAvailed);
+    const slBalance = Math.max(0, slQuota - slAvailed);
+    const elBalance = isElLocked ? 0 : Math.max(0, elQuota - elAvailed);
+
+    // Calculate CPL (Compensatory Off)
+    const cplPolicy = leavePolicy.cpl_policy || {
+      enabled: true,
+      validity_days: 60,
+      min_work_hours_full_cpl: 8.0,
+      min_work_hours_half_cpl: 4.5,
+      auto_credit_on_sunday_work: true,
+      max_cpl_accumulation: 10
+    };
+
+    let cplEarned = 0;
+    const nowMs = Date.now();
+    const validityDays = Number(cplPolicy.validity_days ?? 60);
+    const validityWindowMs = validityDays * 24 * 60 * 60 * 1000;
+
+    // 1. Manual Grants from employee_leaves.json
+    const allCplGrants = Array.isArray(localLeaves?.cpl_grants) ? localLeaves.cpl_grants : [];
+    const userGrants = allCplGrants.filter(g => {
+      if ((g.email || '').toLowerCase() !== normalizedEmail) return false;
+      if (g.status && g.status !== 'ACTIVE') return false;
+      const grantedTime = new Date(g.granted_at || g.work_date).getTime();
+      return (nowMs - grantedTime) <= validityWindowMs;
+    });
+
+    userGrants.forEach(g => {
+      cplEarned += Number(g.days || 1);
+    });
+
+    // 2. Auto-credit on Sunday / Holiday work if enabled
+    if (cplPolicy.enabled && cplPolicy.auto_credit_on_sunday_work) {
+      try {
+        const attData = await getFallbackData();
+        const userRecs = (attData.records || []).filter(r => (r.email || '').toLowerCase() === normalizedEmail);
+        userRecs.forEach(r => {
+          if (!r.attendance_date) return;
+          const recTime = new Date(`${r.attendance_date}T00:00:00+05:30`).getTime();
+          if ((nowMs - recTime) > validityWindowMs) return; // Expired
+          
+          const d = new Date(`${r.attendance_date}T00:00:00+05:30`);
+          const isSunday = d.getDay() === 0;
+          if (isSunday && (r.status === 'PRESENT' || r.in_time)) {
+            const alreadyGranted = userGrants.some(g => g.work_date === r.attendance_date);
+            if (!alreadyGranted) {
+              const workMins = r.total_working_minutes || 0;
+              const fullMins = (cplPolicy.min_work_hours_full_cpl || 8.0) * 60;
+              const halfMins = (cplPolicy.min_work_hours_half_cpl || 4.5) * 60;
+              if (workMins >= fullMins || r.status === 'PRESENT') {
+                cplEarned += 1.0;
+              } else if (workMins >= halfMins) {
+                cplEarned += 0.5;
+              }
+            }
+          }
+        });
+      } catch {}
+    }
+
+    if (cplPolicy.max_cpl_accumulation && cplEarned > cplPolicy.max_cpl_accumulation) {
+      cplEarned = cplPolicy.max_cpl_accumulation;
+    }
+
+    const cplBalance = Math.max(0, cplEarned - cplAvailed);
+
+    return {
+      success: true,
+      data: {
+        email: normalizedEmail,
+        empName,
+        empCode,
+        department,
+        doj,
+        currentYear,
+        tenureMonths,
+        cl: {
+          quota: clQuota,
+          availed: clAvailed,
+          balance: clBalance,
+          status: 'UNLOCKED',
+          statusLabel: '🟢 Unlocked (Day 1 Available)'
+        },
+        sl: {
+          quota: slQuota,
+          availed: slAvailed,
+          balance: slBalance,
+          status: 'UNLOCKED',
+          statusLabel: '🟢 Unlocked'
+        },
+        el: {
+          quota: elQuota,
+          availed: elAvailed,
+          balance: elBalance,
+          status: isElLocked ? 'LOCKED' : 'UNLOCKED',
+          statusLabel: isElLocked 
+            ? `🔒 Blocked (1-Year Probation Lock: Unlocks on ${elUnlockDateStr})`
+            : `🟢 Unlocked (Valid for ${leavePolicy.el_validity_years || 3} Yrs / Encashable)`,
+          unlockDate: elUnlockDateStr,
+          isEncashable: leavePolicy.el_encashable !== false,
+          validityYears: leavePolicy.el_validity_years || 3
+        },
+        cpl: {
+          earned: cplEarned,
+          availed: cplAvailed,
+          balance: cplBalance,
+          status: cplBalance > 0 ? 'AVAILABLE' : 'ZERO_BALANCE',
+          statusLabel: cplBalance > 0
+            ? `🎉 ${cplBalance} Day(s) Available (Valid ${validityDays} Days)`
+            : '⚪ 0 Days (Earned from Sunday/Holiday Work)',
+          validityDays,
+          grants: userGrants
+        },
+        lwp: {
+          availed: lwpAvailed,
+          statusLabel: '⚪ Leave Without Pay (Unpaid Deduction)'
+        },
+        policy: leavePolicy
+      }
+    };
+  } catch (err) {
+    console.error('Error fetching employee leave balance:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * 14. Apply for Employee Leave (Single day or Date range)
+ */
+export async function applyEmployeeLeave({
+  userId,
+  email,
+  empName,
+  empCode,
+  department,
+  tenantId = null,
+  userCompany = '',
+  leaveType = 'CL', // 'CL' | 'SL' | 'EL' | 'HALF_DAY' | 'LWP'
+  fromDate,
+  toDate,
+  reason = '',
+  halfDaySession = 'FIRST_HALF'
+}) {
+  if (!email || !fromDate) {
+    return { success: false, error: 'Employee email and fromDate are required' };
+  }
+
+  const effectiveTenantId = resolveTenantId(tenantId, userCompany);
+  const normalizedEmail = email.trim().toLowerCase();
+  const cleanToDate = toDate || fromDate;
+
+  // Calculate days
+  const start = new Date(`${fromDate}T00:00:00`);
+  const end = new Date(`${cleanToDate}T00:00:00`);
+  if (end < start) {
+    return { success: false, error: 'To date cannot be earlier than From date' };
+  }
+
+  const diffTime = Math.abs(end - start);
+  let totalDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+  if (leaveType === 'HALF_DAY') totalDays = 0.5;
+
+  // Balance & Lock-in Check
+  const balanceRes = await getEmployeeLeaveBalance({ email: normalizedEmail, tenantId: effectiveTenantId, userCompany });
+  if (balanceRes.success && balanceRes.data) {
+    const b = balanceRes.data;
+    if (leaveType === 'EL') {
+      if (b.el.status === 'LOCKED') {
+        return {
+          success: false,
+          error: `Earned Leave (EL) is locked for employees under 1 year of service. Unlocks on ${b.el.unlockDate || '1st anniversary'}. Please choose Casual Leave (CL) or LWP.`
+        };
+      }
+      if (b.el.balance < totalDays) {
+        return {
+          success: false,
+          error: `Insufficient EL balance! Available: ${b.el.balance} days, Requested: ${totalDays} days. Consider applying remaining days as LWP.`
+        };
+      }
+    } else if (leaveType === 'CL' && b.cl.balance < totalDays) {
+      return {
+        success: false,
+        error: `Insufficient Casual Leave (CL) balance! Available: ${b.cl.balance} days, Requested: ${totalDays} days.`
+      };
+    } else if (leaveType === 'SL' && b.sl.balance < totalDays) {
+      return {
+        success: false,
+        error: `Insufficient Sick Leave (SL) balance! Available: ${b.sl.balance} days, Requested: ${totalDays} days.`
+      };
+    } else if (leaveType === 'CPL' && (!b.cpl || b.cpl.balance < totalDays)) {
+      return {
+        success: false,
+        error: `Insufficient CPL balance! Available: ${b.cpl?.balance || 0} day(s), Requested: ${totalDays} day(s). CPL is earned when you work on Sundays or Holidays.`
+      };
+    }
+  }
+
+  const newLeaveRequest = {
+    id: `leave_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    tenant_id: effectiveTenantId,
+    user_id: userId || null,
+    email: normalizedEmail,
+    emp_name: empName || normalizedEmail.split('@')[0],
+    emp_code: empCode || '',
+    department: department || 'General',
+    leave_type: leaveType,
+    from_date: fromDate,
+    to_date: cleanToDate,
+    total_days: totalDays,
+    half_day_session: leaveType === 'HALF_DAY' ? halfDaySession : null,
+    reason: (reason || '').trim(),
+    status: 'PENDING',
+    applied_at: new Date().toISOString(),
+    approver_id: null,
+    approver_name: null,
+    approver_remarks: null,
+    action_at: null
+  };
+
+  const localLeaves = await getFallbackLeavesData();
+  localLeaves.requests = localLeaves.requests || [];
+  localLeaves.requests.unshift(newLeaveRequest);
+  await saveFallbackLeavesData(localLeaves);
+
+  try {
+    const adminClient = getAdminClient();
+    await adminClient.from('employee_leaves').insert([newLeaveRequest]);
+  } catch {}
+
+  try {
+    await logAuditAction({
+      module: 'attendance',
+      action: 'APPLY_LEAVE',
+      details: `${newLeaveRequest.emp_name} applied for ${totalDays} day(s) ${leaveType} from ${fromDate} to ${cleanToDate}`,
+      userEmail: normalizedEmail,
+      userName: newLeaveRequest.emp_name
+    });
+  } catch {}
+
+  return {
+    success: true,
+    message: `Leave application for ${totalDays} day(s) (${leaveType}) submitted successfully! Awaiting HOD approval.`,
+    data: newLeaveRequest
+  };
+}
+
+/**
+ * 15. Get Employee's own Leave Applications
+ */
+export async function getMyLeaveRequests({ email, tenantId = null }) {
+  if (!email) return { success: false, error: 'Email is required' };
+  const normalizedEmail = email.trim().toLowerCase();
+  const localLeaves = await getFallbackLeavesData();
+  const requests = (localLeaves?.requests || [])
+    .filter(r => (r.email || '').toLowerCase() === normalizedEmail)
+    .sort((a, b) => new Date(b.applied_at) - new Date(a.applied_at));
+  return { success: true, data: requests };
+}
+
+/**
+ * 16. Get Pending Leave Requests for HOD / Manager
+ */
+export async function getHodPendingLeaveRequests({ tenantId = null, userCompany = '', department = 'All' } = {}) {
+  const effectiveTenantId = resolveTenantId(tenantId, userCompany);
+  const localLeaves = await getFallbackLeavesData();
+  let requests = (localLeaves?.requests || []).filter(r => {
+    if (r.tenant_id && r.tenant_id !== effectiveTenantId) return false;
+    if (department && department !== 'All' && r.department !== department) return false;
+    return true;
+  });
+  requests.sort((a, b) => new Date(b.applied_at) - new Date(a.applied_at));
+  return { success: true, data: requests };
+}
+
+/**
+ * 17. Approve Leave Request (HOD / Manager)
+ */
+export async function approveLeaveRequest({ requestId, approverId, approverName = 'HOD', remarks = '' }) {
+  if (!requestId) return { success: false, error: 'Request ID is required' };
+  const localLeaves = await getFallbackLeavesData();
+  const req = (localLeaves?.requests || []).find(r => r.id === requestId);
+  if (!req) return { success: false, error: 'Leave request not found' };
+
+  req.status = 'APPROVED';
+  req.approver_id = approverId || null;
+  req.approver_name = approverName;
+  req.approver_remarks = remarks || 'Approved by HOD';
+  req.action_at = new Date().toISOString();
+
+  await saveFallbackLeavesData(localLeaves);
+
+  // Sync to database if available
+  try {
+    const adminClient = getAdminClient();
+    await adminClient.from('employee_leaves').update({
+      status: 'APPROVED',
+      approver_id: approverId,
+      approver_name: approverName,
+      approver_remarks: req.approver_remarks,
+      action_at: req.action_at
+    }).eq('id', requestId);
+  } catch {}
+
+  // Update fallback attendance records for each date in leave period
+  const localAttendance = await getFallbackData();
+  const start = new Date(`${req.from_date}T00:00:00`);
+  const end = new Date(`${req.to_date}T00:00:00`);
+  const cur = new Date(start);
+
+  while (cur <= end) {
+    const dStr = cur.toISOString().split('T')[0];
+    const isPaid = req.leave_type !== 'LWP';
+
+    const existingRecIdx = localAttendance.records.findIndex(
+      r => (r.email || '').toLowerCase() === (req.email || '').toLowerCase() && r.attendance_date === dStr
+    );
+
+    const leaveRec = {
+      id: existingRecIdx >= 0 ? localAttendance.records[existingRecIdx].id : `rec_leave_${Date.now()}_${dStr}`,
+      tenant_id: req.tenant_id,
+      email: req.email,
+      emp_name: req.emp_name,
+      emp_code: req.emp_code,
+      department: req.department,
+      attendance_date: dStr,
+      status: req.leave_type === 'HALF_DAY' ? 'HALF_DAY' : 'ON_LEAVE',
+      remarks: `Approved ${req.leave_type} Leave: ${req.reason || ''}`.trim(),
+      is_regularized: false,
+      is_paid_leave: isPaid,
+      leave_type: req.leave_type
+    };
+
+    if (existingRecIdx >= 0) {
+      localAttendance.records[existingRecIdx] = { ...localAttendance.records[existingRecIdx], ...leaveRec };
+    } else {
+      localAttendance.records.push(leaveRec);
+    }
+
+    try {
+      const adminClient = getAdminClient();
+      await adminClient.from('attendance_records').upsert(leaveRec, { onConflict: 'email,attendance_date' });
+    } catch {}
+
+    cur.setDate(cur.getDate() + 1);
+  }
+
+  await saveFallbackData(localAttendance);
+
+  return { success: true, message: `Leave request for ${req.emp_name} approved successfully!` };
+}
+
+/**
+ * 18. Reject Leave Request (HOD / Manager)
+ */
+export async function rejectLeaveRequest({ requestId, approverId, approverName = 'HOD', remarks = '' }) {
+  if (!requestId) return { success: false, error: 'Request ID is required' };
+  const localLeaves = await getFallbackLeavesData();
+  const req = (localLeaves?.requests || []).find(r => r.id === requestId);
+  if (!req) return { success: false, error: 'Leave request not found' };
+
+  req.status = 'REJECTED';
+  req.approver_id = approverId || null;
+  req.approver_name = approverName;
+  req.approver_remarks = remarks || 'Rejected by HOD';
+  req.action_at = new Date().toISOString();
+
+  await saveFallbackLeavesData(localLeaves);
+
+  try {
+    const adminClient = getAdminClient();
+    await adminClient.from('employee_leaves').update({
+      status: 'REJECTED',
+      approver_id: approverId,
+      approver_name: approverName,
+      approver_remarks: req.approver_remarks,
+      action_at: req.action_at
+    }).eq('id', requestId);
+  } catch {}
+
+  return { success: true, message: `Leave request rejected.` };
+}
+
+/**
+ * 19. Grant Employee CPL (Compensatory Off) Credit (Admin / HOD)
+ */
+export async function grantEmployeeCPLCredit({
+  tenantId = null,
+  userCompany = '',
+  email,
+  empName = '',
+  days = 1.0,
+  reason = '',
+  workDate = null,
+  validityDays = 60,
+  grantedBy = null,
+  grantedByName = 'HOD / Admin'
+}) {
+  if (!email) return { success: false, error: 'Employee email is required' };
+  const numDays = Number(days);
+  if (isNaN(numDays) || numDays <= 0) return { success: false, error: 'Valid days (> 0) required' };
+
+  const effectiveTenantId = resolveTenantId(tenantId, userCompany);
+  const normalizedEmail = email.trim().toLowerCase();
+  const valDays = Number(validityDays || 60);
+
+  const grantRecord = {
+    id: `cpl_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    tenant_id: effectiveTenantId,
+    email: normalizedEmail,
+    emp_name: empName || normalizedEmail.split('@')[0],
+    days: numDays,
+    reason: (reason || 'Sunday / Holiday work credit').trim(),
+    work_date: workDate || new Date().toISOString().split('T')[0],
+    granted_at: new Date().toISOString(),
+    expires_at: new Date(Date.now() + valDays * 24 * 60 * 60 * 1000).toISOString(),
+    granted_by: grantedBy,
+    granted_by_name: grantedByName,
+    status: 'ACTIVE'
+  };
+
+  const localLeaves = await getFallbackLeavesData();
+  localLeaves.cpl_grants = localLeaves.cpl_grants || [];
+  localLeaves.cpl_grants.unshift(grantRecord);
+  await saveFallbackLeavesData(localLeaves);
+
+  try {
+    await logAuditAction({
+      module: 'attendance',
+      action: 'GRANT_CPL_CREDIT',
+      details: `Granted ${numDays} CPL day(s) to ${normalizedEmail} by ${grantedByName}. Reason: ${grantRecord.reason}`,
+      userEmail: normalizedEmail,
+      userName: empName || normalizedEmail
+    });
+  } catch {}
+
+  return {
+    success: true,
+    message: `Successfully credited ${numDays} CPL day(s) to ${empName || normalizedEmail}. Valid for ${valDays} days.`,
+    data: grantRecord
+  };
+}
+
+/**
+ * 20. Update Tenant Leave & CPL Policy (Admin / HOD)
+ */
+export async function updateTenantLeavePolicy({
+  tenantId = null,
+  userCompany = '',
+  leavePolicy = {},
+  updatedBy = 'Admin'
+}) {
+  const effectiveTenantId = resolveTenantId(tenantId, userCompany);
+
+  try {
+    let allPolicies = {};
+    try {
+      const raw = await fs.readFile(POLICIES_FILE_PATH, 'utf8');
+      allPolicies = JSON.parse(raw);
+    } catch {
+      allPolicies = { ...DEFAULT_ATTENDANCE_POLICIES };
+    }
+
+    if (!allPolicies[effectiveTenantId]) {
+      allPolicies[effectiveTenantId] = {
+        tenant_id: effectiveTenantId,
+        company_name: userCompany || 'Default Company',
+        ...DEFAULT_ATTENDANCE_POLICIES[DEFAULT_TENANT_ID]
+      };
+    }
+
+    const currentTenantPolicy = allPolicies[effectiveTenantId];
+    currentTenantPolicy.leave_policy = {
+      ...(currentTenantPolicy.leave_policy || {}),
+      ...leavePolicy,
+      cpl_policy: {
+        ...(currentTenantPolicy.leave_policy?.cpl_policy || {}),
+        ...(leavePolicy.cpl_policy || {})
+      }
+    };
+    currentTenantPolicy.updated_by = updatedBy;
+    currentTenantPolicy.updated_at = new Date().toISOString();
+
+    // Also sync to branch keys if they exist
+    for (const key of Object.keys(allPolicies)) {
+      if (key.startsWith(`${effectiveTenantId}:`)) {
+        allPolicies[key].leave_policy = currentTenantPolicy.leave_policy;
+      }
+    }
+
+    await fs.writeFile(POLICIES_FILE_PATH, JSON.stringify(allPolicies, null, 2) + '\n', 'utf8');
+
+    // Dual-write attempt to Supabase DB if table/column exists
+    try {
+      const adminClient = getAdminClient();
+      await adminClient
+        .from('attendance_shift_policies')
+        .update({
+          leave_policy: currentTenantPolicy.leave_policy,
+          updated_by: updatedBy,
+          updated_at: currentTenantPolicy.updated_at
+        })
+        .eq('tenant_id', effectiveTenantId);
+    } catch {}
+
+    try {
+      await logAuditAction({
+        module: 'attendance',
+        action: 'UPDATE_LEAVE_POLICY',
+        details: `Updated leave policy for tenant ${effectiveTenantId} by ${updatedBy}`,
+        userEmail: updatedBy,
+        userName: updatedBy
+      });
+    } catch {}
+
+    return {
+      success: true,
+      message: 'Company leave policy updated successfully!',
+      data: currentTenantPolicy.leave_policy
+    };
+  } catch (err) {
+    console.error('Error updating tenant leave policy:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * 20B. Get All Tenant Leave Policies (for Tab 7 Master Directory Table)
+ */
+export async function getAllTenantLeavePolicies() {
+  try {
+    const fallbackPolicies = await getFallbackPolicies();
+    const tenantsMap = {};
+
+    const knownTenants = [
+      { id: '00000000-0000-0000-0000-000000000001', name: 'New Swan Group' },
+      { id: '0a37b8e8-1c28-4e19-8891-951fc3f8f8af', name: 'SuPuja Creations' },
+      { id: '922d3e72-6588-457f-a562-4f1bdbf10d98', name: 'Testing New Swan Group' }
+    ];
+
+    knownTenants.forEach(kt => {
+      const pol = fallbackPolicies[kt.id] || DEFAULT_ATTENDANCE_POLICIES[kt.id] || DEFAULT_ATTENDANCE_POLICIES[DEFAULT_TENANT_ID] || {};
+      tenantsMap[kt.id] = {
+        tenant_id: kt.id,
+        company_name: pol.company_name || kt.name,
+        leave_policy: pol.leave_policy || DEFAULT_ATTENDANCE_POLICIES[kt.id]?.leave_policy || DEFAULT_ATTENDANCE_POLICIES[DEFAULT_TENANT_ID]?.leave_policy || {},
+        updated_at: pol.updated_at || null,
+        updated_by: pol.updated_by || 'Default System'
+      };
+    });
+
+    for (const [key, pol] of Object.entries(fallbackPolicies)) {
+      if (!key.includes(':') && !tenantsMap[key]) {
+        tenantsMap[key] = {
+          tenant_id: pol.tenant_id || key,
+          company_name: pol.company_name || 'Enterprise',
+          leave_policy: pol.leave_policy || DEFAULT_ATTENDANCE_POLICIES[DEFAULT_TENANT_ID]?.leave_policy || {},
+          updated_at: pol.updated_at || null,
+          updated_by: pol.updated_by || 'Admin'
+        };
+      }
+    }
+
+    return {
+      success: true,
+      data: Object.values(tenantsMap)
+    };
+  } catch (err) {
+    console.error('Error fetching all tenant leave policies:', err);
+    return { success: false, error: err.message, data: [] };
+  }
+}
+
+/**
+ * 21. Get Comprehensive Team Leave Report & Balances Ledger (Admin / HOD)
+ */
+export async function getTeamLeaveReport({
+  tenantId = null,
+  userCompany = '',
+  department = 'All',
+  year = null
+}) {
+  const effectiveTenantId = resolveTenantId(tenantId, userCompany);
+  const targetYear = year || new Date().getFullYear();
+  const adminClient = getAdminClient();
+
+  try {
+    let query = adminClient
+      .from('user_roles')
+      .select('id, user_id, email, emp_name, emp_code, department, role, date_of_joining, created_at')
+      .order('emp_name', { ascending: true });
+
+    if (effectiveTenantId) {
+      query = query.eq('tenant_id', effectiveTenantId);
+    }
+    const { data: users, error } = await query;
+    if (error) throw error;
+
+    let targetUsers = users || [];
+    if (department && department !== 'All') {
+      targetUsers = targetUsers.filter(u => u.department === department);
+    }
+
+    const localLeaves = await getFallbackLeavesData();
+    const allRequests = Array.isArray(localLeaves?.requests) ? localLeaves.requests : [];
+    const tenantRequests = allRequests.filter(r => !r.tenant_id || r.tenant_id === effectiveTenantId);
+
+    let totalEmployees = targetUsers.length;
+    let totalLeavesTaken = 0;
+    let pendingApprovals = 0;
+    let activeCplPool = 0;
+
+    const roster = await Promise.all(targetUsers.map(async (u) => {
+      const balanceRes = await getEmployeeLeaveBalance({
+        email: u.email,
+        tenantId: effectiveTenantId,
+        userCompany,
+        targetYear
+      });
+
+      const bData = balanceRes.data || {};
+      const cl = bData.cl || { quota: 8, availed: 0, balance: 8 };
+      const sl = bData.sl || { quota: 6, availed: 0, balance: 6 };
+      const el = bData.el || { quota: 15, availed: 0, balance: 15, status: 'UNLOCKED' };
+      const cpl = bData.cpl || { earned: 0, availed: 0, balance: 0 };
+      const lwp = bData.lwp || { availed: 0 };
+
+      const userLeaves = (cl.availed || 0) + (sl.availed || 0) + (el.availed || 0) + (cpl.availed || 0);
+      totalLeavesTaken += userLeaves;
+      activeCplPool += (cpl.balance || 0);
+
+      const userPending = tenantRequests.filter(r => (r.email || '').toLowerCase() === (u.email || '').toLowerCase() && r.status === 'PENDING').length;
+
+      return {
+        userId: u.user_id || u.id,
+        email: u.email,
+        empName: u.emp_name || u.email.split('@')[0],
+        empCode: u.emp_code || '',
+        department: u.department || 'General',
+        role: u.role || 'employee',
+        doj: bData.doj || u.date_of_joining || u.created_at || null,
+        tenureMonths: bData.tenureMonths || 0,
+        cl,
+        sl,
+        el,
+        cpl,
+        lwp,
+        totalLeavesAvailed: userLeaves,
+        pendingRequestsCount: userPending
+      };
+    }));
+
+    pendingApprovals = tenantRequests.filter(r => r.status === 'PENDING').length;
+
+    const relevantEmails = new Set(targetUsers.map(u => (u.email || '').toLowerCase()));
+    const history = tenantRequests
+      .filter(r => relevantEmails.has((r.email || '').toLowerCase()))
+      .sort((a, b) => new Date(b.applied_at) - new Date(a.applied_at));
+
+    return {
+      success: true,
+      data: {
+        kpis: {
+          totalEmployees,
+          totalLeavesTaken,
+          pendingApprovals,
+          activeCplPool
+        },
+        roster,
+        history,
+        year: targetYear,
+        department
+      }
+    };
+  } catch (err) {
+    console.error('Error fetching team leave report:', err);
+    return { success: false, error: err.message };
+  }
+}

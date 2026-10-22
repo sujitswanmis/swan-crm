@@ -7,6 +7,9 @@ import path from 'path';
 const BRANCHES_FILE_PATH = path.join(process.cwd(), 'src', 'config', 'tenant_branches.json');
 
 const getAdminClient = () => {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return null;
+  }
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
     process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -80,31 +83,32 @@ export async function getTenantBranches(companyOrTenantId = 'Default') {
       key = 'Testing New Swan Group';
     }
 
-    const admin = getAdminClient();
-
-    // If key is a UUID that wasn't hardcoded above, look up tenant name from DB
-    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(key)) {
-      try {
-        const { data: tData } = await admin.from('tenants').select('name, tenant_code').eq('id', key).maybeSingle();
-        if (tData?.name) {
-          key = tData.name;
-          if (SWAN_ALIASES.includes(key.toLowerCase()) || SWAN_ALIASES.includes((tData.tenant_code || '').toLowerCase())) {
-            key = 'New Swan Group';
-          }
-        }
-      } catch (e) {}
-    }
-
     let dbBranches = [];
     try {
-      const { data, error } = await admin
-        .from('tenant_branches')
-        .select('*')
-        .or(`company.ilike.${key},tenant_id.eq.${rawKey}`)
-        .order('created_at', { ascending: true });
+      const admin = getAdminClient();
+      if (admin) {
+        // If key is a UUID that wasn't hardcoded above, look up tenant name from DB
+        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(key)) {
+          try {
+            const { data: tData } = await admin.from('tenants').select('name, tenant_code').eq('id', key).maybeSingle();
+            if (tData?.name) {
+              key = tData.name;
+              if (SWAN_ALIASES.includes(key.toLowerCase()) || SWAN_ALIASES.includes((tData.tenant_code || '').toLowerCase())) {
+                key = 'New Swan Group';
+              }
+            }
+          } catch (e) {}
+        }
 
-      if (!error && Array.isArray(data)) {
-        dbBranches = data;
+        const { data, error } = await admin
+          .from('tenant_branches')
+          .select('*')
+          .or(`company.ilike.${key},tenant_id.eq.${rawKey}`)
+          .order('created_at', { ascending: true });
+
+        if (!error && Array.isArray(data)) {
+          dbBranches = data;
+        }
       }
     } catch (e) {
       // Table may not exist yet in Supabase, graceful fallback to file storage

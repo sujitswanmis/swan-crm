@@ -138,9 +138,30 @@ export async function forceSyncOfflineItem(item) {
         return { success: true, item };
       }
     } else if (item.entityType === 'attendance') {
-      const payload = item.payload;
+      const input = item.payload || {};
+      const tenantId = input.tenant_id || input.tenantId || '00000000-0000-0000-0000-000000000001';
+      const payload = {
+        tenant_id: tenantId,
+        user_id: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(input.user_id || input.userId || ''))
+          ? (input.user_id || input.userId) : null,
+        emp_code: input.emp_code || '',
+        emp_name: input.emp_name || input.empName || '',
+        email: String(input.email || '').trim().toLowerCase(),
+        department: input.department || '',
+        attendance_date: input.attendance_date,
+        in_time: input.in_time || null,
+        out_time: input.out_time || null,
+        in_location: input.in_location || 'Office Web Terminal',
+        out_location: input.out_location || null,
+        in_method: input.in_method || 'WEB_PUNCH',
+        out_method: input.out_method || null,
+        total_working_minutes: input.total_working_minutes || 0,
+        status: input.status || 'PRESENT',
+        is_regularized: false,
+        remarks: input.remarks || null
+      };
       if (payload.out_time) {
-        const { error } = await supabase
+        const { data, error } = await supabase
           .from('attendance_records')
           .update({
             out_time: payload.out_time,
@@ -150,9 +171,11 @@ export async function forceSyncOfflineItem(item) {
             status: payload.status,
             remarks: payload.remarks
           })
-          .match({ email: payload.email, attendance_date: payload.attendance_date });
+          .match({ email: payload.email, attendance_date: payload.attendance_date, tenant_id: tenantId })
+          .select('id');
 
         if (error) throw error;
+        if (!data?.length) throw new Error('Matching attendance punch-in was not found for punch-out');
       } else {
         const { error } = await supabase
           .from('attendance_records')

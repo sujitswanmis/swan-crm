@@ -1500,7 +1500,7 @@ export default function CRMContainer({
     let refreshTimer;
     async function loadTeam() {
       try {
-        const response = await getTeamMembers(userCompany);
+        const response = await getTeamMembers(userCompany, effectiveTenantId);
         if (!active) return;
         if (response && Array.isArray(response)) {
           setTeamMembers(response);
@@ -1527,7 +1527,7 @@ export default function CRMContainer({
       client.removeChannel(channel);
       window.removeEventListener('focus', scheduleRefresh);
     };
-  }, [userId]);
+  }, [userId, userCompany, effectiveTenantId]);
   
   const loadLeadsRef = useRef(null);
   const leadSyncInFlightRef = useRef(false);
@@ -4672,29 +4672,33 @@ export default function CRMContainer({
                                 const isFullAccess = isAdmin || recruiterAccess?.is_manager;
                                 const allowedSteps = recruiterAccess?.assigned_steps || [];
 
-                                const canSeeStage = (stageId) => isFullAccess || allowedSteps.includes(stageId);
+                                const canSeeStage = (stageId) => isFullAccess || allowedSteps.includes(stageId) || recruiterAccess?.sub_items?.[stageId]?.view === true;
 
                                 return (
                                   <>
-                                    {/* Dashboard & All Stages - always for admins/full access */}
-                                    {isFullAccess && (
+                                    {/* Dashboard & All Stages - for admins/managers or assigned */}
+                                    {(isFullAccess || canSeeStage('dashboard') || canSeeStage('all_stages')) && (
                                       <>
-                                        <button
-                                          onClick={() => { handleTabChange('recruiter'); setRecruiterFilterStage('dashboard'); }}
-                                          className="submenu-item"
-                                          data-active={activeTab === 'recruiter' && recruiterFilterStage === 'dashboard'}
-                                          style={{ fontWeight: 'bold', color: 'var(--accent-color)' }}
-                                        >
-                                          📊 Recruiter Dashboard
-                                        </button>
-                                        <button
-                                          onClick={() => { handleTabChange('recruiter'); setRecruiterFilterStage('all_stages'); }}
-                                          className="submenu-item"
-                                          data-active={activeTab === 'recruiter' && recruiterFilterStage === 'all_stages'}
-                                          style={{ fontWeight: 'bold' }}
-                                        >
-                                          🔍 Recruiter All Stage
-                                        </button>
+                                        {(isFullAccess || canSeeStage('dashboard')) && (
+                                          <button
+                                            onClick={() => { handleTabChange('recruiter'); setRecruiterFilterStage('dashboard'); }}
+                                            className="submenu-item"
+                                            data-active={activeTab === 'recruiter' && recruiterFilterStage === 'dashboard'}
+                                            style={{ fontWeight: 'bold', color: 'var(--accent-color)' }}
+                                          >
+                                            📊 Recruiter Dashboard
+                                          </button>
+                                        )}
+                                        {(isFullAccess || canSeeStage('all_stages')) && (
+                                          <button
+                                            onClick={() => { handleTabChange('recruiter'); setRecruiterFilterStage('all_stages'); }}
+                                            className="submenu-item"
+                                            data-active={activeTab === 'recruiter' && recruiterFilterStage === 'all_stages'}
+                                            style={{ fontWeight: 'bold' }}
+                                          >
+                                            🔍 Recruiter All Stage
+                                          </button>
+                                        )}
                                         <div style={{ height: '1px', backgroundColor: 'var(--border-light)', margin: '0.4rem 0.75rem' }} />
                                       </>
                                     )}
@@ -4784,13 +4788,19 @@ export default function CRMContainer({
                                 );
                               })()}
 
-                              <button
-                                onClick={() => { handleTabChange('leads'); handleStageChange(null); }}
-                                className="submenu-item"
-                                data-active={activeTab === 'leads' && leadsFilterStage === null}
-                              >
-                                All Leads
-                              </button>
+                              {(() => {
+                                const canSeeAllLeads = isAdmin || leadsAccess?.is_manager || leadsAccess?.sub_items?.all_leads?.view !== false;
+                                if (!canSeeAllLeads) return null;
+                                return (
+                                  <button
+                                    onClick={() => { handleTabChange('leads'); handleStageChange(null); }}
+                                    className="submenu-item"
+                                    data-active={activeTab === 'leads' && leadsFilterStage === null}
+                                  >
+                                    All Leads
+                                  </button>
+                                );
+                              })()}
 
                               {(activePipelineStages && activePipelineStages.length > 0 
                                 ? activePipelineStages 
@@ -4823,23 +4833,34 @@ export default function CRMContainer({
                                 Channel Partner Pipeline
                               </div>
 
-                              <button
-                                onClick={() => handlePartySubTabChange('dashboard')}
-                                className="submenu-item"
-                                data-active={activeTab === 'party' && partySubTab === 'dashboard'}
-                                style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: (activeTab === 'party' && partySubTab === 'dashboard') ? 700 : 600, color: (activeTab === 'party' && partySubTab === 'dashboard') ? 'var(--accent-color)' : undefined }}
-                              >
-                                <span>📊 Party Master Dashboard</span>
-                              </button>
+                              {(() => {
+                                const canSeePartySub = (subId) => (userRole === 'admin' || userRole === 'Admin') || isMasterAdmin || !moduleAccess?.party?.sub_items || moduleAccess.party.sub_items[subId]?.view !== false;
+                                return (
+                                  <>
+                                    {canSeePartySub('dashboard') && (
+                                      <button
+                                        onClick={() => handlePartySubTabChange('dashboard')}
+                                        className="submenu-item"
+                                        data-active={activeTab === 'party' && partySubTab === 'dashboard'}
+                                        style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: (activeTab === 'party' && partySubTab === 'dashboard') ? 700 : 600, color: (activeTab === 'party' && partySubTab === 'dashboard') ? 'var(--accent-color)' : undefined }}
+                                      >
+                                        <span>📊 Party Master Dashboard</span>
+                                      </button>
+                                    )}
 
-                              <button
-                                onClick={() => handlePartySubTabChange('all_party_stage')}
-                                className="submenu-item"
-                                data-active={activeTab === 'party' && partySubTab === 'all_party_stage'}
-                                style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: (activeTab === 'party' && partySubTab === 'all_party_stage') ? 700 : 600, color: (activeTab === 'party' && partySubTab === 'all_party_stage') ? 'var(--accent-color)' : undefined }}
-                              >
-                                <span>📋 All Party Stage</span>
-                              </button>
+                                    {canSeePartySub('all_party_stage') && (
+                                      <button
+                                        onClick={() => handlePartySubTabChange('all_party_stage')}
+                                        className="submenu-item"
+                                        data-active={activeTab === 'party' && partySubTab === 'all_party_stage'}
+                                        style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: (activeTab === 'party' && partySubTab === 'all_party_stage') ? 700 : 600, color: (activeTab === 'party' && partySubTab === 'all_party_stage') ? 'var(--accent-color)' : undefined }}
+                                      >
+                                        <span>📋 All Party Stage</span>
+                                      </button>
+                                    )}
+                                  </>
+                                );
+                              })()}
 
                               <button
                                 onClick={() => handlePartySubTabChange('s00')}
@@ -5192,9 +5213,7 @@ export default function CRMContainer({
 
           {/* SYSTEM CATEGORY ACCORDION */}
           {((userRole === 'admin' || userRole === 'Admin') || 
-            moduleAccess['team']?.view || 
-            moduleAccess['public_users']?.view || 
-            moduleAccess['offline_rule']?.view) && (
+            moduleAccess['team']?.view) && (
               <div>
                 <button
                   onClick={() => toggleCategory('System')}
@@ -5217,34 +5236,6 @@ export default function CRMContainer({
                       >
                         <Shield size={20} style={{ flexShrink: 0 }} />
                         <span>Team Management</span>
-                      </button>
-                    )}
-
-                    {/* Public User Management */}
-                    {!isMasterAdmin && (userRole === 'admin' || userRole === 'Admin') && (
-                      <button 
-                        onClick={() => handleTabChange('public_users')}
-                        className="nav-item" 
-                        data-active={activeTab === 'public_users'}
-                        title={isSidebarCollapsed ? "Public User Management" : undefined}
-                        style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
-                      >
-                        <Users size={20} style={{ flexShrink: 0 }} />
-                        <span>Public User Management</span>
-                      </button>
-                    )}
-
-                    {/* Offline Rule (System Page) */}
-                    {!isMasterAdmin && ((userRole === 'admin' || userRole === 'Admin') || moduleAccess['offline_rule']?.view !== false) && (
-                      <button 
-                        onClick={() => handleTabChange('offline_rule')}
-                        className="nav-item" 
-                        data-active={activeTab === 'offline_rule'}
-                        title={isSidebarCollapsed ? "Offline Rule" : undefined}
-                        style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
-                      >
-                        <WifiOff size={20} style={{ flexShrink: 0, color: '#f59e0b' }} />
-                        <span>Offline Rule</span>
                       </button>
                     )}
                   </div>
@@ -6923,6 +6914,7 @@ export default function CRMContainer({
                     userName={userName}
                     userId={userId}
                     userRole={userRole}
+                    moduleAccess={moduleAccess}
                     isSyncing={isSyncing}
                     syncLoadedCount={syncLoadedCount}
                     initialSubTab={dashboardSubTab}
@@ -7216,6 +7208,12 @@ export default function CRMContainer({
                     initialUsers={teamMembers} 
                     activeSubTab={userManagementSubTab} 
                     onTabChange={handleUserManagementSubTabChange} 
+                    tenantId={effectiveTenantId}
+                    tenantEntitlements={effectiveTenantEntitlements}
+                    isAdmin={isAdmin || isMasterAdmin}
+                    isMasterAdmin={isMasterAdmin}
+                    userId={userId}
+                    userEmail={userEmail}
                     currentUserCompany={(() => {
                       const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl'];
                       const compLower = String(userCompany || '').toLowerCase().trim();

@@ -143,11 +143,22 @@ function SearchableEntryByDropdown({ value, onChange, teamMembers }) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  const activeTeamMembers = useMemo(() => {
+    return (teamMembers || []).filter(m => {
+      if (!m.emp_name) return false;
+      const status = String(m.emp_status || m.status || 'Active').toLowerCase().trim();
+      if (['inactive', 'terminated', 'resigned', 'trash', 'draft'].includes(status)) return false;
+      if (m.is_approved === false) return false;
+      if (m.role === 'customer') return false;
+      return true;
+    });
+  }, [teamMembers]);
+
   const filteredMembers = useMemo(() => {
-    let list = teamMembers;
+    let list = activeTeamMembers;
     if (search.trim()) {
       const term = search.toLowerCase();
-      list = teamMembers.filter(m => 
+      list = activeTeamMembers.filter(m => 
         (m.emp_name && m.emp_name.toLowerCase().includes(term)) ||
         (m.email && m.email.toLowerCase().includes(term)) ||
         (m.emp_department && m.emp_department.toLowerCase().includes(term))
@@ -158,7 +169,7 @@ function SearchableEntryByDropdown({ value, onChange, teamMembers }) {
       const nameB = (b.emp_name || b.email || '').toLowerCase();
       return nameA.localeCompare(nameB);
     });
-  }, [search, teamMembers]);
+  }, [search, activeTeamMembers]);
 
   return (
     <div ref={dropdownRef} style={{ position: 'relative', width: '100%' }}>
@@ -281,13 +292,21 @@ function SearchableAssignToDropdown({ value, onChange, teamMembers }) {
   const dropdownRef = useRef(null);
 
   const activeMembers = useMemo(() => {
-    const list = teamMembers.filter(m => m.emp_name && (m.emp_status === 'Active' || (!m.emp_status && m.role !== 'customer')));
+    const list = (teamMembers || []).filter(m => {
+      if (!m.emp_name) return false;
+      if (value && (m.user_id === value || m.id === value)) return true;
+      const status = String(m.emp_status || m.status || 'Active').toLowerCase().trim();
+      if (['inactive', 'terminated', 'resigned', 'trash', 'draft'].includes(status)) return false;
+      if (m.is_approved === false) return false;
+      if (m.role === 'customer') return false;
+      return true;
+    });
     return [...list].sort((a, b) => {
       const nameA = (a.emp_name || a.email || '').toLowerCase();
       const nameB = (b.emp_name || b.email || '').toLowerCase();
       return nameA.localeCompare(nameB);
     });
-  }, [teamMembers]);
+  }, [teamMembers, value]);
 
   const selectedMemberName = useMemo(() => {
     if (!value) return '';
@@ -541,7 +560,7 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
   useEffect(() => {
     async function loadTeam() {
       try {
-        const response = await getTeamMembers();
+        const response = await getTeamMembers(userCompany);
         if (response && Array.isArray(response) && response.length > 0) {
           setTeamMembers(response);
           return;

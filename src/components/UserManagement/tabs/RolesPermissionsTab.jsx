@@ -122,7 +122,7 @@ export default function RolesPermissionsTab({
         )}
       </div>
 
-      {rolesLoading && <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', fontSize: '0.8rem', color: 'var(--text-secondary)' }}><Loader2 size={15} /> Loading saved roles...</div>}
+      {rolesLoading && <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', fontSize: '0.8rem', color: 'var(--text-secondary)' }}><Loader2 size={15} className="animate-spin" /> Loading saved roles...</div>}
       {rolesError && <div role="alert" style={{ padding: '0.75rem 1rem', borderRadius: '8px', background: '#fffbeb', color: '#92400e', fontSize: '0.82rem' }}>{rolesError}</div>}
 
       {/* Grid: Left Column (Role Profiles List) & Right Column (Profile Inspector) */}

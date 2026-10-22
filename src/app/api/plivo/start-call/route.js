@@ -37,11 +37,32 @@ export async function POST(req) {
       process.env.SUPABASE_SERVICE_ROLE_KEY
     );
 
-    const { data: userRole } = await adminClient
+    let { data: userRole, error: roleError } = await adminClient
       .from('user_roles')
       .select('company, tenant_id')
       .eq('user_id', user.id)
       .maybeSingle();
+
+    // Older CRM databases identify the workspace by company and have no
+    // tenant_id column. Preserve that company instead of silently dialing
+    // through the platform account after the combined select fails.
+    if (roleError?.code === '42703') {
+      const legacyRole = await adminClient
+        .from('user_roles')
+        .select('company')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      userRole = legacyRole.data;
+      roleError = legacyRole.error;
+    }
+
+    if (roleError) {
+      console.error('Calling workspace lookup failed:', roleError.code);
+      return NextResponse.json({ error: 'Calling workspace could not be verified. Please retry.' }, { status: 503 });
+    }
+    if (!userRole) {
+      return NextResponse.json({ error: 'Calling workspace is not assigned to your profile.' }, { status: 403 });
+    }
 
     const userCompany = userRole?.company || '';
     const userTenantId = userRole?.tenant_id || null;

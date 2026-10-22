@@ -6,6 +6,7 @@ import { sendAdminAccountEmailOtp } from './adminMessageConfig';
 import { logAuditAction } from './audit';
 import { saveImpersonateToken } from '@/lib/impersonateStore';
 import { getReportingFields } from '@/utils/reportingHierarchy';
+import { normalizeIndianPhoneNumber } from '@/app/api/plivo/phone-number';
 
 const getAdminClient = () => {
   return createSupabaseClient(
@@ -14,7 +15,7 @@ const getAdminClient = () => {
   );
 };
 
-export async function getTeamMembers(requesterCompany = null) {
+export async function getTeamMembers(requesterCompany = null, tenantId = null) {
   const adminClient = getAdminClient();
   const { data, error } = await adminClient
     .from('user_roles')
@@ -30,8 +31,38 @@ export async function getTeamMembers(requesterCompany = null) {
   const reqLower = String(requesterCompany || '').toLowerCase().trim();
   const isSwanRequester = !requesterCompany || SWAN_COMPANIES.includes(reqLower);
 
+  // If non-default tenantId is provided, resolve tenant details from database
+  let tenantName = '';
+  let tenantCode = '';
+  let tenantAdminEmail = '';
+  if (tenantId && tenantId !== '00000000-0000-0000-0000-000000000001') {
+    const { data: tenant } = await adminClient
+      .from('tenants')
+      .select('name, tenant_code, primary_contact_email')
+      .eq('id', tenantId)
+      .maybeSingle();
+    if (tenant) {
+      tenantName = String(tenant.name || '').toLowerCase().trim();
+      tenantCode = String(tenant.tenant_code || '').toLowerCase().trim();
+      tenantAdminEmail = String(tenant.primary_contact_email || '').toLowerCase().trim();
+    }
+  }
+
   const scopedData = (data || []).filter(u => {
     const userComp = String(u.company || '').toLowerCase().trim();
+    const uEmail = String(u.email || '').toLowerCase().trim();
+    const uOfficialEmail = String(u.emp_official_mail_id || '').toLowerCase().trim();
+
+    // If tenantId was provided and resolved to a non-default tenant
+    if (tenantId && tenantId !== '00000000-0000-0000-0000-000000000001') {
+      if (u.tenant_id && u.tenant_id === tenantId) return true;
+      if (tenantAdminEmail && (uEmail === tenantAdminEmail || uOfficialEmail === tenantAdminEmail)) return true;
+      if (tenantName && userComp === tenantName) return true;
+      if (tenantCode && userComp === tenantCode) return true;
+      if (reqLower && userComp === reqLower) return true;
+      return false;
+    }
+
     if (!isSwanRequester) {
       // Client workspace (e.g. SuPuja Creations, Testing New Swan Group): strictly return users of that company
       return userComp === reqLower;
@@ -47,6 +78,8 @@ export async function getTeamMembers(requesterCompany = null) {
     emp_alt_mobile: u.emp_alt_mobile || (u.module_access && u.module_access.emp_alt_mobile) || '',
     work_location_type: u.work_location_type || (u.module_access && u.module_access.work_location_type) || '',
     work_location_name: u.work_location_name || (u.module_access && u.module_access.work_location_name) || '',
+    assigned_shift: u.assigned_shift || (u.module_access && u.module_access.assigned_shift) || null,
+    salary_amount: (u.salary_amount !== null && u.salary_amount !== undefined) ? u.salary_amount : ((u.module_access && u.module_access.salary_amount !== undefined) ? u.module_access.salary_amount : null),
     ...getReportingFields(u),
     can_self_reset_password: u.can_self_reset_password === true || (u.module_access && u.module_access.can_self_reset_password === true),
     can_import_export: u.can_import_export === true || (u.module_access && u.module_access.can_import_export === true)
@@ -192,11 +225,21 @@ export async function registerEmployeeDetails(userId, email, details) {
         .maybeSingle();
 
       if (sub && typeof sub.user_seat_limit === 'number') {
-        const { count: activeCount } = await adminClient
+        const { data: tenant } = await adminClient
+          .from('tenants')
+          .select('name, tenant_code')
+          .eq('id', targetTenantId)
+          .maybeSingle();
+        const tenantName = tenant?.name || '';
+
+        let seatQuery = adminClient
           .from('user_roles')
           .select('user_id', { count: 'exact', head: true })
-          .eq('tenant_id', targetTenantId)
           .neq('role', 'customer');
+        if (tenantName) {
+          seatQuery = seatQuery.ilike('company', tenantName);
+        }
+        const { count: activeCount } = await seatQuery;
 
         if (activeCount !== null && activeCount >= sub.user_seat_limit) {
           return {
@@ -213,7 +256,6 @@ export async function registerEmployeeDetails(userId, email, details) {
   if (existingUser) {
     // Just update the details, do NOT overwrite role or is_approved UNLESS they are a customer
     const updatePayload = {
-      tenant_id: targetTenantId,
       emp_id: resolvedEmpId || (isCustomer ? 'CUSTOMER' : undefined),
       emp_name: details.emp_name,
       emp_department: details.emp_department || (isCustomer ? 'Customer Support' : undefined),
@@ -261,6 +303,7 @@ export async function registerEmployeeDetails(userId, email, details) {
         .single();
       updatePayload.module_access = { 
         ...(userData?.module_access || {}), 
+        _tenantId: targetTenantId,
         emp_status: details.emp_status || 'Active',
         emp_sub_department: details.emp_sub_department || '',
         emp_alt_mobile: details.emp_alt_mobile || '',
@@ -279,7 +322,6 @@ export async function registerEmployeeDetails(userId, email, details) {
   } else {
     // Insert new user
     const insertPayload = {
-      tenant_id: targetTenantId,
       user_id: userId,
       email: email,
       role: isCustomer ? 'customer' : 'agent',
@@ -299,10 +341,13 @@ export async function registerEmployeeDetails(userId, email, details) {
       primary_reporting_person: details.primary_reporting_person || '',
       secondary_reporting_person: details.secondary_reporting_person || '',
       hod_person: details.hod_person || '',
+      assigned_shift: details.assigned_shift || null,
+      salary_amount: details.salary_amount !== undefined && details.salary_amount !== '' && details.salary_amount !== null ? Number(details.salary_amount) : null,
       can_read: isCustomer ? false : true,
       can_write: isCustomer ? false : true,
       can_import_export: false,
       module_access: {
+        _tenantId: targetTenantId,
         emp_status: details.emp_status || 'Active',
         emp_sub_department: details.emp_sub_department || '',
         emp_alt_mobile: details.emp_alt_mobile || '',
@@ -310,12 +355,15 @@ export async function registerEmployeeDetails(userId, email, details) {
         work_location_name: details.work_location_name || '',
         primary_reporting_person: details.primary_reporting_person || '',
         secondary_reporting_person: details.secondary_reporting_person || '',
-        hod_person: details.hod_person || ''
+        hod_person: details.hod_person || '',
+        assigned_shift: details.assigned_shift || null,
+        salary_amount: details.salary_amount !== undefined && details.salary_amount !== '' && details.salary_amount !== null ? Number(details.salary_amount) : null
       }
     };
 
     let { error } = await adminClient.from('user_roles').insert(insertPayload);
     if (error) {
+      delete insertPayload.tenant_id;
       delete insertPayload.emp_status;
       delete insertPayload.emp_sub_department;
       delete insertPayload.emp_alt_mobile;
@@ -324,6 +372,8 @@ export async function registerEmployeeDetails(userId, email, details) {
       delete insertPayload.primary_reporting_person;
       delete insertPayload.secondary_reporting_person;
       delete insertPayload.hod_person;
+      delete insertPayload.assigned_shift;
+      delete insertPayload.salary_amount;
       const { error: insertErr } = await adminClient.from('user_roles').insert(insertPayload);
       if (insertErr) return { success: false, error: insertErr.message };
     }
@@ -371,6 +421,14 @@ export async function updateEmployeeDetailsAdmin(userId, details) {
     hod_person: details.hod_person || ''
   };
 
+  if (details.assigned_shift !== undefined) {
+    updateData.assigned_shift = details.assigned_shift || null;
+  }
+
+  if (details.salary_amount !== undefined) {
+    updateData.salary_amount = details.salary_amount !== '' && details.salary_amount !== null ? Number(details.salary_amount) : null;
+  }
+
   if (details.emp_status) {
     updateData.emp_status = details.emp_status;
   }
@@ -399,6 +457,8 @@ export async function updateEmployeeDetailsAdmin(userId, details) {
     delete updateData.primary_reporting_person;
     delete updateData.secondary_reporting_person;
     delete updateData.hod_person;
+    delete updateData.assigned_shift;
+    delete updateData.salary_amount;
 
     const { data: userData } = await adminClient
       .from('user_roles')
@@ -417,7 +477,9 @@ export async function updateEmployeeDetailsAdmin(userId, details) {
       work_location_name: details.work_location_name || '',
       primary_reporting_person: details.primary_reporting_person || '',
       secondary_reporting_person: details.secondary_reporting_person || '',
-      hod_person: details.hod_person || ''
+      hod_person: details.hod_person || '',
+      assigned_shift: details.assigned_shift !== undefined ? (details.assigned_shift || null) : (currentAccess.assigned_shift || null),
+      salary_amount: details.salary_amount !== undefined ? (details.salary_amount !== '' && details.salary_amount !== null ? Number(details.salary_amount) : null) : (currentAccess.salary_amount !== undefined ? currentAccess.salary_amount : null)
     };
 
     const { error: fallbackErr } = await adminClient
@@ -967,17 +1029,32 @@ export async function getAgentProfile(userId) {
   if (agentError) return { data: null, error: agentError.message };
   if (!agentData) return { data: null, error: 'Agent profile not found' };
   
-  // Also fetch user role to get employee mobile number (emp_mobile)
+  // Keep the existing agent mobile field compatible with other consumers.
+  // The softphone landing default comes exclusively from User Manage data.
+  agentData.user_landing_mobile = '';
   try {
-    const { data: roleData } = await adminClient
+    let { data: roleData, error: roleError } = await adminClient
       .from('user_roles')
-      .select('emp_mobile')
+      .select('emp_mobile, emp_alt_mobile, module_access')
       .eq('user_id', userId)
       .maybeSingle();
+
+    // Older databases keep Alternate Mobile inside module_access instead of
+    // a dedicated column, matching the User Manage read/write fallback.
+    if (roleError?.code === '42703') {
+      const legacyRole = await adminClient.from('user_roles')
+        .select('emp_mobile, module_access').eq('user_id', userId).maybeSingle();
+      roleData = legacyRole.data;
+      roleError = legacyRole.error;
+    }
+    if (roleError) throw new Error('User mobile details could not be loaded.');
       
     if (roleData && roleData.emp_mobile) {
       agentData.mobile_number = roleData.emp_mobile;
     }
+    agentData.user_landing_mobile = normalizeIndianPhoneNumber(roleData?.emp_mobile) ||
+      normalizeIndianPhoneNumber(roleData?.emp_alt_mobile) ||
+      normalizeIndianPhoneNumber(roleData?.module_access?.emp_alt_mobile) || '';
   } catch (err) {
     console.error('Error fetching role details for mobile number:', err);
   }

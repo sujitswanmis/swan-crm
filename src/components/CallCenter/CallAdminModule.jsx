@@ -846,7 +846,7 @@ function TabEndpoints({ userCompany = '', tenantId = null, agents = [], onRefres
               <tr style={{ fontSize:'0.78rem', textTransform:'uppercase', color:'var(--text-secondary)' }}>
                 {[
                   { key: 'alias', label: 'Alias', width: colWidths.alias },
-                  { key: 'username', label: 'Username', width: colWidths.username },
+                  { key: 'username', label: 'Endpoint ID', width: colWidths.username },
                   { key: 'sip_uri', label: 'SIP URI', width: colWidths.sip_uri },
                   { key: 'password', label: 'SIP Password', width: colWidths.password },
                   { key: 'app_linked', label: 'App Linked', width: colWidths.app_linked },
@@ -917,7 +917,7 @@ function TabEndpoints({ userCompany = '', tenantId = null, agents = [], onRefres
                       </button>
                     </div>
                   </td>
-                  <td style={{ width: `${colWidths.username}px`, padding:'1rem', fontFamily:'monospace', fontSize:'0.8rem', color:'#475569', boxSizing: 'border-box', whiteSpace: 'normal', wordBreak: 'break-all', lineHeight: 1.3, verticalAlign: 'top' }} title={ep.username}>{ep.username}</td>
+                  <td style={{ width: `${colWidths.username}px`, padding:'1rem', fontFamily:'monospace', fontSize:'0.8rem', color:'#475569', boxSizing: 'border-box', whiteSpace: 'normal', wordBreak: 'break-all', lineHeight: 1.3, verticalAlign: 'top' }} title={ep.endpoint_id || 'Endpoint ID unavailable'}>{ep.endpoint_id || '—'}</td>
                   <td style={{ width: `${colWidths.sip_uri}px`, padding:'1rem', fontFamily:'monospace', fontSize:'0.78rem', color:'#64748b', boxSizing: 'border-box', whiteSpace: 'normal', wordBreak: 'break-all', lineHeight: 1.3, verticalAlign: 'top' }} title={ep.sip_uri}>{ep.sip_uri}</td>
                   <td style={{ width: `${colWidths.password}px`, padding:'1rem', boxSizing: 'border-box', verticalAlign: 'middle' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', justifyContent: 'space-between' }}>

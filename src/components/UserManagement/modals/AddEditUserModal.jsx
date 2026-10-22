@@ -1,16 +1,18 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, User, Phone, Mail, Building, MapPin, Shield, Key, Eye, EyeOff, Save, Loader2, CheckCircle2, AlertCircle, Users } from 'lucide-react';
+import { X, User, Phone, Mail, Building, MapPin, Shield, Key, Eye, EyeOff, Save, Loader2, CheckCircle2, AlertCircle, Users, FileText } from 'lucide-react';
 import SearchableEmployeeSelect from '@/components/common/SearchableEmployeeSelect';
 import { getReportingEmail, getReportingFields } from '@/utils/reportingHierarchy';
 import { DEFAULT_DEPARTMENTS, DESIGNATIONS, WORK_LOCATION_TYPES, EMP_STATUS_OPTIONS } from '../utils/userManagementUtils';
 import { getTenantBranches } from '@/app/actions/tenantBranches';
+import { getTenantAttendancePolicy } from '@/app/actions/attendance';
 
 export default function AddEditUserModal({
   isOpen,
   onClose,
   onSave,
+  onSaveDraft = () => {},
   user = null, // if null -> Add Mode, if object -> Edit Mode
   departments = DEFAULT_DEPARTMENTS,
   allEmployees = [],
@@ -19,6 +21,7 @@ export default function AddEditUserModal({
   const isEdit = Boolean(user);
   const [activeStep, setActiveStep] = useState('personal'); // 'personal' | 'job' | 'reporting' | 'auth'
   const [availableBranches, setAvailableBranches] = useState([]);
+  const [availableShifts, setAvailableShifts] = useState([]);
   const [customBranchInput, setCustomBranchInput] = useState(false);
   
   const [formData, setFormData] = useState({
@@ -31,6 +34,8 @@ export default function AddEditUserModal({
     company: 'SuPuja Creations',
     work_location_type: 'Headquarters',
     work_location_name: '',
+    assigned_shift: '',
+    salary_amount: '',
     emp_mobile: '',
     emp_alt_mobile: '',
     email: '',
@@ -56,6 +61,8 @@ export default function AddEditUserModal({
         company: user.company || 'SuPuja Creations',
         work_location_type: user.work_location_type || (user.module_access?.work_location_type) || 'Headquarters',
         work_location_name: user.work_location_name || (user.module_access?.work_location_name) || '',
+        assigned_shift: user.assigned_shift || (user.module_access?.assigned_shift) || '',
+        salary_amount: (user.salary_amount !== null && user.salary_amount !== undefined) ? user.salary_amount : ((user.module_access && user.module_access.salary_amount !== undefined) ? user.module_access.salary_amount : ''),
         emp_mobile: user.emp_mobile || '',
         emp_alt_mobile: user.emp_alt_mobile || (user.module_access?.emp_alt_mobile) || '',
         email: user.email || '',
@@ -74,6 +81,8 @@ export default function AddEditUserModal({
         company: 'SuPuja Creations',
         work_location_type: 'Headquarters',
         work_location_name: '',
+        assigned_shift: '',
+        salary_amount: '',
         emp_mobile: '',
         emp_alt_mobile: '',
         email: '',
@@ -99,6 +108,32 @@ export default function AddEditUserModal({
     }
     return () => { isMounted = false; };
   }, [isOpen, formData.company]);
+
+  // Load tenant/branch attendance shifts dynamically
+  useEffect(() => {
+    let isMounted = true;
+    if (isOpen && formData.company) {
+      getTenantAttendancePolicy(null, formData.company, formData.work_location_name || '').then(res => {
+        if (isMounted && res?.success && res.data) {
+          const pol = res.data;
+          let shifts = [];
+          if (Array.isArray(pol.shifts) && pol.shifts.length > 0) {
+            shifts = pol.shifts;
+          } else if (pol.shift_name) {
+            shifts = [{
+              id: 'shift_default',
+              shift_name: pol.shift_name,
+              start_time: pol.start_time || '09:00',
+              end_time: pol.end_time || '18:30',
+              is_default: true
+            }];
+          }
+          setAvailableShifts(shifts);
+        }
+      }).catch(() => {});
+    }
+    return () => { isMounted = false; };
+  }, [isOpen, formData.company, formData.work_location_name]);
 
   if (!isOpen) return null;
 
@@ -131,6 +166,24 @@ export default function AddEditUserModal({
     };
 
     onSave(payload);
+  };
+
+  const handleDraftClick = () => {
+    if (!formData.emp_name.trim() && !formData.email.trim() && !formData.emp_id.trim()) {
+      setErrorMsg('Please enter at least an Emp Name, Email, or Emp ID to save as Draft.');
+      return;
+    }
+    const fallbackId = formData.emp_id?.trim() || `DRAFT-${Date.now().toString().slice(-6)}`;
+    const fallbackEmail = formData.email?.trim() || `${fallbackId.toLowerCase()}@draft.local`;
+    const fallbackPassword = formData.password || 'DraftPass@123';
+    onSaveDraft({
+      ...formData,
+      emp_id: fallbackId,
+      email: fallbackEmail,
+      password: fallbackPassword,
+      emp_status: 'Draft',
+      emp_name: formData.emp_name?.trim() || 'Draft Employee'
+    });
   };
 
   const steps = [
@@ -603,6 +656,76 @@ export default function AddEditUserModal({
                       )}
                     </div>
                   </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, marginBottom: '0.35rem', color: 'var(--text-primary)' }}>
+                      Assigned Attendance Shift (Default)
+                    </label>
+                    <select
+                      value={formData.assigned_shift || ''}
+                      onChange={e => handleChange('assigned_shift', e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '0.55rem 0.75rem',
+                        borderRadius: '8px',
+                        border: '1px solid var(--border-light)',
+                        backgroundColor: 'var(--bg-surface)',
+                        color: 'var(--text-primary)',
+                        fontSize: '0.85rem'
+                      }}
+                    >
+                      <option value="">-- Auto-Detect Shift (Recommended) --</option>
+                      {availableShifts.length > 0 ? (
+                        <>
+                          {availableShifts.map((s, idx) => (
+                            <option key={s.id || s.shift_code || idx} value={s.shift_name}>
+                              {s.shift_name} ({s.start_time} - {s.end_time}){s.is_default ? ' (Default)' : ''}
+                            </option>
+                          ))}
+                          {formData.assigned_shift && !availableShifts.some(s => s.shift_name === formData.assigned_shift) && (
+                            <option value={formData.assigned_shift}>
+                              {formData.assigned_shift} (Assigned)
+                            </option>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <option value="Regular Shift">Regular / General Shift (09:00 - 18:30)</option>
+                          <option value="Shift A (Morning Production)">Shift A (Morning, 06:00 - 14:30)</option>
+                          <option value="Shift B (Evening Production)">Shift B (Evening, 14:30 - 23:00)</option>
+                          <option value="Shift C (Night Production)">Shift C (Night, 23:00 - 07:30)</option>
+                        </>
+                      )}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, marginBottom: '0.35rem', color: 'var(--text-primary)' }}>
+                      Monthly Salary Amount (₹ / Month)
+                    </label>
+                    <div style={{ position: 'relative' }}>
+                      <span style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', fontWeight: 700, color: 'var(--text-secondary)', fontSize: '0.88rem' }}>
+                        ₹
+                      </span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="100"
+                        value={formData.salary_amount !== undefined && formData.salary_amount !== null ? formData.salary_amount : ''}
+                        onChange={e => handleChange('salary_amount', e.target.value)}
+                        placeholder="e.g. 35000"
+                        style={{
+                          width: '100%',
+                          padding: '0.55rem 0.75rem 0.55rem 1.9rem',
+                          borderRadius: '8px',
+                          border: '1px solid var(--border-light)',
+                          backgroundColor: 'var(--bg-surface)',
+                          color: 'var(--text-primary)',
+                          fontSize: '0.85rem'
+                        }}
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
@@ -745,7 +868,31 @@ export default function AddEditUserModal({
               Cancel
             </button>
 
-            <div style={{ display: 'flex', gap: '0.75rem' }}>
+            <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+              {!isEdit && (
+                <button
+                  type="button"
+                  onClick={handleDraftClick}
+                  disabled={saving || (!formData.emp_name.trim() && !formData.email.trim() && !formData.emp_id.trim())}
+                  style={{
+                    padding: '0.55rem 1.15rem',
+                    borderRadius: '8px',
+                    border: '1px solid #cbd5e1',
+                    backgroundColor: '#f8fafc',
+                    color: '#475569',
+                    cursor: (saving || (!formData.emp_name.trim() && !formData.email.trim() && !formData.emp_id.trim())) ? 'not-allowed' : 'pointer',
+                    fontWeight: 600,
+                    fontSize: '0.82rem',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.4rem'
+                  }}
+                >
+                  <FileText size={15} />
+                  {saving ? 'Saving Draft...' : 'Save Draft'}
+                </button>
+              )}
+
               {activeStep !== 'personal' && (
                 <button
                   type="button"

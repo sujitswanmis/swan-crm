@@ -399,7 +399,15 @@ const LeadAssigneeCell = React.memo(({ info }) => {
       ) : (
         <>
           <option value="">Open Lead (Unassigned)</option>
-          {teamMembers.filter(m => m.emp_name).map(member => (
+          {teamMembers.filter(m => {
+            if (!m.emp_name) return false;
+            if (m.user_id === assignedToId) return true; // keep current selection visible
+            const status = String(m.emp_status || m.status || 'Active').toLowerCase().trim();
+            if (['inactive', 'terminated', 'resigned', 'trash', 'draft'].includes(status)) return false;
+            if (m.is_approved === false) return false;
+            if (m.role === 'customer') return false;
+            return true;
+          }).map(member => (
             <option key={member.user_id} value={member.user_id}>
               {member.emp_name}
             </option>

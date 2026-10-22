@@ -1,19 +1,35 @@
-﻿// ============================================================================
+// ============================================================================
 // SuPuja Creations CRM - GPS Location & Geofencing Utilities
 // ============================================================================
 
 /**
  * Gets high-accuracy GPS coordinates from mobile / browser hardware
+ * Supports configurable timeout (default 3000ms for fast, non-blocking auto query)
  */
-export function getCurrentGPSLocation() {
+export function getCurrentGPSLocation(options = {}) {
+  const timeoutMs = options.timeout || 3000;
+  const enableHighAccuracy = options.enableHighAccuracy !== false;
+  const maximumAge = options.maximumAge || 30000;
+
   return new Promise((resolve) => {
     if (typeof window === 'undefined' || !navigator.geolocation) {
       resolve({ success: false, error: 'Geolocation is not supported by your browser / device' });
       return;
     }
 
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        resolve({ success: false, error: 'Location request timed out (3s fallback)' });
+      }
+    }, timeoutMs + 300);
+
     navigator.geolocation.getCurrentPosition(
       (position) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
         const { latitude, longitude, accuracy } = position.coords;
         resolve({
           success: true,
@@ -25,6 +41,9 @@ export function getCurrentGPSLocation() {
         });
       },
       (error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
         let message = 'Location access denied or unavailable';
         if (error.code === 1) message = 'Please allow Location / GPS permission to punch in';
         if (error.code === 2) message = 'Position unavailable (check GPS settings)';
@@ -32,9 +51,9 @@ export function getCurrentGPSLocation() {
         resolve({ success: false, error: message });
       },
       {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 30000
+        enableHighAccuracy,
+        timeout: timeoutMs,
+        maximumAge
       }
     );
   });

@@ -3,6 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import { Network, Users, ChevronDown, ChevronRight, UserCheck, AlertTriangle, Search, Building, Shield } from 'lucide-react';
 import { isMasterAdmin } from '../utils/userManagementUtils';
+import { getHodTeam } from '@/utils/reportingHierarchy';
 
 export default function OrgHierarchyTab({
   users = [],
@@ -12,6 +13,7 @@ export default function OrgHierarchyTab({
   const [selectedDept, setSelectedDept] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedManagers, setExpandedManagers] = useState({});
+  const [expandedHods, setExpandedHods] = useState({});
 
   // Filter internal staff
   const staff = useMemo(() => {
@@ -54,6 +56,11 @@ export default function OrgHierarchyTab({
     return managersMap;
   }, [staff]);
 
+  const hodHierarchy = useMemo(() => staff.map(hod => ({
+    hod,
+    reports: getHodTeam(staff, hod)
+  })).filter(group => group.reports.length > 0), [staff]);
+
   const toggleManager = (mgrName) => {
     setExpandedManagers(prev => ({ ...prev, [mgrName]: !prev[mgrName] }));
   };
@@ -71,6 +78,16 @@ export default function OrgHierarchyTab({
       return matchesMgr || matchesReports;
     });
   }, [managerHierarchy, searchQuery]);
+
+  const filteredHods = useMemo(() => {
+    const query = searchQuery.toLowerCase().trim();
+    if (!query) return hodHierarchy;
+    return hodHierarchy.filter(({ hod, reports }) =>
+      (hod.emp_name || hod.email || '').toLowerCase().includes(query) ||
+      reports.some(report => (report.emp_name || report.email || '').toLowerCase().includes(query) ||
+        (report.emp_id || '').toLowerCase().includes(query))
+    );
+  }, [hodHierarchy, searchQuery]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', width: '100%' }}>
@@ -132,7 +149,7 @@ export default function OrgHierarchyTab({
             type="text"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            placeholder="Search reporting manager or team member..."
+            placeholder="Search manager, HOD or team member..."
             style={{
               width: '100%',
               padding: '0.45rem 0.75rem 0.45rem 2.1rem',
@@ -144,6 +161,41 @@ export default function OrgHierarchyTab({
             }}
           />
         </div>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+        <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+          HOD Teams ({filteredHods.length})
+        </span>
+        {filteredHods.length === 0 ? (
+          <div style={{ padding: '1.2rem', color: 'var(--text-secondary)', backgroundColor: 'var(--bg-surface)', borderRadius: '12px', border: '1px solid var(--border-light)' }}>
+            No HOD teams found matching search query
+          </div>
+        ) : filteredHods.map(({ hod, reports }) => {
+          const key = hod.user_id || hod.email || hod.emp_name;
+          const isOpen = expandedHods[key] !== false;
+          return (
+            <div key={key} style={{ borderRadius: '12px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', overflow: 'hidden' }}>
+              <button type="button" aria-expanded={isOpen} onClick={() => setExpandedHods(previous => ({ ...previous, [key]: !isOpen }))}
+                style={{ width: '100%', padding: '0.85rem 1rem', border: 0, borderBottom: isOpen ? '1px solid var(--border-light)' : 'none', backgroundColor: 'var(--bg-primary, #f8fafc)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', color: 'var(--text-primary)' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 700, fontSize: '0.88rem' }}>
+                  {isOpen ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+                  <Shield size={16} /> {hod.emp_name || hod.email}
+                </span>
+                <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#2563eb' }}>{reports.length} Reports</span>
+              </button>
+              {isOpen && reports.map(report => (
+                <div key={report.user_id || report.email} style={{ padding: '0.65rem 1rem 0.65rem 2rem', borderBottom: '1px solid var(--border-light)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+                  <div>
+                    <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)' }}>{report.emp_name || report.email}</div>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{report.emp_id ? `#${report.emp_id} • ` : ''}{report.emp_department || 'Staff'}</div>
+                  </div>
+                  <button type="button" onClick={() => onEditUser(report)} style={{ padding: '0.2rem 0.55rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'transparent', color: 'var(--text-secondary)', fontSize: '0.7rem', cursor: 'pointer' }}>Edit Mapping</button>
+                </div>
+              ))}
+            </div>
+          );
+        })}
       </div>
 
       {/* Reporting Hierarchy Tree */}

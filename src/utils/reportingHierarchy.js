@@ -100,6 +100,10 @@ export function getReportingTeam(employees = [], viewer = {}, { fields = REPORTI
   });
 }
 
+export function getHodTeam(employees = [], viewer = {}) {
+  return getReportingTeam(employees, viewer, { fields: ['hod_person'] });
+}
+
 export function getLeadAssignees(team = [], viewer = {}) {
   return [...new Set([viewer.user_id, viewer.emp_name,
     ...team.flatMap(employee => [employee.user_id, employee.emp_name || employee.name])]

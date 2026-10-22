@@ -86,6 +86,7 @@ export default function AnalyticsDashboard({
   userName = '',
   userId = '',
   userRole = '',
+  moduleAccess = {},
   isSyncing = false,
   syncLoadedCount = 0,
   onNavigateTab,
@@ -1566,45 +1567,54 @@ export default function AnalyticsDashboard({
           display: 'flex', flexWrap: 'wrap', gap: '0.45rem', borderTop: '1px solid var(--border-light)',
           paddingTop: '0.65rem'
         }}>
-          {[
-            { id: 'overview', label: 'Executive Overview', icon: Layers, badge: null },
-            { id: 'scorecard', label: 'Team Scorecard', icon: Award, badge: `${teamScorecardData.length} Reps` },
-            { id: 'lead-data', label: 'Lead Data', icon: Database, badge: `${kpis.total.toLocaleString('en-IN')} Leads` },
-            { id: 'delegation', label: 'Delegation Tasks', icon: CheckSquare, badge: delegation.overdue > 0 ? `${delegation.overdue} Overdue` : `${delegation.total}` },
-            { id: 'checklist', label: 'Daily Checklists', icon: ClipboardList, badge: `${dashboardSummaries.checklistSummary.complianceRate || checklists.complianceRate}%` },
-            { id: 'attendance', label: 'Attendance Ops', icon: UserCheck, badge: `${attendanceStats.effectivePresent}/${attendanceStats.total}` },
-            { id: 'recruiter', label: 'Recruiter Hub', icon: Briefcase, badge: `${dashboardSummaries.recruitmentSummary?.openPositions ?? 0} Open` },
-          ].map(tab => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id || (tab.id === 'lead-data' && activeTab === 'pipeline');
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: '0.4rem',
-                  padding: '0.4rem 0.85rem', borderRadius: '8px',
-                  fontSize: '0.8rem', fontWeight: isActive ? 700 : 500,
-                  whiteSpace: 'nowrap', border: 'none', cursor: 'pointer',
-                  backgroundColor: isActive ? 'var(--accent-color)' : 'transparent',
-                  color: isActive ? '#fff' : 'var(--text-primary)',
-                  transition: 'all 0.15s ease'
-                }}
-              >
-                <Icon size={14} />
-                <span>{tab.label}</span>
-                {tab.badge && (
-                  <span style={{
-                    fontSize: '0.68rem', padding: '0.1rem 0.45rem', borderRadius: '10px',
-                    backgroundColor: isActive ? 'rgba(255,255,255,0.25)' : 'var(--th-bg)',
-                    color: isActive ? '#fff' : 'var(--text-secondary)', fontWeight: 700
-                  }}>
-                    {tab.badge}
-                  </span>
-                )}
-              </button>
-            );
-          })}
+          {(() => {
+            const analyticsSubPerms = moduleAccess?.analytics?.sub_items;
+            const isMasterOrAdmin = userRole === 'admin' || userRole === 'Admin' || String(userRole || '').toLowerCase() === 'masteradmin';
+            const allTabs = [
+              { id: 'overview', label: 'Executive Overview', icon: Layers, badge: null },
+              { id: 'scorecard', label: 'Team Scorecard', icon: Award, badge: `${teamScorecardData.length} Reps` },
+              { id: 'lead-data', label: 'Lead Data', icon: Database, badge: `${kpis.total.toLocaleString('en-IN')} Leads` },
+              { id: 'delegation', label: 'Delegation Tasks', icon: CheckSquare, badge: delegation.overdue > 0 ? `${delegation.overdue} Overdue` : `${delegation.total}` },
+              { id: 'checklist', label: 'Daily Checklists', icon: ClipboardList, badge: `${dashboardSummaries.checklistSummary.complianceRate || checklists.complianceRate}%` },
+              { id: 'attendance', label: 'Attendance Ops', icon: UserCheck, badge: `${attendanceStats.effectivePresent}/${attendanceStats.total}` },
+              { id: 'recruiter', label: 'Recruiter Hub', icon: Briefcase, badge: `${dashboardSummaries.recruitmentSummary?.openPositions ?? 0} Open` }
+            ];
+            const visibleTabs = (isMasterOrAdmin || !analyticsSubPerms || Object.keys(analyticsSubPerms).length === 0)
+              ? allTabs
+              : allTabs.filter(t => analyticsSubPerms[t.id]?.view !== false);
+
+            return visibleTabs.map(tab => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id || (tab.id === 'lead-data' && activeTab === 'pipeline');
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '0.4rem',
+                    padding: '0.4rem 0.85rem', borderRadius: '8px',
+                    fontSize: '0.8rem', fontWeight: isActive ? 700 : 500,
+                    whiteSpace: 'nowrap', border: 'none', cursor: 'pointer',
+                    backgroundColor: isActive ? 'var(--accent-color)' : 'transparent',
+                    color: isActive ? '#fff' : 'var(--text-primary)',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  <Icon size={14} />
+                  <span>{tab.label}</span>
+                  {tab.badge && (
+                    <span style={{
+                      fontSize: '0.68rem', padding: '0.1rem 0.45rem', borderRadius: '10px',
+                      backgroundColor: isActive ? 'rgba(255,255,255,0.25)' : 'var(--th-bg)',
+                      color: isActive ? '#fff' : 'var(--text-secondary)', fontWeight: 700
+                    }}>
+                      {tab.badge}
+                    </span>
+                  )}
+                </button>
+              );
+            });
+          })()}
         </div>
       </div>
 

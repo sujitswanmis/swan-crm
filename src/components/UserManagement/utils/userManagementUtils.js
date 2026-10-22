@@ -171,7 +171,7 @@ export function HoverIconButton({ icon: Icon, label, bg, color, borderColor, hov
   const [hovered, setHovered] = useState(false);
 
   return (
-    <div style={{ position: 'relative', display: 'inline-flex' }}>
+    <div style={{ position: 'relative', display: 'inline-flex', flexShrink: 0 }}>
       <button
         type="button"
         disabled={disabled}
@@ -180,6 +180,7 @@ export function HoverIconButton({ icon: Icon, label, bg, color, borderColor, hov
         onMouseLeave={() => setHovered(false)}
         style={{
           display: 'inline-flex',
+          flexShrink: 0,
           alignItems: 'center',
           justifyContent: 'center',
           width: '32px',

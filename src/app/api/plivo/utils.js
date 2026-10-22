@@ -100,6 +100,16 @@ export function categorizeHangupCause(callStatus, hangupCause, hangupSource, _ri
     return 'rejected';
   }
 
+  // Provider setup failures are not evidence about the customer's network.
+  // Dial may report only PLIVO_UNKNOWN_CALLER_ID, without a B-leg or code.
+  // Classify it before the no-ring/failed fallback below.
+  if (
+    [2030, 2040, 2050, 2060, 2070, 3030, 3040, 3130, 3140, 5010, 7011, 8011].includes(code) ||
+    /unknown[\s_-]+caller[\s_-]+id/.test(h)
+  ) {
+    return 'setup_error';
+  }
+
   // 3. Unreachable / Switched Off / Absent / Out of Coverage
   // (Code 20 = Q.850 Subscriber Absent, 480 = SIP Temporarily Unavailable, 2010/2020 = Plivo)
   if (
@@ -148,7 +158,6 @@ export function categorizeHangupCause(callStatus, hangupCause, hangupSource, _ri
 
   // 7. Capacity / Setup errors
   if ([1010, 1020, 5030].includes(code)) return 'capacity_error';
-  if ([2030, 2040, 2050, 2060, 2070, 3030, 3040, 3130, 3140, 5010, 7011, 8011].includes(code)) return 'setup_error';
 
   // 8. Cancelled / Agent Hangup
   if (src === 'api request' || /cancel/.test(h) || /cancel/.test(s)) return 'call_cancelled';

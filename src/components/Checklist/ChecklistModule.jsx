@@ -1,6 +1,6 @@
 'use client';
 
-import MobileTableView from '@/components/common/MobileTableView';
+import MobileTableView, { TableViewToggle, useTableViewPreference } from '@/components/common/MobileTableView';
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   CheckCircle2, AlertCircle, Clock, Calendar, CheckSquare, Plus,
@@ -43,7 +43,7 @@ import { getReportingTeam } from '@/utils/reportingHierarchy';
 import SearchableEmployeeSelect from '@/components/common/SearchableEmployeeSelect';
 import DateRangePicker, { computeDateRange } from '@/components/common/DateRangePicker';
 import { createClient } from '@/utils/supabase/client';
-import { enqueueOfflineAction, canPerformOfflineAction, saveChecklistsLocally, getLocalChecklists } from '@/utils/offlineSync';
+import { enqueueOfflineAction, canPerformOfflineAction, saveChecklistsLocally, getLocalChecklists, getPendingQueue } from '@/utils/offlineSync';
 import useTableColumnResize, { ColumnResizer } from '@/utils/tableColumnResize';
 
 const DEFAULT_MY_CHECKLIST_COL_WIDTHS = {
@@ -131,6 +131,7 @@ export default function ChecklistModule({
   const [complianceTeamFilter, setComplianceTeamFilter] = useState('MY_TEAM'); // 'MY_TEAM' | 'ALL'
   const [templateStatusFilter, setTemplateStatusFilter] = useState('ALL'); // 'ALL' | 'ACTIVE' | 'INACTIVE'
   const [togglingStatusId, setTogglingStatusId] = useState(null);
+  const [templateTableView, setTemplateTableView] = useTableViewPreference('Checklist/ChecklistModule-3');
 
   // Sync activeTab when initialSubTab changes from parent
   useEffect(() => {
@@ -794,18 +795,50 @@ export default function ChecklistModule({
   const [verifyingSubmission, setVerifyingSubmission] = useState(null);
   const [verifyRemarks, setVerifyRemarks] = useState('');
 
-  // Initial load: 0ms instant hydration from IndexedDB + preload employee & department masters
+  const getOfflineDashboard = async () => {
+    const cached = await getLocalChecklists(userEmail);
+    if (!Array.isArray(cached) || cached.length === 0) return [];
+    const queue = await getPendingQueue();
+    const email = String(userEmail || '').trim().toLowerCase();
+    const pending = new Map();
+    for (const entry of queue) {
+      const payload = entry?.payload;
+      if (entry?.entityType !== 'checklist_response' ||
+          String(payload?.employee_email || '').trim().toLowerCase() !== email) continue;
+      pending.set(`${payload.template_id}:${payload.period_key}`, payload);
+    }
+    return cached.map((item) => {
+      const payload = pending.get(`${item.template?.id}:${item.currentPeriodKey}`);
+      if (!payload) return item;
+      return {
+        ...item,
+        submission: payload,
+        status: payload.status,
+        stats: calculateChecklistCompletion(payload.items || item.items || [], payload.responses || {})
+      };
+    });
+  };
+
+  // Initial load: instant hydration from IndexedDB + preload employee & department masters
   useEffect(() => {
-    getLocalChecklists().then((cached) => {
+    getOfflineDashboard().then((cached) => {
       if (Array.isArray(cached) && cached.length > 0) {
         setDashboardChecklists(cached);
       }
     }).catch(() => {});
-    loadEmployees();
-    loadDepartments();
-  }, [effectiveTenantId, userCompany]);
+    if (typeof navigator === 'undefined' || navigator.onLine) {
+      loadEmployees();
+      loadDepartments();
+    }
+  }, [effectiveTenantId, userCompany, userEmail]);
 
   useEffect(() => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      if (activeTab === 'dashboard' || activeTab === 'my_checklists') {
+        loadEmployeeDashboard(dashboardDate, true);
+      }
+      return;
+    }
     if (activeTab === 'dashboard') {
       loadEmployeeDashboard(dashboardDate, true);
       loadTemplates(templates.length > 0);
@@ -890,7 +923,13 @@ export default function ChecklistModule({
   const loadEmployeeDashboard = async (targetDateStr = dashboardDate, silent = false) => {
     if (!silent && dashboardChecklists.length === 0) setLoading(true);
     try {
-      const targetObj = targetDateStr ? new Date(`${targetDateStr}T12:00:00`) : new Date();
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        const cached = await getOfflineDashboard();
+        if (cached.length > 0) setDashboardChecklists(cached);
+        else if (!silent) showNotification('No checklist is cached on this device. Open it once while online.', true);
+        return;
+      }
+      const targetObj = targetDateStr ? new Date(`${targetDateStr}T12:00:00+05:30`) : new Date();
       const res = await getEmployeeChecklistDashboard({
         employeeEmail: userEmail,
         frequency: selectedFrequency,
@@ -899,11 +938,11 @@ export default function ChecklistModule({
       });
       if (res.success && Array.isArray(res.data)) {
         setDashboardChecklists(res.data);
-        saveChecklistsLocally(res.data);
+        saveChecklistsLocally(res.data, userEmail);
       }
     } catch (e) {
       console.warn('Network loadEmployeeDashboard failed, reading offline IndexedDB cache:', e);
-      const cached = await getLocalChecklists();
+      const cached = await getOfflineDashboard();
       if (cached && cached.length > 0) {
         setDashboardChecklists(cached);
       } else if (!silent) {
@@ -1173,6 +1212,7 @@ export default function ChecklistModule({
       const status = stats.isAllDone ? 'COMPLETED' : 'PARTIAL';
       const offlinePayload = {
         id: (executingChecklist.submission?.id && isValidUUID(executingChecklist.submission.id)) ? executingChecklist.submission.id : generateSubmissionUUID(),
+        tenant_id: effectiveTenantId,
         template_id: tmpl.id,
         template_title: tmpl.title,
         frequency: tmpl.frequency,
@@ -1187,7 +1227,11 @@ export default function ChecklistModule({
         submitted_at: new Date().toISOString()
       };
 
-      await enqueueOfflineAction('create', 'checklist_response', offlinePayload);
+      const queued = await enqueueOfflineAction('create', 'checklist_response', offlinePayload);
+      if (!queued) {
+        showNotification('Checklist could not be saved on this device. Please retry.', true);
+        return;
+      }
 
       setDashboardChecklists(prev => prev.map(item => {
         if (item.template.id === tmpl.id && item.currentPeriodKey === executingChecklist.currentPeriodKey) {
@@ -1267,6 +1311,7 @@ export default function ChecklistModule({
         const status = stats.isAllDone ? 'COMPLETED' : 'PARTIAL';
         const offlinePayload = {
           id: (executingChecklist.submission?.id && isValidUUID(executingChecklist.submission.id)) ? executingChecklist.submission.id : generateSubmissionUUID(),
+          tenant_id: effectiveTenantId,
           template_id: tmpl.id,
           template_title: tmpl.title,
           frequency: tmpl.frequency,
@@ -1281,7 +1326,11 @@ export default function ChecklistModule({
           submitted_at: new Date().toISOString()
         };
 
-        await enqueueOfflineAction('create', 'checklist_response', offlinePayload);
+        const queued = await enqueueOfflineAction('create', 'checklist_response', offlinePayload);
+        if (!queued) {
+          showNotification('Checklist could not be saved on this device. Please retry.', true);
+          return;
+        }
 
         setDashboardChecklists(prev => prev.map(item => {
           if (item.template.id === tmpl.id && item.currentPeriodKey === executingChecklist.currentPeriodKey) {
@@ -1715,108 +1764,6 @@ export default function ChecklistModule({
             <RefreshCw size={16} className={loading ? 'spin' : ''} /> Refresh
           </button>
         </div>
-      </div>
-
-      {/* Main Tab Navigation */}
-      <div style={{ display: 'flex', gap: '1rem', borderBottom: '1px solid var(--border-color, #e2e8f0)', paddingBottom: '0.5rem', flexWrap: 'wrap' }}>
-        <button
-          onClick={() => handleTabChange('dashboard')}
-          style={{
-            background: 'none',
-            border: 'none',
-            padding: '0.6rem 1.2rem',
-            fontWeight: 700,
-            fontSize: '0.95rem',
-            cursor: 'pointer',
-            borderBottom: activeTab === 'dashboard' ? '3px solid #3b82f6' : '3px solid transparent',
-            color: activeTab === 'dashboard' ? '#3b82f6' : 'var(--text-secondary, #64748b)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.5rem'
-          }}
-        >
-          <TrendingUp size={18} /> Checklist Dashboard
-        </button>
-
-        <button
-          onClick={() => handleTabChange('my_checklists')}
-          style={{
-            background: 'none',
-            border: 'none',
-            padding: '0.6rem 1.2rem',
-            fontWeight: 700,
-            fontSize: '0.95rem',
-            cursor: 'pointer',
-            borderBottom: activeTab === 'my_checklists' ? '3px solid #3b82f6' : '3px solid transparent',
-            color: activeTab === 'my_checklists' ? '#3b82f6' : 'var(--text-secondary, #64748b)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.5rem'
-          }}
-        >
-          <CheckSquare size={18} /> My Checklists
-        </button>
-
-        {canAccessTemplates && (
-          <button
-            onClick={() => handleTabChange('templates')}
-            style={{
-              background: 'none',
-              border: 'none',
-              padding: '0.6rem 1.2rem',
-              fontWeight: 700,
-              fontSize: '0.95rem',
-              cursor: 'pointer',
-              borderBottom: activeTab === 'templates' ? '3px solid #3b82f6' : '3px solid transparent',
-              color: activeTab === 'templates' ? '#3b82f6' : 'var(--text-secondary, #64748b)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem'
-            }}
-          >
-            <Layers size={18} /> Templates Master
-          </button>
-        )}
-
-        {canAccessCompliance && (
-          <button
-            onClick={() => handleTabChange('compliance')}
-            style={{
-              background: 'none',
-              border: 'none',
-              padding: '0.6rem 1.2rem',
-              fontWeight: 700,
-              fontSize: '0.95rem',
-              cursor: 'pointer',
-              borderBottom: activeTab === 'compliance' ? '3px solid #3b82f6' : '3px solid transparent',
-              color: activeTab === 'compliance' ? '#3b82f6' : 'var(--text-secondary, #64748b)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem'
-            }}
-          >
-            <ShieldCheck size={18} /> Compliance & Verification
-          </button>
-        )}
-
-        <button
-          onClick={() => handleTabChange('holidays')}
-          style={{
-            background: 'none',
-            border: 'none',
-            padding: '0.6rem 1.2rem',
-            fontWeight: 700,
-            fontSize: '0.95rem',
-            cursor: 'pointer',
-            borderBottom: activeTab === 'holidays' ? '3px solid #f59e0b' : '3px solid transparent',
-            color: activeTab === 'holidays' ? '#f59e0b' : 'var(--text-secondary, #64748b)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.5rem'
-          }}
-        >
-          <span>🎉</span> Holidays Calendar
-        </button>
       </div>
 
       {/* Frequency Pill Bar (for My Checklists, Templates, Compliance) */}
@@ -3893,11 +3840,13 @@ export default function ChecklistModule({
                 >
                   <Plus size={16} /> Add New Template
                 </button>
+
+                <TableViewToggle view={templateTableView} onChange={setTemplateTableView} />
               </div>
             </div>
 
             <div style={{ overflowX: 'auto', background: 'var(--card-bg, #ffffff)', border: '1px solid var(--border-color, #e2e8f0)', borderRadius: '12px' }}>
-              <MobileTableView id="Checklist/ChecklistModule-3"><table style={{ width: `${getTemplateTotalWidth()}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
+              <MobileTableView id="Checklist/ChecklistModule-3" view={templateTableView} hideToggle={true}><table style={{ width: `${getTemplateTotalWidth()}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
                 <thead>
                   <tr style={{ background: 'var(--bg-secondary, #f8fafc)', borderBottom: '1px solid var(--border-color, #e2e8f0)', color: 'var(--text-secondary, #64748b)' }}>
                     <th style={{ position: 'relative', width: `${templateColWidths.title}px`, padding: '0.75rem 1rem' }}>

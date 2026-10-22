@@ -1,0 +1,26 @@
+{
+  "requests": [
+    {
+      "id": "leave_1792513992657_1hhtm",
+      "tenant_id": "0a37b8e8-1c28-4e19-8891-951fc3f8f8af",
+      "user_id": "15e6a4bb-ca0c-4743-bf79-494ae64074ee",
+      "email": "supujacreations@gmail.com",
+      "emp_name": "SuPuja Creations",
+      "emp_code": "",
+      "department": "General",
+      "leave_type": "CL",
+      "from_date": "2026-10-19",
+      "to_date": "2026-10-19",
+      "total_days": 1,
+      "half_day_session": null,
+      "reason": "medical",
+      "status": "PENDING",
+      "applied_at": "2026-10-20T16:33:12.657Z",
+      "approver_id": null,
+      "approver_name": null,
+      "approver_remarks": null,
+      "action_at": null
+    }
+  ],
+  "cpl_grants": []
+}
