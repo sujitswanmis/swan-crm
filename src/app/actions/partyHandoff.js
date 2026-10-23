@@ -516,3 +516,161 @@ export async function confirmLeadTransfer(handoffId, partyId, userId) {
 
   return { success: true };
 }
+
+/**
+ * Option 2: Confirm in S01 and delete/purge original lead from Lead Data
+ */
+export async function confirmAndPurgeLeadTransfer(handoffId, partyId, leadId, userId) {
+  const adminClient = getAdminClient();
+  try {
+    // 1. Fetch lead details to enrich party
+    let lead = null;
+    if (leadId) {
+      const { data: lData } = await adminClient
+        .from('leads')
+        .select('*')
+        .eq('id', leadId)
+        .maybeSingle();
+      lead = lData;
+    }
+
+    // 2. Fetch current party
+    let party = null;
+    if (partyId) {
+      const { data: pData } = await adminClient
+        .from('party_master')
+        .select('*')
+        .eq('id', partyId)
+        .maybeSingle();
+      party = pData;
+    }
+
+    if (party && lead) {
+      const currentMeta = parsePartyMeta(party.business_nature);
+      const rawCompany = lead.our_company || party.our_company || currentMeta.our_company || 'NSMLR';
+      const effectiveCompany = ['NSTL', 'NSTLP'].includes(rawCompany) ? 'NSTLP' : rawCompany;
+
+      const enrichedMeta = {
+        ...currentMeta,
+        our_company: effectiveCompany,
+        party_type: currentMeta.party_type || 'Dealer',
+        state_name: lead.state_name || currentMeta.state_name || 'Punjab',
+        district_name: lead.district_name || currentMeta.district_name || '',
+        city_village: lead.city_name || currentMeta.city_village || '',
+        tehsil: lead.tehsil_name || currentMeta.tehsil || '',
+        address: lead.address || currentMeta.address || '',
+        pincode: lead.pin_code || currentMeta.pincode || '',
+        order_category: lead.requirement || currentMeta.order_category || 'Rotavator',
+        contact_person_name_1: lead.name || lead.cp1_name || currentMeta.contact_person_name_1 || party.firm_name,
+        contact_mobile_1_1: lead.phone || lead.cp1_mobile_1 || currentMeta.contact_mobile_1_1 || party.primary_mobile || '',
+        biz_contact_no_1: lead.business_contact_1 || lead.phone || currentMeta.biz_contact_no_1 || party.primary_mobile || '',
+        biz_email_1: lead.email || currentMeta.biz_email_1 || party.official_email || '',
+        stages: {
+          ...(currentMeta.stages || {}),
+          s00: true,
+          s01: false
+        }
+      };
+
+      await adminClient
+        .from('party_master')
+        .update({
+          onboarding_stage: 'S01_Registration',
+          party_status: 'Draft',
+          business_nature: 'SWAN_PARTY_META:' + JSON.stringify(enrichedMeta),
+          primary_mobile: party.primary_mobile || lead.phone || lead.business_contact_1 || null,
+          official_email: party.official_email || lead.email || null,
+          gstin: party.gstin || lead.business_gst || null,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', partyId);
+    } else if (partyId) {
+      await adminClient
+        .from('party_master')
+        .update({
+          onboarding_stage: 'S01_Registration',
+          party_status: 'Draft',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', partyId);
+    }
+
+    // 3. Remove handoff so S00 stops rendering it
+    if (handoffId) {
+      await adminClient.from('lead_party_handoffs').delete().eq('id', handoffId);
+    } else if (leadId) {
+      await adminClient.from('lead_party_handoffs').delete().eq('lead_id', leadId);
+    }
+
+    // 4. Remove notes & delete lead from leads table
+    if (leadId) {
+      try {
+        await adminClient.from('lead_notes').delete().eq('lead_id', leadId);
+      } catch (_) {}
+
+      await adminClient.from('leads').delete().eq('id', leadId);
+    }
+
+    const { data: updatedParty } = partyId 
+      ? await adminClient.from('party_master').select('*').eq('id', partyId).maybeSingle()
+      : { data: null };
+
+    return { success: true, party: updatedParty };
+  } catch (err) {
+    console.error('confirmAndPurgeLeadTransfer error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Option 3: Revert lead transfer back to Stage 08 in Lead Data
+ */
+export async function revertLeadTransferToStage08(handoffId, partyId, leadId, userId) {
+  const adminClient = getAdminClient();
+  try {
+    // 1. Reset status in leads table back to Pending Confirmation in Stage 08
+    if (leadId) {
+      await adminClient
+        .from('leads')
+        .update({
+          status: '8;01>Transfer to Party>Pending Confirmation',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', leadId);
+
+      // Log note in lead_notes
+      try {
+        await adminClient.from('lead_notes').insert([{
+          lead_id: leadId,
+          note_text: 'Lead transfer reverted from Party Master S00 back to Stage 08 (Pending Confirmation).',
+          created_by: userId || 'System'
+        }]);
+      } catch (_) {}
+    }
+
+    // 2. Remove from lead_party_handoffs
+    if (handoffId) {
+      await adminClient.from('lead_party_handoffs').delete().eq('id', handoffId);
+    } else if (leadId) {
+      await adminClient.from('lead_party_handoffs').delete().eq('lead_id', leadId);
+    }
+
+    // 3. If party in party_master was only a draft from this lead, delete or archive it
+    if (partyId) {
+      const { data: p } = await adminClient
+        .from('party_master')
+        .select('id, party_status, onboarding_stage')
+        .eq('id', partyId)
+        .maybeSingle();
+
+      if (p && (p.party_status === 'Draft_From_Lead' || p.onboarding_stage === 'S00_Party_Entry')) {
+        await adminClient.from('party_master').delete().eq('id', partyId);
+      }
+    }
+
+    return { success: true };
+  } catch (err) {
+    console.error('revertLeadTransferToStage08 error:', err);
+    return { success: false, error: err.message };
+  }
+}

@@ -28,7 +28,7 @@ import {
 } from '@/app/actions/partyMaster';
 import { getEmployeesMaster } from '@/app/actions/employee';
 import { getStatesCentral, getDistrictsCentral } from '@/app/actions/centralLocationMaster';
-import { getTransferredLeads, confirmLeadTransfer } from '@/app/actions/partyHandoff';
+import { getTransferredLeads, confirmLeadTransfer, confirmAndPurgeLeadTransfer, revertLeadTransferToStage08 } from '@/app/actions/partyHandoff';
 import { INDIAN_STATE_DISTRICTS, ALL_INDIAN_STATES } from '@/config/indianStateDistricts';
 import StageDataTable from './StageDataTable';
 import StageConfigModal from './StageConfigModal';
@@ -223,6 +223,15 @@ export default function PartyMasterModule({
   const [allStageTableView, setAllStageTableView] = useTableViewPreference('Party/PartyMasterModule-1');
   const [s00TableView, setS00TableView] = useTableViewPreference('Party/PartyMasterModule-2');
   const [reportTableView, setReportTableView] = useTableViewPreference('Party/PartyMasterModule-3');
+  const [activeS00ActionMenuId, setActiveS00ActionMenuId] = useState(null);
+
+  useEffect(() => {
+    const handleOutsideClick = () => setActiveS00ActionMenuId(null);
+    if (activeS00ActionMenuId) {
+      window.addEventListener('click', handleOutsideClick);
+      return () => window.removeEventListener('click', handleOutsideClick);
+    }
+  }, [activeS00ActionMenuId]);
 
   // Column resizing hook for Party Master Table
   const {
@@ -2000,7 +2009,9 @@ export default function PartyMasterModule({
     }
   };
 
+  // Option 1: Default confirm S00 to S01 (Keeps in Lead Data)
   const handleConfirmHandoffLead = async (leadItem) => {
+    setActiveS00ActionMenuId(null);
     try {
       setLoadingTransfers(true);
       const res = await confirmLeadTransfer(leadItem.handoff_id, leadItem.party_id, 'Admin');
@@ -2010,7 +2021,7 @@ export default function PartyMasterModule({
           type: 'success',
           title: 'Lead Transfer Confirmed',
           message: `Lead "${leadItem.firm_name || leadItem.lead_name}" confirmed successfully!`,
-          subMessage: 'Party Master record initialized. Moving to Stage S01 Registration.',
+          subMessage: 'Party Master record initialized. Moving to Stage S01 Registration (Lead retained in Leads table).',
           confirmText: 'Continue to S01 ➔',
           onConfirm: null
         });
@@ -2050,6 +2061,116 @@ export default function PartyMasterModule({
     } finally {
       setLoadingTransfers(false);
     }
+  };
+
+  // Option 2: Confirm in S01 & Delete from Lead Data
+  const handleConfirmAndPurgeHandoffLead = (leadItem) => {
+    setActiveS00ActionMenuId(null);
+    setCenterAlert({
+      isOpen: true,
+      type: 'warning',
+      title: 'Move to S01 & Delete Lead Data?',
+      message: `Are you sure you want to advance "${leadItem.firm_name || leadItem.lead_name}" to S01 and permanently remove the original lead from Lead Data?`,
+      subMessage: 'All profile and contact details will be preserved in Party Master S01.',
+      confirmText: 'Yes, Move & Delete Lead',
+      cancelText: 'Cancel',
+      onConfirm: async () => {
+        try {
+          setLoadingTransfers(true);
+          const res = await confirmAndPurgeLeadTransfer(
+            leadItem.handoff_id,
+            leadItem.party_id,
+            leadItem.lead_id,
+            'Admin'
+          );
+          if (res && res.success) {
+            const [freshParties, freshTrans] = await Promise.all([
+              getPartyList(effectiveTenantId),
+              getTransferredLeads(effectiveTenantId)
+            ]);
+            setParties(freshParties);
+            setTransferredLeads(freshTrans);
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('party_transferred_updated'));
+            }
+            setCenterAlert({
+              isOpen: true,
+              type: 'success',
+              title: 'Moved to S01 & Cleaned from Leads',
+              message: `Partner "${leadItem.firm_name || leadItem.lead_name}" is now ready in S01. Original lead was safely removed from Lead Data.`,
+              confirmText: 'Go to S01 ➔',
+              onConfirm: () => switchTab('s01', true)
+            });
+          } else {
+            throw new Error(res?.error || 'Failed to move and purge lead.');
+          }
+        } catch (err) {
+          setCenterAlert({
+            isOpen: true,
+            type: 'error',
+            title: 'Action Error',
+            message: err.message
+          });
+        } finally {
+          setLoadingTransfers(false);
+        }
+      }
+    });
+  };
+
+  // Option 3: Revert back to Stage 08 in Lead Data
+  const handleRevertHandoffLead = (leadItem) => {
+    setActiveS00ActionMenuId(null);
+    setCenterAlert({
+      isOpen: true,
+      type: 'warning',
+      title: 'Revert to Lead Data Stage 08?',
+      message: `Do you want to send "${leadItem.firm_name || leadItem.lead_name}" back to Lead Data Stage 08 with status "Pending Confirmation"?`,
+      subMessage: 'This will remove the unconfirmed draft from S00 and restore the lead in Stage 08 for sales team review.',
+      confirmText: 'Yes, Revert to Stage 08',
+      cancelText: 'Cancel',
+      onConfirm: async () => {
+        try {
+          setLoadingTransfers(true);
+          const res = await revertLeadTransferToStage08(
+            leadItem.handoff_id,
+            leadItem.party_id,
+            leadItem.lead_id,
+            'Admin'
+          );
+          if (res && res.success) {
+            const [freshParties, freshTrans] = await Promise.all([
+              getPartyList(effectiveTenantId),
+              getTransferredLeads(effectiveTenantId)
+            ]);
+            setParties(freshParties);
+            setTransferredLeads(freshTrans);
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('party_transferred_updated'));
+            }
+            setCenterAlert({
+              isOpen: true,
+              type: 'success',
+              title: 'Reverted to Stage 08',
+              message: `Lead "${leadItem.firm_name || leadItem.lead_name}" reverted to Lead Data Stage 08 (Pending Confirmation).`,
+              confirmText: 'OK',
+              onConfirm: null
+            });
+          } else {
+            throw new Error(res?.error || 'Failed to revert lead.');
+          }
+        } catch (err) {
+          setCenterAlert({
+            isOpen: true,
+            type: 'error',
+            title: 'Revert Error',
+            message: err.message
+          });
+        } finally {
+          setLoadingTransfers(false);
+        }
+      }
+    });
   };
   // Note: getStageApprovalStatus moved above resumeWizard for consistent stage routing
 
@@ -3021,27 +3142,162 @@ export default function PartyMasterModule({
                             {isConfirmed ? '✓ Confirmed (In S01)' : '⏳ Pending Confirmation'}
                           </span>
                         </td>
-                        <td style={{ padding: '0.85rem 1rem', textAlign: 'center' }}>
+                        <td style={{ padding: '0.85rem 1rem', textAlign: 'center', position: 'relative' }}>
                           {!isConfirmed ? (
-                            <button
-                              onClick={() => handleConfirmHandoffLead(lead)}
-                              style={{
-                                padding: '0.45rem 0.95rem',
-                                background: 'linear-gradient(135deg, #10b981, #059669)',
-                                border: 'none',
-                                borderRadius: '6px',
-                                color: '#fff',
-                                fontWeight: 700,
-                                fontSize: '0.8rem',
-                                cursor: 'pointer',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '0.35rem',
-                                boxShadow: '0 2px 8px rgba(16,185,129,0.3)'
-                              }}
-                            >
-                              <CheckCircle2 size={14} /> Confirm &amp; Move to S01 ➔
-                            </button>
+                            <div style={{ display: 'inline-flex', alignItems: 'center', position: 'relative' }}>
+                              {/* Option 1 Main Button: Confirm to S01 (Default) */}
+                              <button
+                                type="button"
+                                onClick={() => handleConfirmHandoffLead(lead)}
+                                title="Default: Confirm to S01 (Keeps lead in Lead Data)"
+                                style={{
+                                  padding: '0.45rem 0.75rem',
+                                  background: 'linear-gradient(135deg, #10b981, #059669)',
+                                  border: 'none',
+                                  borderRadius: '6px 0 0 6px',
+                                  color: '#fff',
+                                  fontWeight: 700,
+                                  fontSize: '0.78rem',
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.35rem',
+                                  boxShadow: '0 2px 6px rgba(16,185,129,0.3)'
+                                }}
+                              >
+                                <CheckCircle2 size={13} /> Confirm S01
+                              </button>
+
+                              {/* Dropdown Toggle Trigger Button */}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveS00ActionMenuId(activeS00ActionMenuId === lead.handoff_id ? null : lead.handoff_id);
+                                }}
+                                title="More Transfer Options (Move & Delete, Revert to Stage 08)"
+                                style={{
+                                  padding: '0.45rem 0.5rem',
+                                  background: '#047857',
+                                  border: 'none',
+                                  borderLeft: '1px solid rgba(255,255,255,0.25)',
+                                  borderRadius: '0 6px 6px 0',
+                                  color: '#fff',
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center'
+                                }}
+                              >
+                                <ChevronDown size={14} />
+                              </button>
+
+                              {/* Floating Action Menu */}
+                              {activeS00ActionMenuId === lead.handoff_id && (
+                                <div
+                                  onClick={(e) => e.stopPropagation()}
+                                  style={{
+                                    position: 'absolute',
+                                    top: 'calc(100% + 4px)',
+                                    right: 0,
+                                    zIndex: 9999,
+                                    background: 'var(--bg-surface, #1e293b)',
+                                    border: '1px solid var(--border-light, rgba(255,255,255,0.15))',
+                                    borderRadius: '10px',
+                                    boxShadow: '0 10px 25px rgba(0,0,0,0.4)',
+                                    minWidth: '240px',
+                                    padding: '0.35rem',
+                                    textAlign: 'left'
+                                  }}
+                                >
+                                  {/* Option 1: Default S00 to S01 */}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleConfirmHandoffLead(lead)}
+                                    style={{
+                                      width: '100%',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '0.6rem',
+                                      padding: '0.55rem 0.75rem',
+                                      background: 'transparent',
+                                      border: 'none',
+                                      borderRadius: '6px',
+                                      color: 'var(--text-primary, #fff)',
+                                      fontSize: '0.8rem',
+                                      cursor: 'pointer',
+                                      fontWeight: 600
+                                    }}
+                                    onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(16,185,129,0.15)'}
+                                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                                  >
+                                    <CheckCircle2 size={15} color="#10b981" />
+                                    <div>
+                                      <div style={{ color: '#10b981' }}>Confirm to S01 (Default)</div>
+                                      <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary, #94a3b8)', fontWeight: 400 }}>Keeps lead in Lead Data</div>
+                                    </div>
+                                  </button>
+
+                                  {/* Option 2: S00 to S01 Move & Delete Lead Data */}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleConfirmAndPurgeHandoffLead(lead)}
+                                    style={{
+                                      width: '100%',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '0.6rem',
+                                      padding: '0.55rem 0.75rem',
+                                      background: 'transparent',
+                                      border: 'none',
+                                      borderRadius: '6px',
+                                      color: 'var(--text-primary, #fff)',
+                                      fontSize: '0.8rem',
+                                      cursor: 'pointer',
+                                      fontWeight: 600
+                                    }}
+                                    onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(56,189,248,0.15)'}
+                                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                                  >
+                                    <ArrowRightLeft size={15} color="#38bdf8" />
+                                    <div>
+                                      <div style={{ color: '#38bdf8' }}>Move to S01 &amp; Delete Lead</div>
+                                      <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary, #94a3b8)', fontWeight: 400 }}>Transfers full data &amp; purges lead</div>
+                                    </div>
+                                  </button>
+
+                                  <div style={{ height: '1px', background: 'var(--border-light, rgba(255,255,255,0.1))', margin: '0.25rem 0' }} />
+
+                                  {/* Option 3: Revert to Stage 08 Pending Confirmation */}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRevertHandoffLead(lead)}
+                                    style={{
+                                      width: '100%',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '0.6rem',
+                                      padding: '0.55rem 0.75rem',
+                                      background: 'transparent',
+                                      border: 'none',
+                                      borderRadius: '6px',
+                                      color: 'var(--text-primary, #fff)',
+                                      fontSize: '0.8rem',
+                                      cursor: 'pointer',
+                                      fontWeight: 600
+                                    }}
+                                    onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(239,68,68,0.15)'}
+                                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                                  >
+                                    <RotateCcw size={15} color="#f87171" />
+                                    <div>
+                                      <div style={{ color: '#f87171' }}>Revert to Leads Stage 08</div>
+                                      <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary, #94a3b8)', fontWeight: 400 }}>Pending Confirmation in Leads</div>
+                                    </div>
+                                  </button>
+                                </div>
+                              )}
+                            </div>
                           ) : (
                             <button
                               onClick={() => {
