@@ -2880,12 +2880,11 @@ export default function CRMContainer({
         }
         tab = 'party';
         setPartyMenuExpanded(true);
-      }
-      const channelOpsTab = search.get('tab') || search.get('subtab') || search.get('step');
-      if (path === 'channel_ops' || path === 'channel-operations' || (path && (path.startsWith('channel-operations/') || path.startsWith('channel_ops/')))) {
+      } else if (tab === 'channel_ops' || tab === 'channel-operations' || (tab && (tab.startsWith('channel-operations/') || tab.startsWith('channel_ops/')))) {
+        const channelOpsTab = params.get('tab') || params.get('subtab') || params.get('step');
         let sub = '';
-        if (path.includes('/')) {
-          sub = path.split('/')[1];
+        if (tab.includes('/')) {
+          sub = tab.split('/')[1];
         } else if (channelOpsTab) {
           sub = channelOpsTab;
         } else {
@@ -2894,6 +2893,7 @@ export default function CRMContainer({
         if (sub) {
           setChannelOpsSubTab(sub.toLowerCase());
         }
+        tab = 'channel_ops';
         setChannelOpsMenuExpanded(true);
       } else if (tab === 'calladmin' || tab === 'call-admin' || (tab && (tab.startsWith('calladmin/') || tab.startsWith('call-admin/')))) {
         let sub = '';
