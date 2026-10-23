@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { prepareIncomingRouting, incomingAgentDialXml } from '@/lib/plivoIncomingRouting';
+import { getPlivoWebhookBaseUrl } from '@/app/api/plivo/utils';
 
 export async function GET() {
   return NextResponse.json({
@@ -10,10 +12,11 @@ export async function GET() {
 }
 
 export async function POST(req) {
+  let event = {};
   try {
     const textData = await req.text();
     const searchParams = new URLSearchParams(textData);
-    const event = Object.fromEntries(searchParams);
+    event = Object.fromEntries(searchParams);
 
     const fromNumber = event.From || '';
     const toNumber = event.To || '+918035340622'; // Plivo Production Number
@@ -186,9 +189,8 @@ export async function POST(req) {
       }
     }
 
-    const host = req.headers.get('host') || 'localhost:3000';
-    const protocol = host.includes('localhost') ? 'http' : 'https';
-    const fallbackActionUrl = `${protocol}://${host}/api/plivo/incoming-fallback`;
+    const baseUrl = getPlivoWebhookBaseUrl(req);
+    const fallbackActionUrl = `${baseUrl}/api/plivo/incoming-fallback`;
 
     // 5. Generate Response XML with Custom Lead Headers
     let xml = '';
@@ -198,6 +200,13 @@ export async function POST(req) {
       const leadCompanySafe = encodeURIComponent(matchedLead?.company || '');
       const leadIdSafe = matchedLead?.id || '';
       const sipHeaders = `X-Lead-Name=${leadNameSafe},X-Lead-Company=${leadCompanySafe},X-Lead-Id=${leadIdSafe}`;
+
+      const tracked = await prepareIncomingRouting(adminClient, event, targetAgents, allowedAgentIds, req);
+      if (tracked?.row) {
+        return new NextResponse(incomingAgentDialXml(req, tracked.ctx, tracked.row, targetAgents, sipHeaders), {
+          headers: { 'Content-Type': 'application/xml' }
+        });
+      }
 
       const callerDisplayName = matchedLead
         ? (matchedLead.name && matchedLead.company ? `${matchedLead.name} - ${matchedLead.company}` : (matchedLead.name || matchedLead.company))
@@ -217,7 +226,7 @@ ${userElements}
 </Response>`;
     } else {
       console.log(`[Incoming Webhook] No online WebRTC agent available. Forwarding call directly to mobile ${defaultForwardMobile}.`);
-      const missedCallActionUrl = `${protocol}://${host}/api/plivo/missed-call-handler`;
+      const missedCallActionUrl = `${baseUrl}/api/plivo/missed-call-handler`;
       xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Dial callerId="${toNumber}" timeout="25" action="${missedCallActionUrl}">
