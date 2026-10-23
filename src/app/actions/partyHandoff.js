@@ -309,7 +309,17 @@ export async function getTransferredLeads(tenantId = DEFAULT_TENANT_ID) {
       console.warn('Could not query lead_party_handoffs:', hErr.message);
     }
 
-    const handoffList = handoffs || [];
+    const rawHandoffList = handoffs || [];
+    // Deduplicate handoffs by target_party_id or lead_id to prevent any duplicate card rendering
+    const seenHandoffKeys = new Set();
+    const handoffList = [];
+    for (const h of rawHandoffList) {
+      const dedupKey = h.target_party_id || h.lead_id || h.id;
+      if (!seenHandoffKeys.has(dedupKey)) {
+        seenHandoffKeys.add(dedupKey);
+        handoffList.push(h);
+      }
+    }
 
     if (handoffList.length > 0) {
       const leadIds = [...new Set(handoffList.map(h => h.lead_id).filter(Boolean))];
@@ -389,9 +399,20 @@ export async function getTransferredLeads(tenantId = DEFAULT_TENANT_ID) {
 
     const { data: partiesFallback } = await fbQuery;
 
-    if (!partiesFallback || partiesFallback.length === 0) return [];
+    const rawPartiesFallback = partiesFallback || [];
+    const seenFallbackKeys = new Set();
+    const uniquePartiesFallback = [];
+    for (const p of rawPartiesFallback) {
+      const dedupKey = p.source_lead_id || p.id;
+      if (!seenFallbackKeys.has(dedupKey)) {
+        seenFallbackKeys.add(dedupKey);
+        uniquePartiesFallback.push(p);
+      }
+    }
 
-    const leadIds = partiesFallback.map(p => p.source_lead_id).filter(Boolean);
+    if (uniquePartiesFallback.length === 0) return [];
+
+    const leadIds = uniquePartiesFallback.map(p => p.source_lead_id).filter(Boolean);
     const { data: leadsData } = await adminClient
       .from('leads')
       .select('*')
@@ -399,7 +420,7 @@ export async function getTransferredLeads(tenantId = DEFAULT_TENANT_ID) {
 
     const leadMap = new Map((leadsData || []).map(l => [l.id, l]));
 
-    return partiesFallback.map(p => {
+    return uniquePartiesFallback.map(p => {
       const lead = leadMap.get(p.source_lead_id) || {};
       const isConfirmed = p.party_status !== 'Draft_From_Lead';
       const partyMeta = parsePartyMeta(p.business_nature);
