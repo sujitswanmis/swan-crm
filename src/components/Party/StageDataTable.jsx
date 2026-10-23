@@ -869,20 +869,22 @@ export default function StageDataTable({
       <div style={{
         border: '1px solid var(--border-light)',
         borderRadius: '10px 10px 0 0',
-        overflow: 'hidden',
-        overflowX: 'auto'
+        overflowX: 'auto',
+        overflowY: 'auto',
+        maxHeight: 'calc(100vh - 280px)',
+        position: 'relative'
       }}>
         <MobileTableView id="Party/StageDataTable-1" view={tableView} hideToggle={true}><table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.84rem' }}>
           <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--table-header-bg, #e2e8f0)' }}>
             <tr style={{ borderBottom: '1px solid var(--border-light, #cbd5e1)', color: 'var(--table-header-text, #1e293b)' }}>
-              <th style={{ padding: '0.75rem 0.9rem', fontWeight: 700 }}>Universal Code</th>
-              <th style={{ padding: '0.75rem 0.9rem', fontWeight: 700 }}>Our Company</th>
-              <th style={{ padding: '0.75rem 0.9rem', fontWeight: 700 }}>Firm &amp; Legal Name</th>
-              <th style={{ padding: '0.75rem 0.9rem', fontWeight: 700 }}>Channel Tier</th>
-              <th style={{ padding: '0.75rem 0.9rem', fontWeight: 700 }}>Contact &amp; Location</th>
-              <th style={{ padding: '0.75rem 0.9rem', fontWeight: 700 }}>{meta.col5Title}</th>
-              <th style={{ padding: '0.75rem 0.9rem', fontWeight: 700 }}>Stage Status</th>
-              <th style={{ padding: '0.75rem 0.6rem', fontWeight: 700, textAlign: 'center', width: '90px' }}>Actions</th>
+              <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--table-header-bg, #e2e8f0)', padding: '0.75rem 0.9rem', fontWeight: 700 }}>Universal Code</th>
+              <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--table-header-bg, #e2e8f0)', padding: '0.75rem 0.9rem', fontWeight: 700 }}>Our Company</th>
+              <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--table-header-bg, #e2e8f0)', padding: '0.75rem 0.9rem', fontWeight: 700 }}>Firm &amp; Legal Name</th>
+              <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--table-header-bg, #e2e8f0)', padding: '0.75rem 0.9rem', fontWeight: 700 }}>Channel Tier</th>
+              <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--table-header-bg, #e2e8f0)', padding: '0.75rem 0.9rem', fontWeight: 700 }}>Contact &amp; Location</th>
+              <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--table-header-bg, #e2e8f0)', padding: '0.75rem 0.9rem', fontWeight: 700 }}>{meta.col5Title}</th>
+              <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--table-header-bg, #e2e8f0)', padding: '0.75rem 0.9rem', fontWeight: 700 }}>Stage Status</th>
+              <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--table-header-bg, #e2e8f0)', padding: '0.75rem 0.6rem', fontWeight: 700, textAlign: 'center', width: '90px' }}>Actions</th>
             </tr>
           </thead>
           <tbody>

@@ -2299,11 +2299,11 @@ export default function PartyMasterModule({
           </div>
 
           {/* Table */}
-          <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px', overflowX: 'auto' }}>
+          <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)', position: 'relative' }}>
             <MobileTableView id="Party/PartyMasterModule-1" view={allStageTableView} hideToggle={true}><table style={{ width: `${Math.max(1200, getPartyTotalWidth())}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.86rem' }}>
-              <thead>
+              <thead style={{ position: 'sticky', top: 0, zIndex: 20, background: 'var(--th-bg)' }}>
                 <tr style={{ background: 'var(--th-bg)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
-                  <th style={{ position: 'relative', padding: '0.85rem 0.75rem', width: `${partyColWidths.select}px`, textAlign: 'center' }}>
+                  <th style={{ position: 'sticky', top: 0, zIndex: 20, background: 'var(--th-bg)', padding: '0.85rem 0.75rem', width: `${partyColWidths.select}px`, textAlign: 'center' }}>
                     <input
                       type="checkbox"
                       checked={isAllAllStageSelected}
@@ -2313,35 +2313,35 @@ export default function PartyMasterModule({
                     />
                     <ColumnResizer columnKey="select" isResizing={isPartyResizing('select')} onMouseDown={(e) => handlePartyResizeStart('select', e)} onTouchStart={(e) => handlePartyTouchStart('select', e)} onDoubleClick={() => handlePartyReset('select')} />
                   </th>
-                  <th style={{ position: 'relative', padding: '0.85rem 0.6rem', width: `${partyColWidths.index}px`, textAlign: 'center' }}>
+                  <th style={{ position: 'sticky', top: 0, zIndex: 20, background: 'var(--th-bg)', padding: '0.85rem 0.6rem', width: `${partyColWidths.index}px`, textAlign: 'center' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>#</div>
                     <ColumnResizer columnKey="index" isResizing={isPartyResizing('index')} onMouseDown={(e) => handlePartyResizeStart('index', e)} onTouchStart={(e) => handlePartyTouchStart('index', e)} onDoubleClick={() => handlePartyReset('index')} />
                   </th>
-                  <th style={{ position: 'relative', padding: '0.85rem 1rem', width: `${partyColWidths.party_code}px` }}>
+                  <th style={{ position: 'sticky', top: 0, zIndex: 20, background: 'var(--th-bg)', padding: '0.85rem 1rem', width: `${partyColWidths.party_code}px` }}>
                     <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Party Code & Tier</div>
                     <ColumnResizer columnKey="party_code" isResizing={isPartyResizing('party_code')} onMouseDown={(e) => handlePartyResizeStart('party_code', e)} onTouchStart={(e) => handlePartyTouchStart('party_code', e)} onDoubleClick={() => handlePartyReset('party_code')} />
                   </th>
-                  <th style={{ position: 'relative', padding: '0.85rem 1rem', width: `${partyColWidths.firm_name}px` }}>
+                  <th style={{ position: 'sticky', top: 0, zIndex: 20, background: 'var(--th-bg)', padding: '0.85rem 1rem', width: `${partyColWidths.firm_name}px` }}>
                     <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Firm Name & Contact</div>
                     <ColumnResizer columnKey="firm_name" isResizing={isPartyResizing('firm_name')} onMouseDown={(e) => handlePartyResizeStart('firm_name', e)} onTouchStart={(e) => handlePartyTouchStart('firm_name', e)} onDoubleClick={() => handlePartyReset('firm_name')} />
                   </th>
-                  <th style={{ position: 'relative', padding: '0.85rem 1rem', width: `${partyColWidths.company_state}px` }}>
+                  <th style={{ position: 'sticky', top: 0, zIndex: 20, background: 'var(--th-bg)', padding: '0.85rem 1rem', width: `${partyColWidths.company_state}px` }}>
                     <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Company / State</div>
                     <ColumnResizer columnKey="company_state" isResizing={isPartyResizing('company_state')} onMouseDown={(e) => handlePartyResizeStart('company_state', e)} onTouchStart={(e) => handlePartyTouchStart('company_state', e)} onDoubleClick={() => handlePartyReset('company_state')} />
                   </th>
-                  <th style={{ position: 'relative', padding: '0.85rem 1rem', width: `${partyColWidths.current_stage}px` }}>
+                  <th style={{ position: 'sticky', top: 0, zIndex: 20, background: 'var(--th-bg)', padding: '0.85rem 1rem', width: `${partyColWidths.current_stage}px` }}>
                     <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Current Stage</div>
                     <ColumnResizer columnKey="current_stage" isResizing={isPartyResizing('current_stage')} onMouseDown={(e) => handlePartyResizeStart('current_stage', e)} onTouchStart={(e) => handlePartyTouchStart('current_stage', e)} onDoubleClick={() => handlePartyReset('current_stage')} />
                   </th>
-                  <th style={{ position: 'relative', padding: '0.85rem 1rem', width: `${partyColWidths.pipeline}px` }}>
+                  <th style={{ position: 'sticky', top: 0, zIndex: 20, background: 'var(--th-bg)', padding: '0.85rem 1rem', width: `${partyColWidths.pipeline}px` }}>
                     <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>8-Stage Onboarding Progress Pipeline</div>
                     <ColumnResizer columnKey="pipeline" isResizing={isPartyResizing('pipeline')} onMouseDown={(e) => handlePartyResizeStart('pipeline', e)} onTouchStart={(e) => handlePartyTouchStart('pipeline', e)} onDoubleClick={() => handlePartyReset('pipeline')} />
                   </th>
-                  <th style={{ position: 'relative', padding: '0.85rem 1rem', width: `${partyColWidths.status}px`, textAlign: 'center' }}>
+                  <th style={{ position: 'sticky', top: 0, zIndex: 20, background: 'var(--th-bg)', padding: '0.85rem 1rem', width: `${partyColWidths.status}px`, textAlign: 'center' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Status</div>
                     <ColumnResizer columnKey="status" isResizing={isPartyResizing('status')} onMouseDown={(e) => handlePartyResizeStart('status', e)} onTouchStart={(e) => handlePartyTouchStart('status', e)} onDoubleClick={() => handlePartyReset('status')} />
                   </th>
-                  <th style={{ position: 'relative', padding: '0.85rem 0.6rem', width: `${partyColWidths.actions}px`, textAlign: 'center' }}>
+                  <th style={{ position: 'sticky', top: 0, zIndex: 20, background: 'var(--th-bg)', padding: '0.85rem 0.6rem', width: `${partyColWidths.actions}px`, textAlign: 'center' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Actions</div>
                     <ColumnResizer columnKey="actions" isResizing={isPartyResizing('actions')} onMouseDown={(e) => handlePartyResizeStart('actions', e)} onTouchStart={(e) => handlePartyTouchStart('actions', e)} onDoubleClick={() => handlePartyReset('actions')} />
                   </th>
@@ -2926,18 +2926,18 @@ export default function PartyMasterModule({
             </div>
           </div>
 
-          <div style={{ background: 'var(--bg-surface)', borderRadius: '12px', border: '1px solid var(--border-light)', overflow: 'hidden' }}>
+          <div style={{ background: 'var(--bg-surface)', borderRadius: '12px', border: '1px solid var(--border-light)', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)', position: 'relative' }}>
             <MobileTableView id="Party/PartyMasterModule-2" view={s00TableView} hideToggle={true}><table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
-              <thead>
-                <tr style={{ background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
-                  <th style={{ padding: '0.85rem 1rem', fontWeight: 700 }}>Lead Universal ID</th>
-                  <th style={{ padding: '0.85rem 1rem', fontWeight: 700 }}>Our Company</th>
-                  <th style={{ padding: '0.85rem 1rem', fontWeight: 700 }}>Lead &amp; Firm Name</th>
-                  <th style={{ padding: '0.85rem 1rem', fontWeight: 700 }}>Contact Person &amp; Phone</th>
-                  <th style={{ padding: '0.85rem 1rem', fontWeight: 700 }}>Location (State / District)</th>
-                  <th style={{ padding: '0.85rem 1rem', fontWeight: 700 }}>Transferred At (IST)</th>
-                  <th style={{ padding: '0.85rem 1rem', fontWeight: 700 }}>Status</th>
-                  <th style={{ padding: '0.85rem 1rem', fontWeight: 700, textAlign: 'center' }}>Action</th>
+              <thead style={{ position: 'sticky', top: 0, zIndex: 20, background: 'var(--th-bg)' }}>
+                <tr style={{ background: 'var(--th-bg)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
+                  <th style={{ position: 'sticky', top: 0, zIndex: 20, background: 'var(--th-bg)', padding: '0.85rem 1rem', fontWeight: 700 }}>Lead Universal ID</th>
+                  <th style={{ position: 'sticky', top: 0, zIndex: 20, background: 'var(--th-bg)', padding: '0.85rem 1rem', fontWeight: 700 }}>Our Company</th>
+                  <th style={{ position: 'sticky', top: 0, zIndex: 20, background: 'var(--th-bg)', padding: '0.85rem 1rem', fontWeight: 700 }}>Lead &amp; Firm Name</th>
+                  <th style={{ position: 'sticky', top: 0, zIndex: 20, background: 'var(--th-bg)', padding: '0.85rem 1rem', fontWeight: 700 }}>Contact Person &amp; Phone</th>
+                  <th style={{ position: 'sticky', top: 0, zIndex: 20, background: 'var(--th-bg)', padding: '0.85rem 1rem', fontWeight: 700 }}>Location (State / District)</th>
+                  <th style={{ position: 'sticky', top: 0, zIndex: 20, background: 'var(--th-bg)', padding: '0.85rem 1rem', fontWeight: 700 }}>Transferred At (IST)</th>
+                  <th style={{ position: 'sticky', top: 0, zIndex: 20, background: 'var(--th-bg)', padding: '0.85rem 1rem', fontWeight: 700 }}>Status</th>
+                  <th style={{ position: 'sticky', top: 0, zIndex: 20, background: 'var(--th-bg)', padding: '0.85rem 1rem', fontWeight: 700, textAlign: 'center' }}>Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -3841,9 +3841,9 @@ export default function PartyMasterModule({
           {/* ========================================================= */}
           {/* DISCRETE INDIVIDUAL COLUMN ENTERPRISE REPORT TABLE */}
           {/* ========================================================= */}
-          <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px', overflowX: 'auto' }}>
+          <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)', position: 'relative' }}>
             <MobileTableView id="Party/PartyMasterModule-3" view={reportTableView} hideToggle={true}><table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
-              <thead>
+              <thead style={{ position: 'sticky', top: 0, zIndex: 20, background: 'var(--th-bg)' }}>
                 <tr style={{ background: 'var(--th-bg)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
                   {/* Selection Checkbox */}
                   <th style={{ padding: '0.8rem 0.65rem', width: '38px', textAlign: 'center' }}>
