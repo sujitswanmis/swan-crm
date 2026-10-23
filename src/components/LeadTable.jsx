@@ -1795,8 +1795,13 @@ export default function LeadTable({
 
   // ⚡ PERF FIX: Pre-compile filter rules once — outside per-row loop — and short-circuit on first match/fail
   const stageFilteredData = useMemo(() => {
+    // When viewing dashboards, bypass TanStack table row model generation completely to eliminate UI freeze
+    if (stageFilter === 'lead_dashboard' || stageFilter === 'dashboard' || stageFilter === 'hourly_work') {
+      return [];
+    }
+
     let result = data;
-    if (stageFilter && stageFilter !== 'all' && stageFilter !== 'lead_dashboard' && stageFilter !== 'dashboard' && stageFilter !== 'hourly_work') {
+    if (stageFilter && stageFilter !== 'all') {
       result = result.filter(lead => matchesLeadPreviewStage(lead, stageFilter));
     }
 

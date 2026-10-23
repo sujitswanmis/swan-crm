@@ -8,6 +8,7 @@ import { createClient } from '@/utils/supabase/client';
 import { normalizeIndianPhoneNumber } from '@/app/api/plivo/phone-number';
 import { incomingMatchesOutboundRoom, shouldAutoAnswerOutbound } from '@/app/api/plivo/outbound-intent';
 import { createIncomingCallGuard, incomingCallUuid } from '@/lib/softphoneIncomingCall';
+import { useSoftphoneContacts } from './useSoftphoneContacts';
 import styles from './Softphone.module.css';
 
 // Web Audio API tone generator for instant audio cues
@@ -146,7 +147,7 @@ if (typeof window !== 'undefined') {
   window.__crm_stop_all_ringing = (room) => globalRingController.stop(room);
 }
 
-const SOFTPHONE_VERSION = 'v2.7';
+const SOFTPHONE_VERSION = 'v2.9';
 
 function readCachedEndpointId(userId, reference) {
   try {
@@ -542,6 +543,10 @@ export default function GlobalSoftphoneWidget({ userId }) {
   const [profileLoad, setProfileLoad] = useState(null);
   const [profileReloadAttempt, setProfileReloadAttempt] = useState(0);
   const profileLoadState = profileLoad?.userId === userId ? profileLoad.status : 'loading';
+  const contactFor = useSoftphoneContacts(agentData?.id ? userId : null, [
+    incomingCall?.callerNumber, activeSession?.customer_number, optimisticCall?.customerNumber,
+    activeCall?.direction === 'inbound' ? activeCall.remote : null
+  ], agentData?.id || '');
   const assignedEndpointKey = String(agentData?.plivo_endpoint_key || '').trim();
   const endpointReference = JSON.stringify([userId, agentData?.id, assignedEndpointKey, agentData?.plivo_username, agentData?.plivo_sip_uri]);
   const displayEndpointId = /^[0-9]+$/.test(assignedEndpointKey)
@@ -1254,26 +1259,8 @@ export default function GlobalSoftphoneWidget({ userId }) {
           setIncomingCall({ callerName, callerNumber, leadName, leadCompany, leadId, extraHeaders, callInfo });
           setIsMinimized(false);
 
-          // 2. If not in extraHeaders, perform fast database lookup by 10-digit number
-          if (!leadName && !leadCompany) {
-            const cleanDigits = (callerName || '').replace(/\D/g, '').slice(-10);
-            if (cleanDigits.length >= 10) {
-              try {
-                const sbClient = createClient();
-                const { data: leads } = await sbClient
-                  .from('leads')
-                  .select('id, name, company')
-                  .or(`phone.ilike.%${cleanDigits}%,business_contact_1.ilike.%${cleanDigits}%,business_contact_2.ilike.%${cleanDigits}%,cp1_mobile_2.ilike.%${cleanDigits}%`)
-                  .limit(1);
-
-                if (leads && leads.length > 0) {
-                  leadName = leads[0].name || '';
-                  leadCompany = leads[0].company || '';
-                  leadId = leads[0].id || '';
-                }
-              } catch (err) {}
-            }
-          }
+          // Optional names are resolved separately by useSoftphoneContacts,
+          // using the authenticated tenant instead of an unscoped browser query.
 
           if (plivoClientRef.current !== client || !guard.isCurrent(ticket)) {
             if (guard.current() === ticket) {
@@ -1810,25 +1797,18 @@ export default function GlobalSoftphoneWidget({ userId }) {
 
               {/* Lead Name / Identifier */}
               <div className={styles.incomingName}>
-                {incomingCall.leadName || incomingCall.leadCompany || 'Customer'}
+                {contactFor(incomingCall.callerNumber).name}
               </div>
 
-              {/* Company Name if available */}
-              {incomingCall.leadCompany && incomingCall.leadName && (
-                <div className={styles.incomingCompany}>
-                  {incomingCall.leadCompany}
-                </div>
-              )}
-
-              {/* Status Badge: Existing Lead vs New Customer */}
+              {/* Contact metadata is verified within the current tenant. */}
               <div style={{ marginBottom: '0.5rem' }}>
-                {(incomingCall.leadName || incomingCall.leadCompany) ? (
+                {contactFor(incomingCall.callerNumber).source ? (
                   <span className={styles.leadBadge}>
-                    ✓ Existing CRM Lead
+                    ✓ Known Contact
                   </span>
                 ) : (
                   <span className={styles.leadBadge}>
-                    New Customer
+                    UnKnow Person
                   </span>
                 )}
               </div>
@@ -1926,8 +1906,11 @@ export default function GlobalSoftphoneWidget({ userId }) {
               </div>
 
               {/* Target Number */}
+              <div className={styles.incomingName}>
+                {contactFor(optimisticCall?.customerNumber || activeSession?.customer_number || activeCall?.remote).name}
+              </div>
               <div className={styles.directNumber}>
-                +91 {optimisticCall?.customerNumber || activeSession?.customer_number?.replace(/[^0-9]/g, '').slice(-10) || 'Customer'}
+                +91 {String(optimisticCall?.customerNumber || activeSession?.customer_number || activeCall?.remote || '').replace(/[^0-9]/g, '').slice(-10) || 'Customer'}
               </div>
 
               <div className={styles.duration}>
@@ -1958,7 +1941,8 @@ export default function GlobalSoftphoneWidget({ userId }) {
           {/* Call Center Active Session Panel (Merge, Mute Participants, etc.) */}
           {activeSession && activeSession.status !== 'ended' && (
             <div>
-              <ActiveCallPanel session={activeSession} agentData={agentData} onCallEnded={handleActivePanelCallEnded}
+              <ActiveCallPanel session={activeSession} agentData={agentData} userId={userId} onCallEnded={handleActivePanelCallEnded}
+                durationLabel={formatDuration(callDuration)}
                 onToggleMute={activeCall && plivoClient && activeSession.calling_mode === 'browser_webrtc' ? toggleMute : undefined}
                 microphoneMuted={isMuted} shortcutControlsRef={callShortcutControlsRef} />
             </div>

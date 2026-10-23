@@ -5402,8 +5402,8 @@ export default function CRMContainer({
             </button>
             
             {activeTab !== 'ai' && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0, flex: 1, overflow: 'hidden' }}>
-                <h1 suppressHydrationWarning style={{ fontSize: '0.98rem', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', margin: 0, minWidth: 0, flex: 1, letterSpacing: '-0.015em' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0, flex: '0 1 auto', overflow: 'hidden' }}>
+                <h1 suppressHydrationWarning style={{ fontSize: '0.96rem', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', margin: 0, minWidth: 0, flex: '0 1 auto', letterSpacing: '-0.015em' }}>
                   {activeTab === 'dashboard' && 'Analytics Dashboard'}
                   {activeTab === 'leads' && (
                     leadsFilterStage === 'hourly_work' 
@@ -5432,6 +5432,9 @@ export default function CRMContainer({
                   {activeTab === 'calladmin' && 'Call Admin'}
                   {activeTab === 'aicallcenter' && 'AI Call Center'}
                   {activeTab === 'team' && 'Team Management'}
+                  {activeTab === 'user_management_new' && 'User Management'}
+                  {activeTab === 'client_registration' && 'Client Registration'}
+                  {activeTab === 'client_report' && 'Client Report'}
                   {activeTab === 'workplace' && (
                     workflowSubTab === 'tracker'
                       ? 'Workflow Builder • Live Working Tracker'
@@ -5464,12 +5467,15 @@ export default function CRMContainer({
                     configMasterSubTab === 'offline_rule' ? '⚙️ Config Master — Offline Rules & Sync Policy' :
                     '⚙️ Config Master — Public User Management'
                   )}
+                  {!['dashboard', 'leads', 'orders', 'mrp', 'mrp_against', 'recruiter', 'joining', 'attendance', 'checklist', 'delegation', 'registration', 'report', 'aiadmin', 'aiknowledgebase', 'callcenter', 'calladmin', 'aicallcenter', 'team', 'user_management_new', 'client_registration', 'client_report', 'workplace', 'public_users', 'party', 'location_territory', 'location_master', 'whatsapp_official', 'whatsapp_unofficial', 'sms_config', 'rcs_config', 'email_config', 'admin_message_config', 'settings', 'saas_master', 'saas_studio', 'config_master'].includes(activeTab) && (
+                    activeTab ? activeTab.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) : 'Dashboard'
+                  )}
                 </h1>
               </div>
             )}
 
             {activeTab !== 'ai' && (
-              <div className="desktop-only" style={{ width: '1px', height: '18px', backgroundColor: 'var(--border-light)', margin: '0 0.4rem' }}></div>
+              <div className="desktop-only" style={{ width: '1px', height: '18px', backgroundColor: 'var(--border-light)', margin: '0 0.4rem', flexShrink: 0 }}></div>
             )}
 
             {/* Desktop Intelligent Global Spotlight Search Trigger */}
@@ -5480,11 +5486,11 @@ export default function CRMContainer({
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '0.55rem',
+                gap: '0.45rem',
                 backgroundColor: 'var(--bg-surface)',
                 border: '1px solid var(--border-light)',
                 borderRadius: '10px',
-                padding: '0.38rem 0.75rem',
+                padding: '0.36rem 0.65rem',
                 cursor: 'pointer',
                 color: 'var(--text-secondary)',
                 transition: 'all 0.18s cubic-bezier(0.16, 1, 0.3, 1)',
@@ -5503,20 +5509,21 @@ export default function CRMContainer({
               }}
               title="Quick Spotlight Search (Ctrl + K)"
             >
-              <Search size={14} style={{ color: 'var(--accent-color)' }} />
-              <span className="desktop-only-text" style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
-                Type <strong style={{ color: 'var(--text-primary)', fontWeight: 600 }}>/</strong> or search CRM...
+              <Search size={14} style={{ color: 'var(--accent-color)', flexShrink: 0 }} />
+              <span className="desktop-only-text" style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', fontWeight: 500, whiteSpace: 'nowrap' }}>
+                Search CRM...
               </span>
               <kbd className="desktop-only" style={{
                 fontSize: '0.68rem',
-                padding: '0.12rem 0.4rem',
+                padding: '0.12rem 0.38rem',
                 borderRadius: '6px',
                 background: 'var(--bg-primary)',
                 border: '1px solid var(--border-light)',
                 color: 'var(--text-secondary)',
                 fontWeight: 700,
                 lineHeight: 1,
-                boxShadow: '0 1px 1px rgba(0,0,0,0.05)'
+                boxShadow: '0 1px 1px rgba(0,0,0,0.05)',
+                flexShrink: 0
               }}>
                 ⌘K
               </kbd>
@@ -5570,12 +5577,12 @@ export default function CRMContainer({
 
             {/* Admin Company Filter */}
             {(userRole === 'admin' || userRole === 'Admin') && (
-              <div className="desktop-only" style={{ display: 'flex', alignItems: 'center', marginRight: '0.25rem' }}>
+              <div className="desktop-only" style={{ display: 'flex', alignItems: 'center', marginRight: '0.25rem', flexShrink: 0 }}>
                 <select 
                   value={adminCompanyFilter} 
                   onChange={(e) => setAdminCompanyFilter(e.target.value)}
-                  title="Filter by Company"
-                  style={{ padding: '0.4rem 0.6rem', borderRadius: '8px', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', color: 'var(--text-primary)', fontSize: '0.82rem', outline: 'none', cursor: 'pointer' }}
+                  title="Filter by Company: NSMLR & NSTLP"
+                  style={{ padding: '0.38rem 0.65rem', borderRadius: '8px', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: 600, outline: 'none', cursor: 'pointer', flexShrink: 0 }}
                 >
                   {(() => {
                     if (!isSwanWorkspace && userCompany) {
@@ -5583,7 +5590,7 @@ export default function CRMContainer({
                     }
                     return (
                       <>
-                        <option value="All">All Companies (NSMLR & NSTLP)</option>
+                        <option value="All">🏢 All Companies</option>
                         <option value="NSMLR">NSMLR</option>
                         <option value="NSTLP">NSTLP</option>
                       </>

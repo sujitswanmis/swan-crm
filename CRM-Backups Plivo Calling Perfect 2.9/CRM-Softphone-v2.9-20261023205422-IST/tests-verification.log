@@ -1,0 +1,832 @@
+TAP version 13
+# Subtest: missing migration or unreachable public webhook leaves the original call untouched
+ok 1 - missing migration or unreachable public webhook leaves the original call untouched
+  ---
+  duration_ms: 15.1671
+  type: 'test'
+  ...
+# Subtest: Add Call holds the same original caller, uses real ringback, and never auto-merges on pickup
+ok 2 - Add Call holds the same original caller, uses real ringback, and never auto-merges on pickup
+  ---
+  duration_ms: 5.886
+  type: 'test'
+  ...
+# Subtest: ringing callback keeps the first caller held and only explicit Cancel resumes them
+ok 3 - ringing callback keeps the first caller held and only explicit Cancel resumes them
+  ---
+  duration_ms: 3.3723
+  type: 'test'
+  ...
+# Subtest: busy, no-answer, and media-anchoring rejection resume the caller without ending the session
+ok 4 - busy, no-answer, and media-anchoring rejection resume the caller without ending the session
+  ---
+  duration_ms: 6.4486
+  type: 'test'
+  ...
+# Subtest: Cancel after pickup removes only the guest before unholding the original caller
+ok 5 - Cancel after pickup removes only the guest before unholding the original caller
+  ---
+  duration_ms: 3.1209
+  type: 'test'
+  ...
+# Subtest: duplicate Add Call cannot place a second outbound call
+ok 6 - duplicate Add Call cannot place a second outbound call
+  ---
+  duration_ms: 1.9084
+  type: 'test'
+  ...
+# Subtest: Cancel during an in-flight invite keeps caller held until request cancellation is confirmed
+ok 7 - Cancel during an in-flight invite keeps caller held until request cancellation is confirmed
+  ---
+  duration_ms: 2.2087
+  type: 'test'
+  ...
+# Subtest: unknown invite IDs and failed cancellation never expose the original caller
+ok 8 - unknown invite IDs and failed cancellation never expose the original caller
+  ---
+  duration_ms: 5.6621
+  type: 'test'
+  ...
+# Subtest: very fast terminal callback before invite response does not reverse completed recovery
+ok 9 - very fast terminal callback before invite response does not reverse completed recovery
+  ---
+  duration_ms: 2.3732
+  type: 'test'
+  ...
+# Subtest: late callbacks from a previous attempt cannot merge, cancel, or unhold a new consultation
+ok 10 - late callbacks from a previous attempt cannot merge, cancel, or unhold a new consultation
+  ---
+  duration_ms: 3.5332
+  type: 'test'
+  ...
+# Subtest: subsequent Add Call preserves previously merged members and manual holds
+ok 11 - subsequent Add Call preserves previously merged members and manual holds
+  ---
+  duration_ms: 3.2589
+  type: 'test'
+  ...
+# Subtest: unconfirmed hold prevents dialing and transfer rejection leaves single-call state intact
+ok 12 - unconfirmed hold prevents dialing and transfer rejection leaves single-call state intact
+  ---
+  duration_ms: 3.6345
+  type: 'test'
+  ...
+# Subtest: failed/unconfirmed Merge re-isolates callers and allows Cancel recovery
+ok 13 - failed/unconfirmed Merge re-isolates callers and allows Cancel recovery
+  ---
+  duration_ms: 4.4503
+  type: 'test'
+  ...
+# Subtest: resume must be observed at provider before reporting an active call
+ok 14 - resume must be observed at provider before reporting an active call
+  ---
+  duration_ms: 2.2584
+  type: 'test'
+  ...
+# Subtest: owner checks and mode/role/attempt-bound signatures reject unrelated access
+ok 15 - owner checks and mode/role/attempt-bound signatures reject unrelated access
+  ---
+  duration_ms: 14.7345
+  type: 'test'
+  ...
+# Subtest: MPC XML holds customer, preserves agent, escapes signed URLs, and keeps private tokens out of UI
+ok 16 - MPC XML holds customer, preserves agent, escapes signed URLs, and keeps private tokens out of UI
+  ---
+  duration_ms: 14.4756
+  type: 'test'
+  ...
+# Subtest: original Dial completion during transfer is not treated as an MPC hangup
+ok 17 - original Dial completion during transfer is not treated as an MPC hangup
+  ---
+  duration_ms: 1.8931
+  type: 'test'
+  ...
+# Subtest: End Call targets this session only and a failed session write remains retryable
+ok 18 - End Call targets this session only and a failed session write remains retryable
+  ---
+  duration_ms: 2.4742
+  type: 'test'
+  ...
+# Subtest: ordinary call status and Dial outcomes do not access consultation storage or MPC APIs
+ok 19 - ordinary call status and Dial outcomes do not access consultation storage or MPC APIs
+  ---
+  duration_ms: 41.5063
+  type: 'test'
+  ...
+# Subtest: installed Plivo SDK accepts native MPC method signatures and request parameters
+ok 20 - installed Plivo SDK accepts native MPC method signatures and request parameters
+  ---
+  duration_ms: 83.2695
+  type: 'test'
+  ...
+# Subtest: overlapping Cancel workers cannot resume a caller twice or unhold a later attempt
+ok 21 - overlapping Cancel workers cannot resume a caller twice or unhold a later attempt
+  ---
+  duration_ms: 3.2294
+  type: 'test'
+  ...
+# Subtest: native session status preserves connected and ended response fields used by the softphone
+ok 22 - native session status preserves connected and ended response fields used by the softphone
+  ---
+  duration_ms: 4.2407
+  type: 'test'
+  ...
+# Subtest: signed answer webhook rejects the wrong call and transient failure returns retry XML
+ok 23 - signed answer webhook rejects the wrong call and transient failure returns retry XML
+  ---
+  duration_ms: 8.7763
+  type: 'test'
+  ...
+# Subtest: transient MPC storage failure in Dial action does not hang up the transferred agent
+ok 24 - transient MPC storage failure in Dial action does not hang up the transferred agent
+  ---
+  duration_ms: 2.8692
+  type: 'test'
+  ...
+# Subtest: temporary provider failure never ends a native call; a confirmed missing active MPC is reconciled
+ok 25 - temporary provider failure never ends a native call; a confirmed missing active MPC is reconciled
+  ---
+  duration_ms: 2.2122
+  type: 'test'
+  ...
+# Subtest: localhost cannot mix old production callbacks with a new consultation tunnel
+ok 26 - localhost cannot mix old production callbacks with a new consultation tunnel
+  ---
+  duration_ms: 1.393
+  type: 'test'
+  ...
+# Subtest: provider history with exitTime is excluded from live members and cannot block caller resume
+ok 27 - provider history with exitTime is excluded from live members and cannot block caller resume
+  ---
+  duration_ms: 2.2756
+  type: 'test'
+  ...
+# Subtest: guest exit between listing and kick is reconciled before resuming the original caller
+ok 28 - guest exit between listing and kick is reconciled before resuming the original caller
+  ---
+  duration_ms: 2.3691
+  type: 'test'
+  ...
+# Subtest: an unrelated kick failure keeps the original caller isolated
+ok 29 - an unrelated kick failure keeps the original caller isolated
+  ---
+  duration_ms: 1.8451
+  type: 'test'
+  ...
+# Subtest: participant views expose full customer/guest phone numbers separately from role labels
+ok 30 - participant views expose full customer/guest phone numbers separately from role labels
+  ---
+  duration_ms: 2.7886
+  type: 'test'
+  ...
+# Subtest: initial XML and later invites use the same hold callback for both participant roles
+ok 31 - initial XML and later invites use the same hold callback for both participant roles
+  ---
+  duration_ms: 2.9812
+  type: 'test'
+  ...
+# Subtest: hold audio is a small non-silent mono PCM WAV suitable for telephone playback
+ok 32 - hold audio is a small non-silent mono PCM WAV suitable for telephone playback
+  ---
+  duration_ms: 3.3195
+  type: 'test'
+  ...
+# Subtest: manual Hold promotes only the two connected callers and never dials a third person
+ok 33 - manual Hold promotes only the two connected callers and never dials a third person
+  ---
+  duration_ms: 1.9061
+  type: 'test'
+  ...
+# Subtest: mobile-agent Mute uses the same controlled promotion and resumes the customer after setup
+ok 34 - mobile-agent Mute uses the same controlled promotion and resumes the customer after setup
+  ---
+  duration_ms: 1.5636
+  type: 'test'
+  ...
+# Subtest: Add Call still holds, consults privately, and explicitly merges after manual controls were prepared
+ok 35 - Add Call still holds, consults privately, and explicitly merges after manual controls were prepared
+  ---
+  duration_ms: 3.0703
+  type: 'test'
+  ...
+# Subtest: manual controls validate role/action and public readiness before touching a live call
+ok 36 - manual controls validate role/action and public readiness before touching a live call
+  ---
+  duration_ms: 3.9819
+  type: 'test'
+  ...
+# Subtest: rejected manual-control transfer leaves no guest request and restores the direct-call marker
+ok 37 - rejected manual-control transfer leaves no guest request and restores the direct-call marker
+  ---
+  duration_ms: 1.5684
+  type: 'test'
+  ...
+# Subtest: unconfirmed manual Hold resumes the customer and leaves a recoverable call
+ok 38 - unconfirmed manual Hold resumes the customer and leaves a recoverable call
+  ---
+  duration_ms: 1.9863
+  type: 'test'
+  ...
+# Subtest: manual Hold waits for delayed original callers beyond the old Add Call readiness window
+ok 39 - manual Hold waits for delayed original callers beyond the old Add Call readiness window
+  ---
+  duration_ms: 214.1804
+  type: 'test'
+  ...
+# Subtest: manual-control timeout is bounded, mentions no third person, and permits recovery
+ok 40 - manual-control timeout is bounded, mentions no third person, and permits recovery
+  ---
+  duration_ms: 454.2446
+  type: 'test'
+  ...
+# Subtest: a confirmed manual-control retry clears old setup errors while an unconfirmed retry retains them
+ok 41 - a confirmed manual-control retry clears old setup errors while an unconfirmed retry retains them
+  ---
+  duration_ms: 2.0588
+  type: 'test'
+  ...
+# Subtest: connected call duration is visible beside the call status and remains visible during Hold
+ok 42 - connected call duration is visible beside the call status and remains visible during Hold
+  ---
+  duration_ms: 46.4727
+  type: 'test'
+  ...
+# Subtest: customer names appear in the call header and pending/live participants while numbers remain visible
+ok 43 - customer names appear in the call header and pending/live participants while numbers remain visible
+  ---
+  duration_ms: 4.6807
+  type: 'test'
+  ...
+# Subtest: normal agent_leg/customer_leg calls render enabled Mute, Hold and End controls before participants
+ok 44 - normal agent_leg/customer_leg calls render enabled Mute, Hold and End controls before participants
+  ---
+  duration_ms: 3.6888
+  type: 'test'
+  ...
+# Subtest: Merge is visible above participants while ringing and enables in consulting even without a busy flag
+ok 45 - Merge is visible above participants while ringing and enables in consulting even without a busy flag
+  ---
+  duration_ms: 2.8079
+  type: 'test'
+  ...
+# Subtest: End Call does not report success when the server rejects hangup
+ok 46 - End Call does not report success when the server rejects hangup
+  ---
+  duration_ms: 1.5997
+  type: 'test'
+  ...
+# Subtest: normal two-person calls end directly, including calls promoted only for manual Hold
+ok 47 - normal two-person calls end directly, including calls promoted only for manual Hold
+  ---
+  duration_ms: 2.8105
+  type: 'test'
+  ...
+# Subtest: merged calls require End All Calls confirmation and Cancel keeps every participant connected
+ok 48 - merged calls require End All Calls confirmation and Cancel keeps every participant connected
+  ---
+  duration_ms: 3.3001
+  type: 'test'
+  ...
+# Subtest: keyboard registration uses the same Mute/Hold/End guards and never bypasses a conference confirmation
+ok 49 - keyboard registration uses the same Mute/Hold/End guards and never bypasses a conference confirmation
+  ---
+  duration_ms: 1.7241
+  type: 'test'
+  ...
+# Subtest: the existing softphone timer reaches the single active panel and updates while docked or minimized
+ok 50 - the existing softphone timer reaches the single active panel and updates while docked or minimized
+  ---
+  duration_ms: 15.5326
+  type: 'test'
+  ...
+# Subtest: Ctrl+M/H/E use the active call controls, suppress defaults, and ignore held-key repeats
+ok 51 - Ctrl+M/H/E use the active call controls, suppress defaults, and ignore held-key repeats
+  ---
+  duration_ms: 1.4104
+  type: 'test'
+  ...
+# Subtest: shortcuts preserve disabled controls, modal confirmation, unrelated keys and idle browser defaults
+ok 52 - shortcuts preserve disabled controls, modal confirmation, unrelated keys and idle browser defaults
+  ---
+  duration_ms: 3.2985
+  type: 'test'
+  ...
+# Subtest: docked/minimized calls retain controls and Ctrl+E reveals the required conference confirmation
+ok 53 - docked/minimized calls retain controls and Ctrl+E reveals the required conference confirmation
+  ---
+  duration_ms: 1.3119
+  type: 'test'
+  ...
+# Subtest: calling method has only Browser and Via Mobile toggles and shows the agent number only for Mobile
+ok 54 - calling method has only Browser and Via Mobile toggles and shows the agent number only for Mobile
+  ---
+  duration_ms: 2.428
+  type: 'test'
+  ...
+1..54
+# tests 54
+# suites 0
+# pass 54
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1046.338
+TAP version 13
+# Subtest: a real ringing invite is answered once by its exact UUID, including double-clicks
+ok 1 - a real ringing invite is answered once by its exact UUID, including double-clicks
+  ---
+  duration_ms: 1.4703
+  type: 'test'
+  ...
+# Subtest: slow lead lookup cannot recreate a cancelled invite even if the SDK list briefly lags
+ok 2 - slow lead lookup cannot recreate a cancelled invite even if the SDK list briefly lags
+  ---
+  duration_ms: 0.7727
+  type: 'test'
+  ...
+# Subtest: late metadata and cancellation for one call cannot overwrite a newer invitation
+ok 3 - late metadata and cancellation for one call cannot overwrite a newer invitation
+  ---
+  duration_ms: 0.2161
+  type: 'test'
+  ...
+# Subtest: a popup whose invite disappeared never calls SDK answer or creates a connected result
+ok 4 - a popup whose invite disappeared never calls SDK answer or creates a connected result
+  ---
+  duration_ms: 0.107
+  type: 'test'
+  ...
+# Subtest: answered, rejected, ignored, cancelled, failed and ended SDK calls are not answerable
+ok 5 - answered, rejected, ignored, cancelled, failed and ended SDK calls are not answerable
+  ---
+  duration_ms: 0.1785
+  type: 'test'
+  ...
+# Subtest: SDK false/throw results are failures and never fall back to answering another call
+ok 6 - SDK false/throw results are failures and never fall back to answering another call
+  ---
+  duration_ms: 0.2325
+  type: 'test'
+  ...
+# Subtest: old SDK instances and their cleanup cannot clear invitations owned by the replacement client
+ok 7 - old SDK instances and their cleanup cannot clear invitations owned by the replacement client
+  ---
+  duration_ms: 0.1552
+  type: 'test'
+  ...
+# Subtest: an invalid or absent UUID never falls back to the most recent ringing call
+ok 8 - an invalid or absent UUID never falls back to the most recent ringing call
+  ---
+  duration_ms: 0.0783
+  type: 'test'
+  ...
+# Subtest: unavailable SDK inventory fails safely and a subsequent new call still works
+ok 9 - unavailable SDK inventory fails safely and a subsequent new call still works
+  ---
+  duration_ms: 0.2508
+  type: 'test'
+  ...
+1..9
+# tests 9
+# suites 0
+# pass 9
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 11.3456
+TAP version 13
+# Subtest: provider codes distinguish busy, invalid, unavailable and timeout
+ok 1 - provider codes distinguish busy, invalid, unavailable and timeout
+  ---
+  duration_ms: 0.9444
+  type: 'test'
+  ...
+# Subtest: outbound Dial passes real carrier audio and reports final status
+ok 2 - outbound Dial passes real carrier audio and reports final status
+  ---
+  duration_ms: 0.5233
+  type: 'test'
+  ...
+# Subtest: outbound auto-answer requires the active room and provider call marker
+ok 3 - outbound auto-answer requires the active room and provider call marker
+  ---
+  duration_ms: 0.2223
+  type: 'test'
+  ...
+# Subtest: ambiguous and app-cancelled calls do not claim the phone was switched off
+ok 4 - ambiguous and app-cancelled calls do not claim the phone was switched off
+  ---
+  duration_ms: 0.2084
+  type: 'test'
+  ...
+# Subtest: a failed Dial with an unknown caller ID is a setup error, not a switched-off customer
+ok 5 - a failed Dial with an unknown caller ID is a setup error, not a switched-off customer
+  ---
+  duration_ms: 0.1213
+  type: 'test'
+  ...
+# Subtest: known provider setup codes retain their meaning even when the destination never rang
+ok 6 - known provider setup codes retain their meaning even when the destination never rang
+  ---
+  duration_ms: 0.1121
+  type: 'test'
+  ...
+# Subtest: outbound customer number accepts Indian mobile and landline formats
+ok 7 - outbound customer number accepts Indian mobile and landline formats
+  ---
+  duration_ms: 0.1416
+  type: 'test'
+  ...
+1..7
+# tests 7
+# suites 0
+# pass 7
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 9.0681
+TAP version 13
+# Subtest: tenant-aware schema passes the caller company and tenant ID to the credential resolver
+ok 1 - tenant-aware schema passes the caller company and tenant ID to the credential resolver
+  ---
+  duration_ms: 44.0133
+  type: 'test'
+  ...
+# Subtest: missing tenant_id retries company lookup and retains the original direct-call URL and SIP marker
+ok 2 - missing tenant_id retries company lookup and retains the original direct-call URL and SIP marker
+  ---
+  duration_ms: 1.2981
+  type: 'test'
+  ...
+# Subtest: different legacy companies remain separate inputs to tenant credential selection
+ok 3 - different legacy companies remain separate inputs to tenant credential selection
+  ---
+  duration_ms: 1.8897
+  type: 'test'
+  ...
+# Subtest: unrelated workspace lookup errors fail before credentials, sessions or provider requests
+ok 4 - unrelated workspace lookup errors fail before credentials, sessions or provider requests
+  ---
+  duration_ms: 2.438
+  type: 'test'
+  ...
+# Subtest: a failed legacy lookup cannot silently dial through platform credentials
+ok 5 - a failed legacy lookup cannot silently dial through platform credentials
+  ---
+  duration_ms: 0.8193
+  type: 'test'
+  ...
+# Subtest: missing profile fails before selecting any calling account
+ok 6 - missing profile fails before selecting any calling account
+  ---
+  duration_ms: 0.6816
+  type: 'test'
+  ...
+# Subtest: an existing legacy platform profile retains its empty-company default mapping
+ok 7 - an existing legacy platform profile retains its empty-company default mapping
+  ---
+  duration_ms: 0.987
+  type: 'test'
+  ...
+# Subtest: assigned caller ID and provider failure cleanup remain intact
+ok 8 - assigned caller ID and provider failure cleanup remain intact
+  ---
+  duration_ms: 1.1263
+  type: 'test'
+  ...
+# Subtest: unauthenticated requests cannot resolve credentials or create sessions
+ok 9 - unauthenticated requests cannot resolve credentials or create sessions
+  ---
+  duration_ms: 0.878
+  type: 'test'
+  ...
+1..9
+# tests 9
+# suites 0
+# pass 9
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 61.7297
+TAP version 13
+# Subtest: customer Dial uses tenant caller ID with a tenant-aware profile schema
+ok 1 - customer Dial uses tenant caller ID with a tenant-aware profile schema
+  ---
+  duration_ms: 46.1485
+  type: 'test'
+  ...
+# Subtest: legacy schema retains tenant caller ID, real carrier ringback, recording and Dial callbacks
+ok 2 - legacy schema retains tenant caller ID, real carrier ringback, recording and Dial callbacks
+  ---
+  duration_ms: 1.2347
+  type: 'test'
+  ...
+# Subtest: different legacy tenants receive their own customer-leg caller IDs
+ok 3 - different legacy tenants receive their own customer-leg caller IDs
+  ---
+  duration_ms: 1.9473
+  type: 'test'
+  ...
+# Subtest: an explicitly assigned agent caller ID retains priority
+ok 4 - an explicitly assigned agent caller ID retains priority
+  ---
+  duration_ms: 2.0097
+  type: 'test'
+  ...
+# Subtest: workspace lookup failures never dial a customer with the platform fallback caller ID
+ok 5 - workspace lookup failures never dial a customer with the platform fallback caller ID
+  ---
+  duration_ms: 3.6077
+  type: 'test'
+  ...
+# Subtest: existing legacy profiles with no company retain the platform default caller ID
+ok 6 - existing legacy profiles with no company retain the platform default caller ID
+  ---
+  duration_ms: 1.287
+  type: 'test'
+  ...
+1..6
+# tests 6
+# suites 0
+# pass 6
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 64.5036
+TAP version 13
+# Subtest: two employees can share a caller ID without altering legacy agent codes or credentials
+ok 1 - two employees can share a caller ID without altering legacy agent codes or credentials
+  ---
+  duration_ms: 39.0083
+  type: 'test'
+  ...
+# Subtest: workspace default clears the dedicated override and failures are reported
+ok 2 - workspace default clears the dedicated override and failures are reported
+  ---
+  duration_ms: 1.5864
+  type: 'test'
+  ...
+# Subtest: missing migration gives a precise error; unrelated numbers and foreign tenants cannot be changed
+ok 3 - missing migration gives a precise error; unrelated numbers and foreign tenants cannot be changed
+  ---
+  duration_ms: 1.6172
+  type: 'test'
+  ...
+# Subtest: unauthenticated and view-only users cannot save caller IDs or revoke access
+ok 4 - unauthenticated and view-only users cannot save caller IDs or revoke access
+  ---
+  duration_ms: 1.3354
+  type: 'test'
+  ...
+# Subtest: revoke preserves call history and SIP settings; re-authorize restores the same profile
+ok 5 - revoke preserves call history and SIP settings; re-authorize restores the same profile
+  ---
+  duration_ms: 1.7028
+  type: 'test'
+  ...
+# Subtest: active calls, busy agents and full seat allocations prevent unsafe changes
+ok 6 - active calls, busy agents and full seat allocations prevent unsafe changes
+  ---
+  duration_ms: 4.6184
+  type: 'test'
+  ...
+# Subtest: self-activation cannot bypass an administrator revocation
+ok 7 - self-activation cannot bypass an administrator revocation
+  ---
+  duration_ms: 0.7429
+  type: 'test'
+  ...
+# Subtest: calling seats count only authorized employees and support the legacy user schema
+ok 8 - calling seats count only authorized employees and support the legacy user schema
+  ---
+  duration_ms: 2.1132
+  type: 'test'
+  ...
+# Subtest: revoked agents cannot obtain SIP credentials or create outbound sessions
+ok 9 - revoked agents cannot obtain SIP credentials or create outbound sessions
+  ---
+  duration_ms: 5.0353
+  type: 'test'
+  ...
+# Subtest: new caller ID reaches both outbound legs; clearing it uses workspace default despite a legacy code
+ok 10 - new caller ID reaches both outbound legs; clearing it uses workspace default despite a legacy code
+  ---
+  duration_ms: 5.6395
+  type: 'test'
+  ...
+# Subtest: pending migration retains working legacy caller IDs on both outbound legs
+ok 11 - pending migration retains working legacy caller IDs on both outbound legs
+  ---
+  duration_ms: 2.1097
+  type: 'test'
+  ...
+# Subtest: sticky inbound routing skips revoked SIP endpoints and rings an authorized employee
+ok 12 - sticky inbound routing skips revoked SIP endpoints and rings an authorized employee
+  ---
+  duration_ms: 1.9767
+  type: 'test'
+  ...
+# Subtest: agent table searches employee ID, email, SIP and caller ID without rendering system settings
+ok 13 - agent table searches employee ID, email, SIP and caller ID without rendering system settings
+  ---
+  duration_ms: 63.1103
+  type: 'test'
+  ...
+# Subtest: table header stays in a bounded scroll region and retains every column resizer
+ok 14 - table header stays in a bounded scroll region and retains every column resizer
+  ---
+  duration_ms: 6.0934
+  type: 'test'
+  ...
+# Subtest: caller-ID UI displays confirmed saves and actual failures instead of an unconditional tick
+ok 15 - caller-ID UI displays confirmed saves and actual failures instead of an unconditional tick
+  ---
+  duration_ms: 13.9117
+  type: 'test'
+  ...
+# Subtest: numeric endpoint IDs and registry mappings do not require a provider lookup or alter assignments
+ok 16 - numeric endpoint IDs and registry mappings do not require a provider lookup or alter assignments
+  ---
+  duration_ms: 1.3076
+  type: 'test'
+  ...
+# Subtest: legacy endpoint keys resolve by the assigned SIP username across provider pages and cache the numeric ID
+ok 17 - legacy endpoint keys resolve by the assigned SIP username across provider pages and cache the numeric ID
+  ---
+  duration_ms: 1.868
+  type: 'test'
+  ...
+# Subtest: endpoint metadata failures never return the internal key or change the calling profile
+ok 18 - endpoint metadata failures never return the internal key or change the calling profile
+  ---
+  duration_ms: 0.8372
+  type: 'test'
+  ...
+# Subtest: endpoint ID lookup requires authentication and respects employee workspace boundaries
+ok 19 - endpoint ID lookup requires authentication and respects employee workspace boundaries
+  ---
+  duration_ms: 1.1843
+  type: 'test'
+  ...
+# Subtest: softphone displays the actual numeric endpoint ID without changing the online connection or calling toggle
+ok 20 - softphone displays the actual numeric endpoint ID without changing the online connection or calling toggle
+  ---
+  duration_ms: 13.2391
+  type: 'test'
+  ...
+# Subtest: an old endpoint lookup cannot change the label after the assignment changes or the widget unmounts
+ok 21 - an old endpoint lookup cannot change the label after the assignment changes or the widget unmounts
+  ---
+  duration_ms: 3.3649
+  type: 'test'
+  ...
+# Subtest: incoming and connecting caller cards display verified names instead of unverified SIP header names
+ok 22 - incoming and connecting caller cards display verified names instead of unverified SIP header names
+  ---
+  duration_ms: 3.9471
+  type: 'test'
+  ...
+# Subtest: endpoint metadata is reused immediately after refresh only for the same user and SIP assignment
+ok 23 - endpoint metadata is reused immediately after refresh only for the same user and SIP assignment
+  ---
+  duration_ms: 13.2508
+  type: 'test'
+  ...
+# Subtest: blocked storage, HTTP errors and malformed metadata leave dialing state intact without caching failures
+ok 24 - blocked storage, HTTP errors and malformed metadata leave dialing state intact without caching failures
+  ---
+  duration_ms: 6.1377
+  type: 'test'
+  ...
+# Subtest: the softphone launcher renders before startup data arrives and loads the profile outside the action queue
+ok 25 - the softphone launcher renders before startup data arrives and loads the profile outside the action queue
+  ---
+  duration_ms: 1.9963
+  type: 'test'
+  ...
+# Subtest: startup failures show retry, non-agents disappear, and canceled profile requests cannot restore old credentials
+ok 26 - startup failures show retry, non-agents disappear, and canceled profile requests cannot restore old credentials
+  ---
+  duration_ms: 3.7995
+  type: 'test'
+  ...
+# Subtest: independent profile reads enforce authentication and tenant scope while preserving the existing profile API
+ok 27 - independent profile reads enforce authentication and tenant scope while preserving the existing profile API
+  ---
+  duration_ms: 2.9513
+  type: 'test'
+  ...
+# Subtest: startup GET routes return private non-cacheable responses and retain server-side access checks
+ok 28 - startup GET routes return private non-cacheable responses and retain server-side access checks
+  ---
+  duration_ms: 7.2643
+  type: 'test'
+  ...
+1..28
+# tests 28
+# suites 0
+# pass 28
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 217.1887
+TAP version 13
+# Subtest: lookup finds tenant lead, employee and recruiter names while returning only display metadata
+ok 1 - lookup finds tenant lead, employee and recruiter names while returning only display metadata
+  ---
+  duration_ms: 46.4335
+  type: 'test'
+  ...
+# Subtest: contact-person numbers select the matching name and formatted/alternate user phones normalize completely
+ok 2 - contact-person numbers select the matching name and formatted/alternate user phones normalize completely
+  ---
+  duration_ms: 2.4851
+  type: 'test'
+  ...
+# Subtest: Lead Data business name takes priority for CP1, CP2 and CP3; a blank business falls back to the matching person
+ok 3 - Lead Data business name takes priority for CP1, CP2 and CP3; a blank business falls back to the matching person
+  ---
+  duration_ms: 3.9866
+  type: 'test'
+  ...
+# Subtest: Party Master metadata matches CP1, CP2 and CP3, preferring the business name before contact names
+ok 4 - Party Master metadata matches CP1, CP2 and CP3, preferring the business name before contact names
+  ---
+  duration_ms: 2.4048
+  type: 'test'
+  ...
+# Subtest: Party contact children and transferred lead links respect parent tenant ownership
+ok 5 - Party contact children and transferred lead links respect parent tenant ownership
+  ---
+  duration_ms: 2.2203
+  type: 'test'
+  ...
+# Subtest: missing names, partial-number matches and names from another tenant produce the exact fallback
+ok 6 - missing names, partial-number matches and names from another tenant produce the exact fallback
+  ---
+  duration_ms: 1.3799
+  type: 'test'
+  ...
+# Subtest: authentication and employee ownership are checked before contact reads; caller-supplied workspace is ignored
+ok 7 - authentication and employee ownership are checked before contact reads; caller-supplied workspace is ignored
+  ---
+  duration_ms: 2.5652
+  type: 'test'
+  ...
+# Subtest: legacy company scoping and JSON mobile fields work without widening access after missing-column errors
+ok 8 - legacy company scoping and JSON mobile fields work without widening access after missing-column errors
+  ---
+  duration_ms: 1.7951
+  type: 'test'
+  ...
+# Subtest: verified legacy New Swan profiles resolve blank and null company rows while explicit foreign tenants remain excluded
+ok 9 - verified legacy New Swan profiles resolve blank and null company rows while explicit foreign tenants remain excluded
+  ---
+  duration_ms: 2.4121
+  type: 'test'
+  ...
+# Subtest: explicit tenant mismatches override matching company labels; untagged recruiter positions stay in Swan
+ok 10 - explicit tenant mismatches override matching company labels; untagged recruiter positions stay in Swan
+  ---
+  duration_ms: 3.3302
+  type: 'test'
+  ...
+# Subtest: bounded invalid input and unavailable data degrade gracefully without a provider or database mutation
+ok 11 - bounded invalid input and unavailable data degrade gracefully without a provider or database mutation
+  ---
+  duration_ms: 4.7847
+  type: 'test'
+  ...
+# Subtest: name enrichment is non-blocking, deduplicates concurrent reads and reuses only user-scoped short-lived cache
+ok 12 - name enrichment is non-blocking, deduplicates concurrent reads and reuses only user-scoped short-lived cache
+  ---
+  duration_ms: 7.5135
+  type: 'test'
+  ...
+# Subtest: late caller metadata cannot overwrite a new call or recreate a canceled incoming invite
+ok 13 - late caller metadata cannot overwrite a new call or recreate a canceled incoming invite
+  ---
+  duration_ms: 1.3124
+  type: 'test'
+  ...
+# Subtest: failed metadata requests do not cache failures or prevent retrying, including a synchronous transport failure
+ok 14 - failed metadata requests do not cache failures or prevent retrying, including a synchronous transport failure
+  ---
+  duration_ms: 1.6199
+  type: 'test'
+  ...
+1..14
+# tests 14
+# suites 0
+# pass 14
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 89.0681

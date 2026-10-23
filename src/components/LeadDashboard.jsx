@@ -70,26 +70,59 @@ export const HOURLY_SLOTS = [
 
 const CHART_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316', '#64748b'];
 
+// IST is UTC+5:30 = 19,800,000 milliseconds
+const IST_OFFSET_MS = 19800000;
+const IST_DATE_FORMATTER = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit'
+});
+
 // All lead date presets use the same IST calendar day on every device.
 function getLocalDateStr(d = new Date()) {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit'
-  }).format(d);
+  try {
+    return IST_DATE_FORMATTER.format(d);
+  } catch {
+    const t = (d instanceof Date ? d.getTime() : Date.now()) + IST_OFFSET_MS;
+    return new Date(t).toISOString().slice(0, 10);
+  }
+}
+
+// ⚡ PERF: Ultra-fast IST parser that extracts 'YYYY-MM-DD' and IST 0-23 hour in < 1 microsecond without re-instantiating Intl
+function toISTDateAndHour(dateVal) {
+  if (!dateVal) return { dateStr: '', hour: null };
+  if (typeof dateVal === 'string') {
+    // If already in YYYY-MM-DD
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateVal)) {
+      return { dateStr: dateVal, hour: null };
+    }
+    // Handle DD/MM/YYYY or MM/DD/YYYY if present without ISO 'T'
+    if (dateVal.includes('/') && !dateVal.includes('T')) {
+      const parts = dateVal.split(' ')[0].split('/');
+      let dStr = '';
+      if (parts.length === 3) {
+        if (parts[2].length === 4) {
+          dStr = `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
+        } else if (parts[0].length === 4) {
+          dStr = `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+        }
+      }
+      return { dateStr: dStr || dateVal.split(' ')[0], hour: null };
+    }
+  }
+  const ms = typeof dateVal === 'number' ? dateVal : Date.parse(dateVal);
+  if (isNaN(ms)) {
+    const str = String(dateVal).split(' ')[0];
+    return { dateStr: str, hour: null };
+  }
+  const istTime = new Date(ms + IST_OFFSET_MS);
+  const iso = istTime.toISOString();
+  return {
+    dateStr: iso.slice(0, 10),
+    hour: istTime.getUTCHours() // IST hour in 0-23
+  };
 }
 
 function getLocalHour(dateVal) {
-  if (!dateVal) return null;
-  const d = new Date(dateVal);
-  if (!isNaN(d.getTime())) return d.getHours();
-  if (typeof dateVal === 'string' && dateVal.includes(':')) {
-    const parts = dateVal.split(' ');
-    const timePart = parts.find(p => p.includes(':'));
-    if (timePart) {
-      const h = parseInt(timePart.split(':')[0], 10);
-      if (!isNaN(h)) return h;
-    }
-  }
-  return null;
+  return toISTDateAndHour(dateVal).hour;
 }
 
 function getSlotIdForHour(hour) {
@@ -153,26 +186,9 @@ function getDateFilterBounds(filterType, customStart, customEnd) {
 function checkDateWithinBounds(dateVal, bounds) {
   if (!bounds || bounds.isAll) return true;
   if (!dateVal) return false;
-  let dStr = '';
-  if (typeof dateVal === 'string') {
-    if (dateVal.includes('T')) {
-      dStr = getLocalDateStr(new Date(dateVal));
-    } else if (dateVal.includes('/')) {
-      const parts = dateVal.split(' ')[0].split('/');
-      if (parts.length === 3) {
-        if (parts[2].length === 4) {
-          dStr = `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
-        } else if (parts[0].length === 4) {
-          dStr = `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
-        }
-      }
-    } else {
-      dStr = dateVal.split(' ')[0];
-    }
-  } else {
-    dStr = getLocalDateStr(new Date(dateVal));
-  }
-  return dStr >= bounds.start && dStr <= bounds.end;
+  const { dateStr } = toISTDateAndHour(dateVal);
+  if (!dateStr) return false;
+  return dateStr >= bounds.start && dateStr <= bounds.end;
 }
 
 function isLeadInDateBounds(lead, bounds) {
@@ -182,8 +198,10 @@ function isLeadInDateBounds(lead, bounds) {
   if (lead.created_at && checkDateWithinBounds(lead.created_at, bounds)) return true;
   if (lead.follow_up_date && checkDateWithinBounds(lead.follow_up_date, bounds)) return true;
   if (Array.isArray(lead.lead_notes) && lead.lead_notes.length > 0) {
-    for (let i = 0; i < lead.lead_notes.length; i++) {
-      if (checkDateWithinBounds(lead.lead_notes[i]?.created_at, bounds)) return true;
+    const notes = lead.lead_notes;
+    for (let i = 0; i < notes.length; i++) {
+      const n = notes[i];
+      if (n && n.created_at && checkDateWithinBounds(n.created_at, bounds)) return true;
     }
   }
   return false;
@@ -419,7 +437,7 @@ export default function LeadDashboard({
         endIso = new Date().toISOString();
       }
 
-      // 1. Fetch notes for range with pagination
+      // 1. Fetch notes for range (bounded to latest 2,000 in a single fast query)
       let notesQuery = supabase
         .from('lead_notes')
         .select('id, lead_id, created_at, note_text, created_by')
@@ -427,15 +445,7 @@ export default function LeadDashboard({
       if (startIso) notesQuery = notesQuery.gte('created_at', startIso);
       if (endIso) notesQuery = notesQuery.lte('created_at', endIso);
 
-      let fetchedNotes = [];
-      let notePage = 0;
-      while (notePage < 10) {
-        const { data: chunk, error } = await notesQuery.range(notePage * 1000, (notePage + 1) * 1000 - 1);
-        if (error || !chunk || chunk.length === 0) break;
-        fetchedNotes = fetchedNotes.concat(chunk);
-        if (chunk.length < 1000) break;
-        notePage++;
-      }
+      const { data: fetchedNotes } = await notesQuery.limit(2000);
 
       // 2. Fetch leads created in range
       let leadsQuery = supabase
@@ -447,7 +457,7 @@ export default function LeadDashboard({
 
       const { data: fetchedLeads } = await leadsQuery.limit(2000);
 
-      setLiveHourlyNotes(fetchedNotes);
+      setLiveHourlyNotes(fetchedNotes || []);
       setLiveHourlyLeads(fetchedLeads || []);
       setLastSyncedTime(new Date());
     } catch (err) {
@@ -457,10 +467,15 @@ export default function LeadDashboard({
     }
   };
 
+  const lastSyncedKeyRef = useRef('');
   // Automatically fetch live hourly actions when entering Hourly tab or changing date
   useEffect(() => {
     if (activeDashboardTab === 'hourly' && canViewHourlyWork) {
-      fetchLiveHourlyData();
+      const syncKey = `${dateRangeFilter}_${customStartDate}_${customEndDate}`;
+      if (lastSyncedKeyRef.current !== syncKey) {
+        lastSyncedKeyRef.current = syncKey;
+        fetchLiveHourlyData();
+      }
     }
   }, [activeDashboardTab, dateRangeFilter, customStartDate, customEndDate, canViewHourlyWork]);
 
@@ -723,7 +738,7 @@ export default function LeadDashboard({
 
   // Team Lead Allocation & Action Summary Matrix in a SINGLE O(N) pass
   const teamAllocationSummary = useMemo(() => {
-    if (!canViewAll || !activeTeamMembers.length) return [];
+    if (!canViewAll || !activeTeamMembers.length || activeDashboardTab !== 'overview') return [];
 
     const { memberEntries, findMember } = memberIndex;
 
@@ -814,8 +829,10 @@ export default function LeadDashboard({
 
       // 3. Notes & Stage Changes
       if (Array.isArray(lead.lead_notes) && lead.lead_notes.length > 0) {
-        lead.lead_notes.forEach(note => {
-          if (checkDateWithinBounds(note.created_at, dateBounds)) {
+        const notes = lead.lead_notes;
+        for (let ni = 0; ni < notes.length; ni++) {
+          const note = notes[ni];
+          if (note && note.created_at && checkDateWithinBounds(note.created_at, dateBounds)) {
             const rawAuthor = note.created_by ? String(note.created_by).trim() : '';
             const isSystemLog = !rawAuthor || 
               rawAuthor.toLowerCase() === 'system' || 
@@ -858,14 +875,14 @@ export default function LeadDashboard({
               }
             }
           }
-        });
+        }
       }
     });
 
     return Array.from(summaryMap.values()).filter(
       emp => (emp.leadsCreated > 0 || emp.stageChanges > 0 || emp.notesAdded > 0 || emp.totalAssigned > 0)
     );
-  }, [canViewAll, leads, activeTeamMembers, memberIndex, dateBounds]);
+  }, [canViewAll, leads, activeTeamMembers, memberIndex, dateBounds, activeDashboardTab]);
 
   const handleTableSort = (key) => {
     if (tableSortKey === key) {
@@ -941,6 +958,7 @@ export default function LeadDashboard({
 
   // Source Distribution Data
   const sourceData = useMemo(() => {
+    if (activeDashboardTab !== 'overview') return [];
     const map = {};
     relevantLeads.forEach(l => {
       const src = l.source || 'Direct / Other';
@@ -949,25 +967,30 @@ export default function LeadDashboard({
 
     return Object.keys(map).map(src => ({ name: src, value: map[src] }))
       .sort((a, b) => b.value - a.value);
-  }, [relevantLeads]);
+  }, [relevantLeads, activeDashboardTab]);
 
   // Urgent Today's Action Queue
   const urgentQueue = useMemo(() => {
-    const todayStr = new Date().toISOString().split('T')[0];
+    if (activeDashboardTab !== 'overview') return [];
+    const todayStr = getLocalDateStr(new Date());
     return relevantLeads
       .filter(l => l.follow_up_date && l.follow_up_date <= todayStr)
       .sort((a, b) => (a.follow_up_date || '').localeCompare(b.follow_up_date || ''))
       .slice(0, 8);
-  }, [relevantLeads]);
+  }, [relevantLeads, activeDashboardTab]);
 
   // Single-pass computation for Hourly Work matrix
   const hourlyWorkData = useMemo(() => {
-    const { findMember } = memberIndex;
-
     const slotsMap = new Map();
     HOURLY_SLOTS.forEach(slot => {
       slotsMap.set(slot.id, new Map());
     });
+
+    if (activeDashboardTab !== 'hourly') {
+      return { slotsMap, hourlyChartData: [], totalDayActions: 0 };
+    }
+
+    const { findMember } = memberIndex;
 
     const getOrCreateSlotMember = (subMap, author, slotId, slotLabel) => {
       if (!subMap || !author) return null;
@@ -1001,39 +1024,34 @@ export default function LeadDashboard({
       return item;
     };
 
-    // Merge cached leads with any newly fetched live leads and notes
-    const combinedLeadsMap = new Map();
-    (leads || []).forEach(l => {
-      if (l && l.id) combinedLeadsMap.set(l.id, { ...l, lead_notes: Array.isArray(l.lead_notes) ? [...l.lead_notes] : [] });
-    });
-    (liveHourlyLeads || []).forEach(hl => {
-      if (hl && hl.id) {
-        const existing = combinedLeadsMap.get(hl.id);
-        if (existing) {
-          combinedLeadsMap.set(hl.id, { ...existing, ...hl });
-        } else {
-          combinedLeadsMap.set(hl.id, { ...hl, lead_notes: [] });
+    // ⚡ PERF: Index live hourly updates in lightweight Maps instead of deep-cloning 45,000 leads
+    const liveNotesByLeadId = new Map();
+    if (Array.isArray(liveHourlyNotes) && liveHourlyNotes.length > 0) {
+      for (let i = 0; i < liveHourlyNotes.length; i++) {
+        const hn = liveHourlyNotes[i];
+        if (!hn || !hn.lead_id) continue;
+        let list = liveNotesByLeadId.get(hn.lead_id);
+        if (!list) {
+          list = [];
+          liveNotesByLeadId.set(hn.lead_id, list);
         }
+        list.push(hn);
       }
-    });
-
-    if (liveHourlyNotes && liveHourlyNotes.length > 0) {
-      liveHourlyNotes.forEach(hn => {
-        if (!hn || !hn.lead_id) return;
-        let target = combinedLeadsMap.get(hn.lead_id);
-        if (!target) {
-          target = { id: hn.lead_id, lead_notes: [] };
-          combinedLeadsMap.set(hn.lead_id, target);
-        }
-        if (!target.lead_notes.some(en => en.id === hn.id)) {
-          target.lead_notes.push(hn);
-        }
-      });
     }
 
-    const effectiveLeads = Array.from(combinedLeadsMap.values());
+    const liveLeadsById = new Map();
+    if (Array.isArray(liveHourlyLeads) && liveHourlyLeads.length > 0) {
+      for (let i = 0; i < liveHourlyLeads.length; i++) {
+        const hl = liveHourlyLeads[i];
+        if (hl && hl.id) liveLeadsById.set(hl.id, hl);
+      }
+    }
 
-    effectiveLeads.forEach(lead => {
+    const processedLeadIds = new Set();
+    const processLeadHourly = (lead) => {
+      if (!lead) return;
+      if (lead.id) processedLeadIds.add(lead.id);
+
       // 1. Leads Created
       const creator = findMember(lead.created_by) || findMember(lead.entry_by) || findMember(lead.user_id);
       const leadDate = lead.created_at || lead.lead_date;
@@ -1077,8 +1095,19 @@ export default function LeadDashboard({
       }
 
       // 3. Notes & Stage Changes
-      if (Array.isArray(lead.lead_notes) && lead.lead_notes.length > 0) {
-        lead.lead_notes.forEach(note => {
+      let allNotes = lead.lead_notes;
+      if (lead.id && liveNotesByLeadId.has(lead.id)) {
+        const extra = liveNotesByLeadId.get(lead.id);
+        const existingIds = new Set(Array.isArray(allNotes) ? allNotes.map(n => n.id) : []);
+        const toAdd = extra.filter(en => !existingIds.has(en.id));
+        allNotes = Array.isArray(allNotes) ? [...allNotes, ...toAdd] : toAdd;
+      }
+
+      if (Array.isArray(allNotes) && allNotes.length > 0) {
+        for (let ni = 0; ni < allNotes.length; ni++) {
+          const note = allNotes[ni];
+          if (!note || !note.created_at) continue;
+
           if (checkDateWithinBounds(note.created_at, dateBounds)) {
             const rawAuthor = note.created_by ? String(note.created_by).trim() : '';
             const isSystemLog = !rawAuthor || 
@@ -1135,9 +1164,28 @@ export default function LeadDashboard({
               }
             }
           }
-        });
+        }
       }
-    });
+    };
+
+    if (Array.isArray(leads)) {
+      for (let li = 0; li < leads.length; li++) {
+        let l = leads[li];
+        if (l && l.id && liveLeadsById.has(l.id)) {
+          l = { ...l, ...liveLeadsById.get(l.id) };
+        }
+        processLeadHourly(l);
+      }
+    }
+
+    // Process any brand-new live hourly leads that weren't in main leads array
+    if (liveLeadsById.size > 0) {
+      liveLeadsById.forEach((hl, hid) => {
+        if (!processedLeadIds.has(hid)) {
+          processLeadHourly(hl);
+        }
+      });
+    }
 
     // Populate leadsWorked counts from Set size
     slotsMap.forEach(memberSubMap => {
@@ -1181,10 +1229,11 @@ export default function LeadDashboard({
     const totalDayActions = hourlyChartData.reduce((acc, curr) => acc + curr.totalActions, 0);
 
     return { slotsMap, hourlyChartData, totalDayActions };
-  }, [leads, liveHourlyNotes, liveHourlyLeads, memberIndex, dateBounds]);
+  }, [leads, liveHourlyNotes, liveHourlyLeads, memberIndex, dateBounds, activeDashboardTab]);
 
   // Grouped Timeline Slots (Hour by Hour)
   const timelineSlots = useMemo(() => {
+    if (activeDashboardTab !== 'hourly') return [];
     const slots = HOURLY_SLOTS.filter(s => s.id !== 'all');
     const targetSlots = selectedHourlySlot === 'all' 
       ? slots 
@@ -1264,10 +1313,11 @@ export default function LeadDashboard({
         hasActivity: activeEmployees.length > 0
       };
     });
-  }, [hourlyWorkData, selectedHourlySlot, selectedAgents, canViewAll, hourlyTableSearch, hourlyTableSortKey, hourlyTableSortDir]);
+  }, [hourlyWorkData, selectedHourlySlot, selectedAgents, canViewAll, hourlyTableSearch, hourlyTableSortKey, hourlyTableSortDir, activeDashboardTab]);
 
   // Flat timeline rows with prominent Time Slot column
   const flatHourlyRows = useMemo(() => {
+    if (activeDashboardTab !== 'hourly') return [];
     const rows = [];
     timelineSlots.forEach(t => {
       t.activeEmployees.forEach(emp => {
@@ -1290,10 +1340,11 @@ export default function LeadDashboard({
     }
 
     return rows;
-  }, [timelineSlots, hourlyTableSortKey, hourlyTableSortDir]);
+  }, [timelineSlots, hourlyTableSortKey, hourlyTableSortDir, activeDashboardTab]);
 
   // Employee x Hours Matrix Grid
   const employeeHourlyMatrix = useMemo(() => {
+    if (activeDashboardTab !== 'hourly') return [];
     const { memberEntries } = memberIndex;
     const slots = HOURLY_SLOTS.filter(s => s.id !== 'all');
 
@@ -1349,7 +1400,7 @@ export default function LeadDashboard({
 
     list.sort((a, b) => b.totalActions - a.totalActions);
     return list.filter(e => e.totalActions > 0 || e.totalWorked > 0);
-  }, [memberIndex, hourlyWorkData, selectedAgents, canViewAll, hourlyTableSearch]);
+  }, [memberIndex, hourlyWorkData, selectedAgents, canViewAll, hourlyTableSearch, activeDashboardTab]);
 
   const activeHourlyTotals = useMemo(() => {
     const totals = {
@@ -1369,6 +1420,8 @@ export default function LeadDashboard({
       totalAssigned: 0
     };
 
+    if (activeDashboardTab !== 'hourly') return totals;
+
     flatHourlyRows.forEach(item => {
       totals.leadsWorked += (item.leadsWorked || 0);
       totals.leadsCreated += item.leadsCreated;
@@ -1387,7 +1440,7 @@ export default function LeadDashboard({
     });
 
     return totals;
-  }, [flatHourlyRows]);
+  }, [flatHourlyRows, activeDashboardTab]);
 
   const handleHourlySort = (key) => {
     if (hourlyTableSortKey === key) {
@@ -1473,7 +1526,11 @@ export default function LeadDashboard({
 
       // 2. Notes & Stage Changes
       if (Array.isArray(lead.lead_notes) && lead.lead_notes.length > 0) {
-        lead.lead_notes.forEach((note, nIdx) => {
+        const notes = lead.lead_notes;
+        for (let nIdx = 0; nIdx < notes.length; nIdx++) {
+          const note = notes[nIdx];
+          if (!note || !note.created_at) continue;
+
           if (checkDateWithinBounds(note.created_at, dateBounds)) {
             const rawAuthor = note.created_by ? String(note.created_by).trim() : '';
             const isSystemLog = !rawAuthor || 
@@ -1493,7 +1550,7 @@ export default function LeadDashboard({
                 const isAssignmentLog = isSystemLogOrAssignmentNote(note.note_text);
 
                 // Exclude system assignment logs from employee drilldown
-                if (isAssignmentLog) return;
+                if (isAssignmentLog) continue;
 
                 const stNum = getStageNumber(lead.status);
 
@@ -1546,7 +1603,7 @@ export default function LeadDashboard({
               }
             }
           }
-        });
+        }
       }
     });
 

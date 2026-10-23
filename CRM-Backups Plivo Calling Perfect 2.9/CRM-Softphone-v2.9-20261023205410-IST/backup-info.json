@@ -1,0 +1,8 @@
+{
+  "softphone_version": "v2.9",
+  "crm_version": "1.0.863",
+  "created_at_ist": "2026-10-23T20:54:10.641Z",
+  "total_files_backed_up": 55,
+  "test_suites_count": 7,
+  "description": "Golden backup baseline for CRM Softphone v2.9 with 124 passing automated tests, tenant contact name enrichment, caller ID routing, and full calling architecture preservation"
+}

@@ -630,7 +630,7 @@ test('a confirmed manual-control retry clears old setup errors while an unconfir
   assert.equal(notHeld.error, 'Hold needs attention');
 });
 
-async function panelHarness({ consultation = null, onToggleMute, fetcher, onCallEnded = () => {}, shortcutControlsRef = { current: null } } = {}) {
+async function panelHarness({ consultation = null, onToggleMute, fetcher, onCallEnded = () => {}, shortcutControlsRef = { current: null }, durationLabel = '00:00', contacts = {} } = {}) {
   const React = require('react');
   const state = [
     [{ memberId: 'agent_leg', callUuid: AGENT, callerName: 'Agent (You)', muted: false },
@@ -647,6 +647,7 @@ async function panelHarness({ consultation = null, onToggleMute, fetcher, onCall
   const { default: Panel } = await load('src/components/CallCenter/ActiveCallPanel.jsx', {
     react: hooks, 'lucide-react': require('lucide-react'),
     '@/utils/supabase/client': { createClient: () => { throw new Error('No live DB in UI tests'); } },
+    './useSoftphoneContacts': { useSoftphoneContacts: () => number => contacts[normalizeIndianPhoneNumber(number)] || { name: 'UnKnow Person' } },
     './Softphone.module.css': new Proxy({}, { get: (_, key) => key }),
   }, { fetch: fetcher || (async () => { throw new Error('Unexpected network request'); }) });
   const session = { id: SESSION_ID, room_name: 'room_test_123', status: 'connected',
@@ -654,7 +655,7 @@ async function panelHarness({ consultation = null, onToggleMute, fetcher, onCall
   const render = () => {
     cursor = 0;
     effects.length = 0;
-    const outer = Panel({ session, onCallEnded, onToggleMute, microphoneMuted: false, shortcutControlsRef });
+    const outer = Panel({ session, userId: USER, agentData: { id: AGENT, user_id: USER }, onCallEnded, onToggleMute, microphoneMuted: false, shortcutControlsRef, durationLabel });
     return outer.type(outer.props);
   };
   const flatten = tree => {
@@ -666,6 +667,38 @@ async function panelHarness({ consultation = null, onToggleMute, fetcher, onCall
   const button = (label, tree = render()) => flatten(tree).find(node => node.type === 'button' && text(node) === label);
   return { state, session, render, flatten, text, button, effects, shortcutControlsRef };
 }
+
+test('connected call duration is visible beside the call status and remains visible during Hold', async () => {
+  const h = await panelHarness({ durationLabel: '02:05' });
+  const duration = () => h.flatten(h.render()).find(node => node.props?.['aria-label'] === 'Call duration');
+  assert.equal(h.text(duration()), '02:05');
+  h.state[3] = { customer_leg: true };
+  assert.equal(h.text(duration()), '02:05');
+  assert.equal(h.button('Resume').props.disabled, false);
+  h.session.status = 'customer_ringing';
+  assert.equal(h.text(duration()), '00:00');
+  h.session.customer_answer_time = '2026-10-23T19:57:03+05:30';
+  assert.equal(h.text(duration()), '02:05');
+  const defaultPanel = await panelHarness();
+  assert.equal(defaultPanel.text(defaultPanel.flatten(defaultPanel.render()).find(node => node.props?.['aria-label'] === 'Call duration')), '00:00');
+});
+
+test('customer names appear in the call header and pending/live participants while numbers remain visible', async () => {
+  const contacts = { '+919876543210': { name: 'Asha Verma', source: 'user' }, '+919999999999': { name: 'Recruiter Candidate', source: 'recruiter' } };
+  const h = await panelHarness({ contacts });
+  const heading = h.flatten(h.render()).find(node => node.props?.['aria-label'] === 'Call contact name');
+  assert.equal(h.text(heading), 'Asha Verma');
+  assert.ok(h.text(h.render()).includes('9876543210'));
+  assert.ok(h.text(h.render()).includes('Agent (You)'));
+  assert.ok(h.text(h.render()).split('Asha Verma').length >= 3);
+  h.session.status = 'customer_ringing';
+  assert.ok(h.text(h.render()).includes('Connecting to telecom line...') || h.text(h.render()).includes('Carrier connecting customer line...'));
+  assert.ok(h.text(h.render()).includes('Asha Verma'));
+  h.state[0].push({ memberId: 'guest', phoneNumber: '+919999999999', callUuid: GUEST });
+  assert.ok(h.text(h.render()).includes('Recruiter Candidate'));
+  delete contacts['+919876543210'];
+  assert.equal(h.text(h.flatten(h.render()).find(node => node.props?.['aria-label'] === 'Call contact name')), 'UnKnow Person');
+});
 
 test('normal agent_leg/customer_leg calls render enabled Mute, Hold and End controls before participants', async () => {
   let muted = 0;
@@ -752,9 +785,10 @@ test('keyboard registration uses the same Mute/Hold/End guards and never bypasse
   cleanup(); assert.equal(h.shortcutControlsRef.current, null);
 });
 
-async function widgetShortcutHarness({ active = true, hidden = false, minimized = false, controls, dialog = false } = {}) {
+async function widgetShortcutHarness({ active = true, hidden = false, minimized = false, controls, dialog = false, durationSeconds = 0 } = {}) {
   const React = require('react'), effects = [], listeners = new Map();
   const state = { 0: minimized, 1: hidden, 3: 'online',
+    9: durationSeconds,
     10: active ? { id: SESSION_ID, room_name: 'room_test_123', status: 'connected', calling_mode: 'mobile' } : null,
     13: { id: AGENT, plivo_endpoint_key: '123', plivo_sip_uri: 'sip:test@phone.plivo.com' } };
   let cursor = 0;
@@ -772,6 +806,7 @@ async function widgetShortcutHarness({ active = true, hidden = false, minimized 
   const { default: Widget } = await load('src/components/CallCenter/GlobalSoftphoneWidget.jsx', {
     react: hooks, 'lucide-react': require('lucide-react'), 'react-draggable': props => props.children,
     './ActiveCallPanel': ActivePanel, './Softphone.module.css': new Proxy({}, { get: (_, key) => key }),
+    './useSoftphoneContacts': { useSoftphoneContacts: () => () => ({ name: 'UnKnow Person' }) },
     '@/utils/supabase/client': { createClient: () => ({}) }, '@/app/actions/team': { getRecentCalls: async () => [] },
     '@/app/api/plivo/phone-number': { normalizeIndianPhoneNumber },
     '@/app/api/plivo/outbound-intent': { incomingMatchesOutboundRoom: () => false, shouldAutoAnswerOutbound: () => false },
@@ -779,7 +814,8 @@ async function widgetShortcutHarness({ active = true, hidden = false, minimized 
   }, { window: windowMock, document: { querySelector: () => dialog ? {} : null } });
   const flatten = node => !node || typeof node !== 'object' ? [] :
     [node, ...React.Children.toArray(node.props?.children).flatMap(flatten)];
-  const nodes = flatten(Widget({ userId: USER }));
+  const render = () => { cursor = 0; return flatten(Widget({ userId: USER })); };
+  const nodes = render();
   const panel = nodes.find(node => node.type === ActivePanel);
   if (panel) panel.props.shortcutControlsRef.current = controls;
   const effect = effects.find(fn => String(fn).includes('handleCallShortcut'));
@@ -791,8 +827,20 @@ async function widgetShortcutHarness({ active = true, hidden = false, minimized 
       preventDefault() { result.prevented++; }, stopPropagation() { result.stopped++; }, ...extra });
     return result;
   };
-  return { state, nodes, panel, press, cleanup, listeners };
+  return { state, nodes, panel, press, cleanup, listeners, render };
 }
+
+test('the existing softphone timer reaches the single active panel and updates while docked or minimized', async () => {
+  for (const visibility of [{ hidden: false, minimized: false }, { hidden: true, minimized: true }]) {
+    const h = await widgetShortcutHarness({ ...visibility, durationSeconds: 125, controls: {} });
+    assert.equal(h.panel.props.durationLabel, '02:05');
+    assert.equal(h.nodes.filter(node => node.type === h.panel.type).length, 1);
+    assert.equal(h.nodes.filter(node => node.props?.title === 'End Call (Hang Up)').length, 0, 'Do not duplicate the standalone call card');
+    h.state[9] = 126;
+    assert.equal(h.render().find(node => node.type === h.panel.type).props.durationLabel, '02:06');
+    h.cleanup();
+  }
+});
 
 test('Ctrl+M/H/E use the active call controls, suppress defaults, and ignore held-key repeats', async () => {
   let muted = false, held = false, ended = 0;
@@ -850,6 +898,7 @@ test('calling method has only Browser and Via Mobile toggles and shows the agent
   const { default: Widget } = await load('src/components/CallCenter/GlobalSoftphoneWidget.jsx', {
     react: hooks, 'lucide-react': require('lucide-react'), 'react-draggable': props => props.children,
     './ActiveCallPanel': () => null, './Softphone.module.css': new Proxy({}, { get: (_, key) => key }),
+    './useSoftphoneContacts': { useSoftphoneContacts: () => () => ({ name: 'UnKnow Person' }) },
     '@/utils/supabase/client': { createClient: () => ({}) }, '@/app/actions/team': { getRecentCalls: async () => [] },
     '@/app/api/plivo/phone-number': { normalizeIndianPhoneNumber },
     '@/app/api/plivo/outbound-intent': { incomingMatchesOutboundRoom: () => false, shouldAutoAnswerOutbound: () => false },

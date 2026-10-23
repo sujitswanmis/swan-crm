@@ -423,6 +423,7 @@ function endpointWidgetHarness(lookup, options = {}) {
   Object.assign(app.dependencies, {
     'lucide-react': require('lucide-react'), 'react-draggable': ({ children }) => children,
     './ActiveCallPanel': () => null, './Softphone.module.css': { __esModule: true, default: new Proxy({}, { get: (_, key) => key }) },
+    './useSoftphoneContacts': { useSoftphoneContacts: () => number => options.contacts?.[normalizeIndianPhoneNumber(number)] || { name: 'UnKnow Person' } },
     '@/utils/supabase/client': { createClient: () => ({}) },
     '@/app/actions/team': { getRecentCalls: async () => [], getAgentEndpointId: () => { throw new Error('Display reads must not use the Server Action queue'); } },
     '@/lib/softphoneIncomingCall': { createIncomingCallGuard: () => ({}), incomingCallUuid: () => null }
@@ -476,6 +477,23 @@ test('an old endpoint lookup cannot change the label after the assignment change
   assert.ok(!label.includes('174793004058391'));
   assert.ok(!label.includes('TC0002'));
   assert.equal(app.state[3], 'online');
+});
+
+test('incoming and connecting caller cards display verified names instead of unverified SIP header names', () => {
+  const number = '+916283362779';
+  const app = endpointWidgetHarness(async () => ({}), { contacts: { [number]: { name: 'Tenant Party Business', source: 'party' } } });
+  app.state[7] = { callerNumber: number, callerName: number, leadName: 'Unverified Header Name', leadCompany: 'Other Tenant' };
+  let tree = app.render();
+  assert.ok(text(tree).includes('Tenant Party Business'));
+  assert.ok(!text(tree).includes('Unverified Header Name'));
+  assert.ok(!text(tree).includes('Other Tenant'));
+  app.state[7] = null;
+  app.state[6] = { customerNumber: number };
+  tree = app.render();
+  assert.ok(text(tree).includes('Tenant Party Business'));
+  assert.ok(text(tree).includes('6283362779'));
+  app.state[6] = { customerNumber: '+919999999999' };
+  assert.ok(text(app.render()).includes('UnKnow Person'));
 });
 
 test('endpoint metadata is reused immediately after refresh only for the same user and SIP assignment', async () => {
@@ -574,6 +592,13 @@ test('startup failures show retry, non-agents disappear, and canceled profile re
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(old.state[13], null);
   assert.equal(old.storage.size, 0);
+
+  const switched = endpointWidgetHarness(async () => ({}));
+  switched.state[13].user_id = 'employee-a';
+  switched.props.userId = 'employee-b';
+  const switchedTree = switched.render();
+  assert.equal(nodes(switchedTree, node => node.props.title === 'Loading CRM Softphone').length, 1);
+  assert.equal(nodes(switchedTree, node => node.props.role === 'group').length, 0, 'A previous user cannot supply the new user\'s calling profile');
 });
 
 test('independent profile reads enforce authentication and tenant scope while preserving the existing profile API', async () => {

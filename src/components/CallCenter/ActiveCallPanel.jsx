@@ -2,14 +2,15 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { PhoneOff, PhoneCall, Mic, MicOff, UserX, UserPlus, Loader2, Users, Pause, Play, UserRound, Headset } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
+import { useSoftphoneContacts } from './useSoftphoneContacts';
 import styles from './Softphone.module.css';
 
-export default function ActiveCallPanel({ session, onCallEnded, agentData, onToggleMute, microphoneMuted = false, shortcutControlsRef }) {
-  return <ActiveCallContent key={session?.room_name} session={session} onCallEnded={onCallEnded} agentData={agentData}
-    onToggleMute={onToggleMute} microphoneMuted={microphoneMuted} shortcutControlsRef={shortcutControlsRef} />;
+export default function ActiveCallPanel({ session, onCallEnded, agentData, userId, onToggleMute, microphoneMuted = false, shortcutControlsRef, durationLabel = '00:00' }) {
+  return <ActiveCallContent key={session?.room_name} session={session} onCallEnded={onCallEnded} agentData={agentData} userId={userId}
+    onToggleMute={onToggleMute} microphoneMuted={microphoneMuted} shortcutControlsRef={shortcutControlsRef} durationLabel={durationLabel} />;
 }
 
-function ActiveCallContent({ session, onCallEnded, agentData, onToggleMute, microphoneMuted, shortcutControlsRef }) {
+function ActiveCallContent({ session, onCallEnded, agentData, userId, onToggleMute, microphoneMuted, shortcutControlsRef, durationLabel }) {
   const [members, setMembers] = useState([]);
   const [newParticipant, setNewParticipant] = useState('');
   const [loadingAction, setLoadingAction] = useState(null);
@@ -44,6 +45,12 @@ function ActiveCallContent({ session, onCallEnded, agentData, onToggleMute, micr
     message: '',
     onConfirm: null
   });
+  const participantPhone = member => member.phoneNumber ||
+    ((member.callUuid === session.customer_call_uuid || member.memberId === 'customer_leg')
+      ? session.customer_number : member.direction === 'inbound' ? member.from : member.to);
+  const contactFor = useSoftphoneContacts(userId || agentData?.user_id, [session.customer_number,
+    ...members.filter(member => member.callUuid !== session.agent_call_uuid && member.memberId !== 'agent_leg').map(participantPhone)
+  ], agentData?.id || '');
 
   // Also listen to supabase changes for this session
   useEffect(() => {
@@ -323,11 +330,14 @@ function ActiveCallContent({ session, onCallEnded, agentData, onToggleMute, micr
           <h2 className={styles.callState} data-connected={!!(session.status === 'connected' || session.customer_answer_time)}>
             <span className={styles.callStateDot} />
             {(session.status === 'connected' || session.customer_answer_time) ? 'Call Connected' : (session.status === 'customer_ringing' ? 'Carrier is trying customer line...' : 'Connecting to Line...')}
+            <span aria-label="Call duration" style={{ marginLeft: 'auto', fontVariantNumeric: 'tabular-nums' }}>
+              {isConnected ? durationLabel : '00:00'}
+            </span>
           </h2>
-          <div className={styles.customerNumber}>
-            +91 {(session.customer_number || '').replace(/[^0-9]/g, '').slice(-10) || 'Target Number'}
+          <div className={styles.customerNumber} aria-label="Call contact name">
+            {contactFor(session.customer_number).name}
           </div>
-          <div className={styles.customerCaption}>Customer</div>
+          <div className={styles.customerCaption}>+91 {(session.customer_number || '').replace(/[^0-9]/g, '').slice(-10) || 'Target Number'}</div>
         </div>
       </div>
 
@@ -394,8 +404,9 @@ function ActiveCallContent({ session, onCallEnded, agentData, onToggleMute, micr
               <span className={styles.avatar}><UserRound size={16} /></span>
               <div className={styles.participantInfo}>
                 <div className={styles.participantName}>
-                  Customer: +91 {(session.customer_number || '').replace(/[^0-9]/g, '').slice(-10)}
+                  {contactFor(session.customer_number).name}
                 </div>
+                <div className={styles.participantNumber}>+91 {(session.customer_number || '').replace(/[^0-9]/g, '').slice(-10)}</div>
                 <div className={styles.pendingStatus}>
                   <Loader2 size={11} className="spin" /> {session.status === 'customer_ringing' ? 'Carrier connecting customer line...' : 'Connecting to telecom line...'}
                 </div>
@@ -406,8 +417,7 @@ function ActiveCallContent({ session, onCallEnded, agentData, onToggleMute, micr
           {members.map(member => {
             const isAgent = member.callUuid === session.agent_call_uuid || member.memberId === 'agent_leg';
             const memberMuted = isAgent && onToggleMute ? microphoneMuted : member.muted;
-            const rawPhone = member.phoneNumber ||
-              ((member.callUuid === session.customer_call_uuid || member.memberId === 'customer_leg') ? session.customer_number : '');
+            const rawPhone = participantPhone(member);
             const digits = String(rawPhone || '').replace(/\D/g, '');
             const phoneNumber = digits.length >= 10 ? `+91 ${digits.slice(-10)}` : '';
             return (
@@ -416,10 +426,10 @@ function ActiveCallContent({ session, onCallEnded, agentData, onToggleMute, micr
                   {member.callUuid === session.agent_call_uuid || member.memberId === 'agent_leg' ? <Headset size={16} /> : <UserRound size={16} />}
                 </span>
                 <div className={styles.participantInfo}>
-                  <div className={styles.participantName} title={member.callerName || (member.direction === 'inbound' ? member.from : member.to) || member.callUuid}>
+                  <div className={styles.participantName} title={isAgent ? member.callerName : contactFor(rawPhone).name}>
                     {(() => {
-                      let name = phoneNumber && (member.callUuid === session.customer_call_uuid || member.memberId === 'customer_leg')
-                        ? 'Customer' : member.callerName || (member.direction === 'inbound' ? member.from : member.to) || member.callUuid;
+                      let name = isAgent ? member.callerName || (member.direction === 'inbound' ? member.from : member.to) || member.callUuid
+                        : contactFor(rawPhone).name;
                       if (name && typeof name === 'string') {
                         if (name.startsWith('sip:')) {
                           name = name.replace('sip:', '').split('@')[0];
@@ -427,7 +437,7 @@ function ActiveCallContent({ session, onCallEnded, agentData, onToggleMute, micr
                         if (agentData && (name === agentData.plivo_username || name === agentData.plivo_sip_uri)) {
                           name = 'Agent (Me)';
                         }
-                        if (!phoneNumber && name.length > 15 && name !== 'Agent (Me)') {
+                        if (isAgent && !phoneNumber && name.length > 15 && name !== 'Agent (Me)') {
                           name = name.substring(0, 15) + '...';
                         }
                       }
