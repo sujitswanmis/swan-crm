@@ -1,6 +1,6 @@
 'use client';
 
-import MobileTableView from '@/components/common/MobileTableView';
+import MobileTableView, { TableViewToggle, useTableViewPreference } from '@/components/common/MobileTableView';
 import React, { useState, useMemo, useEffect } from 'react';
 import {
   Search, Filter, CheckCircle2, Clock, AlertCircle, ArrowRight,
@@ -114,6 +114,7 @@ export default function StageDataTable({
   tenantId = null
 }) {
   const meta = STAGE_CONFIGS[stageId] || STAGE_CONFIGS.s01;
+  const [tableView, setTableView] = useTableViewPreference('Party/StageDataTable-1');
   const [showImportModal, setShowImportModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'PENDING' | 'APPROVED'
@@ -729,6 +730,9 @@ export default function StageDataTable({
           >
             <Download size={15} /> Export {stageId === 's01' ? 'S01 CSV' : 'CSV'}
           </button>
+
+          {/* Table / Tiles View Toggle beside Export CSV */}
+          <TableViewToggle view={tableView} onChange={setTableView} />
         </div>
       </div>
 
@@ -868,7 +872,7 @@ export default function StageDataTable({
         overflow: 'hidden',
         overflowX: 'auto'
       }}>
-        <MobileTableView id="Party/StageDataTable-1"><table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.84rem' }}>
+        <MobileTableView id="Party/StageDataTable-1" view={tableView} hideToggle={true}><table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.84rem' }}>
           <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--table-header-bg, #e2e8f0)' }}>
             <tr style={{ borderBottom: '1px solid var(--border-light, #cbd5e1)', color: 'var(--table-header-text, #1e293b)' }}>
               <th style={{ padding: '0.75rem 0.9rem', fontWeight: 700 }}>Universal Code</th>

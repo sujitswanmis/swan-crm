@@ -1,6 +1,6 @@
 'use client';
 
-import MobileTableView from '@/components/common/MobileTableView';
+import MobileTableView, { TableViewToggle, useTableViewPreference } from '@/components/common/MobileTableView';
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import {
@@ -220,6 +220,8 @@ export default function PartyMasterModule({
   });
   // Stage Configuration Modal State (S01 to S08 popup on table action)
   const [isStageModalOpen, setIsStageModalOpen] = useState(false);
+  const [allStageTableView, setAllStageTableView] = useTableViewPreference('Party/PartyMasterModule-1');
+  const [reportTableView, setReportTableView] = useTableViewPreference('Party/PartyMasterModule-3');
 
   // Column resizing hook for Party Master Table
   const {
@@ -2243,6 +2245,9 @@ export default function PartyMasterModule({
                 >
                   <RotateCcw size={14} /> Clear Filters {allStageActiveFilterCount > 0 ? `(${allStageActiveFilterCount})` : ''}
                 </button>
+
+                {/* Table / Tiles View Toggle */}
+                <TableViewToggle view={allStageTableView} onChange={setAllStageTableView} />
               </div>
             </div>
 
@@ -2294,7 +2299,7 @@ export default function PartyMasterModule({
 
           {/* Table */}
           <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px', overflowX: 'auto' }}>
-            <MobileTableView id="Party/PartyMasterModule-1"><table style={{ width: `${Math.max(1200, getPartyTotalWidth())}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.86rem' }}>
+            <MobileTableView id="Party/PartyMasterModule-1" view={allStageTableView} hideToggle={true}><table style={{ width: `${Math.max(1200, getPartyTotalWidth())}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.86rem' }}>
               <thead>
                 <tr style={{ background: 'var(--th-bg)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
                   <th style={{ position: 'relative', padding: '0.85rem 0.75rem', width: `${partyColWidths.select}px`, textAlign: 'center' }}>
@@ -3722,6 +3727,9 @@ export default function PartyMasterModule({
                   <Download size={15} /> Export CSV
                 </button>
 
+                {/* Table / Tiles View Toggle beside Export CSV */}
+                <TableViewToggle view={reportTableView} onChange={setReportTableView} />
+
                 {/* Clear Filters Button */}
                 <button
                   onClick={handleResetFilters}
@@ -3830,7 +3838,7 @@ export default function PartyMasterModule({
           {/* DISCRETE INDIVIDUAL COLUMN ENTERPRISE REPORT TABLE */}
           {/* ========================================================= */}
           <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px', overflowX: 'auto' }}>
-            <MobileTableView id="Party/PartyMasterModule-3"><table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
+            <MobileTableView id="Party/PartyMasterModule-3" view={reportTableView} hideToggle={true}><table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
               <thead>
                 <tr style={{ background: 'var(--th-bg)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
                   {/* Selection Checkbox */}
