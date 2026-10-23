@@ -172,12 +172,22 @@ export const MODULES_CONFIG = [
       { id: 's06', label: 'S06 Product Auth & Territory' },
       { id: 's07', label: 'S07 Sales Team Assignment' },
       { id: 's08', label: 'S08 Partner Activation' },
-      { id: 'report', label: '📊 Party Master Report' },
-      { id: 'hierarchy_tree', label: '🌳 Channel Hierarchy Tree' },
+      { id: 'report', label: '📑 Party Master Report' },
+      { id: 'hierarchy_tree', label: '🌳 Channel Hierarchy Tree' }
+    ]
+  },
+  { 
+    id: 'channel_ops', 
+    path: 'channel-operations', 
+    label: 'Channel Operations', 
+    category: 'Sales', 
+    icon: <PhoneCall size={20} />,
+    subItemsType: 'tabs',
+    subItems: [
       { id: 'order_followup', label: '📞 Daily Order Followups' },
       { id: 'order_feedback', label: '⭐ Post-Order Feedback' },
       { id: 'monthly_feedback', label: '📅 Monthly Health Checks' },
-      { id: 'complaints', label: '🚨 Complaint Management' }
+      { id: 'complaints', label: '⚠️ Complaint Management' }
     ]
   },
   { id: 'orders', path: 'orders', label: 'Order Management', category: 'Sales', icon: <CheckCircle size={20} /> },

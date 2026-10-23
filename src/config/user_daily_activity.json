@@ -604,11 +604,11 @@
       "userId": "15e6a4bb-ca0c-4743-bf79-494ae64074ee",
       "email": "supujacreations@gmail.com",
       "empName": "SuPuja Creations",
-      "activeSeconds": 6560,
-      "idleSeconds": 10514,
+      "activeSeconds": 6599,
+      "idleSeconds": 13723,
       "firstSeen": "2026-10-21T18:30:10.433229+00:00",
-      "lastSeen": "2026-10-22T15:15:23.266Z",
-      "status": "working",
+      "lastSeen": "2026-10-22T17:23:29.957Z",
+      "status": "away",
       "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36"
     },
     "7712ec30-c633-4e21-94ca-b12408a8dafa": {
@@ -638,10 +638,23 @@
       "email": "admin@newswangroup.com",
       "empName": "New Swan Admin",
       "activeSeconds": 2148,
-      "idleSeconds": 1661,
+      "idleSeconds": 1721,
       "firstSeen": "2026-10-22T14:18:41.181736+00:00",
-      "lastSeen": "2026-10-22T15:35:49.061Z",
+      "lastSeen": "2026-10-22T15:36:49.378Z",
       "status": "away",
+      "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36"
+    }
+  },
+  "2026-10-23": {
+    "07fa35d3-f50a-4e41-ae15-b2692e393ea0": {
+      "userId": "07fa35d3-f50a-4e41-ae15-b2692e393ea0",
+      "email": "admin@newswangroup.com",
+      "empName": "New Swan Admin",
+      "activeSeconds": 5339,
+      "idleSeconds": 14994,
+      "firstSeen": "2026-10-23T08:49:36.633339+00:00",
+      "lastSeen": "2026-10-23T16:59:15.135Z",
+      "status": "working",
       "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36"
     }
   }

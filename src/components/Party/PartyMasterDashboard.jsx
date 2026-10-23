@@ -859,7 +859,7 @@ export default function PartyMasterDashboard({
               <Sparkles size={18} className="text-amber-500" />
               Operational Engines Activity
             </h3>
-            <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>4 Post-Sales Modules</span>
+            <span style={{ fontSize: '0.74rem', color: 'var(--accent-color, #3b82f6)', fontWeight: 600 }}>Channel Operations (Click to Open)</span>
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>

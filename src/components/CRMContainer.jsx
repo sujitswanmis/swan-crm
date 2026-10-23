@@ -38,6 +38,7 @@ const AnalyticsDashboard = dynamic(() => import('@/components/AnalyticsDashboard
 const ClientRegistration = dynamic(() => import('@/components/ClientRegistration'), { loading: () => <WorkspaceSkeleton variant="form" /> });
 const CallCenterModule = dynamic(() => import('./CallCenter/CallCenterModule'), { loading: () => <WorkspaceSkeleton variant="callcenter" /> });
 const PartyMasterModule = dynamic(() => import('./Party/PartyMasterModule'), { loading: () => <WorkspaceSkeleton variant="table" /> });
+const ChannelOperationsModule = dynamic(() => import('./Party/ChannelOperationsModule'), { loading: () => <WorkspaceSkeleton variant="table" /> });
 const LocationManagementModule = dynamic(() => import('./Location/LocationManagementModule'), { loading: () => <WorkspaceSkeleton variant="table" /> });
 const AttendanceModule = dynamic(() => import('./Attendance/AttendanceModule'), { loading: () => <WorkspaceSkeleton variant="attendance" /> });
 const TeamManagement = dynamic(() => import('@/components/TeamManagement'), { loading: () => <WorkspaceSkeleton variant="table" /> });
@@ -205,6 +206,7 @@ export function isTabPermitted(tabId, moduleAccess = {}, userRole = '', tenantEn
   if (tabId === 'team') return moduleAccess['team']?.view === true;
   if (tabId === 'user_management_new') return moduleAccess['user_management_new']?.view === true || moduleAccess['team']?.view === true || isAdmin;
   if (tabId === 'party' || (typeof tabId === 'string' && (tabId.startsWith('party/') || tabId.startsWith('party_')))) return moduleAccess['party']?.view === true || moduleAccess['team']?.view === true;
+  if (tabId === 'channel_ops' || tabId === 'channel-operations' || (typeof tabId === 'string' && (tabId.startsWith('channel_ops') || tabId.startsWith('channel-operations')))) return moduleAccess['channel_ops']?.view === true || moduleAccess['party']?.view === true || moduleAccess['team']?.view === true;
   if (tabId === 'location_master' || tabId === 'location_territory' || tabId === 'location-master') {
     return moduleAccess['location_master']?.view === true || moduleAccess['location_territory']?.view === true;
   }
@@ -238,16 +240,20 @@ export const PARTY_SUBTAB_TITLES = {
   s08: 'S08 Partner Activation',
   report: 'Party Master Report',
   r03: 'Party Master Report',
-  hierarchy_tree: 'Channel Hierarchy Tree',
-  order_followup: 'Engine 1: Daily Order Followups',
-  order_feedback: 'Engine 2: Post-Order Feedback',
-  monthly_feedback: 'Engine 3: Monthly Health Checks',
-  complaints: 'Engine 4: Complaint Management'
+  hierarchy_tree: 'Channel Hierarchy Tree'
+};
+
+export const CHANNEL_OPS_SUBTAB_TITLES = {
+  order_followup: 'Daily Order Followups',
+  order_feedback: 'Post-Order Feedback',
+  monthly_feedback: 'Monthly Health Checks',
+  complaints: 'Complaint Management'
 };
 
 export const MODULE_DISPLAY_NAMES = {
   dashboard: 'Analytics Dashboard',
   leads: 'Leads & Sales Database',
+  channel_ops: 'Channel Operations',
   registration: 'New Lead Registration',
   report: 'Lead Registered Report',
   orders: 'Order Management',
@@ -438,6 +444,9 @@ export default function CRMContainer({
     if (path === 'party' || (path && path.startsWith('party/'))) {
       return 'party';
     }
+    if (path === 'channel_ops' || path === 'channel-operations' || (path && (path.startsWith('channel-operations/') || path.startsWith('channel_ops/')))) {
+      return 'channel_ops';
+    }
     if (['email', 'email-config', 'email_config', 'email-campaigns', 'email_campaigns'].includes(path) || (path && (path.startsWith('email-config') || path.startsWith('email_config') || path.startsWith('email/')))) {
       return 'email_config';
     }
@@ -622,6 +631,22 @@ export default function CRMContainer({
     if (queryTab === 'r03' || queryTab === 'party-master-report') queryTab = 'report';
     if (queryTab) return queryTab;
     return 'dashboard';
+  });
+  const [channelOpsMenuExpanded, setChannelOpsMenuExpanded] = useState(() => {
+    const raw = (initialRoute || pathname || '');
+    let cleanPath = (typeof raw === 'string' ? raw : '').replace(/^\/+|\/+$/g, '').toLowerCase();
+    return cleanPath === 'channel-operations' || cleanPath === 'channel_ops' || (cleanPath && (cleanPath.startsWith('channel-operations/') || cleanPath.startsWith('channel_ops/')));
+  });
+  const [channelOpsSubTab, setChannelOpsSubTab] = useState(() => {
+    const raw = (initialRoute || pathname || '');
+    let cleanPath = (typeof raw === 'string' ? raw : '').replace(/^\/+|\/+$/g, '').toLowerCase();
+    let queryTab = (searchParams?.get('tab') || searchParams?.get('subtab') || searchParams?.get('step') || initialSearchParams?.tab || initialSearchParams?.subtab || initialSearchParams?.step || '').toLowerCase();
+    if (cleanPath && (cleanPath.startsWith('channel-operations/') || cleanPath.startsWith('channel_ops/'))) {
+      let sub = cleanPath.split('/')[1];
+      if (sub) return sub;
+    }
+    if (queryTab && ['order_followup', 'order_feedback', 'monthly_feedback', 'complaints'].includes(queryTab)) return queryTab;
+    return 'order_followup';
   });
   const [saasMenuExpanded, setSaasMenuExpanded] = useState(() => {
     const raw = (initialRoute || pathname || '');
@@ -827,6 +852,21 @@ export default function CRMContainer({
           setPartySubTab(cleanSub);
         }
         setPartyMenuExpanded(true);
+      }
+      const channelOpsTab = search.get('tab') || search.get('subtab') || search.get('step');
+      if (path === 'channel_ops' || path === 'channel-operations' || (path && (path.startsWith('channel-operations/') || path.startsWith('channel_ops/')))) {
+        let sub = '';
+        if (path.includes('/')) {
+          sub = path.split('/')[1];
+        } else if (channelOpsTab) {
+          sub = channelOpsTab;
+        } else {
+          sub = 'order_followup';
+        }
+        if (sub) {
+          setChannelOpsSubTab(sub.toLowerCase());
+        }
+        setChannelOpsMenuExpanded(true);
       }
       if (['scorecard', 'overview', 'pipeline', 'lead-data', 'leads-data'].includes(path)) {
         setDashboardSubTab(path === 'pipeline' || path === 'leads-data' ? 'lead-data' : path);
@@ -2840,6 +2880,21 @@ export default function CRMContainer({
         }
         tab = 'party';
         setPartyMenuExpanded(true);
+      }
+      const channelOpsTab = search.get('tab') || search.get('subtab') || search.get('step');
+      if (path === 'channel_ops' || path === 'channel-operations' || (path && (path.startsWith('channel-operations/') || path.startsWith('channel_ops/')))) {
+        let sub = '';
+        if (path.includes('/')) {
+          sub = path.split('/')[1];
+        } else if (channelOpsTab) {
+          sub = channelOpsTab;
+        } else {
+          sub = 'order_followup';
+        }
+        if (sub) {
+          setChannelOpsSubTab(sub.toLowerCase());
+        }
+        setChannelOpsMenuExpanded(true);
       } else if (tab === 'calladmin' || tab === 'call-admin' || (tab && (tab.startsWith('calladmin/') || tab.startsWith('call-admin/')))) {
         let sub = '';
         if (tab.includes('/')) {
@@ -3201,11 +3256,29 @@ export default function CRMContainer({
   const handlePartySubTabChange = (subTabId) => {
     let cleanSub = (subTabId || 'dashboard').toLowerCase();
     if (cleanSub === 'r03' || cleanSub === 'party-master-report') cleanSub = 'report';
+    if (['order_followup', 'order_feedback', 'monthly_feedback', 'complaints'].includes(cleanSub)) {
+      handleChannelOpsSubTabChange(cleanSub);
+      return;
+    }
     setPartySubTab(cleanSub);
     if (activeTab !== 'party') {
       setActiveTab('party');
     }
     const newPath = `/party/${cleanSub}`;
+    window.history.pushState(null, '', newPath);
+    
+    if (window.innerWidth <= 768) {
+      setIsSidebarOpen(false);
+    }
+  };
+
+  const handleChannelOpsSubTabChange = (subTabId) => {
+    let cleanSub = (subTabId || 'order_followup').toLowerCase();
+    setChannelOpsSubTab(cleanSub);
+    if (activeTab !== 'channel_ops' && activeTab !== 'channel-operations') {
+      setActiveTab('channel_ops');
+    }
+    const newPath = `/channel-operations/${cleanSub}`;
     window.history.pushState(null, '', newPath);
     
     if (window.innerWidth <= 768) {
@@ -4651,6 +4724,14 @@ export default function CRMContainer({
                                 setPartyMenuExpanded(!partyMenuExpanded);
                               }
                               handleTabChange('party');
+                            } else if (module.id === 'channel_ops' || module.id === 'channel-operations') {
+                              if (isSidebarCollapsed) {
+                                setIsSidebarCollapsed(false);
+                                setChannelOpsMenuExpanded(true);
+                              } else {
+                                setChannelOpsMenuExpanded(!channelOpsMenuExpanded);
+                              }
+                              handleTabChange('channel_ops');
                             } else {
                               handleTabChange(module.path || module.id); 
                             }
@@ -4678,6 +4759,11 @@ export default function CRMContainer({
                           {module.id === 'party' && (
                             <span className="nav-chevron" style={{ marginRight: '-0.25rem' }}>
                               {partyMenuExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                            </span>
+                          )}
+                          {(module.id === 'channel_ops' || module.id === 'channel-operations') && (
+                            <span className="nav-chevron" style={{ marginRight: '-0.25rem' }}>
+                              {channelOpsMenuExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                             </span>
                           )}
                           {React.cloneElement(module.icon, { style: { flexShrink: 0 } })}
@@ -4971,7 +5057,7 @@ export default function CRMContainer({
                               <div style={{ height: '1px', backgroundColor: 'var(--border-light, rgba(255,255,255,0.08))', margin: '0.4rem 0.75rem' }} />
 
                               <div style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-muted, #94a3b8)', padding: '0.2rem 0.75rem 0.2rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                                Directory & Operations
+                                Master Directory &amp; Hierarchy
                               </div>
 
                               <button
@@ -4979,7 +5065,7 @@ export default function CRMContainer({
                                 className="submenu-item"
                                 data-active={activeTab === 'party' && (partySubTab === 'report' || partySubTab === 'r03')}
                               >
-                                📊 Party Master Report
+                                📑 Party Master Report
                               </button>
 
                               <button
@@ -4989,37 +5075,47 @@ export default function CRMContainer({
                               >
                                 🌳 Channel Hierarchy Tree
                               </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {(module.id === 'channel_ops' || module.id === 'channel-operations') && (
+                          <div className={`submenu-list ${channelOpsMenuExpanded ? 'expanded' : ''}`}>
+                            <div className="submenu-inner">
+                              <div style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-muted, #94a3b8)', padding: '0.35rem 0.75rem 0.2rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                Operations &amp; Governance
+                              </div>
 
                               <button
-                                onClick={() => handlePartySubTabChange('order_followup')}
+                                onClick={() => handleChannelOpsSubTabChange('order_followup')}
                                 className="submenu-item"
-                                data-active={activeTab === 'party' && partySubTab === 'order_followup'}
+                                data-active={activeTab === 'channel_ops' && channelOpsSubTab === 'order_followup'}
                               >
                                 📞 Daily Order Followups
                               </button>
 
                               <button
-                                onClick={() => handlePartySubTabChange('order_feedback')}
+                                onClick={() => handleChannelOpsSubTabChange('order_feedback')}
                                 className="submenu-item"
-                                data-active={activeTab === 'party' && partySubTab === 'order_feedback'}
+                                data-active={activeTab === 'channel_ops' && channelOpsSubTab === 'order_feedback'}
                               >
                                 ⭐ Post-Order Feedback
                               </button>
 
                               <button
-                                onClick={() => handlePartySubTabChange('monthly_feedback')}
+                                onClick={() => handleChannelOpsSubTabChange('monthly_feedback')}
                                 className="submenu-item"
-                                data-active={activeTab === 'party' && partySubTab === 'monthly_feedback'}
+                                data-active={activeTab === 'channel_ops' && channelOpsSubTab === 'monthly_feedback'}
                               >
                                 📅 Monthly Health Checks
                               </button>
 
                               <button
-                                onClick={() => handlePartySubTabChange('complaints')}
+                                onClick={() => handleChannelOpsSubTabChange('complaints')}
                                 className="submenu-item"
-                                data-active={activeTab === 'party' && partySubTab === 'complaints'}
+                                data-active={activeTab === 'channel_ops' && channelOpsSubTab === 'complaints'}
                               >
-                                🚨 Complaint Management
+                                ⚠️ Complaint Management
                               </button>
                             </div>
                           </div>
@@ -5444,6 +5540,7 @@ export default function CRMContainer({
                   )}
                   {activeTab === 'public_users' && 'Public Applicants'}
                   {activeTab === 'party' && (PARTY_SUBTAB_TITLES[partySubTab] ? `Party Master • ${PARTY_SUBTAB_TITLES[partySubTab]}` : 'Fully Managed Party Master')}
+                  {(activeTab === 'channel_ops' || activeTab === 'channel-operations') && (CHANNEL_OPS_SUBTAB_TITLES[channelOpsSubTab] ? `Channel Operations • ${CHANNEL_OPS_SUBTAB_TITLES[channelOpsSubTab]}` : 'Channel Partner Operations')}
                   {activeTab === 'location_territory' && 'Universal Location & Territory Master'}
                   {activeTab === 'location_master' && 'Central Location Master'}
                   {activeTab === 'whatsapp_official' && 'WhatsApp Official'}
@@ -5467,7 +5564,7 @@ export default function CRMContainer({
                     configMasterSubTab === 'offline_rule' ? '⚙️ Config Master — Offline Rules & Sync Policy' :
                     '⚙️ Config Master — Public User Management'
                   )}
-                  {!['dashboard', 'leads', 'orders', 'mrp', 'mrp_against', 'recruiter', 'joining', 'attendance', 'checklist', 'delegation', 'registration', 'report', 'aiadmin', 'aiknowledgebase', 'callcenter', 'calladmin', 'aicallcenter', 'team', 'user_management_new', 'client_registration', 'client_report', 'workplace', 'public_users', 'party', 'location_territory', 'location_master', 'whatsapp_official', 'whatsapp_unofficial', 'sms_config', 'rcs_config', 'email_config', 'admin_message_config', 'settings', 'saas_master', 'saas_studio', 'config_master'].includes(activeTab) && (
+                  {!['dashboard', 'leads', 'orders', 'mrp', 'mrp_against', 'recruiter', 'joining', 'attendance', 'checklist', 'delegation', 'registration', 'report', 'aiadmin', 'aiknowledgebase', 'callcenter', 'calladmin', 'aicallcenter', 'team', 'user_management_new', 'client_registration', 'client_report', 'workplace', 'public_users', 'party', 'channel_ops', 'channel-operations', 'location_territory', 'location_master', 'whatsapp_official', 'whatsapp_unofficial', 'sms_config', 'rcs_config', 'email_config', 'admin_message_config', 'settings', 'saas_master', 'saas_studio', 'config_master'].includes(activeTab) && (
                     activeTab ? activeTab.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) : 'Dashboard'
                   )}
                 </h1>
@@ -7288,6 +7385,25 @@ export default function CRMContainer({
                     initialSubTab={partySubTab}
                     activeSubTab={partySubTab}
                     onSubTabChange={(tab) => handlePartySubTabChange(tab)}
+                    onNavigateToChannelOps={(tab) => handleChannelOpsSubTabChange(tab)}
+                    userRole={userRole}
+                    moduleAccess={moduleAccess}
+                    userCompany={userCompany}
+                    tenantId={effectiveTenantId}
+                  />
+                </ErrorBoundary>
+              </KeepAliveTab>
+
+              {/* Channel Operations */}
+              <KeepAliveTab 
+                isActive={activeTab === 'channel_ops' || activeTab === 'channel-operations'} 
+                isVisited={isTabPermitted('channel_ops', moduleAccess, userRole) && (visitedTabs.has('channel_ops') || visitedTabs.has('channel-operations') || activeTab === 'channel_ops' || activeTab === 'channel-operations')}
+              >
+                <ErrorBoundary>
+                  <ChannelOperationsModule 
+                    initialSubTab={channelOpsSubTab}
+                    activeSubTab={channelOpsSubTab}
+                    onSubTabChange={(tab) => handleChannelOpsSubTabChange(tab)}
                     userRole={userRole}
                     moduleAccess={moduleAccess}
                     userCompany={userCompany}
