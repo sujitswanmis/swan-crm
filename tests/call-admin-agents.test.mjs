@@ -26,6 +26,8 @@ const code = {
   outbound: compile('src/app/api/plivo/outbound-dial/route.js'),
   token: compile('src/app/api/plivo/token/route.js'),
   incoming: compile('src/app/api/plivo/incoming/route.js'),
+  endpointId: compile('src/app/api/plivo/agent-endpoint-id/route.js'),
+  profile: compile('src/app/api/plivo/agent-profile/route.js'),
   ui: compile('src/components/CallCenter/CallAdminModule.jsx', '\nexport { TabAgents };'),
   widget: compile('src/components/CallCenter/GlobalSoftphoneWidget.jsx')
 };
@@ -67,6 +69,7 @@ function fixture(options = {}) {
           if (options.legacySchema && columns.includes('outgoing_caller_id')) return { data: null, error: { code: '42703', message: 'column missing' } };
           if (options.legacyRoles && table === 'user_roles' && columns.includes('tenant_id')) return { data: null, error: { code: '42703' } };
           if (options.failWrite && operation !== 'select') return { data: null, error: { code: '23505', message: 'Synthetic save failure' } };
+          if (options.profileReadFailure && table === 'call_agents' && operation === 'select') return { data: null, error: { message: 'Synthetic profile read failure' } };
           const rows = tables[table] || [];
           let matches = rows.filter(row => filters.every(filter => filter(row))).slice(0, maxRows);
           if (operation === 'insert') {
@@ -110,7 +113,7 @@ function fixture(options = {}) {
   function load(compiled, extra = {}) {
     const exports = {};
     vm.runInNewContext(compiled, {
-      exports, Buffer, AbortSignal, URL, URLSearchParams, global: {},
+      exports, Buffer, AbortSignal, AbortController, URL, URLSearchParams, global: {},
       process: { env: { NEXT_PUBLIC_SUPABASE_URL: 'https://db.example.test', SUPABASE_SERVICE_ROLE_KEY: 'test-key', PLIVO_FROM_NUMBER: DEFAULT_PHONE } },
       console: { error() {}, warn() {}, log() {} },
       fetch: async url => {
@@ -402,11 +405,15 @@ test('endpoint ID lookup requires authentication and respects employee workspace
   assert.equal(app.log.fetches.length, 0);
 });
 
-function endpointWidgetHarness(lookup) {
+function endpointWidgetHarness(lookup, options = {}) {
   const app = fixture();
   const state = { 0: false, 1: false, 3: 'online', 13: {
     id: 'agent-a', plivo_endpoint_key: 'ADMIN0001', plivo_username: 'sip-a', plivo_sip_uri: 'sip:a@example.test'
   } };
+  if ('initialAgent' in options) state[13] = options.initialAgent;
+  const storage = options.storage || new Map();
+  const requests = [];
+  const props = { userId: 'employee-a' };
   let cursor = 0;
   const effects = [];
   app.dependencies.react = { ...React,
@@ -417,12 +424,28 @@ function endpointWidgetHarness(lookup) {
     'lucide-react': require('lucide-react'), 'react-draggable': ({ children }) => children,
     './ActiveCallPanel': () => null, './Softphone.module.css': { __esModule: true, default: new Proxy({}, { get: (_, key) => key }) },
     '@/utils/supabase/client': { createClient: () => ({}) },
-    '@/app/actions/team': { getRecentCalls: async () => [], getAgentEndpointId: lookup },
+    '@/app/actions/team': { getRecentCalls: async () => [], getAgentEndpointId: () => { throw new Error('Display reads must not use the Server Action queue'); } },
     '@/lib/softphoneIncomingCall': { createIncomingCallGuard: () => ({}), incomingCallUuid: () => null }
   });
-  const widget = app.load(code.widget, { window: {} }).default;
-  const render = () => { cursor = 0; effects.length = 0; return widget({ userId: 'employee-a' }); };
-  return { state, render, resolveEffect: () => effects.find(effect => String(effect).includes('resolveEndpointId')) };
+  const widget = app.load(code.widget, {
+    window: { sessionStorage: {
+      getItem(key) { if (options.storageFailure) throw new Error('Storage blocked'); return storage.get(key) || null; },
+      setItem(key, value) { if (options.storageFailure) throw new Error('Storage blocked'); storage.set(key, value); }
+    } },
+    fetch: async (url, init) => {
+      requests.push({ url, ...init });
+      if (url.startsWith('/api/plivo/agent-profile?')) {
+        return options.profileFetch ? options.profileFetch(url, init) : { ok: true, json: async () => ({ data: copy(state[13]) }) };
+      }
+      assert.ok(url.startsWith('/api/plivo/agent-endpoint-id?'));
+      const result = await lookup(url, init);
+      return { ok: options.endpointOk !== false, json: async () => result };
+    }
+  }).default;
+  const render = () => { cursor = 0; effects.length = 0; return widget(props); };
+  return { state, props, storage, requests, render,
+    resolveEffect: () => effects.find(effect => String(effect).includes('resolveEndpointId')),
+    profileEffect: () => effects.find(effect => String(effect).includes('fetchAgent')) };
 }
 
 test('softphone displays the actual numeric endpoint ID without changing the online connection or calling toggle', async () => {
@@ -453,4 +476,144 @@ test('an old endpoint lookup cannot change the label after the assignment change
   assert.ok(!label.includes('174793004058391'));
   assert.ok(!label.includes('TC0002'));
   assert.equal(app.state[3], 'online');
+});
+
+test('endpoint metadata is reused immediately after refresh only for the same user and SIP assignment', async () => {
+  const first = endpointWidgetHarness(async () => ({ endpointId: '174793004058391' }));
+  first.render(); first.resolveEffect()();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(first.requests.length, 1);
+  assert.equal(first.requests[0].cache, 'no-store');
+  assert.equal(first.requests[0].credentials, 'same-origin');
+  assert.equal(first.storage.size, 1);
+  const cached = JSON.parse([...first.storage.values()][0]);
+  assert.deepEqual(Object.keys(cached).sort(), ['endpointId', 'expiresAt', 'reference']);
+  assert.ok(!JSON.stringify(cached).includes('password'));
+
+  const refreshed = endpointWidgetHarness(() => { throw new Error('A fresh cache must skip the network'); }, { storage: first.storage });
+  refreshed.render(); refreshed.profileEffect()();
+  await new Promise(resolve => setImmediate(resolve));
+  refreshed.render(); refreshed.resolveEffect()();
+  assert.match(text(nodes(refreshed.render(), node => node.props.className === 'endpoint')[0]), /174793004058391/);
+  assert.equal(refreshed.requests.filter(request => request.url.startsWith('/api/plivo/agent-endpoint-id')).length, 0);
+
+  for (const change of ['user', 'assignment', 'expiry']) {
+    const storage = new Map(first.storage);
+    const next = endpointWidgetHarness(async () => ({ endpointId: '222222222222222' }), { storage });
+    if (change === 'user') next.props.userId = 'employee-b';
+    if (change === 'assignment') next.state[13] = { ...next.state[13], plivo_username: 'sip-b' };
+    if (change === 'expiry') storage.set([...storage.keys()][0], JSON.stringify({ ...cached, expiresAt: Date.now() - 1 }));
+    next.render(); next.resolveEffect()();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(next.requests.length, 1, change);
+    assert.ok(!text(nodes(next.render(), node => node.props.className === 'endpoint')[0]).includes('174793004058391'), change);
+  }
+});
+
+test('blocked storage, HTTP errors and malformed metadata leave dialing state intact without caching failures', async () => {
+  for (const options of [{ storageFailure: true }, { endpointOk: false }, { invalidId: true }]) {
+    const app = endpointWidgetHarness(async () => ({ endpointId: options.invalidId ? 'ADMIN0001' : '174793004058391' }), options);
+    app.render(); app.resolveEffect()();
+    await new Promise(resolve => setImmediate(resolve));
+    const tree = app.render();
+    assert.equal(app.state[3], 'online');
+    assert.equal(app.state[13].plivo_username, 'sip-a');
+    assert.equal(nodes(tree, node => node.props.role === 'group').length, 1);
+    assert.equal(app.storage.size, 0);
+    if (!options.storageFailure) assert.match(text(nodes(tree, node => node.props.className === 'endpoint')[0]), /N\/A/);
+  }
+});
+
+test('the softphone launcher renders before startup data arrives and loads the profile outside the action queue', async () => {
+  let finishProfile;
+  const app = endpointWidgetHarness(async () => ({ endpointId: null }), { initialAgent: null,
+    profileFetch: () => new Promise(resolve => { finishProfile = resolve; }) });
+  let tree = app.render();
+  const loading = nodes(tree, node => node.props.title === 'Loading CRM Softphone')[0];
+  assert.ok(loading);
+  assert.equal(loading.props.disabled, true);
+  assert.equal(loading.props['aria-busy'], true);
+  assert.equal(nodes(tree, node => node.props.role === 'group').length, 0);
+  app.profileEffect()();
+  assert.equal(app.requests.length, 1);
+  assert.equal(app.requests[0].url, '/api/plivo/agent-profile?userId=employee-a');
+  finishProfile({ ok: true, json: async () => ({ data: {
+    id: 'agent-a', plivo_endpoint_key: 'ADMIN0001', plivo_username: 'sip-a',
+    default_calling_mode: 'mobile', user_landing_mobile: '+919876543210'
+  } }) });
+  await new Promise(resolve => setImmediate(resolve));
+  tree = app.render();
+  assert.equal(nodes(tree, node => node.props.title === 'Loading CRM Softphone').length, 0);
+  assert.equal(app.state[13].id, 'agent-a');
+  assert.equal(app.state[15], 'mobile');
+  assert.equal(app.state[16], '9876543210');
+  assert.equal(app.storage.size, 0, 'The calling profile and SIP credentials are not persisted');
+});
+
+test('startup failures show retry, non-agents disappear, and canceled profile requests cannot restore old credentials', async () => {
+  let attempts = 0;
+  const retry = endpointWidgetHarness(async () => ({}), { initialAgent: null,
+    profileFetch: async () => ({ ok: ++attempts > 1, json: async () => ({ data: null }) }) });
+  retry.render(); retry.profileEffect()();
+  await new Promise(resolve => setImmediate(resolve));
+  const button = nodes(retry.render(), node => node.props.title === 'Retry loading CRM Softphone')[0];
+  assert.equal(button.props.disabled, false);
+  button.props.onClick();
+  retry.render(); retry.profileEffect()();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(retry.render(), null);
+  assert.equal(attempts, 2);
+
+  let finish;
+  const old = endpointWidgetHarness(async () => ({}), { initialAgent: null,
+    profileFetch: () => new Promise(resolve => { finish = resolve; }) });
+  old.render(); const cleanup = old.profileEffect()();
+  cleanup();
+  assert.equal(old.requests[0].signal.aborted, true);
+  finish({ ok: true, json: async () => ({ data: { id: 'old-agent', plivo_password: 'old-secret' } }) });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(old.state[13], null);
+  assert.equal(old.storage.size, 0);
+});
+
+test('independent profile reads enforce authentication and tenant scope while preserving the existing profile API', async () => {
+  const own = fixture({ userId: 'employee-a' });
+  own.tables.user_roles[1].emp_mobile = '+919876543210';
+  const result = await own.team.getSoftphoneAgentProfile('employee-a');
+  assert.equal(result.status, 200);
+  assert.equal(result.data.user_landing_mobile, '+919876543210');
+  assert.equal(result.data.plivo_password, 'test-password');
+  assert.equal((await own.team.getAgentProfile('employee-a')).data.id, result.data.id);
+  assert.equal((await own.team.getSoftphoneAgentProfile('other-tenant')).status, 403);
+  assert.equal((await fixture({ noUser: true }).team.getSoftphoneAgentProfile()).status, 401);
+  assert.equal((await fixture({ profileReadFailure: true, userId: 'employee-a' }).team.getSoftphoneAgentProfile()).status, 503);
+  const absent = fixture({ userId: 'employee-a' });
+  absent.tables.call_agents[0].user_id = 'different';
+  assert.equal((await absent.team.getSoftphoneAgentProfile()).data, null);
+  assert.equal((await fixture().team.getSoftphoneAgentProfile('employee-a')).status, 200, 'Same-workspace admin access remains supported');
+  assert.equal(own.log.writes.length, 0);
+  assert.equal(own.log.fetches.length, 0);
+});
+
+test('startup GET routes return private non-cacheable responses and retain server-side access checks', async () => {
+  for (const noUser of [false, true]) {
+    const app = fixture({ userId: 'employee-a', noUser });
+    app.dependencies['@/app/actions/team'] = app.team;
+    const profile = await app.load(code.profile).GET(new Request('https://crm.example.test/api/plivo/agent-profile?userId=employee-a'));
+    assert.equal(profile.status, noUser ? 401 : 200);
+    assert.match(profile.headers.get('cache-control'), /private.*no-store/);
+    assert.equal(profile.headers.get('vary'), 'Cookie');
+    const endpoint = await app.load(code.endpointId).GET(new Request('https://crm.example.test/api/plivo/agent-endpoint-id?userId=employee-a'));
+    assert.equal((await endpoint.json()).endpointId, noUser ? null : '174793004058391');
+    assert.match(endpoint.headers.get('cache-control'), /private.*no-store/);
+    assert.equal(app.log.writes.length, 0);
+  }
+  const app = fixture({ userId: 'employee-a' });
+  app.dependencies['@/app/actions/team'] = app.team;
+  const foreign = await app.load(code.profile).GET(new Request('https://crm.example.test/api/plivo/agent-profile?userId=other-tenant'));
+  assert.equal(foreign.status, 403);
+  assert.equal((await foreign.json()).data, null);
+  const invalid = `https://crm.example.test/api?userId=${'a'.repeat(129)}`;
+  assert.equal((await app.load(code.profile).GET(new Request(invalid))).status, 400);
+  assert.equal((await app.load(code.endpointId).GET(new Request(invalid))).status, 400);
 });

@@ -1186,6 +1186,30 @@ export async function getAgentEndpointId(userId = null) {
   }
 }
 
+// Authenticated read for the softphone's independent startup request.
+// Keep getAgentProfile's existing API unchanged for other CRM consumers.
+export async function getSoftphoneAgentProfile(userId = null) {
+  try {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { data: null, error: 'Please sign in again.', status: 401 };
+    const targetUserId = userId || user.id;
+    if (targetUserId !== user.id) {
+      try {
+        await requireCallAdminUser(getAdminClient(), targetUserId);
+      } catch {
+        return { data: null, error: 'Access denied.', status: 403 };
+      }
+    }
+    const result = await getAgentProfile(targetUserId);
+    if (result.error === 'Agent profile not found') return { data: null, error: null, status: 200 };
+    if (result.error) return { data: null, error: 'Softphone profile could not be loaded.', status: 503 };
+    return { ...result, status: 200 };
+  } catch {
+    return { data: null, error: 'Softphone profile could not be loaded.', status: 503 };
+  }
+}
+
 export async function getAgentProfile(userId) {
   const adminClient = getAdminClient();
   const { data: agentData, error: agentError } = await adminClient

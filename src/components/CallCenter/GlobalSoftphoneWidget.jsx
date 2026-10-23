@@ -146,7 +146,18 @@ if (typeof window !== 'undefined') {
   window.__crm_stop_all_ringing = (room) => globalRingController.stop(room);
 }
 
-const SOFTPHONE_VERSION = 'v2.6';
+const SOFTPHONE_VERSION = 'v2.7';
+
+function readCachedEndpointId(userId, reference) {
+  try {
+    if (typeof window === 'undefined') return null;
+    const cached = JSON.parse(window.sessionStorage.getItem(`crm_softphone_endpoint_v1_${userId}`) || 'null');
+    return cached?.reference === reference && cached.expiresAt > Date.now() && /^[0-9]+$/.test(cached.endpointId)
+      ? cached.endpointId : null;
+  } catch {
+    return null;
+  }
+}
 
 // Pre-warm SpeechSynthesis voices on page load
 if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
@@ -331,7 +342,8 @@ export default function GlobalSoftphoneWidget({ userId }) {
   const [activeSession, setActiveSession] = useState(null);
   const [callAnnouncement, setCallAnnouncement] = useState(null);
   const [sdkStatus, setSdkStatus] = useState({ isRegistered: false, isConnected: false });
-  const [agentData, setAgentData] = useState(null);
+  const [agentDataState, setAgentData] = useState(null);
+  const agentData = agentDataState?.user_id && agentDataState.user_id !== userId ? null : agentDataState;
   // Dialer state
   const [customerNumber, setCustomerNumber] = useState('');
   const [callingMode, setCallingMode] = useState('browser_webrtc');
@@ -527,6 +539,9 @@ export default function GlobalSoftphoneWidget({ userId }) {
 
   const [bounds, setBounds] = useState({ left: -1000, top: -1000, right: 12, bottom: 12 });
   const [endpointIdLookup, setEndpointIdLookup] = useState(null);
+  const [profileLoad, setProfileLoad] = useState(null);
+  const [profileReloadAttempt, setProfileReloadAttempt] = useState(0);
+  const profileLoadState = profileLoad?.userId === userId ? profileLoad.status : 'loading';
   const assignedEndpointKey = String(agentData?.plivo_endpoint_key || '').trim();
   const endpointReference = JSON.stringify([userId, agentData?.id, assignedEndpointKey, agentData?.plivo_username, agentData?.plivo_sip_uri]);
   const displayEndpointId = /^[0-9]+$/.test(assignedEndpointKey)
@@ -656,46 +671,68 @@ export default function GlobalSoftphoneWidget({ userId }) {
     localStorage.setItem('softphone_hidden', 'false');
   };
 
-  // Fetch agent profile
+  // Read independently of the Server Action queue used by other CRM modules.
   useEffect(() => {
     if (!userId) return;
     let cancelled = false;
+    const controller = new AbortController();
     const fetchAgent = async () => {
       try {
-        const { getAgentProfile } = await import('@/app/actions/team');
-        const { data } = await getAgentProfile(userId);
+        const response = await fetch(`/api/plivo/agent-profile?userId=${encodeURIComponent(userId)}`, {
+          credentials: 'same-origin', cache: 'no-store', signal: controller.signal
+        });
+        if (!response.ok) throw new Error('Softphone profile could not be loaded.');
+        const { data } = await response.json();
         if (cancelled) return;
+        setAgentData(data || null);
         if (data) {
-          setAgentData(data);
+          const reference = JSON.stringify([userId, data.id, String(data.plivo_endpoint_key || '').trim(), data.plivo_username, data.plivo_sip_uri]);
+          setEndpointIdLookup({ reference, endpointId: readCachedEndpointId(userId, reference) });
           if (data.default_calling_mode) {
              setCallingMode(data.default_calling_mode);
           }
           const landingMobile = normalizeIndianPhoneNumber(data.user_landing_mobile);
           setAgentMobile(landingMobile ? landingMobile.slice(-10) : '');
         }
+        setProfileLoad({ userId, status: 'ready' });
       } catch (err) {
-        console.error(err);
+        if (!cancelled) setProfileLoad({ userId, status: 'error' });
       }
     };
     fetchAgent();
-    return () => { cancelled = true; };
-  }, [userId]);
+    return () => { cancelled = true; controller.abort(); };
+  }, [userId, profileReloadAttempt]);
 
   // Resolve the numeric Plivo ID separately so metadata cannot block connecting or dialing.
   useEffect(() => {
     if (!userId || !agentData?.id || /^[0-9]+$/.test(assignedEndpointKey)) return;
+    const cachedId = readCachedEndpointId(userId, endpointReference);
+    if (cachedId) return;
     let cancelled = false;
+    const controller = new AbortController();
     const resolveEndpointId = async () => {
       try {
-        const { getAgentEndpointId } = await import('@/app/actions/team');
-        const result = await getAgentEndpointId(userId);
-        if (!cancelled) setEndpointIdLookup({ reference: endpointReference, endpointId: result.endpointId });
+        const response = await fetch(`/api/plivo/agent-endpoint-id?userId=${encodeURIComponent(userId)}`, {
+          credentials: 'same-origin', cache: 'no-store', signal: controller.signal
+        });
+        if (!response.ok) throw new Error('Endpoint ID could not be loaded.');
+        const result = await response.json();
+        if (cancelled) return;
+        const endpointId = /^[0-9]+$/.test(String(result.endpointId || '')) ? String(result.endpointId) : null;
+        setEndpointIdLookup({ reference: endpointReference, endpointId });
+        if (endpointId) {
+          try {
+            window.sessionStorage.setItem(`crm_softphone_endpoint_v1_${userId}`, JSON.stringify({
+              reference: endpointReference, endpointId, expiresAt: Date.now() + 5 * 60 * 1000
+            }));
+          } catch { /* Display metadata caching is optional. Never cache SIP credentials. */ }
+        }
       } catch {
         if (!cancelled) setEndpointIdLookup({ reference: endpointReference, endpointId: null });
       }
     };
     resolveEndpointId();
-    return () => { cancelled = true; };
+    return () => { cancelled = true; controller.abort(); };
   }, [userId, agentData?.id, assignedEndpointKey, endpointReference]);
 
   const handleSessionTerminationAnnouncement = useCallback((sessionData, allowGeneric = false) => {
@@ -1638,7 +1675,26 @@ export default function GlobalSoftphoneWidget({ userId }) {
     };
   }, [activeCall, incomingCall]);
 
-  if (!agentData) return null; // Don't show widget if not an agent
+  if (!userId) return null;
+  if (!agentData) {
+    if (profileLoadState === 'ready') return null; // Verified: this user is not a call agent.
+    return (
+      <div className={styles.launcherRoot}>
+        <button
+          type="button"
+          className={styles.launcherButton}
+          disabled={profileLoadState === 'loading'}
+          aria-busy={profileLoadState === 'loading'}
+          onClick={() => { setProfileLoad(null); setAgentData(null); setProfileReloadAttempt(value => value + 1); }}
+          title={profileLoadState === 'error' ? 'Retry loading CRM Softphone' : 'Loading CRM Softphone'}
+        >
+          <PhoneCall size={15} />
+          <span>Softphone</span>
+          <span role="status">{profileLoadState === 'error' ? 'Retry' : 'Loading…'}</span>
+        </button>
+      </div>
+    );
+  }
 
   const hasActiveInteraction = !!(activeCall || incomingCall || (activeSession && activeSession.status !== 'ended') || optimisticCall);
 

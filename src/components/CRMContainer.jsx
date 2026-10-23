@@ -277,6 +277,8 @@ export const MODULE_DISPLAY_NAMES = {
   system_offline_rules: 'Offline Rule Settings'
 };
 
+const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl'];
+
 function sameAlertItems(current, incoming) {
   return current.length === incoming.length && current.every((item, index) => {
     const next = incoming[index];
@@ -367,6 +369,9 @@ export default function CRMContainer({
     (typeof userRole === 'string' && userRole.toLowerCase() === 'masteradmin') ||
     moduleAccess?.is_master_admin === true
   );
+  const isSwanWorkspace = useMemo(() => {
+    return !userCompany || SWAN_COMPANIES.includes(String(userCompany).toLowerCase().trim()) || (userEmail && userEmail.toLowerCase().endsWith('@newswangroup.com'));
+  }, [userCompany, userEmail]);
   const effectiveTenantEntitlements = tenantEntitlements || moduleAccess?._tenantEntitlements || null;
   const effectiveTenantId = tenantId || moduleAccess?._tenantId || null;
   const isCallingEntitled = isFeatureEntitled('callcenter', effectiveTenantEntitlements, effectiveTenantId);
@@ -470,9 +475,12 @@ export default function CRMContainer({
   });
   const [isMounted, setIsMounted] = useState(false);
   const [initialLeadStage] = useState(() => {
-    if (initialSearchParams?.stage === 'all') return null;
-    if (initialSearchParams?.stage) return initialSearchParams.stage;
-    return null;
+    const stageParam = typeof initialSearchParams !== 'undefined' ? initialSearchParams?.stage : null;
+    if (stageParam === 'all') return null;
+    if (stageParam) return stageParam;
+    try {
+      return typeof window !== 'undefined' ? localStorage.getItem('crmActiveStage') || null : null;
+    } catch (_e) { return null; }
   });
   const stagePreviewStateRef = useRef(null);
   const [leads, setLeads] = useState(() => {
@@ -506,12 +514,13 @@ export default function CRMContainer({
     markLeadStartupTiming('app-mounted', { pathname: window.location.pathname });
     setLeadCacheScope(userId);
     let effectiveStage = initialLeadStage;
-    if (!initialSearchParams?.stage && typeof window !== 'undefined') {
+    const hasExplicitStage = typeof initialSearchParams !== 'undefined' && Boolean(initialSearchParams?.stage);
+    if (!hasExplicitStage && typeof window !== 'undefined') {
       try {
         const saved = localStorage.getItem('crmActiveStage');
         if (saved && saved !== 'all') {
           effectiveStage = saved;
-          setLeadsFilterStage(saved);
+          if (typeof setLeadsFilterStage === 'function') setLeadsFilterStage(saved);
         }
       } catch (_e) {}
     }
@@ -545,7 +554,6 @@ export default function CRMContainer({
   const leadAssigneeScopeKey = JSON.stringify(reportingLeadAssignees);
   const leadAssigneeScope = useMemo(() => new Set(JSON.parse(leadAssigneeScopeKey)), [leadAssigneeScopeKey]);
   const [adminCompanyFilter, setAdminCompanyFilter] = useState(() => {
-    const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl'];
     const compLower = String(userCompany || '').toLowerCase().trim();
     if (userCompany && !SWAN_COMPANIES.includes(compLower)) {
       return userCompany;
@@ -554,7 +562,6 @@ export default function CRMContainer({
   });
 
   useEffect(() => {
-    const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl'];
     const compLower = String(userCompany || '').toLowerCase().trim();
     if (userCompany && !SWAN_COMPANIES.includes(compLower) && adminCompanyFilter !== userCompany) {
       setAdminCompanyFilter(userCompany);
@@ -2409,10 +2416,7 @@ export default function CRMContainer({
     let preFilteredLeads = rawLeads;
     
     // 1. Apply Company Filter & Multi-Tenant Workspace Boundary
-    const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl'];
-    const _isSwan = !userCompany || SWAN_COMPANIES.includes(String(userCompany).toLowerCase().trim()) || (userEmail && userEmail.toLowerCase().endsWith('@newswangroup.com'));
-
-    if (!_isSwan && userCompany && userCompany.trim() !== '') {
+    if (!isSwanWorkspace && userCompany && userCompany.trim() !== '') {
       // Client Workspace (e.g. SuPuja Creations, Testing New Swan Group): strictly own company
       preFilteredLeads = rawLeads.filter(l => String(l.our_company || '').trim().toLowerCase() === String(userCompany).trim().toLowerCase());
     } else if (userRole === 'admin' || userRole === 'Admin') {
@@ -2470,7 +2474,7 @@ export default function CRMContainer({
       // If view is true but no steps assigned, they see nothing
       updateLeadsIfChanged([]);
     }
-  }, [rawLeads, loadingLeads, moduleAccess, userRole, adminCompanyFilter, userCompany, userId, userName, globalRolePermissions, leadAssigneeScope]);
+  }, [rawLeads, loadingLeads, moduleAccess, userRole, adminCompanyFilter, userCompany, userId, userName, globalRolePermissions, leadAssigneeScope, isSwanWorkspace]);
 
   // Handle local updates from child components so background fetches don't overwrite them
   const handleLeadsChange = useCallback((updatedFilteredLeads) => {
@@ -2508,7 +2512,7 @@ export default function CRMContainer({
     setLeads(prevLeads => {
       const isVisibleUpdate = lead => {
         const admin = userRole === 'admin' || userRole === 'Admin';
-        if (!_isSwan && userCompany) {
+        if (!isSwanWorkspace && userCompany) {
           return String(lead.our_company || '').trim().toLowerCase() === String(userCompany).trim().toLowerCase();
         }
         if (admin) {
@@ -2539,7 +2543,7 @@ export default function CRMContainer({
       }
       return brandNew.length > 0 ? [...brandNew, ...updatedExisting] : updatedExisting;
     });
-  }, [userRole, adminCompanyFilter, userCompany, moduleAccess, globalRolePermissions, leadAssigneeScope]);
+  }, [userRole, adminCompanyFilter, userCompany, moduleAccess, globalRolePermissions, leadAssigneeScope, isSwanWorkspace]);
 
   const [currentTime] = useState(() => Date.now());
   React.useLayoutEffect(() => {
@@ -5574,9 +5578,7 @@ export default function CRMContainer({
                   style={{ padding: '0.4rem 0.6rem', borderRadius: '8px', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', color: 'var(--text-primary)', fontSize: '0.82rem', outline: 'none', cursor: 'pointer' }}
                 >
                   {(() => {
-                    const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl'];
-                    const _isSwan = !userCompany || SWAN_COMPANIES.includes(String(userCompany).toLowerCase().trim()) || (userEmail && userEmail.toLowerCase().endsWith('@newswangroup.com'));
-                    if (!_isSwan && userCompany) {
+                    if (!isSwanWorkspace && userCompany) {
                       return <option value={userCompany}>{userCompany}</option>;
                     }
                     return (
@@ -7239,7 +7241,6 @@ export default function CRMContainer({
                     userId={userId}
                     userEmail={userEmail}
                     currentUserCompany={(() => {
-                      const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl'];
                       const compLower = String(userCompany || '').toLowerCase().trim();
                       if (userCompany && !SWAN_COMPANIES.includes(compLower)) {
                         return userCompany;
@@ -7388,7 +7389,6 @@ export default function CRMContainer({
                     moduleAccess={moduleAccess} 
                     userRole={userRole} 
                     userCompany={(() => {
-                      const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl'];
                       const compLower = String(userCompany || '').toLowerCase().trim();
                       if (userCompany && !SWAN_COMPANIES.includes(compLower)) {
                         return userCompany;
