@@ -221,6 +221,7 @@ export default function PartyMasterModule({
   // Stage Configuration Modal State (S01 to S08 popup on table action)
   const [isStageModalOpen, setIsStageModalOpen] = useState(false);
   const [allStageTableView, setAllStageTableView] = useTableViewPreference('Party/PartyMasterModule-1');
+  const [s00TableView, setS00TableView] = useTableViewPreference('Party/PartyMasterModule-2');
   const [reportTableView, setReportTableView] = useTableViewPreference('Party/PartyMasterModule-3');
 
   // Column resizing hook for Party Master Table
@@ -2844,6 +2845,9 @@ export default function PartyMasterModule({
               >
                 <Plus size={16} /> + Onboard Direct Partner (Without Lead Handoff)
               </button>
+
+              {/* Table / Tiles View Toggle beside Onboard Direct Partner */}
+              <TableViewToggle view={s00TableView} onChange={setS00TableView} />
             </div>
           </div>
 
@@ -2923,7 +2927,7 @@ export default function PartyMasterModule({
           </div>
 
           <div style={{ background: 'var(--bg-surface)', borderRadius: '12px', border: '1px solid var(--border-light)', overflow: 'hidden' }}>
-            <MobileTableView id="Party/PartyMasterModule-2"><table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
+            <MobileTableView id="Party/PartyMasterModule-2" view={s00TableView} hideToggle={true}><table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
               <thead>
                 <tr style={{ background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
                   <th style={{ padding: '0.85rem 1rem', fontWeight: 700 }}>Lead Universal ID</th>
