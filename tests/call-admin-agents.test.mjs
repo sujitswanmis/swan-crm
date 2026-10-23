@@ -101,6 +101,7 @@ function fixture(options = {}) {
     '@/app/api/plivo/outbound-intent': { outboundRoomToken },
     '@/app/api/plivo/outbound-dial-xml': { buildOutboundDialXml },
     '@/app/api/plivo/utils': { getPlivoWebhookBaseUrl: () => 'https://webhook.example.test' },
+    '@/lib/plivoIncomingRouting': { prepareIncomingRouting: async () => null },
     '@/utils/telephonyConfig': {
       getWorkspaceTelephonyConfig: async () => config,
       getWorkspaceCallingSeatQuota: async (...args) => { log.quota.push(args); return { used: 2, total: 300, canAdd: !options.fullQuota }; }
@@ -424,6 +425,7 @@ function endpointWidgetHarness(lookup, options = {}) {
     'lucide-react': require('lucide-react'), 'react-draggable': ({ children }) => children,
     './ActiveCallPanel': () => null, './Softphone.module.css': { __esModule: true, default: new Proxy({}, { get: (_, key) => key }) },
     './useSoftphoneContacts': { useSoftphoneContacts: () => number => options.contacts?.[normalizeIndianPhoneNumber(number)] || { name: 'UnKnow Person' } },
+    './useIncomingRingtone': { useIncomingRingtone: () => ({ enabled: true, stop() {}, silence() {}, toggleEnabled() {} }) },
     '@/utils/supabase/client': { createClient: () => ({}) },
     '@/app/actions/team': { getRecentCalls: async () => [], getAgentEndpointId: () => { throw new Error('Display reads must not use the Server Action queue'); } },
     '@/lib/softphoneIncomingCall': { createIncomingCallGuard: () => ({}), incomingCallUuid: () => null }

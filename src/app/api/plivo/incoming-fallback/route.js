@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { incomingFallbackXml, incomingHangupXml } from '@/lib/plivoIncomingRouting';
 
 export async function GET() {
   return NextResponse.json({
@@ -14,6 +15,21 @@ export async function POST(req) {
     const textData = await req.text();
     const searchParams = new URLSearchParams(textData);
     const event = Object.fromEntries(searchParams);
+
+    // Signed new invitations respect explicit Forward / Next / Decline.
+    // Older callers keep the original automatic mobile fallback below.
+    if (new URL(req.url).searchParams.has('token')) {
+      try {
+        return new NextResponse(await incomingFallbackXml(req, event), {
+          headers: { 'Content-Type': 'application/xml', 'Cache-Control': 'no-store' }
+        });
+      } catch (error) {
+        return new NextResponse(error.status === 403 ? incomingHangupXml : 'Incoming routing temporarily unavailable', {
+          status: error.status === 403 ? 403 : 503,
+          headers: { 'Content-Type': error.status === 403 ? 'application/xml' : 'text/plain', 'Cache-Control': 'no-store' }
+        });
+      }
+    }
 
     const dialStatus = event.DialStatus || event.Event || '';
     const fromNumber = event.From || '';

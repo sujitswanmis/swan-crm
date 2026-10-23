@@ -1,6 +1,6 @@
 'use client';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Phone, PhoneOff, PhoneMissed, Mic, MicOff, PhoneCall, Headphones, Minimize2, Maximize2, Loader2, ShieldAlert, GripHorizontal, X, RotateCcw, Clock } from 'lucide-react';
+import { Phone, PhoneOff, PhoneMissed, Mic, MicOff, PhoneCall, Headphones, Minimize2, Maximize2, Loader2, ShieldAlert, GripHorizontal, X, RotateCcw, Clock, Volume2, VolumeX, PhoneForwarded, SkipForward } from 'lucide-react';
 import Draggable from 'react-draggable';
 import ActiveCallPanel from './ActiveCallPanel';
 import { getRecentCalls } from '@/app/actions/team';
@@ -9,6 +9,7 @@ import { normalizeIndianPhoneNumber } from '@/app/api/plivo/phone-number';
 import { incomingMatchesOutboundRoom, shouldAutoAnswerOutbound } from '@/app/api/plivo/outbound-intent';
 import { createIncomingCallGuard, incomingCallUuid } from '@/lib/softphoneIncomingCall';
 import { useSoftphoneContacts } from './useSoftphoneContacts';
+import { useIncomingRingtone } from './useIncomingRingtone';
 import styles from './Softphone.module.css';
 
 // Web Audio API tone generator for instant audio cues
@@ -147,7 +148,7 @@ if (typeof window !== 'undefined') {
   window.__crm_stop_all_ringing = (room) => globalRingController.stop(room);
 }
 
-const SOFTPHONE_VERSION = 'v2.9';
+const SOFTPHONE_VERSION = 'v2.11';
 
 function readCachedEndpointId(userId, reference) {
   try {
@@ -367,6 +368,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
   const durationTimerRef = useRef(null);
   const plivoClientRef = useRef(null);
   const incomingGuardRef = useRef(createIncomingCallGuard());
+  const incomingRoutingRef = useRef({ inFlight: null, handled: new Map() });
   const nodeRef = useRef(null);
   const callShortcutControlsRef = useRef(null);
   const activeSessionRef = useRef(null);
@@ -542,11 +544,48 @@ export default function GlobalSoftphoneWidget({ userId }) {
   const [endpointIdLookup, setEndpointIdLookup] = useState(null);
   const [profileLoad, setProfileLoad] = useState(null);
   const [profileReloadAttempt, setProfileReloadAttempt] = useState(0);
+  const [incomingOptions, setIncomingOptions] = useState(null);
+  const [incomingActionState, setIncomingActionState] = useState(null);
+  const [incomingOptionsRetry, setIncomingOptionsRetry] = useState(0);
   const profileLoadState = profileLoad?.userId === userId ? profileLoad.status : 'loading';
   const contactFor = useSoftphoneContacts(agentData?.id ? userId : null, [
     incomingCall?.callerNumber, activeSession?.customer_number, optimisticCall?.customerNumber,
     activeCall?.direction === 'inbound' ? activeCall.remote : null
   ], agentData?.id || '');
+  const incomingRingtone = useIncomingRingtone(agentData?.id ? userId : null,
+    connectionState === 'online' ? incomingCallUuid(incomingCall) : null);
+  const incomingUuid = incomingCallUuid(incomingCall);
+  const incomingToken = String(Object.entries(incomingCall?.extraHeaders || {})
+    .find(([key]) => key.toLowerCase().replace(/^(?:x-ph-)+/, '').replace(/^x-/, '') === 'crminbound')?.[1] || '');
+  const routingOptions = incomingOptions?.uuid === incomingUuid && incomingOptions.userId === userId && incomingOptions.token === incomingToken ? incomingOptions : null;
+  const incomingActionPending = incomingActionState?.uuid === incomingUuid && incomingActionState.userId === userId &&
+    ['pending', 'unconfirmed'].includes(incomingActionState.status);
+  useEffect(() => () => { incomingRoutingRef.current.inFlight = null; }, [userId]);
+  useEffect(() => {
+    if (incomingActionState?.status !== 'success') return;
+    const feedback = incomingActionState;
+    const timer = setTimeout(() => setIncomingActionState(previous => previous === feedback ? null : previous), 5000);
+    return () => clearTimeout(timer);
+  }, [incomingActionState]);
+  useEffect(() => {
+    if (!incomingUuid || !incomingToken || !userId) return;
+    let cancelled = false;
+    const loadIncomingOptions = async () => {
+      try {
+        const response = await fetch('/api/plivo/incoming-control', {
+          method: 'POST', credentials: 'same-origin', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'options', token: incomingToken, userId }), signal: AbortSignal.timeout(8000)
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Call options could not be loaded.');
+        if (!cancelled) setIncomingOptions({ uuid: incomingUuid, userId, token: incomingToken, ...result });
+      } catch {
+        if (!cancelled) setIncomingOptions({ uuid: incomingUuid, userId, token: incomingToken, error: 'Call options could not be loaded.' });
+      }
+    };
+    loadIncomingOptions();
+    return () => { cancelled = true; };
+  }, [incomingUuid, incomingToken, userId, incomingOptionsRetry]);
   const assignedEndpointKey = String(agentData?.plivo_endpoint_key || '').trim();
   const endpointReference = JSON.stringify([userId, agentData?.id, assignedEndpointKey, agentData?.plivo_username, agentData?.plivo_sip_uri]);
   const displayEndpointId = /^[0-9]+$/.test(assignedEndpointKey)
@@ -1186,6 +1225,8 @@ export default function GlobalSoftphoneWidget({ userId }) {
         client.on('onLogout', () => {
           if (plivoClientRef.current && plivoClientRef.current !== client) return;
           incomingGuardRef.current.clear(client);
+          incomingRoutingRef.current.inFlight = null;
+          setIncomingActionState(null);
           setIncomingCall(null);
           setConnectionState('offline');
           setSdkStatus({ isRegistered: false, isConnected: false });
@@ -1256,6 +1297,8 @@ export default function GlobalSoftphoneWidget({ userId }) {
 
           // Show the live invitation immediately. Lead lookup only enriches
           // this exact invite; it cannot recreate a cancelled/answered one.
+          incomingRoutingRef.current.inFlight = null;
+          setIncomingActionState(null);
           setIncomingCall({ callerName, callerNumber, leadName, leadCompany, leadId, extraHeaders, callInfo });
           setIsMinimized(false);
 
@@ -1290,6 +1333,14 @@ export default function GlobalSoftphoneWidget({ userId }) {
 
         client.on('onCallFailed', (reason, callInfo) => {
           if (plivoClientRef.current !== client) return;
+          const failedUuid = incomingCallUuid(callInfo);
+          const handled = incomingRoutingRef.current.handled.get(failedUuid);
+          const cause = String(reason?.message || reason?.cause || reason || '').toLowerCase();
+          if (handled && Date.now() - handled.at < 90000 && /reject|cancel|terminat/.test(cause)) {
+            incomingGuardRef.current.clear(client, callInfo);
+            setIncomingCall(previous => incomingCallUuid(previous) === failedUuid ? null : previous);
+            return;
+          }
           incomingGuardRef.current.clear(client, callInfo);
           stopRingingAudio();
           setActiveCall(null);
@@ -1433,6 +1484,8 @@ export default function GlobalSoftphoneWidget({ userId }) {
     const client = plivoClientRef.current;
     if (client && incomingCall) {
       const uuid = incomingCallUuid(incomingCall);
+      if (incomingRoutingRef.current.inFlight?.uuid === uuid) return;
+      incomingRingtone.stop(uuid);
       const result = incomingGuardRef.current.act(client, incomingCall, 'answer');
       if (result.success) {
         setActiveCall({ direction: 'inbound', remote: incomingCall.callerName });
@@ -1444,12 +1497,64 @@ export default function GlobalSoftphoneWidget({ userId }) {
     }
   };
 
-  const rejectCall = () => {
+  const routeIncomingCall = async action => {
     const client = plivoClientRef.current;
-    if (client && incomingCall) {
-      const uuid = incomingCallUuid(incomingCall);
-      incomingGuardRef.current.act(client, incomingCall, 'reject');
+    const uuid = incomingCallUuid(incomingCall);
+    const guard = incomingGuardRef.current;
+    const ticket = guard.current();
+    const allowed = action === 'decline' ? routingOptions?.canDecline : action === 'next' ? routingOptions?.canNext : routingOptions?.canForward;
+    if (!client || !uuid || !incomingToken || !allowed || incomingRoutingRef.current.inFlight || ticket?.uuid !== uuid || !guard.isCurrent(ticket)) return;
+    let operationId;
+    try { operationId = crypto.randomUUID(); }
+    catch { setIncomingActionState({ uuid, userId, status: 'error', message: 'Call controls are unavailable in this browser.' }); return; }
+    const operation = { uuid, action, operationId, userId };
+    incomingRoutingRef.current.inFlight = operation;
+    incomingRoutingRef.current.handled.set(uuid, { at: Date.now(), action });
+    if (incomingRoutingRef.current.handled.size > 32) incomingRoutingRef.current.handled.delete(incomingRoutingRef.current.handled.keys().next().value);
+    setIncomingActionState({ ...operation, status: 'pending', message: 'Processing call action…' });
+    const request = async requestedAction => {
+      const response = await fetch('/api/plivo/incoming-control', {
+        method: 'POST', credentials: 'same-origin', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: requestedAction, userId, token: incomingToken, inviteUuid: uuid, operationId: operation.operationId }),
+        signal: AbortSignal.timeout(12000)
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        const error = new Error(data.error || 'Call action could not be completed.');
+        error.confirmedFailure = requestedAction !== 'status' && response.status >= 400 && response.status < 500;
+        throw error;
+      }
+      return data;
+    };
+    try {
+      let result;
+      try { result = await request(action); }
+      catch (error) { if (error.confirmedFailure) throw error; result = await request('status'); }
+      for (let attempt = 0; result.pending && attempt < 4; attempt++) {
+        await new Promise(resolve => setTimeout(resolve, 750));
+        if (incomingRoutingRef.current.inFlight !== operation) return;
+        result = await request('status');
+      }
+      if (incomingRoutingRef.current.inFlight !== operation) return;
+      if (!result.success) {
+        setIncomingActionState({ ...operation, status: 'unconfirmed', message: 'Call action is awaiting confirmation.' });
+        return;
+      }
+      incomingRingtone.stop(uuid);
+      guard.clear(client, incomingCall);
       setIncomingCall(previous => incomingCallUuid(previous) === uuid ? null : previous);
+      setErrorMessage('');
+      setIncomingActionState({ ...operation, status: 'success', message: result.message });
+      incomingRoutingRef.current.inFlight = null;
+    } catch (error) {
+      if (incomingRoutingRef.current.inFlight !== operation) return;
+      if (!error.confirmedFailure) {
+        setIncomingActionState({ ...operation, status: 'unconfirmed', message: 'Call action is awaiting confirmation.' });
+        return;
+      }
+      incomingRoutingRef.current.inFlight = null;
+      incomingRoutingRef.current.handled.delete(uuid);
+      setIncomingActionState({ ...operation, status: 'error', message: error.message || 'Call action could not be confirmed.' });
     }
   };
 
@@ -1728,6 +1833,16 @@ export default function GlobalSoftphoneWidget({ userId }) {
           <span className={styles.statusDot} data-state={connectionState} />
         </div>
         <div className={styles.headerActions}>
+          <button
+            type="button"
+            className={styles.iconButton}
+            onClick={incomingRingtone.toggleEnabled}
+            aria-label={`Incoming ringtone: ${incomingRingtone.enabled ? 'Sound On' : 'Silent'}`}
+            aria-pressed={incomingRingtone.enabled}
+            title={incomingRingtone.enabled ? 'Incoming sound: On — click for Silent' : 'Incoming sound: Silent — click for Sound On'}
+          >
+            {incomingRingtone.enabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
+          </button>
           <button 
             type="button"
             className={styles.iconButton}
@@ -1787,6 +1902,11 @@ export default function GlobalSoftphoneWidget({ userId }) {
               {errorMessage}
             </div>
           )}
+          {incomingActionState?.userId === userId && (!incomingUuid || incomingActionState.uuid === incomingUuid) && (
+            <div role="status" style={{ fontSize: '12px', marginBottom: '12px', color: incomingActionState.status === 'error' ? 'var(--sp-danger)' : 'var(--sp-muted)' }}>
+              {incomingActionState.message}
+            </div>
+          )}
 
           {/* Incoming Call Popup with Live Lead Identification */}
           {incomingCall && (
@@ -1819,17 +1939,52 @@ export default function GlobalSoftphoneWidget({ userId }) {
               </div>
 
               {/* Action Buttons */}
-              <div className={styles.incomingActions}>
+              <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginBottom: '12px' }}>
                 <button
                   type="button"
-                  onClick={rejectCall}
+                  className={`${styles.secondaryButton} ${styles.compactButton}`}
+                  onClick={incomingRingtone.silence}
+                  disabled={!incomingRingtone.enabled || incomingRingtone.isSilenced}
+                >
+                  <VolumeX size={14} />
+                  {!incomingRingtone.enabled ? 'Ringtone Silent' : incomingRingtone.isSilenced ? 'Silenced' : 'Silence this call'}
+                </button>
+                {incomingRingtone.enabled && incomingRingtone.blocked && !incomingRingtone.isSilenced && (
+                  <button type="button" className={`${styles.secondaryButton} ${styles.compactButton}`} onClick={incomingRingtone.enableSound}>
+                    <Volume2 size={14} /> Enable sound
+                  </button>
+                )}
+              </div>
+              {!routingOptions && <div style={{ fontSize: '11px', marginBottom: '10px' }}>
+                {incomingToken ? 'Loading call options…' : 'Routing options are unavailable for this invitation.'}
+              </div>}
+              {routingOptions?.error && <button type="button" className={`${styles.secondaryButton} ${styles.compactButton}`} onClick={() => setIncomingOptionsRetry(value => value + 1)} disabled={incomingActionPending}>
+                <RotateCcw size={14} /> Retry call options
+              </button>}
+              <div className={styles.incomingActions} style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
+                <button
+                  type="button"
+                  onClick={() => routeIncomingCall('forward')}
+                  disabled={incomingActionPending || !routingOptions?.canForward}
+                  className={styles.secondaryButton}
+                >
+                  <PhoneForwarded size={15} /> Default Forward Call
+                </button>
+                <button type="button" onClick={() => routeIncomingCall('next')} disabled={incomingActionPending || !routingOptions?.canNext} className={styles.secondaryButton}>
+                  <SkipForward size={15} /> Next Agent
+                </button>
+                <button
+                  type="button"
+                  onClick={() => routeIncomingCall('decline')}
+                  disabled={incomingActionPending || !routingOptions?.canDecline}
                   className={styles.dangerButton}
                 >
-                  <PhoneOff size={15} /> Reject
+                  <PhoneOff size={15} /> Decline Call
                 </button>
                 <button
                   type="button"
                   onClick={answerCall}
+                  disabled={incomingActionPending}
                   className={styles.primaryButton}
                 >
                   <Phone size={15} /> Answer
