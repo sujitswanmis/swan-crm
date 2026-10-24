@@ -9,7 +9,7 @@ import { isFeatureEntitled } from '@/utils/saasEntitlements';
 import SubscriptionExpiryBanner from './SaaS/SubscriptionExpiryBanner';
 import SubscriptionExpiredModal from './SaaS/SubscriptionExpiredModal';
 import AddonPurchaseModal from './SaaS/AddonPurchaseModal';
-import { Database, LayoutDashboard, Users, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, MessageSquare, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen, Building2, MapPin, ShieldCheck, Camera, User, Upload, Loader2, Trash2, Calendar, Clock, AlertTriangle, AlertCircle, X, ExternalLink, CheckSquare, WifiOff, Sparkles, Volume2, CheckCircle2, Play, Settings2, FormInput, Workflow, Monitor, Target, FileType, Compass, Layers, Network, Activity, Crown, GitMerge, Sliders, Send, Mail, Zap } from 'lucide-react';
+import { Database, LayoutDashboard, Users, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, MessageSquare, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen, Building2, MapPin, ShieldCheck, Camera, User, Upload, Loader2, Trash2, Calendar, Clock, AlertTriangle, AlertCircle, X, ExternalLink, CheckSquare, WifiOff, Sparkles, Volume2, CheckCircle2, Play, Settings2, FormInput, Workflow, Monitor, Target, FileType, Compass, Layers, Network, Activity, Crown, GitMerge, Sliders, Send, Mail, Zap, Package } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { getTeamMembers } from '@/app/actions/team';
@@ -91,6 +91,7 @@ const THEMES = [
 
 const SETTINGS_MODULE_ITEMS = [
   { id: 'business', label: 'Business Profile & Branches', icon: Building2 },
+  { id: 'products', label: 'Product List', icon: Package },
   { id: 'crm', label: 'CRM & Lead Config', icon: Settings2 },
   { id: 'fields', label: 'Custom Fields', icon: FormInput },
   { id: 'templates', label: 'Message & WhatsApp Templates', icon: MessageSquare },
@@ -714,6 +715,7 @@ export default function CRMContainer({
     let queryTab = (searchParams?.get('setting') || searchParams?.get('tab') || searchParams?.get('subtab') || initialSearchParams?.setting || initialSearchParams?.tab || initialSearchParams?.subtab || '').toLowerCase();
     if (cleanPath && cleanPath.startsWith('settings/')) {
       const sub = cleanPath.split('/')[1];
+      if (['products', 'product-list', 'products-list'].includes(sub)) return 'products';
       if (['crm-config', 'crm_config'].includes(sub)) return 'crm';
       if (['custom-fields', 'custom_fields'].includes(sub)) return 'fields';
       if (['business-profile', 'branches'].includes(sub)) return 'business';
@@ -723,11 +725,12 @@ export default function CRMContainer({
       if (['performance', 'target'].includes(sub)) return 'targets';
       if (['data-management'].includes(sub)) return 'data';
       if (['file-media', 'files'].includes(sub)) return 'media';
-      if (['business', 'crm', 'fields', 'templates', 'notifications', 'departments', 'targets', 'data', 'media'].includes(sub)) {
+      if (['business', 'products', 'crm', 'fields', 'templates', 'notifications', 'departments', 'targets', 'data', 'media'].includes(sub)) {
         return sub;
       }
     }
     if (queryTab) {
+      if (['products', 'product-list', 'products-list'].includes(queryTab)) return 'products';
       if (['crm-config', 'crm_config'].includes(queryTab)) return 'crm';
       if (['custom-fields', 'custom_fields'].includes(queryTab)) return 'fields';
       if (['business-profile', 'branches'].includes(queryTab)) return 'business';
@@ -737,7 +740,7 @@ export default function CRMContainer({
       if (['performance', 'target'].includes(queryTab)) return 'targets';
       if (['data-management'].includes(queryTab)) return 'data';
       if (['file-media', 'files'].includes(queryTab)) return 'media';
-      if (['business', 'crm', 'fields', 'templates', 'notifications', 'departments', 'targets', 'data', 'media'].includes(queryTab)) {
+      if (['business', 'products', 'crm', 'fields', 'templates', 'notifications', 'departments', 'targets', 'data', 'media'].includes(queryTab)) {
         return queryTab;
       }
     }
@@ -811,6 +814,7 @@ export default function CRMContainer({
           sub = param;
         }
         let cleanSub = (sub || 'business').toLowerCase();
+        if (cleanSub === 'products' || cleanSub === 'product-list' || cleanSub === 'products-list') cleanSub = 'products';
         if (cleanSub === 'crm-config' || cleanSub === 'crm_config') cleanSub = 'crm';
         if (cleanSub === 'custom-fields' || cleanSub === 'custom_fields') cleanSub = 'fields';
         if (cleanSub === 'business-profile' || cleanSub === 'branches') cleanSub = 'business';
@@ -2736,6 +2740,7 @@ export default function CRMContainer({
         sub = params.get('setting') || (params.get('sessionTab') ? 'sessions' : null) || 'business';
       }
       let cleanSub = (sub || 'business').toLowerCase();
+      if (cleanSub === 'products' || cleanSub === 'product-list' || cleanSub === 'products-list') cleanSub = 'products';
       if (cleanSub === 'crm-config' || cleanSub === 'crm_config') cleanSub = 'crm';
       if (cleanSub === 'custom-fields' || cleanSub === 'custom_fields') cleanSub = 'fields';
       if (cleanSub === 'business-profile' || cleanSub === 'branches') cleanSub = 'business';
@@ -2854,6 +2859,7 @@ export default function CRMContainer({
           sub = params.get('setting') || (params.get('sessionTab') ? 'sessions' : null) || 'business';
         }
         let cleanSub = (sub || 'business').toLowerCase();
+        if (cleanSub === 'products' || cleanSub === 'product-list' || cleanSub === 'products-list') cleanSub = 'products';
         if (cleanSub === 'crm-config' || cleanSub === 'crm_config') cleanSub = 'crm';
         if (cleanSub === 'custom-fields' || cleanSub === 'custom_fields') cleanSub = 'fields';
         if (cleanSub === 'business-profile' || cleanSub === 'branches') cleanSub = 'business';
@@ -3172,6 +3178,7 @@ export default function CRMContainer({
 
   const handleSettingSubTabChange = (subTabId) => {
     let cleanSub = subTabId;
+    if (cleanSub === 'products' || cleanSub === 'product-list' || cleanSub === 'products-list') cleanSub = 'products';
     if (cleanSub === 'crm-config' || cleanSub === 'crm_config') cleanSub = 'crm';
     if (cleanSub === 'custom-fields' || cleanSub === 'custom_fields') cleanSub = 'fields';
     if (cleanSub === 'business-profile' || cleanSub === 'branches') cleanSub = 'business';
