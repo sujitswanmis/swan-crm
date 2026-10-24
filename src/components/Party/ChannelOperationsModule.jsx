@@ -21,18 +21,18 @@ import ComplaintManagementModule from '../Orders/ComplaintManagementModule';
 
 const OPERATIONS_TABS = [
   {
-    id: 'order_followup',
-    label: 'Daily Calling Queue',
-    icon: '📞',
-    title: 'Daily Calling Queue (Scheduled Calls)',
-    subtitle: 'Aaj due hone wale sabhi channel partners ki list — 1-click dial karein aur order punch karein'
-  },
-  {
     id: 'frequency_rules',
     label: 'Order Frequency Master',
     icon: '⚙️',
     title: 'Order Frequency Master (Party-wise Rules)',
     subtitle: 'Party Master ke har distributor aur dealer ki repeat order frequency set karein (Daily, Weekly, Monthly, etc.)'
+  },
+  {
+    id: 'order_followup',
+    label: 'Daily Calling Queue',
+    icon: '📞',
+    title: 'Daily Calling Queue (Scheduled Calls)',
+    subtitle: 'Aaj due hone wale sabhi channel partners ki list — 1-click dial karein aur order punch karein'
   },
   {
     id: 'order_pipeline',
@@ -67,7 +67,7 @@ const OPERATIONS_TABS = [
 const DEFAULT_TENANT_ID = '00000000-0000-0000-0000-000000000001';
 
 export default function ChannelOperationsModule({
-  initialSubTab = 'order_followup',
+  initialSubTab = 'frequency_rules',
   activeSubTab,
   onSubTabChange,
   userRole,
@@ -79,8 +79,8 @@ export default function ChannelOperationsModule({
 
   // Active Tab State
   const [activeTab, setActiveTab] = useState(() => {
-    const raw = (activeSubTab || initialSubTab || 'order_followup').toLowerCase();
-    return OPERATIONS_TABS.some(t => t.id === raw) ? raw : 'order_followup';
+    const raw = (activeSubTab || initialSubTab || 'frequency_rules').toLowerCase();
+    return OPERATIONS_TABS.some(t => t.id === raw) ? raw : 'frequency_rules';
   });
 
   useEffect(() => {

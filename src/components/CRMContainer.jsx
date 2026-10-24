@@ -245,8 +245,8 @@ export const PARTY_SUBTAB_TITLES = {
 };
 
 export const CHANNEL_OPS_SUBTAB_TITLES = {
-  order_followup: 'Daily Calling Queue',
   frequency_rules: 'Order Frequency Master',
+  order_followup: 'Daily Calling Queue',
   order_pipeline: 'Order to Delivery Pipeline',
   order_feedback: 'Post-Order Feedback',
   monthly_feedback: 'Monthly Health Checks',
@@ -648,8 +648,8 @@ export default function CRMContainer({
       let sub = cleanPath.split('/')[1];
       if (sub) return sub;
     }
-    if (queryTab && ['order_followup', 'order_feedback', 'monthly_feedback', 'complaints'].includes(queryTab)) return queryTab;
-    return 'order_followup';
+    if (queryTab && ['frequency_rules', 'order_followup', 'order_pipeline', 'order_feedback', 'monthly_feedback', 'complaints'].includes(queryTab)) return queryTab;
+    return 'frequency_rules';
   });
   const [saasMenuExpanded, setSaasMenuExpanded] = useState(() => {
     const raw = (initialRoute || pathname || '');
@@ -867,7 +867,7 @@ export default function CRMContainer({
         } else if (channelOpsTab) {
           sub = channelOpsTab;
         } else {
-          sub = 'order_followup';
+          sub = 'frequency_rules';
         }
         if (sub) {
           setChannelOpsSubTab(sub.toLowerCase());
@@ -2896,7 +2896,7 @@ export default function CRMContainer({
         } else if (channelOpsTab) {
           sub = channelOpsTab;
         } else {
-          sub = 'order_followup';
+          sub = 'frequency_rules';
         }
         if (sub) {
           setChannelOpsSubTab(sub.toLowerCase());
@@ -3265,7 +3265,7 @@ export default function CRMContainer({
   const handlePartySubTabChange = (subTabId) => {
     let cleanSub = (subTabId || 'dashboard').toLowerCase();
     if (cleanSub === 'r03' || cleanSub === 'party-master-report') cleanSub = 'report';
-    if (['order_followup', 'order_feedback', 'monthly_feedback', 'complaints'].includes(cleanSub)) {
+    if (['frequency_rules', 'order_followup', 'order_pipeline', 'order_feedback', 'monthly_feedback', 'complaints'].includes(cleanSub)) {
       handleChannelOpsSubTabChange(cleanSub);
       return;
     }
@@ -3282,7 +3282,7 @@ export default function CRMContainer({
   };
 
   const handleChannelOpsSubTabChange = (subTabId) => {
-    let cleanSub = (subTabId || 'order_followup').toLowerCase();
+    let cleanSub = (subTabId || 'frequency_rules').toLowerCase();
     setChannelOpsSubTab(cleanSub);
     if (activeTab !== 'channel_ops' && activeTab !== 'channel-operations') {
       setActiveTab('channel_ops');
@@ -5096,19 +5096,19 @@ export default function CRMContainer({
                               </div>
 
                               <button
-                                onClick={() => handleChannelOpsSubTabChange('order_followup')}
-                                className="submenu-item"
-                                data-active={activeTab === 'channel_ops' && channelOpsSubTab === 'order_followup'}
-                              >
-                                📞 Daily Calling Queue
-                              </button>
-
-                              <button
                                 onClick={() => handleChannelOpsSubTabChange('frequency_rules')}
                                 className="submenu-item"
                                 data-active={activeTab === 'channel_ops' && channelOpsSubTab === 'frequency_rules'}
                               >
                                 ⚙️ Order Frequency Master
+                              </button>
+
+                              <button
+                                onClick={() => handleChannelOpsSubTabChange('order_followup')}
+                                className="submenu-item"
+                                data-active={activeTab === 'channel_ops' && channelOpsSubTab === 'order_followup'}
+                              >
+                                📞 Daily Calling Queue
                               </button>
 
                               <button
@@ -5565,7 +5565,7 @@ export default function CRMContainer({
                   )}
                   {activeTab === 'public_users' && 'Public Applicants'}
                   {activeTab === 'party' && (PARTY_SUBTAB_TITLES[partySubTab] ? `Party Master • ${PARTY_SUBTAB_TITLES[partySubTab]}` : 'Fully Managed Party Master')}
-                  {(activeTab === 'channel_ops' || activeTab === 'channel-operations') && (CHANNEL_OPS_SUBTAB_TITLES[channelOpsSubTab] ? `Channel Operations • ${CHANNEL_OPS_SUBTAB_TITLES[channelOpsSubTab]}` : 'Channel Partner Operations')}
+                  {(activeTab === 'channel_ops' || activeTab === 'channel-operations') && (CHANNEL_OPS_SUBTAB_TITLES[channelOpsSubTab] ? `Daily Order Follow-up • ${CHANNEL_OPS_SUBTAB_TITLES[channelOpsSubTab]}` : 'Daily Order Follow-up')}
                   {activeTab === 'location_territory' && 'Universal Location & Territory Master'}
                   {activeTab === 'location_master' && 'Central Location Master'}
                   {activeTab === 'whatsapp_official' && 'WhatsApp Official'}
