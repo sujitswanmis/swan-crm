@@ -1,12 +1,13 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Phone, MessageSquare, Plus, Search, Filter, CheckCircle2, Clock, AlertTriangle,
-  RefreshCw, Building2, Package, Calendar, ArrowRight, Shield
+  RefreshCw, Building2, Package, Calendar, ArrowRight, Shield, Sparkles
 } from 'lucide-react';
 import { useTableColumnResize, ColumnResizer } from '@/utils/tableColumnResize';
 import { saveOrderFollowupAndRecur } from '@/app/actions/orderFulfillment';
+import { getTenantProducts } from '@/app/actions/tenantProducts';
 import { PRODUCT_GROUPS } from '@/config/productCatalog';
 import MaskedPhoneDisplay from '../common/MaskedPhoneDisplay';
 
@@ -14,11 +15,36 @@ export default function DailyFollowupQueueTable({
   queue = [],
   loading = false,
   onRefresh,
-  tenantId
+  tenantId,
+  userCompany
 }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('DUE_TODAY');
   const [tierFilter, setTierFilter] = useState('ALL');
+
+  // Dynamic Products Synced from Settings (tenant_products)
+  const [availableProducts, setAvailableProducts] = useState([]);
+  const [loadingProducts, setLoadingProducts] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    async function loadSettingsProducts() {
+      setLoadingProducts(true);
+      try {
+        const prods = await getTenantProducts(userCompany || tenantId || 'New Swan Group');
+        if (isMounted && Array.isArray(prods) && prods.length > 0) {
+          const activeOnly = prods.filter(p => p.is_active !== false);
+          setAvailableProducts(activeOnly.length > 0 ? activeOnly : prods);
+        }
+      } catch (err) {
+        console.warn('Error loading settings products for daily queue:', err);
+      } finally {
+        if (isMounted) setLoadingProducts(false);
+      }
+    }
+    loadSettingsProducts();
+    return () => { isMounted = false; };
+  }, [userCompany, tenantId]);
 
   // Call / Order Modal State
   const [selectedParty, setSelectedParty] = useState(null);
@@ -49,8 +75,11 @@ export default function DailyFollowupQueueTable({
     setSelectedParty(partyItem);
     setCallOutcome(defaultOutcome);
     setFeedbackSuccess('');
+    const firstProd = availableProducts[0];
+    const initialProductName = firstProd?.name || PRODUCT_GROUPS[0]?.name || 'Swan Rotary Tiller (Rotavator)';
+    const initialRate = firstProd?.price ? Number(firstProd.price) : 0;
     setOrderItems([
-      { product: PRODUCT_GROUPS[0]?.name || 'Swan Rotary Tiller (Rotavator)', qty: 1, rate: 0 }
+      { product: initialProductName, qty: 1, rate: initialRate }
     ]);
     setBillingRoute(partyItem.party?.billing_route_type || 'DIRECT_COMPANY_BILLING');
     setPreferredDispatchDate('');
@@ -59,7 +88,10 @@ export default function DailyFollowupQueueTable({
   };
 
   const handleAddItem = () => {
-    setOrderItems([...orderItems, { product: PRODUCT_GROUPS[0]?.name || 'Swan Rotary Tiller (Rotavator)', qty: 1, rate: 0 }]);
+    const firstProd = availableProducts[0];
+    const initialProductName = firstProd?.name || PRODUCT_GROUPS[0]?.name || 'Swan Rotary Tiller (Rotavator)';
+    const initialRate = firstProd?.price ? Number(firstProd.price) : 0;
+    setOrderItems([...orderItems, { product: initialProductName, qty: 1, rate: initialRate }]);
   };
 
   const handleRemoveItem = (index) => {
@@ -70,6 +102,12 @@ export default function DailyFollowupQueueTable({
   const handleItemChange = (index, field, value) => {
     const updated = [...orderItems];
     updated[index][field] = value;
+    if (field === 'product') {
+      const matched = availableProducts.find(p => p.name === value);
+      if (matched && matched.price !== undefined && matched.price !== null) {
+        updated[index].rate = Number(matched.price) || 0;
+      }
+    }
     setOrderItems(updated);
   };
 
@@ -554,9 +592,31 @@ export default function DailyFollowupQueueTable({
                   padding: '1rem',
                   marginBottom: '1.25rem'
                 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-                    <div style={{ fontSize: '0.84rem', fontWeight: 800, color: '#34d399' }}>
-                      PUNCH SALES ORDER ITEMS
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <div style={{ fontSize: '0.84rem', fontWeight: 800, color: '#34d399' }}>
+                        PUNCH SALES ORDER ITEMS
+                      </div>
+                      {availableProducts.length > 0 ? (
+                        <span style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.25rem',
+                          fontSize: '0.68rem',
+                          fontWeight: 700,
+                          padding: '0.15rem 0.45rem',
+                          borderRadius: '6px',
+                          background: 'rgba(16,185,129,0.15)',
+                          color: '#10b981',
+                          border: '1px solid rgba(16,185,129,0.3)'
+                        }}>
+                          <Sparkles size={11} /> Auto-synced with Settings ({availableProducts.length} Products)
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                          (Default Catalog)
+                        </span>
+                      )}
                     </div>
                     <button
                       type="button"
@@ -583,9 +643,17 @@ export default function DailyFollowupQueueTable({
                         onChange={e => handleItemChange(idx, 'product', e.target.value)}
                         style={{ padding: '0.55rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '6px', color: 'var(--text-primary)', fontSize: '0.8rem' }}
                       >
-                        {PRODUCT_GROUPS.map(p => (
-                          <option key={p.id} value={p.name}>{p.name}</option>
-                        ))}
+                        {availableProducts.length > 0 ? (
+                          availableProducts.map(p => (
+                            <option key={p.id || p.sku || p.name} value={p.name}>
+                              {p.name} {p.sku ? `(${p.sku})` : ''} {p.price ? `- ₹${Number(p.price).toLocaleString('en-IN')}` : ''}
+                            </option>
+                          ))
+                        ) : (
+                          PRODUCT_GROUPS.map(p => (
+                            <option key={p.id} value={p.name}>{p.name}</option>
+                          ))
+                        )}
                       </select>
 
                       <input

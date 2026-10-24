@@ -267,9 +267,12 @@ export async function getOrderPipelineList(tenantId = DEFAULT_TENANT_ID, statusF
   const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
 
   try {
+    const parties = await getPartyList(effectiveTenantId);
+    const partiesMap = new Map((parties || []).map(p => [p.id, p]));
+
     let query = adminClient
       .from('sales_orders')
-      .select('*, party:party_master(id, party_universal_code, firm_name, owner_name, primary_mobile, district_name, state_name, party_type)')
+      .select('*')
       .eq('tenant_id', effectiveTenantId)
       .order('created_at', { ascending: false });
 
@@ -282,7 +285,10 @@ export async function getOrderPipelineList(tenantId = DEFAULT_TENANT_ID, statusF
       console.warn('getOrderPipelineList query warning:', error.message);
       return [];
     }
-    return data || [];
+    return (data || []).map(order => ({
+      ...order,
+      party: partiesMap.get(order.party_id) || null
+    }));
   } catch (err) {
     console.error('getOrderPipelineList error:', err);
     return [];
@@ -344,15 +350,21 @@ export async function getDeliveredOrdersPendingFeedback(tenantId = DEFAULT_TENAN
   const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
 
   try {
+    const parties = await getPartyList(effectiveTenantId);
+    const partiesMap = new Map((parties || []).map(p => [p.id, p]));
+
     // 1. Fetch all delivered orders
     const { data: deliveredOrders, error: oErr } = await adminClient
       .from('sales_orders')
-      .select('*, party:party_master(id, party_universal_code, firm_name, owner_name, primary_mobile, district_name, state_name)')
+      .select('*')
       .eq('tenant_id', effectiveTenantId)
       .eq('delivery_status', 'DELIVERED')
       .order('actual_delivery_date', { ascending: false });
 
-    if (oErr) return [];
+    if (oErr) {
+      console.warn('getDeliveredOrdersPendingFeedback query warning:', oErr.message);
+      return [];
+    }
 
     // 2. Fetch already recorded feedback
     const { data: recordedFeedback } = await adminClient
@@ -367,6 +379,7 @@ export async function getDeliveredOrdersPendingFeedback(tenantId = DEFAULT_TENAN
 
     return (deliveredOrders || []).map(order => ({
       ...order,
+      party: partiesMap.get(order.party_id) || null,
       feedback: feedbackMap.get(order.id) || feedbackMap.get(order.order_number) || null,
       isFeedbackRecorded: !!(feedbackMap.get(order.id) || feedbackMap.get(order.order_number))
     }));

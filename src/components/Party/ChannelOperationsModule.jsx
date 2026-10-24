@@ -270,6 +270,7 @@ export default function ChannelOperationsModule({
           loading={loading}
           onRefresh={loadOperationsData}
           tenantId={effectiveTenantId}
+          userCompany={userCompany}
         />
       )}
 
