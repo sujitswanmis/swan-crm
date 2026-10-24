@@ -20,13 +20,51 @@ import MonthlyHealthCheckModule from '../Orders/MonthlyHealthCheckModule';
 import ComplaintManagementModule from '../Orders/ComplaintManagementModule';
 
 const OPERATIONS_TABS = [
-  { id: 'order_followup', label: 'Daily Order Followups', icon: '📞' },
-  { id: 'frequency_rules', label: 'Order Frequency Rules', icon: '⚙️' },
-  { id: 'order_pipeline', label: 'Order to Delivery Pipeline', icon: '🚚' },
-  { id: 'order_feedback', label: 'Post-Order Feedback', icon: '⭐' },
-  { id: 'monthly_feedback', label: 'Monthly Health Checks', icon: '📅' },
-  { id: 'complaints', label: 'Complaint Management', icon: '⚠️' }
+  {
+    id: 'order_followup',
+    label: 'Daily Calling Queue',
+    icon: '📞',
+    title: 'Daily Calling Queue (Scheduled Calls)',
+    subtitle: 'Aaj due hone wale sabhi channel partners ki list — 1-click dial karein aur order punch karein'
+  },
+  {
+    id: 'frequency_rules',
+    label: 'Order Frequency Master',
+    icon: '⚙️',
+    title: 'Order Frequency Master (Party-wise Rules)',
+    subtitle: 'Party Master ke har distributor aur dealer ki repeat order frequency set karein (Daily, Weekly, Monthly, etc.)'
+  },
+  {
+    id: 'order_pipeline',
+    label: 'Order to Delivery Pipeline',
+    icon: '🚚',
+    title: 'Order to Delivery Pipeline (End-to-End Tracking)',
+    subtitle: 'Order Punch ➔ Confirmed ➔ Allocation ➔ Dispatched (LR & Bilty) ➔ Delivered (POD)'
+  },
+  {
+    id: 'order_feedback',
+    label: 'Post-Order Feedback',
+    icon: '⭐',
+    title: 'Post-Delivery Satisfaction Feedback',
+    subtitle: 'Delivery complete hone par partner ka 5-star review aur shortage/damage inspection'
+  },
+  {
+    id: 'monthly_feedback',
+    label: 'Monthly Health Checks',
+    icon: '📅',
+    title: 'Monthly Partner Health Checks',
+    subtitle: 'Inactivity tracking (>45 days dormancy alert) aur 5-dimension relationship audit'
+  },
+  {
+    id: 'complaints',
+    label: 'Complaint Management',
+    icon: '⚠️',
+    title: 'Complaint Management & SLA Tracking',
+    subtitle: 'Plant QA, Logistics aur Accounts grievances ka resolution & verified closure'
+  }
 ];
+
+const DEFAULT_TENANT_ID = '00000000-0000-0000-0000-000000000001';
 
 export default function ChannelOperationsModule({
   initialSubTab = 'order_followup',
@@ -37,7 +75,7 @@ export default function ChannelOperationsModule({
   userCompany,
   tenantId
 }) {
-  const effectiveTenantId = tenantId || null;
+  const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
 
   // Active Tab State
   const [activeTab, setActiveTab] = useState(() => {
@@ -111,31 +149,35 @@ export default function ChannelOperationsModule({
     return deliveredOrders.filter(o => !o.isFeedbackRecorded).length;
   }, [deliveredOrders]);
 
+  const currentTabMeta = useMemo(() => {
+    return OPERATIONS_TABS.find(t => t.id === activeTab) || OPERATIONS_TABS[0];
+  }, [activeTab]);
+
   return (
     <div style={{ padding: '1.25rem 1.5rem', color: 'var(--text-primary)', background: 'var(--bg-primary)', minHeight: '100%' }}>
       {/* Top Module Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
             <div style={{
-              width: '42px',
-              height: '42px',
-              borderRadius: '10px',
+              width: '44px',
+              height: '44px',
+              borderRadius: '12px',
               background: 'linear-gradient(135deg, rgba(37,99,235,0.2) 0%, rgba(59,130,246,0.3) 100%)',
               border: '1px solid rgba(59,130,246,0.4)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              color: '#60a5fa'
+              fontSize: '1.4rem'
             }}>
-              <Phone size={22} />
+              {currentTabMeta.icon}
             </div>
             <div>
-              <h1 style={{ fontSize: '1.55rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
-                Order Operations &amp; Partner Governance
+              <h1 style={{ fontSize: '1.5rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
+                {currentTabMeta.title}
               </h1>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
-                End-to-End Cockpit: Daily Calling Queue, Recurrence Rules, Order-to-Delivery Pipeline, Feedback &amp; Grievances
+              <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+                {currentTabMeta.subtitle}
               </div>
             </div>
           </div>

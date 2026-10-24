@@ -244,8 +244,8 @@ export const PARTY_SUBTAB_TITLES = {
 };
 
 export const CHANNEL_OPS_SUBTAB_TITLES = {
-  order_followup: 'Daily Order Followups',
-  frequency_rules: 'Order Frequency Rules',
+  order_followup: 'Daily Calling Queue',
+  frequency_rules: 'Order Frequency Master',
   order_pipeline: 'Order to Delivery Pipeline',
   order_feedback: 'Post-Order Feedback',
   monthly_feedback: 'Monthly Health Checks',
@@ -255,7 +255,7 @@ export const CHANNEL_OPS_SUBTAB_TITLES = {
 export const MODULE_DISPLAY_NAMES = {
   dashboard: 'Analytics Dashboard',
   leads: 'Leads & Sales Database',
-  channel_ops: 'Channel Operations',
+  channel_ops: 'Daily Order Follow-up',
   registration: 'New Lead Registration',
   report: 'Lead Registered Report',
   orders: 'Order Management',
@@ -5085,7 +5085,7 @@ export default function CRMContainer({
                           <div className={`submenu-list ${channelOpsMenuExpanded ? 'expanded' : ''}`}>
                             <div className="submenu-inner">
                               <div style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-muted, #94a3b8)', padding: '0.35rem 0.75rem 0.2rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                                Order &amp; Channel Operations
+                                Daily Order Follow-up
                               </div>
 
                               <button
@@ -5093,7 +5093,7 @@ export default function CRMContainer({
                                 className="submenu-item"
                                 data-active={activeTab === 'channel_ops' && channelOpsSubTab === 'order_followup'}
                               >
-                                📞 Daily Order Followups
+                                📞 Daily Calling Queue
                               </button>
 
                               <button
@@ -5101,7 +5101,7 @@ export default function CRMContainer({
                                 className="submenu-item"
                                 data-active={activeTab === 'channel_ops' && channelOpsSubTab === 'frequency_rules'}
                               >
-                                ⚙️ Order Frequency Rules
+                                ⚙️ Order Frequency Master
                               </button>
 
                               <button

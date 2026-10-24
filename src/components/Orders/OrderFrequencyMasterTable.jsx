@@ -140,7 +140,7 @@ export default function OrderFrequencyMasterTable({
       if (!p) return false;
 
       if (frequencyFilter !== 'ALL' && item.frequency_type !== frequencyFilter) return false;
-      if (tierFilter !== 'ALL' && p.party_type !== tierFilter) return false;
+      if (tierFilter !== 'ALL' && (p.party_type || '').toLowerCase() !== tierFilter.toLowerCase()) return false;
 
       if (!searchTerm) return true;
       const term = searchTerm.toLowerCase().trim();

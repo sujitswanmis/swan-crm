@@ -2,6 +2,7 @@
 
 import { getAdminClient } from '@/utils/supabase/adminClient';
 import { calculateNextDueDate, getISTDateString, getISTCurrentPeriod } from '@/utils/orderFrequency';
+import { getPartyList } from './partyMaster';
 
 const DEFAULT_TENANT_ID = '00000000-0000-0000-0000-000000000001';
 
@@ -13,17 +14,8 @@ export async function getPartyOrderSchedules(tenantId = DEFAULT_TENANT_ID) {
   const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
 
   try {
-    // 1. Fetch active parties from Party Master
-    const { data: parties, error: pErr } = await adminClient
-      .from('party_master')
-      .select('id, party_universal_code, distributor_code, dealer_code, sub_dealer_code, firm_name, party_type, owner_name, contact_person_name_1, primary_mobile, contact_mobile_1_1, district_name, state_name, billing_route_type, final_status, party_status')
-      .eq('tenant_id', effectiveTenantId)
-      .in('final_status', ['Active', 'Draft', 'Pending']);
-
-    if (pErr) {
-      console.error('getPartyOrderSchedules party_master query error:', pErr);
-      return [];
-    }
+    // 1. Fetch enriched parties from Party Master
+    const parties = await getPartyList(effectiveTenantId);
 
     // 2. Fetch existing schedules
     let schedulesMap = new Map();
@@ -467,12 +459,8 @@ export async function getMonthlyHealthCheckQueue(tenantId = DEFAULT_TENANT_ID, p
   const currentPeriod = periodStr || new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit' }).format(new Date());
 
   try {
-    // 1. Fetch active parties
-    const { data: parties } = await adminClient
-      .from('party_master')
-      .select('id, party_universal_code, distributor_code, dealer_code, firm_name, owner_name, primary_mobile, district_name, state_name, party_type, created_at')
-      .eq('tenant_id', effectiveTenantId)
-      .in('final_status', ['Active', 'Draft', 'Pending']);
+    // 1. Fetch active parties from Party Master
+    const parties = await getPartyList(effectiveTenantId);
 
     // 2. Fetch monthly audits for selected period
     const { data: audits } = await adminClient

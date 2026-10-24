@@ -60,11 +60,12 @@ export async function updatePartyMeta(adminClient, partyId, partialMeta) {
  */
 export async function getPartyList(tenantId = DEFAULT_TENANT_ID) {
   const adminClient = getAdminClient();
+  const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
   try {
     const { data, error } = await adminClient
       .from('party_master')
       .select('*, party_roles(*), party_contacts(*), party_commercial_terms(*), party_addresses(*)')
-      .eq('tenant_id', tenantId)
+      .eq('tenant_id', effectiveTenantId)
       .order('created_at', { ascending: false });
 
     if (error) {

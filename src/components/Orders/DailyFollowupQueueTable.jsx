@@ -127,7 +127,7 @@ export default function DailyFollowupQueueTable({
       const p = item.party;
       if (!p) return false;
 
-      if (tierFilter !== 'ALL' && p.party_type !== tierFilter) return false;
+      if (tierFilter !== 'ALL' && (p.party_type || '').toLowerCase() !== tierFilter.toLowerCase()) return false;
 
       if (statusFilter === 'DUE_TODAY' && item.next_due_date !== todayStr) return false;
       if (statusFilter === 'OVERDUE' && item.next_due_date >= todayStr) return false;
