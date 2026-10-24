@@ -45,16 +45,20 @@ function memoryDb(options) {
   };
   const queries = [];
   return { tables, queries, from(table) {
-    const filters = []; let operation = 'select', payload, singular = false;
+    const filters = []; let operation = 'select', payload, singular = false, columns;
     const query = {
-      select() { return this; }, eq(k, v) { filters.push(row => row[k] === v); return this; },
+      select(value) { columns = value; return this; }, eq(k, v) { filters.push(row => row[k] === v); return this; },
       is(k, v) { return this.eq(k, v); }, in(k, v) { filters.push(row => v.includes(row[k])); return this; },
       order() { return this; }, limit() { return this; },
       update(value) { operation = 'update'; payload = value; return this; },
       insert(value) { operation = 'insert'; payload = value; return this; },
       single() { singular = true; return this; }, maybeSingle() { singular = true; return this; },
       then(resolve, reject) { return Promise.resolve().then(() => {
-        queries.push({ table, operation });
+        queries.push({ table, operation, columns });
+        if (table === 'call_agents' && columns?.includes('outgoing_caller_id')) {
+          if (options.missingCallerIdColumn) return { data: null, error: { code: options.missingCallerIdColumn } };
+          if (options.callerIdReadError) return { data: null, error: { code: 'XX001' } };
+        }
         if (table === 'call_consultations' && options.missingTable) return { data: null, error: { code: 'PGRST205' } };
         if (table === 'call_sessions' && operation === 'update' && options.sessionWriteError) return { data: null, error: { message: 'offline' } };
         assert.ok(tables[table], table);
@@ -159,6 +163,62 @@ test('Add Call holds the same original caller, uses real ringback, and never aut
   const result = await s.api.consultationAction(s.nativeCtx(), 'merge', { attemptId: s.row().attempt_id });
   assert.equal(result.phase, 'merged'); assert.equal(s.live[1].hold, false);
   assert.equal(s.log.some(entry => ['hangup', 'stop'].includes(entry[0])), false);
+});
+
+test('third-person dialing uses the session agent selected outgoing caller ID instead of the rejected workspace default', async () => {
+  const s = await setup();
+  s.db.tables.call_agents[0].outgoing_caller_id = '+918065583111';
+  s.db.tables.call_agents[0].agent_code = '+918064342111';
+  await s.start();
+  assert.equal(s.log.find(entry => entry[0] === 'add')[2].from, '+918065583111');
+  assert.equal(s.row().data.outgoing_caller_id, '+918065583111');
+  assert.equal(s.ctx.config.fromNumber, '+918035340622', 'Do not mutate shared workspace settings');
+  assert.equal(s.live.find(p => p.callUuid === CUSTOMER).hold, true);
+});
+
+test('an empty or non-phone assignment retains this workspace default without reviving an old agent-code override', async () => {
+  for (const assignment of [null, '', 'ADMIN0001']) {
+    const s = await setup();
+    Object.assign(s.db.tables.call_agents[0], { outgoing_caller_id: assignment, agent_code: '+918064342111' });
+    s.ctx.config.fromNumber = '+918044440000';
+    await s.start();
+    assert.equal(s.log.find(entry => entry[0] === 'add')[2].from, '+918044440000');
+  }
+});
+
+test('older caller-ID schemas retain their legacy phone assignment', async () => {
+  for (const code of ['42703', 'PGRST204']) {
+    const s = await setup({ missingCallerIdColumn: code });
+    s.db.tables.call_agents[0].agent_code = '+918064342111';
+    await s.start();
+    assert.equal(s.log.find(entry => entry[0] === 'add')[2].from, '+918064342111');
+    assert.ok(s.db.queries.some(q => q.table === 'call_agents' && q.columns === 'agent_code'));
+  }
+});
+
+test('a failed caller-ID read or mismatched agent owner fails before holding, transferring or dialing', async () => {
+  for (const failure of ['read', 'owner']) {
+    const options = {}, s = await setup(options);
+    if (failure === 'read') options.callerIdReadError = true;
+    else s.db.tables.call_agents[0].user_id = 'another-user';
+    await assert.rejects(s.start(), /caller ID could not be verified/i);
+    assert.equal(s.log.length, 0);
+    assert.equal(s.db.tables.call_sessions[0].conference_name, null);
+    assert.equal(s.db.tables.call_consultations.length, 0);
+  }
+});
+
+test('a selected caller ID works without a workspace default, but a completely missing number leaves the call untouched', async () => {
+  for (const assignment of ['+918065583111', null]) {
+    const s = await setup(); s.ctx.config.fromNumber = '';
+    s.db.tables.call_agents[0].outgoing_caller_id = assignment;
+    if (assignment) {
+      await s.start(); assert.equal(s.log.find(entry => entry[0] === 'add')[2].from, assignment);
+    } else {
+      await assert.rejects(s.start(), /Calling number is not configured/);
+      assert.equal(s.log.length, 0); assert.equal(s.db.tables.call_consultations.length, 0);
+    }
+  }
 });
 
 test('ringing callback keeps the first caller held and only explicit Cancel resumes them', async () => {

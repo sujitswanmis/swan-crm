@@ -148,7 +148,7 @@ if (typeof window !== 'undefined') {
   window.__crm_stop_all_ringing = (room) => globalRingController.stop(room);
 }
 
-const SOFTPHONE_VERSION = 'v2.12';
+const SOFTPHONE_VERSION = 'v2.13';
 
 function readIncomingRoutingToken(headers) {
   const values = Object.fromEntries(Object.entries(headers || {}).map(([key, value]) =>

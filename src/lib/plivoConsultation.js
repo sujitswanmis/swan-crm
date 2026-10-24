@@ -284,6 +284,26 @@ async function finishCancellation(ctx, row) {
   return restoreHolds(ctx, row);
 }
 
+async function consultationCallerId(ctx) {
+  let { data: agent, error } = await ctx.db.from('call_agents').select('outgoing_caller_id,agent_code')
+    .eq('id', ctx.session.agent_id).eq('user_id', ctx.userId).maybeSingle();
+  if (error?.code === '42703' || error?.code === 'PGRST204') {
+    const legacy = await ctx.db.from('call_agents').select('agent_code')
+      .eq('id', ctx.session.agent_id).eq('user_id', ctx.userId).maybeSingle();
+    agent = legacy.data;
+    error = legacy.error;
+  }
+  if (error || !agent) throw new ConsultationError('Outgoing caller ID could not be verified. Your existing call is unchanged.', 503);
+  // Match normal dialing: an explicit empty assignment means workspace default;
+  // agent_code is used only by databases predating the caller-ID column.
+  const assigned = Object.hasOwn(agent, 'outgoing_caller_id') ? agent.outgoing_caller_id : agent.agent_code;
+  const selected = assigned && /^\+?[0-9]{8,15}$/.test(String(assigned).trim())
+    ? String(assigned).trim() : ctx.config.fromNumber;
+  const fromNumber = String(selected || '').replace(/[^0-9+]/g, '');
+  if (!fromNumber) throw new ConsultationError('Calling number is not configured.', 503);
+  return fromNumber;
+}
+
 export async function startConsultation(ctx, number, baseUrl, options = {}) {
   const directControl = options.directControl;
   const dialTo = directControl ? '' : normalizeIndianPhoneNumber(number);
@@ -291,12 +311,14 @@ export async function startConsultation(ctx, number, baseUrl, options = {}) {
   if (ctx.session.status !== 'connected' || !ctx.session.agent_call_uuid || !ctx.session.customer_call_uuid) {
     throw new ConsultationError('Both callers must be connected before Add Call.');
   }
-  if (!directControl && !ctx.config.fromNumber) throw new ConsultationError('Calling number is not configured.', 503);
   if (ctx.session.conference_name && !isConsultationSession(ctx.session)) {
     throw new ConsultationError('This call is already using the previous conference controls.');
   }
   let row = await loadConsultation(ctx.db, ctx.session.id);
   if (row && (BUSY.includes(row.phase) || row.phase === 'failed')) throw new ConsultationError('Finish or cancel the previous Add Call first.');
+  // Resolve only for a new guest dial, before holding/transferring either caller.
+  // Status polling, callbacks, Merge, Cancel and manual controls keep their path.
+  const fromNumber = directControl ? null : await consultationCallerId(ctx);
   await requireReachableWebhook(baseUrl, options.fetcher);
   const attempt = randomUUID();
   const data = {
@@ -315,6 +337,7 @@ export async function startConsultation(ctx, number, baseUrl, options = {}) {
     dial_requested: false, dial_finished: false, started_at: now(),
     cancel_worker: null, cancel_lease_until: null,
     controls_only: !!directControl,
+    ...(!directControl ? { outgoing_caller_id: fromNumber } : {}),
   };
   if (row) {
     row = await patch(ctx, { phase: 'preparing', attempt_id: attempt, data }, ['active', 'merged']);
@@ -396,7 +419,7 @@ export async function startConsultation(ctx, number, baseUrl, options = {}) {
     }
     row = await patch(ctx, { phase: 'dialing', data: { dial_requested: true } }, ['preparing'], attempt);
     const response = await provider(ctx).addParticipant('customer', {
-      friendlyName: row.mpc_name, from: ctx.config.fromNumber, to: dialTo,
+      friendlyName: row.mpc_name, from: fromNumber, to: dialTo,
       dialMusic: 'real', ringTimeout: 35, hold: false, stayAlone: true,
       startMpcOnEnter: true, endMpcOnExit: false, enterSound: 'none', exitSound: 'none',
       agentHoldMusicUrl: consultationWebhookUrl(ctx, row, 'hold'), agentHoldMusicMethod: 'GET',
