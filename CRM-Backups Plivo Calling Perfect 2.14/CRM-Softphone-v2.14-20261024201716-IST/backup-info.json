@@ -1,0 +1,8 @@
+{
+  "softphone_version": "v2.14",
+  "crm_version": "1.0.872",
+  "created_at_ist": "2026-10-24T20:17:16.943Z",
+  "total_files_backed_up": 62,
+  "test_suites_count": 10,
+  "description": "Golden backup baseline for CRM Softphone v2.14 with 178 passing automated tests, incoming ringtone, explicit routing controls, agent caller ID for 3rd person calls, auto connection recovery, and full calling architecture preservation"
+}

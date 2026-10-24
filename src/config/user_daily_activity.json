@@ -650,11 +650,35 @@
       "userId": "07fa35d3-f50a-4e41-ae15-b2692e393ea0",
       "email": "admin@newswangroup.com",
       "empName": "New Swan Admin",
-      "activeSeconds": 5583,
-      "idleSeconds": 15592,
+      "activeSeconds": 8120,
+      "idleSeconds": 16715,
       "firstSeen": "2026-10-23T08:49:36.633339+00:00",
-      "lastSeen": "2026-10-23T17:14:35.141Z",
+      "lastSeen": "2026-10-23T18:29:29.377Z",
       "status": "away",
+      "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36"
+    }
+  },
+  "2026-10-24": {
+    "07fa35d3-f50a-4e41-ae15-b2692e393ea0": {
+      "userId": "07fa35d3-f50a-4e41-ae15-b2692e393ea0",
+      "email": "admin@newswangroup.com",
+      "empName": "New Swan Admin",
+      "activeSeconds": 7115,
+      "idleSeconds": 14014,
+      "firstSeen": "2026-10-23T18:32:07.112169+00:00",
+      "lastSeen": "2026-10-24T15:23:34.882Z",
+      "status": "working",
+      "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36"
+    },
+    "15e6a4bb-ca0c-4743-bf79-494ae64074ee": {
+      "userId": "15e6a4bb-ca0c-4743-bf79-494ae64074ee",
+      "email": "supujacreations@gmail.com",
+      "empName": "SuPuja Creations",
+      "activeSeconds": 119,
+      "idleSeconds": 122,
+      "firstSeen": "2026-10-23T18:45:11.853785+00:00",
+      "lastSeen": "2026-10-23T18:48:11.038Z",
+      "status": "working",
       "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36"
     }
   }
