@@ -148,7 +148,17 @@ if (typeof window !== 'undefined') {
   window.__crm_stop_all_ringing = (room) => globalRingController.stop(room);
 }
 
-const SOFTPHONE_VERSION = 'v2.11';
+const SOFTPHONE_VERSION = 'v2.12';
+
+function readIncomingRoutingToken(headers) {
+  const values = Object.fromEntries(Object.entries(headers || {}).map(([key, value]) =>
+    [key.toLowerCase().replace(/^(?:x-ph-)+/, '').replace(/^x-/, ''), value]));
+  // Retain compatibility with invitations carrying the original single header.
+  if (values.crminboundparts === undefined) return String(values.crminbound || '');
+  if (!/^[1-8]$/.test(String(values.crminboundparts))) return '';
+  const parts = Array.from({ length: Number(values.crminboundparts) }, (_, index) => values[`crminbound${index + 1}`]);
+  return parts.every(part => typeof part === 'string' && /^[a-zA-Z0-9_.-]{1,100}$/.test(part)) ? parts.join('') : '';
+}
 
 function readCachedEndpointId(userId, reference) {
   try {
@@ -555,8 +565,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
   const incomingRingtone = useIncomingRingtone(agentData?.id ? userId : null,
     connectionState === 'online' ? incomingCallUuid(incomingCall) : null);
   const incomingUuid = incomingCallUuid(incomingCall);
-  const incomingToken = String(Object.entries(incomingCall?.extraHeaders || {})
-    .find(([key]) => key.toLowerCase().replace(/^(?:x-ph-)+/, '').replace(/^x-/, '') === 'crminbound')?.[1] || '');
+  const incomingToken = readIncomingRoutingToken(incomingCall?.extraHeaders);
   const routingOptions = incomingOptions?.uuid === incomingUuid && incomingOptions.userId === userId && incomingOptions.token === incomingToken ? incomingOptions : null;
   const incomingActionPending = incomingActionState?.uuid === incomingUuid && incomingActionState.userId === userId &&
     ['pending', 'unconfirmed'].includes(incomingActionState.status);

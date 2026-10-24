@@ -186,9 +186,11 @@ export async function prepareIncomingRouting(db, event, targets, allowedIds = []
 export function incomingAgentDialXml(req, ctx, row, agents, legacyHeaders = '') {
   const users = agents.map(agent => {
     const token = sign(ctx, row, 'invite', { a: agent.id });
-    // Plivo prefixes custom keys with X-PH- on the SIP invite. Keep this key
-    // unprefixed and leave room for that prefix within the header byte limit.
-    const routingHeader = `CrmInbound=${token}`;
+    // The browser SDK drops custom header values longer than 120 characters.
+    // Preserve the signed capability in numbered, bounded transport chunks.
+    const parts = token.match(/.{1,100}/g);
+    const routingHeader = [`CrmInboundParts=${parts.length}`,
+      ...parts.map((part, index) => `CrmInbound${index + 1}=${part}`)].join(',');
     const combined = `${legacyHeaders ? `${legacyHeaders},` : ''}${routingHeader}`;
     const headers = Buffer.byteLength(combined, 'utf8') <= 480 ? combined : routingHeader;
     return `<User sipHeaders="${escapeXml(headers)}">${escapeXml(agent.plivo_sip_uri)}</User>`;

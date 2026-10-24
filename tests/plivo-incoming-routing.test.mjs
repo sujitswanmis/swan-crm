@@ -23,9 +23,23 @@ const TENANT = '33333333-3333-4333-8333-333333333333', DEFAULT = '00000000-0000-
 const CUSTOMER = '+919876543210', CALLED = '+918035340622', FORWARD = '+917888399954';
 const copy = value => JSON.parse(JSON.stringify(value));
 const unescape = value => value.replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&apos;/g, "'");
+// Execute the installed SDK's actual incoming-header filter without starting
+// WebRTC, so transport limits cannot be hidden by a permissive SDK mock.
+const browserSdk = fs.readFileSync(require.resolve('plivo-browser-sdk'), 'utf8');
+const headerModule = browserSdk.match(/"\.\/lib\/utils\/headers\.ts":function\(e,t,n\)\{([\s\S]*?)\},"\.\/lib\/utils\/loggerUtil\.ts"/);
+assert.ok(headerModule, 'Locate the installed Plivo browser SDK header parser');
+const browserHeaders = {};
+vm.runInNewContext(`(function(e,t,n){${headerModule[1]}})`)({}, browserHeaders, () => {});
 const tokenFor = (xml, sip = 'agent-a') => {
   const user = [...xml.matchAll(/<User sipHeaders="([^"]+)">([^<]+)<\/User>/g)].find(match => match[2].includes(`sip:${sip}@`));
-  return user?.[1].match(/CrmInbound=([^,]+)/)?.[1];
+  if (!user) return undefined;
+  const wire = Object.fromEntries(unescape(user[1]).split(',').map(header => {
+    const equals = header.indexOf('='); return [`X-PH-${header.slice(0, equals)}`, header.slice(equals + 1)];
+  }));
+  const delivered = browserHeaders.receiveExtraHeader({ getHeader: key => wire[key] }, wire);
+  const count = Number(delivered['X-PH-CrmInboundParts']);
+  const parts = Array.from({ length: count }, (_, index) => delivered[`X-PH-CrmInbound${index + 1}`]);
+  return count && parts.every(Boolean) ? parts.join('') : undefined;
 };
 const urlFor = (xml, mode) => unescape([...xml.matchAll(/https:\/\/[^"<]+/g)].map(match => match[0]).find(url => url.includes(`mode=${mode}`)));
 
@@ -322,9 +336,24 @@ test('provider V3 signature validation works with the installed SDK and the publ
   assert.ok(await app.prepare());
   const xml = app.lib.incomingAgentDialXml({ url: 'http://localhost:3000/calladmin' }, app.tracked.ctx, app.tracked.row, [app.tables.call_agents[0]], 'X-Lead-Name=' + 'a'.repeat(800));
   const headers = xml.match(/sipHeaders="([^"]+)"/)[1];
-  assert.ok(Buffer.byteLength(headers) < 480); assert.ok(headers.startsWith('CrmInbound=')); assert.ok(!headers.startsWith('X-PH-'));
+  assert.ok(Buffer.byteLength(headers) < 480); assert.ok(headers.startsWith('CrmInboundParts=')); assert.ok(!headers.startsWith('X-PH-'));
+  assert.ok(tokenFor(xml), 'The installed browser SDK must deliver every token part');
   assert.ok(!xml.includes('localhost'));
   await app.action('forward'); assert.ok(app.log.transfers[0][1].alegUrl.startsWith('https://webhook.example.test/'));
+});
+
+test('routing capabilities survive the installed SDK 120-character limit for production and tunnel origins', async () => {
+  assert.equal(browserHeaders.checkExtraHeaderVal('a'.repeat(120)), true);
+  assert.equal(browserHeaders.checkExtraHeaderVal('a'.repeat(121)), false);
+  for (const origin of ['https://app.supujacreations.com', 'https://stop-offering-transform-directors.trycloudflare.com']) {
+    const app = fixture({ incomingUrl: `${origin}/api/plivo/incoming` }); await app.prepare();
+    assert.ok(app.token.length > 120);
+    assert.equal(browserHeaders.checkExtraHeaderVal(app.token), false, 'The previous single header was discarded');
+    const headers = app.xml.match(/sipHeaders="([^"]+)"/)[1];
+    assert.ok(Buffer.byteLength(headers) < 480);
+    assert.ok(headers.split(',').every(header => header.slice(header.indexOf('=') + 1).length <= 100));
+    assert.equal((await app.action('options')).data.canDecline, true);
+  }
 });
 
 test('the migration is additive, denies browser access, and grants only server reads/inserts/updates', () => {

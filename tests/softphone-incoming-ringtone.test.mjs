@@ -16,6 +16,11 @@ const compile = file => swc.transformSync(fs.readFileSync(new URL(`../${file}`, 
 const hookCode = compile('src/components/CallCenter/useIncomingRingtone.js');
 const widgetCode = compile('src/components/CallCenter/GlobalSoftphoneWidget.jsx');
 const flush = () => new Promise(resolve => setImmediate(resolve));
+const browserSdk = fs.readFileSync(require.resolve('plivo-browser-sdk'), 'utf8');
+const headerModule = browserSdk.match(/"\.\/lib\/utils\/headers\.ts":function\(e,t,n\)\{([\s\S]*?)\},"\.\/lib\/utils\/loggerUtil\.ts"/);
+assert.ok(headerModule, 'Locate the installed Plivo browser SDK header parser');
+const browserHeaders = {};
+vm.runInNewContext(`(function(e,t,n){${headerModule[1]}})`)({}, browserHeaders, () => {});
 
 function audioFixture(options = {}) {
   const contexts = [], voices = [], timers = new Map(), listeners = new Map();
@@ -271,9 +276,9 @@ async function widgetHarness({ outbound = false, legacy = false, control, header
   // The fixture's VM rejects all other dependencies and has no network access.
   render(); await flush();
   return { ...h, audio, actions, flags, routeActions, client, render,
-    async incoming(uuid = 'customer-call') {
+    async incoming(uuid = 'customer-call', headers = legacy ? {} : { [headerName]: `signed-${uuid}` }) {
       invitation = { callUUID: uuid, state: 'ringing' };
-      await callbacks.get('onIncomingCall')('+919876543210', legacy ? {} : { [headerName]: `signed-${uuid}` }, invitation);
+      await callbacks.get('onIncomingCall')('+919876543210', headers, invitation);
       render(); await flush();
       return render();
     },
@@ -409,5 +414,45 @@ test('SDK header casing and stripped X-PH prefixes both resolve the same signed 
   for (const headerName of ['X-PH-CrmInbound', 'x-ph-crminbound', 'CrmInbound']) {
     const h = await widgetHarness({ headerName }); await h.incoming();
     assert.equal(h.button('Decline Call').props.disabled, false, headerName); h.unmount();
+  }
+});
+
+test('numbered headers surviving the actual SDK restore the full signed capability and enable all routing buttons', async () => {
+  const token = 'a'.repeat(218) + '.' + 'b'.repeat(43), parts = token.match(/.{1,100}/g);
+  for (const prefix of ['X-PH-', 'x-ph-']) {
+    const wire = { [`${prefix}CrmInboundParts`]: String(parts.length),
+      ...Object.fromEntries(parts.map((part, index) => [`${prefix}CrmInbound${index + 1}`, part])) };
+    const delivered = browserHeaders.receiveExtraHeader({ getHeader: key => wire[key] }, wire);
+    const received = [];
+    const h = await widgetHarness({ control: async body => {
+      received.push(body);
+      return { ok: true, json: async () => body.action === 'options'
+        ? { canForward: true, canNext: true, canDecline: true } : { success: true, action: body.action } };
+    } });
+    await h.incoming('chunked-call', delivered);
+    for (const name of ['Default Forward Call', 'Next Agent', 'Decline Call', 'Answer']) {
+      assert.equal(h.button(name).props.disabled, false, name);
+    }
+    assert.equal(received[0].token, token);
+    await h.button('Decline Call').props.onClick();
+    assert.equal(received[1].token, token); assert.equal(received[1].inviteUuid, 'chunked-call');
+    h.unmount();
+  }
+});
+
+test('incomplete or malformed token chunks keep routing disabled while Answer and Silence remain available', async () => {
+  for (const headers of [
+    { 'X-PH-CrmInboundParts': '3', 'X-PH-CrmInbound1': 'first', 'X-PH-CrmInbound3': 'last' },
+    { 'X-PH-CrmInboundParts': '99', 'X-PH-CrmInbound1': 'first' },
+    { 'X-PH-CrmInboundParts': 'NaN' },
+    { 'X-PH-CrmInboundParts': '1', 'X-PH-CrmInbound1': 'invalid value' }
+  ]) {
+    const received = [];
+    const h = await widgetHarness({ control: async body => { received.push(body); throw new Error('Unexpected control request'); } });
+    await h.incoming('incomplete-call', headers);
+    assert.equal(h.button('Decline Call').props.disabled, true);
+    assert.equal(h.button('Answer').props.disabled, false);
+    assert.equal(h.button('Silence this call').props.disabled, false);
+    assert.equal(received.length, 0); h.unmount();
   }
 });
