@@ -8,6 +8,7 @@ import { createClient } from '@/utils/supabase/client';
 import { normalizeIndianPhoneNumber } from '@/app/api/plivo/phone-number';
 import { incomingMatchesOutboundRoom, shouldAutoAnswerOutbound } from '@/app/api/plivo/outbound-intent';
 import { createIncomingCallGuard, incomingCallUuid } from '@/lib/softphoneIncomingCall';
+import { createSoftphoneConnectionRecovery } from '@/lib/softphoneConnectionRecovery';
 import { useSoftphoneContacts } from './useSoftphoneContacts';
 import { useIncomingRingtone } from './useIncomingRingtone';
 import styles from './Softphone.module.css';
@@ -148,7 +149,7 @@ if (typeof window !== 'undefined') {
   window.__crm_stop_all_ringing = (room) => globalRingController.stop(room);
 }
 
-const SOFTPHONE_VERSION = 'v2.13';
+const SOFTPHONE_VERSION = 'v2.14';
 
 function readIncomingRoutingToken(headers) {
   const values = Object.fromEntries(Object.entries(headers || {}).map(([key, value]) =>
@@ -377,6 +378,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
 
   const durationTimerRef = useRef(null);
   const plivoClientRef = useRef(null);
+  const connectionRecoveryRef = useRef(null);
   const incomingGuardRef = useRef(createIncomingCallGuard());
   const incomingRoutingRef = useRef({ inFlight: null, handled: new Map() });
   const nodeRef = useRef(null);
@@ -1143,13 +1145,13 @@ export default function GlobalSoftphoneWidget({ userId }) {
     };
   }, [agentData, supabase, updateActiveSession, stopRingingAudio, handleSessionTerminationAnnouncement]);
 
-  const connectSoftphone = useCallback(async (clientInstance = plivoClient) => {
+  const connectSoftphone = useCallback(async (clientInstance, { isCurrent = () => true } = {}) => {
     if (!clientInstance) return;
     setConnectionState('connecting');
     setErrorMessage('');
     try {
-      const res = await fetch('/api/plivo/token', { method: 'POST' });
-      if (plivoClientRef.current !== clientInstance) return;
+      const res = await fetch('/api/plivo/token', { method: 'POST', credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.timeout(8000) });
+      if (plivoClientRef.current !== clientInstance || !isCurrent()) return;
       const contentType = res.headers.get('content-type') || '';
 
       if (!res.ok || !contentType.includes('application/json')) {
@@ -1162,35 +1164,33 @@ export default function GlobalSoftphoneWidget({ userId }) {
             errMsg = errJson.error || errJson.message || errMsg;
           }
         } catch (_) {}
-        setConnectionState('error');
-        setErrorMessage(errMsg);
-        return;
+        return { fatal: [401, 403].includes(res.status), retry: true, error: errMsg };
       }
 
       const data = await res.json();
-      if (plivoClientRef.current !== clientInstance) return;
+      if (plivoClientRef.current !== clientInstance || !isCurrent()) return;
       if (data.username && data.password) {
-        clientInstance.login(data.username, data.password);
+        return { accepted: clientInstance.login(data.username, data.password) !== false };
       } else if (data.token) {
-        clientInstance.loginWithAccessToken(data.token);
+        return { accepted: clientInstance.loginWithAccessToken(data.token) !== false };
       } else if (data.enabled === false) {
-        setConnectionState('offline');
-        setErrorMessage('');
+        return { disabled: true };
       } else {
-        setConnectionState('error');
-        setErrorMessage(data.error || 'Failed to fetch credentials');
+        return { fatal: true, error: data.error || 'Failed to fetch credentials' };
       }
     } catch (err) {
-      if (plivoClientRef.current !== clientInstance) return;
-      setConnectionState('error');
-      setErrorMessage(err.message || 'Failed to fetch credentials');
+      if (plivoClientRef.current !== clientInstance || !isCurrent()) return;
+      return { retry: true, error: err.message || 'Failed to fetch credentials' };
     }
-  }, [plivoClient]);
+  }, []);
 
   useEffect(() => {
     let activeClient = null;
+    let recovery = null;
+    let detachRecovery = () => {};
     let disposed = false;
     const incomingGuard = incomingGuardRef.current;
+    if (!userId) return;
     const initPlivo = async () => {
       try {
         const PlivoModule = await import('plivo-browser-sdk');
@@ -1211,24 +1211,47 @@ export default function GlobalSoftphoneWidget({ userId }) {
         if (typeof client.setRingTone === 'function') client.setRingTone(false);
         if (typeof client.setRingToneBack === 'function') client.setRingToneBack(false);
 
-        client.on('onLogin', () => {
-          if (plivoClientRef.current !== client) return;
-          setConnectionState('online');
-          setSdkStatus({ isRegistered: true, isConnected: true });
-          if (agentDataRef.current?.id) {
-            fetch('/api/plivo/session-status', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ agentId: agentDataRef.current.id, status: 'available' })
-            }).catch(() => {});
+        recovery = createSoftphoneConnectionRecovery({ client,
+          schedule: setTimeout, cancel: clearTimeout,
+          online: () => typeof navigator === 'undefined' || navigator.onLine !== false,
+          authenticate: isCurrent => connectSoftphone(client, { isCurrent }),
+          onState: state => {
+            if (disposed || plivoClientRef.current !== client) return;
+            setConnectionState(state.status); setErrorMessage(state.error);
+            setSdkStatus({ isRegistered: state.isRegistered, isConnected: state.isConnected });
+          },
+          onReady: () => {
+            if (agentDataRef.current?.id) {
+              const session = activeSessionRef.current;
+              const busy = session && !['ended', 'failed'].includes(session.status);
+              fetch('/api/plivo/session-status', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ agentId: agentDataRef.current.id, status: busy ? 'busy' : 'available' })
+              }).catch(() => {});
+            }
           }
+        });
+        connectionRecoveryRef.current = recovery;
+        const resume = () => recovery.resume();
+        const offline = () => recovery.offline();
+        const visible = () => { if (document.visibilityState === 'visible') recovery.resume(); };
+        window.addEventListener?.('online', resume);
+        window.addEventListener?.('offline', offline);
+        window.addEventListener?.('focus', resume);
+        if (typeof document !== 'undefined') document.addEventListener?.('visibilitychange', visible);
+        detachRecovery = () => {
+          window.removeEventListener?.('online', resume); window.removeEventListener?.('offline', offline);
+          window.removeEventListener?.('focus', resume);
+          if (typeof document !== 'undefined') document.removeEventListener?.('visibilitychange', visible);
+        };
+
+        client.on('onLogin', () => {
+          if (plivoClientRef.current === client) recovery.registered();
         });
 
         client.on('onLoginFailed', (reason) => {
           if (plivoClientRef.current !== client) return;
-          setConnectionState('error');
-          setErrorMessage('Login failed: ' + reason);
-          setSdkStatus({ isRegistered: false, isConnected: false });
+          recovery.loginFailed(reason);
         });
 
         client.on('onLogout', () => {
@@ -1237,8 +1260,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
           incomingRoutingRef.current.inFlight = null;
           setIncomingActionState(null);
           setIncomingCall(null);
-          setConnectionState('offline');
-          setSdkStatus({ isRegistered: false, isConnected: false });
+          recovery.loggedOut();
           if (agentDataRef.current?.id) {
             fetch('/api/plivo/session-status', {
               method: 'POST',
@@ -1250,13 +1272,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
 
         client.on('onConnectionChange', (state) => {
           if (plivoClientRef.current !== client) return;
-          if (state && (state.status === 'disconnected' || state.status === 'failed')) {
-            setConnectionState('error');
-            setErrorMessage('Connection lost: ' + (state.reason || 'Disconnected'));
-            setSdkStatus(prev => ({ ...prev, isConnected: false }));
-          } else if (state && state.status === 'connected') {
-            setSdkStatus(prev => ({ ...prev, isConnected: true }));
-          }
+          recovery.connectionChanged(state);
         });
 
         client.on('onIncomingCall', async (callerName, extraHeaders, callInfo, incomingCallerName) => {
@@ -1426,8 +1442,9 @@ export default function GlobalSoftphoneWidget({ userId }) {
         setPlivoClient(client);
         
         // Auto connect after initialization
-        connectSoftphone(client);
+        void recovery.start();
       } catch (err) {
+        if (disposed) return;
         setConnectionState('error');
         setErrorMessage('Failed to load SDK');
       }
@@ -1437,13 +1454,16 @@ export default function GlobalSoftphoneWidget({ userId }) {
 
     return () => {
       disposed = true;
+      detachRecovery();
+      recovery?.destroy();
+      if (connectionRecoveryRef.current === recovery) connectionRecoveryRef.current = null;
       if (activeClient) {
         incomingGuard.clear(activeClient);
         if (plivoClientRef.current === activeClient) plivoClientRef.current = null;
         activeClient.logout();
       }
     };
-  }, []);
+  }, [userId, connectSoftphone, stopRingingAudio]);
 
   // Declarative Call Duration Timer based on activeSession status or customer_answer_time
   useEffect(() => {
@@ -1483,10 +1503,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
   };
 
   const disconnectSoftphone = () => {
-    if (plivoClient && connectionState === 'online') {
-      plivoClient.logout();
-      setConnectionState('offline');
-    }
+    connectionRecoveryRef.current?.disconnect();
   };
 
   const answerCall = () => {
@@ -1889,7 +1906,7 @@ export default function GlobalSoftphoneWidget({ userId }) {
             <div style={{ flexShrink: 0 }}>
               {connectionState !== 'online' ? (
                 <button 
-                  onClick={() => connectSoftphone(plivoClient)}
+                  onClick={() => connectionRecoveryRef.current?.connect()}
                   disabled={connectionState === 'connecting'}
                   className={`${styles.primaryButton} ${styles.compactButton}`}
                 >
@@ -1974,21 +1991,23 @@ export default function GlobalSoftphoneWidget({ userId }) {
                 <button
                   type="button"
                   onClick={() => routeIncomingCall('forward')}
+                  aria-busy={incomingActionPending && incomingActionState.action === 'forward'}
                   disabled={incomingActionPending || !routingOptions?.canForward}
                   className={styles.secondaryButton}
                 >
-                  <PhoneForwarded size={15} /> Default Forward Call
+                  {incomingActionPending && incomingActionState.action === 'forward' ? <><Loader2 size={15} className="spin" /> Forwarding…</> : <><PhoneForwarded size={15} /> Default Forward Call</>}
                 </button>
-                <button type="button" onClick={() => routeIncomingCall('next')} disabled={incomingActionPending || !routingOptions?.canNext} className={styles.secondaryButton}>
-                  <SkipForward size={15} /> Next Agent
+                <button type="button" onClick={() => routeIncomingCall('next')} aria-busy={incomingActionPending && incomingActionState.action === 'next'} disabled={incomingActionPending || !routingOptions?.canNext} className={styles.secondaryButton}>
+                  {incomingActionPending && incomingActionState.action === 'next' ? <><Loader2 size={15} className="spin" /> Finding next agent…</> : <><SkipForward size={15} /> Next Agent</>}
                 </button>
                 <button
                   type="button"
                   onClick={() => routeIncomingCall('decline')}
+                  aria-busy={incomingActionPending && incomingActionState.action === 'decline'}
                   disabled={incomingActionPending || !routingOptions?.canDecline}
                   className={styles.dangerButton}
                 >
-                  <PhoneOff size={15} /> Decline Call
+                  {incomingActionPending && incomingActionState.action === 'decline' ? <><Loader2 size={15} className="spin" /> Declining…</> : <><PhoneOff size={15} /> Decline Call</>}
                 </button>
                 <button
                   type="button"

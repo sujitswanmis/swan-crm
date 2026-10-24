@@ -205,9 +205,13 @@ export function incomingAgentDialXml(req, ctx, row, agents, legacyHeaders = '') 
 async function controlContext(userId, token) {
   if (!userId) throw new IncomingRoutingError('Please sign in again.', 401);
   const ctx = await signedContext(token, 'invite');
-  const agent = checked(await ctx.db.from('call_agents').select('*').eq('id', ctx.payload.a).eq('user_id', userId).eq('is_active', true).maybeSingle());
+  const [agentResult, roleResult] = await Promise.all([
+    ctx.db.from('call_agents').select('*').eq('id', ctx.payload.a).eq('user_id', userId).eq('is_active', true).maybeSingle(),
+    ctx.db.from('user_roles').select('*').eq('user_id', userId).maybeSingle()
+  ]);
+  const agent = checked(agentResult);
   if (!agent || !ctx.row.eligible_agent_ids.includes(agent.id)) throw new IncomingRoutingError('This invitation belongs to another agent.', 403);
-  const role = checked(await ctx.db.from('user_roles').select('*').eq('user_id', userId).maybeSingle());
+  const role = checked(roleResult);
   if (!role || (await scopeFor(ctx.db, role)).key !== ctx.row.workspace_key) throw new IncomingRoutingError('This call belongs to another workspace.', 403);
   return { ...ctx, agent, userId };
 }
@@ -218,11 +222,12 @@ function assertRinging(ctx) {
 }
 async function assertLiveInvitation(ctx, inviteUuid) {
   if (!UUID.test(inviteUuid || '')) throw new IncomingRoutingError('Invalid incoming call reference.', 400);
-  const live = await ctx.client.calls.getLiveCall(inviteUuid);
+  const [live, parent] = await Promise.all([
+    ctx.client.calls.getLiveCall(inviteUuid), ctx.client.calls.getLiveCall(ctx.row.parent_call_uuid)
+  ]);
   const target = lower(live.to || live.toNumber).replace(/^sip:/, '').split('@')[0];
   const state = lower(live.callStatus || live.call_state || live.callState);
   if (!['ringing', 'queued'].includes(state) || target !== lower(ctx.agent.plivo_username)) throw new IncomingRoutingError('The invitation has ended or was already answered.');
-  const parent = await ctx.client.calls.getLiveCall(ctx.row.parent_call_uuid);
   if (lower(parent.direction) !== 'inbound' || normalizeIndianPhoneNumber(parent.from) !== normalizeIndianPhoneNumber(ctx.row.customer_number) ||
       normalizeIndianPhoneNumber(parent.to) !== normalizeIndianPhoneNumber(ctx.row.destination_number)) throw new IncomingRoutingError('Incoming customer leg could not be verified.', 403);
 }
@@ -245,9 +250,12 @@ export async function controlIncomingCall(req, userId, body) {
     return { canNext: next.length > 0, canForward: !!forward, canDecline: true };
   }
   if (!['forward', 'next', 'decline'].includes(body.action) || !UUID.test(body.operationId || '')) throw new IncomingRoutingError('Invalid incoming action.', 400);
-  await assertLiveInvitation(ctx, body.inviteUuid);
-  const next = body.action === 'next' ? (await availableAgents(ctx, row, ctx.agent.id))[0] : null;
-  const forward = body.action === 'forward' ? await forwardNumber(ctx, row) : null;
+  const [, nextAgents, forward] = await Promise.all([
+    assertLiveInvitation(ctx, body.inviteUuid),
+    body.action === 'next' ? availableAgents(ctx, row, ctx.agent.id) : null,
+    body.action === 'forward' ? forwardNumber(ctx, row) : null
+  ]);
+  const next = nextAgents?.[0] || null;
   if (body.action === 'next' && !next) throw new IncomingRoutingError('No other agent is available. The call is still ringing.');
   if (body.action === 'forward' && !forward) throw new IncomingRoutingError('No default forwarding number is available. The call is still ringing.');
   const claimed = await patch(ctx, row, { status: 'routing', action: body.action, operation_id: body.operationId,

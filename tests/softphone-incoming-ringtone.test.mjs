@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import { createRequire } from 'node:module';
 import React from 'react';
 import { createIncomingCallGuard, incomingCallUuid } from '../src/lib/softphoneIncomingCall.js';
+import { createSoftphoneConnectionRecovery } from '../src/lib/softphoneConnectionRecovery.js';
 
 const require = createRequire(import.meta.url);
 const swc = require('next/dist/build/swc');
@@ -59,7 +60,7 @@ function audioFixture(options = {}) {
     addEventListener(name, fn) { if (!listeners.has(name)) listeners.set(name, new Set()); listeners.get(name).add(fn); },
     removeEventListener(name, fn) { listeners.get(name)?.delete(fn); }
   };
-  return { contexts, voices, timers, storage, listeners, window,
+  return { contexts, voices, timers, storage, listeners, window, navigator: { onLine: true },
     schedule(fn) { const id = ++nextTimer; timers.set(id, fn); return id; },
     cancel(id) { timers.delete(id); },
     tick() { const [id, fn] = timers.entries().next().value; timers.delete(id); fn(); },
@@ -69,8 +70,8 @@ function audioFixture(options = {}) {
 }
 
 function hooksFixture(audio, initialState = {}) {
-  const state = { ...initialState }, refs = [], effects = [];
-  let stateAt = 0, refAt = 0, effectAt = 0;
+  const state = { ...initialState }, refs = [], effects = [], callbacks = [];
+  let stateAt = 0, refAt = 0, effectAt = 0, callbackAt = 0;
   const hooks = { ...React,
     useState(initial) {
       const at = stateAt++;
@@ -78,7 +79,11 @@ function hooksFixture(audio, initialState = {}) {
       return [state[at], value => { state[at] = typeof value === 'function' ? value(state[at]) : value; }];
     },
     useRef(initial) { const at = refAt++; return refs[at] ||= { current: initial }; },
-    useCallback: fn => fn,
+    useCallback(fn, deps) {
+      const at = callbackAt++, previous = callbacks[at];
+      if (!previous || deps.some((value, i) => !Object.is(value, previous.deps[i]))) callbacks[at] = { fn, deps };
+      return callbacks[at].fn;
+    },
     useEffect(fn, deps) {
       const at = effectAt++, previous = effects[at];
       const changed = !previous || !deps || !previous.deps || deps.some((value, i) => !Object.is(value, previous.deps[i]));
@@ -88,10 +93,11 @@ function hooksFixture(audio, initialState = {}) {
   const load = (code, dependencies = {}) => {
     const loaded = { exports: {} };
     vm.runInNewContext(code, {
-      module: loaded, exports: loaded.exports, window: audio.window, URL, URLSearchParams, AbortSignal, crypto: require('node:crypto').webcrypto,
+      module: loaded, exports: loaded.exports, window: audio.window, navigator: audio.navigator, URL, URLSearchParams, AbortSignal, crypto: require('node:crypto').webcrypto,
       setTimeout: audio.schedule, clearTimeout: audio.cancel,
       fetch: async (url, init) => {
         if (url === '/api/plivo/incoming-control') return audio.control(JSON.parse(init.body));
+        if (url === '/api/plivo/token') audio.tokenRequests = (audio.tokenRequests || 0) + 1;
         assert.ok(['/api/plivo/token', '/api/plivo/session-status'].includes(url), 'Tests must never contact live services');
         return { ok: true, headers: { get: () => 'application/json' },
           json: async () => ({ username: 'test-sip', password: 'test-only' }) };
@@ -106,7 +112,7 @@ function hooksFixture(audio, initialState = {}) {
     return loaded.exports;
   };
   return { hooks, state, refs, effects, load,
-    render(fn) { stateAt = 0; refAt = 0; effectAt = 0; return fn(); },
+    render(fn) { stateAt = 0; refAt = 0; effectAt = 0; callbackAt = 0; return fn(); },
     commit(predicate = () => true) {
       for (const effect of effects) {
         if (!effect.changed || !predicate(effect.fn)) continue;
@@ -242,14 +248,18 @@ async function widgetHarness({ outbound = false, legacy = false, control, header
       message: body.action === 'decline' ? 'Call Declined' : body.action === 'next' ? 'Call sent to next agent' : 'Call forwarded to default number' }) };
   };
   let invitation = null;
+  const registration = { connected: false, registered: false };
   const client = {
     on(name, fn) { callbacks.set(name, fn); },
     getIncomingCalls: () => invitation ? [invitation] : [],
     setRingTone(value) { flags.push(['ringtone', value]); },
     setRingToneBack(value) { flags.push(['ringback', value]); },
     stopRingTone() {},
-    login() { callbacks.get('onLogin')(); },
-    logout() { callbacks.get('onLogout')(); },
+    isConnected: () => registration.connected,
+    isRegistered: () => registration.registered,
+    getCallUUID: () => null,
+    login() { registration.connected = registration.registered = true; callbacks.get('onLogin')(); },
+    logout() { registration.connected = registration.registered = false; callbacks.get('onLogout')(); },
     answer(uuid) { actions.push(['answer', uuid]); invitation = null; },
     reject(uuid) { actions.push(['reject', uuid]); invitation = null; }
   };
@@ -264,6 +274,7 @@ async function widgetHarness({ outbound = false, legacy = false, control, header
     '@/app/api/plivo/phone-number': { normalizeIndianPhoneNumber: number => number },
     '@/app/api/plivo/outbound-intent': { incomingMatchesOutboundRoom: () => false, shouldAutoAnswerOutbound: () => outbound },
     '@/lib/softphoneIncomingCall': { createIncomingCallGuard, incomingCallUuid },
+    '@/lib/softphoneConnectionRecovery': { createSoftphoneConnectionRecovery },
     'plivo-browser-sdk': { __esModule: true, default: class { constructor() { this.client = client; } } }
   });
   const effectFilter = fn => /createIncomingRingtone|controller\?\.start|initPlivo|agentDataRef.current = agentData|loadIncomingOptions/.test(String(fn));
@@ -275,7 +286,7 @@ async function widgetHarness({ outbound = false, legacy = false, control, header
   // connectSoftphone fetches its test credentials using the sandbox global.
   // The fixture's VM rejects all other dependencies and has no network access.
   render(); await flush();
-  return { ...h, audio, actions, flags, routeActions, client, render,
+  return { ...h, audio, actions, flags, routeActions, client, registration, render,
     async incoming(uuid = 'customer-call', headers = legacy ? {} : { [headerName]: `signed-${uuid}` }) {
       invitation = { callUUID: uuid, state: 'ringing' };
       await callbacks.get('onIncomingCall')('+919876543210', headers, invitation);
@@ -283,6 +294,10 @@ async function widgetHarness({ outbound = false, legacy = false, control, header
       return render();
     },
     event(name, ...args) { callbacks.get(name)(...args); return render(); },
+    browser(name) {
+      if (name === 'offline' || name === 'online') audio.navigator.onLine = name === 'online';
+      for (const listener of audio.listeners.get(name) || []) listener(); return render();
+    },
     button(name) { return render().find(node => node.type === 'button' && label(node).trim() === name); }
   };
 }
@@ -313,7 +328,7 @@ test('answer, decline, cancel, failure, termination, logout and unmount all stop
     else if (end === 'onCallFailed') h.event(end, 'failed', { callUUID: 'customer-call' });
     else if (end === 'unmount') h.unmount();
     else h.event(end, { callUUID: 'customer-call' });
-    assert.equal(h.audio.timers.size, 0, end);
+    assert.equal(h.audio.timers.size, end === 'onLogout' ? 1 : 0, end === 'onLogout' ? 'Only registration recovery remains scheduled' : end);
     assert.ok(h.audio.voices.every(voice => voice.disconnected), end);
     if (end !== 'unmount') h.unmount();
   }
@@ -415,6 +430,50 @@ test('SDK header casing and stripped X-PH prefixes both resolve the same signed 
     const h = await widgetHarness({ headerName }); await h.incoming();
     assert.equal(h.button('Decline Call').props.disabled, false, headerName); h.unmount();
   }
+});
+
+test('each incoming routing button shows immediate progress while the response is pending and rejects duplicate clicks', async () => {
+  for (const [name, pending] of [['Default Forward Call', 'Forwarding…'], ['Next Agent', 'Finding next agent…'], ['Decline Call', 'Declining…']]) {
+    let finish, requests = 0;
+    const h = await widgetHarness({ control: async body => {
+      if (body.action === 'options') return { ok: true, json: async () => ({ canNext: true, canForward: true, canDecline: true }) };
+      requests++;
+      return new Promise(resolve => { finish = () => resolve({ ok: true, json: async () => ({ success: true }) }); });
+    } });
+    await h.incoming();
+    const click = h.button(name).props.onClick;
+    const operation = click(); await click();
+    assert.equal(h.button(pending).props['aria-busy'], true);
+    assert.equal(h.button('Answer').props.disabled, true); assert.equal(requests, 1);
+    finish(); await operation; assert.equal(h.state[7], null); h.unmount();
+  }
+});
+
+test('actual SDK state events and browser focus restore registration UI, while manual Disconnect remains offline', async () => {
+  const h = await widgetHarness();
+  h.client.isConnected = () => true; h.client.isRegistered = () => true;
+  h.event('onConnectionChange', { state: 'disconnected', reason: 'Ping Timed Out' });
+  assert.equal(h.state[3], 'connecting');
+  h.event('onConnectionChange', { state: 'connected' }); assert.equal(h.state[3], 'online');
+  h.button('Disconnect').props.onClick(); h.render(); assert.equal(h.state[3], 'offline');
+  h.browser('online'); h.browser('focus'); assert.equal(h.state[3], 'offline');
+  h.unmount();
+  assert.equal(h.audio.listeners.get('online')?.size, 0);
+  assert.equal(h.audio.listeners.get('focus')?.size, 0);
+});
+
+test('browser internet and idle-tab focus events automatically obtain fresh credentials and restore the Online widget', async () => {
+  const h = await widgetHarness(); assert.equal(h.audio.tokenRequests, 1);
+  h.registration.connected = h.registration.registered = false;
+  h.browser('offline'); assert.equal(h.state[3], 'offline');
+  h.browser('focus'); await flush(); assert.equal(h.audio.tokenRequests, 1);
+  h.browser('online'); await flush(); h.render();
+  assert.equal(h.state[3], 'online'); assert.equal(h.audio.tokenRequests, 2);
+  h.registration.connected = h.registration.registered = false;
+  h.browser('focus'); await flush(); h.render();
+  assert.equal(h.state[3], 'online'); assert.equal(h.audio.tokenRequests, 3);
+  h.browser('focus'); await flush(); assert.equal(h.audio.tokenRequests, 3, 'Healthy idle tabs must not re-login');
+  h.unmount();
 });
 
 test('numbered headers surviving the actual SDK restore the full signed capability and enable all routing buttons', async () => {

@@ -22,6 +22,22 @@ function ActiveCallContent({ session, onCallEnded, agentData, userId, onToggleMu
   const membersRequestRef = useRef(false);
   const currentRoomRef = useRef(session?.room_name);
   const hangupInFlightRef = useRef(false);
+  const controlRequestRef = useRef(null);
+  const memberRevisionRef = useRef(0);
+  const beginControl = (key, replace = false) => {
+    if (controlRequestRef.current && !replace) return null;
+    const ticket = { key, room: session.room_name };
+    controlRequestRef.current = ticket; memberRevisionRef.current++;
+    setLoadingAction(key); setConsultationError('');
+    return ticket;
+  };
+  const finishControl = ticket => {
+    if (controlRequestRef.current !== ticket) return;
+    controlRequestRef.current = null; memberRevisionRef.current++; setLoadingAction(null);
+  };
+  const controlError = (ticket, error) => {
+    if (controlRequestRef.current === ticket && currentRoomRef.current === ticket.room) setConsultationError(error.message);
+  };
   const usesConsultation = () => session?.conference_name?.startsWith('mpc_') || !!consultationRef.current;
   const consultationPhases = ['preparing', 'dialing', 'ringing', 'consulting', 'merging', 'cancelling', 'failed'];
   const consultationBusy = consultation?.busy || consultationPhases.includes(consultation?.phase) || loadingAction === 'add_participant';
@@ -76,8 +92,9 @@ function ActiveCallContent({ session, onCallEnded, agentData, userId, onToggleMu
 
   const roomName = session?.room_name;
   const conferenceName = session?.conference_name;
-  const fetchMembers = useCallback(async () => {
-    if (membersRequestRef.current) return;
+  const fetchMembers = useCallback(async (ownedAction = null) => {
+    if (membersRequestRef.current || (controlRequestRef.current && controlRequestRef.current !== ownedAction)) return;
+    const revision = memberRevisionRef.current;
     const room = roomName;
     if (!room) return;
     membersRequestRef.current = true;
@@ -85,7 +102,7 @@ function ActiveCallContent({ session, onCallEnded, agentData, userId, onToggleMu
       if (conferenceName?.startsWith('mpc_') || consultationRef.current) {
         const res = await fetch(`/api/plivo/consultation?room=${encodeURIComponent(room)}`, { cache: 'no-store' });
         const data = await res.json();
-        if (currentRoomRef.current !== room) return;
+        if (currentRoomRef.current !== room || memberRevisionRef.current !== revision) return;
         if (!res.ok || data.error) throw new Error(data.error || 'Call status is unavailable.');
         if (data.consultation) {
           consultationRef.current = data.consultation;
@@ -98,7 +115,7 @@ function ActiveCallContent({ session, onCallEnded, agentData, userId, onToggleMu
       }
       const res = await fetch(`/api/plivo/controls/members?room=${encodeURIComponent(room)}`);
       const data = await res.json();
-      if (currentRoomRef.current !== room) return;
+      if (currentRoomRef.current !== room || memberRevisionRef.current !== revision) return;
       if (data.members) {
         if (data.members.length >= 2 && typeof window !== 'undefined' && window.__crm_stop_all_ringing) {
           window.__crm_stop_all_ringing(room);
@@ -115,7 +132,7 @@ function ActiveCallContent({ session, onCallEnded, agentData, userId, onToggleMu
         });
       }
     } catch (err) {
-      if ((conferenceName?.startsWith('mpc_') || consultationRef.current) && currentRoomRef.current === room) setConsultationError(err.message);
+      if ((conferenceName?.startsWith('mpc_') || consultationRef.current) && currentRoomRef.current === room && memberRevisionRef.current === revision) setConsultationError(err.message);
       else console.error(err);
     } finally {
       membersRequestRef.current = false;
@@ -136,12 +153,14 @@ function ActiveCallContent({ session, onCallEnded, agentData, userId, onToggleMu
 
   const requestConsultation = async (action, extra = {}) => {
     const room = session.room_name;
+    const ticket = controlRequestRef.current;
     const res = await fetch('/api/plivo/consultation', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ roomName: room, action, attemptId: consultationRef.current?.attemptId, ...extra }),
+      signal: AbortSignal.timeout(30000),
     });
     const data = await res.json();
-    if (currentRoomRef.current !== room) return;
+    if (currentRoomRef.current !== room || controlRequestRef.current !== ticket) return;
     if (!res.ok || data.error) throw new Error(data.error || 'Call action could not complete.');
     if (data.consultation) {
       consultationRef.current = data.consultation;
@@ -153,14 +172,14 @@ function ActiveCallContent({ session, onCallEnded, agentData, userId, onToggleMu
   };
 
   const handleConsultationAction = async action => {
-    setLoadingAction(`consultation_${action}`);
+    const ticket = beginControl(`consultation_${action}`);
+    if (!ticket) return;
     try {
       await requestConsultation(action);
     } catch (error) {
-      setConsultationError(error.message);
-      await fetchMembers();
+      controlError(ticket, error);
     } finally {
-      setLoadingAction(null);
+      finishControl(ticket);
     }
   };
 
@@ -170,7 +189,8 @@ function ActiveCallContent({ session, onCallEnded, agentData, userId, onToggleMu
       try { onToggleMute(); } catch (error) { setConsultationError(error.message); }
       return;
     }
-    setLoadingAction(`mute_${memberId}`);
+    const ticket = beginControl(`mute_${memberId}`);
+    if (!ticket) return;
     try {
       if (['agent_leg', 'customer_leg'].includes(memberId)) {
         await requestConsultation('prepare-controls', {
@@ -192,16 +212,19 @@ function ActiveCallContent({ session, onCallEnded, agentData, userId, onToggleMu
         })
       });
       if (!response.ok) throw new Error('Mute could not complete. Please retry.');
-      await fetchMembers();
+      if (controlRequestRef.current === ticket && currentRoomRef.current === ticket.room) {
+        setMembers(previous => previous.map(item => item.memberId === memberId ? { ...item, muted: !isMuted } : item));
+      }
     } catch (error) {
-      setConsultationError(error.message);
+      controlError(ticket, error);
     } finally {
-      setLoadingAction(null);
+      finishControl(ticket);
     }
   };
 
   const handleHoldToggle = async (memberId, isHeld) => {
-    setLoadingAction(`hold_${memberId}`);
+    const ticket = beginControl(`hold_${memberId}`);
+    if (!ticket) return;
     try {
       if (['agent_leg', 'customer_leg'].includes(memberId)) {
         await requestConsultation('prepare-controls', {
@@ -223,13 +246,11 @@ function ActiveCallContent({ session, onCallEnded, agentData, userId, onToggleMu
         })
       });
       if (!response.ok) throw new Error('Hold could not complete. Please retry.');
-      setHeldMembers(prev => ({ ...prev, [memberId]: !isHeld }));
-      await fetchMembers();
+      if (controlRequestRef.current === ticket && currentRoomRef.current === ticket.room) setHeldMembers(prev => ({ ...prev, [memberId]: !isHeld }));
     } catch (e) {
-      setConsultationError(e.message);
-      await fetchMembers();
+      controlError(ticket, e);
     } finally {
-      setLoadingAction(null);
+      finishControl(ticket);
     }
   };
 
@@ -239,7 +260,8 @@ function ActiveCallContent({ session, onCallEnded, agentData, userId, onToggleMu
       title: 'Kick Participant?',
       message: 'Are you sure you want to kick this participant from the call?',
       onConfirm: async () => {
-        setLoadingAction(`kick_${memberId}`);
+        const ticket = beginControl(`kick_${memberId}`);
+        if (!ticket) return;
         try {
           if (usesConsultation()) {
             await requestConsultation('kick', { memberId });
@@ -253,11 +275,11 @@ function ActiveCallContent({ session, onCallEnded, agentData, userId, onToggleMu
               memberId
             })
           });
-          await fetchMembers();
+          await fetchMembers(ticket);
         } catch (error) {
-          setConsultationError(error.message);
+          controlError(ticket, error);
         } finally {
-          setLoadingAction(null);
+          finishControl(ticket);
         }
       }
     });
@@ -266,19 +288,20 @@ function ActiveCallContent({ session, onCallEnded, agentData, userId, onToggleMu
   const endCurrentCall = async () => {
     if (hangupInFlightRef.current) return;
     hangupInFlightRef.current = true;
-    setLoadingAction('hangup_all');
+    const ticket = beginControl('hangup_all', true);
     try {
       const response = await fetch('/api/plivo/controls/hangup-conference', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ roomName: session.room_name }),
       });
       if (!response.ok) throw new Error('Call could not be ended. Please retry.');
+      if (controlRequestRef.current !== ticket || currentRoomRef.current !== ticket.room) return;
       onCallEnded?.();
     } catch (error) {
-      setConsultationError(error.message);
+      controlError(ticket, error);
     } finally {
       hangupInFlightRef.current = false;
-      setLoadingAction(null);
+      finishControl(ticket);
     }
   };
 
@@ -296,15 +319,15 @@ function ActiveCallContent({ session, onCallEnded, agentData, userId, onToggleMu
     e.preventDefault();
     if (!newParticipant || newParticipant.length < 10) return;
     
-    setLoadingAction('add_participant');
-    setConsultationError('');
+    const ticket = beginControl('add_participant');
+    if (!ticket) return;
     try {
       await requestConsultation('start', { participantNumber: newParticipant });
       setNewParticipant('');
     } catch (err) {
-      setConsultationError(err.message || 'Add Call could not complete.');
+      controlError(ticket, err);
     } finally {
-      setLoadingAction(null);
+      finishControl(ticket);
     }
   };
 
@@ -344,21 +367,23 @@ function ActiveCallContent({ session, onCallEnded, agentData, userId, onToggleMu
       <div className={styles.callTools}>
         <div className={styles.callControls} aria-label="Call controls">
           <button type="button" className={styles.secondaryButton} aria-pressed={agentMuted}
+            aria-busy={loadingAction === `mute_${agentMember?.memberId}`}
             onClick={() => handleMuteToggle(agentMember?.memberId || 'agent_leg', agentMuted)}
             disabled={!canMute} title="Mute / Unmute (Ctrl+M)" aria-keyshortcuts="Control+m">
             {loadingAction === `mute_${agentMember?.memberId}` ? <Loader2 size={15} className="spin" /> : agentMuted ? <MicOff size={15} /> : <Mic size={15} />}
-            {agentMuted ? 'Unmute' : 'Mute'}
+            {loadingAction === `mute_${agentMember?.memberId}` ? 'Updating mute…' : agentMuted ? 'Unmute' : 'Mute'}
           </button>
           <button type="button" className={styles.secondaryButton} aria-pressed={customerHeld}
+            aria-busy={loadingAction?.startsWith('hold_') || false}
             onClick={() => handleHoldToggle(customerMember?.memberId || 'customer_leg', customerHeld)}
             disabled={!canHold} title="Hold / Resume (Ctrl+H)" aria-keyshortcuts="Control+h">
             {loadingAction === `hold_${customerMember?.memberId}` ? <Loader2 size={15} className="spin" /> : customerHeld ? <Play size={15} /> : <Pause size={15} />}
-            {customerHeld ? 'Resume' : 'Hold'}
+            {loadingAction?.startsWith('hold_') ? 'Updating hold…' : customerHeld ? 'Resume' : 'Hold'}
           </button>
           <button type="button" onClick={handleHangupAll} disabled={loadingAction === 'hangup_all'}
             className={styles.dangerButton} title={`${requiresEndConfirmation ? 'End All Calls' : 'End Call'} (Ctrl+E)`} aria-keyshortcuts="Control+e">
             {loadingAction === 'hangup_all' ? <Loader2 size={15} className="spin" /> : <PhoneOff size={15} />}
-            {requiresEndConfirmation ? 'End All' : 'End Call'}
+            {loadingAction === 'hangup_all' ? 'Ending call…' : requiresEndConfirmation ? 'End All' : 'End Call'}
           </button>
         </div>
         {(consultationBusy || canMerge || consultation?.phase === 'merged' || consultation?.error) && (

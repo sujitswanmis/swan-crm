@@ -428,7 +428,8 @@ function endpointWidgetHarness(lookup, options = {}) {
     './useIncomingRingtone': { useIncomingRingtone: () => ({ enabled: true, stop() {}, silence() {}, toggleEnabled() {} }) },
     '@/utils/supabase/client': { createClient: () => ({}) },
     '@/app/actions/team': { getRecentCalls: async () => [], getAgentEndpointId: () => { throw new Error('Display reads must not use the Server Action queue'); } },
-    '@/lib/softphoneIncomingCall': { createIncomingCallGuard: () => ({}), incomingCallUuid: () => null }
+    '@/lib/softphoneIncomingCall': { createIncomingCallGuard: () => ({}), incomingCallUuid: () => null },
+    '@/lib/softphoneConnectionRecovery': {}
   });
   const widget = app.load(code.widget, {
     window: { sessionStorage: {

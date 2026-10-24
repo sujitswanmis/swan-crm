@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import { createRequire } from 'node:module';
 import { normalizeIndianPhoneNumber } from '../src/app/api/plivo/phone-number.js';
 import * as originalUtils from '../src/app/api/plivo/utils.js';
+import { createSoftphoneConnectionRecovery } from '../src/lib/softphoneConnectionRecovery.js';
 
 const require = createRequire(import.meta.url);
 const swc = require('next/dist/build/swc');
@@ -698,12 +699,18 @@ async function panelHarness({ consultation = null, onToggleMute, fetcher, onCall
     '', null, {}, false, consultation, '', { isOpen: false },
   ];
   const effects = [];
-  let cursor = 0;
+  const refs = [], callbacks = [];
+  let cursor = 0, refAt = 0;
   const hooks = { ...React, useState(initial) {
     const at = cursor++;
     if (!(at in state)) state[at] = typeof initial === 'function' ? initial() : initial;
     return [state[at], value => { state[at] = typeof value === 'function' ? value(state[at]) : value; }];
-  }, useRef: value => ({ current: value === null ? state[5] : value }), useEffect: fn => effects.push(fn), useCallback: fn => fn };
+  }, useRef: value => {
+    const at = refAt++;
+    const ref = refs[at] ||= { current: value };
+    if (at === 0) ref.current = state[5];
+    return ref;
+  }, useEffect: fn => effects.push(fn), useCallback: fn => { callbacks.push(fn); return fn; } };
   const { default: Panel } = await load('src/components/CallCenter/ActiveCallPanel.jsx', {
     react: hooks, 'lucide-react': require('lucide-react'),
     '@/utils/supabase/client': { createClient: () => { throw new Error('No live DB in UI tests'); } },
@@ -714,7 +721,9 @@ async function panelHarness({ consultation = null, onToggleMute, fetcher, onCall
     agent_call_uuid: AGENT, customer_call_uuid: CUSTOMER, customer_number: '9876543210' };
   const render = () => {
     cursor = 0;
+    refAt = 0;
     effects.length = 0;
+    callbacks.length = 0;
     const outer = Panel({ session, userId: USER, agentData: { id: AGENT, user_id: USER }, onCallEnded, onToggleMute, microphoneMuted: false, shortcutControlsRef, durationLabel });
     return outer.type(outer.props);
   };
@@ -725,7 +734,7 @@ async function panelHarness({ consultation = null, onToggleMute, fetcher, onCall
   const text = node => typeof node === 'string' ? node :
     React.Children.toArray(node?.props?.children).map(child => typeof child === 'object' ? text(child) : String(child)).join('');
   const button = (label, tree = render()) => flatten(tree).find(node => node.type === 'button' && text(node) === label);
-  return { state, session, render, flatten, text, button, effects, shortcutControlsRef };
+  return { state, session, render, flatten, text, button, effects, callbacks, shortcutControlsRef };
 }
 
 test('connected call duration is visible beside the call status and remains visible during Hold', async () => {
@@ -777,6 +786,64 @@ test('normal agent_leg/customer_leg calls render enabled Mute, Hold and End cont
   assert.equal(requests[0][1].action, 'prepare-controls');
   assert.equal(requests[0][1].role, 'customer'); assert.equal(requests[0][1].control, 'hold');
   assert.equal(h.button('Resume').props.disabled, false);
+});
+
+test('Hold shows progress immediately, blocks duplicate actions and ignores an older in-flight participant poll', async () => {
+  let finishPoll, finishHold, requests = 0;
+  const h = await panelHarness({ fetcher: async (url, init) => {
+    if (!init) return new Promise(resolve => { finishPoll = () => resolve({ ok: true, json: async () => ({ members: [
+      { memberId: 'agent_leg', callUuid: AGENT }, { memberId: 'customer_leg', callUuid: CUSTOMER }
+    ] }) }); });
+    requests++;
+    return new Promise(resolve => { finishHold = () => resolve({ ok: true, json: async () => ({ consultation: {
+      phase: 'active', controlsOnly: true, members: [{ memberId: '1', callUuid: AGENT }, { memberId: '2', callUuid: CUSTOMER, held: true }]
+    } }) }); });
+  } });
+  h.render(); const poll = h.callbacks[0]();
+  const click = h.button('Hold').props.onClick, operation = click(); await click();
+  assert.equal(h.button('Updating hold…').props['aria-busy'], true);
+  assert.equal(h.button('Updating hold…').props.disabled, true); assert.equal(requests, 1);
+  finishHold(); await operation; assert.equal(h.button('Resume').props.disabled, false);
+  finishPoll(); await poll; assert.equal(h.button('Resume').props.disabled, false);
+  assert.equal(h.state[0][1].memberId, '2');
+});
+
+test('failed Hold clears immediate progress and keeps the confirmed state available for retry', async () => {
+  let finish;
+  const h = await panelHarness({ fetcher: () => new Promise(resolve => {
+    finish = () => resolve({ ok: false, json: async () => ({ error: 'Provider unavailable' }) });
+  }) });
+  const operation = h.button('Hold').props.onClick();
+  assert.equal(h.button('Updating hold…').props.disabled, true);
+  finish(); await operation;
+  assert.equal(h.button('Hold').props.disabled, false); assert.match(h.state[6], /Provider unavailable/);
+});
+
+test('legacy participant removal still refreshes confirmed members while owning its action lock', async () => {
+  const requests = [];
+  const h = await panelHarness({ fetcher: async (url) => {
+    requests.push(url);
+    return { ok: true, json: async () => ({ members: [{ memberId: 'agent_leg', callUuid: AGENT }, { memberId: 'customer_leg', callUuid: CUSTOMER }] }) };
+  } });
+  h.state[0].push({ memberId: '3', callUuid: GUEST });
+  h.flatten(h.render()).filter(node => node.props?.title === 'Kick Participant').at(-1).props.onClick();
+  await h.state[7].onConfirm();
+  assert.equal(h.state[0].length, 2); assert.equal(requests.length, 2);
+});
+
+test('End Call reacts immediately and a late Hold response cannot clear its pending state or report success early', async () => {
+  let finishHold, finishEnd, ended = 0;
+  const h = await panelHarness({ onCallEnded: () => { ended++; }, fetcher: (url) => new Promise(resolve => {
+    if (url.endsWith('/hangup-conference')) finishEnd = () => resolve({ ok: true });
+    else finishHold = () => resolve({ ok: true, json: async () => ({ consultation: { phase: 'active', controlsOnly: true, members: [] } }) });
+  }) });
+  const hold = h.button('Hold').props.onClick();
+  const end = h.button('End Call').props.onClick();
+  assert.equal(h.button('Ending call…').props.disabled, true); assert.equal(ended, 0);
+  finishHold(); await hold;
+  assert.equal(h.button('Ending call…').props.disabled, true);
+  assert.equal(h.state[5], null, 'Superseded Hold response must not repaint the call');
+  finishEnd(); await end; assert.equal(ended, 1);
 });
 
 test('Merge is visible above participants while ringing and enables in consulting even without a busy flag', async () => {
@@ -872,6 +939,7 @@ async function widgetShortcutHarness({ active = true, hidden = false, minimized 
     '@/app/api/plivo/phone-number': { normalizeIndianPhoneNumber },
     '@/app/api/plivo/outbound-intent': { incomingMatchesOutboundRoom: () => false, shouldAutoAnswerOutbound: () => false },
     '@/lib/softphoneIncomingCall': { createIncomingCallGuard: () => ({}), incomingCallUuid: () => null },
+    '@/lib/softphoneConnectionRecovery': { createSoftphoneConnectionRecovery },
   }, { window: windowMock, document: { querySelector: () => dialog ? {} : null } });
   const flatten = node => !node || typeof node !== 'object' ? [] :
     [node, ...React.Children.toArray(node.props?.children).flatMap(flatten)];
@@ -965,6 +1033,7 @@ test('calling method has only Browser and Via Mobile toggles and shows the agent
     '@/app/api/plivo/phone-number': { normalizeIndianPhoneNumber },
     '@/app/api/plivo/outbound-intent': { incomingMatchesOutboundRoom: () => false, shouldAutoAnswerOutbound: () => false },
     '@/lib/softphoneIncomingCall': { createIncomingCallGuard: () => ({}), incomingCallUuid: () => null },
+    '@/lib/softphoneConnectionRecovery': { createSoftphoneConnectionRecovery },
   });
   const flatten = node => !node || typeof node !== 'object' ? [] :
     [node, ...React.Children.toArray(node.props?.children).flatMap(flatten)];

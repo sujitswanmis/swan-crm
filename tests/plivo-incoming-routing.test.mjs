@@ -327,6 +327,25 @@ test('native Plivo call SDK accepts the exact live lookup, parent transfer and h
   }
 });
 
+test('agent and parent live checks overlap, but both generations are verified before the one mutation', async () => {
+  const app = fixture(); await app.prepare();
+  const original = app.provider.getLiveCall;
+  let waiting = [], rounds = 0;
+  app.provider.getLiveCall = uuid => new Promise((resolve, reject) => {
+    waiting.push({ uuid, resolve, reject });
+    if (waiting.length !== 2) return;
+    const pair = waiting; waiting = []; rounds++;
+    assert.deepEqual(pair.map(item => item.uuid).sort(), [INVITE, PARENT].sort());
+    assert.equal(app.log.hangups.length + app.log.transfers.length, 0);
+    for (const item of pair) original(item.uuid).then(item.resolve, item.reject);
+  });
+  const action = app.action('decline');
+  const timeout = new Promise((_, reject) => { const id = setTimeout(() => reject(new Error('Live reads were serialized')), 1500); id.unref(); });
+  const result = await Promise.race([action, timeout]);
+  assert.equal(result.data.success, true); assert.equal(rounds, 2);
+  assert.deepEqual(app.log.hangups, [PARENT]);
+});
+
 test('provider V3 signature validation works with the installed SDK and the public inbound host survives local agent actions', async () => {
   const plivo = require('plivo'), uri = 'https://webhook.example.test/api/plivo/incoming';
   const event = { CallUUID: PARENT, From: CUSTOMER, To: CALLED, AuthId: 'test-account' };
