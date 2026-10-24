@@ -179,12 +179,14 @@ export const MODULES_CONFIG = [
   { 
     id: 'channel_ops', 
     path: 'channel-operations', 
-    label: 'Channel Operations', 
+    label: 'Order & Channel Operations', 
     category: 'Sales', 
     icon: <PhoneCall size={20} />,
     subItemsType: 'tabs',
     subItems: [
       { id: 'order_followup', label: '📞 Daily Order Followups' },
+      { id: 'frequency_rules', label: '⚙️ Order Frequency Rules' },
+      { id: 'order_pipeline', label: '🚚 Order to Delivery Pipeline' },
       { id: 'order_feedback', label: '⭐ Post-Order Feedback' },
       { id: 'monthly_feedback', label: '📅 Monthly Health Checks' },
       { id: 'complaints', label: '⚠️ Complaint Management' }

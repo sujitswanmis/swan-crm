@@ -245,6 +245,8 @@ export const PARTY_SUBTAB_TITLES = {
 
 export const CHANNEL_OPS_SUBTAB_TITLES = {
   order_followup: 'Daily Order Followups',
+  frequency_rules: 'Order Frequency Rules',
+  order_pipeline: 'Order to Delivery Pipeline',
   order_feedback: 'Post-Order Feedback',
   monthly_feedback: 'Monthly Health Checks',
   complaints: 'Complaint Management'
@@ -5083,7 +5085,7 @@ export default function CRMContainer({
                           <div className={`submenu-list ${channelOpsMenuExpanded ? 'expanded' : ''}`}>
                             <div className="submenu-inner">
                               <div style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-muted, #94a3b8)', padding: '0.35rem 0.75rem 0.2rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                                Operations &amp; Governance
+                                Order &amp; Channel Operations
                               </div>
 
                               <button
@@ -5092,6 +5094,22 @@ export default function CRMContainer({
                                 data-active={activeTab === 'channel_ops' && channelOpsSubTab === 'order_followup'}
                               >
                                 📞 Daily Order Followups
+                              </button>
+
+                              <button
+                                onClick={() => handleChannelOpsSubTabChange('frequency_rules')}
+                                className="submenu-item"
+                                data-active={activeTab === 'channel_ops' && channelOpsSubTab === 'frequency_rules'}
+                              >
+                                ⚙️ Order Frequency Rules
+                              </button>
+
+                              <button
+                                onClick={() => handleChannelOpsSubTabChange('order_pipeline')}
+                                className="submenu-item"
+                                data-active={activeTab === 'channel_ops' && channelOpsSubTab === 'order_pipeline'}
+                              >
+                                🚚 Order to Delivery Pipeline
                               </button>
 
                               <button
