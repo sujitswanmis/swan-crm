@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import MaskedPhoneDisplay from '@/components/common/MaskedPhoneDisplay';
 import PartyImportModal from './PartyImportModal';
+import { B2B_OPERATIONAL_STATUSES } from './StageConfigModal';
 
 const STAGE_CONFIGS = {
   s01: {
@@ -576,19 +577,19 @@ export default function StageDataTable({
       const preFlightGates = [approvals.s01, approvals.tier, approvals.s05, approvals.s06, approvals.s07];
       const passedCount = preFlightGates.filter(Boolean).length;
       const isAllReady = passedCount === 5;
-      const opStatus = party.party_status || party.final_status || 'Draft';
+      const rawStatus = party.activation_status || party.operational_status?.status || party.party_status || party.final_status || 'Draft';
+      const substage = party.activation_substage || party.operational_status?.substage || '';
 
-      const opColors = {
-        'Active': { bg: 'rgba(16,185,129,0.2)', text: '#34d399', border: '#10b981' },
-        'Inactive': { bg: 'rgba(148,163,184,0.2)', text: '#cbd5e1', border: '#64748b' },
-        'Hold': { bg: 'rgba(245,158,11,0.2)', text: '#fbbf24', border: '#f59e0b' },
-        'Payment Issues': { bg: 'rgba(239,68,68,0.2)', text: '#f87171', border: '#ef4444' }
+      const stObj = B2B_OPERATIONAL_STATUSES?.find(s => s.id === rawStatus) || {
+        label: rawStatus === 'Active' ? '🟢 Active' : (rawStatus === 'Draft' ? '📝 Draft' : rawStatus),
+        color: rawStatus === 'Active' ? '#16a34a' : (rawStatus === 'Draft' ? '#94a3b8' : '#d97706'),
+        bg: rawStatus === 'Active' ? 'rgba(22, 163, 74, 0.15)' : 'rgba(100, 116, 139, 0.15)',
+        border: rawStatus === 'Active' ? '#16a34a' : '#64748b'
       };
-      const opConfig = opColors[opStatus] || { bg: 'rgba(59,130,246,0.15)', text: '#60a5fa', border: '#3b82f6' };
 
       return (
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
             <span style={{
               fontSize: '0.74rem',
               fontWeight: 800,
@@ -604,12 +605,25 @@ export default function StageDataTable({
               fontWeight: 800,
               padding: '0.15rem 0.5rem',
               borderRadius: '4px',
-              background: opConfig.bg,
-              color: opConfig.text,
-              border: `1px solid ${opConfig.border}`
+              background: stObj.bg,
+              color: stObj.color,
+              border: `1px solid ${stObj.border}`
             }}>
-              {opStatus}
+              {stObj.label}
             </span>
+            {substage && (
+              <span style={{
+                fontSize: '0.68rem',
+                fontWeight: 700,
+                padding: '0.12rem 0.45rem',
+                borderRadius: '4px',
+                background: 'rgba(255, 255, 255, 0.08)',
+                color: 'var(--text-secondary, #94a3b8)',
+                border: '1px solid var(--border-light, #cbd5e1)'
+              }}>
+                {substage}
+              </span>
+            )}
           </div>
         </div>
       );
@@ -1026,7 +1040,12 @@ export default function StageDataTable({
                         const isConfirmed = isApproved && !isDraft && !isPartial;
 
                         if (stageId === 's08') {
-                          const isLive = party.party_status === 'Active' || party.final_status === 'Active';
+                          const actStatus = party.activation_status || party.operational_status?.status || party.party_status || party.final_status || 'Draft';
+                          const isLive = actStatus === 'Active';
+                          const isHold = actStatus === 'Hold';
+                          const isLost = actStatus === 'Lost';
+                          const isBanned = actStatus === 'Blacklisted';
+
                           return (
                             <span style={{
                               display: 'inline-flex',
@@ -1036,12 +1055,12 @@ export default function StageDataTable({
                               borderRadius: '5px',
                               fontSize: '0.74rem',
                               fontWeight: 800,
-                              background: isLive ? 'rgba(16,185,129,0.2)' : isPartial ? 'rgba(245,158,11,0.2)' : isDraft ? 'rgba(100,116,139,0.18)' : 'rgba(245,158,11,0.2)',
-                              color: isLive ? '#34d399' : isPartial ? '#f59e0b' : isDraft ? '#94a3b8' : '#fbbf24',
+                              background: isLive ? 'rgba(16,185,129,0.2)' : isHold ? 'rgba(217,119,6,0.18)' : isLost ? 'rgba(220,38,38,0.18)' : isBanned ? 'rgba(0,0,0,0.25)' : isPartial ? 'rgba(245,158,11,0.2)' : isDraft ? 'rgba(100,116,139,0.18)' : 'rgba(245,158,11,0.2)',
+                              color: isLive ? '#34d399' : isHold ? '#fbbf24' : isLost ? '#f87171' : isBanned ? '#ef4444' : isPartial ? '#f59e0b' : isDraft ? '#94a3b8' : '#fbbf24',
                               border: isDraft ? '1px dashed #64748b' : isPartial ? '1px solid #f59e0b' : 'none'
                             }}>
                               {isLive ? <CheckCircle2 size={12} /> : isPartial ? <AlertTriangle size={12} /> : isDraft ? <FileText size={12} /> : <Clock size={12} />}
-                              {isLive ? '✓ Live Active' : isPartial ? '⚡ Partial Activation' : isDraft ? '📝 Activation Draft' : '⏳ Pending Activation'}
+                              {isConfirmed ? `✓ ${actStatus}` : isPartial ? `⚡ Partial ${actStatus}` : isDraft ? `📝 Draft ${actStatus}` : '⏳ Pending Activation'}
                             </span>
                           );
                         }

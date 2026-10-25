@@ -261,6 +261,14 @@ export async function getPartyList(tenantId = DEFAULT_TENANT_ID) {
         territory_allocations: terrAllocs,
         team_assignments: teamAssigns,
         external_sap_code: item.external_sap_code || meta.external_sap_code || meta.custom_party_code || null,
+        operational_status: meta.operational_status || {
+          status: meta.activation_status || item.party_status || 'Draft',
+          substage: meta.activation_substage || '',
+          remarks: meta.activation_remarks || ''
+        },
+        activation_status: meta.activation_status || item.party_status,
+        activation_substage: meta.activation_substage || '',
+        activation_remarks: meta.activation_remarks || '',
         meta_stages: meta.stages || {},
         stage_audit: meta.stage_audit || {},
         last_activity: meta.last_activity || {
@@ -1090,20 +1098,30 @@ export async function saveTeamAssignments(partyId, assignments, tenantId = DEFAU
 /**
  * S08 Partner Activation with status options: Active, Inactive, Hold, Payment Issues
  */
-export async function activatePartner(partyId, activationStatus = 'Active', remarks = '', tenantId = DEFAULT_TENANT_ID, updatedBy = 'System Admin', actionType = 'CONFIRM') {
+export async function activatePartner(
+  partyId,
+  activationStatus = 'Active',
+  remarks = '',
+  tenantId = DEFAULT_TENANT_ID,
+  updatedBy = 'System Admin',
+  actionType = 'CONFIRM',
+  subStage = ''
+) {
   const adminClient = getAdminClient();
 
   const details = await getParty360Details(partyId);
   const party = details?.party;
   if (!party) throw new Error('Party not found');
 
-  const validStatuses = ['Active', 'Inactive', 'Hold', 'Payment Issues'];
+  const validStatuses = ['Active', 'Inactive', 'Hold', 'Lost', 'Surrender', 'Terminated', 'Blacklisted', 'Payment Issues'];
   const finalStatus = validStatuses.includes(activationStatus) ? activationStatus : 'Active';
 
-  // Map to valid party_status check constraint in DB
+  // Map to valid party_status check constraint in Supabase
   let dbPartyStatus = 'Active';
-  if (finalStatus === 'Inactive') dbPartyStatus = 'Inactive';
+  if (finalStatus === 'Inactive' || finalStatus === 'Lost') dbPartyStatus = 'Inactive';
   else if (finalStatus === 'Hold' || finalStatus === 'Payment Issues') dbPartyStatus = 'Hold';
+  else if (finalStatus === 'Surrender' || finalStatus === 'Terminated') dbPartyStatus = 'Closed';
+  else if (finalStatus === 'Blacklisted') dbPartyStatus = 'Blacklisted';
 
   const stageVal = actionType === 'DRAFT' ? 'DRAFT' : actionType === 'PARTIAL' ? 'PARTIAL' : true;
   const isCompleted = actionType === 'CONFIRM';
@@ -1140,7 +1158,15 @@ export async function activatePartner(partyId, activationStatus = 'Active', rema
 
   await updatePartyMeta(adminClient, partyId, {
     activation_status: finalStatus,
+    activation_substage: subStage,
     activation_remarks: remarks,
+    operational_status: {
+      status: finalStatus,
+      substage: subStage,
+      remarks: remarks,
+      updated_by: empName,
+      updated_at: istTime
+    },
     stages: {
       ...(existingMeta.stages || {}),
       s08: stageVal

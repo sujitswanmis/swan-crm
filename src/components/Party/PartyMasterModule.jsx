@@ -31,7 +31,7 @@ import { getStatesCentral, getDistrictsCentral } from '@/app/actions/centralLoca
 import { getTransferredLeads, confirmLeadTransfer, confirmAndPurgeLeadTransfer, revertLeadTransferToStage08 } from '@/app/actions/partyHandoff';
 import { INDIAN_STATE_DISTRICTS, ALL_INDIAN_STATES } from '@/config/indianStateDistricts';
 import StageDataTable from './StageDataTable';
-import StageConfigModal from './StageConfigModal';
+import StageConfigModal, { B2B_OPERATIONAL_STATUSES } from './StageConfigModal';
 import PartyMasterDashboard from './PartyMasterDashboard';
 import MaskedPhoneDisplay from '../common/MaskedPhoneDisplay';
 import { PRODUCT_GROUPS } from '@/config/productCatalog';
@@ -434,6 +434,7 @@ export default function PartyMasterModule({
   const [transferredLeads, setTransferredLeads] = useState([]);
   const [loadingTransfers, setLoadingTransfers] = useState(false);
   const [s08ActivationStatus, setS08ActivationStatus] = useState('Active');
+  const [s08SubStage, setS08SubStage] = useState('Regular (Credit Allowed)');
   const [s08Remarks, setS08Remarks] = useState('');
   const [stageConfirmedMap, setStageConfirmedMap] = useState({});
 
@@ -1166,6 +1167,77 @@ export default function PartyMasterModule({
     return { label: 'S08 Activation Desk', color: '#10b981', bg: 'rgba(16,185,129,0.15)' };
   }, [getStageApprovalStatus]);
 
+  // 2-Tier B2B Operational Status Badge Renderer
+  const renderOperationalStatusBadge = useCallback((party) => {
+    if (!party) return null;
+    const isUnconfirmedHandoff = party.party_status === 'Draft_From_Lead' || party.onboarding_stage === 'S00_Party_Entry';
+    if (isUnconfirmedHandoff) {
+      return (
+        <span style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '0.25rem',
+          fontSize: '0.72rem',
+          fontWeight: 700,
+          padding: '0.15rem 0.5rem',
+          borderRadius: '4px',
+          background: 'rgba(245,158,11,0.18)',
+          color: '#fbbf24',
+          border: '1px dashed #f59e0b'
+        }}>
+          ⚡ Pending Transfer
+        </span>
+      );
+    }
+
+    const rawStatus = party.activation_status || party.operational_status?.status || party.party_status || party.final_status || 'Draft';
+    const substage = party.activation_substage || party.operational_status?.substage || '';
+
+    const statusConfig = B2B_OPERATIONAL_STATUSES?.find(s => s.id === rawStatus) || {
+      id: rawStatus,
+      label: rawStatus === 'Active' ? '🟢 Active' : (rawStatus === 'Draft' ? '📝 Draft' : rawStatus),
+      color: rawStatus === 'Active' ? '#16a34a' : (rawStatus === 'Draft' ? '#94a3b8' : '#d97706'),
+      bg: rawStatus === 'Active' ? 'rgba(22, 163, 74, 0.15)' : 'rgba(100, 116, 139, 0.15)',
+      border: rawStatus === 'Active' ? '#16a34a' : '#64748b'
+    };
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.2rem' }}>
+        <span style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '0.25rem',
+          fontSize: '0.72rem',
+          fontWeight: 800,
+          padding: '0.15rem 0.55rem',
+          borderRadius: '5px',
+          background: statusConfig.bg,
+          color: statusConfig.color,
+          border: `1px solid ${statusConfig.border}`
+        }}>
+          {statusConfig.label}
+        </span>
+        {substage && (
+          <span style={{
+            fontSize: '0.66rem',
+            fontWeight: 700,
+            padding: '0.08rem 0.4rem',
+            borderRadius: '3px',
+            background: 'rgba(255, 255, 255, 0.08)',
+            color: 'var(--text-secondary, #94a3b8)',
+            border: '1px solid var(--border-light, #cbd5e1)',
+            maxWidth: '130px',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap'
+          }} title={substage}>
+            {substage}
+          </span>
+        )}
+      </div>
+    );
+  }, []);
+
   // Stage counts for All Party Stage quick filter pills
   const stageCounts = useMemo(() => {
     const s00 = transferredLeads.filter(l => l.transfer_status === 'PENDING_CONFIRMATION').length;
@@ -1525,11 +1597,13 @@ export default function PartyMasterModule({
       district: Array.isArray(rawDistricts) ? rawDistricts.join(', ') : (rawDistricts || prev.district || ''),
       districts: parsedDistricts.length > 0 ? parsedDistricts : (prev.districts || [])
     }));
-    if (party.party_status || party.final_status) {
-      setS08ActivationStatus(party.party_status || party.final_status || 'Active');
-    }
-    if (party.remarks) {
-      setS08Remarks(party.remarks);
+    const resolvedStatus = party.activation_status || party.operational_status?.status || party.party_status || party.final_status || 'Active';
+    setS08ActivationStatus(resolvedStatus);
+    const resolvedSub = party.activation_substage || party.operational_status?.substage || '';
+    const defSub = B2B_OPERATIONAL_STATUSES?.find(s => s.id === resolvedStatus)?.defaultSubStage || '';
+    setS08SubStage(resolvedSub || defSub || 'Regular (Credit Allowed)');
+    if (party.activation_remarks || party.remarks) {
+      setS08Remarks(party.activation_remarks || party.remarks);
     }
     if (party.product_authorizations && party.product_authorizations.length > 0) {
       const pNames = party.product_authorizations.map(p => p.product_name || p.order_category);
@@ -1973,7 +2047,7 @@ export default function PartyMasterModule({
   const handleS07Activation = async (mode = 'CONFIRM') => {
     setActivationErrors([]);
     try {
-      const res = await activatePartner(activePartyId, s08ActivationStatus, s08Remarks, effectiveTenantId, effectiveUserName, mode);
+      const res = await activatePartner(activePartyId, s08ActivationStatus, s08Remarks, effectiveTenantId, effectiveUserName, mode, s08SubStage);
       if (!res.success) {
         setActivationErrors(res.errors || []);
         setCenterAlert({
@@ -2002,7 +2076,7 @@ export default function PartyMasterModule({
           isOpen: true,
           type: 'success',
           title: 'Channel Partner Activated',
-          message: `🎉 Channel Partner status set to "${s08ActivationStatus}" successfully!`,
+          message: `🎉 Channel Partner status set to "${s08ActivationStatus}"${s08SubStage ? ` (${s08SubStage})` : ''} successfully!`,
           partnerName: currentP?.firm_name || '',
           partnerCode: currentP?.party_universal_code || currentP?.party_type || '',
           status: s08ActivationStatus,
@@ -2775,17 +2849,7 @@ export default function PartyMasterModule({
 
                         {/* Status */}
                         <td style={{ padding: '0.85rem 1rem', textAlign: 'center' }}>
-                          <span style={{
-                            display: 'inline-block',
-                            fontSize: '0.72rem',
-                            fontWeight: 700,
-                            padding: '0.15rem 0.5rem',
-                            borderRadius: '4px',
-                            background: isActive ? 'rgba(16,185,129,0.2)' : 'rgba(245,158,11,0.2)',
-                            color: isActive ? '#34d399' : '#fbbf24'
-                          }}>
-                            {isActive ? '● Active' : '○ Draft'}
-                          </span>
+                          {renderOperationalStatusBadge(p)}
                         </td>
 
                         {/* Actions */}
@@ -3795,6 +3859,8 @@ export default function PartyMasterModule({
         // S08
         s08ActivationStatus={s08ActivationStatus}
         setS08ActivationStatus={setS08ActivationStatus}
+        s08SubStage={s08SubStage}
+        setS08SubStage={setS08SubStage}
         s08Remarks={s08Remarks}
         setS08Remarks={setS08Remarks}
         handleS07Activation={handleS07Activation}
@@ -4594,17 +4660,7 @@ export default function PartyMasterModule({
                         {/* 21. Account Status */}
                         {visibleColumns.accountStatus !== false && (
                           <td style={{ padding: '0.65rem 0.85rem', textAlign: 'center' }}>
-                            <span style={{
-                              display: 'inline-block',
-                              fontSize: '0.72rem',
-                              fontWeight: 700,
-                              padding: '0.12rem 0.45rem',
-                              borderRadius: '4px',
-                              background: isActive ? 'rgba(16,185,129,0.2)' : 'rgba(245,158,11,0.2)',
-                              color: isActive ? '#34d399' : '#fbbf24'
-                            }}>
-                              {isActive ? '● Active' : '○ Draft'}
-                            </span>
+                            {renderOperationalStatusBadge(p)}
                           </td>
                         )}
 
@@ -5122,17 +5178,7 @@ export default function PartyMasterModule({
                   </span>
 
                   {/* Operational Status */}
-                  <span style={{
-                    fontSize: '0.75rem',
-                    fontWeight: 700,
-                    padding: '0.18rem 0.55rem',
-                    borderRadius: '6px',
-                    background: (view360Party.final_status === 'Active' || view360Party.party_status === 'Active') ? 'rgba(16,185,129,0.2)' : 'rgba(245,158,11,0.2)',
-                    color: (view360Party.final_status === 'Active' || view360Party.party_status === 'Active') ? '#34d399' : '#fbbf24',
-                    border: `1px solid ${(view360Party.final_status === 'Active' || view360Party.party_status === 'Active') ? '#34d39940' : '#fbbf2440'}`
-                  }}>
-                    ● {view360Party.final_status || view360Party.party_status || 'Draft'}
-                  </span>
+                  {renderOperationalStatusBadge(view360Party)}
 
                   {/* Onboarding Stage */}
                   {view360Party.onboarding_stage && (

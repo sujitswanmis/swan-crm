@@ -28,6 +28,122 @@ export const ALL_CLIENT_TEAM_ROLES = [
   { id: 'CRM', label: 'CRM (Relationship Manager)' }
 ];
 
+export const B2B_OPERATIONAL_STATUSES = [
+  {
+    id: 'Active',
+    label: '🟢 Active',
+    name: 'Active',
+    icon: '🟢',
+    color: '#16a34a',
+    bg: 'rgba(22, 163, 74, 0.12)',
+    border: '#16a34a',
+    gradient: 'linear-gradient(135deg, #16a34a, #15803d)',
+    category: 'Live Business',
+    desc: 'Fully operational channel partner. Commercial factory billing and dispatches allowed.',
+    defaultSubStage: 'Regular (Credit Allowed)',
+    subStages: [
+      { id: 'Regular (Credit Allowed)', label: 'Regular (Credit Allowed)', hint: 'Full Credit & Orders Allowed according to S05 credit limit' },
+      { id: 'Advance RTGS Only (Stop Credit)', label: 'Advance RTGS Only (Stop Credit)', hint: 'Credit stopped, factory billing allowed strictly on 100% advance RTGS' },
+      { id: 'Seasonal Counter (Rabi/Kharif)', label: 'Seasonal Counter (Rabi/Kharif)', hint: 'Active in peak agri season, paused during off-season' }
+    ]
+  },
+  {
+    id: 'Hold',
+    label: '🔴 Hold',
+    name: 'Hold',
+    icon: '🔴',
+    color: '#d97706',
+    bg: 'rgba(217, 119, 6, 0.12)',
+    border: '#d97706',
+    gradient: 'linear-gradient(135deg, #d97706, #b45309)',
+    category: 'Temporary Restraint',
+    desc: 'Orders / dispatches paused pending compliance, payment, or management review.',
+    defaultSubStage: 'Payment Overdue (Ledger Block)',
+    subStages: [
+      { id: 'Payment Overdue (Ledger Block)', label: 'Payment Overdue (Ledger Block)', hint: 'Overdue balance outstanding, ledger locked until cleared' },
+      { id: 'Security / PDC Pending', label: 'Security / PDC Pending', hint: 'PDC expired or security deposit commitment unfulfilled' },
+      { id: 'Under Notice / Review', label: 'Under Notice / Review', hint: 'Audit, policy violation inquiry, or management verification underway' }
+    ]
+  },
+  {
+    id: 'Lost',
+    label: '💔 Lost',
+    name: 'Lost',
+    icon: '💔',
+    color: '#dc2626',
+    bg: 'rgba(220, 38, 38, 0.12)',
+    border: '#dc2626',
+    gradient: 'linear-gradient(135deg, #dc2626, #b91c1c)',
+    category: 'Discontinued (Swan Side Issues)',
+    desc: 'Partner left due to company issues — Prime Win-Back Target.',
+    defaultSubStage: 'Service Issues',
+    subStages: [
+      { id: 'Service Issues', label: '🛠️ Service Issues', hint: 'सर्विस / फील्ड इंजीनियर असंतोष / समय पर रिपेयर नहीं' },
+      { id: 'Product Issues', label: '📦 Product Issues', hint: 'मॉडल / साइज / स्पेसिफिकेशन क्षेत्रीय मांग अनुसार नहीं जमा' },
+      { id: 'Quality Issues', label: '⚙️ Quality Issues', hint: 'क्वालिटी / बार-बार ब्रेकडाउन व मैन्युफैक्चरिंग डिफेक्ट्स' },
+      { id: 'Delivery Issues', label: '🚚 Delivery Issues', hint: 'सीजन में लेट डिलीवरी / समय पर गाड़ी व माल नहीं पहुंचा' },
+      { id: 'Margin Issues', label: '💰 Margin Issues', hint: 'डीलर कमीशन / मार्जिन कम लगा या इंसेंटिव विवाद' },
+      { id: 'Price Issues', label: '🏷️ Price Issues', hint: 'कंपटीटर से रेट महंगा लगा / मार्केट में रेट कंपटीशन' }
+    ]
+  },
+  {
+    id: 'Surrender',
+    label: '📁 Surrender',
+    name: 'Surrender',
+    icon: '📁',
+    color: '#64748b',
+    bg: 'rgba(100, 116, 139, 0.12)',
+    border: '#64748b',
+    gradient: 'linear-gradient(135deg, #64748b, #475569)',
+    category: 'Partner Voluntary Exit',
+    desc: 'Dealer-initiated voluntary exit, formally closed / NOC released.',
+    defaultSubStage: 'Business Closed',
+    subStages: [
+      { id: 'Business Closed', label: 'Business Closed', hint: 'दुकान / फर्म का काम बंद कर दिया' },
+      { id: 'Switched to Other Brand', label: 'Switched to Other Brand', hint: 'दूसरे ब्रांड की एक्सक्लूसिव डीलरशिप ले ली' },
+      { id: 'Switched to Other Business', label: 'Switched to Other Business', hint: 'कृषि उपकरण छोड़ दूसरा कारोबार शुरू किया' }
+    ]
+  },
+  {
+    id: 'Terminated',
+    label: '🛑 Terminated',
+    name: 'Terminated',
+    icon: '🛑',
+    color: '#b91c1c',
+    bg: 'rgba(185, 28, 28, 0.14)',
+    border: '#b91c1c',
+    gradient: 'linear-gradient(135deg, #b91c1c, #991b1b)',
+    category: 'Company Revocation',
+    desc: 'Contract revoked due to breach, misconduct, or continuous non-performance.',
+    defaultSubStage: 'Target Failure / Non-Performance',
+    subStages: [
+      { id: 'Target Failure / Non-Performance', label: 'Target Failure / Non-Performance', hint: 'लगातार कई तिमाहियों से टारगेट पूरा नहीं किया' },
+      { id: 'Territory Breach / Cross-Selling', label: 'Territory Breach / Cross-Selling', hint: 'अधिकृत जिले/क्षेत्र के बाहर दूसरे के इलाके में माल बेचा' },
+      { id: 'Promoting Competitor Brand', label: 'Promoting Competitor Brand', hint: 'प्रतिद्वंदी ब्रांड को सक्रिय प्रमोट किया / कंपनी को धोखा' },
+      { id: 'Agreement & Policy Breach', label: 'Agreement & Policy Breach', hint: 'डीलरशिप एग्रीमेंट व कंपनी नियमों की गंभीर अवहेलना' },
+      { id: 'Market Misconduct / Customer Complaints', label: 'Market Misconduct / Customer Complaints', hint: 'किसानों या मार्केट में बदनामी व वित्तीय धोखाधड़ी शिकायतें' }
+    ]
+  },
+  {
+    id: 'Blacklisted',
+    label: '⛔ Blacklisted',
+    name: 'Blacklisted',
+    icon: '⛔',
+    color: '#0f172a',
+    bg: 'rgba(15, 23, 42, 0.15)',
+    border: '#0f172a',
+    gradient: 'linear-gradient(135deg, #1e293b, #0f172a)',
+    category: 'Permanent Ban',
+    desc: 'Permanently Banned / Legal Action / Cheque Bounce (138 NI Act).',
+    defaultSubStage: 'Cheque Bounce / Legal 138 Case',
+    subStages: [
+      { id: 'Cheque Bounce / Legal 138 Case', label: 'Cheque Bounce / Legal 138 Case', hint: 'चेक बाउंस / 138 NI Act कानूनी केस दर्ज' },
+      { id: 'Fake / Duplicate Spares Selling', label: 'Fake / Duplicate Spares Selling', hint: 'नकली पार्ट्स बेचना / स्वान ब्रांड की पाइरेसी' },
+      { id: 'Financial Fraud / Defaulter', label: 'Financial Fraud / Defaulter', hint: 'कंपनी का पैसा दबाकर भागना / दिवालिया घोषित' }
+    ]
+  }
+];
+
 export const STAGE_THEME_MAP = {
   s01: {
     stage: 'S01',
@@ -678,6 +794,8 @@ export default function StageConfigModal({
   // S08
   s08ActivationStatus,
   setS08ActivationStatus,
+  s08SubStage = '',
+  setS08SubStage,
   s08Remarks,
   setS08Remarks,
   handleS07Activation,
@@ -2494,149 +2612,263 @@ export default function StageConfigModal({
                     </div>
                   </div>
 
-                  {/* 4 Status Options Selector */}
-                  <div style={{ marginBottom: '1.5rem' }}>
-                    <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '0.75rem' }}>
-                      Set Partner Operational Status *
-                    </label>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.85rem' }}>
-                      {[
-                        { id: 'Active', label: 'Active', color: '#16a34a', bg: 'rgba(22, 163, 74, 0.1)', border: '#16a34a', desc: 'Fully operational channel partner, active in daily ordering and billing.' },
-                        { id: 'Inactive', label: 'Inactive', color: '#64748b', bg: 'rgba(100, 116, 139, 0.1)', border: '#64748b', desc: 'Temporarily inactive / counter closed / seasonal recess.' },
-                        { id: 'Hold', label: 'Hold', color: '#d97706', bg: 'rgba(217, 119, 6, 0.1)', border: '#d97706', desc: 'On hold pending compliance check or management verification.' },
-                        { id: 'Payment Issues', label: 'Payment Issues', color: '#dc2626', bg: 'rgba(220, 38, 38, 0.1)', border: '#dc2626', desc: 'Orders blocked due to overdue ledger, credit breach, or PDC bounce.' }
-                      ].map(st => {
-                        const isSel = s08ActivationStatus === st.id;
-                        return (
-                          <div
-                            key={st.id}
-                            onClick={() => setS08ActivationStatus(st.id)}
-                            style={{
-                              padding: '1rem',
-                              borderRadius: '10px',
-                              border: isSel ? `2px solid ${st.border}` : '1.5px solid var(--border-light, #e2e8f0)',
-                              background: isSel ? st.bg : 'var(--bg-surface, #ffffff)',
-                              cursor: 'pointer',
-                              transition: 'all 0.15s'
-                            }}
-                          >
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
-                              <span style={{ fontWeight: 800, fontSize: '0.96rem', color: isSel ? st.color : 'var(--text-primary, #0f172a)' }}>
-                                {st.label}
-                              </span>
-                              <div style={{ width: '16px', height: '16px', borderRadius: '50%', border: `2px solid ${isSel ? st.color : 'var(--border-light, #94a3b8)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                {isSel && <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: st.color }} />}
+                  {/* 2-Tier B2B Operational Status Architecture */}
+                  {(() => {
+                    const currentStatusObj = B2B_OPERATIONAL_STATUSES.find(s => s.id === s08ActivationStatus) || B2B_OPERATIONAL_STATUSES[0];
+                    const activeSub = s08SubStage || currentStatusObj.defaultSubStage;
+
+                    const handleSelectMainStatus = (statusId) => {
+                      setS08ActivationStatus(statusId);
+                      const targetStatus = B2B_OPERATIONAL_STATUSES.find(s => s.id === statusId);
+                      if (targetStatus && setS08SubStage) {
+                        const isCurrentSubValid = targetStatus.subStages.some(sub => sub.id === s08SubStage);
+                        if (!isCurrentSubValid) {
+                          setS08SubStage(targetStatus.defaultSubStage || targetStatus.subStages[0]?.id || '');
+                        }
+                      }
+                    };
+
+                    return (
+                      <>
+                        {/* Tier 1: 6 Main Operational Status Cards */}
+                        <div style={{ marginBottom: '1.25rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.65rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                            <label style={{ fontSize: '0.92rem', fontWeight: 800, color: 'var(--text-primary, #0f172a)' }}>
+                              Tier 1: Set Channel Partner Operational Status *
+                            </label>
+                            <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary, #64748b)', fontWeight: 600 }}>
+                              6 Enterprise B2B Categories
+                            </span>
+                          </div>
+
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '0.75rem' }}>
+                            {B2B_OPERATIONAL_STATUSES.map(st => {
+                              const isSel = s08ActivationStatus === st.id;
+                              return (
+                                <div
+                                  key={st.id}
+                                  onClick={() => handleSelectMainStatus(st.id)}
+                                  style={{
+                                    padding: '0.9rem',
+                                    borderRadius: '10px',
+                                    border: isSel ? `2px solid ${st.border}` : '1.5px solid var(--border-light, #e2e8f0)',
+                                    background: isSel ? st.bg : 'var(--bg-surface, #ffffff)',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.15s',
+                                    boxShadow: isSel ? `0 2px 10px ${st.color}25` : 'none',
+                                    position: 'relative'
+                                  }}
+                                >
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                                    <span style={{ fontWeight: 800, fontSize: '0.95rem', color: isSel ? st.color : 'var(--text-primary, #0f172a)' }}>
+                                      {st.label}
+                                    </span>
+                                    <div style={{
+                                      width: '16px',
+                                      height: '16px',
+                                      borderRadius: '50%',
+                                      border: `2px solid ${isSel ? st.color : 'var(--border-light, #94a3b8)'}`,
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center'
+                                    }}>
+                                      {isSel && <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: st.color }} />}
+                                    </div>
+                                  </div>
+                                  <div style={{
+                                    fontSize: '0.68rem',
+                                    fontWeight: 800,
+                                    textTransform: 'uppercase',
+                                    color: isSel ? st.color : 'var(--text-secondary, #64748b)',
+                                    marginBottom: '0.25rem'
+                                  }}>
+                                    {st.category}
+                                  </div>
+                                  <p style={{ margin: 0, fontSize: '0.74rem', color: 'var(--text-secondary, #64748b)', lineHeight: 1.35 }}>
+                                    {st.desc}
+                                  </p>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* Tier 2: Dynamic Sub-Stage Selector */}
+                        <div style={{
+                          marginBottom: '1.5rem',
+                          padding: '1.1rem',
+                          borderRadius: '10px',
+                          background: currentStatusObj.bg,
+                          border: `1.5px solid ${currentStatusObj.border}`
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                            <div>
+                              <div style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--text-primary, #0f172a)' }}>
+                                Tier 2: Specific Operational Sub-Stage / Root Cause for {currentStatusObj.label} *
+                              </div>
+                              <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary, #64748b)', marginTop: '0.15rem' }}>
+                                Choose the exact commercial classification or operational reason
                               </div>
                             </div>
-                            <p style={{ margin: 0, fontSize: '0.76rem', color: 'var(--text-secondary, #64748b)', lineHeight: 1.35 }}>{st.desc}</p>
+                            <span style={{
+                              fontSize: '0.72rem',
+                              fontWeight: 800,
+                              padding: '0.2rem 0.6rem',
+                              borderRadius: '5px',
+                              background: currentStatusObj.color,
+                              color: '#ffffff'
+                            }}>
+                              {currentStatusObj.category}
+                            </span>
                           </div>
-                        );
-                      })}
-                    </div>
-                  </div>
 
-                  {/* Remarks */}
-                  <div style={{ marginBottom: '1.5rem' }}>
-                    <label style={labelStyle}>
-                      Activation Remarks / Decision Notes
-                    </label>
-                    <textarea
-                      rows="3"
-                      value={s08Remarks}
-                      onChange={e => setS08Remarks(e.target.value)}
-                      placeholder="Enter reasons, special credit remarks, or audit notes for this status change..."
-                      style={{
-                        ...inputStyle,
-                        resize: 'vertical'
-                      }}
-                    />
-                  </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: '0.65rem' }}>
+                            {currentStatusObj.subStages.map(sub => {
+                              const isSubSel = activeSub === sub.id;
+                              return (
+                                <div
+                                  key={sub.id}
+                                  onClick={() => setS08SubStage && setS08SubStage(sub.id)}
+                                  style={{
+                                    padding: '0.75rem 0.85rem',
+                                    borderRadius: '8px',
+                                    border: isSubSel ? `2px solid ${currentStatusObj.color}` : '1.5px solid var(--border-light, #cbd5e1)',
+                                    background: isSubSel ? 'var(--bg-surface, #ffffff)' : 'rgba(255, 255, 255, 0.65)',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.15s',
+                                    boxShadow: isSubSel ? `0 2px 8px ${currentStatusObj.color}35` : 'none'
+                                  }}
+                                >
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
+                                    <span style={{ fontWeight: 800, fontSize: '0.86rem', color: isSubSel ? currentStatusObj.color : 'var(--text-primary, #0f172a)' }}>
+                                      {sub.label}
+                                    </span>
+                                    <div style={{
+                                      width: '14px',
+                                      height: '14px',
+                                      borderRadius: '50%',
+                                      border: `2px solid ${isSubSel ? currentStatusObj.color : 'var(--border-light, #94a3b8)'}`,
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center'
+                                    }}>
+                                      {isSubSel && <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: currentStatusObj.color }} />}
+                                    </div>
+                                  </div>
+                                  <p style={{ margin: 0, fontSize: '0.73rem', color: 'var(--text-secondary, #64748b)', lineHeight: 1.35 }}>
+                                    {sub.hint}
+                                  </p>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
 
-                  <div style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    gap: '0.75rem',
-                    marginTop: '1.75rem',
-                    paddingTop: '1.25rem',
-                    borderTop: '1px solid var(--border-light, #e2e8f0)',
-                    flexWrap: 'wrap'
-                  }}>
-                    <button
-                      type="button"
-                      onClick={onClose}
-                      style={cancelBtnStyle}
-                    >
-                      <X size={15} /> Close [Esc]
-                    </button>
+                        {/* Remarks */}
+                        <div style={{ marginBottom: '1.5rem' }}>
+                          <label style={labelStyle}>
+                            Activation Remarks / Decision Notes
+                          </label>
+                          <textarea
+                            rows="3"
+                            value={s08Remarks}
+                            onChange={e => setS08Remarks(e.target.value)}
+                            placeholder="Enter reasons, special credit remarks, or audit notes for this status change..."
+                            style={{
+                              ...inputStyle,
+                              resize: 'vertical'
+                            }}
+                          />
+                        </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
-                      <button
-                        type="button"
-                        onClick={() => handleS07Activation('DRAFT')}
-                        title="Save remarks as Draft without activating partner"
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '0.45rem',
-                          padding: '0.65rem 1.1rem',
-                          borderRadius: '8px',
-                          fontSize: '0.84rem',
-                          fontWeight: 700,
-                          cursor: 'pointer',
-                          background: 'rgba(100, 116, 139, 0.12)',
-                          border: '1.5px solid #64748b',
-                          color: 'var(--text-primary, #334155)',
-                          transition: 'all 0.15s'
-                        }}
-                      >
-                        <FileText size={15} color="#64748b" /> Save as Draft
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleS07Activation('PARTIAL')}
-                        title="Provisional activation status: save remarks and mark as Partial"
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '0.45rem',
-                          padding: '0.65rem 1.1rem',
-                          borderRadius: '8px',
-                          fontSize: '0.84rem',
-                          fontWeight: 700,
-                          cursor: 'pointer',
-                          background: 'rgba(245, 158, 11, 0.16)',
-                          border: '1.5px solid #f59e0b',
-                          color: '#d97706',
-                          transition: 'all 0.15s'
-                        }}
-                      >
-                        <AlertTriangle size={15} color="#d97706" /> Confirm Partial
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleS07Activation('CONFIRM')}
-                        style={{
-                          padding: '0.75rem 1.8rem',
-                          background: s08ActivationStatus === 'Active' ? 'linear-gradient(135deg, #16a34a, #15803d)' : (s08ActivationStatus === 'Payment Issues' ? 'linear-gradient(135deg, #ef4444, #dc2626)' : 'linear-gradient(135deg, #f59e0b, #d97706)'),
-                          border: 'none',
-                          borderRadius: '8px',
-                          color: '#ffffff',
-                          fontWeight: 800,
-                          fontSize: '0.95rem',
-                          cursor: 'pointer',
+                        <div style={{
                           display: 'flex',
+                          justifyContent: 'space-between',
                           alignItems: 'center',
-                          gap: '0.5rem',
-                          boxShadow: '0 4px 15px rgba(0,0,0,0.2)'
-                        }}
-                      >
-                        <CheckCircle2 size={18} /> Confirm &amp; Set Partner Status: &quot;{s08ActivationStatus}&quot;
-                      </button>
-                    </div>
-                  </div>
+                          gap: '0.75rem',
+                          marginTop: '1.75rem',
+                          paddingTop: '1.25rem',
+                          borderTop: '1px solid var(--border-light, #e2e8f0)',
+                          flexWrap: 'wrap'
+                        }}>
+                          <button
+                            type="button"
+                            onClick={onClose}
+                            style={cancelBtnStyle}
+                          >
+                            <X size={15} /> Close [Esc]
+                          </button>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                            <button
+                              type="button"
+                              onClick={() => handleS07Activation('DRAFT')}
+                              title="Save remarks as Draft without activating partner"
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.45rem',
+                                padding: '0.65rem 1.1rem',
+                                borderRadius: '8px',
+                                fontSize: '0.84rem',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                background: 'rgba(100, 116, 139, 0.12)',
+                                border: '1.5px solid #64748b',
+                                color: 'var(--text-primary, #334155)',
+                                transition: 'all 0.15s'
+                              }}
+                            >
+                              <FileText size={15} color="#64748b" /> Save as Draft
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleS07Activation('PARTIAL')}
+                              title="Provisional activation status: save remarks and mark as Partial"
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.45rem',
+                                padding: '0.65rem 1.1rem',
+                                borderRadius: '8px',
+                                fontSize: '0.84rem',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                background: 'rgba(245, 158, 11, 0.16)',
+                                border: '1.5px solid #f59e0b',
+                                color: '#d97706',
+                                transition: 'all 0.15s'
+                              }}
+                            >
+                              <AlertTriangle size={15} color="#d97706" /> Confirm Partial
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleS07Activation('CONFIRM')}
+                              style={{
+                                padding: '0.75rem 1.6rem',
+                                background: currentStatusObj.gradient || 'linear-gradient(135deg, #16a34a, #15803d)',
+                                border: 'none',
+                                borderRadius: '8px',
+                                color: '#ffffff',
+                                fontWeight: 800,
+                                fontSize: '0.92rem',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.5rem',
+                                boxShadow: '0 4px 15px rgba(0,0,0,0.2)'
+                              }}
+                            >
+                              <CheckCircle2 size={18} /> Confirm &amp; Set Status: &quot;{s08ActivationStatus}&quot; {activeSub ? `(${activeSub})` : ''}
+                            </button>
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
               )}
             </>
