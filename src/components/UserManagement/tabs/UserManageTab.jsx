@@ -141,192 +141,115 @@ export default function UserManageTab({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', width: '100%' }}>
-      {/* Top Header & Actions */}
+      {/* Top Header & Action Buttons */}
       <div style={{
         display: 'flex',
         flexWrap: 'wrap',
-        justifyContent: 'space-between',
+        justifyContent: 'flex-end',
         alignItems: 'center',
-        gap: '0.75rem',
-        paddingBottom: '0.5rem',
-        borderBottom: '1px solid var(--border-light)'
+        gap: '0.5rem',
+        paddingBottom: '0.25rem'
       }}>
-        {/* Department Filter & Table Tiles (Status Badges) side-by-side */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.6rem', alignItems: 'center' }}>
-          {/* Department Filter */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-            <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Dept:</span>
-            <select
-              value={selectedDepartment}
-              onChange={e => {
-                setSelectedDepartment(e.target.value);
-                setCurrentPage(1);
-              }}
-              style={{
-                padding: '0.35rem 0.65rem',
-                borderRadius: '8px',
-                border: '1px solid var(--border-light)',
-                backgroundColor: 'var(--bg-surface)',
-                color: 'var(--text-primary)',
-                fontSize: '0.78rem',
-                fontWeight: 600,
-                cursor: 'pointer'
-              }}
-            >
-              <option value="All">All Departments</option>
-              {departments.map(d => (
-                <option key={d} value={d}>{d}</option>
-              ))}
-            </select>
-          </div>
+        <button
+          type="button"
+          onClick={onRefresh}
+          title="Refresh Users"
+          style={{
+            padding: '0.45rem 0.75rem',
+            borderRadius: '8px',
+            border: '1px solid var(--border-light)',
+            backgroundColor: 'var(--bg-surface)',
+            color: 'var(--text-primary)',
+            fontSize: '0.78rem',
+            fontWeight: 600,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.35rem'
+          }}
+        >
+          <RefreshCw size={14} className={loading ? 'spin' : ''} />
+          Refresh
+        </button>
 
-          <div style={{ width: '1px', height: '24px', backgroundColor: 'var(--border-light)', margin: '0 0.15rem' }} />
+        <button
+          type="button"
+          onClick={onOpenBulkImport}
+          style={{
+            padding: '0.45rem 0.85rem',
+            borderRadius: '8px',
+            border: '1px solid var(--border-light)',
+            backgroundColor: 'var(--bg-surface)',
+            color: 'var(--text-primary)',
+            fontSize: '0.78rem',
+            fontWeight: 600,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.35rem'
+          }}
+        >
+          <Upload size={14} />
+          Import CSV
+        </button>
 
-          {/* Status Filter Badges (Table Tiles) */}
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', alignItems: 'center' }}>
-            {['All', 'Active', 'InActive', 'Hold', 'Resigned', 'Terminated', 'Draft', 'Trash'].map(st => {
-              const isSelected = selectedStatusTab === st;
-              const count = statusCounts[st] || 0;
-              return (
-                <button
-                  key={st}
-                  type="button"
-                  onClick={() => {
-                    setSelectedStatusTab(st);
-                    setCurrentPage(1);
-                  }}
-                  style={{
-                    padding: '0.35rem 0.75rem',
-                    borderRadius: '20px',
-                    border: isSelected ? '1px solid var(--primary-color, #2563eb)' : '1px solid var(--border-light)',
-                    backgroundColor: isSelected ? 'var(--primary-color, #2563eb)' : 'var(--bg-surface)',
-                    color: isSelected ? '#ffffff' : 'var(--text-primary)',
-                    fontSize: '0.78rem',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.4rem',
-                    transition: 'all 0.15s ease'
-                  }}
-                >
-                  <span>{st === 'Hold' ? 'On Hold' : st}</span>
-                  <span style={{
-                    fontSize: '0.7rem',
-                    backgroundColor: isSelected ? 'rgba(255,255,255,0.25)' : 'var(--border-light)',
-                    color: isSelected ? '#ffffff' : 'var(--text-secondary)',
-                    padding: '0.05rem 0.45rem',
-                    borderRadius: '10px'
-                  }}>
-                    {count}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        <button
+          type="button"
+          onClick={onExportCSV}
+          style={{
+            padding: '0.45rem 0.85rem',
+            borderRadius: '8px',
+            border: '1px solid var(--border-light)',
+            backgroundColor: 'var(--bg-surface)',
+            color: 'var(--text-primary)',
+            fontSize: '0.78rem',
+            fontWeight: 600,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.35rem'
+          }}
+        >
+          <Download size={14} />
+          Export CSV
+        </button>
 
-        {/* Global Action Buttons */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-          <button
-            type="button"
-            onClick={onRefresh}
-            title="Refresh Users"
-            style={{
-              padding: '0.45rem 0.75rem',
-              borderRadius: '8px',
-              border: '1px solid var(--border-light)',
-              backgroundColor: 'var(--bg-surface)',
-              color: 'var(--text-primary)',
-              fontSize: '0.78rem',
-              fontWeight: 600,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.35rem'
-            }}
-          >
-            <RefreshCw size={14} className={loading ? 'spin' : ''} />
-            Refresh
-          </button>
-
-          <button
-            type="button"
-            onClick={onOpenBulkImport}
-            style={{
-              padding: '0.45rem 0.85rem',
-              borderRadius: '8px',
-              border: '1px solid var(--border-light)',
-              backgroundColor: 'var(--bg-surface)',
-              color: 'var(--text-primary)',
-              fontSize: '0.78rem',
-              fontWeight: 600,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.35rem'
-            }}
-          >
-            <Upload size={14} />
-            Import CSV
-          </button>
-
-          <button
-            type="button"
-            onClick={onExportCSV}
-            style={{
-              padding: '0.45rem 0.85rem',
-              borderRadius: '8px',
-              border: '1px solid var(--border-light)',
-              backgroundColor: 'var(--bg-surface)',
-              color: 'var(--text-primary)',
-              fontSize: '0.78rem',
-              fontWeight: 600,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.35rem'
-            }}
-          >
-            <Download size={14} />
-            Export CSV
-          </button>
-
-          <button
-            type="button"
-            onClick={onAddUser}
-            style={{
-              padding: '0.45rem 1rem',
-              borderRadius: '8px',
-              border: 'none',
-              backgroundColor: 'var(--primary-color, #2563eb)',
-              color: '#ffffff',
-              fontSize: '0.8rem',
-              fontWeight: 600,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.4rem',
-              boxShadow: '0 2px 6px rgba(37, 99, 235, 0.25)'
-            }}
-          >
-            <Plus size={16} />
-            Add User
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={onAddUser}
+          style={{
+            padding: '0.45rem 1rem',
+            borderRadius: '8px',
+            border: 'none',
+            backgroundColor: 'var(--primary-color, #2563eb)',
+            color: '#ffffff',
+            fontSize: '0.8rem',
+            fontWeight: 600,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.4rem',
+            boxShadow: '0 2px 6px rgba(37, 99, 235, 0.25)'
+          }}
+        >
+          <Plus size={16} />
+          Add User
+        </button>
       </div>
 
-      {/* Search Bar */}
+      {/* Filter Toolbar: Search Bar -> Department Selector -> Table Tiles (Status Badges) */}
       <div style={{
         display: 'flex',
+        flexWrap: 'wrap',
+        gap: '0.75rem',
         alignItems: 'center',
         backgroundColor: 'var(--bg-surface)',
-        padding: '0.65rem 1rem',
+        padding: '0.75rem 1rem',
         borderRadius: '10px',
         border: '1px solid var(--border-light)'
       }}>
-        {/* Search Input */}
-        <div style={{ position: 'relative', width: '100%' }}>
+        {/* 1. Search Bar */}
+        <div style={{ position: 'relative', flex: '1 1 240px', minWidth: '220px', maxWidth: '380px' }}>
           <Search size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
           <input
             type="text"
@@ -335,10 +258,10 @@ export default function UserManageTab({
               setSearchQuery(e.target.value);
               setCurrentPage(1);
             }}
-            placeholder="Search by name, employee code, email, mobile, department, role..."
+            placeholder="Search by name, employee code, email, mobile..."
             style={{
               width: '100%',
-              padding: '0.45rem 0.75rem 0.45rem 2.1rem',
+              padding: '0.42rem 0.75rem 0.42rem 2.1rem',
               borderRadius: '8px',
               border: '1px solid var(--border-light)',
               backgroundColor: 'var(--bg-primary, #f8fafc)',
@@ -346,6 +269,82 @@ export default function UserManageTab({
               fontSize: '0.82rem'
             }}
           />
+        </div>
+
+        {/* Divider */}
+        <div style={{ width: '1px', height: '24px', backgroundColor: 'var(--border-light)', flexShrink: 0 }} />
+
+        {/* 2. Department Selector */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}>
+          <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Dept:</span>
+          <select
+            value={selectedDepartment}
+            onChange={e => {
+              setSelectedDepartment(e.target.value);
+              setCurrentPage(1);
+            }}
+            style={{
+              padding: '0.42rem 0.75rem',
+              borderRadius: '8px',
+              border: '1px solid var(--border-light)',
+              backgroundColor: 'var(--bg-surface)',
+              color: 'var(--text-primary)',
+              fontSize: '0.8rem',
+              fontWeight: 600,
+              cursor: 'pointer'
+            }}
+          >
+            <option value="All">All Departments</option>
+            {departments.map(d => (
+              <option key={d} value={d}>{d}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Divider */}
+        <div style={{ width: '1px', height: '24px', backgroundColor: 'var(--border-light)', flexShrink: 0 }} />
+
+        {/* 3. Table Tiles (Status Badges) */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', alignItems: 'center', flex: '1 1 auto' }}>
+          {['All', 'Active', 'InActive', 'Hold', 'Resigned', 'Terminated', 'Draft', 'Trash'].map(st => {
+            const isSelected = selectedStatusTab === st;
+            const count = statusCounts[st] || 0;
+            return (
+              <button
+                key={st}
+                type="button"
+                onClick={() => {
+                  setSelectedStatusTab(st);
+                  setCurrentPage(1);
+                }}
+                style={{
+                  padding: '0.35rem 0.75rem',
+                  borderRadius: '20px',
+                  border: isSelected ? '1px solid var(--primary-color, #2563eb)' : '1px solid var(--border-light)',
+                  backgroundColor: isSelected ? 'var(--primary-color, #2563eb)' : 'var(--bg-surface)',
+                  color: isSelected ? '#ffffff' : 'var(--text-primary)',
+                  fontSize: '0.78rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <span>{st === 'Hold' ? 'On Hold' : st}</span>
+                <span style={{
+                  fontSize: '0.7rem',
+                  backgroundColor: isSelected ? 'rgba(255,255,255,0.25)' : 'var(--border-light)',
+                  color: isSelected ? '#ffffff' : 'var(--text-secondary)',
+                  padding: '0.05rem 0.45rem',
+                  borderRadius: '10px'
+                }}>
+                  {count}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
