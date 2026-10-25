@@ -156,9 +156,9 @@ export default function ChannelOperationsModule({
   }, [activeTab]);
 
   return (
-    <div style={{ padding: '0.25rem 0.25rem 1.5rem', color: 'var(--text-primary)', background: 'var(--bg-primary)', minHeight: '100%', width: '100%', flex: 1, display: 'flex', flexDirection: 'column' }}>
+    <div style={{ padding: '0.5rem 0.5rem 1.5rem', color: 'var(--text-primary)', background: 'var(--bg-primary)', minHeight: '100%', width: '100%' }}>
       {/* Top Module Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '1rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
             <div style={{
@@ -212,12 +212,15 @@ export default function ChannelOperationsModule({
         display: 'flex',
         alignItems: 'center',
         gap: '0.5rem',
-        padding: '0.4rem',
+        padding: '0.45rem',
         background: 'var(--bg-surface)',
         borderRadius: '12px',
         border: '1px solid var(--border-light)',
-        marginBottom: '1.25rem',
-        overflowX: 'auto'
+        marginBottom: '1rem',
+        overflowX: 'auto',
+        scrollbarWidth: 'thin',
+        minHeight: '52px',
+        boxSizing: 'border-box'
       }}>
         {OPERATIONS_TABS.map(tab => {
           const isActive = activeTab === tab.id;
@@ -231,10 +234,10 @@ export default function ChannelOperationsModule({
               key={tab.id}
               onClick={() => switchTab(tab.id)}
               style={{
-                display: 'flex',
+                display: 'inline-flex',
                 alignItems: 'center',
                 gap: '0.5rem',
-                padding: '0.55rem 1rem',
+                padding: '0.6rem 1.1rem',
                 borderRadius: '8px',
                 border: 'none',
                 background: isActive ? 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)' : 'transparent',
@@ -243,7 +246,10 @@ export default function ChannelOperationsModule({
                 fontSize: '0.84rem',
                 cursor: 'pointer',
                 transition: 'all 0.15s ease',
-                whiteSpace: 'nowrap'
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
+                height: '38px',
+                lineHeight: 1
               }}
             >
               <span>{tab.icon}</span>

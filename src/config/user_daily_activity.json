@@ -687,10 +687,10 @@
       "userId": "07fa35d3-f50a-4e41-ae15-b2692e393ea0",
       "email": "admin@newswangroup.com",
       "empName": "New Swan Admin",
-      "activeSeconds": 5558,
-      "idleSeconds": 7585,
+      "activeSeconds": 6061,
+      "idleSeconds": 7685,
       "firstSeen": "2026-10-25T12:32:43.136058+00:00",
-      "lastSeen": "2026-10-25T17:05:23.473Z",
+      "lastSeen": "2026-10-25T17:15:46.176Z",
       "status": "working",
       "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36"
     }
