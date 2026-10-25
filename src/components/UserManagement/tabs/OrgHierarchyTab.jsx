@@ -173,7 +173,7 @@ export default function OrgHierarchyTab({
           </div>
         ) : filteredHods.map(({ hod, reports }) => {
           const key = hod.user_id || hod.email || hod.emp_name;
-          const isOpen = expandedHods[key] !== false;
+          const isOpen = expandedHods[key] === true;
           return (
             <div key={key} style={{ borderRadius: '12px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', overflow: 'hidden' }}>
               <button type="button" aria-expanded={isOpen} onClick={() => setExpandedHods(previous => ({ ...previous, [key]: !isOpen }))}
@@ -213,7 +213,7 @@ export default function OrgHierarchyTab({
           ) : (
             filteredManagers.map(mgrName => {
               const directReports = managerHierarchy[mgrName] || [];
-              const isOpen = expandedManagers[mgrName] !== false; // open by default
+              const isOpen = expandedManagers[mgrName] === true;
 
               return (
                 <div

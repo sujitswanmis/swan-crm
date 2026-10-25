@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { 
   Users, Shield, Network, Monitor, Clock,
   AlertCircle, CheckCircle2, Loader2, Sparkles 
@@ -102,7 +102,7 @@ export default function UserManagementContainer({
     }
   }, [isAdmin, isMasterAdmin]);
 
-  // Confirm modal for dangerous actions (status, trash, restore, delete)
+  // Confirm employee account changes and existing trash/restore actions.
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
     title: '',
@@ -112,6 +112,7 @@ export default function UserManagementContainer({
     onConfirm: () => {}
   });
   const [confirmLoading, setConfirmLoading] = useState(false);
+  const confirmationPendingRef = useRef(false);
 
   // Notification Toast state
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
@@ -120,6 +121,31 @@ export default function UserManagementContainer({
     setTimeout(() => {
       setToast(prev => ({ ...prev, show: false }));
     }, 3500);
+  };
+
+  const confirmUserChange = ({ title, message, confirmText, action }) => {
+    if (confirmationPendingRef.current) return;
+    setConfirmModal({
+      isOpen: true,
+      title,
+      message,
+      confirmText,
+      type: 'warning',
+      onConfirm: async () => {
+        if (confirmationPendingRef.current) return;
+        confirmationPendingRef.current = true;
+        setConfirmLoading(true);
+        try {
+          await action();
+          setConfirmModal(previous => ({ ...previous, isOpen: false }));
+        } catch (error) {
+          showToast(error.message || 'Could not update employee. Please try again.', 'error');
+        } finally {
+          confirmationPendingRef.current = false;
+          setConfirmLoading(false);
+        }
+      }
+    });
   };
 
   useEffect(() => {
@@ -193,29 +219,34 @@ export default function UserManagementContainer({
     }
   };
 
-  const handleAssignRole = async (user, role) => {
-    if (!window.confirm(`Assign "${role.name}" to ${user.emp_name || user.email}? Their current module permissions will be replaced.`)) return;
-    setAssigningRoleUserId(user.user_id);
-    try {
-      const result = await assignRoleTemplate(user.user_id, role.id);
-      if (!result.success) throw new Error(result.error || 'Could not assign role.');
-      setUsers(previous => previous.map(member => member.user_id === user.user_id ? { ...member, module_access: result.moduleAccess } : member));
-      showToast(`Role "${role.name}" assigned to ${user.emp_name || user.email}.`);
-      try {
-        const supabase = createClient();
-        await supabase.channel('crm_realtime_permission_sync').send({
-          type: 'broadcast',
-          event: 'permission_updated',
-          payload: { userId: user.user_id, moduleAccess: result.moduleAccess, timestamp: Date.now() }
-        });
-      } catch (broadcastError) {
-        console.warn('Role permission broadcast unavailable:', broadcastError);
+  const handleAssignRole = (user, role) => {
+    if (!user?.user_id || !role?.id) return;
+    confirmUserChange({
+      title: 'Assign Role Template?',
+      message: `Assign "${role.name}" to ${user.emp_name || user.email}? Their current module permissions will be replaced.`,
+      confirmText: 'Assign Role',
+      action: async () => {
+        setAssigningRoleUserId(user.user_id);
+        try {
+          const result = await assignRoleTemplate(user.user_id, role.id);
+          if (!result.success) throw new Error(result.error || 'Could not assign role.');
+          setUsers(previous => previous.map(member => member.user_id === user.user_id ? { ...member, module_access: result.moduleAccess } : member));
+          showToast(`Role "${role.name}" assigned to ${user.emp_name || user.email}.`);
+          try {
+            const supabase = createClient();
+            await supabase.channel('crm_realtime_permission_sync').send({
+              type: 'broadcast',
+              event: 'permission_updated',
+              payload: { userId: user.user_id, moduleAccess: result.moduleAccess, timestamp: Date.now() }
+            });
+          } catch (broadcastError) {
+            console.warn('Role permission broadcast unavailable:', broadcastError);
+          }
+        } finally {
+          setAssigningRoleUserId(null);
+        }
       }
-    } catch (error) {
-      showToast(error.message || 'Could not assign role.', 'error');
-    } finally {
-      setAssigningRoleUserId(null);
-    }
+    });
   };
 
   // Fetch users from backend
@@ -254,23 +285,22 @@ export default function UserManagementContainer({
     fetchDepartments();
   }, [fetchUsers, fetchDepartments, initialUsers]);
 
-  // Handler: Change Role directly
-  const handleChangeRole = async (targetUser, newRole) => {
+  // Handler: Confirm a system role change before saving.
+  const handleChangeRole = (targetUser, newRole) => {
     if (!targetUser?.user_id || !newRole) return;
     const current = targetUser.role || 'agent';
     if (current === newRole) return;
-    if (!window.confirm(`Change system role of ${targetUser.emp_name || targetUser.email} to "${newRole}"?`)) return;
-
-    // Optimistic update
-    setUsers(prev => prev.map(u => u.user_id === targetUser.user_id ? { ...u, role: newRole } : u));
-    try {
-      await updateUserRole(targetUser.user_id, newRole);
-      showToast(`Role updated to "${newRole}" for ${targetUser.emp_name || targetUser.email}`, 'success');
-      fetchUsers(false);
-    } catch (err) {
-      alert('Failed to update role: ' + err.message);
-      fetchUsers(false);
-    }
+    confirmUserChange({
+      title: 'Change System Role?',
+      message: `Change the system role of ${targetUser.emp_name || targetUser.email} from "${current}" to "${newRole}"?`,
+      confirmText: 'Change Role',
+      action: async () => {
+        await updateUserRole(targetUser.user_id, newRole);
+        setUsers(previous => previous.map(member => member.user_id === targetUser.user_id ? { ...member, role: newRole } : member));
+        showToast(`Role updated to "${newRole}" for ${targetUser.emp_name || targetUser.email}`, 'success');
+        fetchUsers(false);
+      }
+    });
   };
 
   // Handler: Add or Edit User
@@ -384,38 +414,40 @@ export default function UserManagementContainer({
   };
 
   // Handler: Change Status (supports direct select from EMP_STATUS_OPTIONS or toggle)
-  const handleChangeStatus = async (targetUser, newStatus) => {
+  const handleChangeStatus = (targetUser, newStatus) => {
     if (!targetUser?.user_id) return;
     const current = targetUser.emp_status || (targetUser.module_access?.emp_status) || 'Active';
     const nextStatus = newStatus || (current.toLowerCase() === 'active' ? 'InActive' : 'Active');
     if (current === nextStatus) return;
 
-    // Optimistically update local users state
-    setUsers(prev => prev.map(u => u.user_id === targetUser.user_id ? { ...u, emp_status: nextStatus } : u));
-    try {
-      await updateEmpStatus(targetUser.user_id, nextStatus);
-      showToast(`Status updated to "${nextStatus}" for ${targetUser.emp_name || targetUser.email}`, 'success');
-      fetchUsers(false);
-    } catch (err) {
-      alert('Failed to change status: ' + err.message);
-      fetchUsers(false);
-    }
+    confirmUserChange({
+      title: 'Change Employee Status?',
+      message: `Change the employee status of ${targetUser.emp_name || targetUser.email} from "${current}" to "${nextStatus}"?`,
+      confirmText: 'Change Status',
+      action: async () => {
+        await updateEmpStatus(targetUser.user_id, nextStatus);
+        setUsers(previous => previous.map(member => member.user_id === targetUser.user_id ? { ...member, emp_status: nextStatus } : member));
+        showToast(`Status updated to "${nextStatus}" for ${targetUser.emp_name || targetUser.email}`, 'success');
+        fetchUsers(false);
+      }
+    });
   };
 
   // Handler: Toggle Approval Status
-  const handleToggleApproval = async (targetUser) => {
+  const handleToggleApproval = (targetUser) => {
     if (!targetUser?.user_id) return;
     const nextApproved = !targetUser.is_approved;
-    // Optimistic update
-    setUsers(prev => prev.map(u => u.user_id === targetUser.user_id ? { ...u, is_approved: nextApproved } : u));
-    try {
-      await toggleUserApproval(targetUser.user_id, nextApproved);
-      showToast(`Approval status set to ${nextApproved ? 'Approved' : 'Pending'} for ${targetUser.emp_name || targetUser.email}`, 'success');
-      fetchUsers(false);
-    } catch (err) {
-      alert('Failed to update approval: ' + err.message);
-      fetchUsers(false);
-    }
+    confirmUserChange({
+      title: 'Change Approval Status?',
+      message: `Change the approval status of ${targetUser.emp_name || targetUser.email} from "${targetUser.is_approved ? 'Approved' : 'Pending'}" to "${nextApproved ? 'Approved' : 'Pending'}"?`,
+      confirmText: nextApproved ? 'Approve User' : 'Mark as Pending',
+      action: async () => {
+        await toggleUserApproval(targetUser.user_id, nextApproved);
+        setUsers(previous => previous.map(member => member.user_id === targetUser.user_id ? { ...member, is_approved: nextApproved } : member));
+        showToast(`Approval status set to ${nextApproved ? 'Approved' : 'Pending'} for ${targetUser.emp_name || targetUser.email}`, 'success');
+        fetchUsers(false);
+      }
+    });
   };
 
   // Handler: Save User as Draft (Partial creation)
@@ -577,10 +609,12 @@ export default function UserManagementContainer({
   return (
     <div style={{
       width: '100%',
+      minWidth: 0,
       minHeight: '80vh',
       padding: '0.75rem 1.5rem 1.5rem',
       display: 'flex',
       flexDirection: 'column',
+      flexShrink: 0,
       gap: '1rem',
       backgroundColor: 'transparent',
       boxSizing: 'border-box'
@@ -612,6 +646,7 @@ export default function UserManagementContainer({
       {/* Subpage Navigation Bar */}
       <div style={{
         display: 'flex',
+        flexShrink: 0,
         alignItems: 'center',
         gap: '0.5rem',
         borderBottom: '2px solid var(--border-light, #e2e8f0)',
@@ -635,6 +670,7 @@ export default function UserManagementContainer({
                 if (!isActive) e.currentTarget.style.color = 'var(--text-secondary, #64748b)';
               }}
               style={{
+                flexShrink: 0,
                 padding: '0.65rem 1.25rem',
                 border: 'none',
                 background: 'transparent',
@@ -795,7 +831,11 @@ export default function UserManagementContainer({
 
       <ConfirmActionModal
         isOpen={confirmModal.isOpen}
-        onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+        onClose={() => {
+          if (!confirmLoading && !confirmationPendingRef.current) {
+            setConfirmModal(previous => ({ ...previous, isOpen: false }));
+          }
+        }}
         onConfirm={confirmModal.onConfirm}
         title={confirmModal.title}
         message={confirmModal.message}

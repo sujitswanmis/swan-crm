@@ -4,8 +4,10 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import {
   Package, Plus, Search, Filter, Download, Upload, Edit3, Trash2,
   CheckCircle2, AlertCircle, X, RefreshCw, Building2, Layers,
-  IndianRupee, Tag, BarChart3, ArrowUpDown, Check, FileSpreadsheet
+  IndianRupee, Tag, BarChart3, ArrowUpDown, Check, FileSpreadsheet,
+  Info, FileUp, FileText, Loader2, ChevronDown, Eye, CheckCircle, FileCheck
 } from 'lucide-react';
+import Papa from 'papaparse';
 import { getTenantBranches } from '@/app/actions/tenantBranches';
 import {
   getTenantProducts,
@@ -76,9 +78,22 @@ export default function ProductListConfig({ userCompany = '' }) {
 
   const [showImportModal, setShowImportModal] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [importMode, setImportMode] = useState('file'); // 'file' | 'text'
+  const [importFile, setImportFile] = useState(null);
+  const [parsedItems, setParsedItems] = useState([]);
+  const [isDragging, setIsDragging] = useState(false);
   const [importText, setImportText] = useState('');
   const [importBranch, setImportBranch] = useState('All Branches');
+  const [importCategory, setImportCategory] = useState('General');
   const [importResult, setImportResult] = useState(null);
+  const [previewSearch, setPreviewSearch] = useState('');
+  const [previewFilter, setPreviewFilter] = useState('ALL'); // 'ALL' | 'VALID' | 'ISSUES'
+  const [showSampleDropdown, setShowSampleDropdown] = useState(false);
+  const [showExportDropdown, setShowExportDropdown] = useState(false);
+  const [isExportingExcel, setIsExportingExcel] = useState(false);
+  const fileInputRef = useRef(null);
+  const sampleDropdownRef = useRef(null);
+  const exportDropdownRef = useRef(null);
 
   // Delete confirm
   const [deletingProductId, setDeletingProductId] = useState(null);
@@ -147,6 +162,20 @@ export default function ProductListConfig({ userCompany = '' }) {
   useEffect(() => {
     loadInitialData();
   }, [loadInitialData]);
+
+  // Close dropdowns on outside click
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (sampleDropdownRef.current && !sampleDropdownRef.current.contains(e.target)) {
+        setShowSampleDropdown(false);
+      }
+      if (exportDropdownRef.current && !exportDropdownRef.current.contains(e.target)) {
+        setShowExportDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -381,10 +410,481 @@ export default function ProductListConfig({ userCompany = '' }) {
     showToast(`Exported ${filteredProducts.length} products to CSV!`);
   };
 
-  // --- Import from CSV / Text ---
-  const handleImportCSV = async () => {
+  // --- Download Sample CSV Template ---
+  const handleDownloadSampleCsv = () => {
+    const headers = [
+      'Name',
+      'SKU',
+      'Branch',
+      'Category',
+      'Price',
+      'Tax Rate %',
+      'HSN Code',
+      'Stock Qty',
+      'Min Order Qty',
+      'UOM',
+      'Description'
+    ];
+
+    const sampleRows = [
+      ['Rotavator – Super Series', 'SWAN-ROTA-01', 'All Branches', 'Implement', '115000', '12', '8432', '15', '1', 'Units', 'Heavy duty super series rotavator with multi speed gearbox'],
+      ['Laser Land Leveller', 'SWAN-LLL-02', 'NSMLR', 'Land Leveller', '325000', '12', '8432', '8', '1', 'Units', 'Precision dual slope transmitter receiver system'],
+      ['Genuine Blade 28T', 'SWAN-BLD-28', 'All Branches', 'Spare Part', '650', '18', '843290', '200', '10', 'Pcs', 'High carbon boron steel rotary tiller blades'],
+      ['Super Seeder 8 Row', 'SWAN-SEED-08', 'NSTL', 'Seeder', '245000', '12', '8432', '5', '1', 'Units', 'Next generation super seeder for direct sowing'],
+      ['Hydraulic Reversible MB Plough', 'SWAN-PLOW-03', 'All Branches', 'Plough', '95000', '12', '8432', '12', '1', 'Units', 'Heavy duty reversible mould board plough']
+    ];
+
+    const csvContent = '\uFEFF' + [
+      headers.join(','),
+      ...sampleRows.map(row => row.map(cell => `"${(cell || '').replace(/"/g, '""')}"`).join(','))
+    ].join('\r\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'Product_Import_Sample_Template.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    showToast('Sample CSV template downloaded!');
+  };
+
+  // --- Download Sample Excel Template (.xlsx) ---
+  const handleDownloadSampleExcel = async () => {
+    try {
+      const ExcelJS = (await import('exceljs')).default;
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = 'Swan CRM';
+      const sheet = workbook.addWorksheet('Products');
+
+      sheet.columns = [
+        { header: 'Name', key: 'name', width: 30 },
+        { header: 'SKU', key: 'sku', width: 18 },
+        { header: 'Branch', key: 'branch', width: 20 },
+        { header: 'Category', key: 'category', width: 18 },
+        { header: 'Price', key: 'price', width: 14 },
+        { header: 'Tax Rate %', key: 'tax_rate', width: 14 },
+        { header: 'HSN Code', key: 'hsn', width: 14 },
+        { header: 'Stock Qty', key: 'stock', width: 14 },
+        { header: 'Min Order Qty', key: 'min_order_qty', width: 16 },
+        { header: 'UOM', key: 'uom', width: 12 },
+        { header: 'Description', key: 'description', width: 40 }
+      ];
+
+      // Style header row
+      const headerRow = sheet.getRow(1);
+      headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      headerRow.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF2563EB' }
+      };
+      headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
+      headerRow.height = 24;
+
+      const sampleData = [
+        {
+          name: 'Rotavator – Super Series',
+          sku: 'SWAN-ROTA-01',
+          branch: 'All Branches',
+          category: 'Implement',
+          price: 115000,
+          tax_rate: 12,
+          hsn: '8432',
+          stock: 15,
+          min_order_qty: 1,
+          uom: 'Units',
+          description: 'Heavy duty super series rotavator with multi speed gearbox'
+        },
+        {
+          name: 'Laser Land Leveller',
+          sku: 'SWAN-LLL-02',
+          branch: 'NSMLR',
+          category: 'Land Leveller',
+          price: 325000,
+          tax_rate: 12,
+          hsn: '8432',
+          stock: 8,
+          min_order_qty: 1,
+          uom: 'Units',
+          description: 'Precision dual slope transmitter receiver system'
+        },
+        {
+          name: 'Genuine Blade 28T',
+          sku: 'SWAN-BLD-28',
+          branch: 'All Branches',
+          category: 'Spare Part',
+          price: 650,
+          tax_rate: 18,
+          hsn: '843290',
+          stock: 200,
+          min_order_qty: 10,
+          uom: 'Pcs',
+          description: 'High carbon boron steel rotary tiller blades'
+        },
+        {
+          name: 'Super Seeder 8 Row',
+          sku: 'SWAN-SEED-08',
+          branch: 'NSTL',
+          category: 'Seeder',
+          price: 245000,
+          tax_rate: 12,
+          hsn: '8432',
+          stock: 5,
+          min_order_qty: 1,
+          uom: 'Units',
+          description: 'Next generation super seeder for direct sowing'
+        },
+        {
+          name: 'Hydraulic Reversible MB Plough',
+          sku: 'SWAN-PLOW-03',
+          branch: 'All Branches',
+          category: 'Plough',
+          price: 95000,
+          tax_rate: 12,
+          hsn: '8432',
+          stock: 12,
+          min_order_qty: 1,
+          uom: 'Units',
+          description: 'Heavy duty reversible mould board plough'
+        }
+      ];
+
+      sampleData.forEach(row => {
+        sheet.addRow(row);
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', 'Product_Import_Sample_Template.xlsx');
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      showToast('Sample Excel template (.xlsx) downloaded!');
+    } catch (err) {
+      console.error('Error generating Excel template:', err);
+      showToast('Failed to download Excel template: ' + err.message, 'error');
+    }
+  };
+
+  // --- Export Products to Excel (.xlsx) ---
+  const handleExportExcel = async () => {
+    if (filteredProducts.length === 0) {
+      showToast('No products to export', 'error');
+      return;
+    }
+    setIsExportingExcel(true);
+    try {
+      const ExcelJS = (await import('exceljs')).default;
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet('Products');
+
+      sheet.columns = [
+        { header: 'Status', key: 'status', width: 14 },
+        { header: 'Name', key: 'name', width: 32 },
+        { header: 'SKU', key: 'sku', width: 18 },
+        { header: 'Branch', key: 'branch', width: 20 },
+        { header: 'Category', key: 'category', width: 18 },
+        { header: 'Price (₹)', key: 'price', width: 14 },
+        { header: 'Tax Rate %', key: 'tax_rate', width: 14 },
+        { header: 'HSN Code', key: 'hsn', width: 14 },
+        { header: 'Stock Qty', key: 'stock', width: 14 },
+        { header: 'UOM', key: 'uom', width: 12 },
+        { header: 'Min Order Qty', key: 'moq', width: 14 },
+        { header: 'Description', key: 'description', width: 35 }
+      ];
+
+      const headerRow = sheet.getRow(1);
+      headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      headerRow.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF1E40AF' }
+      };
+      headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
+      headerRow.height = 24;
+
+      filteredProducts.forEach(p => {
+        sheet.addRow({
+          status: p.is_active !== false ? 'Active' : 'Inactive',
+          name: p.name || '',
+          sku: p.sku || '',
+          branch: p.branch_name || 'All Branches',
+          category: p.category || '',
+          price: p.price || 0,
+          tax_rate: p.tax_rate || 0,
+          hsn: p.hsn_code || '',
+          stock: p.stock_quantity || 0,
+          uom: p.uom || 'Units',
+          moq: p.min_order_qty || 1,
+          description: p.description || ''
+        });
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const dateStr = new Date().toISOString().slice(0, 10);
+      link.setAttribute('download', `Products_${effectiveCompany.replace(/\s+/g, '_')}_${dateStr}.xlsx`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      showToast(`Exported ${filteredProducts.length} products to Excel!`);
+    } catch (err) {
+      console.error('Export Excel error:', err);
+      showToast('Export to Excel failed: ' + err.message, 'error');
+    } finally {
+      setIsExportingExcel(false);
+    }
+  };
+
+  // --- Parse Products from parsed row objects ---
+  const parseProductsFromRows = useCallback((rows, defaultBranch, defaultCategory) => {
+    if (!Array.isArray(rows) || rows.length === 0) return [];
+
+    return rows.map((row, idx) => {
+      if (!row || typeof row !== 'object') return null;
+      const keys = Object.keys(row);
+      const findVal = (...patterns) => {
+        for (const pattern of patterns) {
+          const matchKey = keys.find(k => k && k.trim().toLowerCase().includes(pattern));
+          if (matchKey && row[matchKey] !== undefined && row[matchKey] !== null) {
+            const val = String(row[matchKey]).trim();
+            if (val) return val;
+          }
+        }
+        return '';
+      };
+
+      const name = findVal('product name', 'item name', 'name', 'product');
+      const sku = findVal('sku', 'item code', 'product code', 'code');
+      const branchVal = findVal('branch name', 'branch', 'location');
+      const categoryVal = findVal('category', 'cat');
+      const uom = findVal('uom', 'unit') || 'Units';
+      const priceStr = findVal('base price', 'unit price', 'price', 'rate', 'mrp');
+      const taxRateStr = findVal('tax rate', 'tax %', 'gst %', 'tax', 'gst');
+      const hsnCode = findVal('hsn code', 'hsn');
+      const stockStr = findVal('stock quantity', 'stock qty', 'stock', 'quantity', 'qty');
+      const minOrderStr = findVal('min order qty', 'min order', 'moq');
+      const description = findVal('description', 'desc', 'details');
+
+      const price = !isNaN(Number(priceStr)) && Number(priceStr) >= 0 ? Number(priceStr) : 0;
+      const taxRate = !isNaN(Number(taxRateStr)) && Number(taxRateStr) >= 0 ? Number(taxRateStr) : 12;
+      const stockQuantity = !isNaN(Number(stockStr)) && Number(stockStr) >= 0 ? Number(stockStr) : 0;
+      const minOrderQty = !isNaN(Number(minOrderStr)) && Number(minOrderStr) >= 1 ? Number(minOrderStr) : 1;
+
+      const isValid = Boolean(name && name.length > 0);
+      const issues = [];
+      if (!isValid) issues.push('Missing product name');
+
+      return {
+        _id: `parsed_${idx}_${Date.now()}`,
+        _rowNum: idx + 1,
+        _isValid: isValid,
+        _issues: issues,
+        name: name || '',
+        sku: sku || '',
+        branch_name: branchVal || defaultBranch || 'All Branches',
+        category: categoryVal || defaultCategory || 'General',
+        uom: uom,
+        price,
+        tax_rate: taxRate,
+        hsn_code: hsnCode,
+        stock_quantity: stockQuantity,
+        min_order_qty: minOrderQty,
+        description,
+        is_active: true
+      };
+    }).filter(p => p !== null && (p.name || p.sku));
+  }, []);
+
+  const processUploadedFile = async (file) => {
+    if (!file) return;
+    const lowerName = file.name.toLowerCase();
+    const isXlsx = lowerName.endsWith('.xlsx') || lowerName.endsWith('.xls');
+    const isCsv = lowerName.endsWith('.csv');
+
+    if (!isXlsx && !isCsv) {
+      setImportResult({ success: false, error: 'Please select a valid Excel (.xlsx, .xls) or CSV (.csv) file.' });
+      return;
+    }
+
+    setImportFile(file);
+    setImportResult(null);
+    setPreviewSearch('');
+    setPreviewFilter('ALL');
+
+    try {
+      if (isXlsx) {
+        const ExcelJS = (await import('exceljs')).default;
+        const workbook = new ExcelJS.Workbook();
+        const arrayBuffer = await file.arrayBuffer();
+        await workbook.xlsx.load(arrayBuffer);
+        const worksheet = workbook.worksheets[0];
+
+        if (!worksheet) {
+          setParsedItems([]);
+          setImportResult({ success: false, error: 'The uploaded Excel file contains no worksheets.' });
+          return;
+        }
+
+        const worksheetHeaders = [];
+        worksheet.getRow(1).eachCell((cell, colNumber) => {
+          const val = cell.value ? String(cell.value).trim().toLowerCase() : '';
+          worksheetHeaders[colNumber] = val;
+        });
+
+        const rawRows = [];
+        worksheet.eachRow((row, rowNumber) => {
+          if (rowNumber === 1) return; // skip header
+          const rowData = {};
+          row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+            const header = worksheetHeaders[colNumber];
+            if (header) {
+              let val = cell.value;
+              if (val instanceof Date) {
+                val = val.toISOString().split('T')[0];
+              } else if (val && typeof val === 'object' && val.text) {
+                val = val.text;
+              } else if (val && typeof val === 'object' && val.result !== undefined) {
+                val = val.result;
+              }
+              rowData[header] = val !== null && val !== undefined ? String(val).trim() : '';
+            }
+          });
+          if (Object.values(rowData).some(v => v !== '')) {
+            rawRows.push(rowData);
+          }
+        });
+
+        const parsed = parseProductsFromRows(rawRows, importBranch, importCategory);
+        setParsedItems(parsed);
+        if (parsed.length === 0) {
+          setImportResult({
+            success: false,
+            error: 'No valid products could be detected. Header row must contain "Name" or "Product Name".'
+          });
+        }
+      } else {
+        // CSV parsing
+        Papa.parse(file, {
+          header: true,
+          skipEmptyLines: 'greedy',
+          complete: (results) => {
+            if (!results.data || results.data.length === 0) {
+              setParsedItems([]);
+              setImportResult({ success: false, error: 'The uploaded CSV file is empty.' });
+              return;
+            }
+            const parsed = parseProductsFromRows(results.data, importBranch, importCategory);
+            setParsedItems(parsed);
+            if (parsed.length === 0) {
+              setImportResult({
+                success: false,
+                error: 'No valid products could be detected. Header row must contain "Name" or "Product Name".'
+              });
+            }
+          },
+          error: (err) => {
+            setImportResult({ success: false, error: `Failed to read CSV: ${err.message}` });
+          }
+        });
+      }
+    } catch (err) {
+      console.error('File parsing error:', err);
+      setImportResult({ success: false, error: `Error reading file: ${err.message}` });
+    }
+  };
+
+  const handleParseRawText = () => {
     if (!importText.trim()) {
-      setImportResult({ success: false, error: 'Please enter or paste CSV text.' });
+      setImportResult({ success: false, error: 'Please enter or paste CSV text first.' });
+      return;
+    }
+    const res = Papa.parse(importText.trim(), { header: true, skipEmptyLines: 'greedy' });
+    if (!res.data || res.data.length === 0) {
+      setParsedItems([]);
+      setImportResult({ success: false, error: 'No data rows found in pasted text.' });
+      return;
+    }
+    const parsed = parseProductsFromRows(res.data, importBranch, importCategory);
+    setParsedItems(parsed);
+    if (parsed.length === 0) {
+      setImportResult({ success: false, error: 'No valid products found. Header must contain "Name".' });
+    } else {
+      setImportResult(null);
+    }
+  };
+
+  const handleFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      processUploadedFile(file);
+    }
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    const file = e.dataTransfer?.files?.[0];
+    if (file) {
+      processUploadedFile(file);
+    }
+  };
+
+  const handleOpenImportModal = () => {
+    setShowImportModal(true);
+    setImportMode('file');
+    setImportFile(null);
+    setParsedItems([]);
+    setImportResult(null);
+    setImportText('');
+    setPreviewSearch('');
+    setPreviewFilter('ALL');
+    setShowSampleDropdown(false);
+    setIsDragging(false);
+  };
+
+  const handleCloseImportModal = () => {
+    setShowImportModal(false);
+    setImportFile(null);
+    setParsedItems([]);
+    setImportResult(null);
+    setImportText('');
+    setPreviewSearch('');
+    setPreviewFilter('ALL');
+    setShowSampleDropdown(false);
+    setIsDragging(false);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  // --- Confirm & Upload All Valid Products ---
+  const handleConfirmImport = async () => {
+    const validItems = parsedItems.filter(p => p._isValid);
+    if (validItems.length === 0) {
+      setImportResult({ success: false, error: 'No valid products to import. Please ensure products have a Name.' });
       return;
     }
 
@@ -392,73 +892,58 @@ export default function ProductListConfig({ userCompany = '' }) {
     setImportResult(null);
 
     try {
-      const lines = importText.trim().split(/\r?\n/).filter(line => line.trim().length > 0);
-      if (lines.length < 2) {
-        setImportResult({ success: false, error: 'CSV must contain at least a header row and 1 data row.' });
-        setImporting(false);
-        return;
-      }
+      const cleanItems = validItems.map(p => ({
+        name: p.name,
+        sku: p.sku,
+        branch_name: p.branch_name || importBranch,
+        category: p.category || importCategory,
+        uom: p.uom || 'Units',
+        price: p.price || 0,
+        tax_rate: p.tax_rate ?? 12,
+        hsn_code: p.hsn_code || '',
+        stock_quantity: p.stock_quantity || 0,
+        min_order_qty: p.min_order_qty || 1,
+        description: p.description || '',
+        is_active: true
+      }));
 
-      // Parse headers
-      const rawHeader = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, '').toLowerCase());
-      const nameIdx = rawHeader.findIndex(h => h.includes('name') || h.includes('product'));
-      const skuIdx = rawHeader.findIndex(h => h.includes('sku') || h.includes('code'));
-      const branchIdx = rawHeader.findIndex(h => h.includes('branch'));
-      const catIdx = rawHeader.findIndex(h => h.includes('cat'));
-      const priceIdx = rawHeader.findIndex(h => h.includes('price') || h.includes('rate'));
-      const uomIdx = rawHeader.findIndex(h => h.includes('uom') || h.includes('unit'));
-      const hsnIdx = rawHeader.findIndex(h => h.includes('hsn'));
-      const stockIdx = rawHeader.findIndex(h => h.includes('stock') || h.includes('qty'));
-
-      if (nameIdx === -1) {
-        setImportResult({ success: false, error: 'Header row must contain a "Name" or "Product Name" column.' });
-        setImporting(false);
-        return;
-      }
-
-      const parsedItems = [];
-      for (let i = 1; i < lines.length; i++) {
-        const row = lines[i].split(',').map(c => c.trim().replace(/^"|"$/g, ''));
-        const nameVal = row[nameIdx];
-        if (!nameVal) continue;
-
-        parsedItems.push({
-          name: nameVal,
-          sku: skuIdx >= 0 ? row[skuIdx] : '',
-          branch_name: (branchIdx >= 0 && row[branchIdx]) ? row[branchIdx] : importBranch,
-          category: catIdx >= 0 && row[catIdx] ? row[catIdx] : 'General',
-          price: priceIdx >= 0 && !isNaN(Number(row[priceIdx])) ? Number(row[priceIdx]) : 0,
-          uom: uomIdx >= 0 && row[uomIdx] ? row[uomIdx] : 'Units',
-          hsn_code: hsnIdx >= 0 ? row[hsnIdx] : '',
-          stock_quantity: stockIdx >= 0 && !isNaN(Number(row[stockIdx])) ? Number(row[stockIdx]) : 0,
-          is_active: true
-        });
-      }
-
-      if (parsedItems.length === 0) {
-        setImportResult({ success: false, error: 'No valid products could be extracted.' });
-        setImporting(false);
-        return;
-      }
-
-      const res = await importTenantProducts(parsedItems, effectiveCompany, importBranch);
+      const res = await importTenantProducts(cleanItems, effectiveCompany, importBranch);
       if (res.success) {
         setImportResult({ success: true, count: res.count });
-        showToast(res.message);
+        showToast(res.message || `Successfully imported ${res.count} products!`);
         setTimeout(() => {
-          setShowImportModal(false);
-          setImportText('');
+          handleCloseImportModal();
           loadInitialData();
-        }, 1200);
+        }, 1300);
       } else {
-        setImportResult({ success: false, error: res.error });
+        setImportResult({ success: false, error: res.error || 'Failed to import products.' });
       }
     } catch (err) {
-      setImportResult({ success: false, error: err.message || 'Import parsing failed.' });
+      setImportResult({ success: false, error: err.message || 'Import failed unexpectedly.' });
     } finally {
       setImporting(false);
     }
   };
+
+  // Preview filtering calculations
+  const displayedPreviewRows = useMemo(() => {
+    return parsedItems.filter(p => {
+      if (previewFilter === 'VALID' && !p._isValid) return false;
+      if (previewFilter === 'ISSUES' && p._isValid) return false;
+      if (previewSearch.trim()) {
+        const q = previewSearch.toLowerCase().trim();
+        const matchesName = (p.name || '').toLowerCase().includes(q);
+        const matchesSku = (p.sku || '').toLowerCase().includes(q);
+        const matchesCat = (p.category || '').toLowerCase().includes(q);
+        const matchesBranch = (p.branch_name || '').toLowerCase().includes(q);
+        if (!matchesName && !matchesSku && !matchesCat && !matchesBranch) return false;
+      }
+      return true;
+    });
+  }, [parsedItems, previewFilter, previewSearch]);
+
+  const previewValidCount = useMemo(() => parsedItems.filter(p => p._isValid).length, [parsedItems]);
+  const previewIssuesCount = useMemo(() => parsedItems.filter(p => !p._isValid).length, [parsedItems]);
 
   // --- Filtered Products List ---
   const filteredProducts = useMemo(() => {
@@ -646,10 +1131,7 @@ export default function ProductListConfig({ userCompany = '' }) {
             </button>
 
             <button
-              onClick={() => {
-                setShowImportModal(true);
-                setImportResult(null);
-              }}
+              onClick={handleOpenImportModal}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -1632,12 +2114,14 @@ export default function ProductListConfig({ userCompany = '' }) {
             background: '#ffffff',
             borderRadius: '14px',
             width: '100%',
-            maxWidth: '560px',
+            maxWidth: '620px',
+            maxHeight: '90vh',
             display: 'flex',
             flexDirection: 'column',
             boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2)',
             overflow: 'hidden'
           }}>
+            {/* Modal Header */}
             <div style={{
               padding: '1.25rem 1.5rem',
               borderBottom: '1px solid #e2e8f0',
@@ -1648,19 +2132,73 @@ export default function ProductListConfig({ userCompany = '' }) {
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <FileSpreadsheet size={20} color="#2563eb" />
-                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: '#0f172a' }}>
-                  Bulk Import Products (CSV)
-                </h3>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: '#0f172a' }}>
+                    Bulk Import Products (CSV)
+                  </h3>
+                  <p style={{ margin: '2px 0 0 0', fontSize: '0.75rem', color: '#64748b' }}>
+                    Upload or paste formatted product CSV for {effectiveCompany}
+                  </p>
+                </div>
               </div>
               <button
-                onClick={() => setShowImportModal(false)}
+                onClick={handleCloseImportModal}
                 style={{ border: 'none', background: 'transparent', cursor: 'pointer', padding: '4px', color: '#94a3b8' }}
               >
                 <X size={20} />
               </button>
             </div>
 
-            <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            {/* Modal Content Scrollable */}
+            <div style={{ padding: '1.25rem 1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem', overflowY: 'auto' }}>
+              
+              {/* Sample Template Download Card */}
+              <div style={{
+                padding: '0.85rem 1rem',
+                borderRadius: '10px',
+                background: '#eff6ff',
+                border: '1px solid #bfdbfe',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '0.75rem'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                  <Info size={20} color="#2563eb" style={{ flexShrink: 0 }} />
+                  <div>
+                    <div style={{ fontSize: '0.825rem', fontWeight: 600, color: '#1e3a8a' }}>
+                      Need the Sample CSV Template?
+                    </div>
+                    <div style={{ fontSize: '0.735rem', color: '#3b82f6' }}>
+                      Download pre-formatted sample file with required product columns
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleDownloadSampleCsv}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.4rem',
+                    padding: '0.45rem 0.85rem',
+                    borderRadius: '7px',
+                    border: '1px solid #93c5fd',
+                    background: '#ffffff',
+                    color: '#1d4ed8',
+                    fontSize: '0.775rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                    boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                  }}
+                >
+                  <Download size={14} />
+                  <span>Download Sample CSV</span>
+                </button>
+              </div>
+
+              {/* Target Branch Dropdown */}
               <div>
                 <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#334155', marginBottom: '4px' }}>
                   Default Branch for Imported Products
@@ -1670,11 +2208,12 @@ export default function ProductListConfig({ userCompany = '' }) {
                   onChange={(e) => setImportBranch(e.target.value)}
                   style={{
                     width: '100%',
-                    padding: '0.5rem 0.75rem',
+                    padding: '0.55rem 0.75rem',
                     borderRadius: '8px',
                     border: '1px solid #cbd5e1',
                     fontSize: '0.85rem',
-                    background: '#ffffff'
+                    background: '#ffffff',
+                    color: '#0f172a'
                   }}
                 >
                   <option value="All Branches">🌐 All Branches (Universal)</option>
@@ -1684,47 +2223,234 @@ export default function ProductListConfig({ userCompany = '' }) {
                     </option>
                   ))}
                 </select>
+                <span style={{ fontSize: '0.725rem', color: '#64748b', marginTop: '2px', display: 'block' }}>
+                  Used as default if an imported product row doesn&apos;t specify a branch.
+                </span>
               </div>
 
+              {/* Import Mode Tabs */}
               <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                  <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#334155' }}>
-                    Paste CSV Data (Include Header)
-                  </label>
+                <div style={{
+                  display: 'flex',
+                  gap: '0.5rem',
+                  borderBottom: '1px solid #e2e8f0',
+                  paddingBottom: '0.5rem'
+                }}>
                   <button
                     type="button"
-                    onClick={() => {
-                      setImportText(`Name,SKU,Category,Price,UOM,HSN,Stock\nRotavator Mini,SWAN-MINI-01,Implement,85000,Units,8432,15\nMould Board Plough,SWAN-MB-02,Implement,65000,Units,8432,10\nGenuine Blade 28T,SWAN-BLD-28,Spare Part,680,Pcs,843290,200`);
-                    }}
+                    onClick={() => setImportMode('file')}
                     style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.4rem',
+                      padding: '0.45rem 0.85rem',
+                      borderRadius: '6px',
                       border: 'none',
-                      background: 'none',
-                      color: '#2563eb',
-                      fontSize: '0.75rem',
-                      cursor: 'pointer',
-                      fontWeight: 600
+                      background: importMode === 'file' ? '#eff6ff' : 'transparent',
+                      color: importMode === 'file' ? '#2563eb' : '#64748b',
+                      fontSize: '0.8rem',
+                      fontWeight: importMode === 'file' ? 700 : 500,
+                      cursor: 'pointer'
                     }}
                   >
-                    Paste Sample Template
+                    <Upload size={14} />
+                    <span>Upload CSV File</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setImportMode('text')}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.4rem',
+                      padding: '0.45rem 0.85rem',
+                      borderRadius: '6px',
+                      border: 'none',
+                      background: importMode === 'text' ? '#eff6ff' : 'transparent',
+                      color: importMode === 'text' ? '#2563eb' : '#64748b',
+                      fontSize: '0.8rem',
+                      fontWeight: importMode === 'text' ? 700 : 500,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <FileText size={14} />
+                    <span>Paste Raw CSV</span>
                   </button>
                 </div>
-                <textarea
-                  rows={6}
-                  placeholder="Name,SKU,Category,Price,UOM,HSN,Stock&#10;Product A,SKU-001,Implement,50000,Units,8432,10"
-                  value={importText}
-                  onChange={(e) => setImportText(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '0.65rem',
-                    borderRadius: '8px',
-                    border: '1px solid #cbd5e1',
-                    fontSize: '0.8rem',
-                    fontFamily: 'monospace',
-                    boxSizing: 'border-box'
-                  }}
-                />
               </div>
 
+              {/* Tab 1: File Upload Mode */}
+              {importMode === 'file' && (
+                <div>
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    accept=".csv,text/csv"
+                    onChange={handleFileChange}
+                    style={{ display: 'none' }}
+                  />
+
+                  {!importFile ? (
+                    <div
+                      onDragOver={handleDragOver}
+                      onDragLeave={handleDragLeave}
+                      onDrop={handleDrop}
+                      onClick={() => fileInputRef.current?.click()}
+                      style={{
+                        border: isDragging ? '2px dashed #2563eb' : '2px dashed #cbd5e1',
+                        borderRadius: '12px',
+                        padding: '1.75rem 1.5rem',
+                        textAlign: 'center',
+                        backgroundColor: isDragging ? '#eff6ff' : '#f8fafc',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      <FileUp size={36} color={isDragging ? '#2563eb' : '#64748b'} style={{ margin: '0 auto 0.6rem auto' }} />
+                      <div style={{ fontSize: '0.86rem', fontWeight: 600, color: '#1e293b', marginBottom: '0.25rem' }}>
+                        Click to Choose File or Drag & Drop
+                      </div>
+                      <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '0.85rem' }}>
+                        Supports UTF-8 encoded .csv files
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          fileInputRef.current?.click();
+                        }}
+                        style={{
+                          padding: '0.45rem 1.15rem',
+                          borderRadius: '7px',
+                          backgroundColor: '#ffffff',
+                          border: '1px solid #cbd5e1',
+                          color: '#334155',
+                          fontSize: '0.8rem',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                        }}
+                      >
+                        Choose CSV File
+                      </button>
+                    </div>
+                  ) : (
+                    <div style={{
+                      borderRadius: '10px',
+                      border: '1px solid #bbf7d0',
+                      backgroundColor: '#f0fdf4',
+                      padding: '1rem',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.6rem'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                          <FileSpreadsheet size={24} color="#16a34a" />
+                          <div>
+                            <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#14532d' }}>
+                              {importFile.name}
+                            </div>
+                            <div style={{ fontSize: '0.725rem', color: '#166534' }}>
+                              {(importFile.size / 1024).toFixed(1)} KB
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setImportFile(null);
+                            setParsedPreview(null);
+                            if (fileInputRef.current) fileInputRef.current.value = '';
+                          }}
+                          style={{
+                            border: '1px solid #cbd5e1',
+                            background: '#ffffff',
+                            borderRadius: '6px',
+                            color: '#475569',
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                            padding: '0.35rem 0.65rem',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Change File
+                        </button>
+                      </div>
+
+                      {parsedPreview && (
+                        <div style={{
+                          fontSize: '0.785rem',
+                          padding: '0.5rem 0.75rem',
+                          borderRadius: '6px',
+                          background: parsedPreview.count > 0 ? '#dcfce7' : '#fee2e2',
+                          color: parsedPreview.count > 0 ? '#15803d' : '#991b1b',
+                          fontWeight: 600,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.4rem'
+                        }}>
+                          {parsedPreview.count > 0 ? (
+                            <>
+                              <CheckCircle2 size={15} />
+                              <span>{parsedPreview.count} valid products detected and ready to import</span>
+                            </>
+                          ) : (
+                            <>
+                              <AlertCircle size={15} />
+                              <span>0 valid products found. Ensure column header includes &quot;Name&quot;</span>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Tab 2: Raw Text Mode */}
+              {importMode === 'text' && (
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                    <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#334155' }}>
+                      Paste CSV Data (Include Header)
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setImportText(`Name,SKU,Branch,Category,Price,Tax Rate %,HSN Code,Stock Qty,Min Order Qty,UOM,Description\nRotavator – Super Series,SWAN-ROTA-01,All Branches,Implement,115000,12,8432,15,1,Units,Heavy duty super series rotavator\nLaser Land Leveller,SWAN-LLL-02,NSMLR,Land Leveller,325000,12,8432,8,1,Units,Dual slope transmitter receiver system\nGenuine Blade 28T,SWAN-BLD-28,All Branches,Spare Part,650,18,843290,200,10,Pcs,High carbon boron steel blades`);
+                      }}
+                      style={{
+                        border: 'none',
+                        background: 'none',
+                        color: '#2563eb',
+                        fontSize: '0.75rem',
+                        cursor: 'pointer',
+                        fontWeight: 600
+                      }}
+                    >
+                      Paste Sample Template
+                    </button>
+                  </div>
+                  <textarea
+                    rows={6}
+                    placeholder="Name,SKU,Branch,Category,Price,Tax Rate %,HSN Code,Stock Qty,Min Order Qty,UOM,Description&#10;Rotavator,SWAN-01,All Branches,Implement,85000,12,8432,10,1,Units,Sample item"
+                    value={importText}
+                    onChange={(e) => setImportText(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '0.65rem',
+                      borderRadius: '8px',
+                      border: '1px solid #cbd5e1',
+                      fontSize: '0.8rem',
+                      fontFamily: 'monospace',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+              )}
+
+              {/* Status Message */}
               {importResult && (
                 <div style={{
                   padding: '0.65rem 0.85rem',
@@ -1732,16 +2458,21 @@ export default function ProductListConfig({ userCompany = '' }) {
                   background: importResult.success ? '#f0fdf4' : '#fef2f2',
                   border: `1px solid ${importResult.success ? '#bbf7d0' : '#fecaca'}`,
                   color: importResult.success ? '#15803d' : '#991b1b',
-                  fontSize: '0.825rem'
+                  fontSize: '0.825rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem'
                 }}>
-                  {importResult.success ? `Successfully imported ${importResult.count} products!` : importResult.error}
+                  {importResult.success ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
+                  <span>{importResult.success ? `Successfully imported ${importResult.count} products!` : importResult.error}</span>
                 </div>
               )}
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              {/* Actions Footer */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', paddingTop: '0.25rem' }}>
                 <button
                   type="button"
-                  onClick={() => setShowImportModal(false)}
+                  onClick={handleCloseImportModal}
                   style={{
                     padding: '0.55rem 1rem',
                     borderRadius: '8px',
@@ -1757,9 +2488,12 @@ export default function ProductListConfig({ userCompany = '' }) {
                 </button>
                 <button
                   type="button"
-                  disabled={importing}
+                  disabled={importing || (importMode === 'file' && (!importFile || parsedPreview?.count === 0))}
                   onClick={handleImportCSV}
                   style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.4rem',
                     padding: '0.55rem 1.25rem',
                     borderRadius: '8px',
                     border: 'none',
@@ -1768,10 +2502,17 @@ export default function ProductListConfig({ userCompany = '' }) {
                     fontSize: '0.825rem',
                     fontWeight: 600,
                     cursor: 'pointer',
-                    opacity: importing ? 0.7 : 1
+                    opacity: (importing || (importMode === 'file' && (!importFile || parsedPreview?.count === 0))) ? 0.6 : 1
                   }}
                 >
-                  {importing ? 'Importing...' : 'Start Import'}
+                  {importing ? (
+                    <>
+                      <Loader2 size={15} className="animate-spin" />
+                      <span>Importing...</span>
+                    </>
+                  ) : (
+                    <span>Start Import</span>
+                  )}
                 </button>
               </div>
             </div>

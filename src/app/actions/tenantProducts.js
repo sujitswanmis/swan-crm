@@ -114,11 +114,16 @@ export async function getTenantProducts(companyOrTenantId = 'Default', branchFil
         let query = admin
           .from('tenant_products')
           .select('*')
-          .or(`company.ilike.${key},tenant_id.eq.${rawKey}`)
           .order('created_at', { ascending: false });
 
+        if (rawKey && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawKey)) {
+          query = query.or(`company.ilike.${key},tenant_id.eq.${rawKey}`);
+        } else {
+          query = query.ilike('company', key);
+        }
+
         if (branchFilter && branchFilter !== 'ALL') {
-          query = query.or(`branch_name.eq.${branchFilter},branch_name.eq.All Branches`);
+          query = query.in('branch_name', [branchFilter, 'All Branches']);
         }
 
         const { data, error } = await query;

@@ -107,7 +107,7 @@ test('HOD team contains only direct HOD mappings, not primary or secondary repor
   assert.deepEqual(hierarchy.getHodTeam([manager, hodReport, primaryReport, secondaryReport], viewer), [hodReport]);
 });
 
-test('Org Hierarchy displays a separate expandable HOD team', async () => {
+test('Org Hierarchy starts with collapsed HOD teams and manager chains', async () => {
   const OrgHierarchyTab = (await loadModule('src/components/UserManagement/tabs/OrgHierarchyTab.jsx', {
     react: React,
     'lucide-react': new Proxy({}, { get: () => () => null }),
@@ -115,12 +115,13 @@ test('Org Hierarchy displays a separate expandable HOD team', async () => {
     '@/utils/reportingHierarchy': hierarchy
   })).default;
   const html = renderToStaticMarkup(React.createElement(OrgHierarchyTab, {
-    users: [manager, { ...agent, hod_person: manager.email }]
+    users: [manager, { ...agent, primary_reporting_person: manager.emp_name, hod_person: manager.email }]
   }));
   assert.match(html, /HOD Teams \(1\)/);
-  assert.match(html, /aria-expanded="true"/);
+  assert.match(html, /aria-expanded="false"/);
   assert.match(html, /1 Reports/);
-  assert.match(html, /Agent/);
+  assert.match(html, /Reporting Chains by Manager \(1\)/);
+  assert.doesNotMatch(html, /Agent|Edit Mapping/);
 });
 
 test('HOD daily and monthly reports return only authenticated mapped employees', async () => {

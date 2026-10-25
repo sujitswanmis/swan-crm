@@ -74,12 +74,31 @@ export default function DailyFollowupQueueTable({
   const [availableProducts, setAvailableProducts] = useState([]);
   const [loadingProducts, setLoadingProducts] = useState(false);
 
-  // Read current product pricing only when Order Punch is opened.
-  const loadSettingsProducts = useCallback(async () => {
-    const prods = await fetchPartyWorkspaceResource(cacheScope, 'products', () =>
-      getTenantProducts(userCompany || tenantId || 'New Swan Group'));
-    const activeOnly = Array.isArray(prods) ? prods.filter(p => p.is_active !== false) : [];
-    return activeOnly.length ? activeOnly : (Array.isArray(prods) ? prods : []);
+  // Read current product pricing only when Order Punch is opened (strictly tenant & branch wise)
+  const loadSettingsProducts = useCallback(async (partyBranch = null, partyTenant = null) => {
+    const effectiveTenant = partyTenant || tenantId || userCompany || 'New Swan Group';
+    const effectiveBranch = (partyBranch && partyBranch !== 'ALL') ? partyBranch : 'ALL';
+
+    const res = await fetchPartyWorkspaceResource(cacheScope, `products_${effectiveTenant}_${effectiveBranch}`, () =>
+      getTenantProducts(effectiveTenant, effectiveBranch));
+
+    const rawList = Array.isArray(res) ? res : (Array.isArray(res?.products) ? res.products : []);
+    const activeProducts = rawList.filter(p => p.is_active !== false);
+
+    if (activeProducts.length > 0) {
+      return activeProducts;
+    }
+
+    // Defensive fallback: if branch-specific query returned 0, fetch ALL for that tenant
+    if (effectiveBranch !== 'ALL') {
+      const allRes = await fetchPartyWorkspaceResource(cacheScope, `products_${effectiveTenant}_ALL`, () =>
+        getTenantProducts(effectiveTenant, 'ALL'));
+      const allList = Array.isArray(allRes) ? allRes : (Array.isArray(allRes?.products) ? allRes.products : []);
+      const activeAll = allList.filter(p => p.is_active !== false);
+      if (activeAll.length > 0) return activeAll;
+    }
+
+    return activeProducts;
   }, [cacheScope, userCompany, tenantId]);
 
   useEffect(() => {
@@ -197,10 +216,13 @@ export default function DailyFollowupQueueTable({
 
   const openCallModal = async (partyItem, defaultOutcome = 'ORDER_PLACED') => {
     const requestId = ++productRequestRef.current;
-    let products = availableProducts;
     setLoadingProducts(true);
+    const p = partyItem?.party;
+    const partyBranch = p?.our_company || p?.branch_name || 'ALL';
+    const partyTenant = p?.tenant_id || tenantId || userCompany;
+    let products = [];
     try {
-      products = await loadSettingsProducts();
+      products = await loadSettingsProducts(partyBranch, partyTenant);
       if (productRequestRef.current !== requestId) return;
       setAvailableProducts(products);
     } catch (err) {
@@ -214,7 +236,7 @@ export default function DailyFollowupQueueTable({
     setFeedbackSuccess('');
     const firstProd = products[0];
     const initialProductName = firstProd?.name || PRODUCT_GROUPS[0]?.name || 'Swan Rotary Tiller (Rotavator)';
-    const initialRate = firstProd?.price ? Number(firstProd.price) : 0;
+    const initialRate = firstProd?.price != null ? Number(firstProd.price) : 0;
     setOrderItems([
       { product: initialProductName, qty: 1, rate: initialRate }
     ]);
@@ -232,7 +254,7 @@ export default function DailyFollowupQueueTable({
   const handleAddItem = () => {
     const firstProd = availableProducts[0];
     const initialProductName = firstProd?.name || PRODUCT_GROUPS[0]?.name || 'Swan Rotary Tiller (Rotavator)';
-    const initialRate = firstProd?.price ? Number(firstProd.price) : 0;
+    const initialRate = firstProd?.price != null ? Number(firstProd.price) : 0;
     setOrderItems([...orderItems, { product: initialProductName, qty: 1, rate: initialRate }]);
   };
 
@@ -1344,8 +1366,13 @@ export default function DailyFollowupQueueTable({
                 <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-primary)' }}>
                   Record Order Follow-up Call
                 </h3>
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
-                  {selectedParty.party?.firm_name} • {selectedParty.party?.owner_name} ({selectedParty.party?.primary_mobile})
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.2rem', display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+                  <span>{selectedParty.party?.firm_name} • {selectedParty.party?.owner_name} ({selectedParty.party?.primary_mobile})</span>
+                  {selectedParty.party?.our_company && (
+                    <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '1px 6px', borderRadius: '4px', background: 'rgba(56,189,248,0.15)', color: '#0284c7', border: '1px solid rgba(56,189,248,0.3)' }}>
+                      Branch: {selectedParty.party?.our_company}
+                    </span>
+                  )}
                 </div>
               </div>
               <button
@@ -1441,7 +1468,7 @@ export default function DailyFollowupQueueTable({
                           color: '#10b981',
                           border: '1px solid rgba(16,185,129,0.3)'
                         }}>
-                          <Sparkles size={11} /> Auto-synced with Settings ({availableProducts.length} Products)
+                          <Sparkles size={11} /> Auto-synced with Settings ({availableProducts.length} Products{selectedParty?.party?.our_company ? ` • ${selectedParty.party.our_company}` : ''})
                         </span>
                       ) : (
                         <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
@@ -1477,7 +1504,7 @@ export default function DailyFollowupQueueTable({
                         {availableProducts.length > 0 ? (
                           availableProducts.map(p => (
                             <option key={p.id || p.sku || p.name} value={p.name}>
-                              {p.name} {p.sku ? `(${p.sku})` : ''} {p.price ? `- ₹${Number(p.price).toLocaleString('en-IN')}` : ''}
+                              {p.name} {p.sku ? `(${p.sku})` : ''} {p.price != null && p.price !== '' ? `- ₹${Number(p.price).toLocaleString('en-IN')}` : ''}
                             </option>
                           ))
                         ) : (

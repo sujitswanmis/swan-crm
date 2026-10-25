@@ -1,6 +1,7 @@
 'use client';
 
-import React from 'react';
+import React, { useId } from 'react';
+import { createPortal } from 'react-dom';
 import { X, AlertTriangle, Trash2, RotateCcw, ShieldAlert, CheckCircle2, Loader2 } from 'lucide-react';
 
 export default function ConfirmActionModal({
@@ -14,7 +15,8 @@ export default function ConfirmActionModal({
   type = 'warning', // 'warning' | 'danger' | 'info' | 'success'
   loading = false
 }) {
-  if (!isOpen) return null;
+  const titleId = useId();
+  if (!isOpen || typeof document === 'undefined') return null;
 
   const getColorStyles = () => {
     switch (type) {
@@ -53,7 +55,7 @@ export default function ConfirmActionModal({
   const style = getColorStyles();
   const Icon = style.icon;
 
-  return (
+  return createPortal(
     <div style={{
       position: 'fixed',
       top: 0,
@@ -68,14 +70,16 @@ export default function ConfirmActionModal({
       zIndex: 1070,
       padding: '1rem'
     }}>
-      <div className="card" style={{
+      <div className="card" role="dialog" aria-modal="true" aria-labelledby={titleId} aria-busy={loading} style={{
         width: '100%',
         maxWidth: '440px',
+        maxHeight: 'calc(100dvh - 2rem)',
         backgroundColor: 'var(--bg-surface)',
         borderRadius: '16px',
         boxShadow: '0 25px 60px -15px rgba(0, 0, 0, 0.35)',
         border: '1px solid var(--border-light)',
         overflow: 'hidden',
+        overflowY: 'auto',
         padding: 0
       }}>
         <div style={{ padding: '1.5rem' }}>
@@ -93,7 +97,7 @@ export default function ConfirmActionModal({
               <Icon size={22} style={{ color: style.iconColor }} />
             </div>
             <div style={{ flex: 1 }}>
-              <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+              <h3 id={titleId} style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)' }}>
                 {title}
               </h3>
               <p style={{ margin: '0.4rem 0 0 0', fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
@@ -145,6 +149,7 @@ export default function ConfirmActionModal({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

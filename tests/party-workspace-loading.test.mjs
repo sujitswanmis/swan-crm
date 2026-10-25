@@ -269,6 +269,18 @@ test('Party list enrichment stays backward compatible while lead and optional re
   await assert.rejects(failing.getPartyList(tenantId, { throwOnError: true }), /Unavailable/);
 });
 
+test('failed optional locations do not discard the successfully loaded employee picker', async () => {
+  const deps = dependencies(queryClient({}), async () => []);
+  deps.getEmployeesMaster = async () => [{ id: 'employee-1' }];
+  deps.getStatesCentral = async () => { throw new Error('Location unavailable'); };
+  deps.getDistrictsCentral = async () => [];
+  const actions = loadActions('../src/app/actions/partyWorkspaceData.js', deps);
+  const response = await actions.getPartyWorkspaceData(tenantId, 'reference', 'New Swan Group');
+  assert.equal(response.success, true);
+  assert.deepEqual(response.data.employees, [{ id: 'employee-1' }]);
+  assert.equal(response.data.states, undefined);
+});
+
 function componentHarness(filename, modules) {
   const source = fs.readFileSync(new URL(filename, import.meta.url), 'utf8');
   const compiled = swc.transformSync(source, {

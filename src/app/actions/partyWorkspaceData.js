@@ -71,10 +71,13 @@ export async function getPartyWorkspaceData(tenantId, section = 'parties', compa
     if (section === 'parties') data = await getPartyList(tenantId, { throwOnError: true });
     else if (section === 'transfers') data = await getTransferredLeads(tenantId);
     else if (section === 'reference') {
-      const [employees, states] = await Promise.all([getEmployeesMaster(tenantId, company), getStatesCentral()]);
+      const [employeeResult, stateResult] = await Promise.allSettled([getEmployeesMaster(tenantId, company), getStatesCentral()]);
+      data = {};
+      if (employeeResult.status === 'fulfilled') data.employees = employeeResult.value;
+      const states = stateResult.status === 'fulfilled' ? stateResult.value : [];
+      if (stateResult.status === 'fulfilled') data.states = states;
       const punjab = states.find(s => (s.state_name || s.name || '').toLowerCase() === 'punjab');
-      const districts = await getDistrictsCentral(punjab?.id || null, 'Punjab').catch(() => []);
-      data = { employees, states, districts };
+      data.districts = await getDistrictsCentral(punjab?.id || null, 'Punjab').catch(() => []);
     } else if (section === 'dashboard') {
       const results = await Promise.allSettled([
         getOrderFollowups(tenantId), getOrderFeedbackList(tenantId), getMonthlyFeedbackList(tenantId), getComplaintsList(tenantId)
