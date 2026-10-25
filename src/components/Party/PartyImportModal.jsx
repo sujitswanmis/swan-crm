@@ -6,7 +6,7 @@ import {
   Clock, ShieldCheck, FileSpreadsheet, RefreshCw, AlertCircle, Search
 } from 'lucide-react';
 import Papa from 'papaparse';
-import { bulkImportPartyMaster } from '@/app/actions/partyMaster';
+import { bulkImportPartyMaster, checkPartyAndLeadDuplicates } from '@/app/actions/partyMaster';
 import { ALL_INDIAN_STATES, INDIAN_STATE_DISTRICTS } from '@/config/indianStateDistricts';
 import { PRODUCT_GROUPS } from '@/config/productCatalog';
 
@@ -21,6 +21,7 @@ export default function PartyImportModal({
   const [file, setFile] = useState(null);
   const [parsedRows, setParsedRows] = useState([]);
   const [validationSummary, setValidationSummary] = useState(null);
+  const [isValidating, setIsValidating] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [importProgress, setImportProgress] = useState(null); // { active, percentage, current, total, created, skipped, logs, complete }
   const [previewFilter, setPreviewFilter] = useState('ALL'); // 'ALL' | 'VALID' | 'ISSUES'
@@ -487,6 +488,7 @@ export default function PartyImportModal({
     setPreviewFilter('ALL');
     setSearchQuery('');
     setCurrentPage(1);
+    setIsValidating(true);
 
     try {
       if (isXlsx) {
@@ -525,37 +527,79 @@ export default function PartyImportModal({
           }
         });
 
-        validateAndPrepareRows(rawData);
+        await validateAndPrepareRows(rawData);
       } else {
         // CSV Parsing via PapaParse
         Papa.parse(selectedFile, {
           header: true,
           skipEmptyLines: true,
           transformHeader: (h) => h.trim().toLowerCase().replace(/[\s/-]+/g, '_'),
-          complete: (results) => {
+          complete: async (results) => {
             const rawData = results.data || [];
-            validateAndPrepareRows(rawData);
+            await validateAndPrepareRows(rawData);
+            setIsValidating(false);
           },
           error: (err) => {
             alert('Failed to read CSV: ' + err.message);
+            setIsValidating(false);
           }
         });
       }
     } catch (err) {
       console.error('File reading error:', err);
       alert('Error parsing uploaded file: ' + err.message);
+    } finally {
+      if (isXlsx) {
+        setIsValidating(false);
+      }
     }
   };
 
-  const validateAndPrepareRows = (rows) => {
-    // Existing mobiles set
-    const existingMobiles = new Set();
-    existingParties.forEach(p => {
-      const ph = p.primary_mobile || p.contact_mobile_1_1 || p.biz_contact_no_1;
-      if (ph) existingMobiles.add(String(ph).replace(/\D/g, '').slice(-10));
+  const validateAndPrepareRows = async (rows) => {
+    // 1. Collect phones and GSTINs from the file
+    const rawPhones = rows.map(r =>
+      r.biz_contact_no_1 || r.contact_mobile_1_1 || r.primary_mobile || r.mobile || r.phone || ''
+    );
+    const rawGSTINs = rows.map(r =>
+      r.gstin || r.gst_no || r['gstin'] || ''
+    );
+
+    // 2. Query both Party Master and Leads tables in Supabase in real-time
+    let partyDuplicates = {};
+    let leadDuplicates = {};
+    let gstinDuplicates = {};
+
+    try {
+      const res = await checkPartyAndLeadDuplicates(rawPhones, tenantId, rawGSTINs);
+      partyDuplicates = res?.partyDuplicates || {};
+      leadDuplicates = res?.leadDuplicates || {};
+      gstinDuplicates = res?.gstinDuplicates || {};
+    } catch (err) {
+      console.error('Error checking duplicate parties and leads:', err);
+    }
+
+    // 3. Fallback supplement with existing parties in client memory (props)
+    (existingParties || []).forEach(p => {
+      const ph = String(p.primary_mobile || p.contact_mobile_1_1 || p.biz_contact_no_1 || '').replace(/\D/g, '').slice(-10);
+      if (ph && !partyDuplicates[ph]) {
+        partyDuplicates[ph] = {
+          partyId: p.id,
+          partyCode: p.party_universal_code || p.party_code || 'Party Master',
+          firmName: p.firm_name
+        };
+      }
+      const g = String(p.gstin || '').trim().toUpperCase();
+      if (g && !gstinDuplicates[g]) {
+        gstinDuplicates[g] = {
+          partyId: p.id,
+          partyCode: p.party_universal_code || p.party_code || 'Party Master',
+          firmName: p.firm_name
+        };
+      }
     });
 
-    const batchMobiles = new Set();
+    const seenMobilesInBatch = new Map(); // mobile -> rowIdx
+    const seenGSTINsInBatch = new Map(); // gstin -> rowIdx
     const validated = [];
     let validCount = 0;
     let errorCount = 0;
@@ -565,11 +609,15 @@ export default function PartyImportModal({
       const firmName = (row.firm_name || row.company || row.firm || '').trim();
       const rawMobile = (row.biz_contact_no_1 || row.contact_mobile_1_1 || row.primary_mobile || row.mobile || row.phone || '').trim();
       const cleanMobile = rawMobile.replace(/\D/g, '').slice(-10);
+      const gstin = (row.gstin || row.gst_no || '').trim().toUpperCase();
       const contactPerson = (row.contact_person_name_1 || row.contact_person || row.owner_name || firmName).trim();
       const state = (row.state_name || row.state || 'Punjab').trim();
       const district = (row.district_name || row.district || '').trim();
 
       const issues = [];
+      let partyMatch = null;
+      let leadMatch = null;
+      let fileDupRow = null;
 
       if (!firmName) {
         issues.push('Missing Firm Name');
@@ -577,12 +625,43 @@ export default function PartyImportModal({
 
       if (!cleanMobile || cleanMobile.length < 10) {
         issues.push('Invalid 10-digit Mobile');
-      } else if (existingMobiles.has(cleanMobile)) {
-        issues.push(`Mobile ${cleanMobile} already in CRM`);
-      } else if (batchMobiles.has(cleanMobile)) {
-        issues.push(`Duplicate mobile ${cleanMobile} in file`);
       } else {
-        batchMobiles.add(cleanMobile);
+        // Party Master check
+        if (partyDuplicates[cleanMobile]) {
+          partyMatch = partyDuplicates[cleanMobile];
+        }
+        // Lead Data check
+        if (leadDuplicates[cleanMobile]) {
+          leadMatch = leadDuplicates[cleanMobile];
+        }
+        // In-file duplicate check
+        if (seenMobilesInBatch.has(cleanMobile)) {
+          fileDupRow = seenMobilesInBatch.get(cleanMobile);
+          issues.push(`Duplicate mobile ${cleanMobile} in file (already at Row #${fileDupRow})`);
+        } else {
+          seenMobilesInBatch.set(cleanMobile, rowIdx);
+        }
+      }
+
+      // GSTIN check
+      if (gstin && gstin.length >= 10) {
+        if (gstinDuplicates[gstin] && !partyMatch) {
+          partyMatch = gstinDuplicates[gstin];
+        }
+        if (seenGSTINsInBatch.has(gstin)) {
+          issues.push(`Duplicate GSTIN ${gstin} in file (already at Row #${seenGSTINsInBatch.get(gstin)})`);
+        } else {
+          seenGSTINsInBatch.set(gstin, rowIdx);
+        }
+      }
+
+      // Add descriptive duplicate issue messages with IDs
+      if (partyMatch && leadMatch) {
+        issues.push(`Already in Party Master [${partyMatch.partyCode}] (${partyMatch.firmName}) • Also in Leads [Ref #${leadMatch.leadRefId}] (${leadMatch.status})`);
+      } else if (partyMatch) {
+        issues.push(`Already in Party Master: [${partyMatch.partyCode}] ${partyMatch.firmName}`);
+      } else if (leadMatch) {
+        issues.push(`Active in Lead Data: [Ref #${leadMatch.leadRefId}] ${leadMatch.company || leadMatch.name} (${leadMatch.status})`);
       }
 
       if (!state) {
@@ -597,6 +676,9 @@ export default function PartyImportModal({
         _rowIdx: rowIdx,
         _isValid: isValid,
         _issues: issues,
+        _partyMatch: partyMatch,
+        _leadMatch: leadMatch,
+        _fileDupRow: fileDupRow,
         ...row,
         firm_name: firmName,
         primary_mobile: cleanMobile || rawMobile,
@@ -750,6 +832,11 @@ export default function PartyImportModal({
         'Firm Name': r.firm_name || '',
         'Party Tier': r.party_type || 'Dealer',
         'Mobile': r.primary_mobile || '',
+        'Existing Party Code in Party Master': r._partyMatch?.partyCode || '',
+        'Existing Party Firm Name': r._partyMatch?.firmName || '',
+        'Existing Lead Ref ID': r._leadMatch?.leadRefId || '',
+        'Existing Lead Customer/Company': r._leadMatch ? (r._leadMatch.company || r._leadMatch.name) : '',
+        'Existing Lead Stage': r._leadMatch?.status || '',
         'Contact Person': r.contact_person || '',
         'State': r.state_name || '',
         'District': r.district_name || '',
@@ -773,7 +860,10 @@ export default function PartyImportModal({
       mobile: r.primary_mobile || 'No Mobile',
       tier: r.party_type || 'Dealer',
       location: r.district_name ? `${r.district_name}, ${r.state_name}` : (r.state_name || 'N/A'),
-      issues: r._issues || []
+      issues: r._issues || [],
+      partyMatch: r._partyMatch || null,
+      leadMatch: r._leadMatch || null,
+      fileDupRow: r._fileDupRow || null
     }));
   }, [parsedRows]);
 
@@ -1113,7 +1203,17 @@ export default function PartyImportModal({
 
                 <Upload size={28} style={{ color: '#10b981', margin: '0 auto 0.5rem auto' }} />
 
-                {file ? (
+                {isValidating ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 0' }}>
+                    <RefreshCw size={24} className="animate-spin text-sky-400" />
+                    <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#38bdf8' }}>
+                      Cross-Checking Duplicates Across Party Master &amp; Leads...
+                    </div>
+                    <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
+                      Inspecting mobile numbers &amp; GSTINs against live database in real time
+                    </div>
+                  </div>
+                ) : file ? (
                   <div>
                     <div style={{ fontSize: '0.92rem', fontWeight: 700, color: '#10b981' }}>
                       Selected: {file.name}
@@ -1262,23 +1362,59 @@ export default function PartyImportModal({
                               alignItems: 'center',
                               justifyContent: 'space-between',
                               background: 'rgba(0,0,0,0.3)',
-                              padding: '0.4rem 0.65rem',
+                              padding: '0.45rem 0.65rem',
                               borderRadius: '6px',
                               fontSize: '0.74rem',
                               borderLeft: '3px solid #ef4444',
                               cursor: 'pointer',
-                              gap: '0.5rem'
+                              gap: '0.5rem',
+                              flexWrap: 'wrap'
                             }}
                             title="Click to filter this row in preview table"
                           >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: '1 1 auto' }}>
                               <span style={{ fontWeight: 800, color: '#fca5a5' }}>Row #{item.rowIdx}:</span>
                               <span style={{ fontWeight: 700, color: 'var(--text-primary, #fff)' }}>{item.firmName}</span>
                               <span style={{ color: 'var(--text-secondary, #94a3b8)', fontFamily: 'monospace' }}>({item.mobile})</span>
                               <span style={{ color: 'var(--text-secondary, #64748b)', fontSize: '0.7rem' }}>• {item.location}</span>
                             </div>
-                            <div style={{ color: '#f87171', fontWeight: 700, flexShrink: 0 }}>
-                              {item.issues.join(' • ')}
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                              {item.partyMatch && (
+                                <span style={{
+                                  background: 'rgba(56, 189, 248, 0.2)',
+                                  border: '1px solid rgba(56, 189, 248, 0.5)',
+                                  color: '#38bdf8',
+                                  padding: '0.12rem 0.45rem',
+                                  borderRadius: '4px',
+                                  fontWeight: 800,
+                                  fontSize: '0.7rem',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.25rem'
+                                }}>
+                                  🏢 Party ID: {item.partyMatch.partyCode}
+                                </span>
+                              )}
+                              {item.leadMatch && (
+                                <span style={{
+                                  background: 'rgba(245, 158, 11, 0.2)',
+                                  border: '1px solid rgba(245, 158, 11, 0.5)',
+                                  color: '#fbbf24',
+                                  padding: '0.12rem 0.45rem',
+                                  borderRadius: '4px',
+                                  fontWeight: 800,
+                                  fontSize: '0.7rem',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.25rem'
+                                }}>
+                                  🎯 Lead ID: #{item.leadMatch.leadRefId}
+                                </span>
+                              )}
+                              <div style={{ color: '#f87171', fontWeight: 600 }}>
+                                {item.issues.join(' • ')}
+                              </div>
                             </div>
                           </div>
                         ))}
@@ -1419,7 +1555,43 @@ export default function PartyImportModal({
                                     ✓ Valid &amp; Ready
                                   </span>
                                 ) : (
-                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                                    {(r._partyMatch || r._leadMatch) && (
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
+                                        {r._partyMatch && (
+                                          <span style={{
+                                            background: 'rgba(56, 189, 248, 0.2)',
+                                            border: '1px solid rgba(56, 189, 248, 0.5)',
+                                            color: '#38bdf8',
+                                            padding: '0.1rem 0.35rem',
+                                            borderRadius: '4px',
+                                            fontWeight: 800,
+                                            fontSize: '0.68rem',
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '0.2rem'
+                                          }}>
+                                            🏢 {r._partyMatch.partyCode}
+                                          </span>
+                                        )}
+                                        {r._leadMatch && (
+                                          <span style={{
+                                            background: 'rgba(245, 158, 11, 0.2)',
+                                            border: '1px solid rgba(245, 158, 11, 0.5)',
+                                            color: '#fbbf24',
+                                            padding: '0.1rem 0.35rem',
+                                            borderRadius: '4px',
+                                            fontWeight: 800,
+                                            fontSize: '0.68rem',
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '0.2rem'
+                                          }}>
+                                            🎯 Lead #{r._leadMatch.leadRefId}
+                                          </span>
+                                        )}
+                                      </div>
+                                    )}
                                     <span style={{ color: '#ef4444', fontWeight: 700, fontSize: '0.74rem' }}>
                                       ⚠️ {r._issues[0]}
                                     </span>

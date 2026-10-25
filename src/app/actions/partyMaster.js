@@ -1911,4 +1911,137 @@ export async function bulkImportPartyMaster(partiesList = [], importMode = 'FULL
   }
 }
 
+/**
+ * Fast targeted lookup to check duplicates against BOTH Party Master and Lead Data
+ */
+export async function checkPartyAndLeadDuplicates(rawPhones = [], tenantId = DEFAULT_TENANT_ID, rawGSTINs = []) {
+  const adminClient = getAdminClient();
+  const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
+
+  const cleanPhones = Array.from(new Set(
+    (rawPhones || [])
+      .map(p => String(p || '').replace(/\D/g, '').slice(-10))
+      .filter(p => p && p.length === 10)
+  ));
+
+  const cleanGSTINs = Array.from(new Set(
+    (rawGSTINs || [])
+      .map(g => String(g || '').trim().toUpperCase())
+      .filter(g => g && g.length >= 10)
+  ));
+
+  if (cleanPhones.length === 0 && cleanGSTINs.length === 0) {
+    return { partyDuplicates: {}, leadDuplicates: {}, gstinDuplicates: {} };
+  }
+
+  try {
+    const queries = [
+      cleanPhones.length > 0
+        ? adminClient
+            .from('party_master')
+            .select('id, party_universal_code, firm_name, primary_mobile')
+            .eq('tenant_id', effectiveTenantId)
+            .in('primary_mobile', cleanPhones)
+        : Promise.resolve({ data: [] }),
+
+      cleanPhones.length > 0
+        ? adminClient
+            .from('party_contacts')
+            .select('party_id, primary_mobile, party:party_master(id, party_universal_code, firm_name)')
+            .in('primary_mobile', cleanPhones)
+        : Promise.resolve({ data: [] }),
+
+      cleanPhones.length > 0
+        ? adminClient
+            .from('leads')
+            .select('id, lead_ref_id, name, company, phone, business_contact_1, status')
+            .in('phone', cleanPhones)
+        : Promise.resolve({ data: [] }),
+
+      cleanPhones.length > 0
+        ? adminClient
+            .from('leads')
+            .select('id, lead_ref_id, name, company, phone, business_contact_1, status')
+            .in('business_contact_1', cleanPhones)
+        : Promise.resolve({ data: [] }),
+
+      cleanGSTINs.length > 0
+        ? adminClient
+            .from('party_master')
+            .select('id, party_universal_code, firm_name, gstin')
+            .eq('tenant_id', effectiveTenantId)
+            .in('gstin', cleanGSTINs)
+        : Promise.resolve({ data: [] })
+    ];
+
+    const [partyRes, partyContactsRes, leadPhonesRes, leadBizRes, gstinRes] = await Promise.all(queries);
+
+    const partyDuplicates = {};
+    (partyRes.data || []).forEach(p => {
+      const ph = String(p.primary_mobile || '').replace(/\D/g, '').slice(-10);
+      if (ph) {
+        partyDuplicates[ph] = {
+          partyId: p.id,
+          partyCode: p.party_universal_code,
+          firmName: p.firm_name
+        };
+      }
+    });
+
+    (partyContactsRes.data || []).forEach(pc => {
+      const ph = String(pc.primary_mobile || '').replace(/\D/g, '').slice(-10);
+      if (ph && !partyDuplicates[ph] && pc.party) {
+        partyDuplicates[ph] = {
+          partyId: pc.party.id,
+          partyCode: pc.party.party_universal_code,
+          firmName: pc.party.firm_name
+        };
+      }
+    });
+
+    const leadDuplicates = {};
+    const processLead = (l) => {
+      const ph1 = String(l.phone || '').replace(/\D/g, '').slice(-10);
+      const ph2 = String(l.business_contact_1 || '').replace(/\D/g, '').slice(-10);
+      const leadInfo = {
+        leadId: l.id,
+        leadRefId: l.lead_ref_id || l.id?.slice(0, 8),
+        name: l.name || '',
+        company: l.company || '',
+        status: l.status || 'Active Lead'
+      };
+      if (ph1 && cleanPhones.includes(ph1) && !leadDuplicates[ph1]) {
+        leadDuplicates[ph1] = leadInfo;
+      }
+      if (ph2 && cleanPhones.includes(ph2) && !leadDuplicates[ph2]) {
+        leadDuplicates[ph2] = leadInfo;
+      }
+    };
+
+    (leadPhonesRes.data || []).forEach(processLead);
+    (leadBizRes.data || []).forEach(processLead);
+
+    const gstinDuplicates = {};
+    (gstinRes.data || []).forEach(g => {
+      const code = String(g.gstin || '').trim().toUpperCase();
+      if (code) {
+        gstinDuplicates[code] = {
+          partyId: g.id,
+          partyCode: g.party_universal_code,
+          firmName: g.firm_name
+        };
+      }
+    });
+
+    return {
+      partyDuplicates,
+      leadDuplicates,
+      gstinDuplicates
+    };
+  } catch (err) {
+    console.error('checkPartyAndLeadDuplicates error:', err);
+    return { partyDuplicates: {}, leadDuplicates: {}, gstinDuplicates: {} };
+  }
+}
+
 

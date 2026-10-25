@@ -535,9 +535,14 @@ export default function BusinessProfile({ userCompany = '' }) {
                               {br.branch_name}
                             </h4>
                           </div>
-                          <span style={{ fontSize: '0.74rem', color: '#64748b', fontWeight: 600 }}>
-                            Code: <code>{br.branch_code}</code>
-                          </span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '0.25rem' }}>
+                            <span style={{ fontSize: '0.74rem', color: '#64748b', fontWeight: 600 }}>
+                              Branch ID:
+                            </span>
+                            <span style={{ fontSize: '0.74rem', background: '#e0e7ff', color: '#3730a3', padding: '1px 6px', borderRadius: '4px', fontWeight: 700, fontFamily: 'monospace', letterSpacing: '0.5px', border: '1px solid #c7d2fe' }}>
+                              {br.branch_code || br.id}
+                            </span>
+                          </div>
                         </div>
 
                         <span style={{

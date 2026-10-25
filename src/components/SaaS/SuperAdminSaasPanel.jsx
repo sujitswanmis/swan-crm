@@ -1434,9 +1434,11 @@ Thank you for choosing New Swan CRM!`;
                   return (
                     <tr key={t.id} style={{ borderBottom: '1px solid var(--border-light)' }}>
                       <td style={{ padding: '0.75rem 1rem' }}>
-                        <div style={{ fontWeight: 600 }}>{t.name}</div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontFamily: 'monospace' }}>
-                          {t.tenant_code}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                          <span style={{ fontWeight: 600, fontSize: '0.92rem' }}>{t.name}</span>
+                          <span style={{ fontSize: '0.72rem', background: '#e0e7ff', color: '#3730a3', padding: '1px 6px', borderRadius: '4px', fontWeight: 700, fontFamily: 'monospace', letterSpacing: '0.5px', border: '1px solid #c7d2fe' }}>
+                            {t.tenant_code || 'TNT00001'}
+                          </span>
                         </div>
                         {t.primary_contact_email && (
                           <div style={{ fontSize: '0.74rem', color: '#4f46e5', marginTop: '0.2rem', fontWeight: 500 }}>
@@ -1444,9 +1446,9 @@ Thank you for choosing New Swan CRM!`;
                           </div>
                         )}
                         {t.branches && t.branches.length > 0 && (
-                          <div style={{ display: 'flex', gap: '0.3rem', marginTop: '0.3rem' }}>
+                          <div style={{ display: 'flex', gap: '0.3rem', marginTop: '0.35rem', flexWrap: 'wrap' }}>
                             {t.branches.map(b => (
-                              <span key={b} style={{ fontSize: '0.68rem', background: '#f3f4f6', color: '#374151', padding: '1px 5px', borderRadius: '4px', fontWeight: 600, border: '1px solid #e5e7eb' }}>
+                              <span key={b} style={{ fontSize: '0.68rem', background: '#f8fafc', color: '#1e293b', padding: '1px 6px', borderRadius: '4px', fontWeight: 600, border: '1px solid #cbd5e1' }}>
                                 🏢 {b}
                               </span>
                             ))}

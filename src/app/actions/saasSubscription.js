@@ -477,6 +477,14 @@ export async function getAllTenantsWithSubscriptions() {
     const limitsRes = await getTenantSmtpLimitsMap();
     const smtpLimitsMap = limitsRes?.limits || {};
 
+    // Load local branches for enrichment
+    let localBranchMap = {};
+    try {
+      const branchesFilePath = path.join(process.cwd(), 'src', 'config', 'tenant_branches.json');
+      const bContent = await fs.readFile(branchesFilePath, 'utf-8');
+      localBranchMap = JSON.parse(bContent || '{}');
+    } catch (_) {}
+
     const now = new Date();
 
     const enriched = (tenantsList || []).map(t => {
@@ -490,7 +498,7 @@ export async function getAllTenantsWithSubscriptions() {
         const comp = String(u.company || '').trim().toLowerCase();
         const tName = String(t.name || '').trim().toLowerCase();
         const tCode = String(t.tenant_code || '').trim().toLowerCase();
-        if (t.id === DEFAULT_TENANT_ID) {
+        if (t.id === DEFAULT_TENANT_ID || tCode === 'tnt00002') {
           return comp === 'nstlp' || comp === 'nsmlr' || comp === 'new swan group' || comp === 'swan agro' || !comp;
         }
         return comp === tName || comp === tCode || (u.emp_official_mail_id && u.emp_official_mail_id.toLowerCase() === (t.primary_contact_email || '').toLowerCase());
@@ -523,9 +531,18 @@ export async function getAllTenantsWithSubscriptions() {
         resolvedStatus = sub?.status || t.status || 'ACTIVE';
       }
 
-      const branches = t.id === DEFAULT_TENANT_ID ? ['NSMLR', 'NSTLP'] : (t.branches || []);
+      // Resolve branches for this tenant (e.g. TNT00002-B0001, etc.)
+      let branches = [];
+      const branchList = localBranchMap[t.name] || (t.id === DEFAULT_TENANT_ID ? localBranchMap['New Swan Group'] : null) || [];
+      if (Array.isArray(branchList) && branchList.length > 0) {
+        branches = branchList.map(b => b.branch_code || b.id || b.branch_name);
+      } else if (t.id === DEFAULT_TENANT_ID || t.tenant_code === 'TNT00002') {
+        branches = ['TNT00002-B0001 (HQ)', 'TNT00002-B0002 (NSMLR)', 'TNT00002-B0003 (NSTLP)'];
+      } else {
+        branches = t.branches || [];
+      }
 
-      const isMasterHq = t.name === 'SuPuja Creations' || t.tenant_code === 'SUPUJA_CREATIONS' || t.id === '0a37b8e8-1c28-4e19-8891-951fc3f8f8af' || t.id === 'e7d483b2-3fcb-4eb2-9d39-e932b7bb5ff4';
+      const isMasterHq = t.name === 'SuPuja Creations' || t.tenant_code === 'SUPUJA_CREATIONS' || t.tenant_code === 'TNT00001' || t.id === '0a37b8e8-1c28-4e19-8891-951fc3f8f8af' || t.id === 'e7d483b2-3fcb-4eb2-9d39-e932b7bb5ff4';
       const smtpLimit = isMasterHq 
         ? 999 
         : (Number(smtpLimitsMap[t.id]) || Number(smtpLimitsMap[t.tenant_code]) || Number(smtpLimitsMap[t.name]) || 1);
@@ -722,6 +739,38 @@ export async function updateTenantCustomRate(tenantId, processCode, customRate) 
 }
 
 /**
+ * Super Admin SaaS: Generate next sequential tenant code (TNT00001, TNT00002, TNT00003...)
+ */
+export async function getNextTenantCode(adminClient = null) {
+  try {
+    const admin = adminClient || getAdminClient();
+    const { data: allTenants } = await admin
+      .from('tenants')
+      .select('tenant_code');
+
+    let maxNum = 0;
+    if (Array.isArray(allTenants)) {
+      for (const t of allTenants) {
+        const match = String(t.tenant_code || '').match(/^TNT(\d+)$/i);
+        if (match) {
+          const num = parseInt(match[1], 10);
+          if (num > maxNum) maxNum = num;
+        }
+      }
+    }
+
+    // Baseline minimum is 3 (TNT00001 = SuPuja, TNT00002 = New Swan Group, TNT00003 = Testing NSG)
+    if (maxNum < 3) maxNum = 3;
+
+    const nextNum = maxNum + 1;
+    return `TNT${String(nextNum).padStart(5, '0')}`;
+  } catch (err) {
+    console.error('getNextTenantCode error:', err);
+    return `TNT00004`;
+  }
+}
+
+/**
  * Self-Serve SaaS Provisioning: Create a new company workspace, admin user, subscription, and entitlements
  */
 export async function createTenantWorkspace({
@@ -753,20 +802,8 @@ export async function createTenantWorkspace({
     const cleanMobile = adminMobile ? adminMobile.trim() : '';
     const initialStatus = isDraft ? 'DRAFT' : (Number(trialDays) > 0 ? 'TRIAL' : 'ACTIVE');
 
-    // Generate clean slug tenant_code
-    const baseSlug = cleanCompany
-      .toUpperCase()
-      .replace(/[^A-Z0-9]/g, '_')
-      .replace(/__+/g, '_')
-      .replace(/^_|_$/g, '') || 'WORKSPACE';
-
-    const { data: existingSlug } = await admin
-      .from('tenants')
-      .select('id')
-      .eq('tenant_code', baseSlug)
-      .maybeSingle();
-
-    const tenantCode = existingSlug ? `${baseSlug}_${Math.floor(1000 + Math.random() * 9000)}` : baseSlug;
+    // Generate standardized sequential tenant code (e.g. TNT00004)
+    const tenantCode = await getNextTenantCode(admin);
 
     // 1. Create tenant row
     const { data: newTenant, error: tenantErr } = await admin
@@ -919,7 +956,7 @@ export async function createTenantWorkspace({
       if (entError) console.warn('Entitlements insert notice:', entError.message);
     }
 
-    // 7. Insert default company record into companies table
+    // 7. Insert default company record and initial Headquarters branch
     try {
       await admin.from('companies').insert([{
         tenant_id: newTenant.id,
@@ -929,6 +966,23 @@ export async function createTenantWorkspace({
       }]);
     } catch (compErr) {
       console.warn('Default company insert note:', compErr.message);
+    }
+
+    try {
+      const { saveTenantBranch } = await import('@/app/actions/tenantBranches');
+      await saveTenantBranch({
+        id: `${tenantCode}-B0001`,
+        company: cleanCompany,
+        tenantId: newTenant.id,
+        branchName: `${cleanCompany} (Headquarters)`,
+        branchCode: `${tenantCode}-B0001`,
+        locationType: 'Headquarters',
+        email: cleanEmail,
+        phone: cleanMobile,
+        inchargeName: cleanName
+      });
+    } catch (brErr) {
+      console.warn('Initial branch setup note:', brErr.message);
     }
 
     const successMessage = isDraft

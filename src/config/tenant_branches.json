@@ -1,9 +1,13 @@
 {
   "New Swan Group": [
     {
-      "id": "br_nsg_hq_001",
+      "id": "TNT00002-B0001",
       "company": "New Swan Group",
-      "branch_code": "NEW_SWAN_GROUP",
+      "tenant_id": "00000000-0000-0000-0000-000000000001",
+      "tenant_code": "TNT00002",
+      "branch_code": "TNT00002-B0001",
+      "legacy_code": "NEW_SWAN_GROUP",
+      "legacy_id": "br_nsg_hq_001",
       "branch_name": "New Swan Group (Headquarters)",
       "location_type": "Headquarters",
       "address": "Headquarters Complex",
@@ -18,9 +22,13 @@
       "created_at": "2026-10-15T10:00:00.000Z"
     },
     {
-      "id": "br_nsmlr_001",
+      "id": "TNT00002-B0002",
       "company": "New Swan Group",
-      "branch_code": "NSMLR",
+      "tenant_id": "00000000-0000-0000-0000-000000000001",
+      "tenant_code": "TNT00002",
+      "branch_code": "TNT00002-B0002",
+      "legacy_code": "NSMLR",
+      "legacy_id": "br_nsmlr_001",
       "branch_name": "NSMLR",
       "location_type": "Manufacturing Unit",
       "address": "NSMLR Facility",
@@ -35,9 +43,13 @@
       "created_at": "2026-10-15T10:00:00.000Z"
     },
     {
-      "id": "br_nstlp_001",
+      "id": "TNT00002-B0003",
       "company": "New Swan Group",
-      "branch_code": "NSTLP",
+      "tenant_id": "00000000-0000-0000-0000-000000000001",
+      "tenant_code": "TNT00002",
+      "branch_code": "TNT00002-B0003",
+      "legacy_code": "NSTLP",
+      "legacy_id": "br_nstlp_001",
       "branch_name": "NSTLP",
       "location_type": "Plant 2",
       "address": "NSTLP Facility",
@@ -54,9 +66,13 @@
   ],
   "SuPuja Creations": [
     {
-      "id": "br_hq_1791830835870",
+      "id": "TNT00001-B0001",
       "company": "SuPuja Creations",
-      "branch_code": "SUPUJA_CREATIONS",
+      "tenant_id": "0a37b8e8-1c28-4e19-8891-951fc3f8f8af",
+      "tenant_code": "TNT00001",
+      "branch_code": "TNT00001-B0001",
+      "legacy_code": "SUPUJA_CREATIONS",
+      "legacy_id": "br_hq_1791830835870",
       "branch_name": "SuPuja Creations (Headquarters)",
       "location_type": "Headquarters",
       "address": "Main Office Complex",
@@ -73,9 +89,13 @@
   ],
   "Testing New Swan Group": [
     {
-      "id": "br_hq_1792079996274",
+      "id": "TNT00003-B0001",
       "company": "Testing New Swan Group",
-      "branch_code": "HQ-MAIN-01",
+      "tenant_id": "922d3e72-6588-457f-a562-4f1bdbf10d98",
+      "tenant_code": "TNT00003",
+      "branch_code": "TNT00003-B0001",
+      "legacy_code": "HQ-MAIN-01",
+      "legacy_id": "br_hq_1792079996274",
       "branch_name": "Headquarters (Main Office)",
       "location_type": "Headquarters",
       "address": "Main Office Complex",
@@ -92,9 +112,13 @@
   ],
   "SuPuja Creation": [
     {
-      "id": "br_hq_1792173406378",
+      "id": "TNT00001-B0001",
       "company": "SuPuja Creation",
-      "branch_code": "HQ-MAIN-01",
+      "tenant_id": "0a37b8e8-1c28-4e19-8891-951fc3f8f8af",
+      "tenant_code": "TNT00001",
+      "branch_code": "TNT00001-B0001",
+      "legacy_code": "HQ-MAIN-01",
+      "legacy_id": "br_hq_1792173406378",
       "branch_name": "SuPuja Creation (Headquarters)",
       "location_type": "Headquarters",
       "address": "Main Office Complex",

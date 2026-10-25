@@ -50,52 +50,136 @@ async function writeLocalBranches(data) {
 }
 
 /**
+ * Internal resolver for tenant code and standard aliases (SuPuja = TNT00001, New Swan Group = TNT00002, Testing = TNT00003)
+ */
+function resolveKnownTenantInternal(companyOrTenantId = 'Default') {
+  const rawKey = String(companyOrTenantId || 'Default').trim();
+  const lower = rawKey.toLowerCase();
+
+  const SWAN_ALIASES = [
+    '00000000-0000-0000-0000-000000000001',
+    'new_swan_group',
+    'new swan',
+    'new swan group',
+    'nstl',
+    'nstlp',
+    'nsmlr',
+    'swan agro',
+    'tnt00002'
+  ];
+
+  const SUPUJA_ALIASES = [
+    '0a37b8e8-1c28-4e19-8891-951fc3f8f8af',
+    'e7d483b2-3fcb-4eb2-9d39-e932b7bb5ff4',
+    'supuja_creations',
+    'supuja creations',
+    'supuja creation',
+    'tnt00001'
+  ];
+
+  const TESTING_ALIASES = [
+    '922d3e72-6588-457f-a562-4f1bdbf10d98',
+    'testing_new_swan_group',
+    'testing new swan group',
+    'tnt00003'
+  ];
+
+  if (SUPUJA_ALIASES.includes(lower)) {
+    return {
+      tenantCode: 'TNT00001',
+      companyName: 'SuPuja Creations',
+      tenantId: '0a37b8e8-1c28-4e19-8891-951fc3f8f8af'
+    };
+  }
+
+  if (SWAN_ALIASES.includes(lower)) {
+    return {
+      tenantCode: 'TNT00002',
+      companyName: 'New Swan Group',
+      tenantId: '00000000-0000-0000-0000-000000000001'
+    };
+  }
+
+  if (TESTING_ALIASES.includes(lower)) {
+    return {
+      tenantCode: 'TNT00003',
+      companyName: 'Testing New Swan Group',
+      tenantId: '922d3e72-6588-457f-a562-4f1bdbf10d98'
+    };
+  }
+
+  const matchTnt = rawKey.match(/^TNT(\d+)$/i);
+  if (matchTnt) {
+    return {
+      tenantCode: rawKey.toUpperCase(),
+      companyName: rawKey,
+      tenantId: null
+    };
+  }
+
+  return {
+    tenantCode: null,
+    companyName: rawKey,
+    tenantId: null
+  };
+}
+
+export async function resolveKnownTenant(companyOrTenantId = 'Default') {
+  return resolveKnownTenantInternal(companyOrTenantId);
+}
+
+/**
+ * Generate next sequential branch code for a tenant: [TENANT_CODE]-B[0001..9999]
+ */
+function getNextBranchCodeInternal(tenantCode = 'TNT00001', existingBranches = []) {
+  const cleanTenantCode = String(tenantCode || 'TNT00001').toUpperCase().trim();
+  const prefix = `${cleanTenantCode}-B`;
+  let maxSeq = 0;
+
+  if (Array.isArray(existingBranches)) {
+    for (const b of existingBranches) {
+      const candidates = [b?.id, b?.branch_code, b?.legacy_id, b?.legacy_code].filter(Boolean);
+      for (const val of candidates) {
+        const match = String(val).match(new RegExp(`^${cleanTenantCode}-B(\\d+)$`, 'i'));
+        if (match) {
+          const num = parseInt(match[1], 10);
+          if (num > maxSeq) maxSeq = num;
+        }
+      }
+    }
+  }
+
+  const nextSeq = maxSeq + 1;
+  return `${prefix}${String(nextSeq).padStart(4, '0')}`;
+}
+
+export async function getNextBranchCode(tenantCode = 'TNT00001', existingBranches = []) {
+  return getNextBranchCodeInternal(tenantCode, existingBranches);
+}
+
+/**
  * Get all branches for a given company or tenant
  */
 export async function getTenantBranches(companyOrTenantId = 'Default') {
   try {
     const rawKey = String(companyOrTenantId || 'Default').trim();
-    let key = rawKey;
-
-    const SWAN_ALIASES = [
-      '00000000-0000-0000-0000-000000000001',
-      'new_swan_group',
-      'new swan',
-      'new swan group',
-      'nstl',
-      'nstlp',
-      'nsmlr',
-      'swan agro'
-    ];
-    if (SWAN_ALIASES.includes(rawKey.toLowerCase())) {
-      key = 'New Swan Group';
-    } else if (
-      rawKey === '0a37b8e8-1c28-4e19-8891-951fc3f8f8af' ||
-      rawKey.toLowerCase() === 'supuja_creations' ||
-      rawKey.toLowerCase() === 'supuja creations'
-    ) {
-      key = 'SuPuja Creations';
-    } else if (
-      rawKey === '922d3e72-6588-457f-a562-4f1bdbf10d98' ||
-      rawKey.toLowerCase() === 'testing_new_swan_group' ||
-      rawKey.toLowerCase() === 'testing new swan group'
-    ) {
-      key = 'Testing New Swan Group';
-    }
+    const known = resolveKnownTenantInternal(rawKey);
+    let key = known.companyName;
+    let resolvedTenantCode = known.tenantCode;
+    let resolvedTenantId = known.tenantId;
 
     let dbBranches = [];
     try {
       const admin = getAdminClient();
       if (admin) {
-        // If key is a UUID that wasn't hardcoded above, look up tenant name from DB
-        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(key)) {
+        // If key is a UUID that wasn't hardcoded above, look up tenant details from DB
+        if (!resolvedTenantCode && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawKey)) {
           try {
-            const { data: tData } = await admin.from('tenants').select('name, tenant_code').eq('id', key).maybeSingle();
-            if (tData?.name) {
-              key = tData.name;
-              if (SWAN_ALIASES.includes(key.toLowerCase()) || SWAN_ALIASES.includes((tData.tenant_code || '').toLowerCase())) {
-                key = 'New Swan Group';
-              }
+            const { data: tData } = await admin.from('tenants').select('id, name, tenant_code').eq('id', rawKey).maybeSingle();
+            if (tData) {
+              key = tData.name || key;
+              resolvedTenantCode = tData.tenant_code || resolvedTenantCode;
+              resolvedTenantId = tData.id || resolvedTenantId;
             }
           } catch (e) {}
         }
@@ -103,7 +187,7 @@ export async function getTenantBranches(companyOrTenantId = 'Default') {
         const { data, error } = await admin
           .from('tenant_branches')
           .select('*')
-          .or(`company.ilike.${key},tenant_id.eq.${rawKey}`)
+          .or(`company.ilike.${key},tenant_id.eq.${resolvedTenantId || rawKey}`)
           .order('created_at', { ascending: true });
 
         if (!error && Array.isArray(data)) {
@@ -117,7 +201,14 @@ export async function getTenantBranches(companyOrTenantId = 'Default') {
     const localMap = await readLocalBranches();
     let localBranches = Array.isArray(localMap[key]) ? localMap[key] : null;
     if (!localBranches) {
-      const matchKey = Object.keys(localMap).find(k => k.toLowerCase() === key.toLowerCase() || k.toLowerCase() === rawKey.toLowerCase());
+      const matchKey = Object.keys(localMap).find(k => {
+        const kKnown = resolveKnownTenantInternal(k);
+        return (
+          k.toLowerCase() === key.toLowerCase() ||
+          k.toLowerCase() === rawKey.toLowerCase() ||
+          (resolvedTenantCode && kKnown.tenantCode === resolvedTenantCode)
+        );
+      });
       if (matchKey) {
         localBranches = localMap[matchKey];
       }
@@ -131,12 +222,16 @@ export async function getTenantBranches(companyOrTenantId = 'Default') {
 
     const finalBranches = Array.from(mergedMap.values());
 
-    // If completely empty, generate a default "Headquarters" branch for this workspace
+    // If completely empty, generate a standardized default "Headquarters" branch
     if (finalBranches.length === 0) {
+      const tenantCode = resolvedTenantCode || 'TNT00001';
+      const defaultHQCode = `${tenantCode}-B0001`;
       const defaultHQ = {
-        id: `br_hq_${Date.now()}`,
+        id: defaultHQCode,
         company: key,
-        branch_code: 'HQ-MAIN-01',
+        tenant_id: resolvedTenantId,
+        tenant_code: tenantCode,
+        branch_code: defaultHQCode,
         branch_name: `${key} (Headquarters)`,
         location_type: 'Headquarters',
         address: 'Main Office Complex',
@@ -234,15 +329,60 @@ export async function saveTenantBranch({
       return { success: false, error: 'Branch Name is required.' };
     }
 
-    const companyKey = String(company || 'Default').trim();
-    const cleanCode = (branchCode || `BR-${branchName.slice(0, 3).toUpperCase()}-${Date.now().toString().slice(-3)}`).trim().toUpperCase();
-    const branchId = id || `br_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const rawCompany = String(company || 'Default').trim();
+    const known = resolveKnownTenant(tenantId || rawCompany);
+    const companyKey = known.companyName || rawCompany;
+    let resolvedTenantCode = known.tenantCode;
+    let resolvedTenantId = known.tenantId || tenantId;
+
+    const admin = getAdminClient();
+    if (!resolvedTenantCode && admin) {
+      try {
+        const { data: tRow } = await admin
+          .from('tenants')
+          .select('id, name, tenant_code')
+          .or(`id.eq.${tenantId || '00000000-0000-0000-0000-000000000000'},tenant_code.eq.${rawCompany},name.ilike.${rawCompany}`)
+          .maybeSingle();
+        if (tRow) {
+          resolvedTenantCode = tRow.tenant_code;
+          resolvedTenantId = resolvedTenantId || tRow.id;
+        }
+      } catch (_) {}
+    }
+
+    if (!resolvedTenantCode) {
+      resolvedTenantCode = 'TNT00001';
+    }
+
+    const localMap = await readLocalBranches();
+    const existingList = [
+      ...(localMap[companyKey] || []),
+      ...(localMap[rawCompany] || [])
+    ];
+
+    let branchId = id;
+    let cleanCode = branchCode ? String(branchCode).trim().toUpperCase() : null;
+
+    if (!branchId) {
+      // Auto-assign new sequential branch ID and Code: [TENANT_CODE]-B[0001..9999]
+      const nextCode = getNextBranchCodeInternal(resolvedTenantCode, existingList);
+      branchId = nextCode;
+      if (!cleanCode) {
+        cleanCode = nextCode;
+      }
+    } else {
+      if (!cleanCode) {
+        cleanCode = branchId.startsWith('TNT') ? branchId : getNextBranchCodeInternal(resolvedTenantCode, existingList);
+      }
+    }
+
     const nowIso = new Date().toISOString();
 
     const branchRecord = {
       id: branchId,
       company: companyKey,
-      tenant_id: tenantId,
+      tenant_id: resolvedTenantId,
+      tenant_code: resolvedTenantCode,
       branch_code: cleanCode,
       branch_name: branchName.trim(),
       location_type: locationType || 'Branch Office',
@@ -272,19 +412,19 @@ export async function saveTenantBranch({
     }
 
     // 2. Update local file storage
-    const localMap = await readLocalBranches();
-    if (!Array.isArray(localMap[companyKey])) {
-      localMap[companyKey] = [];
+    const freshLocalMap = await readLocalBranches();
+    if (!Array.isArray(freshLocalMap[companyKey])) {
+      freshLocalMap[companyKey] = [];
     }
 
-    const existingIdx = localMap[companyKey].findIndex(b => b.id === branchId || b.branch_code === cleanCode);
+    const existingIdx = freshLocalMap[companyKey].findIndex(b => b.id === branchId || b.branch_code === cleanCode);
     if (existingIdx >= 0) {
-      localMap[companyKey][existingIdx] = { ...localMap[companyKey][existingIdx], ...branchRecord };
+      freshLocalMap[companyKey][existingIdx] = { ...freshLocalMap[companyKey][existingIdx], ...branchRecord };
     } else {
-      localMap[companyKey].push(branchRecord);
+      freshLocalMap[companyKey].push(branchRecord);
     }
 
-    await writeLocalBranches(localMap);
+    await writeLocalBranches(freshLocalMap);
 
     // Audit log
     try {
