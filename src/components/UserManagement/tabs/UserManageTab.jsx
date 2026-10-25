@@ -20,6 +20,7 @@ const DEFAULT_USER_MANAGE_COL_WIDTHS = {
   reporting: 130,
   status: 100,
   approval_status: 105,
+  role: 140,
   actions: 140
 };
 
@@ -30,6 +31,7 @@ const USER_MANAGE_COL_MIN_WIDTHS = {
   reporting: 100,
   status: 80,
   approval_status: 85,
+  role: 110,
   actions: 90
 };
 
@@ -369,7 +371,7 @@ export default function UserManageTab({
                   <ColumnResizer columnKey="user_employee" isResizing={isUserResizing('user_employee')} onMouseDown={(e) => handleUserResizeStart('user_employee', e)} onTouchStart={(e) => handleUserTouchStart('user_employee', e)} onDoubleClick={() => handleUserReset('user_employee')} />
                 </th>
                 <th style={{ position: 'sticky', top: 0, zIndex: 2, padding: '0.75rem 1rem', width: `${userColWidths.dept_role}px`, backgroundColor: 'var(--bg-primary, #f1f5f9)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Department & Role</div>
+                  <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Department & Designation</div>
                   <ColumnResizer columnKey="dept_role" isResizing={isUserResizing('dept_role')} onMouseDown={(e) => handleUserResizeStart('dept_role', e)} onTouchStart={(e) => handleUserTouchStart('dept_role', e)} onDoubleClick={() => handleUserReset('dept_role')} />
                 </th>
                 <th style={{ position: 'sticky', top: 0, zIndex: 2, padding: '0.75rem 1rem', width: `${userColWidths.location}px`, backgroundColor: 'var(--bg-primary, #f1f5f9)' }}>
@@ -388,6 +390,10 @@ export default function UserManageTab({
                   <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Approval Status</div>
                   <ColumnResizer columnKey="approval_status" isResizing={isUserResizing('approval_status')} onMouseDown={(e) => handleUserResizeStart('approval_status', e)} onTouchStart={(e) => handleUserTouchStart('approval_status', e)} onDoubleClick={() => handleUserReset('approval_status')} />
                 </th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 2, padding: '0.75rem 1rem', width: `${userColWidths.role}px`, backgroundColor: 'var(--bg-primary, #f1f5f9)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Role</div>
+                  <ColumnResizer columnKey="role" isResizing={isUserResizing('role')} onMouseDown={(e) => handleUserResizeStart('role', e)} onTouchStart={(e) => handleUserTouchStart('role', e)} onDoubleClick={() => handleUserReset('role')} />
+                </th>
                 <th style={{ position: 'sticky', top: 0, zIndex: 2, padding: '0.75rem 1rem', width: `${userColWidths.actions}px`, textAlign: 'center', backgroundColor: 'var(--bg-primary, #f1f5f9)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Actions</div>
                   <ColumnResizer columnKey="actions" isResizing={isUserResizing('actions')} onMouseDown={(e) => handleUserResizeStart('actions', e)} onTouchStart={(e) => handleUserTouchStart('actions', e)} onDoubleClick={() => handleUserReset('actions')} />
@@ -397,7 +403,7 @@ export default function UserManageTab({
             <tbody>
               {paginatedUsers.length === 0 ? (
                 <tr>
-                  <td colSpan={7} style={{ padding: '3rem 1rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                  <td colSpan={8} style={{ padding: '3rem 1rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
                       <Users size={36} style={{ opacity: 0.35 }} />
                       <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>No users found</span>
@@ -461,7 +467,7 @@ export default function UserManageTab({
                         </div>
                       </td>
 
-                      {/* Department & Role */}
+                      {/* Department & Designation */}
                       <td style={{ padding: '0.75rem 1rem', verticalAlign: 'top' }}>
                         <div style={{ fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }}>
                           {u.emp_department || 'General'}
@@ -469,75 +475,6 @@ export default function UserManageTab({
                         <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: '0.15rem', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }}>
                           {u.emp_designation || 'Staff'}
                         </div>
-
-                        {/* Interactive Role Selector Dropdown */}
-                        {isMaster ? (
-                          <div style={{ marginTop: '0.3rem' }}>
-                            <span style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '0.25rem',
-                              padding: '0.15rem 0.5rem',
-                              borderRadius: '4px',
-                              fontSize: '0.7rem',
-                              fontWeight: 700,
-                              background: '#fef9c3',
-                              color: '#854d0e',
-                              border: '1px solid #fde047'
-                            }}>
-                              👑 Master Admin
-                            </span>
-                          </div>
-                        ) : (
-                          <div style={{ marginTop: '0.35rem' }}>
-                            <select
-                              value={u.module_access?.role_template_id ? `custom:${u.module_access.role_template_id}` : (u.role || 'agent')}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                if (val.startsWith('custom:')) {
-                                  const tId = val.replace('custom:', '');
-                                  const template = (roleTemplates || []).find(r => r.id === tId);
-                                  if (template) onAssignRole(u, template);
-                                } else {
-                                  onChangeRole(u, val);
-                                }
-                              }}
-                              style={{
-                                width: '100%',
-                                maxWidth: '140px',
-                                padding: '0.22rem 0.45rem',
-                                borderRadius: '5px',
-                                border: '1px solid var(--border-light)',
-                                backgroundColor: 'var(--bg-surface)',
-                                color: 'var(--text-primary)',
-                                fontSize: '0.72rem',
-                                fontWeight: 600,
-                                cursor: 'pointer'
-                              }}
-                              title="Change System Role or Assign Role Template"
-                            >
-                              <optgroup label="System Base Roles">
-                                <option value="Admin">Admin</option>
-                                <option value="Manager">Manager</option>
-                                <option value="Supervisor">Supervisor</option>
-                                <option value="Sales">Sales</option>
-                                <option value="Recruiter">Recruiter</option>
-                                <option value="Purchase">Purchase</option>
-                                <option value="agent">Agent (Standard Staff)</option>
-                              </optgroup>
-                              {roleTemplates && roleTemplates.length > 0 && (
-                                <optgroup label="Custom Role Templates (RBAC)">
-                                  {roleTemplates.map(rt => (
-                                    <option key={rt.id} value={`custom:${rt.id}`}>
-                                      {rt.name}
-                                    </option>
-                                  ))}
-                                </optgroup>
-                              )}
-                            </select>
-                          </div>
-                        )}
-
                         {u.assigned_shift && (
                           <div style={{ fontSize: '0.68rem', color: '#0369a1', backgroundColor: '#e0f2fe', padding: '0.1rem 0.35rem', borderRadius: '4px', display: 'inline-block', marginTop: '0.2rem', fontWeight: 600 }}>
                             ⏰ {u.assigned_shift}
@@ -629,6 +566,72 @@ export default function UserManageTab({
                         >
                           {u.is_approved ? '✓ Approved' : '⏳ Pending'}
                         </button>
+                      </td>
+
+                      {/* Role Column (Placed right after Approval Status) */}
+                      <td style={{ padding: '0.75rem 0.65rem', verticalAlign: 'middle' }}>
+                        {isMaster ? (
+                          <span style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.25rem',
+                            padding: '0.25rem 0.55rem',
+                            borderRadius: '6px',
+                            fontSize: '0.74rem',
+                            fontWeight: 700,
+                            background: '#fef9c3',
+                            color: '#854d0e',
+                            border: '1px solid #fde047',
+                            whiteSpace: 'nowrap'
+                          }}>
+                            👑 Master Admin
+                          </span>
+                        ) : (
+                          <select
+                            value={u.module_access?.role_template_id ? `custom:${u.module_access.role_template_id}` : (u.role || 'agent')}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (val.startsWith('custom:')) {
+                                const tId = val.replace('custom:', '');
+                                const template = (roleTemplates || []).find(r => r.id === tId);
+                                if (template) onAssignRole(u, template);
+                              } else {
+                                onChangeRole(u, val);
+                              }
+                            }}
+                            style={{
+                              width: '100%',
+                              padding: '0.32rem 0.5rem',
+                              borderRadius: '6px',
+                              border: '1px solid var(--border-light)',
+                              backgroundColor: 'var(--bg-surface)',
+                              color: 'var(--text-primary)',
+                              fontSize: '0.76rem',
+                              fontWeight: 600,
+                              cursor: 'pointer'
+                            }}
+                            title="Change System Role or Assign Role Template"
+                          >
+                            <optgroup label="System Base Roles">
+                              <option value="Admin">Admin</option>
+                              <option value="Manager">Manager</option>
+                              <option value="Supervisor">Supervisor</option>
+                              <option value="Sales">Sales</option>
+                              <option value="Recruiter">Recruiter</option>
+                              <option value="Purchase">Purchase</option>
+                              <option value="agent">Agent (Standard Staff)</option>
+                            </optgroup>
+                            {roleTemplates && roleTemplates.length > 0 && (
+                              <optgroup label="Custom Role Templates (RBAC)">
+                                {roleTemplates.map(rt => (
+                                  <option key={rt.id} value={`custom:${rt.id}`}>
+                                    {rt.name}
+                                  </option>
+                                ))}
+                              </optgroup>
+                            )}
+                          </select>
+                        )}
                       </td>
 
                       {/* Action Icons */}
