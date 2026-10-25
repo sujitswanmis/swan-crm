@@ -2,6 +2,7 @@
 const MAX_AGE_MS = 30 * 60 * 1000;
 const entries = new Map();
 const pending = new Map();
+const memoryRevisions = new Map();
 let databasePromise;
 
 export const PARTY_WORKSPACE_UPDATED = 'party_workspace_updated';
@@ -17,17 +18,25 @@ export function createPartyWorkspaceScope({ tenantId, company, userId, userEmail
 }
 
 function revision(scope) {
-  try { return window.localStorage.getItem(`party_workspace_revision:${scope.workspace}`) || ''; }
-  catch { return ''; }
+  try { return window.localStorage.getItem(`party_workspace_revision:${scope.workspace}`) || memoryRevisions.get(scope.workspace) || ''; }
+  catch { return memoryRevisions.get(scope.workspace) || ''; }
+}
+
+function istDay() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
 }
 
 function cacheKey(scope, resource) {
-  const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
-  return JSON.stringify([scope.key, resource, day]);
+  return JSON.stringify([scope.key, resource]);
+}
+
+function remember(key, entry) {
+  entries.set(key, entry);
+  if (entries.size > 24) entries.delete(entries.keys().next().value);
 }
 
 function usable(entry, scope) {
-  return entry && entry.revision === revision(scope) &&
+  return entry && entry.day === istDay() && entry.revision === revision(scope) &&
     Number.isFinite(entry.savedAt) && Date.now() >= entry.savedAt && Date.now() - entry.savedAt <= MAX_AGE_MS;
 }
 
@@ -75,7 +84,10 @@ export async function readPartyWorkspaceCache(scope, resource) {
       request.onerror = () => { clearTimeout(timer); resolve(null); };
     });
     if (!usable(entry, scope)) return null;
-    entries.set(key, entry);
+    // A slow IndexedDB read must never replace a newer network snapshot.
+    const current = entries.get(key);
+    if (usable(current, scope) && current.savedAt >= entry.savedAt) return current.data;
+    remember(key, entry);
     return entry.data;
   } catch { return null; }
 }
@@ -91,12 +103,13 @@ export async function fetchPartyWorkspaceResource(scope, resource, loader) {
   if (!scope) return loader();
   const key = cacheKey(scope, resource);
   const startedRevision = revision(scope);
-  const requestKey = JSON.stringify([key, startedRevision]);
+  const day = istDay();
+  const requestKey = JSON.stringify([key, startedRevision, day]);
   if (pending.has(requestKey)) return pending.get(requestKey);
   const request = Promise.resolve().then(loader).then(data => {
-    if (revision(scope) !== startedRevision) throw new Error('Workspace changed while loading; a newer refresh is required.');
-    const entry = { data, savedAt: Date.now(), revision: startedRevision };
-    entries.set(key, entry);
+    if (revision(scope) !== startedRevision || day !== istDay()) throw new Error('Workspace changed while loading; a newer refresh is required.');
+    const entry = { data, savedAt: Date.now(), revision: startedRevision, day };
+    remember(key, entry);
     void persist(key, entry);
     return data;
   }).finally(() => { pending.delete(requestKey); });
@@ -106,8 +119,12 @@ export async function fetchPartyWorkspaceResource(scope, resource, loader) {
 
 export function invalidatePartyWorkspace(scope, source) {
   if (!scope) return;
+  const nextRevision = `${Date.now()}:${Math.random()}`;
+  memoryRevisions.set(scope.workspace, nextRevision);
   try {
-    window.localStorage.setItem(`party_workspace_revision:${scope.workspace}`, `${Date.now()}:${Math.random()}`);
+    window.localStorage.setItem(`party_workspace_revision:${scope.workspace}`, nextRevision);
+  } catch { /* In-memory invalidation still works if browser storage is disabled. */ }
+  try {
     window.dispatchEvent(new CustomEvent(PARTY_WORKSPACE_UPDATED, { detail: { workspace: scope.workspace, source } }));
-  } catch { /* Browser storage can be disabled. */ }
+  } catch { /* Cache invalidation does not depend on event delivery. */ }
 }

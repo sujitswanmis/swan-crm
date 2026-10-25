@@ -96,12 +96,16 @@ export default function ChannelOperationsModule({
     }
   };
 
+  const scopeAccessKey = JSON.stringify(moduleAccess || {});
   const scope = useMemo(() => createPartyWorkspaceScope({
-    tenantId: effectiveTenantId, company: userCompany, userId, userRole, moduleAccess
-  }), [effectiveTenantId, userCompany, userId, userRole, moduleAccess]);
+    tenantId: effectiveTenantId, company: userCompany, userId, userRole, moduleAccess: JSON.parse(scopeAccessKey)
+  }), [effectiveTenantId, userCompany, userId, userRole, scopeAccessKey]);
   const contextKey = scope?.key || JSON.stringify([effectiveTenantId, userCompany, userId, userRole]);
   const contextRef = useRef(contextKey);
-  contextRef.current = contextKey;
+  useEffect(() => {
+    contextRef.current = contextKey;
+    return () => { contextRef.current = null; };
+  }, [contextKey]);
   const requestRef = useRef(0);
   const [datasets, setDatasets] = useState({ context: contextKey, values: {} });
   const values = datasets.context === contextKey ? datasets.values : {};
@@ -150,8 +154,8 @@ export default function ChannelOperationsModule({
   }, [effectiveTenantId, activeTab, contextKey, scope]);
 
   useEffect(() => {
-    void loadOperationsData(false);
-    return () => { requestRef.current++; };
+    const timer = setTimeout(() => { void loadOperationsData(false); }, 0);
+    return () => { clearTimeout(timer); requestRef.current++; };
   }, [loadOperationsData]);
 
   useEffect(() => {
@@ -312,6 +316,7 @@ export default function ChannelOperationsModule({
           userCompany={userCompany}
           userName={userName}
           userId={userId}
+          cacheScope={scope}
         />
       )}
 

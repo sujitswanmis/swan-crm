@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   Phone, MessageSquare, Plus, Search, Filter, CheckCircle2, Clock, AlertTriangle,
   RefreshCw, Building2, Package, Calendar, ArrowRight, Shield, Sparkles, User,
@@ -19,6 +19,7 @@ import { formatISTDateTime, formatISTShortDate } from '@/utils/orderFrequency';
 import { PRODUCT_GROUPS } from '@/config/productCatalog';
 import MaskedPhoneDisplay from '../common/MaskedPhoneDisplay';
 import StandardTablePagination from '../common/StandardTablePagination';
+import { fetchPartyWorkspaceResource } from '@/utils/partyWorkspaceCache';
 
 export default function DailyFollowupQueueTable({
   queue = [],
@@ -27,7 +28,8 @@ export default function DailyFollowupQueueTable({
   tenantId,
   userCompany,
   userName = 'Admin',
-  userId = null
+  userId = null,
+  cacheScope = null
 }) {
   // Top View Toggle: 'QUEUE' | 'LEDGER'
   const [viewMode, setViewMode] = useState('QUEUE');
@@ -42,6 +44,9 @@ export default function DailyFollowupQueueTable({
   const [loadingLedger, setLoadingLedger] = useState(false);
   const [ledgerSearch, setLedgerSearch] = useState('');
   const [ledgerOutcomeFilter, setLedgerOutcomeFilter] = useState('ALL');
+  const [ledgerLoaded, setLedgerLoaded] = useState(false);
+  const ledgerRequestRef = useRef(0);
+  const productRequestRef = useRef(0);
 
   // Strict IST Date Helper for Ledger
   const todayISTStr = useMemo(() => {
@@ -69,28 +74,28 @@ export default function DailyFollowupQueueTable({
   const [availableProducts, setAvailableProducts] = useState([]);
   const [loadingProducts, setLoadingProducts] = useState(false);
 
+  // Read current product pricing only when Order Punch is opened.
+  const loadSettingsProducts = useCallback(async () => {
+    const prods = await fetchPartyWorkspaceResource(cacheScope, 'products', () =>
+      getTenantProducts(userCompany || tenantId || 'New Swan Group'));
+    const activeOnly = Array.isArray(prods) ? prods.filter(p => p.is_active !== false) : [];
+    return activeOnly.length ? activeOnly : (Array.isArray(prods) ? prods : []);
+  }, [cacheScope, userCompany, tenantId]);
+
   useEffect(() => {
-    let isMounted = true;
-    async function loadSettingsProducts() {
-      setLoadingProducts(true);
-      try {
-        const prods = await getTenantProducts(userCompany || tenantId || 'New Swan Group');
-        if (isMounted && Array.isArray(prods) && prods.length > 0) {
-          const activeOnly = prods.filter(p => p.is_active !== false);
-          setAvailableProducts(activeOnly.length > 0 ? activeOnly : prods);
-        }
-      } catch (err) {
-        console.warn('Error loading settings products for daily queue:', err);
-      } finally {
-        if (isMounted) setLoadingProducts(false);
-      }
-    }
-    loadSettingsProducts();
-    return () => { isMounted = false; };
-  }, [userCompany, tenantId]);
+    const timer = setTimeout(() => {
+      setAvailableProducts([]);
+      setTodayLedger([]);
+      setLedgerLoaded(false);
+      setLoadingProducts(false);
+      setLoadingLedger(false);
+    }, 0);
+    return () => { clearTimeout(timer); ledgerRequestRef.current++; productRequestRef.current++; };
+  }, [tenantId, userCompany, userId]);
 
   // Load Call Log Ledger with Date Preset & Range Support (Strict IST)
   const loadLedger = useCallback(async (opts = {}) => {
+    const requestId = ++ledgerRequestRef.current;
     setLoadingLedger(true);
     const preset = opts.preset !== undefined ? opts.preset : ledgerDatePreset;
     const sDate = opts.startDate !== undefined ? opts.startDate : ledgerStartDate;
@@ -101,17 +106,24 @@ export default function DailyFollowupQueueTable({
         endDate: eDate,
         preset
       });
-      setTodayLedger(logs || []);
+      if (ledgerRequestRef.current === requestId) {
+        setTodayLedger(logs || []);
+        setLedgerLoaded(true);
+      }
     } catch (err) {
       console.warn('Error loading daily call log ledger:', err);
     } finally {
-      setLoadingLedger(false);
+      if (ledgerRequestRef.current === requestId) setLoadingLedger(false);
     }
   }, [tenantId, ledgerDatePreset, ledgerStartDate, ledgerEndDate]);
 
   useEffect(() => {
-    loadLedger();
-  }, [loadLedger]);
+    const timer = setTimeout(() => {
+      if (viewMode === 'LEDGER') void loadLedger();
+      else setLoadingLedger(false);
+    }, 0);
+    return () => { clearTimeout(timer); ledgerRequestRef.current++; };
+  }, [loadLedger, viewMode]);
 
   const handleDateRangeChange = ({ preset, startDate, endDate }) => {
     setLedgerDatePreset(preset);
@@ -183,11 +195,24 @@ export default function DailyFollowupQueueTable({
     resetWidths: resetLedgerWidths
   } = useTableColumnResize('daily_ledger_table_widths_v1', defaultLedgerCols);
 
-  const openCallModal = (partyItem, defaultOutcome = 'ORDER_PLACED') => {
+  const openCallModal = async (partyItem, defaultOutcome = 'ORDER_PLACED') => {
+    const requestId = ++productRequestRef.current;
+    let products = availableProducts;
+    setLoadingProducts(true);
+    try {
+      products = await loadSettingsProducts();
+      if (productRequestRef.current !== requestId) return;
+      setAvailableProducts(products);
+    } catch (err) {
+      console.warn('Error loading settings products for daily queue:', err);
+    } finally {
+      if (productRequestRef.current === requestId) setLoadingProducts(false);
+    }
+    if (productRequestRef.current !== requestId) return;
     setSelectedParty(partyItem);
     setCallOutcome(defaultOutcome);
     setFeedbackSuccess('');
-    const firstProd = availableProducts[0];
+    const firstProd = products[0];
     const initialProductName = firstProd?.name || PRODUCT_GROUPS[0]?.name || 'Swan Rotary Tiller (Rotavator)';
     const initialRate = firstProd?.price ? Number(firstProd.price) : 0;
     setOrderItems([
@@ -274,7 +299,8 @@ export default function DailyFollowupQueueTable({
             : `✓ Call recorded! Next follow-up auto-scheduled.`
         );
         if (onRefresh) onRefresh();
-        loadLedger();
+        setLedgerLoaded(false);
+        if (viewMode === 'LEDGER') void loadLedger();
         setTimeout(() => {
           setSelectedParty(null);
           setFeedbackSuccess('');
@@ -394,10 +420,12 @@ export default function DailyFollowupQueueTable({
 
       worksheet.columns = [
         { header: 'Call Time (IST)', key: 'call_time', width: 22 },
+        { header: 'Party ID', key: 'party_id', width: 22 },
         { header: 'Channel Partner', key: 'firm_name', width: 28 },
         { header: 'Owner Name', key: 'owner_name', width: 20 },
         { header: 'Contact Mobile', key: 'mobile', width: 16 },
-        { header: 'District / State', key: 'location', width: 22 },
+        { header: 'District', key: 'district', width: 18 },
+        { header: 'State', key: 'state', width: 18 },
         { header: 'Calling Employee', key: 'caller', width: 20 },
         { header: 'Call Outcome', key: 'outcome', width: 24 },
         { header: 'Order #', key: 'order_no', width: 16 },
@@ -422,12 +450,24 @@ export default function DailyFollowupQueueTable({
         else if (log.call_status === 'RESCHEDULED') outcomeLabel = 'Callback Later';
         else if (log.call_status === 'UNREACHABLE') outcomeLabel = 'Ringing / Unreachable';
 
+        // Party ID / Code Resolution
+        const partyIdDisplay = p.party_universal_code || p.distributor_code || p.dealer_code || p.external_sap_code || p.id || log.party_id || '—';
+
+        // Strict Masking for Mobile Number (e.g. xxxxxx4022)
+        const rawPhone = p.primary_mobile || p.contact_mobile_1_1 || '';
+        const cleanDigits = String(rawPhone).replace(/\D/g, '');
+        const maskedPhone = cleanDigits.length >= 4 
+          ? `xxxxxx${cleanDigits.slice(-4)}` 
+          : (rawPhone || '—');
+
         worksheet.addRow({
           call_time: formatISTDateTime(log.created_at),
+          party_id: partyIdDisplay,
           firm_name: p.firm_name || '—',
           owner_name: p.owner_name || '—',
-          mobile: p.primary_mobile || '—',
-          location: [p.district_name, p.state_name].filter(Boolean).join(', ') || '—',
+          mobile: maskedPhone,
+          district: p.district_name || '—',
+          state: p.state_name || '—',
           caller: log.assigned_caller_name || 'Admin',
           outcome: outcomeLabel,
           order_no: log.generated_order_no || '—',
@@ -507,7 +547,7 @@ export default function DailyFollowupQueueTable({
 
           <button
             type="button"
-            onClick={() => { setViewMode('LEDGER'); loadLedger(); }}
+            onClick={() => setViewMode('LEDGER')}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -524,7 +564,7 @@ export default function DailyFollowupQueueTable({
             }}
           >
             <History size={14} />
-            <span>{ledgerDatePreset === 'today' ? "Today's Call Log Ledger" : "Call Log Ledger"} ({todayLedger.length})</span>
+            <span>{ledgerDatePreset === 'today' ? "Today's Call Log Ledger" : "Call Log Ledger"}{ledgerLoaded ? ` (${todayLedger.length})` : ''}</span>
           </button>
         </div>
 
@@ -546,7 +586,7 @@ export default function DailyFollowupQueueTable({
 
           <button
             type="button"
-            onClick={() => { if (onRefresh) onRefresh(); loadLedger(); }}
+            onClick={() => { if (onRefresh) onRefresh(); if (viewMode === 'LEDGER') void loadLedger(); }}
             disabled={loading || loadingLedger}
             style={{
               padding: '0.45rem 0.85rem',
@@ -887,6 +927,7 @@ export default function DailyFollowupQueueTable({
                               <button
                                 type="button"
                                 onClick={() => openCallModal(item, 'ORDER_PLACED')}
+                                disabled={loadingProducts}
                                 style={{
                                   padding: '0.42rem 0.8rem',
                                   background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',

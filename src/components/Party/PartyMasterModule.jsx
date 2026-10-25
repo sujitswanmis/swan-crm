@@ -26,7 +26,7 @@ import {
   getComplaintsList,
   deletePartyMaster
 } from '@/app/actions/partyMaster';
-import { getStatesCentral, getDistrictsCentral } from '@/app/actions/centralLocationMaster';
+import { getDistrictsCentral } from '@/app/actions/centralLocationMaster';
 import { getPartyWorkspaceData } from '@/app/actions/partyWorkspaceData';
 import {
   createPartyWorkspaceScope, readPartyWorkspaceCache, fetchPartyWorkspaceResource,
@@ -284,16 +284,20 @@ export default function PartyMasterModule({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isStageModalOpen]);
+  const scopeAccessKey = JSON.stringify(moduleAccess || {});
   const scope = useMemo(() => createPartyWorkspaceScope({
-    tenantId: effectiveTenantId, company: userCompany, userEmail, userRole, moduleAccess
-  }), [effectiveTenantId, userCompany, userEmail, userRole, moduleAccess]);
+    tenantId: effectiveTenantId, company: userCompany, userEmail, userRole, moduleAccess: JSON.parse(scopeAccessKey)
+  }), [effectiveTenantId, userCompany, userEmail, userRole, scopeAccessKey]);
   const contextKey = scope?.key || JSON.stringify([effectiveTenantId, userCompany, userEmail, userRole]);
   const contextRef = useRef(contextKey);
-  contextRef.current = contextKey;
+  useEffect(() => {
+    contextRef.current = contextKey;
+    return () => { contextRef.current = null; };
+  }, [contextKey]);
   const initialRequestRef = useRef(0);
   const supportingRequestRef = useRef({});
   const activeTabRef = useRef(activeTab);
-  activeTabRef.current = activeTab;
+  useEffect(() => { activeTabRef.current = activeTab; }, [activeTab]);
   const [dataContext, setDataContext] = useState(contextKey);
   const [partyRows, setParties] = useState([]);
   const parties = dataContext === contextKey ? partyRows : [];
@@ -599,15 +603,17 @@ export default function PartyMasterModule({
   }, [effectiveTenantId, contextKey, scope, loadSupportingData, refreshTransferredLeads]);
 
   useEffect(() => {
-    setParties([]);
-    setTransferredLeads([]);
-    setEmployees([]);
-    setOrderFollowups([]);
-    setOrderFeedbacks([]);
-    setMonthlyFeedbacks([]);
-    setComplaints([]);
-    void loadInitialData(false);
-    return () => { initialRequestRef.current++; };
+    const timer = setTimeout(() => {
+      setParties([]);
+      setTransferredLeads([]);
+      setEmployees([]);
+      setOrderFollowups([]);
+      setOrderFeedbacks([]);
+      setMonthlyFeedbacks([]);
+      setComplaints([]);
+      void loadInitialData(false);
+    }, 0);
+    return () => { clearTimeout(timer); initialRequestRef.current++; };
   }, [loadInitialData]);
 
   useEffect(() => {
@@ -624,9 +630,8 @@ export default function PartyMasterModule({
 
   // When activeTab changes to s00, immediately refresh transferred leads
   useEffect(() => {
-    if (activeTab === 's00') {
-      refreshTransferredLeads();
-    }
+    const timer = setTimeout(() => { if (activeTab === 's00') void refreshTransferredLeads(); }, 0);
+    return () => clearTimeout(timer);
   }, [activeTab, refreshTransferredLeads]);
 
   // Realtime subscription and window event listener for instant S00 updates
@@ -2192,6 +2197,7 @@ export default function PartyMasterModule({
           confirmText: 'Continue to S01 ➔',
           onConfirm: null
         });
+        invalidatePartyWorkspace(scope, 'party');
         const [freshParties, freshTrans] = await Promise.all([
           getPartyList(effectiveTenantId),
           getTransferredLeads(effectiveTenantId)
@@ -2251,6 +2257,7 @@ export default function PartyMasterModule({
             'Admin'
           );
           if (res && res.success) {
+            invalidatePartyWorkspace(scope, 'party');
             const [freshParties, freshTrans] = await Promise.all([
               getPartyList(effectiveTenantId),
               getTransferredLeads(effectiveTenantId)
@@ -2306,6 +2313,7 @@ export default function PartyMasterModule({
             'Admin'
           );
           if (res && res.success) {
+            invalidatePartyWorkspace(scope, 'party');
             const [freshParties, freshTrans] = await Promise.all([
               getPartyList(effectiveTenantId),
               getTransferredLeads(effectiveTenantId)
