@@ -1140,14 +1140,14 @@ export default function CRMContainer({
   const getCategoryForTab = (tab) => {
     if (!tab) return null;
     const cleanTab = String(tab).toLowerCase().trim();
-    const salesTabs = ['registration', 'report', 'leads', 'orders', 'party', 'location_master', 'location_territory'];
+    const salesTabs = ['registration', 'report', 'leads', 'orders', 'party', 'channel_ops', 'channel-operations', 'location_master', 'location_territory'];
     const purchaseTabs = ['mrp', 'mrp_against'];
     const hrTabs = ['recruiter', 'joining'];
     const communicationTabs = ['whatsapp_official', 'whatsapp_unofficial', 'sms_config', 'rcs_config', 'email_config'];
     const systemTabs = ['team', 'public_users', 'aiadmin', 'aiknowledgebase', 'calladmin', 'aicallcenter', 'admin_message_config', 'offline_rule'];
     const settingsTabs = ['settings'];
 
-    if (salesTabs.includes(cleanTab) || cleanTab.startsWith('party/') || cleanTab.startsWith('location')) return 'Sales';
+    if (salesTabs.includes(cleanTab) || cleanTab.startsWith('party/') || cleanTab.startsWith('channel-operations') || cleanTab.startsWith('channel_ops') || cleanTab.startsWith('location')) return 'Sales';
     if (purchaseTabs.includes(cleanTab)) return 'Purchase';
     if (hrTabs.includes(cleanTab)) return 'Human Resource';
     if (cleanTab === 'user_management_new' || cleanTab.startsWith('user_management')) return 'User Management';
@@ -2808,6 +2808,21 @@ export default function CRMContainer({
       }
       tab = 'party';
       setPartyMenuExpanded(true);
+    } else if (tab === 'channel_ops' || tab === 'channel-operations' || (tab && (tab.startsWith('channel-operations/') || tab.startsWith('channel_ops/')))) {
+      const channelOpsTab = params.get('tab') || params.get('subtab') || params.get('step');
+      let sub = '';
+      if (tab.includes('/')) {
+        sub = tab.split('/')[1];
+      } else if (channelOpsTab) {
+        sub = channelOpsTab;
+      } else {
+        sub = 'frequency_rules';
+      }
+      if (sub) {
+        setChannelOpsSubTab(sub.toLowerCase());
+      }
+      tab = 'channel_ops';
+      setChannelOpsMenuExpanded(true);
     } else if (tab === 'calladmin' || tab === 'call-admin' || (tab && (tab.startsWith('calladmin/') || tab.startsWith('call-admin/')))) {
       let sub = '';
       if (tab.includes('/')) {
@@ -3146,6 +3161,16 @@ export default function CRMContainer({
       const targetSub = partySubTab || 's00';
       const cleanTarget = (targetSub === 'r03' || targetSub === 'party-master-report') ? 'report' : targetSub;
       window.history.pushState(null, '', `/party/${cleanTarget}`);
+      if (window.innerWidth <= 768) {
+        setIsSidebarOpen(false);
+      }
+      return;
+    }
+
+    if (tabId === 'channel_ops' || tabId === 'channel-operations') {
+      setActiveTab('channel_ops');
+      const targetSub = channelOpsSubTab || 'frequency_rules';
+      window.history.pushState(null, '', `/channel-operations/${targetSub}`);
       if (window.innerWidth <= 768) {
         setIsSidebarOpen(false);
       }
