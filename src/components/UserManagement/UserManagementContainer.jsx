@@ -609,25 +609,15 @@ export default function UserManagementContainer({
         </div>
       )}
 
-      {/* Clean Sticky Navigation Bar */}
+      {/* Subpage Navigation Bar */}
       <div style={{
-        position: 'sticky',
-        top: 0,
-        zIndex: 20,
-        backgroundColor: 'var(--bg-surface, #ffffff)',
-        paddingTop: '0.65rem',
-        paddingBottom: '0.65rem',
-        marginTop: '-0.75rem',
-        marginLeft: '-1.5rem',
-        marginRight: '-1.5rem',
-        paddingLeft: '1.5rem',
-        paddingRight: '1.5rem',
         display: 'flex',
         alignItems: 'center',
         gap: '0.5rem',
-        borderBottom: '1px solid var(--border-light)',
+        borderBottom: '2px solid var(--border-light, #e2e8f0)',
         overflowX: 'auto',
-        boxShadow: '0 2px 4px rgba(0,0,0,0.02)'
+        paddingBottom: '2px',
+        marginBottom: '0.75rem'
       }}>
         {subpages.map(sub => {
           const Icon = sub.icon;
@@ -638,30 +628,37 @@ export default function UserManagementContainer({
               key={sub.id}
               type="button"
               onClick={() => handleTabSwitch(sub.id)}
+              onMouseEnter={(e) => {
+                if (!isActive) e.currentTarget.style.color = 'var(--text-primary, #1e293b)';
+              }}
+              onMouseLeave={(e) => {
+                if (!isActive) e.currentTarget.style.color = 'var(--text-secondary, #64748b)';
+              }}
               style={{
-                padding: '0.55rem 1rem',
-                borderRadius: '8px',
+                padding: '0.65rem 1.25rem',
                 border: 'none',
-                backgroundColor: isActive ? 'var(--primary-color, #2563eb)' : 'transparent',
-                color: isActive ? '#ffffff' : 'var(--text-secondary)',
-                fontWeight: isActive ? 700 : 500,
-                fontSize: '0.84rem',
+                background: 'transparent',
                 cursor: 'pointer',
-                display: 'flex',
+                fontSize: '0.88rem',
+                fontWeight: isActive ? 700 : 500,
+                color: isActive ? 'var(--accent-color, #2563eb)' : 'var(--text-secondary, #64748b)',
+                borderBottom: isActive ? '3px solid var(--accent-color, #2563eb)' : '3px solid transparent',
+                display: 'inline-flex',
                 alignItems: 'center',
                 gap: '0.5rem',
                 whiteSpace: 'nowrap',
+                marginBottom: '-2px',
                 transition: 'all 0.15s ease'
               }}
             >
-              <Icon size={16} />
+              <Icon size={16} style={{ color: isActive ? 'var(--accent-color, #2563eb)' : 'inherit' }} />
               <span>{sub.label}</span>
               {typeof sub.badge === 'number' && sub.badge > 0 && (
                 <span style={{
-                  fontSize: '0.7rem',
-                  padding: '0.05rem 0.45rem',
+                  fontSize: '0.72rem',
+                  padding: '0.1rem 0.45rem',
                   borderRadius: '10px',
-                  backgroundColor: isActive ? 'rgba(255, 255, 255, 0.25)' : 'var(--bg-primary, #f1f5f9)',
+                  backgroundColor: isActive ? 'var(--accent-color, #2563eb)' : 'var(--bg-primary, #f1f5f9)',
                   color: isActive ? '#ffffff' : 'var(--text-primary)',
                   fontWeight: 700
                 }}>

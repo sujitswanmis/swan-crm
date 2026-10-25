@@ -13,6 +13,7 @@ import {
   verifyAndCloseComplaintTicket
 } from '@/app/actions/orderFulfillment';
 import MaskedPhoneDisplay from '../common/MaskedPhoneDisplay';
+import StandardTablePagination from '../common/StandardTablePagination';
 
 const CATEGORIES = [
   { id: 'MANUFACTURING_DEFECT', label: 'Manufacturing Defect (QA)', dept: 'QUALITY_ASSURANCE', sla: '48h' },
@@ -38,6 +39,8 @@ export default function ComplaintManagementModule({
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
   const [deptFilter, setDeptFilter] = useState('ALL');
 
   // Modals
@@ -168,6 +171,17 @@ export default function ComplaintManagementModule({
       return num.includes(term) || firm.includes(term) || desc.includes(term);
     });
   }, [tickets, searchTerm]);
+
+  // Auto-reset page on filter changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, statusFilter, pageSize]);
+
+  const paginatedTickets = useMemo(() => {
+    if (pageSize === 100000) return filteredTickets;
+    const start = (currentPage - 1) * pageSize;
+    return filteredTickets.slice(start, start + pageSize);
+  }, [filteredTickets, currentPage, pageSize]);
 
   // KPI Ribbon counts
   const kpis = useMemo(() => {
@@ -344,42 +358,44 @@ export default function ComplaintManagementModule({
         </div>
       </div>
 
-      {/* Table with Resizable Columns */}
+      {/* Table with Resizable Columns and Sticky Header */}
       <div style={{
         background: 'var(--bg-surface)',
         borderRadius: '12px',
         border: '1px solid var(--border-light)',
-        overflow: 'hidden'
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column'
       }}>
-        <div style={{ overflowX: 'auto', width: '100%' }}>
+        <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 310px)', minHeight: '380px', width: '100%' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.84rem' }}>
-            <thead>
-              <tr style={{ background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
-                <th style={{ width: `${columnWidths.ticket_id}px`, padding: '0.85rem 1rem', position: 'relative' }}>
+            <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)' }}>
+              <tr style={{ background: 'var(--bg-surface)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
+                <th style={{ width: `${columnWidths.ticket_id}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                   Ticket # &amp; Priority
                   <ColumnResizer onMouseDown={e => startResize('ticket_id', e)} onDoubleClick={() => resetWidths()} />
                 </th>
-                <th style={{ width: `${columnWidths.partner}px`, padding: '0.85rem 1rem', position: 'relative' }}>
+                <th style={{ width: `${columnWidths.partner}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                   Channel Partner
                   <ColumnResizer onMouseDown={e => startResize('partner', e)} onDoubleClick={() => resetWidths()} />
                 </th>
-                <th style={{ width: `${columnWidths.category_dept}px`, padding: '0.85rem 1rem', position: 'relative' }}>
+                <th style={{ width: `${columnWidths.category_dept}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                   Category &amp; Department
                   <ColumnResizer onMouseDown={e => startResize('category_dept', e)} onDoubleClick={() => resetWidths()} />
                 </th>
-                <th style={{ width: `${columnWidths.sla_status}px`, padding: '0.85rem 1rem', position: 'relative' }}>
+                <th style={{ width: `${columnWidths.sla_status}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                   SLA Status (IST)
                   <ColumnResizer onMouseDown={e => startResize('sla_status', e)} onDoubleClick={() => resetWidths()} />
                 </th>
-                <th style={{ width: `${columnWidths.issue}px`, padding: '0.85rem 1rem', position: 'relative' }}>
+                <th style={{ width: `${columnWidths.issue}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                   Issue Description
                   <ColumnResizer onMouseDown={e => startResize('issue', e)} onDoubleClick={() => resetWidths()} />
                 </th>
-                <th style={{ width: `${columnWidths.status}px`, padding: '0.85rem 1rem', position: 'relative' }}>
+                <th style={{ width: `${columnWidths.status}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                   Ticket Status
                   <ColumnResizer onMouseDown={e => startResize('status', e)} onDoubleClick={() => resetWidths()} />
                 </th>
-                <th style={{ width: `${columnWidths.actions}px`, padding: '0.85rem 1rem', textAlign: 'center', position: 'relative' }}>
+                <th style={{ width: `${columnWidths.actions}px`, padding: '0.85rem 1rem', textAlign: 'center', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                   Resolution Action
                   <ColumnResizer onMouseDown={e => startResize('actions', e)} onDoubleClick={() => resetWidths()} />
                 </th>
@@ -393,7 +409,7 @@ export default function ComplaintManagementModule({
                   </td>
                 </tr>
               ) : (
-                filteredTickets.map(t => {
+                paginatedTickets.map(t => {
                   const p = t.party;
                   const isClosed = t.ticket_status === 'RESOLVED_CLOSED';
 
@@ -563,6 +579,15 @@ export default function ComplaintManagementModule({
             </tbody>
           </table>
         </div>
+
+        {/* Standard Table Pagination Footer */}
+        <StandardTablePagination
+          currentPage={currentPage}
+          totalRecords={filteredTickets.length}
+          pageSize={pageSize}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={setPageSize}
+        />
       </div>
 
       {/* Create Ticket Modal */}

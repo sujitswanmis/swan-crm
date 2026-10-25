@@ -4,9 +4,11 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Phone, MessageSquare, Plus, Search, Filter, CheckCircle2, Clock, AlertTriangle,
   RefreshCw, Building2, Package, Calendar, ArrowRight, Shield, Sparkles, User,
-  History, ListOrdered, TrendingUp, Check, X, PhoneCall, PhoneOff, CalendarClock
+  History, ListOrdered, TrendingUp, Check, X, PhoneCall, PhoneOff, CalendarClock,
+  FileSpreadsheet, Download
 } from 'lucide-react';
 import { useTableColumnResize, ColumnResizer } from '@/utils/tableColumnResize';
+import DateRangePicker from '@/components/common/DateRangePicker';
 import {
   saveOrderFollowupAndRecur,
   getPartyCallHistory,
@@ -16,6 +18,7 @@ import { getTenantProducts } from '@/app/actions/tenantProducts';
 import { formatISTDateTime, formatISTShortDate } from '@/utils/orderFrequency';
 import { PRODUCT_GROUPS } from '@/config/productCatalog';
 import MaskedPhoneDisplay from '../common/MaskedPhoneDisplay';
+import StandardTablePagination from '../common/StandardTablePagination';
 
 export default function DailyFollowupQueueTable({
   queue = [],
@@ -39,6 +42,23 @@ export default function DailyFollowupQueueTable({
   const [loadingLedger, setLoadingLedger] = useState(false);
   const [ledgerSearch, setLedgerSearch] = useState('');
   const [ledgerOutcomeFilter, setLedgerOutcomeFilter] = useState('ALL');
+
+  // Strict IST Date Helper for Ledger
+  const todayISTStr = useMemo(() => {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+  }, []);
+
+  // Ledger Quick Date Presets State (Strict IST)
+  const [ledgerDatePreset, setLedgerDatePreset] = useState('today');
+  const [ledgerStartDate, setLedgerStartDate] = useState(todayISTStr);
+  const [ledgerEndDate, setLedgerEndDate] = useState(todayISTStr);
+  const [exportingExcel, setExportingExcel] = useState(false);
+
+  // Pagination States
+  const [queuePage, setQueuePage] = useState(1);
+  const [queuePageSize, setQueuePageSize] = useState(25);
+  const [ledgerPage, setLedgerPage] = useState(1);
+  const [ledgerPageSize, setLedgerPageSize] = useState(25);
 
   // Party History Drawer State
   const [historyParty, setHistoryParty] = useState(null);
@@ -69,22 +89,36 @@ export default function DailyFollowupQueueTable({
     return () => { isMounted = false; };
   }, [userCompany, tenantId]);
 
-  // Load Today's Call Log Ledger
-  const loadLedger = useCallback(async () => {
+  // Load Call Log Ledger with Date Preset & Range Support (Strict IST)
+  const loadLedger = useCallback(async (opts = {}) => {
     setLoadingLedger(true);
+    const preset = opts.preset !== undefined ? opts.preset : ledgerDatePreset;
+    const sDate = opts.startDate !== undefined ? opts.startDate : ledgerStartDate;
+    const eDate = opts.endDate !== undefined ? opts.endDate : ledgerEndDate;
     try {
-      const logs = await getDailyCallLogLedger(tenantId);
+      const logs = await getDailyCallLogLedger(tenantId, {
+        startDate: sDate,
+        endDate: eDate,
+        preset
+      });
       setTodayLedger(logs || []);
     } catch (err) {
       console.warn('Error loading daily call log ledger:', err);
     } finally {
       setLoadingLedger(false);
     }
-  }, [tenantId]);
+  }, [tenantId, ledgerDatePreset, ledgerStartDate, ledgerEndDate]);
 
   useEffect(() => {
     loadLedger();
   }, [loadLedger]);
+
+  const handleDateRangeChange = ({ preset, startDate, endDate }) => {
+    setLedgerDatePreset(preset);
+    setLedgerStartDate(startDate);
+    setLedgerEndDate(endDate);
+    setLedgerPage(1);
+  };
 
   // Open History Drawer
   const openHistoryDrawer = async (partyItem) => {
@@ -122,7 +156,7 @@ export default function DailyFollowupQueueTable({
   const [saving, setSaving] = useState(false);
   const [feedbackSuccess, setFeedbackSuccess] = useState('');
 
-  // Table Column Resizer
+  // Table Column Resizer - Queue Table
   const defaultCols = {
     code_tier: 160,
     firm_contact: 240,
@@ -133,6 +167,21 @@ export default function DailyFollowupQueueTable({
     actions: 170
   };
   const { columnWidths, startResize, resetWidths } = useTableColumnResize('daily_queue_table_widths_v2', defaultCols);
+
+  // Table Column Resizer - Ledger Table
+  const defaultLedgerCols = {
+    call_time: 180,
+    partner: 250,
+    caller: 160,
+    outcome: 180,
+    details: 240,
+    notes: 260
+  };
+  const {
+    columnWidths: ledgerWidths,
+    startResize: startLedgerResize,
+    resetWidths: resetLedgerWidths
+  } = useTableColumnResize('daily_ledger_table_widths_v1', defaultLedgerCols);
 
   const openCallModal = (partyItem, defaultOutcome = 'ORDER_PLACED') => {
     setSelectedParty(partyItem);
@@ -307,6 +356,113 @@ export default function DailyFollowupQueueTable({
     });
   }, [todayLedger, ledgerSearch, ledgerOutcomeFilter]);
 
+  // Auto-reset queue page on filter changes
+  useEffect(() => {
+    setQueuePage(1);
+  }, [searchTerm, statusFilter, tierFilter, queuePageSize]);
+
+  // Auto-reset ledger page on filter or date changes
+  useEffect(() => {
+    setLedgerPage(1);
+  }, [ledgerSearch, ledgerOutcomeFilter, ledgerPageSize, ledgerDatePreset, ledgerStartDate, ledgerEndDate]);
+
+  const paginatedQueue = useMemo(() => {
+    if (queuePageSize === 100000) return filteredQueue;
+    const start = (queuePage - 1) * queuePageSize;
+    return filteredQueue.slice(start, start + queuePageSize);
+  }, [filteredQueue, queuePage, queuePageSize]);
+
+  const paginatedLedger = useMemo(() => {
+    if (ledgerPageSize === 100000) return filteredLedger;
+    const start = (ledgerPage - 1) * ledgerPageSize;
+    return filteredLedger.slice(start, start + ledgerPageSize);
+  }, [filteredLedger, ledgerPage, ledgerPageSize]);
+
+  // Export Call Log Ledger to Excel
+  const exportLedgerToExcel = async () => {
+    if (filteredLedger.length === 0) {
+      alert('No call records available to export for the selected filter.');
+      return;
+    }
+    setExportingExcel(true);
+    try {
+      const ExcelJS = (await import('exceljs')).default;
+      const { saveAs } = await import('file-saver');
+
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Call Log Ledger');
+
+      worksheet.columns = [
+        { header: 'Call Time (IST)', key: 'call_time', width: 22 },
+        { header: 'Channel Partner', key: 'firm_name', width: 28 },
+        { header: 'Owner Name', key: 'owner_name', width: 20 },
+        { header: 'Contact Mobile', key: 'mobile', width: 16 },
+        { header: 'District / State', key: 'location', width: 22 },
+        { header: 'Calling Employee', key: 'caller', width: 20 },
+        { header: 'Call Outcome', key: 'outcome', width: 24 },
+        { header: 'Order #', key: 'order_no', width: 16 },
+        { header: 'Punched Products', key: 'products', width: 36 },
+        { header: 'Order Value (₹)', key: 'order_value', width: 18 },
+        { header: 'Billing Route', key: 'billing_route', width: 24 },
+        { header: 'Preferred Dispatch Date', key: 'dispatch_date', width: 22 },
+        { header: 'No Order Reason', key: 'no_order_reason', width: 25 },
+        { header: 'Callback Scheduled', key: 'rescheduled_time', width: 22 },
+        { header: 'Conversation Notes', key: 'notes', width: 40 }
+      ];
+
+      filteredLedger.forEach(log => {
+        const p = log.party || {};
+        const items = Array.isArray(log.order_line_items) ? log.order_line_items : [];
+        const prodSummary = items.map(it => `${it.product || ''} (Qty: ${it.qty || 0}, Rate: ₹${it.rate || 0})`).join('; ');
+        const totalVal = items.reduce((sum, it) => sum + ((Number(it.qty) || 0) * (Number(it.rate) || 0)), 0);
+
+        let outcomeLabel = log.call_status;
+        if (log.call_status === 'ORDER_PLACED') outcomeLabel = 'Order Placed';
+        else if (log.call_status === 'NO_ORDER') outcomeLabel = 'Stock Full / No Order';
+        else if (log.call_status === 'RESCHEDULED') outcomeLabel = 'Callback Later';
+        else if (log.call_status === 'UNREACHABLE') outcomeLabel = 'Ringing / Unreachable';
+
+        worksheet.addRow({
+          call_time: formatISTDateTime(log.created_at),
+          firm_name: p.firm_name || '—',
+          owner_name: p.owner_name || '—',
+          mobile: p.primary_mobile || '—',
+          location: [p.district_name, p.state_name].filter(Boolean).join(', ') || '—',
+          caller: log.assigned_caller_name || 'Admin',
+          outcome: outcomeLabel,
+          order_no: log.generated_order_no || '—',
+          products: prodSummary || '—',
+          order_value: log.is_order_placed ? totalVal : '—',
+          billing_route: log.billing_route || '—',
+          dispatch_date: log.preferred_dispatch_date || '—',
+          no_order_reason: log.no_order_reason || '—',
+          rescheduled_time: log.rescheduled_time || '—',
+          notes: log.notes || '—'
+        });
+      });
+
+      // Style Header Row
+      const headerRow = worksheet.getRow(1);
+      headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      headerRow.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF059669' }
+      };
+      headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
+      headerRow.height = 26;
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const dateLabel = ledgerDatePreset === 'today' ? 'Today' : (ledgerStartDate ? `${ledgerStartDate}_to_${ledgerEndDate}` : 'All_Time');
+      saveAs(new Blob([buffer]), `Order_Desk_Call_Log_${dateLabel}.xlsx`);
+    } catch (err) {
+      console.error('Export Excel failed:', err);
+      alert('Failed to export Excel: ' + (err.message || 'Unknown error'));
+    } finally {
+      setExportingExcel(false);
+    }
+  };
+
   return (
     <div style={{ width: '100%' }}>
       {/* Top View Toggle: Calling Queue vs Today's Call Log Ledger */}
@@ -368,7 +524,7 @@ export default function DailyFollowupQueueTable({
             }}
           >
             <History size={14} />
-            <span>Today&apos;s Call Log Ledger ({todayLedger.length})</span>
+            <span>{ledgerDatePreset === 'today' ? "Today's Call Log Ledger" : "Call Log Ledger"} ({todayLedger.length})</span>
           </button>
         </div>
 
@@ -536,43 +692,45 @@ export default function DailyFollowupQueueTable({
             </div>
           </div>
 
-          {/* Table with Resizable Columns */}
+          {/* Table with Resizable Columns and Sticky Header */}
           <div style={{
             background: 'var(--bg-surface)',
             borderRadius: '12px',
             border: '1px solid var(--border-light)',
             overflow: 'hidden',
-            width: '100%'
+            width: '100%',
+            display: 'flex',
+            flexDirection: 'column'
           }}>
-            <div style={{ overflowX: 'auto', width: '100%' }}>
+            <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 310px)', minHeight: '380px', width: '100%' }}>
               <table style={{ width: '100%', minWidth: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.84rem' }}>
-                <thead>
-                  <tr style={{ background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
-                    <th style={{ width: `${columnWidths.code_tier}px`, padding: '0.85rem 1rem', position: 'relative' }}>
+                <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)' }}>
+                  <tr style={{ background: 'var(--bg-surface)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
+                    <th style={{ width: `${columnWidths.code_tier}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                       Code &amp; Tier
                       <ColumnResizer onMouseDown={e => startResize('code_tier', e)} onDoubleClick={() => resetWidths()} />
                     </th>
-                    <th style={{ width: `${columnWidths.firm_contact}px`, padding: '0.85rem 1rem', position: 'relative' }}>
+                    <th style={{ width: `${columnWidths.firm_contact}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                       Firm &amp; Contact
                       <ColumnResizer onMouseDown={e => startResize('firm_contact', e)} onDoubleClick={() => resetWidths()} />
                     </th>
-                    <th style={{ width: `${columnWidths.location}px`, padding: '0.85rem 1rem', position: 'relative' }}>
+                    <th style={{ width: `${columnWidths.location}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                       Location
                       <ColumnResizer onMouseDown={e => startResize('location', e)} onDoubleClick={() => resetWidths()} />
                     </th>
-                    <th style={{ width: `${columnWidths.frequency}px`, padding: '0.85rem 1rem', position: 'relative' }}>
+                    <th style={{ width: `${columnWidths.frequency}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                       Frequency
                       <ColumnResizer onMouseDown={e => startResize('frequency', e)} onDoubleClick={() => resetWidths()} />
                     </th>
-                    <th style={{ width: `${columnWidths.due_status}px`, padding: '0.85rem 1rem', position: 'relative' }}>
+                    <th style={{ width: `${columnWidths.due_status}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                       Schedule Due (IST)
                       <ColumnResizer onMouseDown={e => startResize('due_status', e)} onDoubleClick={() => resetWidths()} />
                     </th>
-                    <th style={{ width: `${columnWidths.last_interaction}px`, padding: '0.85rem 1rem', position: 'relative' }}>
+                    <th style={{ width: `${columnWidths.last_interaction}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                       Last Call &amp; Emp
                       <ColumnResizer onMouseDown={e => startResize('last_interaction', e)} onDoubleClick={() => resetWidths()} />
                     </th>
-                    <th style={{ width: `${columnWidths.actions}px`, padding: '0.85rem 1rem', textAlign: 'center', position: 'relative' }}>
+                    <th style={{ width: `${columnWidths.actions}px`, padding: '0.85rem 1rem', textAlign: 'center', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                       Actions
                       <ColumnResizer onMouseDown={e => startResize('actions', e)} onDoubleClick={() => resetWidths()} />
                     </th>
@@ -586,7 +744,7 @@ export default function DailyFollowupQueueTable({
                       </td>
                     </tr>
                   ) : (
-                    filteredQueue.map(item => {
+                    paginatedQueue.map(item => {
                       const p = item.party;
                       const phone = p?.contact_mobile_1_1 || p?.primary_mobile;
                       const isOverdue = item.next_due_date < todayStr;
@@ -778,6 +936,15 @@ export default function DailyFollowupQueueTable({
                 </tbody>
               </table>
             </div>
+
+            {/* Standard Table Pagination for Queue */}
+            <StandardTablePagination
+              currentPage={queuePage}
+              totalRecords={filteredQueue.length}
+              pageSize={queuePageSize}
+              onPageChange={setQueuePage}
+              onPageSizeChange={setQueuePageSize}
+            />
           </div>
         </>
       )}
@@ -793,7 +960,9 @@ export default function DailyFollowupQueueTable({
             marginBottom: '1rem'
           }}>
             <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '10px', padding: '0.85rem 1rem' }}>
-              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase' }}>Today&apos;s Total Calls</div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase' }}>
+                {ledgerDatePreset === 'today' ? "Today's Total Calls" : "Total Calls Recorded"}
+              </div>
               <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: '0.2rem' }}>{ledgerMetrics.totalCalls}</div>
             </div>
 
@@ -847,7 +1016,7 @@ export default function DailyFollowupQueueTable({
                 <input
                   type="text"
                   value={ledgerSearch}
-                  onChange={e => setLedgerSearch(e.target.value)}
+                  onChange={e => { setLedgerSearch(e.target.value); setLedgerPage(1); }}
                   placeholder="Filter by Partner, Calling Employee, Order #..."
                   style={{
                     width: '100%',
@@ -862,10 +1031,21 @@ export default function DailyFollowupQueueTable({
               </div>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+              {/* Quick Date Presets */}
+              <DateRangePicker
+                preset={ledgerDatePreset}
+                startDate={ledgerStartDate}
+                endDate={ledgerEndDate}
+                allowAllTime={true}
+                title="Filter Call Log Ledger by Date"
+                onChange={handleDateRangeChange}
+              />
+
+              {/* Outcome Filter */}
               <select
                 value={ledgerOutcomeFilter}
-                onChange={e => setLedgerOutcomeFilter(e.target.value)}
+                onChange={e => { setLedgerOutcomeFilter(e.target.value); setLedgerPage(1); }}
                 style={{
                   padding: '0.5rem 0.75rem',
                   background: 'var(--bg-primary)',
@@ -881,38 +1061,119 @@ export default function DailyFollowupQueueTable({
                 <option value="RESCHEDULED">⏰ Callback Later ({ledgerMetrics.callbacks})</option>
                 <option value="UNREACHABLE">📵 Ringing / Unreachable ({ledgerMetrics.unreachable})</option>
               </select>
+
+              {/* Export to Excel Button */}
+              <button
+                type="button"
+                onClick={exportLedgerToExcel}
+                disabled={exportingExcel || filteredLedger.length === 0}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.45rem',
+                  padding: '0.5rem 0.9rem',
+                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                  border: 'none',
+                  borderRadius: '8px',
+                  color: '#ffffff',
+                  fontSize: '0.82rem',
+                  fontWeight: 700,
+                  cursor: (exportingExcel || filteredLedger.length === 0) ? 'not-allowed' : 'pointer',
+                  opacity: (exportingExcel || filteredLedger.length === 0) ? 0.6 : 1,
+                  boxShadow: '0 2px 4px rgba(16,185,129,0.2)',
+                  whiteSpace: 'nowrap'
+                }}
+                title="Export filtered call log ledger to Excel (.xlsx)"
+              >
+                {exportingExcel ? (
+                  <>
+                    <RefreshCw size={14} className="animate-spin" />
+                    <span>Exporting...</span>
+                  </>
+                ) : (
+                  <>
+                    <FileSpreadsheet size={14} />
+                    <span>Export Excel</span>
+                  </>
+                )}
+              </button>
+
+              {/* Refresh Ledger Button */}
+              <button
+                type="button"
+                onClick={() => loadLedger()}
+                disabled={loadingLedger}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  padding: '0.5rem 0.75rem',
+                  background: 'var(--bg-primary)',
+                  border: '1px solid var(--border-light)',
+                  borderRadius: '8px',
+                  color: 'var(--text-secondary)',
+                  fontSize: '0.82rem',
+                  fontWeight: 600,
+                  cursor: loadingLedger ? 'not-allowed' : 'pointer',
+                  whiteSpace: 'nowrap'
+                }}
+                title="Refresh ledger records"
+              >
+                <RefreshCw size={13} className={loadingLedger ? 'animate-spin' : ''} />
+                <span>Refresh</span>
+              </button>
             </div>
           </div>
 
-          {/* Ledger Table */}
+          {/* Ledger Table with Sticky Header */}
           <div style={{
             background: 'var(--bg-surface)',
             borderRadius: '12px',
             border: '1px solid var(--border-light)',
             overflow: 'hidden',
-            width: '100%'
+            width: '100%',
+            display: 'flex',
+            flexDirection: 'column'
           }}>
-            <div style={{ overflowX: 'auto', width: '100%' }}>
+            <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 310px)', minHeight: '380px', width: '100%' }}>
               <table style={{ width: '100%', minWidth: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.84rem' }}>
-                <thead>
-                  <tr style={{ background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
-                    <th style={{ padding: '0.85rem 1rem' }}>Call Time (IST)</th>
-                    <th style={{ padding: '0.85rem 1rem' }}>Channel Partner</th>
-                    <th style={{ padding: '0.85rem 1rem' }}>Calling Emp</th>
-                    <th style={{ padding: '0.85rem 1rem' }}>Call Outcome</th>
-                    <th style={{ padding: '0.85rem 1rem' }}>Details / Order Punch</th>
-                    <th style={{ padding: '0.85rem 1rem' }}>Conversation Notes</th>
+                <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)' }}>
+                  <tr style={{ background: 'var(--bg-surface)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
+                    <th style={{ width: `${ledgerWidths.call_time}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
+                      Call Time (IST)
+                      <ColumnResizer onMouseDown={e => startLedgerResize('call_time', e)} onDoubleClick={() => resetLedgerWidths()} />
+                    </th>
+                    <th style={{ width: `${ledgerWidths.partner}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
+                      Channel Partner
+                      <ColumnResizer onMouseDown={e => startLedgerResize('partner', e)} onDoubleClick={() => resetLedgerWidths()} />
+                    </th>
+                    <th style={{ width: `${ledgerWidths.caller}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
+                      Calling Emp
+                      <ColumnResizer onMouseDown={e => startLedgerResize('caller', e)} onDoubleClick={() => resetLedgerWidths()} />
+                    </th>
+                    <th style={{ width: `${ledgerWidths.outcome}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
+                      Call Outcome
+                      <ColumnResizer onMouseDown={e => startLedgerResize('outcome', e)} onDoubleClick={() => resetLedgerWidths()} />
+                    </th>
+                    <th style={{ width: `${ledgerWidths.details}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
+                      Details / Order Punch
+                      <ColumnResizer onMouseDown={e => startLedgerResize('details', e)} onDoubleClick={() => resetLedgerWidths()} />
+                    </th>
+                    <th style={{ width: `${ledgerWidths.notes}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
+                      Conversation Notes
+                      <ColumnResizer onMouseDown={e => startLedgerResize('notes', e)} onDoubleClick={() => resetLedgerWidths()} />
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredLedger.length === 0 ? (
                     <tr>
                       <td colSpan="6" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
-                        No calls recorded today matching current filter.
+                        {loadingLedger ? 'Loading call records...' : 'No calls recorded matching current filter and date range.'}
                       </td>
                     </tr>
                   ) : (
-                    filteredLedger.map(log => {
+                    paginatedLedger.map(log => {
                       const p = log.party;
                       return (
                         <tr key={log.id} style={{ borderBottom: '1px solid var(--border-light)' }}>
@@ -992,6 +1253,15 @@ export default function DailyFollowupQueueTable({
                 </tbody>
               </table>
             </div>
+
+            {/* Standard Table Pagination for Ledger */}
+            <StandardTablePagination
+              currentPage={ledgerPage}
+              totalRecords={filteredLedger.length}
+              pageSize={ledgerPageSize}
+              onPageChange={setLedgerPage}
+              onPageSizeChange={setLedgerPageSize}
+            />
           </div>
         </>
       )}

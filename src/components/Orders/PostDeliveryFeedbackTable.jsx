@@ -8,6 +8,7 @@ import {
 import { useTableColumnResize, ColumnResizer } from '@/utils/tableColumnResize';
 import { savePostDeliveryFeedback } from '@/app/actions/orderFulfillment';
 import MaskedPhoneDisplay from '../common/MaskedPhoneDisplay';
+import StandardTablePagination from '../common/StandardTablePagination';
 
 export default function PostDeliveryFeedbackTable({
   deliveredOrders = [],
@@ -17,6 +18,8 @@ export default function PostDeliveryFeedbackTable({
 }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [feedbackStatusFilter, setFeedbackStatusFilter] = useState('ALL');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
   const [selectedOrderForFeedback, setSelectedOrderForFeedback] = useState(null);
   const [saving, setSaving] = useState(false);
   const [feedbackSuccessMsg, setFeedbackSuccessMsg] = useState('');
@@ -117,6 +120,17 @@ export default function PostDeliveryFeedbackTable({
     });
   }, [deliveredOrders, feedbackStatusFilter, searchTerm]);
 
+  // Auto-reset page on filter changes
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, feedbackStatusFilter, pageSize]);
+
+  const paginatedOrders = useMemo(() => {
+    if (pageSize === 100000) return filteredOrders;
+    const start = (currentPage - 1) * pageSize;
+    return filteredOrders.slice(start, start + pageSize);
+  }, [filteredOrders, currentPage, pageSize]);
+
   return (
     <div>
       {/* Top Filter and Search Bar */}
@@ -194,42 +208,44 @@ export default function PostDeliveryFeedbackTable({
         </div>
       </div>
 
-      {/* Table with Resizable Columns */}
+      {/* Table with Resizable Columns and Sticky Header */}
       <div style={{
         background: 'var(--bg-surface)',
         borderRadius: '12px',
         border: '1px solid var(--border-light)',
-        overflow: 'hidden'
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column'
       }}>
-        <div style={{ overflowX: 'auto', width: '100%' }}>
+        <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 310px)', minHeight: '380px', width: '100%' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.84rem' }}>
-            <thead>
-              <tr style={{ background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
-                <th style={{ width: `${columnWidths.order_no}px`, padding: '0.85rem 1rem', position: 'relative' }}>
+            <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)' }}>
+              <tr style={{ background: 'var(--bg-surface)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
+                <th style={{ width: `${columnWidths.order_no}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                   Order #
                   <ColumnResizer onMouseDown={e => startResize('order_no', e)} onDoubleClick={() => resetWidths()} />
                 </th>
-                <th style={{ width: `${columnWidths.partner}px`, padding: '0.85rem 1rem', position: 'relative' }}>
+                <th style={{ width: `${columnWidths.partner}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                   Channel Partner
                   <ColumnResizer onMouseDown={e => startResize('partner', e)} onDoubleClick={() => resetWidths()} />
                 </th>
-                <th style={{ width: `${columnWidths.delivery_date}px`, padding: '0.85rem 1rem', position: 'relative' }}>
+                <th style={{ width: `${columnWidths.delivery_date}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                   Delivery Date (IST)
                   <ColumnResizer onMouseDown={e => startResize('delivery_date', e)} onDoubleClick={() => resetWidths()} />
                 </th>
-                <th style={{ width: `${columnWidths.transporter}px`, padding: '0.85rem 1rem', position: 'relative' }}>
+                <th style={{ width: `${columnWidths.transporter}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                   Transporter &amp; LR
                   <ColumnResizer onMouseDown={e => startResize('transporter', e)} onDoubleClick={() => resetWidths()} />
                 </th>
-                <th style={{ width: `${columnWidths.feedback_score}px`, padding: '0.85rem 1rem', position: 'relative' }}>
+                <th style={{ width: `${columnWidths.feedback_score}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                   Satisfaction Rating
                   <ColumnResizer onMouseDown={e => startResize('feedback_score', e)} onDoubleClick={() => resetWidths()} />
                 </th>
-                <th style={{ width: `${columnWidths.issues}px`, padding: '0.85rem 1rem', position: 'relative' }}>
+                <th style={{ width: `${columnWidths.issues}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                   Damage / Issues
                   <ColumnResizer onMouseDown={e => startResize('issues', e)} onDoubleClick={() => resetWidths()} />
                 </th>
-                <th style={{ width: `${columnWidths.actions}px`, padding: '0.85rem 1rem', textAlign: 'center', position: 'relative' }}>
+                <th style={{ width: `${columnWidths.actions}px`, padding: '0.85rem 1rem', textAlign: 'center', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                   Action
                   <ColumnResizer onMouseDown={e => startResize('actions', e)} onDoubleClick={() => resetWidths()} />
                 </th>
@@ -243,7 +259,7 @@ export default function PostDeliveryFeedbackTable({
                   </td>
                 </tr>
               ) : (
-                filteredOrders.map(order => {
+                paginatedOrders.map(order => {
                   const p = order.party;
                   const phone = p?.primary_mobile;
                   const fb = order.feedback;
@@ -346,6 +362,15 @@ export default function PostDeliveryFeedbackTable({
             </tbody>
           </table>
         </div>
+
+        {/* Standard Table Pagination Footer */}
+        <StandardTablePagination
+          currentPage={currentPage}
+          totalRecords={filteredOrders.length}
+          pageSize={pageSize}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={setPageSize}
+        />
       </div>
 
       {/* Feedback Modal */}

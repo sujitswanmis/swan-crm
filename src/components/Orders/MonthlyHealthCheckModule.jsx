@@ -9,6 +9,7 @@ import {
 import { useTableColumnResize, ColumnResizer } from '@/utils/tableColumnResize';
 import { getMonthlyHealthCheckQueue, saveMonthlyHealthCheckAudit } from '@/app/actions/orderFulfillment';
 import MaskedPhoneDisplay from '../common/MaskedPhoneDisplay';
+import StandardTablePagination from '../common/StandardTablePagination';
 
 export default function MonthlyHealthCheckModule({
   tenantId
@@ -475,140 +476,14 @@ export default function MonthlyHealthCheckModule({
           </table>
         </div>
 
-        {/* Pagination Navigation Footer */}
-        <div style={{
-          padding: '0.75rem 1rem',
-          borderTop: '1px solid var(--border-light)',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          backgroundColor: 'var(--bg-primary, #f8fafc)',
-          fontSize: '0.78rem',
-          color: 'var(--text-secondary)',
-          flexWrap: 'wrap',
-          gap: '0.75rem'
-        }}>
-          <div>
-            Showing <strong>{filteredQueue.length > 0 ? (currentPage - 1) * pageSize + 1 : 0}</strong> to <strong>{Math.min(currentPage * pageSize, filteredQueue.length)}</strong> of <strong>{filteredQueue.length}</strong> records
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-            {/* Rows per page selector */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              <span>Rows per page:</span>
-              <select
-                value={pageSize}
-                onChange={e => {
-                  setPageSize(Number(e.target.value));
-                  setCurrentPage(1);
-                }}
-                style={{
-                  padding: '0.3rem 0.55rem',
-                  borderRadius: '6px',
-                  border: '1px solid var(--border-light)',
-                  backgroundColor: 'var(--bg-surface)',
-                  color: 'var(--text-primary)',
-                  fontSize: '0.78rem',
-                  fontWeight: 600,
-                  cursor: 'pointer'
-                }}
-              >
-                {[10, 25, 50, 100].map(n => (
-                  <option key={n} value={n}>{n}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Page navigation */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-              <button
-                type="button"
-                disabled={currentPage <= 1}
-                onClick={() => setCurrentPage(1)}
-                title="First Page"
-                style={{
-                  padding: '0.35rem 0.55rem',
-                  borderRadius: '6px',
-                  border: '1px solid var(--border-light)',
-                  backgroundColor: 'var(--bg-surface)',
-                  color: 'var(--text-primary)',
-                  cursor: currentPage <= 1 ? 'not-allowed' : 'pointer',
-                  opacity: currentPage <= 1 ? 0.4 : 1,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}
-              >
-                <ChevronsLeft size={14} />
-              </button>
-              <button
-                type="button"
-                disabled={currentPage <= 1}
-                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                title="Previous Page"
-                style={{
-                  padding: '0.35rem 0.55rem',
-                  borderRadius: '6px',
-                  border: '1px solid var(--border-light)',
-                  backgroundColor: 'var(--bg-surface)',
-                  color: 'var(--text-primary)',
-                  cursor: currentPage <= 1 ? 'not-allowed' : 'pointer',
-                  opacity: currentPage <= 1 ? 0.4 : 1,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}
-              >
-                <ChevronLeft size={14} />
-              </button>
-
-              <span style={{ fontWeight: 600, padding: '0 0.5rem', color: 'var(--text-primary)' }}>
-                Page {currentPage} of {totalPages}
-              </span>
-
-              <button
-                type="button"
-                disabled={currentPage >= totalPages}
-                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                title="Next Page"
-                style={{
-                  padding: '0.35rem 0.55rem',
-                  borderRadius: '6px',
-                  border: '1px solid var(--border-light)',
-                  backgroundColor: 'var(--bg-surface)',
-                  color: 'var(--text-primary)',
-                  cursor: currentPage >= totalPages ? 'not-allowed' : 'pointer',
-                  opacity: currentPage >= totalPages ? 0.4 : 1,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}
-              >
-                <ChevronRight size={14} />
-              </button>
-              <button
-                type="button"
-                disabled={currentPage >= totalPages}
-                onClick={() => setCurrentPage(totalPages)}
-                title="Last Page"
-                style={{
-                  padding: '0.35rem 0.55rem',
-                  borderRadius: '6px',
-                  border: '1px solid var(--border-light)',
-                  backgroundColor: 'var(--bg-surface)',
-                  color: 'var(--text-primary)',
-                  cursor: currentPage >= totalPages ? 'not-allowed' : 'pointer',
-                  opacity: currentPage >= totalPages ? 0.4 : 1,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}
-              >
-                <ChevronsRight size={14} />
-              </button>
-            </div>
-          </div>
-        </div>
+        {/* Standard Table Pagination Footer */}
+        <StandardTablePagination
+          currentPage={currentPage}
+          totalRecords={filteredQueue.length}
+          pageSize={pageSize}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={setPageSize}
+        />
       </div>
 
       {/* Audit Modal */}

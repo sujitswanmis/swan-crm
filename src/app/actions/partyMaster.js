@@ -70,7 +70,7 @@ export async function updatePartyMeta(adminClient, partyId, partialMeta) {
 /**
  * Fetch complete party list with hierarchy information (R03 Ready)
  */
-export async function getPartyList(tenantId = DEFAULT_TENANT_ID) {
+export async function getPartyList(tenantId = DEFAULT_TENANT_ID, options = {}) {
   const adminClient = getAdminClient();
   const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
   try {
@@ -82,6 +82,7 @@ export async function getPartyList(tenantId = DEFAULT_TENANT_ID) {
 
     if (error) {
       console.error('Error fetching party list:', error);
+      if (options.throwOnError) throw error;
       return [];
     }
 
@@ -93,7 +94,8 @@ export async function getPartyList(tenantId = DEFAULT_TENANT_ID) {
     // Fetch related leads for parties originated from leads
     const leadIds = [...new Set(parties.map(p => p.source_lead_id).filter(Boolean))];
     const leadMap = new Map();
-    if (leadIds.length > 0) {
+    const leadsPromise = (async () => {
+      if (leadIds.length === 0) return;
       try {
         const { data: leadsData } = await adminClient.from('leads').select('*').in('id', leadIds);
         if (leadsData) {
@@ -102,7 +104,7 @@ export async function getPartyList(tenantId = DEFAULT_TENANT_ID) {
       } catch (lErr) {
         console.warn('Could not fetch leads for party list:', lErr.message);
       }
-    }
+    })();
 
     // Try to fetch authorizations and territories defensively
     let authMap = {};
@@ -111,9 +113,9 @@ export async function getPartyList(tenantId = DEFAULT_TENANT_ID) {
 
     try {
       const [authRes, terrRes, teamRes] = await Promise.all([
-        adminClient.from('party_product_authorizations').select('*').eq('tenant_id', tenantId),
-        adminClient.from('party_territory_allocations').select('*').eq('tenant_id', tenantId),
-        adminClient.from('party_team_assignments').select('*').eq('tenant_id', tenantId)
+        adminClient.from('party_product_authorizations').select('*').eq('tenant_id', effectiveTenantId),
+        adminClient.from('party_territory_allocations').select('*').eq('tenant_id', effectiveTenantId),
+        adminClient.from('party_team_assignments').select('*').eq('tenant_id', effectiveTenantId)
       ]);
 
       if (authRes.data) {
@@ -137,6 +139,8 @@ export async function getPartyList(tenantId = DEFAULT_TENANT_ID) {
     } catch (e) {
       console.warn('Optional tables not yet migrated or query failed:', e.message);
     }
+
+    await leadsPromise;
 
     const enrichedData = parties.map(item => {
       const meta = parsePartyMeta(item.business_nature);
@@ -285,6 +289,7 @@ export async function getPartyList(tenantId = DEFAULT_TENANT_ID) {
     return enrichedData;
   } catch (err) {
     console.error('Critical failure in getPartyList:', err);
+    if (options.throwOnError) throw err;
     return [];
   }
 }

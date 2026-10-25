@@ -26,8 +26,12 @@ import {
   getComplaintsList,
   deletePartyMaster
 } from '@/app/actions/partyMaster';
-import { getEmployeesMaster } from '@/app/actions/employee';
 import { getStatesCentral, getDistrictsCentral } from '@/app/actions/centralLocationMaster';
+import { getPartyWorkspaceData } from '@/app/actions/partyWorkspaceData';
+import {
+  createPartyWorkspaceScope, readPartyWorkspaceCache, fetchPartyWorkspaceResource,
+  invalidatePartyWorkspace, PARTY_WORKSPACE_UPDATED
+} from '@/utils/partyWorkspaceCache';
 import { getTransferredLeads, confirmLeadTransfer, confirmAndPurgeLeadTransfer, revertLeadTransferToStage08 } from '@/app/actions/partyHandoff';
 import { INDIAN_STATE_DISTRICTS, ALL_INDIAN_STATES } from '@/config/indianStateDistricts';
 import StageDataTable from './StageDataTable';
@@ -280,7 +284,19 @@ export default function PartyMasterModule({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isStageModalOpen]);
-  const [parties, setParties] = useState([]);
+  const scope = useMemo(() => createPartyWorkspaceScope({
+    tenantId: effectiveTenantId, company: userCompany, userEmail, userRole, moduleAccess
+  }), [effectiveTenantId, userCompany, userEmail, userRole, moduleAccess]);
+  const contextKey = scope?.key || JSON.stringify([effectiveTenantId, userCompany, userEmail, userRole]);
+  const contextRef = useRef(contextKey);
+  contextRef.current = contextKey;
+  const initialRequestRef = useRef(0);
+  const supportingRequestRef = useRef({});
+  const activeTabRef = useRef(activeTab);
+  activeTabRef.current = activeTab;
+  const [dataContext, setDataContext] = useState(contextKey);
+  const [partyRows, setParties] = useState([]);
+  const parties = dataContext === contextKey ? partyRows : [];
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -504,19 +520,107 @@ export default function PartyMasterModule({
   });
 
   const refreshTransferredLeads = useCallback(async () => {
+    const requestContext = contextKey;
     try {
-      const transRes = await getTransferredLeads(effectiveTenantId);
-      setTransferredLeads(transRes || []);
+      const transRes = await fetchPartyWorkspaceResource(scope, 'transfers', async () => {
+        const result = await getPartyWorkspaceData(effectiveTenantId, 'transfers');
+        if (!result.success) throw new Error(result.error);
+        return result.data;
+      });
+      if (contextRef.current === requestContext) setTransferredLeads(transRes || []);
     } catch (err) {
       console.warn('Could not refresh transferred leads:', err);
     }
-  }, [effectiveTenantId]);
+  }, [effectiveTenantId, contextKey, scope]);
+
+  const loadSupportingData = useCallback(async section => {
+    const requestId = (supportingRequestRef.current[section] || 0) + 1;
+    supportingRequestRef.current[section] = requestId;
+    let fresh = false;
+    const isCurrent = () => contextRef.current === contextKey && supportingRequestRef.current[section] === requestId;
+    const apply = data => {
+      if (!data || !isCurrent()) return;
+      if (section === 'reference') {
+        if (Array.isArray(data.employees)) setEmployees(data.employees);
+        if (Array.isArray(data.states)) setLocationStates(data.states);
+        if (data.districts?.length) {
+          const names = data.districts.map(d => d.district_name || d.name);
+          setS00Districts(names);
+          setS05Districts(names);
+        }
+      } else {
+        if (Array.isArray(data.orderFollowups)) setOrderFollowups(data.orderFollowups);
+        if (Array.isArray(data.orderFeedbacks)) setOrderFeedbacks(data.orderFeedbacks);
+        if (Array.isArray(data.monthlyFeedbacks)) setMonthlyFeedbacks(data.monthlyFeedbacks);
+        if (Array.isArray(data.complaints)) setComplaints(data.complaints);
+      }
+    };
+    void readPartyWorkspaceCache(scope, `party:${section}`).then(data => { if (!fresh) apply(data); });
+    try {
+      const data = await fetchPartyWorkspaceResource(scope, `party:${section}`, async () => {
+        const result = await getPartyWorkspaceData(effectiveTenantId, section, userCompany);
+        if (!result.success) throw new Error(result.error);
+        return result.data;
+      });
+      fresh = true;
+      apply(data);
+    } catch (err) { console.warn(`Party ${section} refresh failed:`, err); }
+  }, [effectiveTenantId, userCompany, contextKey, scope]);
+
+  const loadInitialData = useCallback(async (force = true) => {
+    const requestId = ++initialRequestRef.current;
+    if (force !== false) invalidatePartyWorkspace(scope, 'party');
+    const isCurrent = () => contextRef.current === contextKey && initialRequestRef.current === requestId;
+    let fresh = false;
+    const apply = data => {
+      if (!Array.isArray(data) || !isCurrent()) return;
+      setDataContext(contextKey);
+      setParties(data);
+      setLoading(false);
+    };
+    setLoading(true);
+    if (force === false) void readPartyWorkspaceCache(scope, 'parties').then(data => { if (!fresh) apply(data); });
+    try {
+      const data = await fetchPartyWorkspaceResource(scope, 'parties', async () => {
+        const result = await getPartyWorkspaceData(effectiveTenantId);
+        if (!result.success) throw new Error(result.error);
+        return result.data;
+      });
+      fresh = true;
+      apply(data);
+    } catch (err) { console.warn('Party list refresh failed; keeping available rows:', err); }
+    finally { if (isCurrent()) setLoading(false); }
+    if (isCurrent()) {
+      // Start these after the list request so supporting actions cannot queue ahead of it.
+      void loadSupportingData('reference');
+      void refreshTransferredLeads();
+      if (activeTabRef.current === 'dashboard') void loadSupportingData('dashboard');
+    }
+  }, [effectiveTenantId, contextKey, scope, loadSupportingData, refreshTransferredLeads]);
 
   useEffect(() => {
     setParties([]);
     setTransferredLeads([]);
-    loadInitialData();
-  }, [effectiveTenantId, userCompany]);
+    setEmployees([]);
+    setOrderFollowups([]);
+    setOrderFeedbacks([]);
+    setMonthlyFeedbacks([]);
+    setComplaints([]);
+    void loadInitialData(false);
+    return () => { initialRequestRef.current++; };
+  }, [loadInitialData]);
+
+  useEffect(() => {
+    if (activeTab === 'dashboard' && dataContext === contextKey && partyRows.length > 0) void loadSupportingData('dashboard');
+  }, [activeTab, dataContext, contextKey, partyRows.length, loadSupportingData]);
+
+  useEffect(() => {
+    const onUpdate = event => {
+      if (event.detail?.workspace === scope?.workspace && event.detail?.source !== 'party') void loadInitialData(false);
+    };
+    window.addEventListener(PARTY_WORKSPACE_UPDATED, onUpdate);
+    return () => window.removeEventListener(PARTY_WORKSPACE_UPDATED, onUpdate);
+  }, [scope, loadInitialData]);
 
   // When activeTab changes to s00, immediately refresh transferred leads
   useEffect(() => {
@@ -566,48 +670,6 @@ export default function PartyMasterModule({
       }
     };
   }, [refreshTransferredLeads, activeTab]);
-
-  const loadInitialData = async () => {
-    setLoading(true);
-    try {
-      const [partyRes, empRes, dbStates, transRes] = await Promise.all([
-        getPartyList(effectiveTenantId),
-        getEmployeesMaster(effectiveTenantId, userCompany),
-        getStatesCentral().catch(() => []),
-        getTransferredLeads(effectiveTenantId).catch(() => [])
-      ]);
-      setParties(partyRes || []);
-      setEmployees(empRes || []);
-      setTransferredLeads(transRes || []);
-
-      if (dbStates && dbStates.length > 0) {
-        setLocationStates(dbStates);
-        const punjabState = dbStates.find(s => (s.state_name || s.name || '').toLowerCase() === 'punjab');
-        const punjabDists = await getDistrictsCentral(punjabState?.id || null, 'Punjab').catch(() => []);
-        if (punjabDists && punjabDists.length > 0) {
-          const names = punjabDists.map(d => d.district_name || d.name);
-          setS00Districts(names);
-          setS05Districts(names);
-        }
-      }
-
-      if (activeTab === 'dashboard') {
-        const [fUps, fBacks, mFeedbacks, cmps] = await Promise.all([
-          getOrderFollowups(effectiveTenantId).catch(() => []),
-          getOrderFeedbackList(effectiveTenantId).catch(() => []),
-          getMonthlyFeedbackList(effectiveTenantId).catch(() => []),
-          getComplaintsList(effectiveTenantId).catch(() => [])
-        ]);
-        if (Array.isArray(fUps)) setOrderFollowups(fUps);
-        if (Array.isArray(fBacks)) setOrderFeedbacks(fBacks);
-        if (Array.isArray(mFeedbacks)) setMonthlyFeedbacks(mFeedbacks);
-        if (Array.isArray(cmps)) setComplaints(cmps);
-      }
-    } catch (e) {
-      console.error(e);
-    }
-    setLoading(false);
-  };
 
   const handleS00StateChange = async (newState) => {
     const fallbackDists = INDIAN_STATE_DISTRICTS[newState] || [];

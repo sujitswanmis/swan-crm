@@ -8,6 +8,7 @@ import {
 import { useTableColumnResize, ColumnResizer } from '@/utils/tableColumnResize';
 import { updateOrderLifecycleStatus } from '@/app/actions/orderFulfillment';
 import MaskedPhoneDisplay from '../common/MaskedPhoneDisplay';
+import StandardTablePagination from '../common/StandardTablePagination';
 
 const STAGES = [
   { id: 'PUNCHED', label: '1. Order Punched', color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' },
@@ -25,6 +26,8 @@ export default function OrderDeliveryPipeline({
 }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [stageFilter, setStageFilter] = useState('ALL');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
   const [selectedOrderForAction, setSelectedOrderForAction] = useState(null);
   const [actionStage, setActionStage] = useState('');
   const [actionForm, setActionForm] = useState({
@@ -106,6 +109,17 @@ export default function OrderDeliveryPipeline({
       return num.includes(term) || firm.includes(term) || lr.includes(term) || veh.includes(term) || trans.includes(term);
     });
   }, [orders, stageFilter, searchTerm]);
+
+  // Auto-reset page on filter changes
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, stageFilter, pageSize]);
+
+  const paginatedOrders = useMemo(() => {
+    if (pageSize === 100000) return filteredOrders;
+    const start = (currentPage - 1) * pageSize;
+    return filteredOrders.slice(start, start + pageSize);
+  }, [filteredOrders, currentPage, pageSize]);
 
   // Stage counts for quick summary
   const stageCounts = useMemo(() => {
@@ -229,42 +243,44 @@ export default function OrderDeliveryPipeline({
         </div>
       </div>
 
-      {/* Orders Table with Resizable Columns */}
+      {/* Orders Table with Resizable Columns and Sticky Header */}
       <div style={{
         background: 'var(--bg-surface)',
         borderRadius: '12px',
         border: '1px solid var(--border-light)',
-        overflow: 'hidden'
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column'
       }}>
-        <div style={{ overflowX: 'auto', width: '100%' }}>
+        <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 310px)', minHeight: '380px', width: '100%' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.84rem' }}>
-            <thead>
-              <tr style={{ background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
-                <th style={{ width: `${columnWidths.order_no}px`, padding: '0.85rem 1rem', position: 'relative' }}>
+            <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)' }}>
+              <tr style={{ background: 'var(--bg-surface)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
+                <th style={{ width: `${columnWidths.order_no}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                   Order #
                   <ColumnResizer onMouseDown={e => startResize('order_no', e)} onDoubleClick={() => resetWidths()} />
                 </th>
-                <th style={{ width: `${columnWidths.partner}px`, padding: '0.85rem 1rem', position: 'relative' }}>
+                <th style={{ width: `${columnWidths.partner}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                   Channel Partner
                   <ColumnResizer onMouseDown={e => startResize('partner', e)} onDoubleClick={() => resetWidths()} />
                 </th>
-                <th style={{ width: `${columnWidths.line_items}px`, padding: '0.85rem 1rem', position: 'relative' }}>
+                <th style={{ width: `${columnWidths.line_items}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                   Ordered Items
                   <ColumnResizer onMouseDown={e => startResize('line_items', e)} onDoubleClick={() => resetWidths()} />
                 </th>
-                <th style={{ width: `${columnWidths.stage}px`, padding: '0.85rem 1rem', position: 'relative' }}>
+                <th style={{ width: `${columnWidths.stage}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                   Current Stage
                   <ColumnResizer onMouseDown={e => startResize('stage', e)} onDoubleClick={() => resetWidths()} />
                 </th>
-                <th style={{ width: `${columnWidths.logistics}px`, padding: '0.85rem 1rem', position: 'relative' }}>
+                <th style={{ width: `${columnWidths.logistics}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                   Logistics &amp; LR / Bilty
                   <ColumnResizer onMouseDown={e => startResize('logistics', e)} onDoubleClick={() => resetWidths()} />
                 </th>
-                <th style={{ width: `${columnWidths.dates}px`, padding: '0.85rem 1rem', position: 'relative' }}>
+                <th style={{ width: `${columnWidths.dates}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                   Timeline (IST)
                   <ColumnResizer onMouseDown={e => startResize('dates', e)} onDoubleClick={() => resetWidths()} />
                 </th>
-                <th style={{ width: `${columnWidths.actions}px`, padding: '0.85rem 1rem', textAlign: 'center', position: 'relative' }}>
+                <th style={{ width: `${columnWidths.actions}px`, padding: '0.85rem 1rem', textAlign: 'center', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                   Update Stage
                   <ColumnResizer onMouseDown={e => startResize('actions', e)} onDoubleClick={() => resetWidths()} />
                 </th>
@@ -278,7 +294,7 @@ export default function OrderDeliveryPipeline({
                   </td>
                 </tr>
               ) : (
-                filteredOrders.map(order => {
+                paginatedOrders.map(order => {
                   const p = order.party;
                   const currentStage = order.delivery_status || 'PUNCHED';
                   const stageObj = STAGES.find(s => s.id === currentStage) || STAGES[0];
@@ -421,6 +437,15 @@ export default function OrderDeliveryPipeline({
             </tbody>
           </table>
         </div>
+
+        {/* Standard Table Pagination Footer */}
+        <StandardTablePagination
+          currentPage={currentPage}
+          totalRecords={filteredOrders.length}
+          pageSize={pageSize}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={setPageSize}
+        />
       </div>
 
       {/* Stage Progression Modal */}

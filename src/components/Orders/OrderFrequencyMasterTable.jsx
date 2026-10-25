@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Calendar, Clock, Settings, Search, Filter, CheckCircle2,
   AlertCircle, RefreshCw, Edit3, Sparkles, Building2
@@ -9,6 +9,7 @@ import { useTableColumnResize, ColumnResizer } from '@/utils/tableColumnResize';
 import { calculateNextDueDate } from '@/utils/orderFrequency';
 import { upsertPartyOrderSchedule } from '@/app/actions/orderFulfillment';
 import MaskedPhoneDisplay from '../common/MaskedPhoneDisplay';
+import StandardTablePagination from '../common/StandardTablePagination';
 
 const FREQUENCY_OPTIONS = [
   { id: 'DAILY', label: 'Daily (Every Working Day)', desc: 'Call every single day' },
@@ -43,6 +44,8 @@ export default function OrderFrequencyMasterTable({
   const [editingSchedule, setEditingSchedule] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
   // Form State for editing frequency
   const [formState, setFormState] = useState({
@@ -154,6 +157,25 @@ export default function OrderFrequencyMasterTable({
     });
   }, [schedules, frequencyFilter, tierFilter, searchTerm]);
 
+  // Reset page to 1 when filters or pageSize change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, frequencyFilter, tierFilter, pageSize]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredSchedules.length / (pageSize === 100000 ? (filteredSchedules.length || 1) : pageSize)));
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
+  const paginatedSchedules = useMemo(() => {
+    if (pageSize === 100000) return filteredSchedules;
+    const start = (currentPage - 1) * pageSize;
+    return filteredSchedules.slice(start, start + pageSize);
+  }, [filteredSchedules, currentPage, pageSize]);
+
   return (
     <div style={{ width: '100%' }}>
       {/* Top Filter and Search Bar */}
@@ -251,39 +273,41 @@ export default function OrderFrequencyMasterTable({
         </div>
       </div>
 
-      {/* Frequency Master Table with Column Resizers */}
+      {/* Frequency Master Table with Column Resizers and Sticky Header */}
       <div style={{
         background: 'var(--bg-surface)',
         borderRadius: '12px',
         border: '1px solid var(--border-light)',
         overflow: 'hidden',
-        width: '100%'
+        width: '100%',
+        display: 'flex',
+        flexDirection: 'column'
       }}>
-        <div style={{ overflowX: 'auto', width: '100%' }}>
+        <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 310px)', minHeight: '380px', width: '100%' }}>
           <table style={{ width: '100%', minWidth: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.84rem' }}>
-            <thead>
-              <tr style={{ background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
-                <th style={{ width: `${columnWidths.code_tier}px`, padding: '0.85rem 1rem', position: 'relative' }}>
+            <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)' }}>
+              <tr style={{ background: 'var(--bg-surface)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
+                <th style={{ width: `${columnWidths.code_tier}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                   Code &amp; Tier
                   <ColumnResizer onMouseDown={e => startResize('code_tier', e)} onDoubleClick={() => resetWidths()} />
                 </th>
-                <th style={{ width: `${columnWidths.firm_contact}px`, padding: '0.85rem 1rem', position: 'relative' }}>
+                <th style={{ width: `${columnWidths.firm_contact}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                   Firm &amp; Contact
                   <ColumnResizer onMouseDown={e => startResize('firm_contact', e)} onDoubleClick={() => resetWidths()} />
                 </th>
-                <th style={{ width: `${columnWidths.location}px`, padding: '0.85rem 1rem', position: 'relative' }}>
+                <th style={{ width: `${columnWidths.location}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                   Location
                   <ColumnResizer onMouseDown={e => startResize('location', e)} onDoubleClick={() => resetWidths()} />
                 </th>
-                <th style={{ width: `${columnWidths.frequency}px`, padding: '0.85rem 1rem', position: 'relative' }}>
+                <th style={{ width: `${columnWidths.frequency}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                   Calling Frequency Rule
                   <ColumnResizer onMouseDown={e => startResize('frequency', e)} onDoubleClick={() => resetWidths()} />
                 </th>
-                <th style={{ width: `${columnWidths.next_due}px`, padding: '0.85rem 1rem', position: 'relative' }}>
+                <th style={{ width: `${columnWidths.next_due}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                   Next Due (IST)
                   <ColumnResizer onMouseDown={e => startResize('next_due', e)} onDoubleClick={() => resetWidths()} />
                 </th>
-                <th style={{ width: `${columnWidths.actions}px`, padding: '0.85rem 1rem', textAlign: 'center', position: 'relative' }}>
+                <th style={{ width: `${columnWidths.actions}px`, padding: '0.85rem 1rem', textAlign: 'center', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                   Action
                   <ColumnResizer onMouseDown={e => startResize('actions', e)} onDoubleClick={() => resetWidths()} />
                 </th>
@@ -297,7 +321,7 @@ export default function OrderFrequencyMasterTable({
                   </td>
                 </tr>
               ) : (
-                filteredSchedules.map(item => {
+                paginatedSchedules.map(item => {
                   const p = item.party;
                   const isDist = p.party_type === 'Distributor';
                   const isDealer = p.party_type === 'Dealer';
@@ -414,6 +438,15 @@ export default function OrderFrequencyMasterTable({
             </tbody>
           </table>
         </div>
+
+        {/* Standard Table Pagination Footer */}
+        <StandardTablePagination
+          currentPage={currentPage}
+          totalRecords={filteredSchedules.length}
+          pageSize={pageSize}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={setPageSize}
+        />
       </div>
 
       {/* Frequency Configuration Modal */}

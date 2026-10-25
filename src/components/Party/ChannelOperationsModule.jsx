@@ -1,16 +1,14 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   Phone, Star, Calendar, AlertTriangle, RefreshCw, Truck, Clock, Settings, Package
 } from 'lucide-react';
-import { getPartyList } from '@/app/actions/partyMaster';
+import { getChannelWorkspaceData } from '@/app/actions/partyWorkspaceData';
 import {
-  getPartyOrderSchedules,
-  getDailyOrderFollowupQueue,
-  getOrderPipelineList,
-  getDeliveredOrdersPendingFeedback
-} from '@/app/actions/orderFulfillment';
+  createPartyWorkspaceScope, readPartyWorkspaceCache, fetchPartyWorkspaceResource,
+  invalidatePartyWorkspace, PARTY_WORKSPACE_UPDATED
+} from '@/utils/partyWorkspaceCache';
 
 import DailyFollowupQueueTable from '../Orders/DailyFollowupQueueTable';
 import OrderFrequencyMasterTable from '../Orders/OrderFrequencyMasterTable';
@@ -98,41 +96,73 @@ export default function ChannelOperationsModule({
     }
   };
 
-  // Shared Data States
-  const [parties, setParties] = useState([]);
-  const [schedules, setSchedules] = useState([]);
-  const [dailyQueue, setDailyQueue] = useState([]);
-  const [pipelineOrders, setPipelineOrders] = useState([]);
-  const [deliveredOrders, setDeliveredOrders] = useState([]);
+  const scope = useMemo(() => createPartyWorkspaceScope({
+    tenantId: effectiveTenantId, company: userCompany, userId, userRole, moduleAccess
+  }), [effectiveTenantId, userCompany, userId, userRole, moduleAccess]);
+  const contextKey = scope?.key || JSON.stringify([effectiveTenantId, userCompany, userId, userRole]);
+  const contextRef = useRef(contextKey);
+  contextRef.current = contextKey;
+  const requestRef = useRef(0);
+  const [datasets, setDatasets] = useState({ context: contextKey, values: {} });
+  const values = datasets.context === contextKey ? datasets.values : {};
+  const parties = values.complaints || [];
+  const schedules = values.frequency_rules || [];
+  const dailyQueue = values.order_followup || [];
+  const pipelineOrders = values.order_pipeline || [];
+  const deliveredOrders = values.order_feedback || [];
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
 
-  // Load Operations Data
-  const loadOperationsData = useCallback(async () => {
+  // Only the selected tab is fetched. Cached rows remain visible during revalidation.
+  const loadOperationsData = useCallback(async (force = true) => {
+    const requestId = ++requestRef.current;
+    if (force !== false) invalidatePartyWorkspace(scope, 'channel');
+    if (activeTab === 'monthly_feedback') { setLoading(false); return; }
+    const resource = `channel:${activeTab}`;
+    let fresh = false;
+    const isCurrent = () => requestRef.current === requestId && contextRef.current === contextKey;
+    const apply = data => {
+      if (!isCurrent() || !Array.isArray(data)) return;
+      setDatasets(previous => ({
+        context: contextKey,
+        values: { ...(previous.context === contextKey ? previous.values : {}), [activeTab]: data }
+      }));
+    };
     setLoading(true);
+    setLoadError('');
+    if (force === false) {
+      void readPartyWorkspaceCache(scope, resource).then(data => { if (!fresh) apply(data); });
+    }
     try {
-      const [partiesRes, schedulesRes, queueRes, pipelineRes, deliveredRes] = await Promise.all([
-        getPartyList(effectiveTenantId),
-        getPartyOrderSchedules(effectiveTenantId),
-        getDailyOrderFollowupQueue(effectiveTenantId),
-        getOrderPipelineList(effectiveTenantId),
-        getDeliveredOrdersPendingFeedback(effectiveTenantId)
-      ]);
-
-      if (Array.isArray(partiesRes)) setParties(partiesRes);
-      if (Array.isArray(schedulesRes)) setSchedules(schedulesRes);
-      if (Array.isArray(queueRes)) setDailyQueue(queueRes);
-      if (Array.isArray(pipelineRes)) setPipelineOrders(pipelineRes);
-      if (Array.isArray(deliveredRes)) setDeliveredOrders(deliveredRes);
+      const data = await fetchPartyWorkspaceResource(scope, resource, async () => {
+        const result = await getChannelWorkspaceData(effectiveTenantId, activeTab);
+        if (!result.success) throw new Error(result.error);
+        return result.data;
+      });
+      fresh = true;
+      apply(data);
     } catch (err) {
       console.error('Error loading Channel Operations data:', err);
+      if (isCurrent()) setLoadError('Latest data refresh nahi hua. Available rows preserved hain; Refresh se retry karein.');
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
-  }, [effectiveTenantId]);
+  }, [effectiveTenantId, activeTab, contextKey, scope]);
 
   useEffect(() => {
-    loadOperationsData();
+    void loadOperationsData(false);
+    return () => { requestRef.current++; };
   }, [loadOperationsData]);
+
+  useEffect(() => {
+    const onUpdate = event => {
+      if (event.detail?.workspace === scope?.workspace && event.detail?.source !== 'channel') void loadOperationsData(false);
+    };
+    window.addEventListener(PARTY_WORKSPACE_UPDATED, onUpdate);
+    return () => window.removeEventListener(PARTY_WORKSPACE_UPDATED, onUpdate);
+  }, [scope, loadOperationsData]);
+
+  const initialLoading = loading && values[activeTab] === undefined;
 
   // Tab Badge Counts
   const todayStr = useMemo(() => {
@@ -272,10 +302,11 @@ export default function ChannelOperationsModule({
       </div>
 
       {/* Tab Content Display */}
+      {loadError && <div role="status" style={{ marginBottom: '0.75rem', color: 'var(--text-secondary)', fontSize: '0.82rem' }}>{loadError}</div>}
       {activeTab === 'order_followup' && (
         <DailyFollowupQueueTable
           queue={dailyQueue}
-          loading={loading}
+          loading={initialLoading}
           onRefresh={loadOperationsData}
           tenantId={effectiveTenantId}
           userCompany={userCompany}
@@ -287,7 +318,7 @@ export default function ChannelOperationsModule({
       {activeTab === 'frequency_rules' && (
         <OrderFrequencyMasterTable
           schedules={schedules}
-          loading={loading}
+          loading={initialLoading}
           onRefresh={loadOperationsData}
           tenantId={effectiveTenantId}
         />
@@ -296,7 +327,7 @@ export default function ChannelOperationsModule({
       {activeTab === 'order_pipeline' && (
         <OrderDeliveryPipeline
           orders={pipelineOrders}
-          loading={loading}
+          loading={initialLoading}
           onRefresh={loadOperationsData}
           tenantId={effectiveTenantId}
         />
@@ -305,7 +336,7 @@ export default function ChannelOperationsModule({
       {activeTab === 'order_feedback' && (
         <PostDeliveryFeedbackTable
           deliveredOrders={deliveredOrders}
-          loading={loading}
+          loading={initialLoading}
           onRefresh={loadOperationsData}
           tenantId={effectiveTenantId}
         />

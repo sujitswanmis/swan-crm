@@ -321,23 +321,55 @@ export async function getPartyCallHistory(partyId, tenantId = DEFAULT_TENANT_ID)
 }
 
 /**
- * 4C. GET DAILY CALL LOG LEDGER (Consolidated log of calls made today for team audit & metrics)
+ * 4C. GET DAILY CALL LOG LEDGER (Consolidated log of calls made for team audit & metrics)
+ * Supports single targetDate string, date range options ({ startDate, endDate, preset }), or default today in IST.
  */
-export async function getDailyCallLogLedger(tenantId = DEFAULT_TENANT_ID, targetDate = null) {
+export async function getDailyCallLogLedger(tenantId = DEFAULT_TENANT_ID, targetDateOrOptions = null, options = {}) {
   const adminClient = getAdminClient();
   const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
-  const filterDate = targetDate || new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+
+  let startDate = null;
+  let endDate = null;
+  let isAll = false;
+  let singleDate = null;
+
+  if (typeof targetDateOrOptions === 'object' && targetDateOrOptions !== null) {
+    startDate = targetDateOrOptions.startDate;
+    endDate = targetDateOrOptions.endDate;
+    if (targetDateOrOptions.preset === 'all') isAll = true;
+  } else if (typeof targetDateOrOptions === 'string' && targetDateOrOptions) {
+    singleDate = targetDateOrOptions;
+  }
+
+  if (options?.startDate) startDate = options.startDate;
+  if (options?.endDate) endDate = options.endDate;
+  if (options?.preset === 'all') isAll = true;
 
   try {
     const parties = await getPartyList(effectiveTenantId);
     const partiesMap = new Map((parties || []).map(p => [p.id, p]));
 
-    const { data: logs, error } = await adminClient
+    let query = adminClient
       .from('party_order_followups')
       .select('*')
-      .eq('tenant_id', effectiveTenantId)
-      .or(`scheduled_date.eq.${filterDate},created_at.gte.${filterDate}T00:00:00+05:30`)
-      .order('created_at', { ascending: false });
+      .eq('tenant_id', effectiveTenantId);
+
+    if (isAll) {
+      // All time - no date boundary
+    } else if (startDate && endDate) {
+      query = query
+        .gte('created_at', `${startDate}T00:00:00+05:30`)
+        .lte('created_at', `${endDate}T23:59:59.999+05:30`);
+    } else if (startDate) {
+      query = query.gte('created_at', `${startDate}T00:00:00+05:30`);
+    } else if (singleDate) {
+      query = query.or(`scheduled_date.eq.${singleDate},created_at.gte.${singleDate}T00:00:00+05:30`);
+    } else {
+      const todayIST = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+      query = query.or(`scheduled_date.eq.${todayIST},created_at.gte.${todayIST}T00:00:00+05:30`);
+    }
+
+    const { data: logs, error } = await query.order('created_at', { ascending: false });
 
     if (error) throw error;
 
