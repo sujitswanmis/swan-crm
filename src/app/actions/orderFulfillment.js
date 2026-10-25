@@ -699,9 +699,18 @@ export async function getComplaintsTickets(tenantId = DEFAULT_TENANT_ID, filters
   const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
 
   try {
+    // 1. Fetch parties list to get full enriched data (district, state, etc.)
+    const partiesList = await getPartyList(effectiveTenantId).catch(() => []);
+    const partiesMap = new Map();
+    if (Array.isArray(partiesList)) {
+      partiesList.forEach(p => {
+        if (p?.id) partiesMap.set(String(p.id), p);
+      });
+    }
+
     let query = adminClient
       .from('party_complaints')
-      .select('*, party:party_master(id, party_universal_code, firm_name, owner_name, primary_mobile, district_name, state_name, party_type)')
+      .select('*, party:party_master(id, party_universal_code, firm_name, primary_mobile, external_sap_code)')
       .eq('tenant_id', effectiveTenantId)
       .order('created_at', { ascending: false });
 
@@ -712,8 +721,20 @@ export async function getComplaintsTickets(tenantId = DEFAULT_TENANT_ID, filters
       query = query.eq('assigned_department', filters.department);
     }
 
-    const { data, error } = await query;
-    if (error) return [];
+    let { data, error } = await query;
+    if (error) {
+      console.error('getComplaintsTickets joined query failed, falling back to raw:', error.message);
+      const rawRes = await adminClient
+        .from('party_complaints')
+        .select('*')
+        .eq('tenant_id', effectiveTenantId)
+        .order('created_at', { ascending: false });
+      if (rawRes.error) {
+        console.error('getComplaintsTickets raw fallback error:', rawRes.error.message);
+        return [];
+      }
+      data = rawRes.data;
+    }
 
     const now = Date.now();
 
@@ -728,8 +749,16 @@ export async function getComplaintsTickets(tenantId = DEFAULT_TENANT_ID, filters
         isBreached = diffHours < 0;
       }
 
+      // Merge enriched party info (district, state, phone, firm name)
+      const partyFromMap = partiesMap.get(String(ticket.party_id));
+      const mergedParty = {
+        ...(partyFromMap || {}),
+        ...(ticket.party || {})
+      };
+
       return {
         ...ticket,
+        party: mergedParty,
         isSlaBreached: isBreached,
         slaHoursRemaining: hoursRemaining
       };

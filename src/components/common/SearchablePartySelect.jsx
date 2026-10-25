@@ -3,6 +3,15 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Search, Check, X, MapPin, Phone, Building2, ChevronDown } from 'lucide-react';
 
+function maskPhoneNumber(phone) {
+  if (!phone) return '';
+  const digits = String(phone).replace(/\D/g, '');
+  if (digits.length >= 4) {
+    return `xxxxxx${digits.slice(-4)}`;
+  }
+  return String(phone);
+}
+
 export default function SearchablePartySelect({
   parties = [],
   selectedId = '',
@@ -179,7 +188,7 @@ export default function SearchablePartySelect({
                 flexShrink: 0
               }}>
                 <Phone size={12} style={{ opacity: 0.7 }} />
-                {selectedParty.primary_mobile || selectedParty.biz_contact_no_1}
+                {maskPhoneNumber(selectedParty.primary_mobile || selectedParty.biz_contact_no_1)}
               </span>
             )}
           </div>
@@ -443,7 +452,7 @@ export default function SearchablePartySelect({
                           {phone && (
                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.2rem' }}>
                               <Phone size={11} style={{ opacity: 0.7 }} />
-                              {phone}
+                              {maskPhoneNumber(phone)}
                             </span>
                           )}
                         </div>

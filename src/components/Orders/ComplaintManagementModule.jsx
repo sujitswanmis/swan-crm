@@ -446,8 +446,13 @@ export default function ComplaintManagementModule({
                           {p?.firm_name || 'Direct Customer'}
                         </div>
                         <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
-                          {p?.district_name}, {p?.state_name}
+                          {[p?.district_name || p?.district, p?.state_name || p?.state].filter(Boolean).join(', ') || 'N/A'}
                         </div>
+                        {(p?.primary_mobile || p?.biz_contact_no_1) && (
+                          <div style={{ marginTop: '0.25rem' }}>
+                            <MaskedPhoneDisplay phone={p.primary_mobile || p.biz_contact_no_1} size="sm" />
+                          </div>
+                        )}
                       </td>
 
                       <td style={{ padding: '0.85rem 1rem', fontSize: '0.82rem' }}>
