@@ -307,6 +307,7 @@ export default function PartyMasterModule({
     firm_name: '',
     legal_name: '',
     constitution_type: 'PROPRIETORSHIP',
+    external_sap_code: '',
     gstin: '',
     pan: '',
     address: '',
@@ -718,6 +719,8 @@ export default function PartyMasterModule({
       const matchesSearch = !term || (
         (p.firm_name && p.firm_name.toLowerCase().includes(term)) ||
         (p.legal_name && p.legal_name.toLowerCase().includes(term)) ||
+        (p.external_sap_code && p.external_sap_code.toLowerCase().includes(term)) ||
+        (p.meta?.external_sap_code && p.meta.external_sap_code.toLowerCase().includes(term)) ||
         (p.party_universal_code && p.party_universal_code.toLowerCase().includes(term)) ||
         (p.distributor_code && p.distributor_code.toLowerCase().includes(term)) ||
         (p.dealer_code && p.dealer_code.toLowerCase().includes(term)) ||
@@ -1246,6 +1249,7 @@ export default function PartyMasterModule({
       if (!allStageSearch) return true;
       const term = allStageSearch.trim().toLowerCase();
       const code = (p.distributor_code || p.dealer_code || p.sub_dealer_code || p.party_universal_code || '').toLowerCase();
+      const erpCode = (p.external_sap_code || p.meta?.external_sap_code || '').toLowerCase();
       const firm = (p.firm_name || '').toLowerCase();
       const legal = (p.legal_name || '').toLowerCase();
       const person = (p.contact_person_name_1 || p.owner_name || '').toLowerCase();
@@ -1253,7 +1257,7 @@ export default function PartyMasterModule({
       const dist = (p.district_name || '').toLowerCase();
       const state = (p.state_name || '').toLowerCase();
 
-      return code.includes(term) || firm.includes(term) || legal.includes(term) || person.includes(term) || phone.includes(term) || dist.includes(term) || state.includes(term);
+      return code.includes(term) || erpCode.includes(term) || firm.includes(term) || legal.includes(term) || person.includes(term) || phone.includes(term) || dist.includes(term) || state.includes(term);
     });
   }, [parties, allStageFilter, allStageTierFilter, allStageCompanyFilter, allStageStateFilter, allStageStatusFilter, allStageSearch, getNextPendingStage]);
 
@@ -1368,6 +1372,7 @@ export default function PartyMasterModule({
       firm_name: '',
       legal_name: '',
       constitution_type: 'PROPRIETORSHIP',
+      external_sap_code: '',
       gstin: '',
       pan: '',
       address: '',
@@ -1449,6 +1454,7 @@ export default function PartyMasterModule({
       firm_name: party.firm_name || lead.company || lead.name || '',
       legal_name: party.legal_name || lead.company || lead.name || '',
       constitution_type: party.constitution_type || 'PROPRIETORSHIP',
+      external_sap_code: party.external_sap_code || party.meta?.external_sap_code || party.meta?.custom_party_code || '',
       gstin: party.gstin || lead.business_gst || lead.gstin || '',
       pan: party.pan || lead.pan || '',
       address: party.address || lead.address || '',
@@ -1661,26 +1667,36 @@ export default function PartyMasterModule({
     }
   };
 
-  // Wizard & Submenu Save Handlers
-  const handleS00Submit = async (e) => {
-    e.preventDefault();
+  // Wizard & Submenu Save Handlers with 3-Tier Mode: 'DRAFT' | 'PARTIAL' | 'CONFIRM'
+  const handleS00Submit = async (e, mode = 'CONFIRM') => {
+    e?.preventDefault?.();
+    if (mode === 'CONFIRM' && !s00Form.firm_name?.trim()) {
+      setCenterAlert({
+        isOpen: true,
+        type: 'warning',
+        title: 'Firm Name Required',
+        message: 'Please provide Firm / Trade Name to confirm S01 Stage!'
+      });
+      return;
+    }
+
     try {
       const primaryPhone = s00Form.biz_contact_no_1 || s00Form.contact_mobile_1_1 || '0000000000';
-      const owner = s00Form.contact_person_name_1 || s00Form.firm_name;
+      const owner = s00Form.contact_person_name_1 || s00Form.firm_name || 'Owner';
 
       const payload = {
         ...s00Form,
         primary_mobile: primaryPhone,
         owner_name: owner,
         contact_person: s00Form.contact_person_name_1,
-        workflow_status: 'S01_Approved'
+        workflow_status: mode === 'CONFIRM' ? 'S01_Approved' : (mode === 'PARTIAL' ? 'S01_Partial' : 'S01_Draft')
       };
 
       let partyId = activePartyId;
       let partyObj = null;
 
       if (partyId) {
-        partyObj = await updatePartyStep(partyId, 'S00_Party_Master', payload, effectiveTenantId, effectiveUserName);
+        partyObj = await updatePartyStep(partyId, 'S00_Party_Master', payload, effectiveTenantId, effectiveUserName, mode);
       } else {
         partyObj = await createPartyMaster(payload, effectiveTenantId, effectiveUserName);
         partyId = partyObj.id;
@@ -1689,9 +1705,10 @@ export default function PartyMasterModule({
       setWizardParty(partyObj);
       await loadInitialData();
 
+      const stageVal = mode === 'DRAFT' ? 'DRAFT' : (mode === 'PARTIAL' ? 'PARTIAL' : true);
       setStageConfirmedMap(prev => ({
         ...prev,
-        [partyId]: { ...(prev[partyId] || {}), s01: true }
+        [partyId]: { ...(prev[partyId] || {}), s01: stageVal }
       }));
 
       setIsStageModalOpen(false);
@@ -1707,8 +1724,8 @@ export default function PartyMasterModule({
     }
   };
 
-  const handleS01DistSubmit = async (e) => {
-    e.preventDefault();
+  const handleS01DistSubmit = async (e, mode = 'CONFIRM') => {
+    e?.preventDefault?.();
     try {
       const distChips = Array.isArray(s01DistForm.districts) && s01DistForm.districts.length > 0
         ? s01DistForm.districts
@@ -1722,13 +1739,15 @@ export default function PartyMasterModule({
         district_name: distString,
         assigned_districts: distChips,
         headquarter_districts: distChips,
-        workflow_status: 'S02_Completed',
+        workflow_status: mode === 'CONFIRM' ? 'S02_Completed' : (mode === 'PARTIAL' ? 'S02_Partial' : 'S02_Draft'),
         next_step: 'S04_Commercial'
-      }, effectiveTenantId, effectiveUserName);
+      }, effectiveTenantId, effectiveUserName, mode);
       await loadInitialData();
+
+      const stageVal = mode === 'DRAFT' ? 'DRAFT' : (mode === 'PARTIAL' ? 'PARTIAL' : true);
       setStageConfirmedMap(prev => ({
         ...prev,
-        [activePartyId]: { ...(prev[activePartyId] || {}), s02: true }
+        [activePartyId]: { ...(prev[activePartyId] || {}), s02: stageVal }
       }));
       setIsStageModalOpen(false);
       setActivePartyId(null);
@@ -1743,9 +1762,9 @@ export default function PartyMasterModule({
     }
   };
 
-  const handleS02DealerSubmit = async (e) => {
-    e.preventDefault();
-    if (!s02DealerForm.parent_distributor_id) {
+  const handleS02DealerSubmit = async (e, mode = 'CONFIRM') => {
+    e?.preventDefault?.();
+    if (mode === 'CONFIRM' && !s02DealerForm.parent_distributor_id) {
       setCenterAlert({
         isOpen: true,
         type: 'warning',
@@ -1759,13 +1778,15 @@ export default function PartyMasterModule({
         parent_distributor_id: s02DealerForm.parent_distributor_id,
         dealership_type: s02DealerForm.dealership_type,
         showroom_area_sqft: s02DealerForm.showroom_area_sqft,
-        workflow_status: 'S03_Completed',
+        workflow_status: mode === 'CONFIRM' ? 'S03_Completed' : (mode === 'PARTIAL' ? 'S03_Partial' : 'S03_Draft'),
         next_step: 'S04_Commercial'
-      }, effectiveTenantId, effectiveUserName);
+      }, effectiveTenantId, effectiveUserName, mode);
       await loadInitialData();
+
+      const stageVal = mode === 'DRAFT' ? 'DRAFT' : (mode === 'PARTIAL' ? 'PARTIAL' : true);
       setStageConfirmedMap(prev => ({
         ...prev,
-        [activePartyId]: { ...(prev[activePartyId] || {}), s03: true }
+        [activePartyId]: { ...(prev[activePartyId] || {}), s03: stageVal }
       }));
       setIsStageModalOpen(false);
       setActivePartyId(null);
@@ -1780,9 +1801,9 @@ export default function PartyMasterModule({
     }
   };
 
-  const handleS03SubDealerSubmit = async (e) => {
-    e.preventDefault();
-    if (!s03SubDealerForm.parent_dealer_id) {
+  const handleS03SubDealerSubmit = async (e, mode = 'CONFIRM') => {
+    e?.preventDefault?.();
+    if (mode === 'CONFIRM' && !s03SubDealerForm.parent_dealer_id) {
       setCenterAlert({
         isOpen: true,
         type: 'warning',
@@ -1798,13 +1819,15 @@ export default function PartyMasterModule({
       await updatePartyStep(activePartyId, 'S03_Sub_Dealer_Registration', {
         parent_dealer_id: s03SubDealerForm.parent_dealer_id,
         parent_distributor_id: derivedDistId,
-        workflow_status: 'S04_Completed',
+        workflow_status: mode === 'CONFIRM' ? 'S04_Completed' : (mode === 'PARTIAL' ? 'S04_Partial' : 'S04_Draft'),
         next_step: 'S04_Commercial'
-      }, effectiveTenantId, effectiveUserName);
+      }, effectiveTenantId, effectiveUserName, mode);
       await loadInitialData();
+
+      const stageVal = mode === 'DRAFT' ? 'DRAFT' : (mode === 'PARTIAL' ? 'PARTIAL' : true);
       setStageConfirmedMap(prev => ({
         ...prev,
-        [activePartyId]: { ...(prev[activePartyId] || {}), s04: true }
+        [activePartyId]: { ...(prev[activePartyId] || {}), s04: stageVal }
       }));
       setIsStageModalOpen(false);
       setActivePartyId(null);
@@ -1819,19 +1842,21 @@ export default function PartyMasterModule({
     }
   };
 
-  const handleS04CommercialSubmit = async (e) => {
-    e.preventDefault();
+  const handleS04CommercialSubmit = async (e, mode = 'CONFIRM') => {
+    e?.preventDefault?.();
     try {
       await updatePartyStep(activePartyId, 'S04_Commercial', {
         ...s04CommForm,
-        commercial_status: 'Completed',
-        workflow_status: 'S05_Completed',
+        commercial_status: mode === 'CONFIRM' ? 'Completed' : (mode === 'PARTIAL' ? 'Partial' : 'Draft'),
+        workflow_status: mode === 'CONFIRM' ? 'S05_Completed' : (mode === 'PARTIAL' ? 'S05_Partial' : 'S05_Draft'),
         next_step: 'S05_Product_Authorization'
-      }, effectiveTenantId, effectiveUserName);
+      }, effectiveTenantId, effectiveUserName, mode);
       await loadInitialData();
+
+      const stageVal = mode === 'DRAFT' ? 'DRAFT' : (mode === 'PARTIAL' ? 'PARTIAL' : true);
       setStageConfirmedMap(prev => ({
         ...prev,
-        [activePartyId]: { ...(prev[activePartyId] || {}), s05: true }
+        [activePartyId]: { ...(prev[activePartyId] || {}), s05: stageVal }
       }));
       setIsStageModalOpen(false);
       setActivePartyId(null);
@@ -1847,14 +1872,14 @@ export default function PartyMasterModule({
   };
 
   // Combined S06 Product Authorization & Territory Allocation Submit
-  const handleS05CombinedSubmit = async (e) => {
-    e.preventDefault();
-    if (s05SelectedProducts.length === 0) {
+  const handleS05CombinedSubmit = async (e, mode = 'CONFIRM') => {
+    e?.preventDefault?.();
+    if (mode === 'CONFIRM' && s05SelectedProducts.length === 0) {
       setCenterAlert({
         isOpen: true,
         type: 'warning',
         title: 'Product Required',
-        message: 'At least one Product must be authorized for this party!'
+        message: 'At least one Product must be authorized for this party to confirm S06!'
       });
       return;
     }
@@ -1866,7 +1891,7 @@ export default function PartyMasterModule({
         order_category: s06ProductCategory === 'Spare Part' ? 'Spare Parts' : p,
         opening_stock_required: 1
       }));
-      await saveProductAuthorizations(activePartyId, items, effectiveTenantId, effectiveUserName);
+      await saveProductAuthorizations(activePartyId, items, effectiveTenantId, effectiveUserName, mode);
 
       // 2. Save territory
       await saveTerritoryAllocation(activePartyId, {
@@ -1876,20 +1901,21 @@ export default function PartyMasterModule({
         tehsil_area: s05TerritoryForm.tehsil_area,
         market_coverage_area: s05TerritoryForm.market_coverage_chips,
         territory_type: s05TerritoryForm.territory_type
-      }, effectiveTenantId, effectiveUserName);
+      }, effectiveTenantId, effectiveUserName, mode);
 
       await updatePartyStep(activePartyId, 'S05_Product_Authorization_Territory', {
         state_name: s05TerritoryForm.state,
         district_name: s05TerritoryForm.district,
         product_category: s06ProductCategory,
-        workflow_status: 'S06_Completed',
+        workflow_status: mode === 'CONFIRM' ? 'S06_Completed' : (mode === 'PARTIAL' ? 'S06_Partial' : 'S06_Draft'),
         next_step: 'S06_Team_Assignment'
-      }, effectiveTenantId, effectiveUserName);
+      }, effectiveTenantId, effectiveUserName, mode);
 
       await loadInitialData();
+      const stageVal = mode === 'DRAFT' ? 'DRAFT' : (mode === 'PARTIAL' ? 'PARTIAL' : true);
       setStageConfirmedMap(prev => ({
         ...prev,
-        [activePartyId]: { ...(prev[activePartyId] || {}), s06: true }
+        [activePartyId]: { ...(prev[activePartyId] || {}), s06: stageVal }
       }));
       setIsStageModalOpen(false);
       setActivePartyId(null);
@@ -1904,8 +1930,8 @@ export default function PartyMasterModule({
     }
   };
 
-  const handleS06TeamSubmit = async (e) => {
-    e.preventDefault();
+  const handleS06TeamSubmit = async (e, mode = 'CONFIRM') => {
+    e?.preventDefault?.();
     try {
       const flatAssignments = [];
       Object.entries(s06TeamMap).forEach(([role, names]) => {
@@ -1920,15 +1946,16 @@ export default function PartyMasterModule({
         });
       });
 
-      await saveTeamAssignments(activePartyId, flatAssignments, effectiveTenantId, effectiveUserName);
+      await saveTeamAssignments(activePartyId, flatAssignments, effectiveTenantId, effectiveUserName, mode);
       await updatePartyStep(activePartyId, 'S06_Team_Assignment', {
-        workflow_status: 'S07_Completed',
+        workflow_status: mode === 'CONFIRM' ? 'S07_Completed' : (mode === 'PARTIAL' ? 'S07_Partial' : 'S07_Draft'),
         next_step: 'S07_Activation'
-      }, effectiveTenantId, effectiveUserName);
+      }, effectiveTenantId, effectiveUserName, mode);
       await loadInitialData();
+      const stageVal = mode === 'DRAFT' ? 'DRAFT' : (mode === 'PARTIAL' ? 'PARTIAL' : true);
       setStageConfirmedMap(prev => ({
         ...prev,
-        [activePartyId]: { ...(prev[activePartyId] || {}), s07: true }
+        [activePartyId]: { ...(prev[activePartyId] || {}), s07: stageVal }
       }));
       setIsStageModalOpen(false);
       setActivePartyId(null);
@@ -1943,10 +1970,10 @@ export default function PartyMasterModule({
     }
   };
 
-  const handleS07Activation = async () => {
+  const handleS07Activation = async (mode = 'CONFIRM') => {
     setActivationErrors([]);
     try {
-      const res = await activatePartner(activePartyId, s08ActivationStatus, s08Remarks, effectiveTenantId, effectiveUserName);
+      const res = await activatePartner(activePartyId, s08ActivationStatus, s08Remarks, effectiveTenantId, effectiveUserName, mode);
       if (!res.success) {
         setActivationErrors(res.errors || []);
         setCenterAlert({
@@ -1964,9 +1991,10 @@ export default function PartyMasterModule({
         const currentP = parties.find(p => p.id === activePartyId) || wizardParty;
         setShowWizard(false);
         setIsStageModalOpen(false);
+        const stageVal = mode === 'DRAFT' ? 'DRAFT' : (mode === 'PARTIAL' ? 'PARTIAL' : true);
         setStageConfirmedMap(prev => ({
           ...prev,
-          [activePartyId]: { ...(prev[activePartyId] || {}), s08: true }
+          [activePartyId]: { ...(prev[activePartyId] || {}), s08: stageVal }
         }));
         await loadInitialData();
 
@@ -2553,6 +2581,22 @@ export default function PartyMasterModule({
                           <div style={{ fontWeight: 800, color: isDist ? '#38bdf8' : isDealer ? '#34d399' : '#fbbf24', fontSize: '0.92rem' }}>
                             {p.distributor_code || p.dealer_code || p.sub_dealer_code || p.party_universal_code || 'UNASSIGNED'}
                           </div>
+                          {(p.external_sap_code || p.meta?.external_sap_code) && (
+                            <div style={{ marginTop: '0.15rem' }}>
+                              <span style={{
+                                display: 'inline-block',
+                                fontSize: '0.67rem',
+                                fontWeight: 700,
+                                padding: '0.08rem 0.35rem',
+                                borderRadius: '4px',
+                                background: 'rgba(99, 102, 241, 0.15)',
+                                color: '#818cf8',
+                                border: '1px solid rgba(99, 102, 241, 0.3)'
+                              }} title="Tenant ERP / Custom Software ID">
+                                ERP: {p.external_sap_code || p.meta?.external_sap_code}
+                              </span>
+                            </div>
+                          )}
                           <div style={{ marginTop: '0.2rem' }}>
                             <span style={{
                               display: 'inline-block',
@@ -2619,13 +2663,58 @@ export default function PartyMasterModule({
                             {stagesList.map((stg) => {
                               const isNextPending = !isActive && nextStage === stg.id;
                               const audit = p.stage_audit?.[stg.id];
+                              const rawStageVal = p.meta_stages?.[stg.id] || p.meta?.stages?.[stg.id] || audit?.status;
+                              const isDraft = rawStageVal === 'DRAFT' || audit?.status === 'DRAFT';
+                              const isPartial = rawStageVal === 'PARTIAL' || audit?.status === 'PARTIAL';
+                              const isConfirmed = (stg.done || rawStageVal === true || audit?.status === 'CONFIRMED') && !isDraft && !isPartial;
+
                               const auditInfo = audit
-                                ? `✓ ${stg.label} Completed by: ${audit.emp_name} on ${audit.timestamp} (IST)`
-                                : stg.done
-                                ? `✓ ${stg.label} Completed`
+                                ? (isDraft
+                                    ? `📝 ${stg.label} Draft saved by: ${audit.emp_name} on ${audit.timestamp} (IST)`
+                                    : isPartial
+                                    ? `⚡ ${stg.label} Confirmed Partial by: ${audit.emp_name} on ${audit.timestamp} (IST)`
+                                    : `✓ ${stg.label} Confirmed by: ${audit.emp_name} on ${audit.timestamp} (IST)`)
+                                : isConfirmed
+                                ? `✓ ${stg.label} Confirmed`
+                                : isPartial
+                                ? `⚡ ${stg.label} Confirmed Partial`
+                                : isDraft
+                                ? `📝 ${stg.label} Draft Saved`
                                 : isNextPending
                                 ? `⚡ ${stg.label} Next Pending Action`
                                 : `○ ${stg.label} Upcoming`;
+
+                              const btnBorder = isConfirmed
+                                ? '1px solid rgba(16,185,129,0.5)'
+                                : isPartial
+                                ? '1.5px solid #f59e0b'
+                                : isDraft
+                                ? '1.5px dashed #94a3b8'
+                                : isNextPending
+                                ? '1.5px solid #38bdf8'
+                                : '1px solid var(--border-light)';
+
+                              const btnBg = isConfirmed
+                                ? 'rgba(16,185,129,0.18)'
+                                : isPartial
+                                ? 'rgba(245,158,11,0.22)'
+                                : isDraft
+                                ? 'rgba(148,163,184,0.16)'
+                                : isNextPending
+                                ? 'rgba(56,189,248,0.2)'
+                                : 'var(--bg-primary)';
+
+                              const btnColor = isConfirmed
+                                ? '#10b981'
+                                : isPartial
+                                ? '#f59e0b'
+                                : isDraft
+                                ? '#94a3b8'
+                                : isNextPending
+                                ? '#38bdf8'
+                                : 'var(--text-secondary)';
+
+                              const btnSymbol = isConfirmed ? '✓' : isPartial ? '⚡' : isDraft ? '📝' : isNextPending ? '○' : '○';
 
                               return (
                                 <button
@@ -2643,25 +2732,13 @@ export default function PartyMasterModule({
                                     fontWeight: 700,
                                     cursor: 'pointer',
                                     transition: 'all 0.15s',
-                                    border: stg.done
-                                      ? '1px solid rgba(16,185,129,0.5)'
-                                      : isNextPending
-                                      ? '1.5px solid #f59e0b'
-                                      : '1px solid var(--border-light)',
-                                    background: stg.done
-                                      ? 'rgba(16,185,129,0.18)'
-                                      : isNextPending
-                                      ? 'rgba(245,158,11,0.22)'
-                                      : 'var(--bg-primary)',
-                                    color: stg.done
-                                      ? '#10b981'
-                                      : isNextPending
-                                      ? '#f59e0b'
-                                      : 'var(--text-secondary)',
-                                    boxShadow: isNextPending ? '0 0 6px rgba(245,158,11,0.35)' : 'none'
+                                    border: btnBorder,
+                                    background: btnBg,
+                                    color: btnColor,
+                                    boxShadow: (isNextPending || isPartial) ? '0 0 6px rgba(245,158,11,0.3)' : 'none'
                                   }}
                                 >
-                                  {stg.done ? '✓' : isNextPending ? '⚡' : '○'} {stg.label}
+                                  {btnSymbol} {stg.label}
                                 </button>
                               );
                             })}

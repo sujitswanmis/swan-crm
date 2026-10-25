@@ -6,7 +6,7 @@ import {
   Search, Filter, CheckCircle2, Clock, AlertCircle, ArrowRight,
   Building2, ShieldCheck, Check, Plus, ExternalLink, RefreshCw,
   Users, MapPin, Phone, Shield, ChevronRight, Trash2, Eye,
-  Upload, Download
+  Upload, Download, FileText, AlertTriangle
 } from 'lucide-react';
 import MaskedPhoneDisplay from '@/components/common/MaskedPhoneDisplay';
 import PartyImportModal from './PartyImportModal';
@@ -945,11 +945,16 @@ export default function StageDataTable({
                   >
                     {/* Universal Code */}
                     <td style={{ padding: '0.75rem 0.9rem', fontWeight: 700, color: '#38bdf8' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
                         <span>{party.party_universal_code || `PRT-${party.id?.slice(0, 6)}`}</span>
                         {party.source_lead_id && (
                           <span style={{ fontSize: '0.68rem', padding: '0.1rem 0.35rem', borderRadius: '4px', background: 'rgba(56,189,248,0.2)', color: '#38bdf8', fontWeight: 700 }} title="Transferred from Lead Stage 07">
                             S00
+                          </span>
+                        )}
+                        {(party.external_sap_code || party.meta?.external_sap_code) && (
+                          <span style={{ fontSize: '0.66rem', padding: '0.08rem 0.35rem', borderRadius: '4px', background: 'rgba(99,102,241,0.15)', color: '#818cf8', fontWeight: 700, border: '1px solid rgba(99,102,241,0.3)' }} title="Tenant Software / Custom ERP ID">
+                            ERP: {party.external_sap_code || party.meta?.external_sap_code}
                           </span>
                         )}
                       </div>
@@ -1013,37 +1018,89 @@ export default function StageDataTable({
 
                     {/* Stage Status & Last Emp / Timestamp */}
                     <td style={{ padding: '0.75rem 0.9rem' }}>
-                      {stageId === 's08' ? (
-                        <span style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '0.3rem',
-                          padding: '0.22rem 0.6rem',
-                          borderRadius: '5px',
-                          fontSize: '0.74rem',
-                          fontWeight: 800,
-                          background: (party.party_status === 'Active' || party.final_status === 'Active') ? 'rgba(16,185,129,0.2)' : 'rgba(245,158,11,0.2)',
-                          color: (party.party_status === 'Active' || party.final_status === 'Active') ? '#34d399' : '#fbbf24'
-                        }}>
-                          {(party.party_status === 'Active' || party.final_status === 'Active') ? <CheckCircle2 size={12} /> : <Clock size={12} />}
-                          {(party.party_status === 'Active' || party.final_status === 'Active') ? '✓ Live Active' : '⏳ Pending Activation'}
-                        </span>
-                      ) : (
-                        <span style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '0.3rem',
-                          padding: '0.22rem 0.6rem',
-                          borderRadius: '5px',
-                          fontSize: '0.74rem',
-                          fontWeight: 800,
-                          background: isApproved ? 'rgba(16,185,129,0.2)' : 'rgba(245,158,11,0.2)',
-                          color: isApproved ? '#34d399' : '#fbbf24'
-                        }}>
-                          {isApproved ? <CheckCircle2 size={12} /> : <Clock size={12} />}
-                          {isApproved ? '✓ Approved' : '⏳ Pending'}
-                        </span>
-                      )}
+                      {(() => {
+                        const stageAudit = party.stage_audit?.[stageId];
+                        const rawVal = party.meta_stages?.[stageId] || party.meta?.stages?.[stageId] || stageAudit?.status;
+                        const isDraft = rawVal === 'DRAFT' || stageAudit?.status === 'DRAFT';
+                        const isPartial = rawVal === 'PARTIAL' || stageAudit?.status === 'PARTIAL';
+                        const isConfirmed = isApproved && !isDraft && !isPartial;
+
+                        if (stageId === 's08') {
+                          const isLive = party.party_status === 'Active' || party.final_status === 'Active';
+                          return (
+                            <span style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.3rem',
+                              padding: '0.22rem 0.6rem',
+                              borderRadius: '5px',
+                              fontSize: '0.74rem',
+                              fontWeight: 800,
+                              background: isLive ? 'rgba(16,185,129,0.2)' : isPartial ? 'rgba(245,158,11,0.2)' : isDraft ? 'rgba(100,116,139,0.18)' : 'rgba(245,158,11,0.2)',
+                              color: isLive ? '#34d399' : isPartial ? '#f59e0b' : isDraft ? '#94a3b8' : '#fbbf24',
+                              border: isDraft ? '1px dashed #64748b' : isPartial ? '1px solid #f59e0b' : 'none'
+                            }}>
+                              {isLive ? <CheckCircle2 size={12} /> : isPartial ? <AlertTriangle size={12} /> : isDraft ? <FileText size={12} /> : <Clock size={12} />}
+                              {isLive ? '✓ Live Active' : isPartial ? '⚡ Partial Activation' : isDraft ? '📝 Activation Draft' : '⏳ Pending Activation'}
+                            </span>
+                          );
+                        }
+
+                        if (isDraft) {
+                          return (
+                            <span style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.3rem',
+                              padding: '0.22rem 0.6rem',
+                              borderRadius: '5px',
+                              fontSize: '0.74rem',
+                              fontWeight: 800,
+                              background: 'rgba(100,116,139,0.18)',
+                              color: '#94a3b8',
+                              border: '1px dashed #64748b'
+                            }}>
+                              <FileText size={12} /> 📝 Draft Saved
+                            </span>
+                          );
+                        }
+
+                        if (isPartial) {
+                          return (
+                            <span style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.3rem',
+                              padding: '0.22rem 0.6rem',
+                              borderRadius: '5px',
+                              fontSize: '0.74rem',
+                              fontWeight: 800,
+                              background: 'rgba(245,158,11,0.2)',
+                              color: '#f59e0b',
+                              border: '1px solid #f59e0b'
+                            }}>
+                              <AlertTriangle size={12} /> ⚡ Partial
+                            </span>
+                          );
+                        }
+
+                        return (
+                          <span style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.3rem',
+                            padding: '0.22rem 0.6rem',
+                            borderRadius: '5px',
+                            fontSize: '0.74rem',
+                            fontWeight: 800,
+                            background: isConfirmed ? 'rgba(16,185,129,0.2)' : 'rgba(100,116,139,0.12)',
+                            color: isConfirmed ? '#34d399' : '#94a3b8'
+                          }}>
+                            {isConfirmed ? <CheckCircle2 size={12} /> : <Clock size={12} />}
+                            {isConfirmed ? '✓ Approved' : '⏳ Pending'}
+                          </span>
+                        );
+                      })()}
 
                       {/* Last Employee & Timestamp for this stage */}
                       {party.stage_audit?.[stageId] ? (

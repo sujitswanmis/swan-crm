@@ -10,7 +10,9 @@ import {
   Building2,
   Users,
   Search,
-  Trash2
+  Trash2,
+  FileText,
+  AlertTriangle
 } from 'lucide-react';
 import { ALL_INDIAN_STATES, INDIAN_STATE_DISTRICTS } from '@/config/indianStateDistricts';
 import { PRODUCT_GROUPS } from '@/config/productCatalog';
@@ -241,6 +243,383 @@ export function ChipInput({ chips = [], onChange, placeholder = 'Type and press 
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Reusable Searchable Party Select (Combobox) for S03 Parent Distributor & S04 Parent Dealer
+ */
+function SearchablePartySelect({
+  label,
+  placeholder = 'Search by Firm Name, Code, City...',
+  selectedId,
+  options = [],
+  onChange,
+  color = '#059669',
+  required = false,
+  emptyNotice = 'No matching party found'
+}) {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [isOpen, setIsOpen] = useState(false);
+
+  const selectedParty = options.find(p => p.id === selectedId);
+
+  const filtered = options.filter(p => {
+    if (!searchTerm.trim()) return true;
+    const q = searchTerm.toLowerCase();
+    const code = (p.distributor_code || p.dealer_code || p.sub_dealer_code || p.party_universal_code || p.external_sap_code || '').toLowerCase();
+    const firm = (p.firm_name || '').toLowerCase();
+    const city = (p.city_village || p.district_name || p.district || p.state_name || p.state || '').toLowerCase();
+    const phone = (p.primary_mobile || p.biz_contact_no_1 || p.contact_mobile_1_1 || '').toLowerCase();
+    return code.includes(q) || firm.includes(q) || city.includes(q) || phone.includes(q);
+  });
+
+  return (
+    <div style={{ marginBottom: '0.5rem' }}>
+      <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.82rem', fontWeight: 700, color, marginBottom: '0.35rem' }}>
+        <span>{label} {required && '*'}</span>
+        {selectedParty && (
+          <span style={{ fontSize: '0.72rem', color: '#16a34a', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+            <Check size={12} /> Active Parent Selected
+          </span>
+        )}
+      </label>
+
+      {/* Selected Card View */}
+      {selectedParty && !isOpen ? (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '0.65rem 0.95rem',
+          borderRadius: '8px',
+          border: `1.5px solid ${color}`,
+          background: `${color}12`,
+          gap: '0.75rem'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexWrap: 'wrap' }}>
+            <span style={{
+              fontSize: '0.76rem',
+              fontWeight: 800,
+              padding: '0.15rem 0.5rem',
+              borderRadius: '4px',
+              background: color,
+              color: '#ffffff',
+              fontFamily: 'monospace'
+            }}>
+              {selectedParty.distributor_code || selectedParty.dealer_code || selectedParty.party_universal_code || 'CODE'}
+            </span>
+            <span style={{ fontWeight: 800, color: 'var(--text-primary, #0f172a)', fontSize: '0.94rem' }}>
+              {selectedParty.firm_name}
+            </span>
+            <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary, #64748b)' }}>
+              📍 {selectedParty.district_name || selectedParty.district || selectedParty.state_name || selectedParty.state || 'Punjab'}
+            </span>
+            {(selectedParty.primary_mobile || selectedParty.biz_contact_no_1) && (
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary, #64748b)' }}>
+                📞 {selectedParty.primary_mobile || selectedParty.biz_contact_no_1}
+              </span>
+            )}
+            {selectedParty.external_sap_code && (
+              <span style={{
+                fontSize: '0.7rem',
+                fontWeight: 700,
+                padding: '0.1rem 0.4rem',
+                borderRadius: '4px',
+                background: 'rgba(99, 102, 241, 0.15)',
+                color: '#6366f1',
+                border: '1px solid rgba(99, 102, 241, 0.3)'
+              }}>
+                ERP: {selectedParty.external_sap_code}
+              </span>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setIsOpen(true);
+              setSearchTerm('');
+            }}
+            style={{
+              background: 'transparent',
+              border: `1px solid ${color}`,
+              color: color,
+              padding: '0.3rem 0.7rem',
+              borderRadius: '6px',
+              fontSize: '0.78rem',
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.3rem',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            Change / Search
+          </button>
+        </div>
+      ) : (
+        /* Search Input and Floating Dropdown */
+        <div style={{ position: 'relative' }}>
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+            <Search size={16} style={{ position: 'absolute', left: '0.85rem', color: 'var(--text-secondary, #94a3b8)', pointerEvents: 'none' }} />
+            <input
+              type="text"
+              autoFocus={isOpen}
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              onFocus={() => setIsOpen(true)}
+              placeholder={placeholder}
+              style={{
+                width: '100%',
+                padding: '0.65rem 1rem 0.65rem 2.4rem',
+                paddingRight: selectedParty ? '6.5rem' : '1rem',
+                background: 'var(--bg-primary, #f8fafc)',
+                border: `1.5px solid ${isOpen ? color : 'var(--border-light, #cbd5e1)'}`,
+                borderRadius: '8px',
+                fontSize: '0.86rem',
+                color: 'var(--text-primary, #0f172a)',
+                outline: 'none',
+                boxShadow: isOpen ? `0 0 0 3px ${color}25` : 'none',
+                boxSizing: 'border-box'
+              }}
+            />
+            {selectedParty && (
+              <button
+                type="button"
+                onClick={() => {
+                  setIsOpen(false);
+                  setSearchTerm('');
+                }}
+                style={{
+                  position: 'absolute',
+                  right: '0.5rem',
+                  fontSize: '0.74rem',
+                  fontWeight: 700,
+                  padding: '0.25rem 0.55rem',
+                  background: 'rgba(100,116,139,0.15)',
+                  border: '1px solid var(--border-light)',
+                  borderRadius: '5px',
+                  cursor: 'pointer',
+                  color: 'var(--text-secondary)'
+                }}
+              >
+                Keep Current
+              </button>
+            )}
+          </div>
+
+          {isOpen && (
+            <>
+              <div
+                onClick={() => setIsOpen(false)}
+                style={{ position: 'fixed', inset: 0, zIndex: 999 }}
+              />
+              <div style={{
+                position: 'absolute',
+                top: 'calc(100% + 4px)',
+                left: 0,
+                right: 0,
+                maxHeight: '260px',
+                overflowY: 'auto',
+                background: 'var(--bg-surface, #ffffff)',
+                border: '1.5px solid var(--border-light, #cbd5e1)',
+                borderRadius: '8px',
+                boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.25)',
+                zIndex: 1000,
+                padding: '0.35rem 0'
+              }}>
+                {filtered.length === 0 ? (
+                  <div style={{ padding: '0.85rem 1rem', fontSize: '0.85rem', color: 'var(--text-secondary, #94a3b8)', textAlign: 'center' }}>
+                    {emptyNotice} {searchTerm ? `for "${searchTerm}"` : ''}
+                  </div>
+                ) : (
+                  filtered.map(p => {
+                    const isCurrent = p.id === selectedId;
+                    const code = p.distributor_code || p.dealer_code || p.sub_dealer_code || p.party_universal_code || 'CODE';
+                    const loc = [p.district_name || p.district, p.state_name || p.state].filter(Boolean).join(', ');
+                    return (
+                      <div
+                        key={p.id}
+                        onClick={() => {
+                          onChange(p.id);
+                          setIsOpen(false);
+                          setSearchTerm('');
+                        }}
+                        style={{
+                          padding: '0.6rem 0.95rem',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          background: isCurrent ? `${color}18` : 'transparent',
+                          borderBottom: '1px solid var(--border-light, #f1f5f9)',
+                          transition: 'background 0.1s'
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = `${color}15`; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = isCurrent ? `${color}18` : 'transparent'; }}
+                      >
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                            <span style={{
+                              fontSize: '0.72rem',
+                              fontWeight: 800,
+                              padding: '0.1rem 0.4rem',
+                              borderRadius: '4px',
+                              background: isCurrent ? color : 'rgba(100, 116, 139, 0.15)',
+                              color: isCurrent ? '#ffffff' : 'var(--text-primary)',
+                              fontFamily: 'monospace'
+                            }}>
+                              {code}
+                            </span>
+                            <span style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--text-primary, #0f172a)' }}>
+                              {p.firm_name}
+                            </span>
+                            {p.external_sap_code && (
+                              <span style={{
+                                fontSize: '0.68rem',
+                                fontWeight: 700,
+                                padding: '0.05rem 0.35rem',
+                                borderRadius: '3px',
+                                background: 'rgba(99, 102, 241, 0.15)',
+                                color: '#6366f1'
+                              }}>
+                                ERP: {p.external_sap_code}
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary, #64748b)', paddingLeft: '0.2rem' }}>
+                            {loc ? `📍 ${loc}` : ''} {(p.primary_mobile || p.biz_contact_no_1) ? `• 📞 ${p.primary_mobile || p.biz_contact_no_1}` : ''}
+                          </div>
+                        </div>
+
+                        {isCurrent && (
+                          <span style={{
+                            fontSize: '0.75rem',
+                            fontWeight: 800,
+                            color,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.25rem'
+                          }}>
+                            <Check size={14} /> Selected
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * 3-Tier Action Buttons Component for Stages S01-S08
+ * Save as Draft (📝), Confirm Partial (⚡), Save & Confirm Stage (✓)
+ */
+function StageActionButtons({
+  onClose,
+  onSave,
+  stageLabel = 'Stage',
+  isSubmitting = false,
+  cancelBtnStyle,
+  submitBtnStyle,
+  customColor
+}) {
+  return (
+    <div style={{
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      gap: '0.75rem',
+      marginTop: '1.75rem',
+      paddingTop: '1.25rem',
+      borderTop: '1px solid var(--border-light, #e2e8f0)',
+      flexWrap: 'wrap'
+    }}>
+      <button
+        type="button"
+        onClick={onClose}
+        style={cancelBtnStyle}
+      >
+        <X size={15} /> Close [Esc]
+      </button>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+        {/* 1. Save as Draft */}
+        <button
+          type="button"
+          onClick={(e) => onSave(e, 'DRAFT')}
+          disabled={isSubmitting}
+          title="Save entered details into database without strict validation. Stage remains Draft/WIP."
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '0.45rem',
+            padding: '0.65rem 1.1rem',
+            borderRadius: '8px',
+            fontSize: '0.84rem',
+            fontWeight: 700,
+            cursor: isSubmitting ? 'not-allowed' : 'pointer',
+            background: 'rgba(100, 116, 139, 0.12)',
+            border: '1.5px solid #64748b',
+            color: 'var(--text-primary, #334155)',
+            transition: 'all 0.15s'
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(100, 116, 139, 0.22)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(100, 116, 139, 0.12)'; }}
+        >
+          <FileText size={15} color="#64748b" /> Save as Draft
+        </button>
+
+        {/* 2. Confirm Partial */}
+        <button
+          type="button"
+          onClick={(e) => onSave(e, 'PARTIAL')}
+          disabled={isSubmitting}
+          title="Provisional approval: saves data, marks stage as Partial, flags pending compliance."
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '0.45rem',
+            padding: '0.65rem 1.1rem',
+            borderRadius: '8px',
+            fontSize: '0.84rem',
+            fontWeight: 700,
+            cursor: isSubmitting ? 'not-allowed' : 'pointer',
+            background: 'rgba(245, 158, 11, 0.16)',
+            border: '1.5px solid #f59e0b',
+            color: '#d97706',
+            transition: 'all 0.15s'
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(245, 158, 11, 0.26)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(245, 158, 11, 0.16)'; }}
+        >
+          <AlertTriangle size={15} color="#d97706" /> Confirm Partial
+        </button>
+
+        {/* 3. Save & Confirm Stage */}
+        <button
+          type="button"
+          onClick={(e) => onSave(e, 'CONFIRM')}
+          disabled={isSubmitting}
+          title="100% full verification: strict validation, marks stage Confirmed and unlocks next stage."
+          style={{
+            ...submitBtnStyle,
+            background: customColor || 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
+            border: '1px solid #10b981',
+            boxShadow: '0 2px 8px rgba(16, 185, 129, 0.35)'
+          }}
+        >
+          <CheckCircle2 size={16} /> Save &amp; Confirm {stageLabel}
+        </button>
+      </div>
     </div>
   );
 }
@@ -620,8 +999,21 @@ export default function StageConfigModal({
                   gap: '0.6rem',
                   fontSize: '0.78rem'
                 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <span style={{ color: '#38bdf8', fontWeight: 800 }}>👤 Last Verified / Updated By:</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                    {modalParty.stage_audit[activeTab].status === 'DRAFT' ? (
+                      <span style={{ fontSize: '0.72rem', fontWeight: 800, padding: '0.15rem 0.5rem', borderRadius: '4px', background: 'rgba(100, 116, 139, 0.25)', color: '#94a3b8' }}>
+                        📝 DRAFT
+                      </span>
+                    ) : modalParty.stage_audit[activeTab].status === 'PARTIAL' ? (
+                      <span style={{ fontSize: '0.72rem', fontWeight: 800, padding: '0.15rem 0.5rem', borderRadius: '4px', background: 'rgba(245, 158, 11, 0.25)', color: '#f59e0b' }}>
+                        ⚡ PARTIAL
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: '0.72rem', fontWeight: 800, padding: '0.15rem 0.5rem', borderRadius: '4px', background: 'rgba(16, 185, 129, 0.25)', color: '#10b981' }}>
+                        ✓ CONFIRMED
+                      </span>
+                    )}
+                    <span style={{ color: '#38bdf8', fontWeight: 800 }}>👤 By:</span>
                     <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
                       {modalParty.stage_audit[activeTab].emp_name}
                     </span>
@@ -725,6 +1117,23 @@ export default function StageConfigModal({
                           <option value="LTD">Public Ltd.</option>
                           <option value="LLP">LLP</option>
                         </select>
+                      </div>
+                      <div>
+                        <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <span>Tenant Custom / ERP ID</span>
+                          <span style={{ fontSize: '0.7rem', color: '#6366f1', fontWeight: 600 }}>Tally / Custom Software</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={s00Form.external_sap_code || ''}
+                          onChange={e => setS00Form({ ...s00Form, external_sap_code: e.target.value })}
+                          placeholder="e.g. ERP-1049, TLY-88"
+                          style={{
+                            ...inputStyle,
+                            borderColor: s00Form.external_sap_code ? 'rgba(99, 102, 241, 0.45)' : undefined,
+                            background: s00Form.external_sap_code ? 'rgba(99, 102, 241, 0.04)' : undefined
+                          }}
+                        />
                       </div>
                       <div>
                         <label style={labelStyle}>GSTIN</label>
@@ -1150,16 +1559,59 @@ export default function StageConfigModal({
                         </button>
                       )}
                     </div>
-                    <div style={{ display: 'flex', gap: '0.75rem' }}>
+                    <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
                       <button
                         type="button"
                         onClick={onClose}
                         style={cancelBtnStyle}
                       >
-                        Close [Esc]
+                        <X size={15} /> Close [Esc]
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => handleS00Submit(e, 'DRAFT')}
+                        title="Save entered firm details as Draft without strict validation"
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.45rem',
+                          padding: '0.65rem 1.1rem',
+                          borderRadius: '8px',
+                          fontSize: '0.84rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          background: 'rgba(100, 116, 139, 0.12)',
+                          border: '1.5px solid #64748b',
+                          color: 'var(--text-primary, #334155)',
+                          transition: 'all 0.15s'
+                        }}
+                      >
+                        <FileText size={15} color="#64748b" /> Save as Draft
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => handleS00Submit(e, 'PARTIAL')}
+                        title="Provisional confirmation: save S01 and mark as Partial"
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.45rem',
+                          padding: '0.65rem 1.1rem',
+                          borderRadius: '8px',
+                          fontSize: '0.84rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          background: 'rgba(245, 158, 11, 0.16)',
+                          border: '1.5px solid #f59e0b',
+                          color: '#d97706',
+                          transition: 'all 0.15s'
+                        }}
+                      >
+                        <AlertTriangle size={15} color="#d97706" /> Confirm Partial
                       </button>
                       <button
                         type="submit"
+                        onClick={(e) => handleS00Submit(e, 'CONFIRM')}
                         style={submitBtnStyle}
                       >
                         <CheckCircle2 size={16} /> Save &amp; Confirm S01 Details
@@ -1309,21 +1761,14 @@ export default function StageConfigModal({
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.5rem' }}>
-                    <button
-                      type="button"
-                      onClick={onClose}
-                      style={cancelBtnStyle}
-                    >
-                      Close [Esc]
-                    </button>
-                    <button
-                      type="submit"
-                      style={submitBtnStyle}
-                    >
-                      <CheckCircle2 size={16} /> Save &amp; Confirm S02 Distributor Details
-                    </button>
-                  </div>
+                  <StageActionButtons
+                    onClose={onClose}
+                    onSave={(e, mode) => handleS01DistSubmit(e, mode)}
+                    stageLabel="S02 Distributor Details"
+                    cancelBtnStyle={cancelBtnStyle}
+                    submitBtnStyle={submitBtnStyle}
+                    customColor={currentTheme.gradient}
+                  />
                 </form>
               )}
 
@@ -1338,26 +1783,16 @@ export default function StageConfigModal({
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem', fontSize: '0.88rem' }}>
                       <div style={{ gridColumn: 'span 2' }}>
-                        <label style={{ ...labelStyle, color: '#059669', fontWeight: 700 }}>
-                          Parent Distributor * (Strict Hierarchy Tagging)
-                        </label>
-                        <select
-                          required
-                          value={s02DealerForm.parent_distributor_id}
-                          onChange={e => setS02DealerForm({ ...s02DealerForm, parent_distributor_id: e.target.value })}
-                          style={{
-                            ...inputStyle,
-                            border: '1.5px solid #059669',
-                            fontWeight: 600
-                          }}
-                        >
-                          <option value="">-- Select Active Parent Distributor --</option>
-                          {activeDistributors.map(d => (
-                            <option key={d.id} value={d.id}>
-                              {d.distributor_code || d.party_universal_code} | {d.firm_name} ({d.state_name || 'Punjab'})
-                            </option>
-                          ))}
-                        </select>
+                        <SearchablePartySelect
+                          label="Parent Distributor (Strict Hierarchy Tagging)"
+                          placeholder="Search active distributor by firm name, code, district, city..."
+                          selectedId={s02DealerForm.parent_distributor_id}
+                          options={activeDistributors}
+                          onChange={(partyId) => setS02DealerForm({ ...s02DealerForm, parent_distributor_id: partyId })}
+                          color="#059669"
+                          required={true}
+                          emptyNotice="No active Parent Distributor found"
+                        />
                       </div>
 
                       <div>
@@ -1385,21 +1820,14 @@ export default function StageConfigModal({
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.5rem' }}>
-                    <button
-                      type="button"
-                      onClick={onClose}
-                      style={cancelBtnStyle}
-                    >
-                      Close [Esc]
-                    </button>
-                    <button
-                      type="submit"
-                      style={submitBtnStyle}
-                    >
-                      <CheckCircle2 size={16} /> Save &amp; Confirm S03 Dealer Mapping
-                    </button>
-                  </div>
+                  <StageActionButtons
+                    onClose={onClose}
+                    onSave={(e, mode) => handleS02DealerSubmit(e, mode)}
+                    stageLabel="S03 Dealer Mapping"
+                    cancelBtnStyle={cancelBtnStyle}
+                    submitBtnStyle={submitBtnStyle}
+                    customColor={currentTheme.gradient}
+                  />
                 </form>
               )}
 
@@ -1414,26 +1842,16 @@ export default function StageConfigModal({
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem', fontSize: '0.88rem' }}>
                       <div style={{ gridColumn: 'span 2' }}>
-                        <label style={{ ...labelStyle, color: '#d97706', fontWeight: 700 }}>
-                          Parent Dealer * (Mandatory Retail Counter Placement)
-                        </label>
-                        <select
-                          required
-                          value={s03SubDealerForm.parent_dealer_id}
-                          onChange={e => setS03SubDealerForm({ ...s03SubDealerForm, parent_dealer_id: e.target.value })}
-                          style={{
-                            ...inputStyle,
-                            border: '1.5px solid #d97706',
-                            fontWeight: 600
-                          }}
-                        >
-                          <option value="">-- Select Active Parent Dealer --</option>
-                          {activeDealers.map(dlr => (
-                            <option key={dlr.id} value={dlr.id}>
-                              {dlr.dealer_code || dlr.party_universal_code} | {dlr.firm_name} ({dlr.state_name || 'Punjab'})
-                            </option>
-                          ))}
-                        </select>
+                        <SearchablePartySelect
+                          label="Parent Dealer (Mandatory Retail Counter Placement)"
+                          placeholder="Search active parent dealer by firm name, code, district, city..."
+                          selectedId={s03SubDealerForm.parent_dealer_id}
+                          options={activeDealers}
+                          onChange={(partyId) => setS03SubDealerForm({ ...s03SubDealerForm, parent_dealer_id: partyId })}
+                          color="#d97706"
+                          required={true}
+                          emptyNotice="No active Parent Dealer found"
+                        />
                       </div>
 
                       {/* AUTO-DERIVED READ-ONLY DISTRIBUTOR CARD */}
@@ -1466,21 +1884,14 @@ export default function StageConfigModal({
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.5rem' }}>
-                    <button
-                      type="button"
-                      onClick={onClose}
-                      style={cancelBtnStyle}
-                    >
-                      Close [Esc]
-                    </button>
-                    <button
-                      type="submit"
-                      style={submitBtnStyle}
-                    >
-                      <CheckCircle2 size={16} /> Save &amp; Confirm S04 Sub-Dealer Mapping
-                    </button>
-                  </div>
+                  <StageActionButtons
+                    onClose={onClose}
+                    onSave={(e, mode) => handleS03SubDealerSubmit(e, mode)}
+                    stageLabel="S04 Sub-Dealer Mapping"
+                    cancelBtnStyle={cancelBtnStyle}
+                    submitBtnStyle={submitBtnStyle}
+                    customColor={currentTheme.gradient}
+                  />
                 </form>
               )}
 
@@ -1638,21 +2049,14 @@ export default function StageConfigModal({
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.5rem' }}>
-                    <button
-                      type="button"
-                      onClick={onClose}
-                      style={cancelBtnStyle}
-                    >
-                      Close [Esc]
-                    </button>
-                    <button
-                      type="submit"
-                      style={submitBtnStyle}
-                    >
-                      <CheckCircle2 size={16} /> Save &amp; Confirm S05 Commercial Details
-                    </button>
-                  </div>
+                  <StageActionButtons
+                    onClose={onClose}
+                    onSave={(e, mode) => handleS04CommercialSubmit(e, mode)}
+                    stageLabel="S05 Commercial Details"
+                    cancelBtnStyle={cancelBtnStyle}
+                    submitBtnStyle={submitBtnStyle}
+                    customColor={currentTheme.gradient}
+                  />
                 </form>
               )}
 
@@ -1988,21 +2392,14 @@ export default function StageConfigModal({
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.5rem' }}>
-                    <button
-                      type="button"
-                      onClick={onClose}
-                      style={cancelBtnStyle}
-                    >
-                      Close [Esc]
-                    </button>
-                    <button
-                      type="submit"
-                      style={submitBtnStyle}
-                    >
-                      <CheckCircle2 size={16} /> Save &amp; Confirm S06 Products &amp; Territory
-                    </button>
-                  </div>
+                  <StageActionButtons
+                    onClose={onClose}
+                    onSave={(e, mode) => handleS05CombinedSubmit(e, mode)}
+                    stageLabel="S06 Products &amp; Territory"
+                    cancelBtnStyle={cancelBtnStyle}
+                    submitBtnStyle={submitBtnStyle}
+                    customColor={currentTheme.gradient}
+                  />
                 </form>
               )}
 
@@ -2041,21 +2438,14 @@ export default function StageConfigModal({
                     ))}
                   </div>
 
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.5rem' }}>
-                    <button
-                      type="button"
-                      onClick={onClose}
-                      style={cancelBtnStyle}
-                    >
-                      Close [Esc]
-                    </button>
-                    <button
-                      type="submit"
-                      style={submitBtnStyle}
-                    >
-                      <CheckCircle2 size={16} /> Save &amp; Confirm S07 Sales Team Assignment
-                    </button>
-                  </div>
+                  <StageActionButtons
+                    onClose={onClose}
+                    onSave={(e, mode) => handleS06TeamSubmit(e, mode)}
+                    stageLabel="S07 Sales Team"
+                    cancelBtnStyle={cancelBtnStyle}
+                    submitBtnStyle={submitBtnStyle}
+                    customColor={currentTheme.gradient}
+                  />
                 </form>
               )}
 
@@ -2162,34 +2552,90 @@ export default function StageConfigModal({
                     />
                   </div>
 
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: '0.75rem',
+                    marginTop: '1.75rem',
+                    paddingTop: '1.25rem',
+                    borderTop: '1px solid var(--border-light, #e2e8f0)',
+                    flexWrap: 'wrap'
+                  }}>
                     <button
                       type="button"
                       onClick={onClose}
                       style={cancelBtnStyle}
                     >
-                      Close [Esc]
+                      <X size={15} /> Close [Esc]
                     </button>
-                    <button
-                      type="button"
-                      onClick={handleS07Activation}
-                      style={{
-                        padding: '0.75rem 1.8rem',
-                        background: s08ActivationStatus === 'Active' ? 'linear-gradient(135deg, #16a34a, #15803d)' : (s08ActivationStatus === 'Payment Issues' ? 'linear-gradient(135deg, #ef4444, #dc2626)' : 'linear-gradient(135deg, #f59e0b, #d97706)'),
-                        border: 'none',
-                        borderRadius: '8px',
-                        color: '#ffffff',
-                        fontWeight: 800,
-                        fontSize: '0.95rem',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.5rem',
-                        boxShadow: '0 4px 15px rgba(0,0,0,0.2)'
-                      }}
-                    >
-                      <CheckCircle2 size={18} /> Confirm &amp; Set Partner Status: &quot;{s08ActivationStatus}&quot;
-                    </button>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        onClick={() => handleS07Activation('DRAFT')}
+                        title="Save remarks as Draft without activating partner"
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.45rem',
+                          padding: '0.65rem 1.1rem',
+                          borderRadius: '8px',
+                          fontSize: '0.84rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          background: 'rgba(100, 116, 139, 0.12)',
+                          border: '1.5px solid #64748b',
+                          color: 'var(--text-primary, #334155)',
+                          transition: 'all 0.15s'
+                        }}
+                      >
+                        <FileText size={15} color="#64748b" /> Save as Draft
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleS07Activation('PARTIAL')}
+                        title="Provisional activation status: save remarks and mark as Partial"
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.45rem',
+                          padding: '0.65rem 1.1rem',
+                          borderRadius: '8px',
+                          fontSize: '0.84rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          background: 'rgba(245, 158, 11, 0.16)',
+                          border: '1.5px solid #f59e0b',
+                          color: '#d97706',
+                          transition: 'all 0.15s'
+                        }}
+                      >
+                        <AlertTriangle size={15} color="#d97706" /> Confirm Partial
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleS07Activation('CONFIRM')}
+                        style={{
+                          padding: '0.75rem 1.8rem',
+                          background: s08ActivationStatus === 'Active' ? 'linear-gradient(135deg, #16a34a, #15803d)' : (s08ActivationStatus === 'Payment Issues' ? 'linear-gradient(135deg, #ef4444, #dc2626)' : 'linear-gradient(135deg, #f59e0b, #d97706)'),
+                          border: 'none',
+                          borderRadius: '8px',
+                          color: '#ffffff',
+                          fontWeight: 800,
+                          fontSize: '0.95rem',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.5rem',
+                          boxShadow: '0 4px 15px rgba(0,0,0,0.2)'
+                        }}
+                      >
+                        <CheckCircle2 size={18} /> Confirm &amp; Set Partner Status: &quot;{s08ActivationStatus}&quot;
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}

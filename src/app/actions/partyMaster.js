@@ -260,6 +260,7 @@ export async function getPartyList(tenantId = DEFAULT_TENANT_ID) {
         product_authorizations: prodAuths,
         territory_allocations: terrAllocs,
         team_assignments: teamAssigns,
+        external_sap_code: item.external_sap_code || meta.external_sap_code || meta.custom_party_code || null,
         meta_stages: meta.stages || {},
         stage_audit: meta.stage_audit || {},
         last_activity: meta.last_activity || {
@@ -593,7 +594,7 @@ export async function createPartyMaster(partyData, tenantId = DEFAULT_TENANT_ID,
 /**
  * Update Party Step Data (S01, S02, S03, S04, S05, S05.1, S06, S07)
  */
-export async function updatePartyStep(partyId, stepName, stepData, tenantId = DEFAULT_TENANT_ID, updatedBy = 'System Admin') {
+export async function updatePartyStep(partyId, stepName, stepData, tenantId = DEFAULT_TENANT_ID, updatedBy = 'System Admin', actionType = 'CONFIRM') {
   const adminClient = getAdminClient();
 
   // Fetch current party to check parent changes
@@ -617,7 +618,8 @@ export async function updatePartyStep(partyId, stepName, stepData, tenantId = DE
   });
 
   // Map step names to NEXT valid onboarding_stage check constraint values
-  if (stepName) {
+  // Only advance onboarding_stage if action is not DRAFT
+  if (stepName && actionType !== 'DRAFT') {
     const effectiveType = stepData.party_type || currentParty.party_type || 'Dealer';
     const stageMapping = {
       'S00_Party_Master': effectiveType === 'Distributor' 
@@ -634,28 +636,6 @@ export async function updatePartyStep(partyId, stepName, stepData, tenantId = DE
     };
     if (stageMapping[stepName]) {
       updateFields.onboarding_stage = stageMapping[stepName];
-    }
-
-    // Persist confirmed stage flags in business_nature JSON metadata
-    const stepStageMap = {
-      'S00_Party_Master': { s00: true, s01: true },
-      'S01_Distributor_Registration': { s00: true, s01: true, s02: true },
-      'S02_Dealer_Registration': { s00: true, s01: true, s03: true },
-      'S03_Sub_Dealer_Registration': { s00: true, s01: true, s04: true },
-      'S04_Commercial': { s00: true, s01: true, tier: true, s05: true },
-      'S05_Product_Authorization_Territory': { s00: true, s01: true, tier: true, s05: true, s06: true },
-      'S05_Product_Territory': { s00: true, s01: true, tier: true, s05: true, s06: true },
-      'S06_Team_Assignment': { s00: true, s01: true, tier: true, s05: true, s06: true, s07: true },
-      'S07_Activation': { s00: true, s01: true, tier: true, s05: true, s06: true, s07: true, s08: true }
-    };
-    if (stepStageMap[stepName]) {
-      try {
-        const existingMeta = parsePartyMeta(currentParty.business_nature);
-        const mergedStages = { ...(existingMeta.stages || {}), ...stepStageMap[stepName] };
-        await updatePartyMeta(adminClient, partyId, { stages: mergedStages });
-      } catch (err) {
-        console.warn('Could not persist stages meta in updatePartyStep:', err.message);
-      }
     }
   }
 
@@ -863,6 +843,10 @@ export async function updatePartyStep(partyId, stepName, stepData, tenantId = DE
   if (stepData.headquarter_districts !== undefined) metaUpdates.headquarter_districts = stepData.headquarter_districts;
   if (stepData.zone !== undefined) metaUpdates.zone = stepData.zone;
   if (stepData.product_category !== undefined) metaUpdates.product_category = stepData.product_category;
+  if (stepData.external_sap_code !== undefined) {
+    metaUpdates.external_sap_code = stepData.external_sap_code;
+    metaUpdates.custom_party_code = stepData.external_sap_code;
+  }
 
   if (stepName) {
     const stageKeyMap = {
@@ -882,11 +866,15 @@ export async function updatePartyStep(partyId, stepName, stepData, tenantId = DE
       const istTime = getISTTimestamp();
       const empName = updatedBy || stepData.updated_by || 'System Admin';
 
-      metaUpdates.stages = { ...(existingMeta.stages || {}), [stageKey]: true };
+      const stageVal = actionType === 'DRAFT' ? 'DRAFT' : actionType === 'PARTIAL' ? 'PARTIAL' : true;
+      const isCompleted = actionType === 'CONFIRM';
+
+      metaUpdates.stages = { ...(existingMeta.stages || {}), [stageKey]: stageVal };
       metaUpdates.stage_audit = {
         ...(existingMeta.stage_audit || {}),
         [stageKey]: {
-          completed: true,
+          completed: isCompleted,
+          status: actionType,
           emp_name: empName,
           timestamp: istTime,
           step_name: stepName
@@ -894,6 +882,7 @@ export async function updatePartyStep(partyId, stepName, stepData, tenantId = DE
       };
       metaUpdates.last_activity = {
         stage: stageKey.toUpperCase(),
+        status: actionType,
         emp_name: empName,
         timestamp: istTime
       };
@@ -910,7 +899,7 @@ export async function updatePartyStep(partyId, stepName, stepData, tenantId = DE
 /**
  * Save Product Authorizations (S05)
  */
-export async function saveProductAuthorizations(partyId, products, tenantId = DEFAULT_TENANT_ID, updatedBy = 'System Admin') {
+export async function saveProductAuthorizations(partyId, products, tenantId = DEFAULT_TENANT_ID, updatedBy = 'System Admin', actionType = 'CONFIRM') {
   const adminClient = getAdminClient();
   try {
     // Delete existing and insert new in table if table exists
@@ -940,9 +929,14 @@ export async function saveProductAuthorizations(partyId, products, tenantId = DE
   const existingMeta = parsePartyMeta(existingPartyRec?.business_nature);
   const istTime = getISTTimestamp();
   const empName = updatedBy || 'System Admin';
+
+  const stageVal = actionType === 'DRAFT' ? 'DRAFT' : actionType === 'PARTIAL' ? 'PARTIAL' : true;
+  const isCompleted = actionType === 'CONFIRM';
+
   const stageAudit = { ...(existingMeta.stage_audit || {}) };
   stageAudit.s06 = {
-    completed: true,
+    completed: isCompleted,
+    status: actionType,
     emp_name: empName,
     timestamp: istTime,
     step_name: 'Product Authorization'
@@ -952,11 +946,12 @@ export async function saveProductAuthorizations(partyId, products, tenantId = DE
     product_authorizations: products || [],
     stages: {
       ...(existingMeta.stages || {}),
-      s06: true
+      s06: stageVal
     },
     stage_audit: stageAudit,
     last_activity: {
       stage: 'S06',
+      status: actionType,
       emp_name: empName,
       timestamp: istTime
     }
@@ -968,7 +963,7 @@ export async function saveProductAuthorizations(partyId, products, tenantId = DE
 /**
  * Save Territory Allocation (S05.1)
  */
-export async function saveTerritoryAllocation(partyId, territoryData, tenantId = DEFAULT_TENANT_ID, updatedBy = 'System Admin') {
+export async function saveTerritoryAllocation(partyId, territoryData, tenantId = DEFAULT_TENANT_ID, updatedBy = 'System Admin', actionType = 'CONFIRM') {
   const adminClient = getAdminClient();
   let savedRecord = territoryData;
   try {
@@ -999,9 +994,14 @@ export async function saveTerritoryAllocation(partyId, territoryData, tenantId =
   const existingMeta = parsePartyMeta(existingPartyRec?.business_nature);
   const istTime = getISTTimestamp();
   const empName = updatedBy || 'System Admin';
+
+  const stageVal = actionType === 'DRAFT' ? 'DRAFT' : actionType === 'PARTIAL' ? 'PARTIAL' : true;
+  const isCompleted = actionType === 'CONFIRM';
+
   const stageAudit = { ...(existingMeta.stage_audit || {}) };
   stageAudit.s06 = {
-    completed: true,
+    completed: isCompleted,
+    status: actionType,
     emp_name: empName,
     timestamp: istTime,
     step_name: 'Territory Allocation'
@@ -1012,11 +1012,12 @@ export async function saveTerritoryAllocation(partyId, territoryData, tenantId =
     zone: territoryData.zone || 'North Zone',
     stages: {
       ...(existingMeta.stages || {}),
-      s06: true
+      s06: stageVal
     },
     stage_audit: stageAudit,
     last_activity: {
       stage: 'S06',
+      status: actionType,
       emp_name: empName,
       timestamp: istTime
     }
@@ -1028,7 +1029,7 @@ export async function saveTerritoryAllocation(partyId, territoryData, tenantId =
 /**
  * Save Team Assignments (S06)
  */
-export async function saveTeamAssignments(partyId, assignments, tenantId = DEFAULT_TENANT_ID, updatedBy = 'System Admin') {
+export async function saveTeamAssignments(partyId, assignments, tenantId = DEFAULT_TENANT_ID, updatedBy = 'System Admin', actionType = 'CONFIRM') {
   const adminClient = getAdminClient();
   try {
     await adminClient.from('party_team_assignments').delete().eq('party_id', partyId);
@@ -1055,9 +1056,14 @@ export async function saveTeamAssignments(partyId, assignments, tenantId = DEFAU
   const existingMeta = parsePartyMeta(existingPartyRec?.business_nature);
   const istTime = getISTTimestamp();
   const empName = updatedBy || 'System Admin';
+
+  const stageVal = actionType === 'DRAFT' ? 'DRAFT' : actionType === 'PARTIAL' ? 'PARTIAL' : true;
+  const isCompleted = actionType === 'CONFIRM';
+
   const stageAudit = { ...(existingMeta.stage_audit || {}) };
   stageAudit.s07 = {
-    completed: true,
+    completed: isCompleted,
+    status: actionType,
     emp_name: empName,
     timestamp: istTime,
     step_name: 'Sales Team Assignment'
@@ -1067,11 +1073,12 @@ export async function saveTeamAssignments(partyId, assignments, tenantId = DEFAU
     team_assignments: assignments || [],
     stages: {
       ...(existingMeta.stages || {}),
-      s07: true
+      s07: stageVal
     },
     stage_audit: stageAudit,
     last_activity: {
       stage: 'S07',
+      status: actionType,
       emp_name: empName,
       timestamp: istTime
     }
@@ -1083,7 +1090,7 @@ export async function saveTeamAssignments(partyId, assignments, tenantId = DEFAU
 /**
  * S08 Partner Activation with status options: Active, Inactive, Hold, Payment Issues
  */
-export async function activatePartner(partyId, activationStatus = 'Active', remarks = '', tenantId = DEFAULT_TENANT_ID, updatedBy = 'System Admin') {
+export async function activatePartner(partyId, activationStatus = 'Active', remarks = '', tenantId = DEFAULT_TENANT_ID, updatedBy = 'System Admin', actionType = 'CONFIRM') {
   const adminClient = getAdminClient();
 
   const details = await getParty360Details(partyId);
@@ -1098,12 +1105,15 @@ export async function activatePartner(partyId, activationStatus = 'Active', rema
   if (finalStatus === 'Inactive') dbPartyStatus = 'Inactive';
   else if (finalStatus === 'Hold' || finalStatus === 'Payment Issues') dbPartyStatus = 'Hold';
 
+  const stageVal = actionType === 'DRAFT' ? 'DRAFT' : actionType === 'PARTIAL' ? 'PARTIAL' : true;
+  const isCompleted = actionType === 'CONFIRM';
+
   // Update Party Status
   const { data: activated, error: actErr } = await adminClient
     .from('party_master')
     .update({
       party_status: dbPartyStatus,
-      onboarding_stage: 'S08_Party_Activation',
+      onboarding_stage: isCompleted ? 'S08_Party_Activation' : (party.onboarding_stage || 'S07_Employee_Assignment'),
       updated_at: new Date().toISOString()
     })
     .eq('id', partyId)
@@ -1121,7 +1131,8 @@ export async function activatePartner(partyId, activationStatus = 'Active', rema
   const empName = updatedBy || 'System Admin';
   const stageAudit = { ...(existingMeta.stage_audit || {}) };
   stageAudit.s08 = {
-    completed: true,
+    completed: isCompleted,
+    status: actionType,
     emp_name: empName,
     timestamp: istTime,
     step_name: 'Party Activation'
@@ -1132,24 +1143,27 @@ export async function activatePartner(partyId, activationStatus = 'Active', rema
     activation_remarks: remarks,
     stages: {
       ...(existingMeta.stages || {}),
-      s08: true
+      s08: stageVal
     },
     stage_audit: stageAudit,
     last_activity: {
       stage: 'S08',
+      status: actionType,
       emp_name: empName,
       timestamp: istTime
     }
   });
 
   // If originated from lead, also update lead_party_handoffs to ACTIVATED
-  try {
-    await adminClient
-      .from('lead_party_handoffs')
-      .update({ handoff_status: 'ACTIVATED' })
-      .eq('target_party_id', partyId);
-  } catch (hErr) {
-    console.warn('Could not update lead_party_handoffs status:', hErr.message);
+  if (isCompleted) {
+    try {
+      await adminClient
+        .from('lead_party_handoffs')
+        .update({ handoff_status: 'ACTIVATED' })
+        .eq('target_party_id', partyId);
+    } catch (hErr) {
+      console.warn('Could not update lead_party_handoffs status:', hErr.message);
+    }
   }
 
   return { success: true, party: activated, status: finalStatus };
