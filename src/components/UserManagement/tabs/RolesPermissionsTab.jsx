@@ -301,8 +301,18 @@ export default function RolesPermissionsTab({
                       <button
                         type="button"
                         onClick={() => onAssignRoleToUser(u, currentPreset)}
-                        disabled={assigningRoleUserId === u.user_id || u.role !== 'agent'}
-                        style={{ padding: '0.25rem 0.65rem', borderRadius: '6px', border: 0, backgroundColor: '#4f46e5', color: '#fff', fontWeight: 600, fontSize: '0.72rem', cursor: 'pointer', opacity: u.role === 'agent' ? 1 : 0.5 }}
+                        disabled={assigningRoleUserId === u.user_id || u.role === 'customer' || isMasterAdmin(u)}
+                        style={{
+                          padding: '0.25rem 0.65rem',
+                          borderRadius: '6px',
+                          border: 0,
+                          backgroundColor: '#4f46e5',
+                          color: '#fff',
+                          fontWeight: 600,
+                          fontSize: '0.72rem',
+                          cursor: (assigningRoleUserId === u.user_id || u.role === 'customer' || isMasterAdmin(u)) ? 'not-allowed' : 'pointer',
+                          opacity: (assigningRoleUserId === u.user_id || u.role === 'customer' || isMasterAdmin(u)) ? 0.5 : 1
+                        }}
                       >
                         {assigningRoleUserId === u.user_id ? 'Assigning...' : 'Assign Role'}
                       </button>

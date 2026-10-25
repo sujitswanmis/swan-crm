@@ -37,10 +37,13 @@ export default function UserManageTab({
   users = [],
   loading = false,
   departments = [],
+  roleTemplates = [],
   onRefresh = () => {},
   onAddUser = () => {},
   onEditUser = () => {},
   onManagePermissions = () => {},
+  onChangeRole = () => {},
+  onAssignRole = () => {},
   onResetPassword = () => {},
   onSendResetEmail = () => {},
   onViewChat = () => {},
@@ -464,8 +467,77 @@ export default function UserManageTab({
                           {u.emp_department || 'General'}
                         </div>
                         <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: '0.15rem', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }}>
-                          {u.emp_designation || u.role || 'Staff'}
+                          {u.emp_designation || 'Staff'}
                         </div>
+
+                        {/* Interactive Role Selector Dropdown */}
+                        {isMaster ? (
+                          <div style={{ marginTop: '0.3rem' }}>
+                            <span style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.25rem',
+                              padding: '0.15rem 0.5rem',
+                              borderRadius: '4px',
+                              fontSize: '0.7rem',
+                              fontWeight: 700,
+                              background: '#fef9c3',
+                              color: '#854d0e',
+                              border: '1px solid #fde047'
+                            }}>
+                              👑 Master Admin
+                            </span>
+                          </div>
+                        ) : (
+                          <div style={{ marginTop: '0.35rem' }}>
+                            <select
+                              value={u.module_access?.role_template_id ? `custom:${u.module_access.role_template_id}` : (u.role || 'agent')}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                if (val.startsWith('custom:')) {
+                                  const tId = val.replace('custom:', '');
+                                  const template = (roleTemplates || []).find(r => r.id === tId);
+                                  if (template) onAssignRole(u, template);
+                                } else {
+                                  onChangeRole(u, val);
+                                }
+                              }}
+                              style={{
+                                width: '100%',
+                                maxWidth: '140px',
+                                padding: '0.22rem 0.45rem',
+                                borderRadius: '5px',
+                                border: '1px solid var(--border-light)',
+                                backgroundColor: 'var(--bg-surface)',
+                                color: 'var(--text-primary)',
+                                fontSize: '0.72rem',
+                                fontWeight: 600,
+                                cursor: 'pointer'
+                              }}
+                              title="Change System Role or Assign Role Template"
+                            >
+                              <optgroup label="System Base Roles">
+                                <option value="Admin">Admin</option>
+                                <option value="Manager">Manager</option>
+                                <option value="Supervisor">Supervisor</option>
+                                <option value="Sales">Sales</option>
+                                <option value="Recruiter">Recruiter</option>
+                                <option value="Purchase">Purchase</option>
+                                <option value="agent">Agent (Standard Staff)</option>
+                              </optgroup>
+                              {roleTemplates && roleTemplates.length > 0 && (
+                                <optgroup label="Custom Role Templates (RBAC)">
+                                  {roleTemplates.map(rt => (
+                                    <option key={rt.id} value={`custom:${rt.id}`}>
+                                      {rt.name}
+                                    </option>
+                                  ))}
+                                </optgroup>
+                              )}
+                            </select>
+                          </div>
+                        )}
+
                         {u.assigned_shift && (
                           <div style={{ fontSize: '0.68rem', color: '#0369a1', backgroundColor: '#e0f2fe', padding: '0.1rem 0.35rem', borderRadius: '4px', display: 'inline-block', marginTop: '0.2rem', fontWeight: 600 }}>
                             ⏰ {u.assigned_shift}

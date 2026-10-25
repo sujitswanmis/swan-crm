@@ -16,6 +16,7 @@ export default function AddEditUserModal({
   user = null, // if null -> Add Mode, if object -> Edit Mode
   departments = DEFAULT_DEPARTMENTS,
   allEmployees = [],
+  roleTemplates = [],
   saving = false
 }) {
   const isEdit = Boolean(user);
@@ -31,6 +32,8 @@ export default function AddEditUserModal({
     emp_department: '',
     emp_sub_department: '',
     emp_designation: '',
+    role: 'agent',
+    role_template_id: '',
     company: 'SuPuja Creations',
     work_location_type: 'Headquarters',
     work_location_name: '',
@@ -58,6 +61,8 @@ export default function AddEditUserModal({
         emp_department: user.emp_department || '',
         emp_sub_department: user.emp_sub_department || (user.module_access?.emp_sub_department) || '',
         emp_designation: user.emp_designation || '',
+        role: user.role || 'agent',
+        role_template_id: user.module_access?.role_template_id || '',
         company: user.company || 'SuPuja Creations',
         work_location_type: user.work_location_type || (user.module_access?.work_location_type) || 'Headquarters',
         work_location_name: user.work_location_name || (user.module_access?.work_location_name) || '',
@@ -78,6 +83,8 @@ export default function AddEditUserModal({
         emp_department: departments[0] || 'Sales',
         emp_sub_department: '',
         emp_designation: 'Sales Executive',
+        role: 'agent',
+        role_template_id: '',
         company: 'SuPuja Creations',
         work_location_type: 'Headquarters',
         work_location_name: '',
@@ -561,6 +568,54 @@ export default function AddEditUserModal({
                       {DESIGNATIONS.map(d => (
                         <option key={d} value={d}>{d}</option>
                       ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, marginBottom: '0.35rem', color: 'var(--text-primary)' }}>
+                      System Role & Access Template
+                    </label>
+                    <select
+                      value={formData.role_template_id ? `custom:${formData.role_template_id}` : (formData.role || 'agent')}
+                      onChange={e => {
+                        const val = e.target.value;
+                        if (val.startsWith('custom:')) {
+                          const tId = val.replace('custom:', '');
+                          handleChange('role_template_id', tId);
+                          handleChange('role', 'agent');
+                        } else {
+                          handleChange('role_template_id', '');
+                          handleChange('role', val);
+                        }
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '0.55rem 0.75rem',
+                        borderRadius: '8px',
+                        border: '1px solid var(--border-light)',
+                        backgroundColor: 'var(--bg-surface)',
+                        color: 'var(--text-primary)',
+                        fontSize: '0.85rem'
+                      }}
+                    >
+                      <optgroup label="System Base Roles">
+                        <option value="Admin">Admin</option>
+                        <option value="Manager">Manager</option>
+                        <option value="Supervisor">Supervisor</option>
+                        <option value="Sales">Sales</option>
+                        <option value="Recruiter">Recruiter</option>
+                        <option value="Purchase">Purchase</option>
+                        <option value="agent">Agent (Standard Staff)</option>
+                      </optgroup>
+                      {roleTemplates && roleTemplates.length > 0 && (
+                        <optgroup label="Custom Role Templates (RBAC)">
+                          {roleTemplates.map(rt => (
+                            <option key={rt.id} value={`custom:${rt.id}`}>
+                              {rt.name}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
                     </select>
                   </div>
 

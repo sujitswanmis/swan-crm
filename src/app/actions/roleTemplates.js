@@ -234,7 +234,7 @@ export async function assignRoleTemplate(userId, roleId) {
       .eq('user_id', userId).maybeSingle();
     if (targetError) throw new Error(targetError.message);
     if (!target || !sameWorkspace(actor, target)) throw new Error('Employee not found in this workspace.');
-    if (!isActive(target) || norm(target.role) !== 'agent' || isMasterAdmin(target, target.email) ||
+    if (!isActive(target) || norm(target.role) === 'customer' || isMasterAdmin(target, target.email) ||
       norm(target.emp_id) === 'masteradmin' || norm(target.emp_designation) === 'master admin') {
       throw new Error('Only active staff accounts can receive a custom role.');
     }
@@ -248,7 +248,7 @@ export async function assignRoleTemplate(userId, roleId) {
     Object.assign(nextAccess, permissions, { role_template_id: template.id, role_template_name: template.name });
 
     const updateTarget = payload => {
-      let query = db.from('user_roles').update(payload).eq('user_id', target.user_id).eq('role', 'agent');
+      let query = db.from('user_roles').update(payload).eq('user_id', target.user_id);
       if (target.company) query = query.eq('company', target.company);
       return query.select('user_id').maybeSingle();
     };

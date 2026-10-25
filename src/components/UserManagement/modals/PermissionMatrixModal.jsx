@@ -209,16 +209,34 @@ export default function PermissionMatrixModal({
     if (!parentPerms.view) return { view: false, add: false, edit: false, delete: false };
     const m = accessForm[moduleId] || {};
     const subs = m.sub_items || {};
-    const sub = subs[subId];
-    if (!sub) return { view: false, add: false, edit: false, delete: false };
-    if (sub === true) return { view: true, add: parentPerms.add, edit: parentPerms.edit, delete: parentPerms.delete };
-    if (sub.view === false) return { view: false, add: false, edit: false, delete: false };
-    return {
-      view: true,
-      add: (sub.add ?? true) && parentPerms.add,
-      edit: (sub.edit ?? true) && parentPerms.edit,
-      delete: sub.delete === true
-    };
+
+    // Explicit sub-item configuration in module_access
+    if (subs && typeof subs === 'object' && subs[subId] !== undefined) {
+      const sub = subs[subId];
+      if (sub === false || sub.view === false) {
+        return { view: false, add: false, edit: false, delete: false };
+      }
+      if (sub === true) {
+        return { view: true, add: parentPerms.add, edit: parentPerms.edit, delete: parentPerms.delete };
+      }
+      return {
+        view: true,
+        add: sub.add !== false && parentPerms.add,
+        edit: sub.edit !== false && parentPerms.edit,
+        delete: sub.delete === true
+      };
+    }
+
+    // Support assigned_steps (e.g. leads pipeline stages or recruiter steps)
+    if (Array.isArray(m.assigned_steps) && !m.is_manager) {
+      const isAssigned = m.assigned_steps.includes(subId);
+      if (!isAssigned) {
+        return { view: false, add: false, edit: false, delete: false };
+      }
+    }
+
+    // Default: Inherit parent module's active permissions (matching TeamManagement pattern)
+    return { ...parentPerms };
   };
 
   // Toggle Handlers
@@ -229,13 +247,13 @@ export default function PermissionMatrixModal({
       const currentPerms = getModulePerms(module.id);
       const nextVal = !currentPerms[perm];
 
-      let updated = { ...current };
       if (perm === 'view') {
         if (!nextVal) {
-          delete prev[module.id];
-          return { ...prev };
+          const nextState = { ...prev };
+          delete nextState[module.id];
+          return nextState;
         } else {
-          updated = {
+          const updated = {
             view: true,
             read: true,
             write: current.write ?? true,
@@ -251,20 +269,22 @@ export default function PermissionMatrixModal({
             });
             updated.sub_items = defaultSubs;
           }
+          delete updated.role_template_id;
+          delete updated.role_template_name;
+          return { ...prev, [module.id]: updated };
         }
       } else {
-        updated = {
+        const updated = {
           ...current,
           [perm]: nextVal,
           view: true,
           read: true
         };
         if (perm === 'add') updated.write = nextVal;
+        delete updated.role_template_id;
+        delete updated.role_template_name;
+        return { ...prev, [module.id]: updated };
       }
-
-      delete updated.role_template_id;
-      delete updated.role_template_name;
-      return { ...prev, [module.id]: updated };
     });
   };
 
@@ -272,18 +292,20 @@ export default function PermissionMatrixModal({
     setAccessForm(prev => {
       const parent = prev[moduleId] || { view: true, read: true, write: true, add: true, edit: true };
       const currentSubs = parent.sub_items || {};
-      const curSub = currentSubs[subId] || { view: false };
-      const nextVal = !curSub[perm];
+      const currentSubPerms = getSubItemPerms(moduleId, subId);
+      const nextVal = !currentSubPerms[perm];
 
-      let updatedSub = { ...curSub };
+      let updatedSub = { ...currentSubPerms, [perm]: nextVal };
       if (perm === 'view') {
         if (!nextVal) {
           updatedSub = { view: false, add: false, edit: false, delete: false };
         } else {
-          updatedSub = { view: true, add: curSub.add ?? true, edit: curSub.edit ?? true, delete: curSub.delete ?? false };
+          updatedSub.view = true;
         }
       } else {
-        updatedSub = { ...curSub, [perm]: nextVal, view: true };
+        if (nextVal) {
+          updatedSub.view = true;
+        }
       }
 
       return {
@@ -350,7 +372,7 @@ export default function PermissionMatrixModal({
   // Quick Presets Application
   const handleApplyPreset = (presetKey) => {
     const preset = availablePresets.find(p => p.key === presetKey);
-    const customRole = user.role === 'agent' ? customRoles.find(r => `custom:${r.id}` === presetKey) : null;
+    const customRole = customRoles.find(r => `custom:${r.id}` === presetKey);
     const selectedRole = preset || customRole;
     if (!selectedRole) return;
 
@@ -774,7 +796,7 @@ export default function PermissionMatrixModal({
                         {preset.name}
                       </option>
                     ))}
-                    {user.role === 'agent' && customRoles.map(role => (
+                    {customRoles.map(role => (
                       <option key={role.id} value={`custom:${role.id}`}>
                         {role.name} (Custom)
                       </option>
@@ -853,7 +875,7 @@ export default function PermissionMatrixModal({
             </div>
 
             {/* Interactive Resizable Table */}
-            <div style={{ overflow: 'auto', height: '360px', maxHeight: '420px', minHeight: '300px' }}>
+            <div style={{ overflow: 'auto', maxHeight: 'min(620px, 62vh)', minHeight: '340px' }}>
               <table
                 style={{
                   borderCollapse: 'separate',

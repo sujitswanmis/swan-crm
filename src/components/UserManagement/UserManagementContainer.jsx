@@ -8,7 +8,8 @@ import {
 import { 
   getTeamMembers, createAccountAdmin, updateEmployeeDetailsAdmin, 
   updateModuleAccess, updateEmpStatus, moveToTrashUser, 
-  restoreUserFromTrash, deleteUserAdmin, toggleUserApproval
+  restoreUserFromTrash, deleteUserAdmin, toggleUserApproval,
+  updateUserRole
 } from '@/app/actions/team';
 import { createClient } from '@/utils/supabase/client';
 import { getRoleTemplates, createRoleTemplate, assignRoleTemplate } from '@/app/actions/roleTemplates';
@@ -122,7 +123,6 @@ export default function UserManagementContainer({
   };
 
   useEffect(() => {
-    if (activeTab !== 'roles' && !permissionModal.isOpen) return;
     let active = true;
     setRolesLoading(true);
 
@@ -147,7 +147,7 @@ export default function UserManagementContainer({
       });
 
     return () => { active = false; };
-  }, [activeTab, permissionModal.isOpen, isAdmin, isMasterAdmin, userId, userEmail, currentUserCompany]);
+  }, [isAdmin, isMasterAdmin, userId, userEmail, currentUserCompany]);
 
   const handleCreateRole = async details => {
     setSavingRole(true);
@@ -254,14 +254,40 @@ export default function UserManagementContainer({
     fetchDepartments();
   }, [fetchUsers, fetchDepartments, initialUsers]);
 
+  // Handler: Change Role directly
+  const handleChangeRole = async (targetUser, newRole) => {
+    if (!targetUser?.user_id || !newRole) return;
+    const current = targetUser.role || 'agent';
+    if (current === newRole) return;
+    if (!window.confirm(`Change system role of ${targetUser.emp_name || targetUser.email} to "${newRole}"?`)) return;
+
+    // Optimistic update
+    setUsers(prev => prev.map(u => u.user_id === targetUser.user_id ? { ...u, role: newRole } : u));
+    try {
+      await updateUserRole(targetUser.user_id, newRole);
+      showToast(`Role updated to "${newRole}" for ${targetUser.emp_name || targetUser.email}`, 'success');
+      fetchUsers(false);
+    } catch (err) {
+      alert('Failed to update role: ' + err.message);
+      fetchUsers(false);
+    }
+  };
+
   // Handler: Add or Edit User
   const handleSaveAddEditUser = async (formData) => {
     setSavingAddEdit(true);
     try {
+      const { role, role_template_id, ...profileData } = formData;
       if (addEditModal.user) {
         // Edit Mode
-        const res = await updateEmployeeDetailsAdmin(addEditModal.user.user_id, formData);
+        const res = await updateEmployeeDetailsAdmin(addEditModal.user.user_id, profileData);
         if (res && res.success) {
+          if (role && role !== addEditModal.user.role) {
+            try { await updateUserRole(addEditModal.user.user_id, role); } catch (e) { console.warn('Role update notice:', e); }
+          }
+          if (role_template_id && role_template_id !== addEditModal.user.module_access?.role_template_id) {
+            try { await assignRoleTemplate(addEditModal.user.user_id, role_template_id); } catch (e) { console.warn('Role template assign notice:', e); }
+          }
           showToast(`Profile updated for ${formData.emp_name}!`, 'success');
           setAddEditModal({ isOpen: false, user: null });
           fetchUsers(false);
@@ -271,8 +297,17 @@ export default function UserManagementContainer({
       } else {
         // Add Mode
         const { email, password, ...details } = formData;
-        const res = await createAccountAdmin(email, password, details);
+        const res = await createAccountAdmin(email, password, { ...details, role: role || 'agent' });
         if (res && res.success) {
+          const newUserId = res.userId;
+          if (newUserId) {
+            if (role && role !== 'agent') {
+              try { await updateUserRole(newUserId, role); } catch (e) { console.warn('Role update notice:', e); }
+            }
+            if (role_template_id) {
+              try { await assignRoleTemplate(newUserId, role_template_id); } catch (e) { console.warn('Role template assign notice:', e); }
+            }
+          }
           showToast(`Account created for ${formData.emp_name}!`, 'success');
           setAddEditModal({ isOpen: false, user: null });
           fetchUsers(false);
@@ -291,9 +326,8 @@ export default function UserManagementContainer({
   const handleSavePermissions = async (userId, updatedAccess) => {
     setSavingPermissions(true);
     try {
-      const res = updatedAccess.role_template_id
-        ? await assignRoleTemplate(userId, updatedAccess.role_template_id)
-        : await updateModuleAccess(userId, updatedAccess);
+      // Save directly via updateModuleAccess so any fine-tuned checkbox selections are preserved
+      const res = await updateModuleAccess(userId, updatedAccess);
       if (res && res.success) {
         const savedAccess = res.moduleAccess || updatedAccess;
         // Realtime broadcast to active user sessions
@@ -646,10 +680,13 @@ export default function UserManagementContainer({
             users={users}
             loading={loading}
             departments={departments}
+            roleTemplates={roleTemplates}
             onRefresh={() => fetchUsers(true)}
             onAddUser={() => setAddEditModal({ isOpen: true, user: null })}
             onEditUser={(u) => setAddEditModal({ isOpen: true, user: u })}
             onManagePermissions={(u) => setPermissionModal({ isOpen: true, user: u })}
+            onChangeRole={handleChangeRole}
+            onAssignRole={handleAssignRole}
             onResetPassword={(u) => setResetPasswordModal({ isOpen: true, user: u })}
             onSendResetEmail={(u) => setSendResetEmailModal({ isOpen: true, user: u })}
             onViewChat={(u) => setViewChatModal({ isOpen: true, user: u })}
@@ -705,6 +742,7 @@ export default function UserManagementContainer({
         onSaveDraft={handleSaveDraft}
         departments={departments}
         allEmployees={users}
+        roleTemplates={roleTemplates}
         saving={savingAddEdit}
       />
 
