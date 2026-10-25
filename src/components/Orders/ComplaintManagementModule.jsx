@@ -618,7 +618,7 @@ export default function ComplaintManagementModule({
             width: '100%',
             maxWidth: '540px',
             boxShadow: '0 20px 40px rgba(0,0,0,0.5)',
-            overflow: 'hidden'
+            overflow: 'visible'
           }}>
             <div style={{
               padding: '1.2rem 1.5rem',
@@ -626,6 +626,8 @@ export default function ComplaintManagementModule({
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
+              borderTopLeftRadius: '15px',
+              borderTopRightRadius: '15px',
               background: 'linear-gradient(135deg, rgba(239,68,68,0.1) 0%, transparent 100%)'
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -645,22 +647,15 @@ export default function ComplaintManagementModule({
 
             <form onSubmit={handleCreateTicket} style={{ padding: '1.5rem' }}>
               <div style={{ marginBottom: '1rem' }}>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>
-                  Select Channel Partner *
-                </label>
-                <select
+                <SearchablePartySelect
+                  parties={parties}
+                  selectedId={createForm.party_id}
+                  onChange={(id) => setCreateForm(prev => ({ ...prev, party_id: id }))}
+                  label="Select Channel Partner"
+                  placeholder="Type to search partner by name, code, district, phone..."
+                  color="#ef4444"
                   required
-                  value={createForm.party_id}
-                  onChange={e => setCreateForm({ ...createForm, party_id: e.target.value })}
-                  style={{ width: '100%', padding: '0.6rem 0.8rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.88rem' }}
-                >
-                  <option value="">-- Choose Partner from Master --</option>
-                  {parties.map(p => (
-                    <option key={p.id} value={p.id}>
-                      {p.firm_name} ({p.party_universal_code || p.distributor_code || p.dealer_code}) - {p.district_name}
-                    </option>
-                  ))}
-                </select>
+                />
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1rem' }}>
