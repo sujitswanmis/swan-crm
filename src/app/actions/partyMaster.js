@@ -261,25 +261,93 @@ export async function getPartyList(tenantId = DEFAULT_TENANT_ID) {
 }
 
 /**
- * Helper to generate atomic channel codes
+ * Helper to generate atomic branch-prefixed party codes (e.g., PTY-NSMLR-100001, PTY-NSTLP-100001)
  */
-async function generateChannelCode(adminClient, partyType) {
-  const ts = Date.now().toString().slice(-6);
-  try {
-    if (partyType === 'Distributor') {
-      const { data } = await adminClient.rpc('generate_atomic_distributor_code');
-      return data || `DIS-${ts}`;
-    } else if (partyType === 'Dealer') {
-      const { data } = await adminClient.rpc('generate_atomic_dealer_code');
-      return data || `DLR-${ts}`;
-    } else if (partyType === 'Sub-Dealer') {
-      const { data } = await adminClient.rpc('generate_atomic_sub_dealer_code');
-      return data || `SDL-${ts}`;
+export async function generateBranchPartyCode(adminClient, rawBranch = 'NSMLR') {
+  const branch = ['NSTL', 'NSTLP'].includes(String(rawBranch || '').toUpperCase().trim())
+    ? 'NSTLP'
+    : String(rawBranch || 'NSMLR').toUpperCase().trim().replace(/[^A-Z0-9]/g, '') || 'NSMLR';
+
+  const prefix = `PTY-${branch}-`;
+
+  const { data: latest } = await adminClient
+    .from('party_master')
+    .select('party_universal_code')
+    .like('party_universal_code', `${prefix}%`)
+    .order('party_universal_code', { ascending: false })
+    .limit(10);
+
+  let maxNum = 100000;
+  if (latest && latest.length > 0) {
+    for (const row of latest) {
+      const code = row.party_universal_code || '';
+      if (code.startsWith(prefix)) {
+        const numPart = parseInt(code.slice(prefix.length), 10);
+        if (!isNaN(numPart) && numPart > maxNum) {
+          maxNum = numPart;
+        }
+      }
     }
-  } catch (e) {
-    // Fallback if RPC does not exist
   }
-  return partyType === 'Distributor' ? `DIS-${ts}` : partyType === 'Dealer' ? `DLR-${ts}` : `SDL-${ts}`;
+
+  const nextSeq = maxNum + 1;
+  return `${prefix}${nextSeq}`;
+}
+
+/**
+ * Helper to generate a block of consecutive branch party codes for batch importing
+ */
+export async function generateBranchPartyCodesBatch(adminClient, branchCounts = {}) {
+  const result = {};
+
+  for (const [rawBranch, count] of Object.entries(branchCounts)) {
+    if (!count || count <= 0) continue;
+    const branch = ['NSTL', 'NSTLP'].includes(String(rawBranch || '').toUpperCase().trim())
+      ? 'NSTLP'
+      : String(rawBranch || 'NSMLR').toUpperCase().trim().replace(/[^A-Z0-9]/g, '') || 'NSMLR';
+
+    const prefix = `PTY-${branch}-`;
+
+    const { data: latest } = await adminClient
+      .from('party_master')
+      .select('party_universal_code')
+      .like('party_universal_code', `${prefix}%`)
+      .order('party_universal_code', { ascending: false })
+      .limit(10);
+
+    let maxNum = 100000;
+    if (latest && latest.length > 0) {
+      for (const row of latest) {
+        const code = row.party_universal_code || '';
+        if (code.startsWith(prefix)) {
+          const numPart = parseInt(code.slice(prefix.length), 10);
+          if (!isNaN(numPart) && numPart > maxNum) {
+            maxNum = numPart;
+          }
+        }
+      }
+    }
+
+    const codes = [];
+    for (let i = 1; i <= count; i++) {
+      codes.push(`${prefix}${maxNum + i}`);
+    }
+    result[branch] = codes;
+  }
+
+  return result;
+}
+
+/**
+ * Helper to generate atomic channel codes (e.g. DLR-NSMLR-100001, DIS-NSTLP-100001)
+ */
+async function generateChannelCode(adminClient, partyType, branchCode = 'NSMLR', seqNumber = null) {
+  const pfx = partyType === 'Distributor' ? 'DIS' : partyType === 'Sub-Dealer' ? 'SDL' : 'DLR';
+  const cleanBranch = ['NSTL', 'NSTLP'].includes(String(branchCode || '').toUpperCase().trim()) ? 'NSTLP' : 'NSMLR';
+  if (seqNumber) {
+    return `${pfx}-${cleanBranch}-${seqNumber}`;
+  }
+  return `${pfx}-${cleanBranch}-${Date.now().toString().slice(-6)}`;
 }
 
 const VALID_PARTY_MASTER_COLUMNS = [
@@ -315,17 +383,16 @@ export async function createPartyMaster(partyData, tenantId = DEFAULT_TENANT_ID)
 
   const { primary_contact_name, ...cleanPartyData } = partyData;
 
-  // Generate atomic PTY code
-  let partyCode;
-  try {
-    const { data: codeData } = await adminClient.rpc('generate_atomic_party_code');
-    partyCode = codeData || `PTY-${Date.now().toString().slice(-6)}`;
-  } catch {
-    partyCode = `PTY-${Date.now().toString().slice(-6)}`;
-  }
+  const rawComp = cleanPartyData.our_company || 'NSMLR';
+  const branchCode = ['NSTL', 'NSTLP'].includes(String(rawComp).toUpperCase().trim()) ? 'NSTLP' : 'NSMLR';
+
+  // Generate branch-prefixed atomic PTY code (e.g., PTY-NSMLR-100001)
+  const partyCode = await generateBranchPartyCode(adminClient, branchCode);
+  const seqMatch = partyCode.match(/-(\d+)$/);
+  const seqNumber = seqMatch ? seqMatch[1] : null;
 
   const partyType = partyData.party_type || partyData.party_category || 'Dealer';
-  const channelCode = await generateChannelCode(adminClient, partyType);
+  const channelCode = await generateChannelCode(adminClient, partyType, branchCode, seqNumber);
 
   const sanitizedStatus = VALID_PARTY_STATUSES.includes(cleanPartyData.party_status)
     ? cleanPartyData.party_status
@@ -1549,6 +1616,17 @@ export async function bulkImportPartyMaster(partiesList = [], importMode = 'FULL
 
     const seenBatchMobiles = new Set();
 
+    // Pre-calculate branch counts and allocate sequential batch codes
+    const branchCounts = {};
+    partiesList.forEach(r => {
+      const rawComp = String(r.our_company || r['Operating Company'] || r.company_name || 'NSMLR').trim().toUpperCase();
+      const comp = ['NSTL', 'NSTLP'].includes(rawComp) ? 'NSTLP' : 'NSMLR';
+      branchCounts[comp] = (branchCounts[comp] || 0) + 1;
+    });
+
+    const branchCodesPool = await generateBranchPartyCodesBatch(adminClient, branchCounts);
+    const branchCodeIndex = {};
+
     for (let i = 0; i < partiesList.length; i++) {
       const row = partiesList[i];
       const rowIdx = i + 1;
@@ -1592,9 +1670,17 @@ export async function bulkImportPartyMaster(partiesList = [], importMode = 'FULL
       if (cleanMobile) existingMobiles.add(cleanMobile);
       if (gstin) existingGSTINs.add(gstin);
 
-      // Generate atomic party universal code & channel code
-      const tsPart = Date.now().toString().slice(-6) + Math.floor(Math.random() * 100).toString().padStart(2, '0');
-      const partyCode = `PTY-${tsPart}`;
+      const rawComp = String(row.our_company || row['Operating Company'] || row.company_name || 'NSMLR').trim().toUpperCase();
+      const ourCompany = ['NSTL', 'NSTLP'].includes(rawComp) ? 'NSTLP' : 'NSMLR';
+
+      // Pick next sequential branch-prefixed party code
+      branchCodeIndex[ourCompany] = branchCodeIndex[ourCompany] || 0;
+      const partyCode = (branchCodesPool[ourCompany] && branchCodesPool[ourCompany][branchCodeIndex[ourCompany]])
+        || await generateBranchPartyCode(adminClient, ourCompany);
+      branchCodeIndex[ourCompany]++;
+
+      const seqMatch = partyCode.match(/-(\d+)$/);
+      const seqNumber = seqMatch ? seqMatch[1] : null;
 
       let partyType = String(row.party_type || row['Party Tier'] || row['Tier'] || 'Dealer').trim();
       if (!['Distributor', 'Dealer', 'Sub-Dealer'].includes(partyType)) {
@@ -1605,10 +1691,7 @@ export async function bulkImportPartyMaster(partiesList = [], importMode = 'FULL
       }
 
       const channelPrefix = partyType === 'Distributor' ? 'DIS' : partyType === 'Sub-Dealer' ? 'SDL' : 'DLR';
-      const channelCode = `${channelPrefix}-${tsPart}`;
-
-      const rawComp = String(row.our_company || row['Operating Company'] || row.company_name || 'NSMLR').trim().toUpperCase();
-      const ourCompany = rawComp === 'NSTL' || rawComp === 'NSTLP' ? 'NSTLP' : 'NSMLR';
+      const channelCode = seqNumber ? `${channelPrefix}-${ourCompany}-${seqNumber}` : `${channelPrefix}-${ourCompany}-${Date.now().toString().slice(-6)}`;
 
       let constitution = String(row.constitution_type || row['Constitution Type'] || 'PROPRIETORSHIP').trim().toUpperCase();
       if (!['PROPRIETORSHIP', 'PARTNERSHIP', 'PVT_LTD', 'LTD', 'LLP'].includes(constitution)) {
