@@ -156,7 +156,7 @@ export default function ChannelOperationsModule({
   }, [activeTab]);
 
   return (
-    <div style={{ padding: '1.25rem 1.5rem', color: 'var(--text-primary)', background: 'var(--bg-primary)', minHeight: '100%' }}>
+    <div style={{ padding: '0.25rem 0.25rem 1.5rem', color: 'var(--text-primary)', background: 'var(--bg-primary)', minHeight: '100%', width: '100%', flex: 1, display: 'flex', flexDirection: 'column' }}>
       {/* Top Module Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '1rem' }}>
         <div>

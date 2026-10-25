@@ -5013,10 +5013,6 @@ export default function CRMContainer({
                         {module.id === 'party' && (
                           <div className={`submenu-list ${partyMenuExpanded ? 'expanded' : ''}`}>
                             <div className="submenu-inner">
-                              <div style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-muted, #94a3b8)', padding: '0.35rem 0.75rem 0.2rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                                Channel Partner Pipeline
-                              </div>
-
                               {(() => {
                                 const canSeePartySub = (subId) => (userRole === 'admin' || userRole === 'Admin') || isMasterAdmin || !moduleAccess?.party?.sub_items || moduleAccess.party.sub_items[subId]?.view !== false;
                                 return (
@@ -5124,12 +5120,6 @@ export default function CRMContainer({
                                 S08 Partner Activation
                               </button>
 
-                              <div style={{ height: '1px', backgroundColor: 'var(--border-light, rgba(255,255,255,0.08))', margin: '0.4rem 0.75rem' }} />
-
-                              <div style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-muted, #94a3b8)', padding: '0.2rem 0.75rem 0.2rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                                Master Directory &amp; Hierarchy
-                              </div>
-
                               <button
                                 onClick={() => handlePartySubTabChange('report')}
                                 className="submenu-item"
@@ -5152,10 +5142,6 @@ export default function CRMContainer({
                         {(module.id === 'channel_ops' || module.id === 'channel-operations') && (
                           <div className={`submenu-list ${channelOpsMenuExpanded ? 'expanded' : ''}`}>
                             <div className="submenu-inner">
-                              <div style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-muted, #94a3b8)', padding: '0.35rem 0.75rem 0.2rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                                Daily Order Follow-up
-                              </div>
-
                               <button
                                 onClick={() => handleChannelOpsSubTabChange('frequency_rules')}
                                 className="submenu-item"

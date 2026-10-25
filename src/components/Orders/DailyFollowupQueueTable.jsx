@@ -308,7 +308,7 @@ export default function DailyFollowupQueueTable({
   }, [todayLedger, ledgerSearch, ledgerOutcomeFilter]);
 
   return (
-    <div>
+    <div style={{ width: '100%' }}>
       {/* Top View Toggle: Calling Queue vs Today's Call Log Ledger */}
       <div style={{
         display: 'flex',
@@ -541,10 +541,11 @@ export default function DailyFollowupQueueTable({
             background: 'var(--bg-surface)',
             borderRadius: '12px',
             border: '1px solid var(--border-light)',
-            overflow: 'hidden'
+            overflow: 'hidden',
+            width: '100%'
           }}>
             <div style={{ overflowX: 'auto', width: '100%' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.84rem' }}>
+              <table style={{ width: '100%', minWidth: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.84rem' }}>
                 <thead>
                   <tr style={{ background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
                     <th style={{ width: `${columnWidths.code_tier}px`, padding: '0.85rem 1rem', position: 'relative' }}>
@@ -887,10 +888,11 @@ export default function DailyFollowupQueueTable({
             background: 'var(--bg-surface)',
             borderRadius: '12px',
             border: '1px solid var(--border-light)',
-            overflow: 'hidden'
+            overflow: 'hidden',
+            width: '100%'
           }}>
             <div style={{ overflowX: 'auto', width: '100%' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.84rem' }}>
+              <table style={{ width: '100%', minWidth: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.84rem' }}>
                 <thead>
                   <tr style={{ background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
                     <th style={{ padding: '0.85rem 1rem' }}>Call Time (IST)</th>

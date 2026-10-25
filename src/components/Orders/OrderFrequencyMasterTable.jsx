@@ -155,7 +155,7 @@ export default function OrderFrequencyMasterTable({
   }, [schedules, frequencyFilter, tierFilter, searchTerm]);
 
   return (
-    <div>
+    <div style={{ width: '100%' }}>
       {/* Top Filter and Search Bar */}
       <div style={{
         background: 'var(--bg-surface)',
@@ -167,7 +167,8 @@ export default function OrderFrequencyMasterTable({
         justifyContent: 'space-between',
         alignItems: 'center',
         flexWrap: 'wrap',
-        gap: '0.75rem'
+        gap: '0.75rem',
+        width: '100%'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flex: '1 1 300px', maxWidth: '420px' }}>
           <div style={{ position: 'relative', width: '100%' }}>
@@ -255,10 +256,11 @@ export default function OrderFrequencyMasterTable({
         background: 'var(--bg-surface)',
         borderRadius: '12px',
         border: '1px solid var(--border-light)',
-        overflow: 'hidden'
+        overflow: 'hidden',
+        width: '100%'
       }}>
         <div style={{ overflowX: 'auto', width: '100%' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.84rem' }}>
+          <table style={{ width: '100%', minWidth: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.84rem' }}>
             <thead>
               <tr style={{ background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
                 <th style={{ width: `${columnWidths.code_tier}px`, padding: '0.85rem 1rem', position: 'relative' }}>
