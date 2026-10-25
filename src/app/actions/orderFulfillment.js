@@ -831,8 +831,7 @@ export async function updateComplaintTicketAction(ticketId, actionData, tenantId
     ticket_status: 'ACTION_TAKEN',
     resolution_type: actionData.resolution_type,
     resolution_notes: actionData.resolution_notes || '',
-    action_reference_no: actionData.action_reference_no || '',
-    updated_at: new Date().toISOString()
+    action_reference_no: actionData.action_reference_no || ''
   };
 
   try {
