@@ -49,6 +49,24 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - **No Cache, Build, or Temp Folder Purging**: Never delete `.next`, `node_modules`, `.git`, or temporary folders. Deleting runtime or build directories can break active dev servers, corrupt in-memory Turbopack state, and lead to fatal application crashes.
 - **Safe Alternatives Only**: If code needs cleanup or space is tight, archive, comment out, create non-destructive additive changes, or instruct the user to handle disk cleanup manually outside the agent environment.
 
+# Mandatory Standard Table Pagination & Sticky Header Rule (Unified Table Setup)
+- **Universal Application Across All CRM Tables**: The standard page navigation setup and frozen header structure MUST be applied uniformly across every tabular view in the CRM (Daily Order Followup tabs, Pipeline, Feedback, Complaints, Users, Party Master, Leads, etc.):
+  1. **Frozen Table Header (`position: sticky`)**:
+     - All table headers (`<thead>` and `<th>`) must be sticky (`position: sticky; top: 0; zIndex: 10; backgroundColor: 'var(--bg-surface)'`) with `boxShadow: 'inset 0 -1px 0 var(--border-light)'`.
+     - The table wrapper must have a bounded scrollable height (`overflow: 'auto'`, e.g., `maxHeight: 'calc(100vh - 310px)'`, `minHeight: '380px'`) so headers remain frozen during scrolling.
+     - Column resizing (`ColumnResizer`) must remain fully integrated and active on every frozen header.
+  2. **Unified Bottom Page Navigation (Navigation Bar Setup)**:
+     - **Record Counter**: Display exact range on left: `Showing <strong>{from}</strong> to <strong>{to}</strong> of <strong>{total}</strong> records`.
+     - **Rows Per Page Selector**: Standard dropdown selector with options `[10, 25, 50, 100]`, with default set to **25** records.
+     - **Standard 5-Button Navigation Controls**:
+       - First Page (`<<` / `ChevronsLeft`)
+       - Previous Page (`<` / `ChevronLeft`)
+       - Current Page Indicator (`Page {currentPage} of {totalPages}`)
+       - Next Page (`>` / `ChevronRight`)
+       - Last Page (`>>` / `ChevronsRight`)
+       - Boundary disabled states (disabled when on first/last page).
+     - **Automatic Page Reset**: Whenever the user types in search, changes tab/filter, switches period/date, or updates rows per page, `currentPage` MUST automatically reset to `1`.
+
 # Mandatory Table Column Resizing Rule (Lead Data Pattern)
 - **Interactive Column Resizing Across All Tables**: Every tabular data grid / table across the CRM (whether using TanStack Table or standard HTML `<table>`) MUST provide interactive column resizing capability on each column header (`<th>`), allowing users to expand or shrink column widths (`chhota bada krna`), exactly as implemented in Lead Data (`LeadTable.jsx`).
 - **Standard Resizer Requirements**:

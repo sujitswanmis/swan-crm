@@ -3,7 +3,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import {
   Calendar, Users, AlertTriangle, CheckCircle2, Search, Filter,
-  RefreshCw, Star, TrendingUp, ShieldAlert, Edit3
+  RefreshCw, Star, TrendingUp, ShieldAlert, Edit3,
+  ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight
 } from 'lucide-react';
 import { useTableColumnResize, ColumnResizer } from '@/utils/tableColumnResize';
 import { getMonthlyHealthCheckQueue, saveMonthlyHealthCheckAudit } from '@/app/actions/orderFulfillment';
@@ -24,6 +25,8 @@ export default function MonthlyHealthCheckModule({
   const [selectedPartyForAudit, setSelectedPartyForAudit] = useState(null);
   const [saving, setSaving] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
   // 5-Dimension Audit Form
   const [auditForm, setAuditForm] = useState({
@@ -129,6 +132,26 @@ export default function MonthlyHealthCheckModule({
       return code.includes(term) || firm.includes(term) || owner.includes(term) || city.includes(term);
     });
   }, [queue, riskFilter, searchTerm]);
+
+  // Reset page to 1 when search, filter, period or pageSize changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, riskFilter, period, pageSize]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredQueue.length / pageSize));
+
+  // Auto-adjust page if current page exceeds total pages
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
+  // Paginated queue slice
+  const paginatedQueue = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredQueue.slice(start, start + pageSize);
+  }, [filteredQueue, currentPage, pageSize]);
 
   // KPI Ribbon counts
   const kpis = useMemo(() => {
@@ -275,42 +298,44 @@ export default function MonthlyHealthCheckModule({
         </div>
       </div>
 
-      {/* Table with Resizable Columns */}
+      {/* Table with Resizable Columns and Sticky Header */}
       <div style={{
         background: 'var(--bg-surface)',
         borderRadius: '12px',
         border: '1px solid var(--border-light)',
-        overflow: 'hidden'
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column'
       }}>
-        <div style={{ overflowX: 'auto', width: '100%' }}>
+        <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 310px)', minHeight: '380px', width: '100%' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.84rem' }}>
-            <thead>
-              <tr style={{ background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
-                <th style={{ width: `${columnWidths.partner}px`, padding: '0.85rem 1rem', position: 'relative' }}>
+            <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)' }}>
+              <tr style={{ background: 'var(--bg-surface)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
+                <th style={{ width: `${columnWidths.partner}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                   Channel Partner
                   <ColumnResizer onMouseDown={e => startResize('partner', e)} onDoubleClick={() => resetWidths()} />
                 </th>
-                <th style={{ width: `${columnWidths.location}px`, padding: '0.85rem 1rem', position: 'relative' }}>
+                <th style={{ width: `${columnWidths.location}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                   Location
                   <ColumnResizer onMouseDown={e => startResize('location', e)} onDoubleClick={() => resetWidths()} />
                 </th>
-                <th style={{ width: `${columnWidths.period}px`, padding: '0.85rem 1rem', position: 'relative' }}>
+                <th style={{ width: `${columnWidths.period}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                   Audit Month
                   <ColumnResizer onMouseDown={e => startResize('period', e)} onDoubleClick={() => resetWidths()} />
                 </th>
-                <th style={{ width: `${columnWidths.days_inactive}px`, padding: '0.85rem 1rem', position: 'relative' }}>
+                <th style={{ width: `${columnWidths.days_inactive}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                   Dormancy Status
                   <ColumnResizer onMouseDown={e => startResize('days_inactive', e)} onDoubleClick={() => resetWidths()} />
                 </th>
-                <th style={{ width: `${columnWidths.health_stars}px`, padding: '0.85rem 1rem', position: 'relative' }}>
+                <th style={{ width: `${columnWidths.health_stars}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                   5-Dim Health Score
                   <ColumnResizer onMouseDown={e => startResize('health_stars', e)} onDoubleClick={() => resetWidths()} />
                 </th>
-                <th style={{ width: `${columnWidths.demand_plan}px`, padding: '0.85rem 1rem', position: 'relative' }}>
+                <th style={{ width: `${columnWidths.demand_plan}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                   Demand Forecast &amp; Intel
                   <ColumnResizer onMouseDown={e => startResize('demand_plan', e)} onDoubleClick={() => resetWidths()} />
                 </th>
-                <th style={{ width: `${columnWidths.actions}px`, padding: '0.85rem 1rem', textAlign: 'center', position: 'relative' }}>
+                <th style={{ width: `${columnWidths.actions}px`, padding: '0.85rem 1rem', textAlign: 'center', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                   Audit Action
                   <ColumnResizer onMouseDown={e => startResize('actions', e)} onDoubleClick={() => resetWidths()} />
                 </th>
@@ -324,7 +349,7 @@ export default function MonthlyHealthCheckModule({
                   </td>
                 </tr>
               ) : (
-                filteredQueue.map(item => {
+                paginatedQueue.map(item => {
                   const p = item.party;
                   const phone = p?.primary_mobile;
                   const a = item.audit;
@@ -448,6 +473,141 @@ export default function MonthlyHealthCheckModule({
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Pagination Navigation Footer */}
+        <div style={{
+          padding: '0.75rem 1rem',
+          borderTop: '1px solid var(--border-light)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          backgroundColor: 'var(--bg-primary, #f8fafc)',
+          fontSize: '0.78rem',
+          color: 'var(--text-secondary)',
+          flexWrap: 'wrap',
+          gap: '0.75rem'
+        }}>
+          <div>
+            Showing <strong>{filteredQueue.length > 0 ? (currentPage - 1) * pageSize + 1 : 0}</strong> to <strong>{Math.min(currentPage * pageSize, filteredQueue.length)}</strong> of <strong>{filteredQueue.length}</strong> records
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+            {/* Rows per page selector */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <span>Rows per page:</span>
+              <select
+                value={pageSize}
+                onChange={e => {
+                  setPageSize(Number(e.target.value));
+                  setCurrentPage(1);
+                }}
+                style={{
+                  padding: '0.3rem 0.55rem',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border-light)',
+                  backgroundColor: 'var(--bg-surface)',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.78rem',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                {[10, 25, 50, 100].map(n => (
+                  <option key={n} value={n}>{n}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Page navigation */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+              <button
+                type="button"
+                disabled={currentPage <= 1}
+                onClick={() => setCurrentPage(1)}
+                title="First Page"
+                style={{
+                  padding: '0.35rem 0.55rem',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border-light)',
+                  backgroundColor: 'var(--bg-surface)',
+                  color: 'var(--text-primary)',
+                  cursor: currentPage <= 1 ? 'not-allowed' : 'pointer',
+                  opacity: currentPage <= 1 ? 0.4 : 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                <ChevronsLeft size={14} />
+              </button>
+              <button
+                type="button"
+                disabled={currentPage <= 1}
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                title="Previous Page"
+                style={{
+                  padding: '0.35rem 0.55rem',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border-light)',
+                  backgroundColor: 'var(--bg-surface)',
+                  color: 'var(--text-primary)',
+                  cursor: currentPage <= 1 ? 'not-allowed' : 'pointer',
+                  opacity: currentPage <= 1 ? 0.4 : 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                <ChevronLeft size={14} />
+              </button>
+
+              <span style={{ fontWeight: 600, padding: '0 0.5rem', color: 'var(--text-primary)' }}>
+                Page {currentPage} of {totalPages}
+              </span>
+
+              <button
+                type="button"
+                disabled={currentPage >= totalPages}
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                title="Next Page"
+                style={{
+                  padding: '0.35rem 0.55rem',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border-light)',
+                  backgroundColor: 'var(--bg-surface)',
+                  color: 'var(--text-primary)',
+                  cursor: currentPage >= totalPages ? 'not-allowed' : 'pointer',
+                  opacity: currentPage >= totalPages ? 0.4 : 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                <ChevronRight size={14} />
+              </button>
+              <button
+                type="button"
+                disabled={currentPage >= totalPages}
+                onClick={() => setCurrentPage(totalPages)}
+                title="Last Page"
+                style={{
+                  padding: '0.35rem 0.55rem',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border-light)',
+                  backgroundColor: 'var(--bg-surface)',
+                  color: 'var(--text-primary)',
+                  cursor: currentPage >= totalPages ? 'not-allowed' : 'pointer',
+                  opacity: currentPage >= totalPages ? 0.4 : 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                <ChevronsRight size={14} />
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 

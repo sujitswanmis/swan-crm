@@ -573,7 +573,7 @@ export default function DailyFollowupQueueTable({
                       <ColumnResizer onMouseDown={e => startResize('last_interaction', e)} onDoubleClick={() => resetWidths()} />
                     </th>
                     <th style={{ width: `${columnWidths.actions}px`, padding: '0.85rem 1rem', textAlign: 'center', position: 'relative' }}>
-                      Dial &amp; Action
+                      Actions
                       <ColumnResizer onMouseDown={e => startResize('actions', e)} onDoubleClick={() => resetWidths()} />
                     </th>
                   </tr>
@@ -730,7 +730,7 @@ export default function DailyFollowupQueueTable({
                                 type="button"
                                 onClick={() => openCallModal(item, 'ORDER_PLACED')}
                                 style={{
-                                  padding: '0.4rem 0.75rem',
+                                  padding: '0.42rem 0.8rem',
                                   background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
                                   border: 'none',
                                   color: '#fff',
@@ -740,11 +740,12 @@ export default function DailyFollowupQueueTable({
                                   cursor: 'pointer',
                                   display: 'inline-flex',
                                   alignItems: 'center',
-                                  gap: '0.3rem'
+                                  gap: '0.35rem',
+                                  whiteSpace: 'nowrap'
                                 }}
                               >
-                                <Phone size={12} />
-                                Call
+                                <Package size={13} />
+                                Order Punch
                               </button>
 
                               <button
