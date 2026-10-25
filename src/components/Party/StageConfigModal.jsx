@@ -43,7 +43,7 @@ export const B2B_OPERATIONAL_STATUSES = [
     defaultSubStage: 'Regular (Credit Allowed)',
     subStages: [
       { id: 'Regular (Credit Allowed)', label: 'Regular (Credit Allowed)', hint: 'Full Credit & Orders Allowed according to S05 credit limit' },
-      { id: 'Advance RTGS Only (Stop Credit)', label: 'Advance RTGS Only (Stop Credit)', hint: 'Credit stopped, factory billing allowed strictly on 100% advance RTGS' },
+      { id: 'Advance Payment (Stop Credit)', label: 'Advance Payment (Stop Credit)', hint: 'Credit stopped, factory billing allowed strictly on 100% advance payment (RTGS/NEFT/IMPS)' },
       { id: 'Seasonal Counter (Rabi/Kharif)', label: 'Seasonal Counter (Rabi/Kharif)', hint: 'Active in peak agri season, paused during off-season' }
     ]
   },
