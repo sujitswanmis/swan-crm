@@ -199,13 +199,33 @@ export async function saveOrderFollowupAndRecur(followupData, tenantId = DEFAULT
     }
   }
 
-  // 2. Insert call log into party_order_followups
+  // 2. Safe Employee ID Resolution for Foreign Key Constraint
+  let validEmployeeId = null;
+  const candidateCallerId = followupData.assigned_caller_id || followupData.caller_id;
+  if (candidateCallerId) {
+    try {
+      const { data: empMatch } = await adminClient
+        .from('employees')
+        .select('id')
+        .or(`id.eq.${candidateCallerId},user_id.eq.${candidateCallerId}`)
+        .limit(1)
+        .maybeSingle();
+
+      if (empMatch?.id) {
+        validEmployeeId = empMatch.id;
+      }
+    } catch (_err) {
+      validEmployeeId = null;
+    }
+  }
+
+  // 2B. Insert call log into party_order_followups
   const callPayload = {
     tenant_id: effectiveTenantId,
     party_id: followupData.party_id,
     scheduled_date: followupData.scheduled_date || todayStr,
-    assigned_caller_id: followupData.assigned_caller_id || followupData.caller_id || null,
-    assigned_caller_name: followupData.assigned_caller_name || followupData.caller_name || 'Agent',
+    assigned_caller_id: validEmployeeId,
+    assigned_caller_name: followupData.assigned_caller_name || followupData.caller_name || 'Admin',
     call_status: followupData.call_status,
     is_order_placed: isOrder,
     generated_order_no: generatedOrderNo,
@@ -220,14 +240,26 @@ export async function saveOrderFollowupAndRecur(followupData, tenantId = DEFAULT
 
   let savedFollowup = null;
   try {
-    const { data: fData } = await adminClient
+    const { data: fData, error: fError } = await adminClient
       .from('party_order_followups')
       .insert([callPayload])
       .select()
       .single();
+
+    if (fError) {
+      console.error('Save order followup failed:', fError);
+      return {
+        success: false,
+        error: fError.message || 'Failed to insert call log'
+      };
+    }
     savedFollowup = fData;
   } catch (err) {
-    console.warn('Save order followup warning:', err.message);
+    console.error('Save order followup error:', err);
+    return {
+      success: false,
+      error: err.message || 'Failed to insert call log'
+    };
   }
 
   // 3. Recalculate Next Due Date & update party_order_schedules
@@ -304,7 +336,7 @@ export async function getDailyCallLogLedger(tenantId = DEFAULT_TENANT_ID, target
       .from('party_order_followups')
       .select('*')
       .eq('tenant_id', effectiveTenantId)
-      .eq('scheduled_date', filterDate)
+      .or(`scheduled_date.eq.${filterDate},created_at.gte.${filterDate}T00:00:00+05:30`)
       .order('created_at', { ascending: false });
 
     if (error) throw error;

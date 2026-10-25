@@ -1079,7 +1079,7 @@ export default function UserManageTab({
         border: '1px solid var(--border-light)'
       }}>
         {/* 1. Search Bar */}
-        <div style={{ position: 'relative', flex: '1 1 240px', minWidth: '220px', maxWidth: '380px' }}>
+        <div style={{ position: 'relative', flex: '1 1 200px', minWidth: '180px', maxWidth: '300px' }}>
           <Search size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
           <input
             type="text"

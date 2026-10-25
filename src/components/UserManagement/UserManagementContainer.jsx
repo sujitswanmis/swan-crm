@@ -567,7 +567,7 @@ export default function UserManagementContainer({
 
   // Navigation Subpage Tabs definition
   const subpages = [
-    { id: 'user_manage', label: 'User Manage', icon: Users, badge: users.filter(u => u.role !== 'customer').length },
+    { id: 'user_manage', label: 'User Manage', icon: Users },
     { id: 'roles', label: 'Roles & Permissions', icon: Shield },
     { id: 'hierarchy', label: 'Org Hierarchy', icon: Network },
     { id: 'sessions', label: 'Active Sessions', icon: Monitor },
