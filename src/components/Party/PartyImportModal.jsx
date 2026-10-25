@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import {
   Upload, Download, X, CheckCircle2, AlertTriangle, Check,
-  Clock, ShieldCheck, FileSpreadsheet, RefreshCw, AlertCircle
+  Clock, ShieldCheck, FileSpreadsheet, RefreshCw, AlertCircle, Search
 } from 'lucide-react';
 import Papa from 'papaparse';
 import { bulkImportPartyMaster } from '@/app/actions/partyMaster';
@@ -23,6 +23,10 @@ export default function PartyImportModal({
   const [validationSummary, setValidationSummary] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [importProgress, setImportProgress] = useState(null); // { active, percentage, current, total, created, skipped, logs, complete }
+  const [previewFilter, setPreviewFilter] = useState('ALL'); // 'ALL' | 'VALID' | 'ISSUES'
+  const [searchQuery, setSearchQuery] = useState('');
+  const [pageSize, setPageSize] = useState(25); // 10 | 25 | 50 | 100 | 'ALL'
+  const [currentPage, setCurrentPage] = useState(1);
 
   const fileInputRef = useRef(null);
 
@@ -480,6 +484,9 @@ export default function PartyImportModal({
     setFile(selectedFile);
     setValidationSummary(null);
     setParsedRows([]);
+    setPreviewFilter('ALL');
+    setSearchQuery('');
+    setCurrentPage(1);
 
     try {
       if (isXlsx) {
@@ -683,8 +690,83 @@ export default function PartyImportModal({
     setParsedRows([]);
     setValidationSummary(null);
     setImportProgress(null);
+    setPreviewFilter('ALL');
+    setSearchQuery('');
+    setCurrentPage(1);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
+
+  // Download rejected / invalid rows with exact issue reasons as CSV
+  const handleDownloadIssuesReport = async () => {
+    try {
+      const invalidRows = parsedRows.filter(r => !r._isValid);
+      if (invalidRows.length === 0) return;
+      const { saveAs } = await import('file-saver');
+      const exportData = invalidRows.map(r => ({
+        'Row Number': r._rowIdx,
+        'Firm Name': r.firm_name || '',
+        'Party Tier': r.party_type || 'Dealer',
+        'Mobile': r.primary_mobile || '',
+        'Contact Person': r.contact_person || '',
+        'State': r.state_name || '',
+        'District': r.district_name || '',
+        'Reason for Issue': (r._issues || []).join('; ')
+      }));
+      const csv = Papa.unparse(exportData);
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      saveAs(blob, `Party_Import_Issues_${new Date().toISOString().split('T')[0]}.csv`);
+    } catch (err) {
+      console.error('Error exporting issues:', err);
+      alert('Could not export issues report: ' + err.message);
+    }
+  };
+
+  // Structured breakdown of issue rows for quick inspection
+  const issueBreakdown = useMemo(() => {
+    const invalidRows = parsedRows.filter(r => !r._isValid);
+    return invalidRows.map(r => ({
+      rowIdx: r._rowIdx,
+      firmName: r.firm_name || 'Unnamed Firm',
+      mobile: r.primary_mobile || 'No Mobile',
+      tier: r.party_type || 'Dealer',
+      location: r.district_name ? `${r.district_name}, ${r.state_name}` : (r.state_name || 'N/A'),
+      issues: r._issues || []
+    }));
+  }, [parsedRows]);
+
+  // Filtered rows based on tabs and search query
+  const filteredRows = useMemo(() => {
+    let list = parsedRows;
+    if (previewFilter === 'VALID') {
+      list = list.filter(r => r._isValid);
+    } else if (previewFilter === 'ISSUES') {
+      list = list.filter(r => !r._isValid);
+    }
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      list = list.filter(r =>
+        (r.firm_name && r.firm_name.toLowerCase().includes(q)) ||
+        (r.primary_mobile && String(r.primary_mobile).includes(q)) ||
+        (r.contact_person && r.contact_person.toLowerCase().includes(q)) ||
+        (r.district_name && r.district_name.toLowerCase().includes(q)) ||
+        (r.state_name && r.state_name.toLowerCase().includes(q)) ||
+        (r._issues && r._issues.some(issue => issue.toLowerCase().includes(q)))
+      );
+    }
+
+    return list;
+  }, [parsedRows, previewFilter, searchQuery]);
+
+  // Pagination calculation
+  const totalPages = pageSize === 'ALL' ? 1 : Math.ceil(filteredRows.length / pageSize) || 1;
+  const safeCurrentPage = Math.min(Math.max(currentPage, 1), totalPages);
+
+  const displayedRows = useMemo(() => {
+    if (pageSize === 'ALL') return filteredRows;
+    const start = (safeCurrentPage - 1) * pageSize;
+    return filteredRows.slice(start, start + pageSize);
+  }, [filteredRows, safeCurrentPage, pageSize]);
 
   return (
     <div style={{
@@ -703,8 +785,8 @@ export default function PartyImportModal({
         border: '1px solid var(--border-light, rgba(255,255,255,0.1))',
         borderRadius: '14px',
         width: '100%',
-        maxWidth: '860px',
-        maxHeight: '90vh',
+        maxWidth: '1020px',
+        maxHeight: '92vh',
         display: 'flex',
         flexDirection: 'column',
         boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
@@ -1011,69 +1093,387 @@ export default function PartyImportModal({
 
               {/* 4. Pre-Flight Validation Preview */}
               {validationSummary && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <div style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                      Pre-Import Validation Preview:
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                  {/* Top Bar: Title & Filter Badges */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+                    <div style={{ fontSize: '0.88rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                      Pre-Import Validation Preview ({validationSummary.total} Total Rows):
                     </div>
                     <div style={{ display: 'flex', gap: '0.5rem' }}>
-                      <span style={{ fontSize: '0.74rem', fontWeight: 700, color: '#10b981', background: 'rgba(16,185,129,0.15)', padding: '0.2rem 0.6rem', borderRadius: '6px' }}>
+                      <button
+                        type="button"
+                        onClick={() => { setPreviewFilter('VALID'); setCurrentPage(1); }}
+                        style={{
+                          fontSize: '0.74rem',
+                          fontWeight: 700,
+                          color: '#10b981',
+                          background: previewFilter === 'VALID' ? 'rgba(16,185,129,0.3)' : 'rgba(16,185,129,0.12)',
+                          border: previewFilter === 'VALID' ? '1px solid #10b981' : '1px solid rgba(16,185,129,0.25)',
+                          padding: '0.25rem 0.65rem',
+                          borderRadius: '6px',
+                          cursor: 'pointer'
+                        }}
+                        title="Click to view only valid rows"
+                      >
                         ✓ {validationSummary.valid} Valid Rows
-                      </span>
+                      </button>
                       {validationSummary.invalid > 0 && (
-                        <span style={{ fontSize: '0.74rem', fontWeight: 700, color: '#f87171', background: 'rgba(239,68,68,0.15)', padding: '0.2rem 0.6rem', borderRadius: '6px' }}>
+                        <button
+                          type="button"
+                          onClick={() => { setPreviewFilter('ISSUES'); setCurrentPage(1); }}
+                          style={{
+                            fontSize: '0.74rem',
+                            fontWeight: 700,
+                            color: '#f87171',
+                            background: previewFilter === 'ISSUES' ? 'rgba(239,68,68,0.3)' : 'rgba(239,68,68,0.12)',
+                            border: previewFilter === 'ISSUES' ? '1px solid #ef4444' : '1px solid rgba(239,68,68,0.25)',
+                            padding: '0.25rem 0.65rem',
+                            borderRadius: '6px',
+                            cursor: 'pointer'
+                          }}
+                          title="Click to view only rows with issues"
+                        >
                           ⚠️ {validationSummary.invalid} With Issues
-                        </span>
+                        </button>
                       )}
                     </div>
                   </div>
 
-                  {/* Preview Table */}
+                  {/* Dedicated Issues Breakdown Box */}
+                  {validationSummary.invalid > 0 && (
+                    <div style={{
+                      background: 'rgba(239, 68, 68, 0.07)',
+                      border: '1px solid rgba(239, 68, 68, 0.3)',
+                      borderRadius: '8px',
+                      padding: '0.85rem 1rem'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.65rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <AlertTriangle size={18} style={{ color: '#ef4444', flexShrink: 0 }} />
+                          <span style={{ fontSize: '0.84rem', fontWeight: 800, color: '#f87171' }}>
+                            {validationSummary.invalid} Rows Have Issues (Skipped on Import)
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPreviewFilter(previewFilter === 'ISSUES' ? 'ALL' : 'ISSUES');
+                              setCurrentPage(1);
+                            }}
+                            style={{
+                              padding: '0.28rem 0.65rem',
+                              background: previewFilter === 'ISSUES' ? '#ef4444' : 'rgba(239, 68, 68, 0.2)',
+                              border: '1px solid #ef4444',
+                              color: '#fff',
+                              borderRadius: '6px',
+                              fontSize: '0.74rem',
+                              fontWeight: 700,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            {previewFilter === 'ISSUES' ? 'Show All Rows in Table' : `🔍 Show Only ${validationSummary.invalid} Issues in Table`}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleDownloadIssuesReport}
+                            style={{
+                              padding: '0.28rem 0.65rem',
+                              background: 'rgba(255,255,255,0.06)',
+                              border: '1px solid rgba(255,255,255,0.15)',
+                              color: 'var(--text-primary, #fff)',
+                              borderRadius: '6px',
+                              fontSize: '0.74rem',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.35rem'
+                            }}
+                            title="Download Excel/CSV of rejected rows with issue reasons"
+                          >
+                            <Download size={13} /> Download Issues (.csv)
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Detailed Issue Rows List */}
+                      <div style={{
+                        maxHeight: '125px',
+                        overflowY: 'auto',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '0.35rem',
+                        paddingRight: '0.25rem'
+                      }}>
+                        {issueBreakdown.map((item, idx) => (
+                          <div
+                            key={idx}
+                            onClick={() => {
+                              setPreviewFilter('ISSUES');
+                              setSearchQuery(item.firmName !== 'Unnamed Firm' ? item.firmName : item.mobile);
+                              setCurrentPage(1);
+                            }}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              background: 'rgba(0,0,0,0.3)',
+                              padding: '0.4rem 0.65rem',
+                              borderRadius: '6px',
+                              fontSize: '0.74rem',
+                              borderLeft: '3px solid #ef4444',
+                              cursor: 'pointer',
+                              gap: '0.5rem'
+                            }}
+                            title="Click to filter this row in preview table"
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              <span style={{ fontWeight: 800, color: '#fca5a5' }}>Row #{item.rowIdx}:</span>
+                              <span style={{ fontWeight: 700, color: 'var(--text-primary, #fff)' }}>{item.firmName}</span>
+                              <span style={{ color: 'var(--text-secondary, #94a3b8)', fontFamily: 'monospace' }}>({item.mobile})</span>
+                              <span style={{ color: 'var(--text-secondary, #64748b)', fontSize: '0.7rem' }}>• {item.location}</span>
+                            </div>
+                            <div style={{ color: '#f87171', fontWeight: 700, flexShrink: 0 }}>
+                              {item.issues.join(' • ')}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Filter Pills & Quick Search Bar */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.6rem' }}>
+                    <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                      <button
+                        type="button"
+                        onClick={() => { setPreviewFilter('ALL'); setCurrentPage(1); }}
+                        style={{
+                          padding: '0.3rem 0.7rem',
+                          borderRadius: '6px',
+                          fontSize: '0.74rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          border: previewFilter === 'ALL' ? '1px solid #38bdf8' : '1px solid rgba(255,255,255,0.1)',
+                          background: previewFilter === 'ALL' ? 'rgba(56,189,248,0.15)' : 'rgba(255,255,255,0.03)',
+                          color: previewFilter === 'ALL' ? '#38bdf8' : 'var(--text-secondary)'
+                        }}
+                      >
+                        All Records ({validationSummary.total})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setPreviewFilter('VALID'); setCurrentPage(1); }}
+                        style={{
+                          padding: '0.3rem 0.7rem',
+                          borderRadius: '6px',
+                          fontSize: '0.74rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          border: previewFilter === 'VALID' ? '1px solid #10b981' : '1px solid rgba(255,255,255,0.1)',
+                          background: previewFilter === 'VALID' ? 'rgba(16,185,129,0.15)' : 'rgba(255,255,255,0.03)',
+                          color: previewFilter === 'VALID' ? '#10b981' : 'var(--text-secondary)'
+                        }}
+                      >
+                        ✓ Valid Only ({validationSummary.valid})
+                      </button>
+                      {validationSummary.invalid > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => { setPreviewFilter('ISSUES'); setCurrentPage(1); }}
+                          style={{
+                            padding: '0.3rem 0.7rem',
+                            borderRadius: '6px',
+                            fontSize: '0.74rem',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            border: previewFilter === 'ISSUES' ? '1px solid #ef4444' : '1px solid rgba(239,68,68,0.3)',
+                            background: previewFilter === 'ISSUES' ? 'rgba(239,68,68,0.2)' : 'rgba(239,68,68,0.08)',
+                            color: '#f87171'
+                          }}
+                        >
+                          ⚠️ Issues Only ({validationSummary.invalid})
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Quick Search */}
+                    <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                      <input
+                        type="text"
+                        placeholder="Search firm, mobile, city..."
+                        value={searchQuery}
+                        onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+                        style={{
+                          padding: '0.3rem 0.6rem 0.3rem 1.8rem',
+                          background: 'rgba(0,0,0,0.35)',
+                          border: '1px solid var(--border-light, rgba(255,255,255,0.15))',
+                          borderRadius: '6px',
+                          color: 'var(--text-primary, #fff)',
+                          fontSize: '0.74rem',
+                          width: '200px'
+                        }}
+                      />
+                      <Search size={13} style={{ position: 'absolute', left: '8px', color: 'var(--text-secondary, #94a3b8)', pointerEvents: 'none' }} />
+                      {searchQuery && (
+                        <X
+                          size={13}
+                          style={{ position: 'absolute', right: '8px', color: 'var(--text-secondary, #94a3b8)', cursor: 'pointer' }}
+                          onClick={() => { setSearchQuery(''); setCurrentPage(1); }}
+                        />
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Preview Table with Frozen Header & Full Data Scrolling */}
                   <div style={{
-                    maxHeight: '220px',
+                    maxHeight: '340px',
                     overflowY: 'auto',
-                    border: '1px solid var(--border-light, rgba(255,255,255,0.08))',
-                    borderRadius: '8px'
+                    border: '1px solid var(--border-light, rgba(255,255,255,0.1))',
+                    borderRadius: '8px',
+                    background: 'var(--bg-primary, #0b1120)'
                   }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem', textAlign: 'left' }}>
-                      <thead>
-                        <tr style={{ background: 'rgba(255,255,255,0.04)', color: 'var(--text-secondary)', borderBottom: '1px solid var(--border-light)' }}>
-                          <th style={{ padding: '0.5rem 0.75rem' }}>#</th>
-                          <th style={{ padding: '0.5rem 0.75rem' }}>Firm Name</th>
-                          <th style={{ padding: '0.5rem 0.75rem' }}>Tier</th>
-                          <th style={{ padding: '0.5rem 0.75rem' }}>Mobile</th>
-                          <th style={{ padding: '0.5rem 0.75rem' }}>Location</th>
-                          <th style={{ padding: '0.5rem 0.75rem' }}>Status</th>
+                    <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.78rem', textAlign: 'left' }}>
+                      <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: '#0b1120' }}>
+                        <tr style={{ background: '#0b1120', color: 'var(--text-secondary, #94a3b8)', borderBottom: '1px solid var(--border-light, rgba(255,255,255,0.1))' }}>
+                          <th style={{ padding: '0.55rem 0.75rem', position: 'sticky', top: 0, background: '#0b1120', borderBottom: '1px solid rgba(255,255,255,0.1)', width: '50px' }}>#</th>
+                          <th style={{ padding: '0.55rem 0.75rem', position: 'sticky', top: 0, background: '#0b1120', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>Firm Name</th>
+                          <th style={{ padding: '0.55rem 0.75rem', position: 'sticky', top: 0, background: '#0b1120', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>Tier</th>
+                          <th style={{ padding: '0.55rem 0.75rem', position: 'sticky', top: 0, background: '#0b1120', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>Mobile</th>
+                          <th style={{ padding: '0.55rem 0.75rem', position: 'sticky', top: 0, background: '#0b1120', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>Contact Person</th>
+                          <th style={{ padding: '0.55rem 0.75rem', position: 'sticky', top: 0, background: '#0b1120', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>Location</th>
+                          <th style={{ padding: '0.55rem 0.75rem', position: 'sticky', top: 0, background: '#0b1120', borderBottom: '1px solid rgba(255,255,255,0.1)', minWidth: '220px' }}>Status &amp; Validation Reason</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {parsedRows.slice(0, 10).map((r, i) => (
-                          <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', background: r._isValid ? 'transparent' : 'rgba(239,68,68,0.05)' }}>
-                            <td style={{ padding: '0.5rem 0.75rem', color: 'var(--text-secondary)' }}>{r._rowIdx}</td>
-                            <td style={{ padding: '0.5rem 0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>{r.firm_name || '-'}</td>
-                            <td style={{ padding: '0.5rem 0.75rem', color: 'var(--text-secondary)' }}>{r.party_type || 'Dealer'}</td>
-                            <td style={{ padding: '0.5rem 0.75rem', fontFamily: 'monospace' }}>{r.primary_mobile || '-'}</td>
-                            <td style={{ padding: '0.5rem 0.75rem', color: 'var(--text-secondary)' }}>{r.district_name ? `${r.district_name}, ${r.state_name}` : r.state_name}</td>
-                            <td style={{ padding: '0.5rem 0.75rem' }}>
-                              {r._isValid ? (
-                                <span style={{ color: '#10b981', fontWeight: 700, fontSize: '0.72rem' }}>✓ Valid</span>
-                              ) : (
-                                <span style={{ color: '#f87171', fontWeight: 600, fontSize: '0.72rem' }} title={r._issues.join(', ')}>
-                                  ⚠️ {r._issues[0]}
-                                </span>
-                              )}
+                        {displayedRows.length === 0 ? (
+                          <tr>
+                            <td colSpan={7} style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary, #94a3b8)' }}>
+                              No records found matching current filter or search criteria.
                             </td>
                           </tr>
-                        ))}
+                        ) : (
+                          displayedRows.map((r, i) => (
+                            <tr
+                              key={r._rowIdx || i}
+                              style={{
+                                borderBottom: '1px solid rgba(255,255,255,0.04)',
+                                background: r._isValid ? 'transparent' : 'rgba(239,68,68,0.08)'
+                              }}
+                            >
+                              <td style={{ padding: '0.5rem 0.75rem', color: 'var(--text-secondary)', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>{r._rowIdx}</td>
+                              <td style={{ padding: '0.5rem 0.75rem', fontWeight: 600, color: 'var(--text-primary)', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>{r.firm_name || '-'}</td>
+                              <td style={{ padding: '0.5rem 0.75rem', color: 'var(--text-secondary)', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>{r.party_type || 'Dealer'}</td>
+                              <td style={{ padding: '0.5rem 0.75rem', fontFamily: 'monospace', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>{r.primary_mobile || '-'}</td>
+                              <td style={{ padding: '0.5rem 0.75rem', color: 'var(--text-secondary)', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>{r.contact_person || '-'}</td>
+                              <td style={{ padding: '0.5rem 0.75rem', color: 'var(--text-secondary)', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                                {r.district_name ? `${r.district_name}, ${r.state_name}` : r.state_name}
+                              </td>
+                              <td style={{ padding: '0.5rem 0.75rem', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                                {r._isValid ? (
+                                  <span style={{ color: '#10b981', fontWeight: 700, fontSize: '0.74rem' }}>
+                                    ✓ Valid &amp; Ready
+                                  </span>
+                                ) : (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                                    <span style={{ color: '#ef4444', fontWeight: 700, fontSize: '0.74rem' }}>
+                                      ⚠️ {r._issues[0]}
+                                    </span>
+                                    {r._issues.length > 1 && (
+                                      <span style={{ color: '#fca5a5', fontSize: '0.68rem' }}>
+                                        +{r._issues.length - 1} more: {r._issues.slice(1).join(', ')}
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                              </td>
+                            </tr>
+                          ))
+                        )}
                       </tbody>
                     </table>
                   </div>
 
-                  {parsedRows.length > 10 && (
-                    <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', textAlign: 'right' }}>
-                      Showing first 10 of {parsedRows.length} rows...
+                  {/* Pagination & Full Data Controls */}
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    flexWrap: 'wrap',
+                    gap: '0.5rem',
+                    fontSize: '0.76rem',
+                    color: 'var(--text-secondary, #94a3b8)',
+                    paddingTop: '0.2rem'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                      <span>Rows per page:</span>
+                      <select
+                        value={pageSize}
+                        onChange={(e) => {
+                          const val = e.target.value === 'ALL' ? 'ALL' : Number(e.target.value);
+                          setPageSize(val);
+                          setCurrentPage(1);
+                        }}
+                        style={{
+                          background: 'rgba(0,0,0,0.35)',
+                          border: '1px solid var(--border-light, rgba(255,255,255,0.15))',
+                          borderRadius: '5px',
+                          color: 'var(--text-primary, #fff)',
+                          padding: '0.2rem 0.45rem',
+                          fontSize: '0.75rem',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <option value={10}>10</option>
+                        <option value={25}>25</option>
+                        <option value={50}>50</option>
+                        <option value={100}>100</option>
+                        <option value="ALL">All ({filteredRows.length} Rows)</option>
+                      </select>
+                      <span>
+                        Showing {filteredRows.length === 0 ? 0 : pageSize === 'ALL' ? `1-${filteredRows.length}` : `${(safeCurrentPage - 1) * pageSize + 1}-${Math.min(safeCurrentPage * pageSize, filteredRows.length)}`} of {filteredRows.length} records {previewFilter !== 'ALL' ? `(${previewFilter.toLowerCase()})` : ''}
+                      </span>
                     </div>
-                  )}
+
+                    {pageSize !== 'ALL' && totalPages > 1 && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                        <button
+                          type="button"
+                          disabled={safeCurrentPage <= 1}
+                          onClick={() => setCurrentPage(p => Math.max(p - 1, 1))}
+                          style={{
+                            padding: '0.25rem 0.6rem',
+                            background: 'rgba(255,255,255,0.05)',
+                            border: '1px solid var(--border-light, rgba(255,255,255,0.1))',
+                            borderRadius: '5px',
+                            color: safeCurrentPage <= 1 ? 'rgba(255,255,255,0.3)' : 'var(--text-primary, #fff)',
+                            cursor: safeCurrentPage <= 1 ? 'not-allowed' : 'pointer'
+                          }}
+                        >
+                          ◀ Prev
+                        </button>
+                        <span style={{ padding: '0 0.4rem', fontWeight: 700, color: 'var(--text-primary, #fff)' }}>
+                          Page {safeCurrentPage} of {totalPages}
+                        </span>
+                        <button
+                          type="button"
+                          disabled={safeCurrentPage >= totalPages}
+                          onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))}
+                          style={{
+                            padding: '0.25rem 0.6rem',
+                            background: 'rgba(255,255,255,0.05)',
+                            border: '1px solid var(--border-light, rgba(255,255,255,0.1))',
+                            borderRadius: '5px',
+                            color: safeCurrentPage >= totalPages ? 'rgba(255,255,255,0.3)' : 'var(--text-primary, #fff)',
+                            cursor: safeCurrentPage >= totalPages ? 'not-allowed' : 'pointer'
+                          }}
+                        >
+                          Next ▶
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 
