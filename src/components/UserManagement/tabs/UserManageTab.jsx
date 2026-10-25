@@ -151,47 +151,79 @@ export default function UserManageTab({
         paddingBottom: '0.5rem',
         borderBottom: '1px solid var(--border-light)'
       }}>
-        {/* Status Filter Badges */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', alignItems: 'center' }}>
-          {['All', 'Active', 'InActive', 'Hold', 'Resigned', 'Terminated', 'Draft', 'Trash'].map(st => {
-            const isSelected = selectedStatusTab === st;
-            const count = statusCounts[st] || 0;
-            return (
-              <button
-                key={st}
-                type="button"
-                onClick={() => {
-                  setSelectedStatusTab(st);
-                  setCurrentPage(1);
-                }}
-                style={{
-                  padding: '0.35rem 0.75rem',
-                  borderRadius: '20px',
-                  border: isSelected ? '1px solid var(--primary-color, #2563eb)' : '1px solid var(--border-light)',
-                  backgroundColor: isSelected ? 'var(--primary-color, #2563eb)' : 'var(--bg-surface)',
-                  color: isSelected ? '#ffffff' : 'var(--text-primary)',
-                  fontSize: '0.78rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.4rem',
-                  transition: 'all 0.15s ease'
-                }}
-              >
-                <span>{st === 'Hold' ? 'On Hold' : st}</span>
-                <span style={{
-                  fontSize: '0.7rem',
-                  backgroundColor: isSelected ? 'rgba(255,255,255,0.25)' : 'var(--border-light)',
-                  color: isSelected ? '#ffffff' : 'var(--text-secondary)',
-                  padding: '0.05rem 0.45rem',
-                  borderRadius: '10px'
-                }}>
-                  {count}
-                </span>
-              </button>
-            );
-          })}
+        {/* Department Filter & Table Tiles (Status Badges) side-by-side */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.6rem', alignItems: 'center' }}>
+          {/* Department Filter */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Dept:</span>
+            <select
+              value={selectedDepartment}
+              onChange={e => {
+                setSelectedDepartment(e.target.value);
+                setCurrentPage(1);
+              }}
+              style={{
+                padding: '0.35rem 0.65rem',
+                borderRadius: '8px',
+                border: '1px solid var(--border-light)',
+                backgroundColor: 'var(--bg-surface)',
+                color: 'var(--text-primary)',
+                fontSize: '0.78rem',
+                fontWeight: 600,
+                cursor: 'pointer'
+              }}
+            >
+              <option value="All">All Departments</option>
+              {departments.map(d => (
+                <option key={d} value={d}>{d}</option>
+              ))}
+            </select>
+          </div>
+
+          <div style={{ width: '1px', height: '24px', backgroundColor: 'var(--border-light)', margin: '0 0.15rem' }} />
+
+          {/* Status Filter Badges (Table Tiles) */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', alignItems: 'center' }}>
+            {['All', 'Active', 'InActive', 'Hold', 'Resigned', 'Terminated', 'Draft', 'Trash'].map(st => {
+              const isSelected = selectedStatusTab === st;
+              const count = statusCounts[st] || 0;
+              return (
+                <button
+                  key={st}
+                  type="button"
+                  onClick={() => {
+                    setSelectedStatusTab(st);
+                    setCurrentPage(1);
+                  }}
+                  style={{
+                    padding: '0.35rem 0.75rem',
+                    borderRadius: '20px',
+                    border: isSelected ? '1px solid var(--primary-color, #2563eb)' : '1px solid var(--border-light)',
+                    backgroundColor: isSelected ? 'var(--primary-color, #2563eb)' : 'var(--bg-surface)',
+                    color: isSelected ? '#ffffff' : 'var(--text-primary)',
+                    fontSize: '0.78rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.4rem',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  <span>{st === 'Hold' ? 'On Hold' : st}</span>
+                  <span style={{
+                    fontSize: '0.7rem',
+                    backgroundColor: isSelected ? 'rgba(255,255,255,0.25)' : 'var(--border-light)',
+                    color: isSelected ? '#ffffff' : 'var(--text-secondary)',
+                    padding: '0.05rem 0.45rem',
+                    borderRadius: '10px'
+                  }}>
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* Global Action Buttons */}
@@ -284,20 +316,17 @@ export default function UserManageTab({
         </div>
       </div>
 
-      {/* Search & Filter Bar */}
+      {/* Search Bar */}
       <div style={{
         display: 'flex',
-        flexWrap: 'wrap',
-        gap: '0.75rem',
         alignItems: 'center',
-        justifyContent: 'space-between',
         backgroundColor: 'var(--bg-surface)',
-        padding: '0.75rem 1rem',
+        padding: '0.65rem 1rem',
         borderRadius: '10px',
         border: '1px solid var(--border-light)'
       }}>
         {/* Search Input */}
-        <div style={{ position: 'relative', flex: 1, minWidth: '240px' }}>
+        <div style={{ position: 'relative', width: '100%' }}>
           <Search size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
           <input
             type="text"
@@ -306,7 +335,7 @@ export default function UserManageTab({
               setSearchQuery(e.target.value);
               setCurrentPage(1);
             }}
-            placeholder="Search by name, employee code, email, mobile, department..."
+            placeholder="Search by name, employee code, email, mobile, department, role..."
             style={{
               width: '100%',
               padding: '0.45rem 0.75rem 0.45rem 2.1rem',
@@ -317,31 +346,6 @@ export default function UserManageTab({
               fontSize: '0.82rem'
             }}
           />
-        </div>
-
-        {/* Department Filter */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Dept:</span>
-          <select
-            value={selectedDepartment}
-            onChange={e => {
-              setSelectedDepartment(e.target.value);
-              setCurrentPage(1);
-            }}
-            style={{
-              padding: '0.45rem 0.75rem',
-              borderRadius: '8px',
-              border: '1px solid var(--border-light)',
-              backgroundColor: 'var(--bg-surface)',
-              color: 'var(--text-primary)',
-              fontSize: '0.8rem'
-            }}
-          >
-            <option value="All">All Departments</option>
-            {departments.map(d => (
-              <option key={d} value={d}>{d}</option>
-            ))}
-          </select>
         </div>
       </div>
 
