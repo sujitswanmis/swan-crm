@@ -142,6 +142,10 @@ export async function getPartyList(tenantId = DEFAULT_TENANT_ID, options = {}) {
 
     await leadsPromise;
 
+    const activityFormatter = new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', hour12: true
+    });
     const enrichedData = parties.map(item => {
       const meta = parsePartyMeta(item.business_nature);
       
@@ -279,7 +283,7 @@ export async function getPartyList(tenantId = DEFAULT_TENANT_ID, options = {}) {
           stage: (item.onboarding_stage || 'S01').slice(0, 3).toUpperCase(),
           emp_name: item.created_by || 'Admin',
           timestamp: item.updated_at 
-            ? new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }).format(new Date(item.updated_at))
+            ? activityFormatter.format(new Date(item.updated_at))
             : 'Recently'
         },
         meta: meta
