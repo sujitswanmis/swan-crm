@@ -14,6 +14,7 @@ import {
 } from '@/app/actions/orderFulfillment';
 import MaskedPhoneDisplay from '../common/MaskedPhoneDisplay';
 import StandardTablePagination from '../common/StandardTablePagination';
+import SearchablePartySelect from '../common/SearchablePartySelect';
 
 const CATEGORIES = [
   { id: 'MANUFACTURING_DEFECT', label: 'Manufacturing Defect (QA)', dept: 'QUALITY_ASSURANCE', sla: '48h' },
@@ -110,6 +111,13 @@ export default function ComplaintManagementModule({
       const res = await createComplaintTicketDirect(createForm, tenantId);
       if (res.success) {
         setShowCreateModal(false);
+        setCreateForm({
+          party_id: '',
+          category: 'MANUFACTURING_DEFECT',
+          priority: 'HIGH',
+          assigned_department: 'QUALITY_ASSURANCE',
+          issue_description: ''
+        });
         loadTickets();
       } else {
         alert('Failed to create ticket: ' + (res.error || 'Unknown error'));
