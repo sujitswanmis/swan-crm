@@ -12,6 +12,18 @@ const getAdminClient = () => {
 
 const DEFAULT_TENANT_ID = '00000000-0000-0000-0000-000000000001';
 
+function getISTTimestamp() {
+  return new Intl.DateTimeFormat('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true
+  }).format(new Date());
+}
+
 /**
  * Safe JSON metadata parser & updater for party_master.business_nature
  * Ensures product authorizations, territory, team assignments, and channel links persist in Supabase
@@ -249,6 +261,14 @@ export async function getPartyList(tenantId = DEFAULT_TENANT_ID) {
         territory_allocations: terrAllocs,
         team_assignments: teamAssigns,
         meta_stages: meta.stages || {},
+        stage_audit: meta.stage_audit || {},
+        last_activity: meta.last_activity || {
+          stage: (item.onboarding_stage || 'S01').slice(0, 3).toUpperCase(),
+          emp_name: item.created_by || 'Admin',
+          timestamp: item.updated_at 
+            ? new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }).format(new Date(item.updated_at))
+            : 'Recently'
+        },
         meta: meta
       };
     });
@@ -378,7 +398,7 @@ const VALID_CONSTITUTIONS = [
 /**
  * Create New Party Master (S00) with proper channel codes & relationship tracking
  */
-export async function createPartyMaster(partyData, tenantId = DEFAULT_TENANT_ID) {
+export async function createPartyMaster(partyData, tenantId = DEFAULT_TENANT_ID, createdBy = 'System Admin') {
   const adminClient = getAdminClient();
 
   const { primary_contact_name, ...cleanPartyData } = partyData;
@@ -548,6 +568,23 @@ export async function createPartyMaster(partyData, tenantId = DEFAULT_TENANT_ID)
   initialMeta.stages = isUnconfirmedHandoff 
     ? { s00: false, s01: false } 
     : { s00: true, s01: false };
+
+  const istNow = getISTTimestamp();
+  const empName = createdBy || cleanPartyData.created_by || 'System Admin';
+  initialMeta.stage_audit = {
+    s01: {
+      completed: true,
+      emp_name: empName,
+      timestamp: istNow,
+      step_name: 'S00_Party_Master'
+    }
+  };
+  initialMeta.last_activity = {
+    stage: 'S01',
+    emp_name: empName,
+    timestamp: istNow
+  };
+
   await updatePartyMeta(adminClient, party.id, initialMeta);
 
   return party;
@@ -556,7 +593,7 @@ export async function createPartyMaster(partyData, tenantId = DEFAULT_TENANT_ID)
 /**
  * Update Party Step Data (S01, S02, S03, S04, S05, S05.1, S06, S07)
  */
-export async function updatePartyStep(partyId, stepName, stepData, tenantId = DEFAULT_TENANT_ID) {
+export async function updatePartyStep(partyId, stepName, stepData, tenantId = DEFAULT_TENANT_ID, updatedBy = 'System Admin') {
   const adminClient = getAdminClient();
 
   // Fetch current party to check parent changes
@@ -841,7 +878,25 @@ export async function updatePartyStep(partyId, stepName, stepData, tenantId = DE
     };
     if (stageKeyMap[stepName]) {
       const existingMeta = parsePartyMeta(currentParty.business_nature);
-      metaUpdates.stages = { ...(existingMeta.stages || {}), [stageKeyMap[stepName]]: true };
+      const stageKey = stageKeyMap[stepName];
+      const istTime = getISTTimestamp();
+      const empName = updatedBy || stepData.updated_by || 'System Admin';
+
+      metaUpdates.stages = { ...(existingMeta.stages || {}), [stageKey]: true };
+      metaUpdates.stage_audit = {
+        ...(existingMeta.stage_audit || {}),
+        [stageKey]: {
+          completed: true,
+          emp_name: empName,
+          timestamp: istTime,
+          step_name: stepName
+        }
+      };
+      metaUpdates.last_activity = {
+        stage: stageKey.toUpperCase(),
+        emp_name: empName,
+        timestamp: istTime
+      };
     }
   }
 
@@ -855,7 +910,7 @@ export async function updatePartyStep(partyId, stepName, stepData, tenantId = DE
 /**
  * Save Product Authorizations (S05)
  */
-export async function saveProductAuthorizations(partyId, products, tenantId = DEFAULT_TENANT_ID) {
+export async function saveProductAuthorizations(partyId, products, tenantId = DEFAULT_TENANT_ID, updatedBy = 'System Admin') {
   const adminClient = getAdminClient();
   try {
     // Delete existing and insert new in table if table exists
@@ -881,11 +936,29 @@ export async function saveProductAuthorizations(partyId, products, tenantId = DE
   }
 
   // Always persist authorisations and stage in party metadata
+  const existingPartyRec = (await adminClient.from('party_master').select('business_nature').eq('id', partyId).maybeSingle()).data;
+  const existingMeta = parsePartyMeta(existingPartyRec?.business_nature);
+  const istTime = getISTTimestamp();
+  const empName = updatedBy || 'System Admin';
+  const stageAudit = { ...(existingMeta.stage_audit || {}) };
+  stageAudit.s06 = {
+    completed: true,
+    emp_name: empName,
+    timestamp: istTime,
+    step_name: 'Product Authorization'
+  };
+
   await updatePartyMeta(adminClient, partyId, {
     product_authorizations: products || [],
     stages: {
-      ...(parsePartyMeta((await adminClient.from('party_master').select('business_nature').eq('id', partyId).maybeSingle()).data?.business_nature).stages || {}),
+      ...(existingMeta.stages || {}),
       s06: true
+    },
+    stage_audit: stageAudit,
+    last_activity: {
+      stage: 'S06',
+      emp_name: empName,
+      timestamp: istTime
     }
   });
 
@@ -895,7 +968,7 @@ export async function saveProductAuthorizations(partyId, products, tenantId = DE
 /**
  * Save Territory Allocation (S05.1)
  */
-export async function saveTerritoryAllocation(partyId, territoryData, tenantId = DEFAULT_TENANT_ID) {
+export async function saveTerritoryAllocation(partyId, territoryData, tenantId = DEFAULT_TENANT_ID, updatedBy = 'System Admin') {
   const adminClient = getAdminClient();
   let savedRecord = territoryData;
   try {
@@ -922,9 +995,31 @@ export async function saveTerritoryAllocation(partyId, territoryData, tenantId =
   }
 
   // Always persist territory in party metadata
+  const existingPartyRec = (await adminClient.from('party_master').select('business_nature').eq('id', partyId).maybeSingle()).data;
+  const existingMeta = parsePartyMeta(existingPartyRec?.business_nature);
+  const istTime = getISTTimestamp();
+  const empName = updatedBy || 'System Admin';
+  const stageAudit = { ...(existingMeta.stage_audit || {}) };
+  stageAudit.s06 = {
+    completed: true,
+    emp_name: empName,
+    timestamp: istTime,
+    step_name: 'Territory Allocation'
+  };
+
   await updatePartyMeta(adminClient, partyId, {
     territory: territoryData,
-    zone: territoryData.zone || 'North Zone'
+    zone: territoryData.zone || 'North Zone',
+    stages: {
+      ...(existingMeta.stages || {}),
+      s06: true
+    },
+    stage_audit: stageAudit,
+    last_activity: {
+      stage: 'S06',
+      emp_name: empName,
+      timestamp: istTime
+    }
   });
 
   return savedRecord;
@@ -933,7 +1028,7 @@ export async function saveTerritoryAllocation(partyId, territoryData, tenantId =
 /**
  * Save Team Assignments (S06)
  */
-export async function saveTeamAssignments(partyId, assignments, tenantId = DEFAULT_TENANT_ID) {
+export async function saveTeamAssignments(partyId, assignments, tenantId = DEFAULT_TENANT_ID, updatedBy = 'System Admin') {
   const adminClient = getAdminClient();
   try {
     await adminClient.from('party_team_assignments').delete().eq('party_id', partyId);
@@ -956,11 +1051,29 @@ export async function saveTeamAssignments(partyId, assignments, tenantId = DEFAU
   }
 
   // Always persist team assignments and stage in party metadata
+  const existingPartyRec = (await adminClient.from('party_master').select('business_nature').eq('id', partyId).maybeSingle()).data;
+  const existingMeta = parsePartyMeta(existingPartyRec?.business_nature);
+  const istTime = getISTTimestamp();
+  const empName = updatedBy || 'System Admin';
+  const stageAudit = { ...(existingMeta.stage_audit || {}) };
+  stageAudit.s07 = {
+    completed: true,
+    emp_name: empName,
+    timestamp: istTime,
+    step_name: 'Sales Team Assignment'
+  };
+
   await updatePartyMeta(adminClient, partyId, {
     team_assignments: assignments || [],
     stages: {
-      ...(parsePartyMeta((await adminClient.from('party_master').select('business_nature').eq('id', partyId).maybeSingle()).data?.business_nature).stages || {}),
+      ...(existingMeta.stages || {}),
       s07: true
+    },
+    stage_audit: stageAudit,
+    last_activity: {
+      stage: 'S07',
+      emp_name: empName,
+      timestamp: istTime
     }
   });
 
@@ -970,7 +1083,7 @@ export async function saveTeamAssignments(partyId, assignments, tenantId = DEFAU
 /**
  * S08 Partner Activation with status options: Active, Inactive, Hold, Payment Issues
  */
-export async function activatePartner(partyId, activationStatus = 'Active', remarks = '', tenantId = DEFAULT_TENANT_ID) {
+export async function activatePartner(partyId, activationStatus = 'Active', remarks = '', tenantId = DEFAULT_TENANT_ID, updatedBy = 'System Admin') {
   const adminClient = getAdminClient();
 
   const details = await getParty360Details(partyId);
@@ -1004,12 +1117,28 @@ export async function activatePartner(partyId, activationStatus = 'Active', rema
 
   // Always update metadata stages in party_master
   const existingMeta = parsePartyMeta(activated.business_nature);
+  const istTime = getISTTimestamp();
+  const empName = updatedBy || 'System Admin';
+  const stageAudit = { ...(existingMeta.stage_audit || {}) };
+  stageAudit.s08 = {
+    completed: true,
+    emp_name: empName,
+    timestamp: istTime,
+    step_name: 'Party Activation'
+  };
+
   await updatePartyMeta(adminClient, partyId, {
     activation_status: finalStatus,
     activation_remarks: remarks,
     stages: {
       ...(existingMeta.stages || {}),
       s08: true
+    },
+    stage_audit: stageAudit,
+    last_activity: {
+      stage: 'S08',
+      emp_name: empName,
+      timestamp: istTime
     }
   });
 
@@ -1140,6 +1269,8 @@ export async function getParty360Details(partyId) {
     biz_email_2: rawParty.biz_email_2 || meta.biz_email_2 || null,
     biz_alt_email_1: rawParty.biz_alt_email_1 || meta.biz_alt_email_1 || null,
     biz_alt_email_2: rawParty.biz_alt_email_2 || meta.biz_alt_email_2 || null,
+    stage_audit: meta.stage_audit || {},
+    last_activity: meta.last_activity || null,
     meta: meta
   } : null;
 
@@ -1567,7 +1698,7 @@ export async function deletePartyMaster(partyId, tenantId = DEFAULT_TENANT_ID) {
  * and creates corresponding party_master, party_contacts, party_addresses,
  * and party_roles records.
  */
-export async function bulkImportPartyMaster(partiesList = [], importMode = 'FULL', tenantId = DEFAULT_TENANT_ID) {
+export async function bulkImportPartyMaster(partiesList = [], importMode = 'FULL', tenantId = DEFAULT_TENANT_ID, importedBy = 'Bulk Import Admin') {
   const adminClient = getAdminClient();
   const results = {
     total: partiesList.length,
@@ -1738,6 +1869,25 @@ export async function bulkImportPartyMaster(partiesList = [], importMode = 'FULL
         ? { s00: true, s01: true, s02: true, s03: true, s04: true, tier: true, s05: true, s06: true, s07: true, s08: true }
         : { s00: true, s01: true };
 
+      const istNow = getISTTimestamp();
+      const empName = importedBy || 'Bulk Import Admin';
+      const stageAudit = {
+        s01: {
+          completed: true,
+          emp_name: empName,
+          timestamp: istNow,
+          step_name: 'Bulk S01 Registration'
+        }
+      };
+      if (isFull) {
+        stageAudit.s08 = {
+          completed: true,
+          emp_name: empName,
+          timestamp: istNow,
+          step_name: 'Full Import Auto-Activation'
+        };
+      }
+
       const metaPayload = {
         our_company: ourCompany,
         billing_route_type: billingRoute,
@@ -1745,6 +1895,12 @@ export async function bulkImportPartyMaster(partiesList = [], importMode = 'FULL
         parent_distributor_id: parentDistId,
         parent_dealer_id: parentDlrId,
         stages: stagesConfig,
+        stage_audit: stageAudit,
+        last_activity: {
+          stage: isFull ? 'S08' : 'S01',
+          emp_name: empName,
+          timestamp: istNow
+        },
         product_authorizations: isFull ? [{ product_category: prodCategory, status: 'APPROVED' }] : [],
         territory: { state: stateName, districts: districtName ? [districtName] : [], zone: 'North Zone' },
         security_deposit_amount: secDeposit,

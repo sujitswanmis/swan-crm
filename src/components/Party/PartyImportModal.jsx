@@ -15,7 +15,8 @@ export default function PartyImportModal({
   onClose,
   onImportSuccess,
   existingParties = [],
-  tenantId = null
+  tenantId = null,
+  userName = ''
 }) {
   const [importMode, setImportMode] = useState('FULL'); // 'FULL' (S01 to S08) | 'S01_ONLY'
   const [file, setFile] = useState(null);
@@ -741,7 +742,7 @@ export default function PartyImportModal({
           ]
         }));
 
-        const res = await bulkImportPartyMaster(batch, importMode, tenantId);
+        const res = await bulkImportPartyMaster(batch, importMode, tenantId, userName || 'Bulk Import Admin');
 
         if (res && res.success) {
           totalImported += res.imported || 0;

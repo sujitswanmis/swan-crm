@@ -238,15 +238,22 @@ async function saveFallbackPolicies(data) {
 }
 
 /**
- * Resolve effective tenant_id from company string if not an explicit UUID
+ * Resolve effective tenant_id from company string or tenant code if not an explicit UUID
  */
 function resolveTenantId(tenantId, userCompany = '') {
   const comp = (userCompany || '').toLowerCase().trim();
-  if (comp) {
-    if (comp.includes('supuja')) return '0a37b8e8-1c28-4e19-8891-951fc3f8f8af';
-    if (comp.includes('testing')) return '922d3e72-6588-457f-a562-4f1bdbf10d98';
-    if (comp.includes('swan')) return '00000000-0000-0000-0000-000000000001';
+  const rawId = String(tenantId || '').toLowerCase().trim();
+
+  if (comp.includes('supuja') || comp.includes('tnt00001') || rawId === 'tnt00001' || rawId === '0a37b8e8-1c28-4e19-8891-951fc3f8f8af') {
+    return '0a37b8e8-1c28-4e19-8891-951fc3f8f8af';
   }
+  if (comp.includes('testing') || comp.includes('tnt00003') || rawId === 'tnt00003' || rawId === '922d3e72-6588-457f-a562-4f1bdbf10d98') {
+    return '922d3e72-6588-457f-a562-4f1bdbf10d98';
+  }
+  if (comp.includes('swan') || comp.includes('nsmlr') || comp.includes('nstlp') || comp.includes('tnt00002') || rawId === 'tnt00002') {
+    return '00000000-0000-0000-0000-000000000001';
+  }
+
   if (tenantId && isValidUuid(tenantId) && tenantId !== '00000000-0000-0000-0000-000000000001') {
     return tenantId;
   }

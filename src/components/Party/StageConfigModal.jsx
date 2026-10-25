@@ -605,6 +605,58 @@ export default function StageConfigModal({
             </div>
           ) : (
             <>
+              {/* Stage Audit Banner (Shows Last Employee & Timestamp) */}
+              {modalParty?.stage_audit?.[activeTab] ? (
+                <div style={{
+                  background: 'rgba(56, 189, 248, 0.08)',
+                  border: '1px solid rgba(56, 189, 248, 0.25)',
+                  borderRadius: '8px',
+                  padding: '0.55rem 0.95rem',
+                  marginBottom: '1.25rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '0.6rem',
+                  fontSize: '0.78rem'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span style={{ color: '#38bdf8', fontWeight: 800 }}>👤 Last Verified / Updated By:</span>
+                    <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+                      {modalParty.stage_audit[activeTab].emp_name}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: 'var(--text-secondary)' }}>
+                    <span>🕒 Timestamp (IST):</span>
+                    <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#38bdf8' }}>
+                      {modalParty.stage_audit[activeTab].timestamp}
+                    </span>
+                  </div>
+                </div>
+              ) : modalParty?.last_activity ? (
+                <div style={{
+                  background: 'rgba(255, 255, 255, 0.03)',
+                  border: '1px solid var(--border-light)',
+                  borderRadius: '8px',
+                  padding: '0.45rem 0.85rem',
+                  marginBottom: '1rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '0.5rem',
+                  fontSize: '0.74rem',
+                  color: 'var(--text-secondary)'
+                }}>
+                  <div>
+                    Last Known Activity: <strong style={{ color: 'var(--text-primary)' }}>{modalParty.last_activity.emp_name}</strong>
+                  </div>
+                  <div style={{ fontFamily: 'monospace' }}>
+                    {modalParty.last_activity.timestamp}
+                  </div>
+                </div>
+              ) : null}
+
               {/* ========================================================= */}
               {/* STAGE S01 FORM */}
               {/* ========================================================= */}

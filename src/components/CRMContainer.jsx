@@ -7415,6 +7415,8 @@ export default function CRMContainer({
                     moduleAccess={moduleAccess}
                     userCompany={userCompany}
                     tenantId={effectiveTenantId}
+                    userName={userName}
+                    userEmail={userEmail}
                   />
                 </ErrorBoundary>
               </KeepAliveTab>

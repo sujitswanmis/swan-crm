@@ -69,22 +69,31 @@ function resolveTenantKey(companyOrTenantId) {
     'nstl',
     'nstlp',
     'nsmlr',
-    'swan agro'
+    'swan agro',
+    'tnt00002'
   ];
 
-  if (SWAN_ALIASES.includes(rawKey.toLowerCase())) {
+  const SUPUJA_ALIASES = [
+    '0a37b8e8-1c28-4e19-8891-951fc3f8f8af',
+    'supuja_creations',
+    'supuja creations',
+    'supuja creation',
+    'tnt00001'
+  ];
+
+  const TESTING_ALIASES = [
+    '922d3e72-6588-457f-a562-4f1bdbf10d98',
+    'testing_new_swan_group',
+    'testing new swan group',
+    'tnt00003'
+  ];
+
+  const lower = rawKey.toLowerCase();
+  if (SWAN_ALIASES.includes(lower)) {
     key = 'New Swan Group';
-  } else if (
-    rawKey === '0a37b8e8-1c28-4e19-8891-951fc3f8f8af' ||
-    rawKey.toLowerCase() === 'supuja_creations' ||
-    rawKey.toLowerCase() === 'supuja creations'
-  ) {
+  } else if (SUPUJA_ALIASES.includes(lower)) {
     key = 'SuPuja Creations';
-  } else if (
-    rawKey === '922d3e72-6588-457f-a562-4f1bdbf10d98' ||
-    rawKey.toLowerCase() === 'testing_new_swan_group' ||
-    rawKey.toLowerCase() === 'testing new swan group'
-  ) {
+  } else if (TESTING_ALIASES.includes(lower)) {
     key = 'Testing New Swan Group';
   }
 

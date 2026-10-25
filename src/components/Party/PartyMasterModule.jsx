@@ -201,8 +201,11 @@ export default function PartyMasterModule({
   userRole = '',
   moduleAccess = {},
   userCompany = '',
-  tenantId = null
+  tenantId = null,
+  userName = '',
+  userEmail = ''
 }) {
+  const effectiveUserName = userName || 'Admin';
   const effectiveTenantId = useMemo(() => {
     if (tenantId && tenantId !== 'default' && tenantId !== '00000000-0000-0000-0000-000000000001') {
       return tenantId;
@@ -1677,9 +1680,9 @@ export default function PartyMasterModule({
       let partyObj = null;
 
       if (partyId) {
-        partyObj = await updatePartyStep(partyId, 'S00_Party_Master', payload, effectiveTenantId);
+        partyObj = await updatePartyStep(partyId, 'S00_Party_Master', payload, effectiveTenantId, effectiveUserName);
       } else {
-        partyObj = await createPartyMaster(payload, effectiveTenantId);
+        partyObj = await createPartyMaster(payload, effectiveTenantId, effectiveUserName);
         partyId = partyObj.id;
         setActivePartyId(partyId);
       }
@@ -1721,7 +1724,7 @@ export default function PartyMasterModule({
         headquarter_districts: distChips,
         workflow_status: 'S02_Completed',
         next_step: 'S04_Commercial'
-      }, effectiveTenantId);
+      }, effectiveTenantId, effectiveUserName);
       await loadInitialData();
       setStageConfirmedMap(prev => ({
         ...prev,
@@ -1758,7 +1761,7 @@ export default function PartyMasterModule({
         showroom_area_sqft: s02DealerForm.showroom_area_sqft,
         workflow_status: 'S03_Completed',
         next_step: 'S04_Commercial'
-      }, effectiveTenantId);
+      }, effectiveTenantId, effectiveUserName);
       await loadInitialData();
       setStageConfirmedMap(prev => ({
         ...prev,
@@ -1797,7 +1800,7 @@ export default function PartyMasterModule({
         parent_distributor_id: derivedDistId,
         workflow_status: 'S04_Completed',
         next_step: 'S04_Commercial'
-      }, effectiveTenantId);
+      }, effectiveTenantId, effectiveUserName);
       await loadInitialData();
       setStageConfirmedMap(prev => ({
         ...prev,
@@ -1824,7 +1827,7 @@ export default function PartyMasterModule({
         commercial_status: 'Completed',
         workflow_status: 'S05_Completed',
         next_step: 'S05_Product_Authorization'
-      }, effectiveTenantId);
+      }, effectiveTenantId, effectiveUserName);
       await loadInitialData();
       setStageConfirmedMap(prev => ({
         ...prev,
@@ -1863,7 +1866,7 @@ export default function PartyMasterModule({
         order_category: s06ProductCategory === 'Spare Part' ? 'Spare Parts' : p,
         opening_stock_required: 1
       }));
-      await saveProductAuthorizations(activePartyId, items, effectiveTenantId);
+      await saveProductAuthorizations(activePartyId, items, effectiveTenantId, effectiveUserName);
 
       // 2. Save territory
       await saveTerritoryAllocation(activePartyId, {
@@ -1873,7 +1876,7 @@ export default function PartyMasterModule({
         tehsil_area: s05TerritoryForm.tehsil_area,
         market_coverage_area: s05TerritoryForm.market_coverage_chips,
         territory_type: s05TerritoryForm.territory_type
-      }, effectiveTenantId);
+      }, effectiveTenantId, effectiveUserName);
 
       await updatePartyStep(activePartyId, 'S05_Product_Authorization_Territory', {
         state_name: s05TerritoryForm.state,
@@ -1881,7 +1884,7 @@ export default function PartyMasterModule({
         product_category: s06ProductCategory,
         workflow_status: 'S06_Completed',
         next_step: 'S06_Team_Assignment'
-      }, effectiveTenantId);
+      }, effectiveTenantId, effectiveUserName);
 
       await loadInitialData();
       setStageConfirmedMap(prev => ({
@@ -1917,11 +1920,11 @@ export default function PartyMasterModule({
         });
       });
 
-      await saveTeamAssignments(activePartyId, flatAssignments, effectiveTenantId);
+      await saveTeamAssignments(activePartyId, flatAssignments, effectiveTenantId, effectiveUserName);
       await updatePartyStep(activePartyId, 'S06_Team_Assignment', {
         workflow_status: 'S07_Completed',
         next_step: 'S07_Activation'
-      }, effectiveTenantId);
+      }, effectiveTenantId, effectiveUserName);
       await loadInitialData();
       setStageConfirmedMap(prev => ({
         ...prev,
@@ -1943,7 +1946,7 @@ export default function PartyMasterModule({
   const handleS07Activation = async () => {
     setActivationErrors([]);
     try {
-      const res = await activatePartner(activePartyId, s08ActivationStatus, s08Remarks, effectiveTenantId);
+      const res = await activatePartner(activePartyId, s08ActivationStatus, s08Remarks, effectiveTenantId, effectiveUserName);
       if (!res.success) {
         setActivationErrors(res.errors || []);
         setCenterAlert({
@@ -2615,12 +2618,21 @@ export default function PartyMasterModule({
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
                             {stagesList.map((stg) => {
                               const isNextPending = !isActive && nextStage === stg.id;
+                              const audit = p.stage_audit?.[stg.id];
+                              const auditInfo = audit
+                                ? `✓ ${stg.label} Completed by: ${audit.emp_name} on ${audit.timestamp} (IST)`
+                                : stg.done
+                                ? `✓ ${stg.label} Completed`
+                                : isNextPending
+                                ? `⚡ ${stg.label} Next Pending Action`
+                                : `○ ${stg.label} Upcoming`;
+
                               return (
                                 <button
                                   key={stg.id}
                                   type="button"
                                   onClick={() => resumeWizard(p, stg.id)}
-                                  title={`${stg.title} (${stg.done ? 'Completed' : isNextPending ? 'Next Pending Action' : 'Upcoming'}) - Click to Open`}
+                                  title={`${stg.title}\n${auditInfo}\nClick to Open / Configure Stage`}
                                   style={{
                                     display: 'inline-flex',
                                     alignItems: 'center',
@@ -2654,6 +2666,34 @@ export default function PartyMasterModule({
                               );
                             })}
                           </div>
+
+                          {/* Last Stage Activity Footnote */}
+                          {p.last_activity && (
+                            <div style={{
+                              width: '100%',
+                              marginTop: '0.35rem',
+                              fontSize: '0.69rem',
+                              color: 'var(--text-secondary, #94a3b8)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.35rem',
+                              flexWrap: 'wrap'
+                            }}>
+                              <span style={{
+                                background: 'rgba(56, 189, 248, 0.14)',
+                                border: '1px solid rgba(56, 189, 248, 0.35)',
+                                color: '#38bdf8',
+                                padding: '1px 5px',
+                                borderRadius: '4px',
+                                fontWeight: 800,
+                                fontSize: '0.65rem'
+                              }}>
+                                {p.last_activity.stage || 'S01'}
+                              </span>
+                              <span>by <strong style={{ color: 'var(--text-primary, #fff)' }}>{p.last_activity.emp_name || 'Admin'}</strong></span>
+                              <span style={{ color: '#64748b' }}>• {p.last_activity.timestamp}</span>
+                            </div>
+                          )}
                         </td>
 
                         {/* Status */}
@@ -3505,6 +3545,7 @@ export default function PartyMasterModule({
           onNewParty={startNewPartyWizard}
           onDeleteParty={handleDeleteParty}
           refreshData={loadInitialData}
+          userName={effectiveUserName}
         />
       )}
 
@@ -3519,6 +3560,7 @@ export default function PartyMasterModule({
           onNewParty={startNewPartyWizard}
           onDeleteParty={handleDeleteParty}
           refreshData={loadInitialData}
+          userName={effectiveUserName}
         />
       )}
 
@@ -3533,6 +3575,7 @@ export default function PartyMasterModule({
           onNewParty={startNewPartyWizard}
           onDeleteParty={handleDeleteParty}
           refreshData={loadInitialData}
+          userName={effectiveUserName}
         />
       )}
 
@@ -3547,6 +3590,7 @@ export default function PartyMasterModule({
           onNewParty={startNewPartyWizard}
           onDeleteParty={handleDeleteParty}
           refreshData={loadInitialData}
+          userName={effectiveUserName}
         />
       )}
 
@@ -3561,6 +3605,7 @@ export default function PartyMasterModule({
           onNewParty={startNewPartyWizard}
           onDeleteParty={handleDeleteParty}
           refreshData={loadInitialData}
+          userName={effectiveUserName}
         />
       )}
 
@@ -3575,6 +3620,7 @@ export default function PartyMasterModule({
           onNewParty={startNewPartyWizard}
           onDeleteParty={handleDeleteParty}
           refreshData={loadInitialData}
+          userName={effectiveUserName}
         />
       )}
 
@@ -3589,6 +3635,7 @@ export default function PartyMasterModule({
           onNewParty={startNewPartyWizard}
           onDeleteParty={handleDeleteParty}
           refreshData={loadInitialData}
+          userName={effectiveUserName}
         />
       )}
 
@@ -3603,6 +3650,7 @@ export default function PartyMasterModule({
           onNewParty={startNewPartyWizard}
           onDeleteParty={handleDeleteParty}
           refreshData={loadInitialData}
+          userName={effectiveUserName}
         />
       )}
 

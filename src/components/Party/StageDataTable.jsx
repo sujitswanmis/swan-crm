@@ -111,7 +111,8 @@ export default function StageDataTable({
   onNewParty,
   onDeleteParty,
   refreshData,
-  tenantId = null
+  tenantId = null,
+  userName = ''
 }) {
   const meta = STAGE_CONFIGS[stageId] || STAGE_CONFIGS.s01;
   const [tableView, setTableView] = useTableViewPreference('Party/StageDataTable-1');
@@ -1010,7 +1011,7 @@ export default function StageDataTable({
                       {renderStageCol5(party, approvals)}
                     </td>
 
-                    {/* Stage Status */}
+                    {/* Stage Status & Last Emp / Timestamp */}
                     <td style={{ padding: '0.75rem 0.9rem' }}>
                       {stageId === 's08' ? (
                         <span style={{
@@ -1043,6 +1044,22 @@ export default function StageDataTable({
                           {isApproved ? '✓ Approved' : '⏳ Pending'}
                         </span>
                       )}
+
+                      {/* Last Employee & Timestamp for this stage */}
+                      {party.stage_audit?.[stageId] ? (
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary, #94a3b8)', marginTop: '0.3rem', display: 'flex', flexDirection: 'column', gap: '0.1rem' }}>
+                          <div>
+                            by <strong style={{ color: 'var(--text-primary, #fff)' }}>{party.stage_audit[stageId].emp_name}</strong>
+                          </div>
+                          <div style={{ fontSize: '0.67rem', color: '#38bdf8', fontFamily: 'monospace' }}>
+                            {party.stage_audit[stageId].timestamp}
+                          </div>
+                        </div>
+                      ) : party.last_activity ? (
+                        <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: '0.25rem' }}>
+                          Updated: {party.last_activity.timestamp}
+                        </div>
+                      ) : null}
                     </td>
 
                     {/* Compact Icon Action Buttons */}
@@ -1281,6 +1298,7 @@ export default function StageDataTable({
           }}
           existingParties={parties}
           tenantId={tenantId}
+          userName={userName}
         />
       )}
     </div>
