@@ -203,7 +203,7 @@ export default function ChannelOperationsModule({
           }}
         >
           <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-          {loading ? 'Refreshing...' : 'Refresh Operations'}
+          {loading ? 'Refreshing...' : 'Refresh'}
         </button>
       </div>
 
