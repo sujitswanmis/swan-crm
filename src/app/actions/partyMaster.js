@@ -1515,28 +1515,25 @@ export async function bulkImportPartyMaster(partiesList = [], importMode = 'FULL
   }
 
   try {
-    // 1. Fetch existing mobile numbers & GSTINs in DB to prevent duplicates
-    const { data: existingRecords } = await adminClient
-      .from('party_master')
-      .select('primary_mobile, gstin')
-      .eq('tenant_id', tenantId);
+    // 1. Fetch existing mobile numbers & GSTINs and active mapping in DB in parallel
+    const [existingRecordsRes, allPartiesMapRes] = await Promise.all([
+      adminClient.from('party_master').select('primary_mobile, gstin').eq('tenant_id', tenantId),
+      adminClient.from('party_master').select('id, firm_name, party_universal_code, business_nature').eq('tenant_id', tenantId)
+    ]);
+
+    const existingRecords = existingRecordsRes.data || [];
+    const allPartiesMap = allPartiesMapRes.data || [];
 
     const existingMobiles = new Set();
     const existingGSTINs = new Set();
-    (existingRecords || []).forEach(r => {
+    existingRecords.forEach(r => {
       if (r.primary_mobile) existingMobiles.add(String(r.primary_mobile).replace(/\D/g, '').slice(-10));
       if (r.gstin) existingGSTINs.add(String(r.gstin).trim().toUpperCase());
     });
 
-    // Also fetch active distributors and dealers to resolve parent mapping by name or code if provided
-    const { data: allPartiesMap } = await adminClient
-      .from('party_master')
-      .select('id, firm_name, party_universal_code, business_nature')
-      .eq('tenant_id', tenantId);
-
     const distMap = new Map();
     const dlrMap = new Map();
-    (allPartiesMap || []).forEach(p => {
+    allPartiesMap.forEach(p => {
       const meta = parsePartyMeta(p.business_nature);
       const pType = (meta.party_type || meta.dealership_type || '').toLowerCase();
       const lowerName = (p.firm_name || '').toLowerCase().trim();
@@ -1721,53 +1718,56 @@ export async function bulkImportPartyMaster(partiesList = [], importMode = 'FULL
 
       const partyId = createdParty.id;
 
-      // Insert Contact Person 1 (Primary Contact)
+      // Insert all child records (contacts, address, role, terms) in parallel
+      const childPromises = [];
+
+      // 1. Primary Contact Person
       const cp1Name = String(row.contact_person_name_1 || contactPerson || firmName).trim();
       const cp1Mobile = String(row.contact_mobile_1_1 || cleanMobile).replace(/\D/g, '').slice(-10) || cleanMobile;
       const cp1Email = String(row.contact_email_1_2 || email || '').trim();
-      try {
-        await adminClient.from('party_contacts').insert([{
+      childPromises.push(
+        adminClient.from('party_contacts').insert([{
           party_id: partyId,
           contact_name: cp1Name,
           primary_mobile: cp1Mobile,
           email: cp1Email || null,
           is_primary: true
-        }]);
-      } catch (_) {}
+        }])
+      );
 
-      // Insert Contact Person 2 (if present)
+      // 2. Contact Person 2 (if present)
       const cp2Name = String(row.contact_person_name_2 || '').trim();
       const cp2Mobile = String(row.contact_mobile_2_1 || '').replace(/\D/g, '').slice(-10);
       if (cp2Name || cp2Mobile) {
-        try {
-          await adminClient.from('party_contacts').insert([{
+        childPromises.push(
+          adminClient.from('party_contacts').insert([{
             party_id: partyId,
             contact_name: cp2Name || 'Contact Person 2',
             primary_mobile: cp2Mobile || null,
             email: String(row.contact_email_2_2 || '').trim() || null,
             is_primary: false
-          }]);
-        } catch (_) {}
+          }])
+        );
       }
 
-      // Insert Contact Person 3 (if present)
+      // 3. Contact Person 3 (if present)
       const cp3Name = String(row.contact_person_name_3 || '').trim();
       const cp3Mobile = String(row.contact_mobile_3_1 || '').replace(/\D/g, '').slice(-10);
       if (cp3Name || cp3Mobile) {
-        try {
-          await adminClient.from('party_contacts').insert([{
+        childPromises.push(
+          adminClient.from('party_contacts').insert([{
             party_id: partyId,
             contact_name: cp3Name || 'Contact Person 3',
             primary_mobile: cp3Mobile || null,
             email: String(row.contact_email_3_1 || '').trim() || null,
             is_primary: false
-          }]);
-        } catch (_) {}
+          }])
+        );
       }
 
-      // Insert address
-      try {
-        await adminClient.from('party_addresses').insert([{
+      // 4. Registered Address
+      childPromises.push(
+        adminClient.from('party_addresses').insert([{
           party_id: partyId,
           address_type: 'REGISTERED',
           address_line_1: addressLine || `${firmName}, ${districtName || stateName}`,
@@ -1775,30 +1775,32 @@ export async function bulkImportPartyMaster(partiesList = [], importMode = 'FULL
           district_name: districtName,
           pincode: pincode || null,
           is_primary: true
-        }]);
-      } catch (_) {}
+        }])
+      );
 
-      // Insert role
-      try {
-        const roleType = partyType === 'Distributor' ? 'DISTRIBUTOR' : (partyType === 'Sub-Dealer' ? 'DIRECT_CUSTOMER' : 'DEALER');
-        await adminClient.from('party_roles').insert([{
+      // 5. Party Role
+      const roleType = partyType === 'Distributor' ? 'DISTRIBUTOR' : (partyType === 'Sub-Dealer' ? 'DIRECT_CUSTOMER' : 'DEALER');
+      childPromises.push(
+        adminClient.from('party_roles').insert([{
           party_id: partyId,
           role_type: roleType,
           role_code: channelCode,
           status: 'ACTIVE'
-        }]);
-      } catch (_) {}
+        }])
+      );
 
-      // Insert commercial terms
-      try {
-        await adminClient.from('party_commercial_terms').insert([{
+      // 6. Commercial terms
+      childPromises.push(
+        adminClient.from('party_commercial_terms').insert([{
           party_id: partyId,
           credit_limit: isFull ? 1000000 : 500000,
           credit_days: 30,
           security_deposit_amount: secDeposit,
           security_mode: secMode
-        }]);
-      } catch (_) {}
+        }])
+      );
+
+      await Promise.allSettled(childPromises);
 
       results.imported++;
       results.createdParties.push({ id: partyId, firm_name: firmName, party_code: partyCode, channel_code: channelCode });

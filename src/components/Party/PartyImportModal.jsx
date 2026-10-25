@@ -614,7 +614,7 @@ export default function PartyImportModal({
     });
   };
 
-  // Start processing import via server action
+  // Start processing import via fast chunked server action batches (Real-time live progress)
   const handleStartImport = async () => {
     const validToImport = parsedRows.filter(r => r._isValid);
     if (validToImport.length === 0) {
@@ -622,50 +622,92 @@ export default function PartyImportModal({
       return;
     }
 
+    const totalRecords = validToImport.length;
+    const CHUNK_SIZE = 25;
+    const totalChunks = Math.ceil(totalRecords / CHUNK_SIZE);
+
     setIsProcessing(true);
     setImportProgress({
       active: true,
-      percentage: 15,
+      percentage: 5,
       current: 0,
-      total: validToImport.length,
+      total: totalRecords,
       created: 0,
       skipped: 0,
-      logs: [`Starting import of ${validToImport.length} records in ${importMode === 'FULL' ? 'Full S01–S08' : 'S01-Only'} mode...`],
+      logs: [
+        `Starting import of ${totalRecords} records in ${importMode === 'FULL' ? 'Full S01–S08' : 'S01-Only'} mode...`,
+        `Divided into ${totalChunks} fast real-time batches (${CHUNK_SIZE} records per batch).`
+      ],
       complete: false
     });
 
+    let totalImported = 0;
+    let totalSkipped = 0;
+    const allErrors = [];
+
     try {
-      setImportProgress(prev => ({ ...prev, percentage: 40, logs: [...prev.logs, 'Contacting Supabase backend...'] }));
+      for (let chunkIdx = 0; chunkIdx < totalChunks; chunkIdx++) {
+        const start = chunkIdx * CHUNK_SIZE;
+        const end = Math.min(start + CHUNK_SIZE, totalRecords);
+        const batch = validToImport.slice(start, end);
 
-      const res = await bulkImportPartyMaster(validToImport, importMode, tenantId);
-
-      if (!res.success) {
         setImportProgress(prev => ({
           ...prev,
-          active: false,
-          complete: true,
-          percentage: 100,
-          logs: [...prev.logs, `❌ Import Failed: ${res.error}`]
+          logs: [
+            ...prev.logs,
+            `⏳ Batch ${chunkIdx + 1} of ${totalChunks}: Processing records ${start + 1} to ${end}...`
+          ]
         }));
-        setIsProcessing(false);
-        return;
+
+        const res = await bulkImportPartyMaster(batch, importMode, tenantId);
+
+        if (res && res.success) {
+          totalImported += res.imported || 0;
+          totalSkipped += res.skipped || 0;
+          if (res.errors && res.errors.length) {
+            allErrors.push(...res.errors);
+          }
+          const pct = Math.min(Math.round(((chunkIdx + 1) / totalChunks) * 100), 98);
+          setImportProgress(prev => ({
+            ...prev,
+            percentage: pct,
+            current: totalImported,
+            created: totalImported,
+            skipped: totalSkipped,
+            logs: [
+              ...prev.logs,
+              `✓ Batch ${chunkIdx + 1}/${totalChunks} Complete: +${res.imported} created${res.skipped > 0 ? ` (${res.skipped} skipped)` : ''}. Progress: ${totalImported}/${totalRecords}`
+            ]
+          }));
+        } else {
+          const errDetail = res?.error || 'Batch import failed';
+          allErrors.push(`Batch ${chunkIdx + 1} Error: ${errDetail}`);
+          setImportProgress(prev => ({
+            ...prev,
+            logs: [
+              ...prev.logs,
+              `⚠️ Batch ${chunkIdx + 1} notice: ${errDetail}`
+            ]
+          }));
+        }
       }
 
-      const successLogs = [
-        `✅ Import Finished Successfully!`,
-        `🎉 Successfully Created: ${res.imported} Channel Partners`,
-        res.skipped > 0 ? `⚠️ Skipped / Duplicates: ${res.skipped}` : null,
-        ...(res.errors || []).slice(0, 8)
+      // All batches successfully processed
+      const summaryLogs = [
+        `✅ All ${totalChunks} Batches Completed!`,
+        `🎉 Successfully Created: ${totalImported} Channel Partners`,
+        totalSkipped > 0 ? `⚠️ Skipped / Duplicates: ${totalSkipped}` : null,
+        ...allErrors.slice(0, 5)
       ].filter(Boolean);
 
       setImportProgress({
         active: false,
         percentage: 100,
-        current: res.imported,
-        total: validToImport.length,
-        created: res.imported,
-        skipped: res.skipped,
-        logs: successLogs,
+        current: totalImported,
+        total: totalRecords,
+        created: totalImported,
+        skipped: totalSkipped,
+        logs: summaryLogs,
         complete: true
       });
 
@@ -673,6 +715,7 @@ export default function PartyImportModal({
         onImportSuccess();
       }
     } catch (err) {
+      console.error('Bulk import error:', err);
       setImportProgress(prev => ({
         ...prev,
         active: false,
