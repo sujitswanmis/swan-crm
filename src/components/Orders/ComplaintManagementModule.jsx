@@ -32,6 +32,13 @@ const DEPARTMENTS = [
   { id: 'SERVICE_ENGINEERING', label: 'Field Service Engineering' }
 ];
 
+const CLOSURE_METHODS = [
+  { id: 'PHONE_CALL', label: '📞 Phone Call Confirmation with Partner' },
+  { id: 'WHATSAPP_CONFIRMED', label: '💬 WhatsApp Written Confirmation' },
+  { id: 'SIGNED_SLIP', label: '📝 Signed Delivery Slip / Replacement POD' },
+  { id: 'FIELD_VISIT', label: '🧑‍🔧 Field Visit by Service Engineer' }
+];
+
 export default function ComplaintManagementModule({
   tenantId,
   parties = []
@@ -63,8 +70,10 @@ export default function ComplaintManagementModule({
 
   const [selectedTicketForClose, setSelectedTicketForClose] = useState(null);
   const [closeForm, setCloseForm] = useState({
-    closure_otp: 'VERIFIED_ON_CALL',
-    dealer_satisfaction_rating: 5
+    closure_method: 'PHONE_CALL',
+    closure_notes: '',
+    dealer_satisfaction_rating: 5,
+    partner_remarks: ''
   });
 
   const [submitting, setSubmitting] = useState(false);
@@ -153,7 +162,15 @@ export default function ComplaintManagementModule({
     if (!selectedTicketForClose) return;
     setSubmitting(true);
     try {
-      const res = await verifyAndCloseComplaintTicket(selectedTicketForClose.id, closeForm, tenantId);
+      const methodObj = CLOSURE_METHODS.find(m => m.id === closeForm.closure_method);
+      const methodLabel = methodObj?.label || closeForm.closure_method;
+      const notesPart = closeForm.closure_notes ? ` - ${closeForm.closure_notes}` : '';
+      const remarksPart = closeForm.partner_remarks ? ` | Partner Remarks: ${closeForm.partner_remarks}` : '';
+      const payload = {
+        closure_otp: `${methodLabel}${notesPart}${remarksPart}`,
+        dealer_satisfaction_rating: Number(closeForm.dealer_satisfaction_rating) || 5
+      };
+      const res = await verifyAndCloseComplaintTicket(selectedTicketForClose.id, payload, tenantId);
       if (res.success) {
         setSelectedTicketForClose(null);
         loadTickets();
@@ -561,8 +578,10 @@ export default function ComplaintManagementModule({
                             onClick={() => {
                               setSelectedTicketForClose(t);
                               setCloseForm({
-                                closure_otp: 'VERIFIED_ON_CALL',
-                                dealer_satisfaction_rating: 5
+                                closure_method: 'PHONE_CALL',
+                                closure_notes: '',
+                                dealer_satisfaction_rating: 5,
+                                partner_remarks: ''
                               });
                             }}
                             style={{
@@ -581,7 +600,7 @@ export default function ComplaintManagementModule({
                         )}
                         {isClosed && (
                           <span style={{ color: '#10b981', fontSize: '0.78rem', fontWeight: 700 }}>
-                            ⭐ {t.dealer_satisfaction_rating || 5}/5 Closed
+                            ⭐ {t.dealer_satisfaction_rating || 5}/5 Partner Verified
                           </span>
                         )}
                       </td>
@@ -712,7 +731,7 @@ export default function ComplaintManagementModule({
                   required
                   value={createForm.issue_description}
                   onChange={e => setCreateForm({ ...createForm, issue_description: e.target.value })}
-                  placeholder="Detail the exact problem reported by dealer (e.g. Broken gear tooth in rotavator chassis #8421)..."
+                  placeholder="Detail the exact problem reported by channel partner (e.g. Broken gear tooth in rotavator chassis #8421)..."
                   style={{ width: '100%', padding: '0.6rem 0.8rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.88rem' }}
                 />
               </div>
@@ -869,7 +888,7 @@ export default function ComplaintManagementModule({
         </div>
       )}
 
-      {/* Verify & Close Modal */}
+      {/* Channel Partner Verified Closure Modal */}
       {selectedTicketForClose && (
         <div style={{
           position: 'fixed',
@@ -887,65 +906,116 @@ export default function ComplaintManagementModule({
             border: '1px solid var(--border-light)',
             borderRadius: '16px',
             width: '100%',
-            maxWidth: '500px',
+            maxWidth: '540px',
             boxShadow: '0 20px 40px rgba(0,0,0,0.5)',
-            overflow: 'hidden'
+            maxHeight: '92vh',
+            overflowY: 'auto'
           }}>
             <div style={{
               padding: '1.2rem 1.5rem',
               borderBottom: '1px solid var(--border-light)',
               display: 'flex',
               justifyContent: 'space-between',
-              alignItems: 'center',
+              alignItems: 'flex-start',
               background: 'linear-gradient(135deg, rgba(16,185,129,0.1) 0%, transparent 100%)'
             }}>
               <div>
                 <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                  Dealer Verified Closure
+                  Channel Partner Verified Closure
                 </h3>
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
-                  Ticket #{selectedTicketForClose.ticket_number} • {selectedTicketForClose.party?.firm_name}
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  <span style={{ fontWeight: 700, color: '#10b981' }}>#{selectedTicketForClose.ticket_number}</span>
+                  <span>•</span>
+                  <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{selectedTicketForClose.party?.firm_name || 'Channel Partner'}</span>
+                  {selectedTicketForClose.party?.primary_mobile && (
+                    <MaskedPhoneDisplay phone={selectedTicketForClose.party.primary_mobile} size="sm" />
+                  )}
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setSelectedTicketForClose(null)}
-                style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '1.2rem' }}
+                style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '1.2rem', padding: '0.2rem' }}
               >
                 ✕
               </button>
             </div>
 
-            <form onSubmit={handleVerifyClose} style={{ padding: '1.5rem' }}>
+            <form onSubmit={handleVerifyClose} style={{ padding: '1.4rem' }}>
+              {/* Context Summary Card: Original Issue & Action Taken */}
               <div style={{
-                background: 'rgba(16,185,129,0.1)',
-                border: '1px solid rgba(16,185,129,0.3)',
-                borderRadius: '8px',
-                padding: '0.75rem 1rem',
-                marginBottom: '1rem',
-                fontSize: '0.82rem',
-                color: '#34d399'
+                background: 'var(--bg-primary)',
+                border: '1px solid var(--border-light)',
+                borderRadius: '10px',
+                padding: '0.85rem 1rem',
+                marginBottom: '1.15rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.55rem',
+                fontSize: '0.82rem'
               }}>
-                ✓ Two-factor verification: Ticket is confirmed resolved with the partner directly.
+                <div>
+                  <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
+                    Reported Grievance:
+                  </span>
+                  <div style={{ color: 'var(--text-primary)', marginTop: '0.15rem', fontWeight: 600 }}>
+                    {selectedTicketForClose.issue_description}
+                  </div>
+                </div>
+
+                <div style={{ borderTop: '1px solid var(--border-light)', paddingTop: '0.45rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  <div>
+                    <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
+                      Corrective Action Taken:
+                    </span>
+                    <div style={{ color: '#3b82f6', fontWeight: 700, marginTop: '0.1rem' }}>
+                      {selectedTicketForClose.resolution_type?.replace(/_/g, ' ') || 'Action Recorded'}
+                      {selectedTicketForClose.action_reference_no && ` (Ref: ${selectedTicketForClose.action_reference_no})`}
+                    </div>
+                  </div>
+                  {selectedTicketForClose.resolution_notes && (
+                    <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
+                      "{selectedTicketForClose.resolution_notes}"
+                    </div>
+                  )}
+                </div>
               </div>
 
+              {/* Closure Verification Method (Selection List) */}
               <div style={{ marginBottom: '1rem' }}>
                 <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>
-                  Dealer Closure Verification / OTP / Confirmation Call *
+                  Closure Verification Method *
+                </label>
+                <select
+                  required
+                  value={closeForm.closure_method}
+                  onChange={e => setCloseForm({ ...closeForm, closure_method: e.target.value })}
+                  style={{ width: '100%', padding: '0.6rem 0.8rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.86rem', fontWeight: 600 }}
+                >
+                  {CLOSURE_METHODS.map(m => (
+                    <option key={m.id} value={m.id}>{m.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Spoke with Person / Verification Note */}
+              <div style={{ marginBottom: '1rem' }}>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>
+                  Person Spoke With / Verification Note
                 </label>
                 <input
                   type="text"
-                  required
-                  value={closeForm.closure_otp}
-                  onChange={e => setCloseForm({ ...closeForm, closure_otp: e.target.value })}
-                  placeholder="e.g. Phone confirmed with Mr. Sharma / OTP 4921"
-                  style={{ width: '100%', padding: '0.6rem 0.8rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.88rem' }}
+                  value={closeForm.closure_notes}
+                  onChange={e => setCloseForm({ ...closeForm, closure_notes: e.target.value })}
+                  placeholder="e.g. Confirmed with Proprietor Mr. Sharma / Signed voucher collected"
+                  style={{ width: '100%', padding: '0.6rem 0.8rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.86rem' }}
                 />
               </div>
 
-              <div style={{ marginBottom: '1.25rem' }}>
+              {/* Partner Resolution Satisfaction Score */}
+              <div style={{ marginBottom: '1rem' }}>
                 <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>
-                  Dealer Resolution Satisfaction Score *
+                  Partner Resolution Satisfaction Score *
                 </label>
                 <select
                   value={closeForm.dealer_satisfaction_rating}
@@ -958,6 +1028,20 @@ export default function ComplaintManagementModule({
                   <option value={2}>⭐⭐ 2 - Partially Satisfied</option>
                   <option value={1}>⭐ 1 - Not Satisfied</option>
                 </select>
+              </div>
+
+              {/* Partner Remarks / Closing Feedback Textarea */}
+              <div style={{ marginBottom: '1.25rem' }}>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>
+                  Partner Closing Remarks / Additional Feedback
+                </label>
+                <textarea
+                  rows="2"
+                  value={closeForm.partner_remarks}
+                  onChange={e => setCloseForm({ ...closeForm, partner_remarks: e.target.value })}
+                  placeholder="Record any comments, remarks, or observations shared by the partner..."
+                  style={{ width: '100%', padding: '0.6rem 0.8rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.86rem' }}
+                />
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
@@ -982,7 +1066,7 @@ export default function ComplaintManagementModule({
                     fontSize: '0.84rem'
                   }}
                 >
-                  {submitting ? 'Closing Ticket...' : 'Verify & Close Ticket'}
+                  {submitting ? 'Verifying & Closing...' : 'Verify & Close Ticket'}
                 </button>
               </div>
             </form>
