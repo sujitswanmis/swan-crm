@@ -123,3 +123,44 @@ export function calculateNextDueDate(schedule, fromDateStr = null) {
   const fallback = new Date(baseUtc.getTime() + 30 * 24 * 60 * 60 * 1000);
   return fallback.toISOString().slice(0, 10);
 }
+
+/**
+ * Format timestamp strictly in Indian Standard Time (IST / Asia/Kolkata)
+ * Example: "25 Oct 2026, 04:30 PM"
+ */
+export function formatISTDateTime(isoString) {
+  if (!isoString) return '—';
+  try {
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return String(isoString);
+    return new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    }).format(d);
+  } catch (_) {
+    return String(isoString);
+  }
+}
+
+/**
+ * Format relative time or short date string in IST
+ */
+export function formatISTShortDate(isoString) {
+  if (!isoString) return '—';
+  try {
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return String(isoString);
+    return new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      day: '2-digit',
+      month: 'short'
+    }).format(d);
+  } catch (_) {
+    return String(isoString);
+  }
+}

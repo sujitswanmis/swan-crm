@@ -1137,20 +1137,72 @@ export default function CRMContainer({
     return () => window.removeEventListener('crm_config_updated', handleConfigStagesUpdated);
   }, []);
 
+  const getCategoryForTab = (tab) => {
+    if (!tab) return null;
+    const cleanTab = String(tab).toLowerCase().trim();
+    const salesTabs = ['registration', 'report', 'leads', 'orders', 'party', 'location_master', 'location_territory'];
+    const purchaseTabs = ['mrp', 'mrp_against'];
+    const hrTabs = ['recruiter', 'joining'];
+    const communicationTabs = ['whatsapp_official', 'whatsapp_unofficial', 'sms_config', 'rcs_config', 'email_config'];
+    const systemTabs = ['team', 'public_users', 'aiadmin', 'aiknowledgebase', 'calladmin', 'aicallcenter', 'admin_message_config', 'offline_rule'];
+    const settingsTabs = ['settings'];
+
+    if (salesTabs.includes(cleanTab) || cleanTab.startsWith('party/') || cleanTab.startsWith('location')) return 'Sales';
+    if (purchaseTabs.includes(cleanTab)) return 'Purchase';
+    if (hrTabs.includes(cleanTab)) return 'Human Resource';
+    if (cleanTab === 'user_management_new' || cleanTab.startsWith('user_management')) return 'User Management';
+    if (cleanTab === 'workplace' || cleanTab === 'workflow' || cleanTab.startsWith('workflow/')) return 'Workflow Builder';
+    if (communicationTabs.includes(cleanTab) || cleanTab.startsWith('email-config') || cleanTab.startsWith('email_config')) return 'Communication Center';
+    if (systemTabs.includes(cleanTab) || cleanTab.startsWith('calladmin') || cleanTab.startsWith('aiadmin')) return 'System';
+    if (settingsTabs.includes(cleanTab) || cleanTab.startsWith('settings/') || cleanTab === 'sessions') return 'Settings';
+    return null;
+  };
+
   const [leadDataExpanded, setLeadDataExpanded] = useState(false);
   const [recruiterMenuExpanded, setRecruiterMenuExpanded] = useState(false);
   const [recruiterFilterStage, setRecruiterFilterStage] = useState('dashboard');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [expandedCategories, setExpandedCategories] = useState({
-    'Sales': false,
-    'Purchase': false,
-    'Human Resource': false,
-    'User Management': false,
-    'Workflow Builder': false,
-    'Communication Center': false,
-    'System': false,
-    'Settings': false
+  const [expandedCategories, setExpandedCategories] = useState(() => {
+    const defaults = {
+      'Sales': false,
+      'Purchase': false,
+      'Human Resource': false,
+      'User Management': false,
+      'Workflow Builder': false,
+      'Communication Center': false,
+      'System': false,
+      'Settings': false
+    };
+    const targetCat = getCategoryForTab(initialRoute || pathname);
+    if (targetCat) {
+      defaults[targetCat] = true;
+    }
+    return defaults;
   });
+
+  const sidebarMountedRef = useRef(false);
+
+  useEffect(() => {
+    try {
+      const savedCollapsed = localStorage.getItem('crm-sidebar-collapsed');
+      if (savedCollapsed === 'true') {
+        setIsSidebarCollapsed(true);
+      }
+      const savedCats = localStorage.getItem('crm-expanded-categories');
+      if (savedCats) {
+        const parsed = JSON.parse(savedCats);
+        if (parsed && typeof parsed === 'object') {
+          const targetCat = getCategoryForTab(activeTab || initialRoute || pathname);
+          setExpandedCategories(prev => ({
+            ...prev,
+            ...parsed,
+            ...(targetCat ? { [targetCat]: true } : {})
+          }));
+        }
+      }
+    } catch (_e) {}
+    sidebarMountedRef.current = true;
+  }, []);
 
   const [userManagementSubTab, setUserManagementSubTab] = useState(() => {
     const route = (initialRoute || pathname || '').replace(/^\/+|\/+$/g, '').toLowerCase();
@@ -1173,64 +1225,45 @@ export default function CRMContainer({
   };
 
   useEffect(() => {
-    localStorage.setItem('crm-sidebar-collapsed', isSidebarCollapsed);
+    if (!sidebarMountedRef.current) return;
+    try {
+      localStorage.setItem('crm-sidebar-collapsed', isSidebarCollapsed ? 'true' : 'false');
+    } catch (_e) {}
   }, [isSidebarCollapsed]);
 
   // Auto-expand categories and submenus when activeTab changes
   useEffect(() => {
-    let categoryToExpand = null;
-    const salesTabs = ['registration', 'report', 'leads', 'orders', 'party', 'location_master', 'location_territory'];
-    const purchaseTabs = ['mrp', 'mrp_against'];
-    const hrTabs = ['recruiter', 'joining'];
-    const communicationTabs = ['whatsapp_official', 'whatsapp_unofficial', 'sms_config', 'rcs_config', 'email_config'];
-    const systemTabs = ['team', 'public_users', 'aiadmin', 'aiknowledgebase', 'calladmin', 'aicallcenter', 'admin_message_config', 'offline_rule'];
-    const settingsTabs = ['settings'];
-
-    if (salesTabs.includes(activeTab)) {
-      categoryToExpand = 'Sales';
-    } else if (purchaseTabs.includes(activeTab)) {
-      categoryToExpand = 'Purchase';
-    } else if (hrTabs.includes(activeTab)) {
-      categoryToExpand = 'Human Resource';
-    } else if (activeTab === 'user_management_new') {
-      categoryToExpand = 'User Management';
-    } else if (activeTab === 'workplace') {
-      categoryToExpand = 'Workflow Builder';
-    } else if (communicationTabs.includes(activeTab)) {
-      categoryToExpand = 'Communication Center';
-    } else if (systemTabs.includes(activeTab)) {
-      categoryToExpand = 'System';
-    } else if (settingsTabs.includes(activeTab)) {
-      categoryToExpand = 'Settings';
-    }
+    const categoryToExpand = getCategoryForTab(activeTab);
 
     if (categoryToExpand) {
-      setExpandedCategories({
-        'Sales': categoryToExpand === 'Sales',
-        'Purchase': categoryToExpand === 'Purchase',
-        'Human Resource': categoryToExpand === 'Human Resource',
-        'User Management': categoryToExpand === 'User Management',
-        'Workflow Builder': categoryToExpand === 'Workflow Builder',
-        'Communication Center': categoryToExpand === 'Communication Center',
-        'System': categoryToExpand === 'System',
-        'Settings': categoryToExpand === 'Settings'
+      setExpandedCategories(prev => {
+        if (prev[categoryToExpand]) return prev;
+        const next = {
+          ...prev,
+          [categoryToExpand]: true
+        };
+        try {
+          localStorage.setItem('crm-expanded-categories', JSON.stringify(next));
+        } catch (_e) {}
+        return next;
       });
     }
 
     // Auto-expand submenus
-    setLeadDataExpanded(activeTab === 'leads');
-    setRecruiterMenuExpanded(activeTab === 'recruiter');
-    setAttendanceMenuExpanded(activeTab === 'attendance');
-    setChecklistMenuExpanded(activeTab === 'checklist');
-    setDelegationMenuExpanded(activeTab === 'delegation');
-    setPartyMenuExpanded(activeTab === 'party');
-    setAiMenuExpanded(['ai', 'aiadmin', 'aiknowledgebase'].includes(activeTab));
-    setMessageMenuExpanded(['whatsapp_official', 'whatsapp_unofficial', 'sms_config', 'rcs_config', 'email_config'].includes(activeTab));
-    setCallCenterMenuExpanded(['callcenter', 'calladmin', 'aicallcenter'].includes(activeTab));
-    setWorkflowMenuExpanded(activeTab === 'workplace');
-    setSettingsMenuExpanded(activeTab === 'settings');
-    setSaasMenuExpanded(['saas_master', 'saas_studio'].includes(activeTab));
-    setConfigMasterMenuExpanded(activeTab === 'config_master');
+    const cleanTab = String(activeTab || '').toLowerCase();
+    if (cleanTab === 'leads') setLeadDataExpanded(true);
+    if (cleanTab === 'recruiter') setRecruiterMenuExpanded(true);
+    if (cleanTab === 'attendance' || cleanTab.startsWith('attendance/')) setAttendanceMenuExpanded(true);
+    if (cleanTab === 'checklist' || cleanTab.startsWith('checklist/')) setChecklistMenuExpanded(true);
+    if (cleanTab === 'delegation' || cleanTab.startsWith('delegation/')) setDelegationMenuExpanded(true);
+    if (cleanTab === 'party' || cleanTab.startsWith('party/')) setPartyMenuExpanded(true);
+    if (['ai', 'aiadmin', 'aiknowledgebase'].includes(cleanTab) || cleanTab.startsWith('aiadmin/')) setAiMenuExpanded(true);
+    if (['whatsapp_official', 'whatsapp_unofficial', 'sms_config', 'rcs_config', 'email_config'].includes(cleanTab) || cleanTab.startsWith('email-config') || cleanTab.startsWith('email_config')) setMessageMenuExpanded(true);
+    if (['callcenter', 'calladmin', 'aicallcenter'].includes(cleanTab) || cleanTab.startsWith('calladmin/')) setCallCenterMenuExpanded(true);
+    if (cleanTab === 'workplace' || cleanTab === 'workflow' || cleanTab.startsWith('workflow/')) setWorkflowMenuExpanded(true);
+    if (cleanTab === 'settings' || cleanTab.startsWith('settings/') || cleanTab === 'sessions') setSettingsMenuExpanded(true);
+    if (['saas_master', 'saas_studio'].includes(cleanTab) || cleanTab.startsWith('saas-master/')) setSaasMenuExpanded(true);
+    if (cleanTab === 'config_master' || cleanTab.startsWith('config-master/')) setConfigMasterMenuExpanded(true);
   }, [activeTab]);
 
   useEffect(() => {
@@ -1257,10 +1290,16 @@ export default function CRMContainer({
     if (isSidebarCollapsed) {
       setIsSidebarCollapsed(false);
     }
-    setExpandedCategories(prev => ({
-      ...prev,
-      [categoryName]: !prev[categoryName]
-    }));
+    setExpandedCategories(prev => {
+      const next = {
+        ...prev,
+        [categoryName]: !prev[categoryName]
+      };
+      try {
+        localStorage.setItem('crm-expanded-categories', JSON.stringify(next));
+      } catch (_e) {}
+      return next;
+    });
   };
   
   const [currentTheme, setCurrentTheme] = useState(initialTheme || 'default');
@@ -2812,6 +2851,15 @@ export default function CRMContainer({
     }
     if (tab) {
       setActiveTab(tab);
+      const cat = getCategoryForTab(tab);
+      if (cat) {
+        setExpandedCategories(prev => {
+          if (prev[cat]) return prev;
+          const next = { ...prev, [cat]: true };
+          try { localStorage.setItem('crm-expanded-categories', JSON.stringify(next)); } catch (_e) {}
+          return next;
+        });
+      }
       let stage = params.get('stage');
       if (stage === 'all') stage = null;
       if (stage) {
@@ -2962,6 +3010,15 @@ export default function CRMContainer({
       }
       
       setActiveTab(tab);
+      const cat = getCategoryForTab(tab);
+      if (cat) {
+        setExpandedCategories(prev => {
+          if (prev[cat]) return prev;
+          const next = { ...prev, [cat]: true };
+          try { localStorage.setItem('crm-expanded-categories', JSON.stringify(next)); } catch (_e) {}
+          return next;
+        });
+      }
       
       let stage = params.get('stage');
       if (stage === 'all') stage = null;
@@ -4692,12 +4749,16 @@ export default function CRMContainer({
                 <button
                   onClick={() => toggleCategory(category)}
                   className="category-header"
+                  suppressHydrationWarning
                 >
                   {expandedCategories[category] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                   <span>{category}</span>
                 </button>
                 
-                <div className={`category-modules-list ${(isSidebarCollapsed || expandedCategories[category]) ? 'expanded' : ''}`}>
+                <div 
+                  className={`category-modules-list ${(isSidebarCollapsed || expandedCategories[category]) ? 'expanded' : ''}`}
+                  suppressHydrationWarning
+                >
                   <div className="category-modules-inner">
                     {visibleModules.map(module => (
                       <SidebarSubmenu key={module.id} collapsed={isSidebarCollapsed}>
@@ -5165,12 +5226,16 @@ export default function CRMContainer({
                 }}
                 className="category-header"
                 data-active={activeTab === 'user_management_new'}
+                suppressHydrationWarning
               >
                 {expandedCategories['User Management'] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                 <span>User Management</span>
               </button>
 
-              <div className={`category-modules-list ${(isSidebarCollapsed || expandedCategories['User Management']) ? 'expanded' : ''}`}>
+              <div 
+                className={`category-modules-list ${(isSidebarCollapsed || expandedCategories['User Management']) ? 'expanded' : ''}`}
+                suppressHydrationWarning
+              >
                 <div className="category-modules-inner">
                   {[
                     { id: 'user_manage', label: 'User Manage', icon: Users },
@@ -5223,12 +5288,16 @@ export default function CRMContainer({
                 }}
                 className="category-header"
                 data-active={activeTab === 'workplace'}
+                suppressHydrationWarning
               >
                 {expandedCategories['Workflow Builder'] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                 <span>Workflow Builder</span>
               </button>
 
-              <div className={`category-modules-list ${(isSidebarCollapsed || expandedCategories['Workflow Builder']) ? 'expanded' : ''}`}>
+              <div 
+                className={`category-modules-list ${(isSidebarCollapsed || expandedCategories['Workflow Builder']) ? 'expanded' : ''}`}
+                suppressHydrationWarning
+              >
                 <div className="category-modules-inner">
                   {[
                     { id: 'active', label: 'Active Workflows', icon: GitMerge },
@@ -5284,12 +5353,16 @@ export default function CRMContainer({
                   onClick={() => toggleCategory('Communication Center')}
                   className="category-header"
                   data-active={['whatsapp_official', 'whatsapp_unofficial', 'sms_config', 'rcs_config', 'email_config'].includes(activeTab)}
+                  suppressHydrationWarning
                 >
                   {expandedCategories['Communication Center'] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                   <span>Communication Center</span>
                 </button>
 
-                <div className={`category-modules-list ${(isSidebarCollapsed || expandedCategories['Communication Center']) ? 'expanded' : ''}`}>
+                <div 
+                  className={`category-modules-list ${(isSidebarCollapsed || expandedCategories['Communication Center']) ? 'expanded' : ''}`}
+                  suppressHydrationWarning
+                >
                   <div className="category-modules-inner">
                     {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['whatsapp_official']?.view) && (
                       <button 
@@ -5367,12 +5440,16 @@ export default function CRMContainer({
                 <button
                   onClick={() => toggleCategory('System')}
                   className="category-header"
+                  suppressHydrationWarning
                 >
                   {expandedCategories['System'] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                   <span>System</span>
                 </button>
 
-                <div className={`category-modules-list ${(isSidebarCollapsed || expandedCategories['System']) ? 'expanded' : ''}`}>
+                <div 
+                  className={`category-modules-list ${(isSidebarCollapsed || expandedCategories['System']) ? 'expanded' : ''}`}
+                  suppressHydrationWarning
+                >
                   <div className="category-modules-inner">
                     {/* Team Management */}
                     {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['team']?.view) && (
@@ -5398,12 +5475,16 @@ export default function CRMContainer({
               <button
                 onClick={() => toggleCategory('Settings')}
                 className="category-header"
+                suppressHydrationWarning
               >
                 {expandedCategories['Settings'] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                 <span>Settings</span>
               </button>
 
-              <div className={`category-modules-list ${(isSidebarCollapsed || expandedCategories['Settings']) ? 'expanded' : ''}`}>
+              <div 
+                className={`category-modules-list ${(isSidebarCollapsed || expandedCategories['Settings']) ? 'expanded' : ''}`}
+                suppressHydrationWarning
+              >
                 <div className="category-modules-inner">
                   {SETTINGS_MODULE_ITEMS.filter(item => {
                     if (userRole === 'admin' || userRole === 'Admin') return true;
@@ -7435,6 +7516,8 @@ export default function CRMContainer({
                     moduleAccess={moduleAccess}
                     userCompany={userCompany}
                     tenantId={effectiveTenantId}
+                    userName={userName}
+                    userId={userId}
                   />
                 </ErrorBoundary>
               </KeepAliveTab>

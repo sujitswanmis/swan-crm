@@ -73,7 +73,9 @@ export default function ChannelOperationsModule({
   userRole,
   moduleAccess,
   userCompany,
-  tenantId
+  tenantId,
+  userName,
+  userId
 }) {
   const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
 
@@ -271,6 +273,8 @@ export default function ChannelOperationsModule({
           onRefresh={loadOperationsData}
           tenantId={effectiveTenantId}
           userCompany={userCompany}
+          userName={userName}
+          userId={userId}
         />
       )}
 

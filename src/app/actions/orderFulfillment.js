@@ -119,16 +119,18 @@ export async function getDailyOrderFollowupQueue(tenantId = DEFAULT_TENANT_ID, t
     // Read all parties with schedules
     const allSchedules = await getPartyOrderSchedules(effectiveTenantId);
 
-    // Fetch latest follow-up calls
+    // Fetch follow-up calls including caller name and timestamp
     const { data: followups } = await adminClient
       .from('party_order_followups')
-      .select('party_id, call_status, scheduled_date, created_at, is_order_placed, generated_order_no')
+      .select('id, party_id, call_status, scheduled_date, created_at, is_order_placed, generated_order_no, assigned_caller_name, assigned_caller_id, no_order_reason, notes, rescheduled_time, order_line_items')
       .eq('tenant_id', effectiveTenantId)
       .order('created_at', { ascending: false });
 
     const latestFollowupMap = new Map();
+    const callCountsMap = new Map();
     if (Array.isArray(followups)) {
       followups.forEach(f => {
+        callCountsMap.set(f.party_id, (callCountsMap.get(f.party_id) || 0) + 1);
         if (!latestFollowupMap.has(f.party_id)) {
           latestFollowupMap.set(f.party_id, f);
         }
@@ -137,12 +139,14 @@ export async function getDailyOrderFollowupQueue(tenantId = DEFAULT_TENANT_ID, t
 
     return allSchedules.map(item => {
       const latestCall = latestFollowupMap.get(item.party_id) || null;
+      const callCount = callCountsMap.get(item.party_id) || 0;
       const isDue = (item.next_due_date <= todayStr);
       const isCompletedToday = latestCall?.created_at?.slice(0, 10) === todayStr;
 
       return {
         ...item,
         latestCall,
+        callCount,
         isDue,
         isCompletedToday
       };
@@ -200,6 +204,8 @@ export async function saveOrderFollowupAndRecur(followupData, tenantId = DEFAULT
     tenant_id: effectiveTenantId,
     party_id: followupData.party_id,
     scheduled_date: followupData.scheduled_date || todayStr,
+    assigned_caller_id: followupData.assigned_caller_id || followupData.caller_id || null,
+    assigned_caller_name: followupData.assigned_caller_name || followupData.caller_name || 'Agent',
     call_status: followupData.call_status,
     is_order_placed: isOrder,
     generated_order_no: generatedOrderNo,
@@ -257,6 +263,60 @@ export async function saveOrderFollowupAndRecur(followupData, tenantId = DEFAULT
     generated_order_no: generatedOrderNo,
     followup: savedFollowup
   };
+}
+
+/**
+ * 4B. GET PARTY CALL HISTORY (All historical calls for a specific party in chronological order)
+ */
+export async function getPartyCallHistory(partyId, tenantId = DEFAULT_TENANT_ID) {
+  const adminClient = getAdminClient();
+  const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
+
+  try {
+    const { data, error } = await adminClient
+      .from('party_order_followups')
+      .select('*')
+      .eq('tenant_id', effectiveTenantId)
+      .eq('party_id', partyId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return data || [];
+  } catch (err) {
+    console.error('getPartyCallHistory error:', err);
+    return [];
+  }
+}
+
+/**
+ * 4C. GET DAILY CALL LOG LEDGER (Consolidated log of calls made today for team audit & metrics)
+ */
+export async function getDailyCallLogLedger(tenantId = DEFAULT_TENANT_ID, targetDate = null) {
+  const adminClient = getAdminClient();
+  const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
+  const filterDate = targetDate || new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+
+  try {
+    const parties = await getPartyList(effectiveTenantId);
+    const partiesMap = new Map((parties || []).map(p => [p.id, p]));
+
+    const { data: logs, error } = await adminClient
+      .from('party_order_followups')
+      .select('*')
+      .eq('tenant_id', effectiveTenantId)
+      .eq('scheduled_date', filterDate)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    return (logs || []).map(l => ({
+      ...l,
+      party: partiesMap.get(l.party_id) || null
+    }));
+  } catch (err) {
+    console.error('getDailyCallLogLedger error:', err);
+    return [];
+  }
 }
 
 /**
