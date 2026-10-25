@@ -346,7 +346,7 @@ export default function DailyFollowupQueueTable({
             }}
           >
             <Phone size={14} />
-            <span>Daily Calling Queue ({filteredQueue.length})</span>
+            <span>Order Desk Calling ({filteredQueue.length})</span>
           </button>
 
           <button

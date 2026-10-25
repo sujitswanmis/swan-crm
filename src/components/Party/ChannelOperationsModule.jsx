@@ -29,9 +29,9 @@ const OPERATIONS_TABS = [
   },
   {
     id: 'order_followup',
-    label: 'Daily Calling Queue',
+    label: 'Order Desk Calling',
     icon: '📞',
-    title: 'Daily Calling Queue (Scheduled Calls)',
+    title: 'Order Desk Calling (Scheduled Partner Follow-up)',
     subtitle: 'Aaj due hone wale sabhi channel partners ki list — 1-click dial karein aur order punch karein'
   },
   {

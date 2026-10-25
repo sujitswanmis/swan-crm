@@ -246,7 +246,7 @@ export const PARTY_SUBTAB_TITLES = {
 
 export const CHANNEL_OPS_SUBTAB_TITLES = {
   frequency_rules: 'Order Frequency Master',
-  order_followup: 'Daily Calling Queue',
+  order_followup: 'Order Desk Calling',
   order_pipeline: 'Order to Delivery Pipeline',
   order_feedback: 'Post-Order Feedback',
   monthly_feedback: 'Monthly Health Checks',
@@ -5169,7 +5169,7 @@ export default function CRMContainer({
                                 className="submenu-item"
                                 data-active={activeTab === 'channel_ops' && channelOpsSubTab === 'order_followup'}
                               >
-                                📞 Daily Calling Queue
+                                📞 Order Desk Calling
                               </button>
 
                               <button

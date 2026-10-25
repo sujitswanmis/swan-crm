@@ -185,7 +185,7 @@ export const MODULES_CONFIG = [
     subItemsType: 'tabs',
     subItems: [
       { id: 'frequency_rules', label: '⚙️ Order Frequency Master' },
-      { id: 'order_followup', label: '📞 Daily Calling Queue' },
+      { id: 'order_followup', label: '📞 Order Desk Calling' },
       { id: 'order_pipeline', label: '🚚 Order to Delivery Pipeline' },
       { id: 'order_feedback', label: '⭐ Post-Order Feedback' },
       { id: 'monthly_feedback', label: '📅 Monthly Health Checks' },
