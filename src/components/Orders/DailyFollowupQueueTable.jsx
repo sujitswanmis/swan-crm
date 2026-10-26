@@ -5,10 +5,11 @@ import {
   Phone, MessageSquare, Plus, Search, Filter, CheckCircle2, Clock, AlertTriangle,
   RefreshCw, Building2, Package, Calendar, ArrowRight, Shield, Sparkles, User,
   History, ListOrdered, TrendingUp, Check, X, PhoneCall, PhoneOff, CalendarClock,
-  FileSpreadsheet, Download
+  FileSpreadsheet, Download, Trash2, IndianRupee
 } from 'lucide-react';
 import { useTableColumnResize, ColumnResizer } from '@/utils/tableColumnResize';
 import DateRangePicker from '@/components/common/DateRangePicker';
+import SearchableProductSelect from '@/components/common/SearchableProductSelect';
 import {
   saveOrderFollowupAndRecur,
   getPartyCallHistory,
@@ -251,17 +252,46 @@ export default function DailyFollowupQueueTable({
     setCallNotes('');
   };
 
+  const qtyInputRefs = useRef([]);
+
+  const focusQtyInput = useCallback((index) => {
+    if (qtyInputRefs.current[index]) {
+      qtyInputRefs.current[index].focus();
+      if (typeof qtyInputRefs.current[index].select === 'function') {
+        qtyInputRefs.current[index].select();
+      }
+    }
+  }, []);
+
   const handleAddItem = () => {
     const firstProd = availableProducts[0];
     const initialProductName = firstProd?.name || PRODUCT_GROUPS[0]?.name || 'Swan Rotary Tiller (Rotavator)';
     const initialRate = firstProd?.price != null ? Number(firstProd.price) : 0;
-    setOrderItems([...orderItems, { product: initialProductName, qty: 1, rate: initialRate }]);
+    const newItems = [...orderItems, { product: initialProductName, qty: 1, rate: initialRate }];
+    setOrderItems(newItems);
   };
 
   const handleRemoveItem = (index) => {
     if (orderItems.length <= 1) return;
     setOrderItems(orderItems.filter((_, i) => i !== index));
   };
+
+  const handleProductSelect = useCallback((index, selectedProduct) => {
+    const updated = [...orderItems];
+    if (typeof selectedProduct === 'string') {
+      updated[index].product = selectedProduct;
+      const matched = availableProducts.find(p => p.name === selectedProduct);
+      if (matched && matched.price != null && matched.price !== '') {
+        updated[index].rate = Number(matched.price) || 0;
+      }
+    } else if (selectedProduct && typeof selectedProduct === 'object') {
+      updated[index].product = selectedProduct.name;
+      if (selectedProduct.price != null && selectedProduct.price !== '') {
+        updated[index].rate = Number(selectedProduct.price) || 0;
+      }
+    }
+    setOrderItems(updated);
+  }, [orderItems, availableProducts]);
 
   const handleItemChange = (index, field, value) => {
     const updated = [...orderItems];
@@ -274,6 +304,14 @@ export default function DailyFollowupQueueTable({
     }
     setOrderItems(updated);
   };
+
+  const orderTotalQuantity = useMemo(() => {
+    return orderItems.reduce((acc, it) => acc + (Number(it.qty) || 0), 0);
+  }, [orderItems]);
+
+  const orderTotalAmount = useMemo(() => {
+    return orderItems.reduce((acc, it) => acc + ((Number(it.qty) || 0) * (Number(it.rate) || 0)), 0);
+  }, [orderItems]);
 
   const handleSubmitCall = async (e) => {
     e.preventDefault();
@@ -1346,12 +1384,12 @@ export default function DailyFollowupQueueTable({
             background: 'var(--bg-surface)',
             border: '1px solid var(--border-light)',
             borderRadius: '16px',
-            width: '100%',
-            maxWidth: '640px',
-            maxHeight: '90vh',
+            width: '95vw',
+            maxWidth: '920px',
+            maxHeight: '92vh',
             display: 'flex',
             flexDirection: 'column',
-            boxShadow: '0 20px 40px rgba(0,0,0,0.5)',
+            boxShadow: '0 25px 60px rgba(0,0,0,0.6)',
             overflow: 'hidden'
           }}>
             <div style={{
@@ -1408,7 +1446,7 @@ export default function DailyFollowupQueueTable({
                 <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '0.4rem' }}>
                   Call Outcome / Disposition *
                 </label>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.5rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(175px, 1fr))', gap: '0.65rem' }}>
                   {[
                     { id: 'ORDER_PLACED', label: '📦 Order Placed', color: '#10b981' },
                     { id: 'NO_ORDER', label: '❌ Stock Full / No Order', color: '#94a3b8' },
@@ -1450,9 +1488,9 @@ export default function DailyFollowupQueueTable({
                   padding: '1rem',
                   marginBottom: '1.25rem'
                 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <div style={{ fontSize: '0.84rem', fontWeight: 800, color: '#34d399' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                      <div style={{ fontSize: '0.88rem', fontWeight: 800, color: '#34d399', letterSpacing: '0.02em' }}>
                         PUNCH SALES ORDER ITEMS
                       </div>
                       {availableProducts.length > 0 ? (
@@ -1460,18 +1498,18 @@ export default function DailyFollowupQueueTable({
                           display: 'inline-flex',
                           alignItems: 'center',
                           gap: '0.25rem',
-                          fontSize: '0.68rem',
+                          fontSize: '0.7rem',
                           fontWeight: 700,
-                          padding: '0.15rem 0.45rem',
+                          padding: '0.2rem 0.55rem',
                           borderRadius: '6px',
                           background: 'rgba(16,185,129,0.15)',
                           color: '#10b981',
                           border: '1px solid rgba(16,185,129,0.3)'
                         }}>
-                          <Sparkles size={11} /> Auto-synced with Settings ({availableProducts.length} Products{selectedParty?.party?.our_company ? ` • ${selectedParty.party.our_company}` : ''})
+                          <Sparkles size={12} /> Auto-synced with Settings ({availableProducts.length} Products{selectedParty?.party?.our_company ? ` • ${selectedParty.party.our_company}` : ''})
                         </span>
                       ) : (
-                        <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
                           (Default Catalog)
                         </span>
                       )}
@@ -1480,69 +1518,167 @@ export default function DailyFollowupQueueTable({
                       type="button"
                       onClick={handleAddItem}
                       style={{
-                        padding: '0.25rem 0.65rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.35rem',
+                        padding: '0.35rem 0.8rem',
                         background: 'rgba(16,185,129,0.2)',
                         border: '1px solid #10b981',
                         color: '#34d399',
                         borderRadius: '6px',
-                        fontSize: '0.75rem',
+                        fontSize: '0.78rem',
                         fontWeight: 700,
-                        cursor: 'pointer'
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease'
                       }}
                     >
-                      + Add Line Item
+                      <Plus size={14} /> Add Line Item
                     </button>
                   </div>
 
-                  {orderItems.map((item, idx) => (
-                    <div key={idx} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr auto', gap: '0.5rem', marginBottom: '0.5rem', alignItems: 'center' }}>
-                      <select
-                        value={item.product}
-                        onChange={e => handleItemChange(idx, 'product', e.target.value)}
-                        style={{ padding: '0.55rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '6px', color: 'var(--text-primary)', fontSize: '0.8rem' }}
-                      >
-                        {availableProducts.length > 0 ? (
-                          availableProducts.map(p => (
-                            <option key={p.id || p.sku || p.name} value={p.name}>
-                              {p.name} {p.sku ? `(${p.sku})` : ''} {p.price != null && p.price !== '' ? `- ₹${Number(p.price).toLocaleString('en-IN')}` : ''}
-                            </option>
-                          ))
-                        ) : (
-                          PRODUCT_GROUPS.map(p => (
-                            <option key={p.id} value={p.name}>{p.name}</option>
-                          ))
-                        )}
-                      </select>
+                  {/* Column Headers */}
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'minmax(280px, 1fr) 90px 125px 120px 36px',
+                    gap: '0.65rem',
+                    padding: '0 0.35rem 0.4rem 0.35rem',
+                    fontSize: '0.72rem',
+                    fontWeight: 700,
+                    color: 'var(--text-secondary)',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.03em'
+                  }}>
+                    <div>Product / Model (Search by name or SKU)</div>
+                    <div style={{ textAlign: 'center' }}>Qty</div>
+                    <div style={{ textAlign: 'right' }}>Rate (₹)</div>
+                    <div style={{ textAlign: 'right' }}>Subtotal</div>
+                    <div></div>
+                  </div>
 
-                      <input
-                        type="number"
-                        min="1"
-                        placeholder="Qty"
-                        value={item.qty}
-                        onChange={e => handleItemChange(idx, 'qty', e.target.value)}
-                        style={{ padding: '0.55rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '6px', color: 'var(--text-primary)', fontSize: '0.8rem' }}
-                      />
-
-                      <input
-                        type="number"
-                        min="0"
-                        placeholder="Rate ₹"
-                        value={item.rate}
-                        onChange={e => handleItemChange(idx, 'rate', e.target.value)}
-                        style={{ padding: '0.55rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '6px', color: 'var(--text-primary)', fontSize: '0.8rem' }}
-                      />
-
-                      {orderItems.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveItem(idx)}
-                          style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '1.1rem' }}
+                  {/* Order Line Items */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                    {orderItems.map((item, idx) => {
+                      const itemSubtotal = (Number(item.qty) || 0) * (Number(item.rate) || 0);
+                      return (
+                        <div
+                          key={idx}
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'minmax(280px, 1fr) 90px 125px 120px 36px',
+                            gap: '0.65rem',
+                            alignItems: 'center'
+                          }}
                         >
-                          ✕
-                        </button>
-                      )}
+                          <SearchableProductSelect
+                            products={availableProducts.length > 0 ? availableProducts : PRODUCT_GROUPS}
+                            value={item.product}
+                            onChange={(prod) => handleProductSelect(idx, prod)}
+                            onSelectNext={() => focusQtyInput(idx)}
+                            placeholder="Type to search product or SKU..."
+                          />
+
+                          <input
+                            ref={el => (qtyInputRefs.current[idx] = el)}
+                            type="number"
+                            min="1"
+                            placeholder="Qty"
+                            value={item.qty}
+                            onChange={e => handleItemChange(idx, 'qty', e.target.value)}
+                            style={{
+                              padding: '0.52rem 0.65rem',
+                              background: 'var(--bg-primary)',
+                              border: '1px solid var(--border-light)',
+                              borderRadius: '8px',
+                              color: 'var(--text-primary)',
+                              fontSize: '0.82rem',
+                              fontWeight: 600,
+                              textAlign: 'center',
+                              boxSizing: 'border-box',
+                              width: '100%'
+                            }}
+                          />
+
+                          <input
+                            type="number"
+                            min="0"
+                            placeholder="Rate ₹"
+                            value={item.rate}
+                            onChange={e => handleItemChange(idx, 'rate', e.target.value)}
+                            style={{
+                              padding: '0.52rem 0.65rem',
+                              background: 'var(--bg-primary)',
+                              border: '1px solid var(--border-light)',
+                              borderRadius: '8px',
+                              color: 'var(--text-primary)',
+                              fontSize: '0.82rem',
+                              fontWeight: 600,
+                              textAlign: 'right',
+                              boxSizing: 'border-box',
+                              width: '100%'
+                            }}
+                          />
+
+                          <div style={{
+                            padding: '0.52rem 0.65rem',
+                            fontSize: '0.82rem',
+                            fontWeight: 700,
+                            color: '#059669',
+                            textAlign: 'right',
+                            background: 'rgba(16,185,129,0.08)',
+                            borderRadius: '8px',
+                            border: '1px solid rgba(16,185,129,0.2)'
+                          }}>
+                            ₹{itemSubtotal.toLocaleString('en-IN')}
+                          </div>
+
+                          {orderItems.length > 1 ? (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveItem(idx)}
+                              title="Remove item"
+                              style={{
+                                background: 'rgba(239,68,68,0.1)',
+                                border: '1px solid rgba(239,68,68,0.25)',
+                                color: '#ef4444',
+                                cursor: 'pointer',
+                                borderRadius: '6px',
+                                padding: '0.45rem',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center'
+                              }}
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          ) : (
+                            <div />
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Order Total Summary Bar */}
+                  <div style={{
+                    marginTop: '0.85rem',
+                    padding: '0.65rem 1rem',
+                    background: 'rgba(16,185,129,0.12)',
+                    border: '1px solid rgba(16,185,129,0.3)',
+                    borderRadius: '8px',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    flexWrap: 'wrap',
+                    gap: '0.5rem'
+                  }}>
+                    <div style={{ display: 'flex', gap: '1.2rem', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                      <span>Total Lines: <strong style={{ color: 'var(--text-primary)' }}>{orderItems.length}</strong></span>
+                      <span>Total Units: <strong style={{ color: 'var(--text-primary)' }}>{orderTotalQuantity}</strong></span>
                     </div>
-                  ))}
+                    <div style={{ fontSize: '0.92rem', fontWeight: 800, color: '#059669' }}>
+                      Order Estimated Total: ₹{orderTotalAmount.toLocaleString('en-IN')}
+                    </div>
+                  </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginTop: '0.75rem' }}>
                     <div>
@@ -1726,32 +1862,51 @@ export default function DailyFollowupQueueTable({
                 </div>
               )}
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
-                <button
-                  type="button"
-                  onClick={() => setSelectedParty(null)}
-                  style={{ padding: '0.6rem 1.2rem', background: 'transparent', border: '1px solid var(--border-light)', color: 'var(--text-secondary)', borderRadius: '8px', cursor: 'pointer', fontSize: '0.84rem' }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  style={{
-                    padding: '0.6rem 1.4rem',
-                    background: callOutcome === 'ORDER_PLACED'
-                      ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
-                      : 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
-                    border: 'none',
-                    color: '#fff',
-                    fontWeight: 700,
-                    borderRadius: '8px',
-                    cursor: saving ? 'not-allowed' : 'pointer',
-                    fontSize: '0.84rem'
-                  }}
-                >
-                  {saving ? 'Saving...' : callOutcome === 'ORDER_PLACED' ? 'Book Sales Order' : 'Record Call Log'}
-                </button>
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                paddingTop: '0.85rem',
+                borderTop: '1px solid var(--border-light)',
+                marginTop: '1rem',
+                flexWrap: 'wrap',
+                gap: '0.75rem'
+              }}>
+                <div>
+                  {callOutcome === 'ORDER_PLACED' && orderTotalAmount > 0 && (
+                    <div style={{ fontSize: '0.84rem', fontWeight: 700, color: '#059669' }}>
+                      Booking: {orderTotalQuantity} Units • ₹{orderTotalAmount.toLocaleString('en-IN')}
+                    </div>
+                  )}
+                </div>
+                <div style={{ display: 'flex', gap: '0.75rem' }}>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedParty(null)}
+                    style={{ padding: '0.6rem 1.25rem', background: 'transparent', border: '1px solid var(--border-light)', color: 'var(--text-secondary)', borderRadius: '8px', cursor: 'pointer', fontSize: '0.84rem', fontWeight: 600 }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    style={{
+                      padding: '0.6rem 1.6rem',
+                      background: callOutcome === 'ORDER_PLACED'
+                        ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
+                        : 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+                      border: 'none',
+                      color: '#fff',
+                      fontWeight: 700,
+                      borderRadius: '8px',
+                      cursor: saving ? 'not-allowed' : 'pointer',
+                      fontSize: '0.86rem',
+                      boxShadow: callOutcome === 'ORDER_PLACED' ? '0 4px 12px rgba(16,185,129,0.25)' : '0 4px 12px rgba(37,99,235,0.25)'
+                    }}
+                  >
+                    {saving ? 'Saving...' : callOutcome === 'ORDER_PLACED' ? 'Book Sales Order' : 'Record Call Log'}
+                  </button>
+                </div>
               </div>
             </form>
           </div>
