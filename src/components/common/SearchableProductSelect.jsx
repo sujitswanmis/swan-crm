@@ -42,7 +42,7 @@ export default function SearchableProductSelect({
 
   // Find currently selected product object
   const currentSelected = useMemo(() => {
-    if (!value) return null;
+    if (!value || typeof value !== 'string' || !value.trim()) return null;
     return normalizedProducts.find(p => p.name === value || p.id === value) || { name: value };
   }, [normalizedProducts, value]);
 
@@ -342,7 +342,7 @@ export default function SearchableProductSelect({
             <span>
               {filteredProducts.length === 0
                 ? 'No matching products'
-                : `Showing ${Math.min(filteredProducts.length, 60)} of ${filteredProducts.length} items`}
+                : `Showing all ${filteredProducts.length} products`}
             </span>
             <span style={{ fontSize: '0.66rem', color: 'var(--text-muted, #94a3b8)' }}>
               Use ↑↓ to navigate • Enter to select
@@ -354,7 +354,7 @@ export default function SearchableProductSelect({
             ref={listRef}
             style={{
               overflowY: 'auto',
-              maxHeight: '230px',
+              maxHeight: '260px',
               padding: '0.25rem 0'
             }}
           >
@@ -365,7 +365,7 @@ export default function SearchableProductSelect({
                 <div style={{ fontSize: '0.72rem', marginTop: '0.25rem' }}>Try searching with a shorter keyword or model code</div>
               </div>
             ) : (
-              filteredProducts.slice(0, 60).map((prod, index) => {
+              filteredProducts.map((prod, index) => {
                 const isSelected = prod.name === currentSelected?.name;
                 const isHighlighted = index === highlightedIndex;
 

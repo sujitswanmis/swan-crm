@@ -235,11 +235,9 @@ export default function DailyFollowupQueueTable({
     setSelectedParty(partyItem);
     setCallOutcome(defaultOutcome);
     setFeedbackSuccess('');
-    const firstProd = products[0];
-    const initialProductName = firstProd?.name || PRODUCT_GROUPS[0]?.name || 'Swan Rotary Tiller (Rotavator)';
-    const initialRate = firstProd?.price != null ? Number(firstProd.price) : 0;
+    // Start with a clean blank row so executive searches and selects product freshly
     setOrderItems([
-      { product: initialProductName, qty: 1, rate: initialRate }
+      { product: '', qty: 1, rate: 0 }
     ]);
     setBillingRoute(partyItem.party?.billing_route_type || 'DIRECT_COMPANY_BILLING');
     setPreferredDispatchDate('');
@@ -264,10 +262,8 @@ export default function DailyFollowupQueueTable({
   }, []);
 
   const handleAddItem = () => {
-    const firstProd = availableProducts[0];
-    const initialProductName = firstProd?.name || PRODUCT_GROUPS[0]?.name || 'Swan Rotary Tiller (Rotavator)';
-    const initialRate = firstProd?.price != null ? Number(firstProd.price) : 0;
-    const newItems = [...orderItems, { product: initialProductName, qty: 1, rate: initialRate }];
+    // Add clean blank row so executive can search and select product without confusion
+    const newItems = [...orderItems, { product: '', qty: 1, rate: 0 }];
     setOrderItems(newItems);
   };
 
@@ -319,8 +315,17 @@ export default function DailyFollowupQueueTable({
     setSaving(true);
     try {
       const isOrder = callOutcome === 'ORDER_PLACED';
-      const totalQty = orderItems.reduce((acc, it) => acc + (Number(it.qty) || 0), 0);
-      const totalAmount = orderItems.reduce((acc, it) => acc + ((Number(it.qty) || 0) * (Number(it.rate) || 0)), 0);
+      let validOrderItems = orderItems;
+      if (isOrder) {
+        validOrderItems = orderItems.filter(it => it.product && it.product.trim() !== '');
+        if (validOrderItems.length === 0) {
+          alert('Please search and select at least one product before punching the order.');
+          setSaving(false);
+          return;
+        }
+      }
+      const totalQty = validOrderItems.reduce((acc, it) => acc + (Number(it.qty) || 0), 0);
+      const totalAmount = validOrderItems.reduce((acc, it) => acc + ((Number(it.qty) || 0) * (Number(it.rate) || 0)), 0);
 
       // Determine notes and reason based on disposition
       let resolvedReason = '';
@@ -340,10 +345,10 @@ export default function DailyFollowupQueueTable({
         call_status: callOutcome,
         assigned_caller_name: userName || 'Admin',
         assigned_caller_id: userId || null,
-        product: orderItems[0]?.product,
+        product: validOrderItems[0]?.product || '',
         qty: totalQty,
         total_amount: totalAmount,
-        order_line_items: orderItems,
+        order_line_items: validOrderItems,
         billing_route: billingRoute,
         preferred_dispatch_date: preferredDispatchDate || null,
         next_followup_date: (callOutcome === 'RESCHEDULED' && rescheduleDate) ? rescheduleDate : null,

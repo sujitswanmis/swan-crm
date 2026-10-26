@@ -76,3 +76,31 @@ test('order totals calculate accurately across multiple line items', () => {
   assert.equal(totalQty, 3);
   assert.equal(totalAmount, 2 * 48656 + 130889);
 });
+
+test('all 129 products are displayed without 60-item capping', () => {
+  const catalog = Array.from({ length: 129 }, (_, i) => ({
+    id: `prod_${i}`,
+    name: `Product Model ${i + 1}`,
+    sku: `SKU-${1000 + i}`,
+    price: 10000 + i * 500
+  }));
+
+  const allItems = filterProducts(catalog, '');
+  assert.equal(allItems.length, 129, 'Full catalog of 129 products must not be capped at 60');
+});
+
+test('blank items are properly initialized and filtered on submission', () => {
+  const initialRow = { product: '', qty: 1, rate: 0 };
+  assert.equal(initialRow.product, '');
+  assert.equal(initialRow.rate, 0);
+
+  const rawRows = [
+    { product: 'Rotavator 2.5ft', qty: 2, rate: 48656 },
+    { product: '', qty: 1, rate: 0 },
+    { product: '   ', qty: 1, rate: 0 }
+  ];
+
+  const validRows = rawRows.filter(r => r.product && r.product.trim() !== '');
+  assert.equal(validRows.length, 1);
+  assert.equal(validRows[0].product, 'Rotavator 2.5ft');
+});
