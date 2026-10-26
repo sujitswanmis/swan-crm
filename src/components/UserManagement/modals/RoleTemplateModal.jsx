@@ -66,7 +66,7 @@ function saveColumnWidths(widths) {
 }
 
 export default function RoleTemplateModal({ onClose, onSave, saving = false, users = [], initialRole = null }) {
-  const isEdit = Boolean(initialRole?.id);
+  const isEdit = Boolean(initialRole?.id || initialRole?.name);
   const [name, setName] = useState(initialRole?.name || '');
   const [description, setDescription] = useState(initialRole?.description || '');
   const [selectedPresetKey, setSelectedPresetKey] = useState('');

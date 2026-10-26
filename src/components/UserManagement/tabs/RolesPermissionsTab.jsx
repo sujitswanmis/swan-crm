@@ -47,20 +47,55 @@ export default function RolesPermissionsTab({
     }
   }, [isMasterAdmin, selectedPresetKey]);
 
-  const roleProfiles = useMemo(() => [
-    ...visiblePresets,
-    ...customRoles.map(role => ({
-      key: `custom:${role.id}`,
-      id: role.id,
-      name: role.name,
-      description: role.description || 'Custom permission template',
-      presetData: role.permissions || {},
-      color: '#4f46e5',
-      badgeBg: '#eef2ff',
-      badgeBorder: '#c7d2fe',
-      custom: true
-    }))
-  ], [visiblePresets, customRoles]);
+  const roleProfiles = useMemo(() => {
+    const customRoleByName = new Map();
+    customRoles.forEach(r => {
+      if (r?.name) customRoleByName.set(r.name.trim().toLowerCase(), r);
+    });
+
+    // 1. Process visiblePresets: if a custom role matches its name, override it with custom data!
+    const processedPresets = visiblePresets.map(preset => {
+      const match = customRoleByName.get(preset.name.trim().toLowerCase());
+      if (match) {
+        return {
+          ...preset,
+          originalKey: preset.key,
+          key: `custom:${match.id}`,
+          id: match.id,
+          name: match.name,
+          description: match.description || preset.description,
+          presetData: match.permissions || preset.presetData || {},
+          custom: true,
+          isOverride: true
+        };
+      }
+      return {
+        ...preset,
+        originalKey: preset.key,
+        custom: false,
+        isOverride: false
+      };
+    });
+
+    // 2. Add remaining custom roles that don't match any default preset name
+    const presetNames = new Set(visiblePresets.map(p => p.name.trim().toLowerCase()));
+    const additionalCustom = customRoles
+      .filter(r => r?.name && !presetNames.has(r.name.trim().toLowerCase()))
+      .map(role => ({
+        key: `custom:${role.id}`,
+        id: role.id,
+        name: role.name,
+        description: role.description || 'Custom permission template',
+        presetData: role.permissions || {},
+        color: '#4f46e5',
+        badgeBg: '#eef2ff',
+        badgeBorder: '#c7d2fe',
+        custom: true,
+        isOverride: false
+      }));
+
+    return [...processedPresets, ...additionalCustom];
+  }, [visiblePresets, customRoles]);
 
   // Active Preset definition
   const currentPreset = useMemo(() => {
@@ -70,67 +105,55 @@ export default function RolesPermissionsTab({
   // Compute users per role
   const roleStats = useMemo(() => {
     const stats = {};
-    visiblePresets.forEach(p => {
+    roleProfiles.forEach(p => {
       stats[p.key] = 0;
-    });
-    customRoles.forEach(role => {
-      stats[`custom:${role.id}`] = 0;
     });
 
     (users || []).forEach(u => {
       if (u.role === 'customer') return;
-      const customKey = `custom:${u.module_access?.role_template_id}`;
-      if (Object.hasOwn(stats, customKey)) {
-        stats[customKey] += 1;
-        return;
+
+      // 1. Direct role template id match
+      if (u.module_access?.role_template_id) {
+        const customKey = `custom:${u.module_access.role_template_id}`;
+        if (Object.hasOwn(stats, customKey)) {
+          stats[customKey] += 1;
+          return;
+        }
       }
+
       if (checkIsMasterAdmin(u)) {
         if (isMasterAdmin && Object.hasOwn(stats, 'master_admin')) {
           stats.master_admin = (stats.master_admin || 0) + 1;
         }
         return;
       }
-      if (u.module_access?.role_preset_key && Object.hasOwn(stats, u.module_access.role_preset_key)) {
-        stats[u.module_access.role_preset_key] += 1;
-        return;
+
+      // 2. Preset key match (check if overridden or original)
+      if (u.module_access?.role_preset_key) {
+        const matchedProfile = roleProfiles.find(p => p.originalKey === u.module_access.role_preset_key || p.key === u.module_access.role_preset_key);
+        if (matchedProfile && Object.hasOwn(stats, matchedProfile.key)) {
+          stats[matchedProfile.key] += 1;
+          return;
+        }
       }
+
+      // 3. Role string match (telecaller, admin, etc.)
       const r = (u.role || '').toLowerCase().trim();
-      if (r === 'admin' && Object.hasOwn(stats, 'admin')) {
-        stats.admin += 1;
+      const matchedByRole = roleProfiles.find(p => (p.originalKey || p.key || '').toLowerCase() === r || (p.name || '').toLowerCase() === r);
+      if (matchedByRole && Object.hasOwn(stats, matchedByRole.key)) {
+        stats[matchedByRole.key] += 1;
         return;
       }
-      if (r === 'crm' && Object.hasOwn(stats, 'crm')) {
-        stats.crm += 1;
-        return;
-      }
-      if (r === 'telecaller' && Object.hasOwn(stats, 'telecaller')) {
-        stats.telecaller += 1;
-        return;
-      }
-      if ((r === 'sales coordinator' || r === 'sales_coordinator') && Object.hasOwn(stats, 'sales_coordinator')) {
-        stats.sales_coordinator += 1;
-        return;
-      }
-      if ((r === 'process coordinator' || r === 'process_coordinator') && Object.hasOwn(stats, 'process_coordinator')) {
-        stats.process_coordinator += 1;
-        return;
-      }
-      const desig = (u.emp_designation || '').toLowerCase();
-      if (desig.includes('hod') || desig.includes('director') || desig.includes('head')) {
-        stats.hod_dept_head = (stats.hod_dept_head || 0) + 1;
-      } else if (desig.includes('manager') || desig.includes('lead')) {
-        stats.sales_manager = (stats.sales_manager || 0) + 1;
-      } else if (desig.includes('recruiter') || desig.includes('hr')) {
-        stats.hr_recruiter = (stats.hr_recruiter || 0) + 1;
-      } else if (desig.includes('account') || desig.includes('finance') || desig.includes('purchase')) {
-        stats.accounts_billing = (stats.accounts_billing || 0) + 1;
-      } else {
-        stats.sales_executive = (stats.sales_executive || 0) + 1;
+
+      // Fallback
+      const defaultProfile = roleProfiles.find(p => p.originalKey === 'sales_executive' || p.key === 'sales_executive');
+      if (defaultProfile && Object.hasOwn(stats, defaultProfile.key)) {
+        stats[defaultProfile.key] += 1;
       }
     });
 
     return stats;
-  }, [visiblePresets, customRoles, users, isMasterAdmin]);
+  }, [roleProfiles, users, isMasterAdmin]);
 
   // Filter users matching search query for quick permission inspection
   const filteredUsers = useMemo(() => {
@@ -255,7 +278,7 @@ export default function RolesPermissionsTab({
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                     <span style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: preset.color }} />
                     <span style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-primary)' }}>{preset.name}</span>
-                    {preset.custom && (
+                    {preset.isOverride ? (
                       <span style={{
                         fontSize: '0.68rem',
                         fontWeight: 700,
@@ -265,9 +288,21 @@ export default function RolesPermissionsTab({
                         color: '#6d28d9',
                         border: '1px solid #ddd6fe'
                       }}>
+                        Customized
+                      </span>
+                    ) : preset.custom ? (
+                      <span style={{
+                        fontSize: '0.68rem',
+                        fontWeight: 700,
+                        padding: '0.12rem 0.45rem',
+                        borderRadius: '6px',
+                        backgroundColor: '#f1f5f9',
+                        color: '#475569',
+                        border: '1px solid #cbd5e1'
+                      }}>
                         Custom Role
                       </span>
-                    )}
+                    ) : null}
                   </div>
                   <span style={{
                     fontSize: '0.72rem',
@@ -317,9 +352,9 @@ export default function RolesPermissionsTab({
                   color: currentPreset.color,
                   border: `1px solid ${currentPreset.badgeBorder}`
                 }}>
-                  {currentPreset.custom ? 'Custom Role' : 'Role Template'}
+                  {currentPreset.isOverride ? 'Customized Preset' : currentPreset.custom ? 'Custom Role' : 'Default Preset'}
                 </span>
-                {currentPreset.custom && canManageRoles && (
+                {canManageRoles && currentPreset.key !== 'master_admin' && (
                   <button
                     type="button"
                     onClick={() => onEditRole(currentPreset)}
@@ -343,7 +378,31 @@ export default function RolesPermissionsTab({
                     <span>Edit Role</span>
                   </button>
                 )}
-                {currentPreset.custom && canManageRoles && (
+                {canManageRoles && currentPreset.isOverride && (
+                  <button
+                    type="button"
+                    onClick={() => onDeleteRole(currentPreset)}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.35rem',
+                      padding: '0.25rem 0.55rem',
+                      borderRadius: '6px',
+                      border: '1px solid #fed7aa',
+                      backgroundColor: '#fff7ed',
+                      color: '#c2410c',
+                      fontSize: '0.74rem',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease'
+                    }}
+                    title="Reset role overrides back to factory default"
+                  >
+                    <Trash2 size={13} />
+                    <span>Reset to Default</span>
+                  </button>
+                )}
+                {canManageRoles && currentPreset.custom && !currentPreset.isOverride && (
                   <button
                     type="button"
                     onClick={() => onDeleteRole(currentPreset)}

@@ -215,8 +215,9 @@ export default function UserManagementContainer({
     setSavingRole(true);
     try {
       const { assignedUserIds = [], id: roleId, ...rolePayload } = details;
-      const isUpdating = Boolean(roleId || editingRole?.id);
-      const targetRoleId = roleId || editingRole?.id;
+      const matchedExisting = roleTemplates.find(r => r.name?.trim().toLowerCase() === rolePayload.name?.trim().toLowerCase());
+      const targetRoleId = roleId || editingRole?.id || matchedExisting?.id;
+      const isUpdating = Boolean(targetRoleId);
 
       let result;
       if (isUpdating) {
@@ -273,18 +274,21 @@ export default function UserManagementContainer({
 
   const handleDeleteRole = (role) => {
     if (!role?.id) return;
+    const isOverride = Boolean(role.isOverride);
     confirmUserChange({
-      title: 'Delete Custom Role Template?',
-      message: `Are you sure you want to delete role template "${role.name}"? Any staff members with this template will have it unlinked.`,
-      confirmText: 'Delete Role',
+      title: isOverride ? 'Reset Role to Factory Default?' : 'Delete Custom Role Template?',
+      message: isOverride
+        ? `Are you sure you want to reset "${role.name}" back to its factory default settings?`
+        : `Are you sure you want to delete role template "${role.name}"? Any staff members with this template will have it unlinked.`,
+      confirmText: isOverride ? 'Reset to Default' : 'Delete Role',
       type: 'danger',
       action: async () => {
         try {
           const res = await deleteRoleTemplate(role.id);
           if (!res.success) throw new Error(res.error || 'Failed to delete role.');
           setRoleTemplates(prev => prev.filter(r => r.id !== role.id));
-          setSelectedRoleKey('admin');
-          showToast(`Role template "${role.name}" deleted successfully.`);
+          setSelectedRoleKey(role.originalKey || 'admin');
+          showToast(isOverride ? `Role "${role.name}" reset to factory default.` : `Role template "${role.name}" deleted successfully.`);
           fetchUsers(false);
         } catch (err) {
           showToast(err.message || 'Failed to delete role', 'error');
