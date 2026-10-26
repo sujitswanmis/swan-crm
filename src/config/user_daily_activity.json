@@ -711,22 +711,22 @@
       "userId": "07fa35d3-f50a-4e41-ae15-b2692e393ea0",
       "email": "admin@newswangroup.com",
       "empName": "New Swan Admin",
-      "activeSeconds": 7529,
-      "idleSeconds": 5123,
+      "activeSeconds": 17067,
+      "idleSeconds": 17464,
       "firstSeen": "2026-10-25T18:31:04.442893+00:00",
-      "lastSeen": "2026-10-26T07:00:29.909Z",
-      "status": "working",
+      "lastSeen": "2026-10-26T18:14:15.412Z",
+      "status": "away",
       "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36"
     },
     "15e6a4bb-ca0c-4743-bf79-494ae64074ee": {
       "userId": "15e6a4bb-ca0c-4743-bf79-494ae64074ee",
       "email": "supujacreations@gmail.com",
       "empName": "SuPuja Creations",
-      "activeSeconds": 60,
-      "idleSeconds": 0,
+      "activeSeconds": 1928,
+      "idleSeconds": 2759,
       "firstSeen": "2026-10-26T05:30:09.578144+00:00",
-      "lastSeen": "2026-10-26T05:31:09.812Z",
-      "status": "working",
+      "lastSeen": "2026-10-26T18:11:03.896Z",
+      "status": "away",
       "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36"
     }
   }

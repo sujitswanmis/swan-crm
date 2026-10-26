@@ -34,6 +34,15 @@ import ConfirmActionModal from './modals/ConfirmActionModal';
 
 import { isFeatureEntitled } from '@/utils/saasEntitlements';
 import { DEFAULT_DEPARTMENTS } from './utils/userManagementUtils';
+import { filterVisibleSubTabs, getSubItemPermissions } from '@/utils/permissionUtils';
+
+const USER_MANAGEMENT_TABS = [
+  { id: 'user_manage', label: 'User Manage', icon: Users },
+  { id: 'roles', label: 'Roles & Permissions', icon: Shield },
+  { id: 'hierarchy', label: 'Org Hierarchy', icon: Network },
+  { id: 'sessions', label: 'Active Sessions', icon: Monitor },
+  { id: 'audit', label: 'Audit Logs', icon: Clock }
+];
 
 const validSubTabs = ['user_manage', 'roles', 'hierarchy', 'sessions', 'audit'];
 const normalizeSubTab = (tab) => validSubTabs.includes(tab) ? tab : 'user_manage';
@@ -48,11 +57,20 @@ export default function UserManagementContainer({
   isAdmin = false,
   isMasterAdmin = false,
   userId = null,
-  userEmail = null
+  userEmail = null,
+  userRole = '',
+  moduleAccess = {}
 }) {
+  const visibleSubpages = useMemo(() => {
+    return filterVisibleSubTabs(moduleAccess, userRole, 'user_management_new', USER_MANAGEMENT_TABS);
+  }, [moduleAccess, userRole]);
+
   const [users, setUsers] = useState(initialUsers || []);
   const [loading, setLoading] = useState(!initialUsers || initialUsers.length === 0);
-  const [activeTab, setActiveTab] = useState(() => normalizeSubTab(activeSubTab));
+  const [activeTab, setActiveTab] = useState(() => {
+    const nextTab = normalizeSubTab(activeSubTab);
+    return visibleSubpages.some(t => t.id === nextTab) ? nextTab : (visibleSubpages[0]?.id || 'user_manage');
+  });
   const [departments, setDepartments] = useState(DEFAULT_DEPARTMENTS);
 
   const hasChatbot = useMemo(() => {
@@ -61,12 +79,19 @@ export default function UserManagementContainer({
 
   useEffect(() => {
     const nextTab = normalizeSubTab(activeSubTab);
-    if (nextTab !== activeTab) {
-      setActiveTab(nextTab);
+    if (visibleSubpages.some(t => t.id === nextTab)) {
+      if (nextTab !== activeTab) {
+        setActiveTab(nextTab);
+      }
+    } else if (visibleSubpages.length > 0 && !visibleSubpages.some(t => t.id === activeTab)) {
+      const fallback = visibleSubpages[0]?.id || 'user_manage';
+      setActiveTab(fallback);
+      onTabChange(fallback);
     }
-  }, [activeSubTab]);
+  }, [activeSubTab, visibleSubpages, activeTab, onTabChange]);
 
   const handleTabSwitch = (newTabId) => {
+    if (!visibleSubpages.some(t => t.id === newTabId)) return;
     const nextTab = normalizeSubTab(newTabId);
     setActiveTab(nextTab);
     onTabChange(nextTab);
@@ -597,15 +622,6 @@ export default function UserManagementContainer({
     document.body.removeChild(link);
   };
 
-  // Navigation Subpage Tabs definition
-  const subpages = [
-    { id: 'user_manage', label: 'User Manage', icon: Users },
-    { id: 'roles', label: 'Roles & Permissions', icon: Shield },
-    { id: 'hierarchy', label: 'Org Hierarchy', icon: Network },
-    { id: 'sessions', label: 'Active Sessions', icon: Monitor },
-    { id: 'audit', label: 'Audit Logs', icon: Clock }
-  ];
-
   return (
     <div style={{
       width: '100%',
@@ -654,7 +670,7 @@ export default function UserManagementContainer({
         paddingBottom: '2px',
         marginBottom: '0.75rem'
       }}>
-        {subpages.map(sub => {
+        {visibleSubpages.map(sub => {
           const Icon = sub.icon;
           const isActive = activeTab === sub.id;
 
@@ -708,7 +724,17 @@ export default function UserManagementContainer({
 
       {/* Tab Content Rendering */}
       <div style={{ flex: 1, width: '100%' }}>
-        {activeTab === 'user_manage' && (
+        {!visibleSubpages.some(t => t.id === activeTab) && (
+          <div className="card" style={{ padding: '3.5rem 2rem', textAlign: 'center', background: 'var(--bg-surface)', borderRadius: '16px', border: '1px solid var(--border-light)' }}>
+            <Shield size={52} style={{ color: '#ef4444', margin: '0 auto 1.25rem' }} />
+            <h3 style={{ fontSize: '1.3rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>Access Restricted</h3>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', maxWidth: '440px', margin: '0.6rem auto 1.5rem', lineHeight: '1.5' }}>
+              Aapke account ko iss User Management section ({activeTab}) ka access nahi diya gaya hai.
+            </p>
+          </div>
+        )}
+
+        {activeTab === 'user_manage' && visibleSubpages.some(t => t.id === 'user_manage') && (
           <UserManageTab
             users={users}
             loading={loading}
@@ -735,7 +761,7 @@ export default function UserManagementContainer({
           />
         )}
 
-        {activeTab === 'roles' && (
+        {activeTab === 'roles' && visibleSubpages.some(t => t.id === 'roles') && (
           <RolesPermissionsTab
             users={users}
             onManagePermissions={(u) => setPermissionModal({ isOpen: true, user: u })}
@@ -749,7 +775,7 @@ export default function UserManagementContainer({
           />
         )}
 
-        {activeTab === 'hierarchy' && (
+        {activeTab === 'hierarchy' && visibleSubpages.some(t => t.id === 'hierarchy') && (
           <OrgHierarchyTab
             users={users}
             departments={departments}
@@ -757,11 +783,11 @@ export default function UserManagementContainer({
           />
         )}
 
-        {activeTab === 'sessions' && (
+        {activeTab === 'sessions' && visibleSubpages.some(t => t.id === 'sessions') && (
           <ActiveSessionsTab currentUserCompany={currentUserCompany} />
         )}
 
-        {activeTab === 'audit' && (
+        {activeTab === 'audit' && visibleSubpages.some(t => t.id === 'audit') && (
           <AuditLogsTab currentUserCompany={currentUserCompany} />
         )}
       </div>

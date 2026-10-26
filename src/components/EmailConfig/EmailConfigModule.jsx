@@ -1,7 +1,7 @@
 'use client';
 
 import MobileTableView from '@/components/common/MobileTableView';
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { 
   Mail, Save, Plus, Trash2, Edit3, Send, CheckCircle2, AlertCircle, 
   RefreshCw, Shield, Key, Eye, EyeOff, Server, Play, Clock, 
@@ -29,6 +29,15 @@ import EmailDragDropBuilder, { DEFAULT_DRAG_DROP_BLOCKS } from '@/components/Ema
 import { getTenantBranches } from '@/app/actions/tenantBranches';
 import { getAllTenantsWithSubscriptions, updateTenantSmtpLimit } from '@/app/actions/saasSubscription';
 import { PREBUILT_EMAIL_TEMPLATES } from '@/config/crmPreBuiltTemplates';
+import { filterVisibleSubTabs, getSubItemPermissions } from '@/utils/permissionUtils';
+
+const ALL_EMAIL_CONFIG_TABS = [
+  { id: 'smtp', label: '⚙️ SMTP Server Settings' },
+  { id: 'templates', label: '📝 Email Templates' },
+  { id: 'automations', label: '⚡ Stage Automations' },
+  { id: 'test', label: '🚀 Live Email Test' },
+  { id: 'logs', label: '📜 Sent History' }
+];
 
 const SMTP_PRESETS = [
   {
@@ -123,32 +132,41 @@ export default function EmailConfigModule({
   initialTab = null,
   onSubTabChange = null
 }) {
+  const visibleTabs = useMemo(() => {
+    return filterVisibleSubTabs(moduleAccess, userRole, 'email_config', ALL_EMAIL_CONFIG_TABS);
+  }, [moduleAccess, userRole]);
+
   const [activeTab, setActiveTabState] = useState(() => {
+    const isAllowed = (t) => visibleTabs.some(vt => vt.id === t);
     // 1. Initial tab from props
-    if (initialTab && ['smtp', 'templates', 'automations', 'test', 'logs'].includes(initialTab)) {
+    if (initialTab && isAllowed(initialTab)) {
       return initialTab;
     }
     // 2. URL query param or path
     if (typeof window !== 'undefined') {
       const urlParams = new URLSearchParams(window.location.search);
       const qTab = (urlParams.get('tab') || urlParams.get('subtab') || '').toLowerCase();
-      if (['smtp', 'templates', 'automations', 'test', 'logs'].includes(qTab)) {
+      if (isAllowed(qTab)) {
         return qTab;
       }
       const pathParts = window.location.pathname.replace(/^\/+|\/+$/g, '').toLowerCase().split('/');
-      if (pathParts[0]?.startsWith('email') && pathParts[1] && ['smtp', 'templates', 'automations', 'test', 'logs'].includes(pathParts[1])) {
+      if (pathParts[0]?.startsWith('email') && pathParts[1] && isAllowed(pathParts[1])) {
         return pathParts[1];
       }
     }
-    return 'smtp';
+    return visibleTabs[0]?.id || 'smtp';
   });
 
   // Sync state if initialTab prop changes externally
   useEffect(() => {
-    if (initialTab && ['smtp', 'templates', 'automations', 'test', 'logs'].includes(initialTab) && initialTab !== activeTab) {
-      setActiveTabState(initialTab);
+    if (initialTab && visibleTabs.some(t => t.id === initialTab)) {
+      if (initialTab !== activeTab) setActiveTabState(initialTab);
+    } else if (visibleTabs.length > 0 && !visibleTabs.some(t => t.id === activeTab)) {
+      const fallback = visibleTabs[0]?.id || 'smtp';
+      setActiveTabState(fallback);
+      if (onSubTabChange) onSubTabChange(fallback);
     }
-  }, [initialTab]);
+  }, [initialTab, visibleTabs, activeTab, onSubTabChange]);
 
   // Sync browser back/forward buttons
   useEffect(() => {
@@ -156,15 +174,16 @@ export default function EmailConfigModule({
       if (typeof window === 'undefined') return;
       const urlParams = new URLSearchParams(window.location.search);
       const qTab = (urlParams.get('tab') || urlParams.get('subtab') || '').toLowerCase();
-      if (['smtp', 'templates', 'automations', 'test', 'logs'].includes(qTab)) {
+      if (visibleTabs.some(vt => vt.id === qTab)) {
         setActiveTabState(qTab);
       }
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
+  }, [visibleTabs]);
 
   const setActiveTab = useCallback((tabId) => {
+    if (!visibleTabs.some(t => t.id === tabId)) return;
     setActiveTabState(tabId);
     if (typeof onSubTabChange === 'function') {
       onSubTabChange(tabId);
@@ -173,7 +192,7 @@ export default function EmailConfigModule({
       currentUrl.searchParams.set('tab', tabId);
       window.history.pushState(null, '', currentUrl.pathname + currentUrl.search);
     }
-  }, [onSubTabChange]);
+  }, [onSubTabChange, visibleTabs]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState(null);
@@ -1234,7 +1253,7 @@ export default function EmailConfigModule({
           { id: 'automations', label: '⚡ Stage Automations', count: automations.length },
           { id: 'test', label: '🚀 Live Email Test', count: null },
           { id: 'logs', label: '📜 Sent History', count: logs.length }
-        ].map(tab => (
+        ].filter(tab => visibleTabs.some(vt => vt.id === tab.id)).map(tab => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
@@ -1268,7 +1287,7 @@ export default function EmailConfigModule({
       {/* ========================================================================= */}
       {/* TAB 1: MULTIPLE SMTP SERVER SETTINGS */}
       {/* ========================================================================= */}
-      {activeTab === 'smtp' && (
+      {activeTab === 'smtp' && visibleTabs.some(vt => vt.id === 'smtp') && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           
           {/* Header Action Bar */}
@@ -1586,7 +1605,7 @@ export default function EmailConfigModule({
       {/* ========================================================================= */}
       {/* TAB 2: EMAIL TEMPLATES LIBRARY (SEARCH, MULTI-SELECT, PER-PAGE & VIEWS) */}
       {/* ========================================================================= */}
-      {activeTab === 'templates' && (
+      {activeTab === 'templates' && visibleTabs.some(vt => vt.id === 'templates') && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
           
           {/* TOOLBAR: Filter Tabs, Real-Time Search, Items Per Page & View Mode Toggle */}
@@ -2494,7 +2513,7 @@ export default function EmailConfigModule({
       {/* ========================================================================= */}
       {/* TAB 3: STAGE-BASED AUTOMATION RULES */}
       {/* ========================================================================= */}
-      {activeTab === 'automations' && (
+      {activeTab === 'automations' && visibleTabs.some(vt => vt.id === 'automations') && (
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.75rem', flexWrap: 'wrap', gap: '1rem' }}>
             <div>
@@ -2799,7 +2818,7 @@ export default function EmailConfigModule({
       {/* ========================================================================= */}
       {/* TAB 4: LIVE TEST EMAIL SENDER */}
       {/* ========================================================================= */}
-      {activeTab === 'test' && (
+      {activeTab === 'test' && visibleTabs.some(vt => vt.id === 'test') && (
         <div className="card" style={{ padding: '1.75rem', borderRadius: '14px', maxWidth: '650px' }}>
           <h3 style={{ fontSize: '1.1rem', fontWeight: 600, margin: '0 0 0.5rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <Send size={18} style={{ color: 'var(--accent-color)' }} />
@@ -2913,7 +2932,7 @@ export default function EmailConfigModule({
       {/* ========================================================================= */}
       {/* TAB 5: SENT HISTORY / LOGS */}
       {/* ========================================================================= */}
-      {activeTab === 'logs' && (
+      {activeTab === 'logs' && visibleTabs.some(vt => vt.id === 'logs') && (
         <div className="card" style={{ padding: '1.5rem', borderRadius: '14px' }}>
           
           {/* Top Realtime Tracking Analytics Cards */}
@@ -3053,6 +3072,19 @@ export default function EmailConfigModule({
               </table></MobileTableView>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Access Denied Card if current tab is not allowed */}
+      {!visibleTabs.some(vt => vt.id === activeTab) && (
+        <div style={{ textAlign: 'center', padding: '3.5rem 1.5rem', background: 'var(--bg-surface)', borderRadius: '12px', border: '1px solid var(--border-light)', margin: '2rem 0' }}>
+          <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: '#fee2e2', color: '#dc2626', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.25rem' }}>
+            <Shield size={28} />
+          </div>
+          <h3 style={{ fontSize: '1.15rem', fontWeight: 700, margin: '0 0 0.5rem 0', color: 'var(--text-primary)' }}>Access Restricted</h3>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', maxWidth: '420px', margin: '0 auto' }}>
+            You do not have permission to view this section of Email Configuration. Please contact your administrator.
+          </p>
         </div>
       )}
 

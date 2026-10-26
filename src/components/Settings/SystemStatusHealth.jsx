@@ -39,9 +39,222 @@ const formatISTTimestamp = (date = new Date()) => {
   }
 };
 
-export default function SystemStatusHealth() {
+// Helper to calculate Indian Standard Time (IST) date boundaries for Quick Date Presets
+const getISTDateBoundaries = (preset) => {
+  try {
+    const now = new Date();
+    const istFormatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    });
+    const parts = istFormatter.formatToParts(now);
+    const year = parseInt(parts.find(p => p.type === 'year').value, 10);
+    const month = parseInt(parts.find(p => p.type === 'month').value, 10);
+    const day = parseInt(parts.find(p => p.type === 'day').value, 10);
+
+    const todayStart = new Date(`${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T00:00:00+05:30`);
+    const todayEnd = new Date(`${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T23:59:59.999+05:30`);
+
+    if (preset === 'today') {
+      return { start: todayStart, end: todayEnd };
+    }
+    if (preset === 'yesterday') {
+      const yStart = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000);
+      const yEnd = new Date(todayStart.getTime() - 1);
+      return { start: yStart, end: yEnd };
+    }
+    if (preset === '7days') {
+      const s = new Date(todayStart.getTime() - 6 * 24 * 60 * 60 * 1000);
+      return { start: s, end: todayEnd };
+    }
+    if (preset === 'this_month') {
+      const mStart = new Date(`${year}-${String(month).padStart(2, '0')}-01T00:00:00+05:30`);
+      return { start: mStart, end: todayEnd };
+    }
+  } catch (err) {
+    console.error('Error calculating IST boundaries:', err);
+  }
+  return { start: null, end: null };
+};
+
+// Critical CRM Tables & Required Columns for Schema Doctor
+const CRITICAL_CRM_TABLES = [
+  {
+    table: 'leads',
+    category: 'Sales & Pipeline',
+    description: 'Core lead records, pipeline stages, contact details and rep assignments',
+    requiredColumns: ['id', 'our_company', 'assigned_to', 'status', 'updated_at', 'phone', 'lead_ref_id']
+  },
+  {
+    table: 'lead_notes',
+    category: 'Sales & Activity',
+    description: 'Follow-up remarks, client timeline history and employee notes',
+    requiredColumns: ['id', 'lead_id', 'created_at', 'note_text', 'created_by']
+  },
+  {
+    table: 'user_roles',
+    category: 'Security & Access',
+    description: 'Employee access control, roles, company assignments, salary and shift rules',
+    requiredColumns: ['id', 'user_id', 'tenant_id', 'emp_code', 'department', 'emp_official_mail_id', 'assigned_shift', 'salary_amount']
+  },
+  {
+    table: 'attendance_records',
+    category: 'Workforce Management',
+    description: 'Daily in/out punch records, shift assignments, short leaves, and working minutes',
+    requiredColumns: ['id', 'tenant_id', 'email', 'attendance_date', 'short_leave_type', 'shift_name', 'is_grace_applied', 'branch_name']
+  },
+  {
+    table: 'attendance_shift_policies',
+    category: 'Workforce Management',
+    description: 'Multi-shift definitions, grace minutes, and short leave rules per tenant/branch',
+    requiredColumns: ['id', 'tenant_id', 'company_name', 'shift_name', 'branch_name', 'grace_minutes', 'shifts']
+  },
+  {
+    table: 'tenant_branches',
+    category: 'Multi-Tenant SaaS',
+    description: 'Standardized tenant branch codes (TNT00001-B0001), addresses, and locations',
+    requiredColumns: ['id', 'tenant_id', 'tenant_code', 'branch_code', 'branch_name', 'company', 'is_active']
+  },
+  {
+    table: 'tenants',
+    category: 'Multi-Tenant SaaS',
+    description: 'Tenant organizations catalog, master tenant codes (TNT00001, TNT00002), and billing status',
+    requiredColumns: ['id', 'tenant_code', 'name', 'status', 'primary_contact_email']
+  },
+  {
+    table: 'attendance_regularization_requests',
+    category: 'Workforce Management',
+    description: 'Employee missing punch applications, approval workflows, and regularization audit',
+    requiredColumns: ['id', 'tenant_id', 'email', 'attendance_date', 'request_type', 'status']
+  },
+  {
+    table: 'call_sessions',
+    category: 'Telephony & Softphone',
+    description: 'Live softphone calls, duration, hangup causes, recording URLs and consultation logs',
+    requiredColumns: ['id', 'user_id', 'agent_id', 'customer_number', 'status', 'agent_call_uuid', 'hangup_source']
+  },
+  {
+    table: 'call_agents',
+    category: 'Telephony & Softphone',
+    description: 'Plivo WebRTC endpoint mapping, SIP credentials, desk authorization and status',
+    requiredColumns: ['id', 'user_id', 'plivo_username', 'plivo_sip_uri', 'is_active']
+  },
+  {
+    table: 'audit_logs',
+    category: 'Security & Compliance',
+    description: 'Administrative action history, permission changes, deletions, and login tracking',
+    requiredColumns: ['id', 'created_at', 'action', 'user_id']
+  },
+  {
+    table: 'party_orders',
+    category: 'Channel Operations',
+    description: 'Party orders, dealer booking frequency, lifecycle stages, and delivery tracking',
+    requiredColumns: ['id', 'tenant_id', 'order_number', 'party_id', 'order_status']
+  }
+];
+
+export const HEALTH_TAB_SLUGS = {
+  overview: 'overview',
+  schema_doctor: 'schema-doctor',
+  supabase: 'supabase',
+  leads: 'leads',
+  telephony: 'telephony',
+  workforce: 'workforce',
+  infra: 'infra',
+  errors: 'errors'
+};
+
+export const SLUG_TO_HEALTH_TAB = {
+  'overview': 'overview',
+  'schema-doctor': 'schema_doctor',
+  'schema_doctor': 'schema_doctor',
+  'schema': 'schema_doctor',
+  'supabase': 'supabase',
+  'supabase-logs': 'supabase',
+  'logs': 'supabase',
+  'leads': 'leads',
+  'lead-quality': 'leads',
+  'lead-doctor': 'leads',
+  'leads-doctor': 'leads',
+  'telephony': 'telephony',
+  'calling': 'telephony',
+  'voice': 'telephony',
+  'workforce': 'workforce',
+  'attendance': 'workforce',
+  'sessions': 'workforce',
+  'infra': 'infra',
+  'infrastructure': 'infra',
+  'database': 'infra',
+  'errors': 'errors',
+  'terminal': 'errors',
+  'live-errors': 'errors'
+};
+
+export function resolveHealthTabFromLocation(fallback = 'overview') {
+  if (typeof window === 'undefined') return fallback;
+  const path = window.location.pathname.toLowerCase().replace(/^\/+|\/+$/g, '');
+  const search = new URLSearchParams(window.location.search);
+  const qTab = (search.get('tab') || search.get('subtab') || search.get('health_tab') || '').toLowerCase();
+  if (qTab && SLUG_TO_HEALTH_TAB[qTab]) return SLUG_TO_HEALTH_TAB[qTab];
+
+  const segments = path.split('/');
+  if (segments.length >= 3 && (segments[1] === 'status' || segments[1] === 'health')) {
+    const slug = segments[2];
+    if (SLUG_TO_HEALTH_TAB[slug]) return SLUG_TO_HEALTH_TAB[slug];
+  }
+  if (segments.length >= 2 && (segments[0] === 'system-health' || segments[0] === 'system_health')) {
+    const slug = segments[1];
+    if (SLUG_TO_HEALTH_TAB[slug]) return SLUG_TO_HEALTH_TAB[slug];
+  }
+  return fallback;
+}
+
+export default function SystemStatusHealth({ initialTab = 'overview', activeSubTab = null, onTabChange = null }) {
   const supabase = createClient();
-  const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'supabase' | 'leads' | 'telephony' | 'workforce' | 'infra' | 'errors'
+  const [activeTab, setActiveTab] = useState(() => {
+    if (activeSubTab && SLUG_TO_HEALTH_TAB[activeSubTab]) return SLUG_TO_HEALTH_TAB[activeSubTab];
+    return resolveHealthTabFromLocation(initialTab || 'overview');
+  });
+
+  useEffect(() => {
+    if (activeSubTab && SLUG_TO_HEALTH_TAB[activeSubTab]) {
+      const resolved = SLUG_TO_HEALTH_TAB[activeSubTab];
+      if (resolved !== activeTab) {
+        setActiveTab(resolved);
+      }
+    }
+  }, [activeSubTab]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const resolved = resolveHealthTabFromLocation(activeTab);
+      if (resolved && resolved !== activeTab) {
+        setActiveTab(resolved);
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [activeTab]);
+
+  const handleSelectTab = (tabId) => {
+    setActiveTab(tabId);
+    const slug = HEALTH_TAB_SLUGS[tabId] || tabId;
+    if (typeof window !== 'undefined') {
+      const path = window.location.pathname.toLowerCase().replace(/^\/+|\/+$/g, '');
+      let newPath = `/config-master/status/${slug}`;
+      if (path.startsWith('system-health') || path.startsWith('system_health')) {
+        newPath = `/system-health/${slug}`;
+      }
+      if (window.location.pathname !== newPath) {
+        window.history.pushState(null, '', newPath);
+      }
+    }
+    if (onTabChange) {
+      onTabChange(tabId, slug);
+    }
+  };
   const [isRunning, setIsRunning] = useState(false);
   const [lastChecked, setLastChecked] = useState(null);
   const [autoRefresh, setAutoRefresh] = useState(false);
@@ -50,14 +263,24 @@ export default function SystemStatusHealth() {
 
   // Captured live runtime errors
   const [runtimeErrors, setRuntimeErrors] = useState([]);
+  const [errorDatePreset, setErrorDatePreset] = useState('all'); // 'all' | 'today' | 'yesterday' | '7days' | 'this_month'
 
   // Deep Server Audit State
   const [serverAudit, setServerAudit] = useState(null);
   const [serverAuditLoading, setServerAuditLoading] = useState(false);
 
-  // Supabase Logs Filter & Search State
+  // Supabase Logs Filter, Date Presets & Search State
   const [supabaseLogSearch, setSupabaseLogSearch] = useState('');
   const [supabaseLogFilter, setSupabaseLogFilter] = useState('all'); // 'all' | 'stage' | 'note' | 'delete' | 'login'
+  const [supabaseDatePreset, setSupabaseDatePreset] = useState('all'); // 'all' | 'today' | 'yesterday' | '7days' | 'this_month'
+
+  // Database Schema Doctor State
+  const [schemaResults, setSchemaResults] = useState([]);
+  const [isScanningSchema, setIsScanningSchema] = useState(false);
+  const [schemaLastScanned, setSchemaLastScanned] = useState(null);
+  const [schemaFilter, setSchemaFilter] = useState('all'); // 'all' | 'issues' | 'healthy'
+  const [schemaSearch, setSchemaSearch] = useState('');
+  const [copiedFixId, setCopiedFixId] = useState(null);
 
   // Setup Global Error Listeners on Mount
   useEffect(() => {
@@ -1005,10 +1228,203 @@ export default function SystemStatusHealth() {
   const sChecks = serverAudit?.checks;
   const supaUsage = sChecks?.supabaseUsage;
 
-  // Filtered Supabase Logs
+  // SQL Script Generators for Schema Fixes
+  const generateAddColumnsSql = (table, missingCols) => {
+    const colDefs = missingCols.map(col => {
+      if (col === 'tenant_id') return `ADD COLUMN IF NOT EXISTS tenant_id uuid DEFAULT '00000000-0000-0000-0000-000000000001'`;
+      if (col === 'salary_amount') return `ADD COLUMN IF NOT EXISTS salary_amount numeric(12,2) DEFAULT NULL`;
+      if (col === 'is_grace_applied' || col === 'is_active') return `ADD COLUMN IF NOT EXISTS ${col} boolean DEFAULT true`;
+      if (col === 'short_leave_type') return `ADD COLUMN IF NOT EXISTS short_leave_type text DEFAULT 'NONE'`;
+      if (col === 'shifts') return `ADD COLUMN IF NOT EXISTS shifts jsonb DEFAULT '[]'::jsonb`;
+      if (col === 'grace_minutes') return `ADD COLUMN IF NOT EXISTS grace_minutes integer DEFAULT 5`;
+      if (col === 'updated_at' || col === 'created_at') return `ADD COLUMN IF NOT EXISTS ${col} timestamptz DEFAULT now()`;
+      return `ADD COLUMN IF NOT EXISTS ${col} text`;
+    });
+    return `-- Fix missing column(s) on ${table}\nALTER TABLE IF EXISTS ${table}\n  ${colDefs.join(',\n  ')};`;
+  };
+
+  const generateCreateTableSql = (table) => {
+    if (table === 'attendance_shift_policies') {
+      return `-- 1. Create attendance_shift_policies table\nCREATE TABLE IF NOT EXISTS attendance_shift_policies (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),\n  tenant_id uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001',\n  company_name text NOT NULL,\n  policy_version text DEFAULT 'v1.0',\n  shift_name text DEFAULT 'Regular Shift',\n  branch_name text DEFAULT NULL,\n  start_time text DEFAULT '09:00',\n  end_time text DEFAULT '18:30',\n  grace_minutes integer DEFAULT 5,\n  short_leave_total_monthly integer DEFAULT 4,\n  max_short_leave_per_day integer DEFAULT 1,\n  min_half_day_minutes integer DEFAULT 270,\n  min_full_day_minutes integer DEFAULT 450,\n  shifts jsonb DEFAULT '[]'::jsonb,\n  created_at timestamptz DEFAULT now(),\n  updated_at timestamptz DEFAULT now()\n);\n\n-- 2. Enable RLS and grant access\nALTER TABLE attendance_shift_policies ENABLE ROW LEVEL SECURITY;\nDROP POLICY IF EXISTS "attendance_policies_all_access" ON attendance_shift_policies;\nCREATE POLICY "attendance_policies_all_access" ON attendance_shift_policies FOR ALL TO authenticated, anon, service_role USING (true) WITH CHECK (true);`;
+    }
+    if (table === 'tenant_branches') {
+      return `-- 1. Create tenant_branches table\nCREATE TABLE IF NOT EXISTS tenant_branches (\n  id text PRIMARY KEY,\n  company text,\n  tenant_id uuid DEFAULT '00000000-0000-0000-0000-000000000001',\n  tenant_code text,\n  branch_code text,\n  branch_name text NOT NULL,\n  location_type text DEFAULT 'Branch Office',\n  is_active boolean DEFAULT true,\n  created_at timestamptz DEFAULT now(),\n  updated_at timestamptz DEFAULT now()\n);\n\n-- 2. Enable RLS and grant access\nALTER TABLE tenant_branches ENABLE ROW LEVEL SECURITY;\nDROP POLICY IF EXISTS "tenant_branches_all_access" ON tenant_branches;\nCREATE POLICY "tenant_branches_all_access" ON tenant_branches FOR ALL TO authenticated, anon, service_role USING (true) WITH CHECK (true);`;
+    }
+    return `-- Create missing table ${table}\nCREATE TABLE IF NOT EXISTS ${table} (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),\n  tenant_id uuid DEFAULT '00000000-0000-0000-0000-000000000001',\n  created_at timestamptz DEFAULT now(),\n  updated_at timestamptz DEFAULT now()\n);\nALTER TABLE ${table} ENABLE ROW LEVEL SECURITY;\nDROP POLICY IF EXISTS "${table}_all_access" ON ${table};\nCREATE POLICY "${table}_all_access" ON ${table} FOR ALL TO authenticated, anon, service_role USING (true) WITH CHECK (true);`;
+  };
+
+  const generateRlsFixSql = (table) => {
+    return `-- Enable RLS and grant full read/write access to ${table}\nALTER TABLE ${table} ENABLE ROW LEVEL SECURITY;\nDROP POLICY IF EXISTS "${table}_all_access" ON ${table};\nCREATE POLICY "${table}_all_access"\n  ON ${table}\n  FOR ALL\n  TO authenticated, anon, service_role\n  USING (true)\n  WITH CHECK (true);`;
+  };
+
+  // Run Database Schema Diagnostic Scan
+  const runSchemaDiagnosticScan = useCallback(async () => {
+    setIsScanningSchema(true);
+    const results = [];
+
+    for (const item of CRITICAL_CRM_TABLES) {
+      const t0 = performance.now();
+      try {
+        const { error } = await supabase
+          .from(item.table)
+          .select(item.requiredColumns.join(','))
+          .limit(0);
+
+        const latency = Math.round(performance.now() - t0);
+
+        if (!error) {
+          results.push({
+            table: item.table,
+            category: item.category,
+            description: item.description,
+            requiredColumns: item.requiredColumns,
+            missingColumns: [],
+            status: 'healthy',
+            statusCode: 200,
+            latency,
+            errorMsg: null,
+            fixSql: null
+          });
+        } else {
+          const msg = String(error.message || '').toLowerCase();
+          const code = String(error.code || '');
+
+          if (code === '42P01' || msg.includes('does not exist') || msg.includes('schema cache') || error.status === 404) {
+            results.push({
+              table: item.table,
+              category: item.category,
+              description: item.description,
+              requiredColumns: item.requiredColumns,
+              missingColumns: item.requiredColumns,
+              status: 'missing_table',
+              statusCode: 404,
+              latency,
+              errorMsg: `Table '${item.table}' does not exist in Supabase schema.`,
+              fixSql: generateCreateTableSql(item.table)
+            });
+          } else if (code === '42703' || (msg.includes('column') && msg.includes('does not exist'))) {
+            const missingCols = [];
+            for (const col of item.requiredColumns) {
+              const { error: colErr } = await supabase.from(item.table).select(col).limit(0);
+              if (colErr && (colErr.code === '42703' || colErr.message?.toLowerCase().includes('does not exist'))) {
+                missingCols.push(col);
+              }
+            }
+            results.push({
+              table: item.table,
+              category: item.category,
+              description: item.description,
+              requiredColumns: item.requiredColumns,
+              missingColumns: missingCols.length > 0 ? missingCols : ['(Column mismatch)'],
+              status: 'missing_column',
+              statusCode: 42703,
+              latency,
+              errorMsg: `Required column(s) [${missingCols.join(', ')}] missing from table.`,
+              fixSql: generateAddColumnsSql(item.table, missingCols)
+            });
+          } else if (code === '42501' || code === '403' || msg.includes('row-level security') || msg.includes('permission denied')) {
+            results.push({
+              table: item.table,
+              category: item.category,
+              description: item.description,
+              requiredColumns: item.requiredColumns,
+              missingColumns: [],
+              status: 'rls_blocked',
+              statusCode: 403,
+              latency,
+              errorMsg: `Row Level Security (RLS) policy blocks access to '${item.table}'.`,
+              fixSql: generateRlsFixSql(item.table)
+            });
+          } else {
+            results.push({
+              table: item.table,
+              category: item.category,
+              description: item.description,
+              requiredColumns: item.requiredColumns,
+              missingColumns: [],
+              status: 'warning',
+              statusCode: code || 'ERR',
+              latency,
+              errorMsg: error.message,
+              fixSql: null
+            });
+          }
+        }
+      } catch (ex) {
+        results.push({
+          table: item.table,
+          category: item.category,
+          description: item.description,
+          requiredColumns: item.requiredColumns,
+          missingColumns: [],
+          status: 'error',
+          statusCode: 500,
+          latency: Math.round(performance.now() - t0),
+          errorMsg: ex.message || 'Unknown network error',
+          fixSql: null
+        });
+      }
+    }
+
+    setSchemaResults(results);
+    setIsScanningSchema(false);
+    setSchemaLastScanned(formatISTTimestamp(new Date()));
+  }, [supabase]);
+
+  // Auto-scan schema when doctor tab opened
+  useEffect(() => {
+    if (activeTab === 'schema_doctor' && schemaResults.length === 0 && !isScanningSchema) {
+      runSchemaDiagnosticScan();
+    }
+  }, [activeTab, schemaResults.length, isScanningSchema, runSchemaDiagnosticScan]);
+
+  const schemaIssuesCount = useMemo(() => {
+    return schemaResults.filter(r => r.status !== 'healthy').length;
+  }, [schemaResults]);
+
+  const filteredSchemaResults = useMemo(() => {
+    return schemaResults.filter(item => {
+      if (schemaFilter === 'issues' && item.status === 'healthy') return false;
+      if (schemaFilter === 'healthy' && item.status !== 'healthy') return false;
+      if (schemaSearch.trim()) {
+        const q = schemaSearch.toLowerCase();
+        const inTable = item.table.toLowerCase().includes(q);
+        const inCat = item.category.toLowerCase().includes(q);
+        const inDesc = item.description.toLowerCase().includes(q);
+        const inCols = item.requiredColumns.some(c => c.toLowerCase().includes(q));
+        return inTable || inCat || inDesc || inCols;
+      }
+      return true;
+    });
+  }, [schemaResults, schemaFilter, schemaSearch]);
+
+  // Filtered Runtime Errors with Quick Date Presets
+  const filteredRuntimeErrors = useMemo(() => {
+    return runtimeErrors.filter(err => {
+      if (errorDatePreset !== 'all') {
+        const { start, end } = getISTDateBoundaries(errorDatePreset);
+        if (start && end) {
+          const t = new Date(err.timeRaw || err.timestamp || 0).getTime();
+          if (t < start.getTime() || t > end.getTime()) return false;
+        }
+      }
+      return true;
+    });
+  }, [runtimeErrors, errorDatePreset]);
+
+  // Filtered Supabase Logs with Quick Date Presets
   const filteredSupabaseLogs = useMemo(() => {
     const rawLogs = supaUsage?.recentAuditLogs || [];
     return rawLogs.filter(log => {
+      // Date Preset Filter (Strict IST)
+      if (supabaseDatePreset !== 'all') {
+        const { start, end } = getISTDateBoundaries(supabaseDatePreset);
+        if (start && end) {
+          const t = new Date(log.created_at || log.timestamp || 0).getTime();
+          if (t < start.getTime() || t > end.getTime()) return false;
+        }
+      }
+
       // Type Filter
       if (supabaseLogFilter === 'stage' && !log.action?.toLowerCase().includes('stage')) return false;
       if (supabaseLogFilter === 'note' && !log.action?.toLowerCase().includes('note')) return false;
@@ -1027,7 +1443,7 @@ export default function SystemStatusHealth() {
 
       return true;
     });
-  }, [supaUsage?.recentAuditLogs, supabaseLogFilter, supabaseLogSearch]);
+  }, [supaUsage?.recentAuditLogs, supabaseLogFilter, supabaseLogSearch, supabaseDatePreset]);
 
   return (
     <div style={{ width: '100%', boxSizing: 'border-box' }}>
@@ -1199,19 +1615,20 @@ export default function SystemStatusHealth() {
       }}>
         {[
           { id: 'overview', label: '🏥 Overview & Alerts', badge: allAnomalies.length },
+          { id: 'schema_doctor', label: '🔬 Database Schema Doctor', badge: schemaIssuesCount || null },
           { id: 'supabase', label: '⚡ Supabase Usage & Logs', badge: supaUsage?.recentAuditLogs?.length || null },
           { id: 'leads', label: '🎯 Lead Quality Doctor', badge: sChecks?.leadsDoctor?.unassignedLeads || null },
           { id: 'telephony', label: '📞 Calling & Voice', badge: sChecks?.telephonyDoctor?.failedCallsToday || null },
           { id: 'workforce', label: '👥 Attendance & Sessions', badge: sChecks?.attendanceDoctor?.unclosedPastShifts || null },
           { id: 'infra', label: '⚙️ Database & Infrastructure', badge: null },
-          { id: 'errors', label: '🚨 Live Error Terminal', badge: runtimeErrors.length }
+          { id: 'errors', label: '🚨 Live Error Terminal', badge: filteredRuntimeErrors.length }
         ].map(tab => {
           const isActive = activeTab === tab.id;
           return (
             <button
               key={tab.id}
               type="button"
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => handleSelectTab(tab.id)}
               style={{
                 padding: '0.65rem 1.1rem',
                 border: 'none',
@@ -1519,6 +1936,500 @@ export default function SystemStatusHealth() {
                 <Mic size={13} />
                 Test Microphone Device
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB 1.5: DATABASE SCHEMA & TABLE DOCTOR                                   */}
+      {/* ========================================================================= */}
+      {activeTab === 'schema_doctor' && (
+        <div>
+          {/* Header Strip */}
+          <div style={{
+            padding: '1.25rem 1.5rem',
+            borderRadius: '10px',
+            backgroundColor: 'var(--card-bg, #ffffff)',
+            border: '1px solid var(--border-color, #e2e8f0)',
+            marginBottom: '1.25rem',
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '1rem'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+              <div style={{
+                width: '42px',
+                height: '42px',
+                borderRadius: '10px',
+                backgroundColor: schemaIssuesCount > 0 ? 'rgba(239, 68, 68, 0.12)' : 'rgba(16, 185, 129, 0.12)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: schemaIssuesCount > 0 ? '#ef4444' : '#10b981'
+              }}>
+                <Database size={22} />
+              </div>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                    🔬 Database Schema & Table Doctor
+                  </h3>
+                  <span style={{
+                    padding: '0.15rem 0.5rem',
+                    borderRadius: '12px',
+                    fontSize: '0.72rem',
+                    fontWeight: 800,
+                    backgroundColor: schemaIssuesCount === 0 ? '#10b981' : '#ef4444',
+                    color: '#ffffff'
+                  }}>
+                    {schemaIssuesCount === 0 ? 'ALL TABLES & COLUMNS INTACT' : `${schemaIssuesCount} SCHEMA ANOMALIES`}
+                  </span>
+                </div>
+                <p style={{ margin: '0.2rem 0 0', fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                  Live PostgreSQL schema validator inspecting core tables, required columns, RLS permissions, and auto-generating repair SQL.
+                </p>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+              {schemaLastScanned && (
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                  Scanned: <strong>{schemaLastScanned}</strong>
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={runSchemaDiagnosticScan}
+                disabled={isScanningSchema}
+                style={{
+                  padding: '0.45rem 1rem',
+                  borderRadius: '6px',
+                  backgroundColor: '#2563eb',
+                  color: '#ffffff',
+                  border: 'none',
+                  fontSize: '0.82rem',
+                  fontWeight: 700,
+                  cursor: isScanningSchema ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.45rem',
+                  opacity: isScanningSchema ? 0.7 : 1
+                }}
+              >
+                <RefreshCw size={14} className={isScanningSchema ? 'spin' : ''} />
+                {isScanningSchema ? 'Scanning Database Schema...' : 'Re-Scan Schema Now'}
+              </button>
+            </div>
+          </div>
+
+          {/* 4 Summary KPI Cards */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+            gap: '1rem',
+            marginBottom: '1.25rem'
+          }}>
+            <div style={{
+              padding: '1.15rem',
+              borderRadius: '8px',
+              backgroundColor: 'var(--card-bg, #ffffff)',
+              border: '1px solid var(--border-color, #e2e8f0)'
+            }}>
+              <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)' }}>MONITORED TABLES</div>
+              <div style={{ fontSize: '1.85rem', fontWeight: 800, color: '#2563eb', margin: '0.35rem 0' }}>
+                {CRITICAL_CRM_TABLES.length}
+              </div>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                Core Sales, Workforce & Multi-Tenant tables
+              </div>
+            </div>
+
+            <div style={{
+              padding: '1.15rem',
+              borderRadius: '8px',
+              backgroundColor: 'var(--card-bg, #ffffff)',
+              border: '1px solid var(--border-color, #e2e8f0)'
+            }}>
+              <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)' }}>100% HEALTHY TABLES</div>
+              <div style={{ fontSize: '1.85rem', fontWeight: 800, color: '#10b981', margin: '0.35rem 0' }}>
+                {schemaResults.filter(r => r.status === 'healthy').length}
+              </div>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                Tables & columns verified intact
+              </div>
+            </div>
+
+            <div style={{
+              padding: '1.15rem',
+              borderRadius: '8px',
+              backgroundColor: schemaIssuesCount > 0 ? 'rgba(239, 68, 68, 0.05)' : 'var(--card-bg, #ffffff)',
+              border: `1px solid ${schemaIssuesCount > 0 ? '#ef4444' : 'var(--border-color, #e2e8f0)'}`
+            }}>
+              <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)' }}>DETECTED GAPS / ERRORS</div>
+              <div style={{ fontSize: '1.85rem', fontWeight: 800, color: schemaIssuesCount > 0 ? '#dc2626' : '#10b981', margin: '0.35rem 0' }}>
+                {schemaIssuesCount}
+              </div>
+              <div style={{ fontSize: '0.78rem', color: schemaIssuesCount > 0 ? '#dc2626' : 'var(--text-secondary)' }}>
+                {schemaIssuesCount > 0 ? 'Action required: Missing table/column' : 'Zero schema defects found'}
+              </div>
+            </div>
+
+            <div style={{
+              padding: '1.15rem',
+              borderRadius: '8px',
+              backgroundColor: 'var(--card-bg, #ffffff)',
+              border: '1px solid var(--border-color, #e2e8f0)'
+            }}>
+              <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)' }}>AVG SCHEMA QUERY PING</div>
+              <div style={{ fontSize: '1.85rem', fontWeight: 800, color: '#6366f1', margin: '0.35rem 0' }}>
+                {schemaResults.length > 0
+                  ? Math.round(schemaResults.reduce((sum, r) => sum + (r.latency || 0), 0) / schemaResults.length)
+                  : 0} ms
+              </div>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                Real-time PostgREST response latency
+              </div>
+            </div>
+          </div>
+
+          {/* Actionable Fix Banner if Gaps Detected */}
+          {schemaIssuesCount > 0 && (
+            <div style={{
+              padding: '1rem 1.25rem',
+              borderRadius: '8px',
+              backgroundColor: 'rgba(239, 68, 68, 0.08)',
+              border: '1px solid rgba(239, 68, 68, 0.35)',
+              marginBottom: '1.25rem',
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '1rem'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                <ShieldAlert size={22} color="#dc2626" />
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: '0.92rem', color: '#dc2626' }}>
+                    {schemaIssuesCount} Database Schema Inconsistencies Detected!
+                  </div>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                    Copy the auto-generated SQL repair scripts below and run them in Supabase SQL Editor to resolve all gaps immediately.
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const combinedSql = schemaResults
+                    .filter(r => r.fixSql)
+                    .map(r => r.fixSql)
+                    .join('\n\n');
+                  if (combinedSql) {
+                    navigator.clipboard.writeText(combinedSql);
+                    setCopiedFixId('all');
+                    setTimeout(() => setCopiedFixId(null), 3000);
+                  }
+                }}
+                style={{
+                  padding: '0.45rem 0.9rem',
+                  borderRadius: '6px',
+                  backgroundColor: '#dc2626',
+                  color: '#ffffff',
+                  border: 'none',
+                  fontSize: '0.82rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem'
+                }}
+              >
+                {copiedFixId === 'all' ? <Check size={14} /> : <Copy size={14} />}
+                {copiedFixId === 'all' ? 'All Fix SQL Copied!' : 'Copy All Repair SQL'}
+              </button>
+            </div>
+          )}
+
+          {/* Table Container Card */}
+          <div style={{
+            borderRadius: '10px',
+            backgroundColor: 'var(--card-bg, #ffffff)',
+            border: '1px solid var(--border-color, #e2e8f0)',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+            overflow: 'hidden'
+          }}>
+            {/* Filter and Search Bar */}
+            <div style={{
+              padding: '0.9rem 1.25rem',
+              borderBottom: '1px solid var(--border-color, #e2e8f0)',
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '0.75rem',
+              backgroundColor: 'var(--card-bg-subtle, #f8fafc)'
+            }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                padding: '0.35rem 0.65rem',
+                borderRadius: '6px',
+                border: '1px solid var(--border-color, #e2e8f0)',
+                backgroundColor: 'var(--card-bg, #ffffff)'
+              }}>
+                <Search size={14} color="var(--text-secondary)" />
+                <input
+                  type="text"
+                  placeholder="Filter table, column or category..."
+                  value={schemaSearch}
+                  onChange={(e) => setSchemaSearch(e.target.value)}
+                  style={{
+                    border: 'none',
+                    outline: 'none',
+                    background: 'transparent',
+                    fontSize: '0.8rem',
+                    color: 'var(--text-primary)',
+                    width: '240px'
+                  }}
+                />
+                {schemaSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setSchemaSearch('')}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: '0.8rem' }}
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+
+              {/* Status Filter Pills */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Status:</span>
+                {[
+                  { id: 'all', label: `All Tables (${schemaResults.length || CRITICAL_CRM_TABLES.length})` },
+                  { id: 'issues', label: `Issues Only (${schemaIssuesCount})` },
+                  { id: 'healthy', label: `Healthy (${schemaResults.filter(r => r.status === 'healthy').length})` }
+                ].map(f => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    onClick={() => setSchemaFilter(f.id)}
+                    style={{
+                      padding: '0.3rem 0.7rem',
+                      borderRadius: '20px',
+                      fontSize: '0.76rem',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      border: schemaFilter === f.id ? '2px solid #2563eb' : '1px solid var(--border-color, #e2e8f0)',
+                      backgroundColor: schemaFilter === f.id ? 'rgba(37, 99, 235, 0.1)' : 'var(--card-bg, #ffffff)',
+                      color: schemaFilter === f.id ? '#2563eb' : 'var(--text-secondary)'
+                    }}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Diagnostic Table with Sticky Header */}
+            <div style={{ maxHeight: 'calc(100vh - 360px)', minHeight: '340px', overflow: 'auto' }}>
+              <MobileTableView id="Settings/SystemStatusHealth-SchemaDoctor">
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                  <thead>
+                    <tr style={{
+                      position: 'sticky',
+                      top: 0,
+                      zIndex: 10,
+                      backgroundColor: 'var(--card-bg, #ffffff)',
+                      boxShadow: 'inset 0 -1px 0 var(--border-color, #e2e8f0)',
+                      textAlign: 'left',
+                      color: 'var(--text-secondary)'
+                    }}>
+                      <th style={{ padding: '0.65rem 0.85rem', width: '220px' }}>TABLE & MODULE</th>
+                      <th style={{ padding: '0.65rem 0.85rem' }}>REQUIRED SCHEMATIC COLUMNS</th>
+                      <th style={{ padding: '0.65rem 0.85rem', width: '100px', textAlign: 'right' }}>PING</th>
+                      <th style={{ padding: '0.65rem 0.85rem', width: '170px' }}>STATUS & HEALTH</th>
+                      <th style={{ padding: '0.65rem 0.85rem', width: '150px', textAlign: 'center' }}>ACTION</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredSchemaResults.map(res => {
+                      const isHealthy = res.status === 'healthy';
+                      const isMissingTable = res.status === 'missing_table';
+                      const isMissingCol = res.status === 'missing_column';
+                      const isRls = res.status === 'rls_blocked';
+
+                      return (
+                        <tr
+                          key={res.table}
+                          style={{
+                            borderBottom: '1px solid var(--border-color, #f1f5f9)',
+                            backgroundColor: isHealthy ? 'transparent' : 'rgba(239, 68, 68, 0.03)',
+                            transition: 'background-color 0.15s ease'
+                          }}
+                        >
+                          {/* Table Name */}
+                          <td style={{ padding: '0.75rem 0.85rem', verticalAlign: 'top' }}>
+                            <div style={{ fontWeight: 800, fontFamily: 'monospace', fontSize: '0.86rem', color: isHealthy ? '#0f172a' : '#dc2626' }}>
+                              {res.table}
+                            </div>
+                            <div style={{ fontSize: '0.72rem', color: '#6366f1', fontWeight: 600, marginTop: '0.15rem' }}>
+                              {res.category}
+                            </div>
+                            <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+                              {res.description}
+                            </div>
+                          </td>
+
+                          {/* Columns */}
+                          <td style={{ padding: '0.75rem 0.85rem', verticalAlign: 'top' }}>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
+                              {res.requiredColumns.map(col => {
+                                const isColMissing = res.missingColumns?.includes(col);
+                                return (
+                                  <span
+                                    key={col}
+                                    style={{
+                                      padding: '0.1rem 0.4rem',
+                                      borderRadius: '4px',
+                                      fontSize: '0.72rem',
+                                      fontFamily: 'monospace',
+                                      fontWeight: isColMissing ? 800 : 500,
+                                      backgroundColor: isColMissing ? 'rgba(239, 68, 68, 0.15)' : 'rgba(100, 116, 139, 0.08)',
+                                      color: isColMissing ? '#dc2626' : 'var(--text-primary)',
+                                      border: isColMissing ? '1px solid #ef4444' : '1px solid transparent'
+                                    }}
+                                  >
+                                    {isColMissing ? `❌ ${col}` : col}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                            {res.errorMsg && (
+                              <div style={{ fontSize: '0.74rem', color: '#dc2626', fontWeight: 600, marginTop: '0.35rem' }}>
+                                {res.errorMsg}
+                              </div>
+                            )}
+                          </td>
+
+                          {/* Ping */}
+                          <td style={{ padding: '0.75rem 0.85rem', verticalAlign: 'top', textAlign: 'right' }}>
+                            <span style={{ fontWeight: 700, fontFamily: 'monospace', color: res.latency < 300 ? '#10b981' : '#f59e0b' }}>
+                              {res.latency != null ? `${res.latency} ms` : '—'}
+                            </span>
+                          </td>
+
+                          {/* Status */}
+                          <td style={{ padding: '0.75rem 0.85rem', verticalAlign: 'top' }}>
+                            {isHealthy && (
+                              <span style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.3rem',
+                                padding: '0.2rem 0.55rem',
+                                borderRadius: '12px',
+                                fontSize: '0.72rem',
+                                fontWeight: 800,
+                                backgroundColor: 'rgba(16, 185, 129, 0.12)',
+                                color: '#059669'
+                              }}>
+                                <CheckCircle2 size={12} /> 200 OK (INTACT)
+                              </span>
+                            )}
+                            {isMissingTable && (
+                              <span style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.3rem',
+                                padding: '0.2rem 0.55rem',
+                                borderRadius: '12px',
+                                fontSize: '0.72rem',
+                                fontWeight: 800,
+                                backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                                color: '#dc2626'
+                              }}>
+                                <XCircle size={12} /> 404 TABLE MISSING
+                              </span>
+                            )}
+                            {isMissingCol && (
+                              <span style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.3rem',
+                                padding: '0.2rem 0.55rem',
+                                borderRadius: '12px',
+                                fontSize: '0.72rem',
+                                fontWeight: 800,
+                                backgroundColor: 'rgba(245, 158, 11, 0.12)',
+                                color: '#d97706'
+                              }}>
+                                <AlertTriangle size={12} /> 42703 COLUMN GAP
+                              </span>
+                            )}
+                            {isRls && (
+                              <span style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.3rem',
+                                padding: '0.2rem 0.55rem',
+                                borderRadius: '12px',
+                                fontSize: '0.72rem',
+                                fontWeight: 800,
+                                backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                                color: '#dc2626'
+                              }}>
+                                <Lock size={12} /> 403 RLS BLOCKED
+                              </span>
+                            )}
+                          </td>
+
+                          {/* Action */}
+                          <td style={{ padding: '0.75rem 0.85rem', verticalAlign: 'top', textAlign: 'center' }}>
+                            {isHealthy ? (
+                              <span style={{ fontSize: '0.75rem', color: '#10b981', fontWeight: 600 }}>
+                                ✓ Verified
+                              </span>
+                            ) : res.fixSql ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(res.fixSql);
+                                  setCopiedFixId(res.table);
+                                  setTimeout(() => setCopiedFixId(null), 2500);
+                                }}
+                                style={{
+                                  padding: '0.3rem 0.65rem',
+                                  borderRadius: '5px',
+                                  border: '1px solid #dc2626',
+                                  backgroundColor: 'rgba(239, 68, 68, 0.08)',
+                                  color: '#dc2626',
+                                  fontSize: '0.74rem',
+                                  fontWeight: 700,
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.3rem'
+                                }}
+                              >
+                                {copiedFixId === res.table ? <Check size={12} /> : <Copy size={12} />}
+                                {copiedFixId === res.table ? 'Copied!' : 'Copy Fix SQL'}
+                              </button>
+                            ) : (
+                              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>—</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </MobileTableView>
             </div>
           </div>
         </div>
@@ -1858,6 +2769,38 @@ export default function SystemStatusHealth() {
                       ×
                     </button>
                   )}
+                </div>
+
+                {/* Date Presets (Strict IST) */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'inline-flex', alignItems: 'center', gap: '0.2rem' }}>
+                    <Calendar size={13} />
+                  </span>
+                  {[
+                    { id: 'all', label: 'All Time' },
+                    { id: 'today', label: 'Today (IST)' },
+                    { id: 'yesterday', label: 'Yesterday' },
+                    { id: '7days', label: 'Last 7 Days' },
+                    { id: 'this_month', label: 'This Month' }
+                  ].map(dp => (
+                    <button
+                      key={dp.id}
+                      type="button"
+                      onClick={() => setSupabaseDatePreset(dp.id)}
+                      style={{
+                        padding: '0.25rem 0.55rem',
+                        borderRadius: '16px',
+                        fontSize: '0.74rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        border: supabaseDatePreset === dp.id ? '1.5px solid #059669' : '1px solid var(--border-color, #e2e8f0)',
+                        backgroundColor: supabaseDatePreset === dp.id ? 'rgba(5, 150, 105, 0.12)' : 'var(--card-bg, #ffffff)',
+                        color: supabaseDatePreset === dp.id ? '#059669' : 'var(--text-secondary)'
+                      }}
+                    >
+                      {dp.label}
+                    </button>
+                  ))}
                 </div>
 
                 {/* Filter Pills */}
@@ -2400,37 +3343,71 @@ export default function SystemStatusHealth() {
           }}>
             <div>
               <h3 style={{ fontSize: '1.15rem', fontWeight: 800, margin: '0 0 0.25rem', color: 'var(--text-primary)' }}>
-                🚨 Live Application Exceptions & Error Terminal ({runtimeErrors.length})
+                🚨 Live Application Exceptions & Error Terminal ({filteredRuntimeErrors.length})
               </h3>
               <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
                 Automatic real-time trap for unhandled JavaScript errors, promise rejections, and network API drops across the app.
               </p>
             </div>
 
-            {runtimeErrors.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setRuntimeErrors([])}
-                style={{
-                  padding: '0.4rem 0.8rem',
-                  borderRadius: '6px',
-                  border: '1px solid var(--border-color, #e2e8f0)',
-                  backgroundColor: 'transparent',
-                  color: 'var(--text-secondary)',
-                  fontSize: '0.8rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.35rem'
-                }}
-              >
-                <Trash2 size={13} /> Clear Log
-              </button>
-            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+              {/* Quick Date Presets */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'inline-flex', alignItems: 'center', gap: '0.2rem' }}>
+                  <Calendar size={13} />
+                </span>
+                {[
+                  { id: 'all', label: 'All Time' },
+                  { id: 'today', label: 'Today (IST)' },
+                  { id: 'yesterday', label: 'Yesterday' },
+                  { id: '7days', label: 'Last 7 Days' },
+                  { id: 'this_month', label: 'This Month' }
+                ].map(dp => (
+                  <button
+                    key={dp.id}
+                    type="button"
+                    onClick={() => setErrorDatePreset(dp.id)}
+                    style={{
+                      padding: '0.25rem 0.55rem',
+                      borderRadius: '16px',
+                      fontSize: '0.74rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      border: errorDatePreset === dp.id ? '1.5px solid #059669' : '1px solid var(--border-color, #e2e8f0)',
+                      backgroundColor: errorDatePreset === dp.id ? 'rgba(5, 150, 105, 0.12)' : 'var(--card-bg, #ffffff)',
+                      color: errorDatePreset === dp.id ? '#059669' : 'var(--text-secondary)'
+                    }}
+                  >
+                    {dp.label}
+                  </button>
+                ))}
+              </div>
+
+              {runtimeErrors.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setRuntimeErrors([])}
+                  style={{
+                    padding: '0.4rem 0.8rem',
+                    borderRadius: '6px',
+                    border: '1px solid var(--border-color, #e2e8f0)',
+                    backgroundColor: 'transparent',
+                    color: 'var(--text-secondary)',
+                    fontSize: '0.8rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.35rem'
+                  }}
+                >
+                  <Trash2 size={13} /> Clear Log
+                </button>
+              )}
+            </div>
           </div>
 
-          {runtimeErrors.length === 0 ? (
+          {filteredRuntimeErrors.length === 0 ? (
             <div style={{
               padding: '3rem 1.5rem',
               textAlign: 'center',
@@ -2445,12 +3422,14 @@ export default function SystemStatusHealth() {
                 Zero Runtime Exceptions Captured
               </div>
               <div style={{ maxWidth: '500px', margin: '0.25rem auto 0', fontSize: '0.82rem' }}>
-                No unhandled JavaScript exceptions, network drops, or promise failures have been recorded during this session.
+                {errorDatePreset === 'all'
+                  ? 'No unhandled JavaScript exceptions, network drops, or promise failures have been recorded during this session.'
+                  : `No runtime exceptions recorded for the selected period (${errorDatePreset.toUpperCase()}).`}
               </div>
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-              {runtimeErrors.map(err => (
+              {filteredRuntimeErrors.map(err => (
                 <div
                   key={err.id}
                   style={{

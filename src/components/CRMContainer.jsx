@@ -456,7 +456,7 @@ export default function CRMContainer({
     if (['saas-master', 'saas_master', 'saasmaster', 'saas-studio', 'saas_studio', 'saasstudio'].includes(path) || (path && (path.startsWith('saas-master') || path.startsWith('saas_master') || path.startsWith('saas-studio') || path.startsWith('saas_studio')))) {
       return isMasterAdmin ? 'saas_master' : 'dashboard';
     }
-    if (['config-master', 'config_master', 'configmaster', 'admin-message-config', 'admin_message_config'].includes(path) || (path && (path.startsWith('config-master') || path.startsWith('config_master')))) {
+    if (['config-master', 'config_master', 'configmaster', 'admin-message-config', 'admin_message_config', 'system-health', 'system_health'].includes(path) || (path && (path.startsWith('config-master') || path.startsWith('config_master') || path.startsWith('system-health') || path.startsWith('system_health')))) {
       return isMasterAdmin ? 'config_master' : 'dashboard';
     }
     if (isMasterAdmin && (path === 'offline_rule' || path === 'offline-rule' || path === 'public_users' || path === 'public-users')) {
@@ -676,7 +676,7 @@ export default function CRMContainer({
   const [configMasterMenuExpanded, setConfigMasterMenuExpanded] = useState(() => {
     const raw = (initialRoute || pathname || '');
     let cleanPath = (typeof raw === 'string' ? raw : '').replace(/^\/+|\/+$/g, '').toLowerCase();
-    return cleanPath.startsWith('config-master') || cleanPath.startsWith('config_master') || cleanPath === 'admin_message_config' || cleanPath === 'admin-message-config' || (isMasterAdmin && (cleanPath === 'offline_rule' || cleanPath === 'offline-rule' || cleanPath === 'public_users' || cleanPath === 'public-users'));
+    return cleanPath.startsWith('config-master') || cleanPath.startsWith('config_master') || cleanPath.startsWith('system-health') || cleanPath.startsWith('system_health') || cleanPath === 'admin_message_config' || cleanPath === 'admin-message-config' || (isMasterAdmin && (cleanPath === 'offline_rule' || cleanPath === 'offline-rule' || cleanPath === 'public_users' || cleanPath === 'public-users'));
   });
   const [configMasterSubTab, setConfigMasterSubTab] = useState(() => {
     const raw = (initialRoute || pathname || '');
@@ -690,6 +690,9 @@ export default function CRMContainer({
     }
     if (cleanPath === 'public_users' || cleanPath === 'public-users') {
       return 'public_users';
+    }
+    if (cleanPath === 'system-health' || cleanPath === 'system_health' || cleanPath.startsWith('system-health/') || cleanPath.startsWith('system_health/')) {
+      return 'status';
     }
     if (cleanPath && (cleanPath.startsWith('config-master/') || cleanPath.startsWith('config_master/'))) {
       const sub = cleanPath.split('/')[1];
@@ -707,6 +710,20 @@ export default function CRMContainer({
       return queryTab;
     }
     return 'messages';
+  });
+  const [configMasterHealthSubTab, setConfigMasterHealthSubTab] = useState(() => {
+    const raw = (initialRoute || pathname || '');
+    let cleanPath = (typeof raw === 'string' ? raw : '').replace(/^\/+|\/+$/g, '').toLowerCase();
+    let queryTab = (searchParams?.get('health_tab') || searchParams?.get('tab') || initialSearchParams?.health_tab || initialSearchParams?.tab || '').toLowerCase();
+    if (cleanPath && (cleanPath.startsWith('config-master/status/') || cleanPath.startsWith('config-master/health/') || cleanPath.startsWith('config_master/status/') || cleanPath.startsWith('config_master/health/'))) {
+      const parts = cleanPath.split('/');
+      if (parts[2]) return parts[2];
+    }
+    if (cleanPath && (cleanPath.startsWith('system-health/') || cleanPath.startsWith('system_health/'))) {
+      const parts = cleanPath.split('/');
+      if (parts[1]) return parts[1];
+    }
+    return queryTab || 'overview';
   });
   const [settingsMenuExpanded, setSettingsMenuExpanded] = useState(false);
   const [currentSettingSubTab, setCurrentSettingSubTab] = useState(() => {
@@ -822,7 +839,8 @@ export default function CRMContainer({
       }
       const attTab = search.get('tab') || search.get('subtab');
       if (attTab && (path === 'attendance' || (path && path.startsWith('attendance/')))) {
-        setAttendanceSubTab(attTab);
+        const isPermitted = getSubItemPermissions(moduleAccess, userRole, 'attendance', attTab.toLowerCase()).view;
+        setAttendanceSubTab(isPermitted ? attTab.toLowerCase() : 'my_attendance');
       }
       if (attTab && (path === 'checklist' || (path && path.startsWith('checklist/')))) {
         setChecklistSubTab(attTab);
@@ -2838,7 +2856,8 @@ export default function CRMContainer({
     } else if (tab === 'attendance' || (tab && tab.startsWith('attendance/'))) {
       let sub = tab.startsWith('attendance/') ? tab.split('/')[1] : (params.get('tab') || params.get('subtab'));
       if (sub) {
-        setAttendanceSubTab(sub.toLowerCase());
+        const isPermitted = getSubItemPermissions(moduleAccess, userRole, 'attendance', sub.toLowerCase()).view;
+        setAttendanceSubTab(isPermitted ? sub.toLowerCase() : 'my_attendance');
       }
       tab = 'attendance';
       setAttendanceMenuExpanded(true);
@@ -2981,7 +3000,8 @@ export default function CRMContainer({
       } else if (tab === 'attendance' || (tab && tab.startsWith('attendance/'))) {
         let sub = tab.startsWith('attendance/') ? tab.split('/')[1] : (params.get('tab') || params.get('subtab'));
         if (sub) {
-          setAttendanceSubTab(sub.toLowerCase());
+          const isPermitted = getSubItemPermissions(moduleAccess, userRole, 'attendance', sub.toLowerCase()).view;
+          setAttendanceSubTab(isPermitted ? sub.toLowerCase() : 'my_attendance');
         }
         tab = 'attendance';
         setAttendanceMenuExpanded(true);
@@ -3006,6 +3026,25 @@ export default function CRMContainer({
         }
         tab = 'workplace';
         setWorkflowMenuExpanded(true);
+      } else if (tab === 'config-master' || tab === 'config_master' || tab === 'system-health' || tab === 'system_health' || (tab && (tab.startsWith('config-master/') || tab.startsWith('config_master/') || tab.startsWith('system-health/') || tab.startsWith('system_health/')))) {
+        let sub = '';
+        let healthSub = '';
+        if (tab.startsWith('config-master/') || tab.startsWith('config_master/')) {
+          const parts = tab.split('/');
+          sub = parts[1] || '';
+          healthSub = parts[2] || '';
+        } else if (tab.startsWith('system-health/') || tab.startsWith('system_health/')) {
+          sub = 'status';
+          healthSub = tab.split('/')[1] || '';
+        } else {
+          sub = params.get('tab') || params.get('subtab') || 'messages';
+          healthSub = params.get('health_tab') || '';
+        }
+        if (sub === 'health' || sub === 'logs' || tab === 'system-health' || tab === 'system_health') sub = 'status';
+        if (sub) setConfigMasterSubTab(sub.toLowerCase());
+        if (healthSub) setConfigMasterHealthSubTab(healthSub.toLowerCase());
+        tab = 'config_master';
+        setConfigMasterMenuExpanded(true);
       }
       
       if (!tab) {
@@ -3280,11 +3319,13 @@ export default function CRMContainer({
   };
 
   const handleAttendanceSubTabChange = (subTabId) => {
-    setAttendanceSubTab(subTabId);
+    const isPermitted = getSubItemPermissions(moduleAccess, userRole, 'attendance', subTabId).view;
+    const targetSub = isPermitted ? subTabId : 'my_attendance';
+    setAttendanceSubTab(targetSub);
     if (activeTab !== 'attendance') {
       setActiveTab('attendance');
     }
-    const newPath = `/attendance?tab=${subTabId}`;
+    const newPath = `/attendance?tab=${targetSub}`;
     window.history.pushState(null, '', newPath);
     
     if (window.innerWidth <= 768) {
@@ -3401,7 +3442,10 @@ export default function CRMContainer({
     if (activeTab !== 'config_master') {
       setActiveTab('config_master');
     }
-    const newPath = `/config-master/${canonical}`;
+    let newPath = `/config-master/${canonical}`;
+    if (canonical === 'status' && configMasterHealthSubTab && configMasterHealthSubTab !== 'overview') {
+      newPath = `/config-master/status/${configMasterHealthSubTab}`;
+    }
     window.history.pushState(null, '', newPath);
     if (window.innerWidth <= 768) {
       setIsSidebarOpen(false);
@@ -4555,66 +4599,87 @@ export default function CRMContainer({
               
               <div className={`submenu-list ${attendanceMenuExpanded ? 'expanded' : ''}`}>
                 <div className="submenu-inner">
-                  <button
-                    onClick={() => handleAttendanceSubTabChange('my_attendance')}
-                    className="submenu-item"
-                    data-active={activeTab === 'attendance' && attendanceSubTab === 'my_attendance'}
-                  >
-                    ⏱️ Daily Punch Station
-                  </button>
-                  <button
-                    onClick={() => handleAttendanceSubTabChange('monthly_logs')}
-                    className="submenu-item"
-                    data-active={activeTab === 'attendance' && attendanceSubTab === 'monthly_logs'}
-                  >
-                    📅 Monthly Attendance Log
-                  </button>
-                  <button
-                    onClick={() => handleAttendanceSubTabChange('regularization')}
-                    className="submenu-item"
-                    data-active={activeTab === 'attendance' && attendanceSubTab === 'regularization'}
-                  >
-                    📝 Missing Punch / Regularize
-                  </button>
-                  {((userRole === 'admin' || userRole === 'Admin') || userRole === 'manager' || userRole === 'hod' || moduleAccess['attendance']?.is_manager) && (
-                    <>
-                      <button
-                        onClick={() => handleAttendanceSubTabChange('hod_approvals')}
-                        className="submenu-item"
-                        data-active={activeTab === 'attendance' && attendanceSubTab === 'hod_approvals'}
-                      >
-                        🛡️ HOD Approvals
-                      </button>
-                      <button
-                        onClick={() => handleAttendanceSubTabChange('team_report')}
-                        className="submenu-item"
-                        data-active={activeTab === 'attendance' && attendanceSubTab === 'team_report'}
-                      >
-                        👥 Team Attendance Report
-                      </button>
-                    </>
+                  {getSubItemPermissions(moduleAccess, userRole, 'attendance', 'my_attendance').view && (
+                    <button
+                      onClick={() => handleAttendanceSubTabChange('my_attendance')}
+                      className="submenu-item"
+                      data-active={activeTab === 'attendance' && attendanceSubTab === 'my_attendance'}
+                    >
+                      ⏱️ Daily Punch Station
+                    </button>
                   )}
-                  <button
-                    onClick={() => handleAttendanceSubTabChange('shift_rules')}
-                    className="submenu-item"
-                    data-active={activeTab === 'attendance' && attendanceSubTab === 'shift_rules'}
-                  >
-                    📖 Shift Rules
-                  </button>
-                  <button
-                    onClick={() => handleAttendanceSubTabChange('leave_policy')}
-                    className="submenu-item"
-                    data-active={activeTab === 'attendance' && attendanceSubTab === 'leave_policy'}
-                  >
-                    🌴 Company Leave Policy
-                  </button>
-                  <button
-                    onClick={() => handleAttendanceSubTabChange('geofencing')}
-                    className="submenu-item"
-                    data-active={activeTab === 'attendance' && attendanceSubTab === 'geofencing'}
-                  >
-                    📍 Office Geofencing Policy
-                  </button>
+                  {getSubItemPermissions(moduleAccess, userRole, 'attendance', 'monthly_logs').view && (
+                    <button
+                      onClick={() => handleAttendanceSubTabChange('monthly_logs')}
+                      className="submenu-item"
+                      data-active={activeTab === 'attendance' && attendanceSubTab === 'monthly_logs'}
+                    >
+                      📅 My Monthly Attendance
+                    </button>
+                  )}
+                  {getSubItemPermissions(moduleAccess, userRole, 'attendance', 'regularization').view && (
+                    <button
+                      onClick={() => handleAttendanceSubTabChange('regularization')}
+                      className="submenu-item"
+                      data-active={activeTab === 'attendance' && attendanceSubTab === 'regularization'}
+                    >
+                      ⏰ My Missing Punch
+                    </button>
+                  )}
+                  {getSubItemPermissions(moduleAccess, userRole, 'attendance', 'my_leaves').view && (
+                    <button
+                      onClick={() => handleAttendanceSubTabChange('my_leaves')}
+                      className="submenu-item"
+                      data-active={activeTab === 'attendance' && attendanceSubTab === 'my_leaves'}
+                    >
+                      📅 My Leaves
+                    </button>
+                  )}
+                  {getSubItemPermissions(moduleAccess, userRole, 'attendance', 'hod_approvals').view && (
+                    <button
+                      onClick={() => handleAttendanceSubTabChange('hod_approvals')}
+                      className="submenu-item"
+                      data-active={activeTab === 'attendance' && attendanceSubTab === 'hod_approvals'}
+                    >
+                      🛡️ HOD Approvals
+                    </button>
+                  )}
+                  {getSubItemPermissions(moduleAccess, userRole, 'attendance', 'team_report').view && (
+                    <button
+                      onClick={() => handleAttendanceSubTabChange('team_report')}
+                      className="submenu-item"
+                      data-active={activeTab === 'attendance' && attendanceSubTab === 'team_report'}
+                    >
+                      👥 Team Attendance Report
+                    </button>
+                  )}
+                  {getSubItemPermissions(moduleAccess, userRole, 'attendance', 'shift_rules').view && (
+                    <button
+                      onClick={() => handleAttendanceSubTabChange('shift_rules')}
+                      className="submenu-item"
+                      data-active={activeTab === 'attendance' && attendanceSubTab === 'shift_rules'}
+                    >
+                      📖 Shift Rules
+                    </button>
+                  )}
+                  {getSubItemPermissions(moduleAccess, userRole, 'attendance', 'leave_policy').view && (
+                    <button
+                      onClick={() => handleAttendanceSubTabChange('leave_policy')}
+                      className="submenu-item"
+                      data-active={activeTab === 'attendance' && attendanceSubTab === 'leave_policy'}
+                    >
+                      🌴 Company Leave Policy
+                    </button>
+                  )}
+                  {getSubItemPermissions(moduleAccess, userRole, 'attendance', 'geofencing').view && (
+                    <button
+                      onClick={() => handleAttendanceSubTabChange('geofencing')}
+                      className="submenu-item"
+                      data-active={activeTab === 'attendance' && attendanceSubTab === 'geofencing'}
+                    >
+                      📍 Office Geofencing Policy
+                    </button>
+                  )}
                 </div>
               </div>
             </SidebarSubmenu>
@@ -4647,14 +4712,16 @@ export default function CRMContainer({
               
               <div className={`submenu-list ${checklistMenuExpanded ? 'expanded' : ''}`}>
                 <div className="submenu-inner">
-                  <button
-                    onClick={() => handleChecklistSubTabChange('dashboard')}
-                    className="submenu-item"
-                    data-active={activeTab === 'checklist' && (checklistSubTab === 'dashboard' || !checklistSubTab)}
-                  >
-                    📊 Checklist Dashboard
-                  </button>
-                  {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['checklist']?.sub_items?.my_checklists?.view !== false) && (
+                  {getSubItemPermissions(moduleAccess, userRole, 'checklist', 'dashboard').view && (
+                    <button
+                      onClick={() => handleChecklistSubTabChange('dashboard')}
+                      className="submenu-item"
+                      data-active={activeTab === 'checklist' && (checklistSubTab === 'dashboard' || !checklistSubTab)}
+                    >
+                      📊 Checklist Dashboard
+                    </button>
+                  )}
+                  {getSubItemPermissions(moduleAccess, userRole, 'checklist', 'my_checklists').view && (
                     <button
                       onClick={() => handleChecklistSubTabChange('my_checklists')}
                       className="submenu-item"
@@ -4663,7 +4730,7 @@ export default function CRMContainer({
                       📋 My Checklists
                     </button>
                   )}
-                  {((userRole === 'admin' || userRole === 'Admin') || userRole === 'manager' || userRole === 'hod' || moduleAccess['checklist']?.is_manager || moduleAccess['checklist']?.sub_items?.templates?.view === true) && (
+                  {getSubItemPermissions(moduleAccess, userRole, 'checklist', 'templates').view && (
                     <button
                       onClick={() => handleChecklistSubTabChange('templates')}
                       className="submenu-item"
@@ -4672,7 +4739,7 @@ export default function CRMContainer({
                       📑 Templates Master
                     </button>
                   )}
-                  {((userRole === 'admin' || userRole === 'Admin') || userRole === 'manager' || userRole === 'hod' || moduleAccess['checklist']?.is_manager || moduleAccess['checklist']?.sub_items?.compliance?.view === true) && (
+                  {getSubItemPermissions(moduleAccess, userRole, 'checklist', 'compliance').view && (
                     <button
                       onClick={() => handleChecklistSubTabChange('compliance')}
                       className="submenu-item"
@@ -4681,13 +4748,15 @@ export default function CRMContainer({
                       🛡️ Compliance & Audit
                     </button>
                   )}
-                  <button
-                    onClick={() => handleChecklistSubTabChange('holidays')}
-                    className="submenu-item"
-                    data-active={activeTab === 'checklist' && checklistSubTab === 'holidays'}
-                  >
-                    🎉 Holidays Calendar
-                  </button>
+                  {getSubItemPermissions(moduleAccess, userRole, 'checklist', 'holidays').view && (
+                    <button
+                      onClick={() => handleChecklistSubTabChange('holidays')}
+                      className="submenu-item"
+                      data-active={activeTab === 'checklist' && checklistSubTab === 'holidays'}
+                    >
+                      🎉 Holidays Calendar
+                    </button>
+                  )}
                 </div>
               </div>
             </SidebarSubmenu>
@@ -4720,7 +4789,7 @@ export default function CRMContainer({
               
               <div className={`submenu-list ${delegationMenuExpanded ? 'expanded' : ''}`}>
                 <div className="submenu-inner">
-                  {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['delegation']?.sub_items?.dashboard?.view !== false) && (
+                  {getSubItemPermissions(moduleAccess, userRole, 'delegation', 'dashboard').view && (
                     <button
                       onClick={() => handleDelegationSubTabChange('dashboard')}
                       className="submenu-item"
@@ -4729,7 +4798,7 @@ export default function CRMContainer({
                       📊 Delegation Dashboard
                     </button>
                   )}
-                  {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['delegation']?.sub_items?.to_me?.view !== false) && (
+                  {getSubItemPermissions(moduleAccess, userRole, 'delegation', 'to_me').view && (
                     <button
                       onClick={() => handleDelegationSubTabChange('to_me')}
                       className="submenu-item"
@@ -4738,7 +4807,7 @@ export default function CRMContainer({
                       📥 Tasks To Me
                     </button>
                   )}
-                  {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['delegation']?.sub_items?.by_me?.view !== false) && (
+                  {getSubItemPermissions(moduleAccess, userRole, 'delegation', 'by_me').view && (
                     <button
                       onClick={() => handleDelegationSubTabChange('by_me')}
                       className="submenu-item"
@@ -4747,7 +4816,7 @@ export default function CRMContainer({
                       📤 Tasks By Me
                     </button>
                   )}
-                  {((userRole === 'admin' || userRole === 'Admin') || userRole === 'manager' || userRole === 'hod' || moduleAccess['delegation']?.is_manager || moduleAccess['delegation']?.sub_items?.all?.view === true) && (
+                  {getSubItemPermissions(moduleAccess, userRole, 'delegation', 'all').view && (
                     <button
                       onClick={() => handleDelegationSubTabChange('all')}
                       className="submenu-item"
@@ -5063,103 +5132,125 @@ export default function CRMContainer({
                                         <span>📋 All Party Stage</span>
                                       </button>
                                     )}
+
+                                    {canSeePartySub('s00') && (
+                                      <button
+                                        onClick={() => handlePartySubTabChange('s00')}
+                                        className="submenu-item"
+                                        data-active={activeTab === 'party' && partySubTab === 's00'}
+                                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
+                                      >
+                                        <span>S00 Transfered to Party</span>
+                                        {partyPendingCount > 0 && (
+                                          <span style={{ background: '#ef4444', color: '#fff', fontSize: '0.65rem', fontWeight: 800, padding: '0.1rem 0.4rem', borderRadius: '10px' }}>
+                                            {partyPendingCount}
+                                          </span>
+                                        )}
+                                      </button>
+                                    )}
+
+                                    {canSeePartySub('s01') && (
+                                      <button
+                                        onClick={() => handlePartySubTabChange('s01')}
+                                        className="submenu-item"
+                                        data-active={activeTab === 'party' && partySubTab === 's01'}
+                                      >
+                                        S01 Party Master Creation
+                                      </button>
+                                    )}
+
+                                    {canSeePartySub('s02') && (
+                                      <button
+                                        onClick={() => handlePartySubTabChange('s02')}
+                                        className="submenu-item"
+                                        data-active={activeTab === 'party' && partySubTab === 's02'}
+                                      >
+                                        S02 Distributor Registration
+                                      </button>
+                                    )}
+
+                                    {canSeePartySub('s03') && (
+                                      <button
+                                        onClick={() => handlePartySubTabChange('s03')}
+                                        className="submenu-item"
+                                        data-active={activeTab === 'party' && partySubTab === 's03'}
+                                      >
+                                        S03 Dealer Registration
+                                      </button>
+                                    )}
+
+                                    {canSeePartySub('s04') && (
+                                      <button
+                                        onClick={() => handlePartySubTabChange('s04')}
+                                        className="submenu-item"
+                                        data-active={activeTab === 'party' && partySubTab === 's04'}
+                                      >
+                                        S04 Sub-Dealer Registration
+                                      </button>
+                                    )}
+
+                                    {canSeePartySub('s05') && (
+                                      <button
+                                        onClick={() => handlePartySubTabChange('s05')}
+                                        className="submenu-item"
+                                        data-active={activeTab === 'party' && partySubTab === 's05'}
+                                      >
+                                        S05 Commercial Security Details
+                                      </button>
+                                    )}
+
+                                    {canSeePartySub('s06') && (
+                                      <button
+                                        onClick={() => handlePartySubTabChange('s06')}
+                                        className="submenu-item"
+                                        data-active={activeTab === 'party' && partySubTab === 's06'}
+                                      >
+                                        S06 Product Auth & Territory
+                                      </button>
+                                    )}
+
+                                    {canSeePartySub('s07') && (
+                                      <button
+                                        onClick={() => handlePartySubTabChange('s07')}
+                                        className="submenu-item"
+                                        data-active={activeTab === 'party' && partySubTab === 's07'}
+                                      >
+                                        S07 Sales Team Assignment
+                                      </button>
+                                    )}
+
+                                    {canSeePartySub('s08') && (
+                                      <button
+                                        onClick={() => handlePartySubTabChange('s08')}
+                                        className="submenu-item"
+                                        data-active={activeTab === 'party' && partySubTab === 's08'}
+                                      >
+                                        S08 Partner Activation
+                                      </button>
+                                    )}
+
+                                    {canSeePartySub('report') && (
+                                      <button
+                                        onClick={() => handlePartySubTabChange('report')}
+                                        className="submenu-item"
+                                        data-active={activeTab === 'party' && (partySubTab === 'report' || partySubTab === 'r03')}
+                                      >
+                                        📑 Party Master Report
+                                      </button>
+                                    )}
+
+                                    {canSeePartySub('hierarchy_tree') && (
+                                      <button
+                                        onClick={() => handlePartySubTabChange('hierarchy_tree')}
+                                        className="submenu-item"
+                                        data-active={activeTab === 'party' && partySubTab === 'hierarchy_tree'}
+                                      >
+                                        🌳 Channel Hierarchy Tree
+                                      </button>
+                                    )}
                                   </>
                                 );
                               })()}
-
-                              <button
-                                onClick={() => handlePartySubTabChange('s00')}
-                                className="submenu-item"
-                                data-active={activeTab === 'party' && partySubTab === 's00'}
-                                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
-                              >
-                                <span>S00 Transfered to Party</span>
-                                {partyPendingCount > 0 && (
-                                  <span style={{ background: '#ef4444', color: '#fff', fontSize: '0.65rem', fontWeight: 800, padding: '0.1rem 0.4rem', borderRadius: '10px' }}>
-                                    {partyPendingCount}
-                                  </span>
-                                )}
-                              </button>
-
-                              <button
-                                onClick={() => handlePartySubTabChange('s01')}
-                                className="submenu-item"
-                                data-active={activeTab === 'party' && partySubTab === 's01'}
-                              >
-                                S01 Party Master Creation
-                              </button>
-
-                              <button
-                                onClick={() => handlePartySubTabChange('s02')}
-                                className="submenu-item"
-                                data-active={activeTab === 'party' && partySubTab === 's02'}
-                              >
-                                S02 Distributor Registration
-                              </button>
-
-                              <button
-                                onClick={() => handlePartySubTabChange('s03')}
-                                className="submenu-item"
-                                data-active={activeTab === 'party' && partySubTab === 's03'}
-                              >
-                                S03 Dealer Registration
-                              </button>
-
-                              <button
-                                onClick={() => handlePartySubTabChange('s04')}
-                                className="submenu-item"
-                                data-active={activeTab === 'party' && partySubTab === 's04'}
-                              >
-                                S04 Sub-Dealer Registration
-                              </button>
-
-                              <button
-                                onClick={() => handlePartySubTabChange('s05')}
-                                className="submenu-item"
-                                data-active={activeTab === 'party' && partySubTab === 's05'}
-                              >
-                                S05 Commercial Security Details
-                              </button>
-
-                              <button
-                                onClick={() => handlePartySubTabChange('s06')}
-                                className="submenu-item"
-                                data-active={activeTab === 'party' && partySubTab === 's06'}
-                              >
-                                S06 Product Auth & Territory
-                              </button>
-
-                              <button
-                                onClick={() => handlePartySubTabChange('s07')}
-                                className="submenu-item"
-                                data-active={activeTab === 'party' && partySubTab === 's07'}
-                              >
-                                S07 Sales Team Assignment
-                              </button>
-
-                              <button
-                                onClick={() => handlePartySubTabChange('s08')}
-                                className="submenu-item"
-                                data-active={activeTab === 'party' && partySubTab === 's08'}
-                              >
-                                S08 Partner Activation
-                              </button>
-
-                              <button
-                                onClick={() => handlePartySubTabChange('report')}
-                                className="submenu-item"
-                                data-active={activeTab === 'party' && (partySubTab === 'report' || partySubTab === 'r03')}
-                              >
-                                📑 Party Master Report
-                              </button>
-
-                              <button
-                                onClick={() => handlePartySubTabChange('hierarchy_tree')}
-                                className="submenu-item"
-                                data-active={activeTab === 'party' && partySubTab === 'hierarchy_tree'}
-                              >
-                                🌳 Channel Hierarchy Tree
-                              </button>
                             </div>
                           </div>
                         )}
@@ -5167,53 +5258,65 @@ export default function CRMContainer({
                         {(module.id === 'channel_ops' || module.id === 'channel-operations') && (
                           <div className={`submenu-list ${channelOpsMenuExpanded ? 'expanded' : ''}`}>
                             <div className="submenu-inner">
-                              <button
-                                onClick={() => handleChannelOpsSubTabChange('frequency_rules')}
-                                className="submenu-item"
-                                data-active={activeTab === 'channel_ops' && channelOpsSubTab === 'frequency_rules'}
-                              >
-                                ⚙️ Order Frequency Master
-                              </button>
+                              {getSubItemPermissions(moduleAccess, userRole, 'channel_ops', 'frequency_rules').view && (
+                                <button
+                                  onClick={() => handleChannelOpsSubTabChange('frequency_rules')}
+                                  className="submenu-item"
+                                  data-active={activeTab === 'channel_ops' && channelOpsSubTab === 'frequency_rules'}
+                                >
+                                  ⚙️ Order Frequency Master
+                                </button>
+                              )}
 
-                              <button
-                                onClick={() => handleChannelOpsSubTabChange('order_followup')}
-                                className="submenu-item"
-                                data-active={activeTab === 'channel_ops' && channelOpsSubTab === 'order_followup'}
-                              >
-                                📞 Order Desk Calling
-                              </button>
+                              {getSubItemPermissions(moduleAccess, userRole, 'channel_ops', 'order_followup').view && (
+                                <button
+                                  onClick={() => handleChannelOpsSubTabChange('order_followup')}
+                                  className="submenu-item"
+                                  data-active={activeTab === 'channel_ops' && channelOpsSubTab === 'order_followup'}
+                                >
+                                  📞 Order Desk Calling
+                                </button>
+                              )}
 
-                              <button
-                                onClick={() => handleChannelOpsSubTabChange('order_pipeline')}
-                                className="submenu-item"
-                                data-active={activeTab === 'channel_ops' && channelOpsSubTab === 'order_pipeline'}
-                              >
-                                🚚 Order to Delivery Pipeline
-                              </button>
+                              {getSubItemPermissions(moduleAccess, userRole, 'channel_ops', 'order_pipeline').view && (
+                                <button
+                                  onClick={() => handleChannelOpsSubTabChange('order_pipeline')}
+                                  className="submenu-item"
+                                  data-active={activeTab === 'channel_ops' && channelOpsSubTab === 'order_pipeline'}
+                                >
+                                  🚚 Order to Delivery Pipeline
+                                </button>
+                              )}
 
-                              <button
-                                onClick={() => handleChannelOpsSubTabChange('order_feedback')}
-                                className="submenu-item"
-                                data-active={activeTab === 'channel_ops' && channelOpsSubTab === 'order_feedback'}
-                              >
-                                ⭐ Post-Order Feedback
-                              </button>
+                              {getSubItemPermissions(moduleAccess, userRole, 'channel_ops', 'order_feedback').view && (
+                                <button
+                                  onClick={() => handleChannelOpsSubTabChange('order_feedback')}
+                                  className="submenu-item"
+                                  data-active={activeTab === 'channel_ops' && channelOpsSubTab === 'order_feedback'}
+                                >
+                                  ⭐ Post-Order Feedback
+                                </button>
+                              )}
 
-                              <button
-                                onClick={() => handleChannelOpsSubTabChange('monthly_feedback')}
-                                className="submenu-item"
-                                data-active={activeTab === 'channel_ops' && channelOpsSubTab === 'monthly_feedback'}
-                              >
-                                📅 Monthly Health Checks
-                              </button>
+                              {getSubItemPermissions(moduleAccess, userRole, 'channel_ops', 'monthly_feedback').view && (
+                                <button
+                                  onClick={() => handleChannelOpsSubTabChange('monthly_feedback')}
+                                  className="submenu-item"
+                                  data-active={activeTab === 'channel_ops' && channelOpsSubTab === 'monthly_feedback'}
+                                >
+                                  📅 Monthly Health Checks
+                                </button>
+                              )}
 
-                              <button
-                                onClick={() => handleChannelOpsSubTabChange('complaints')}
-                                className="submenu-item"
-                                data-active={activeTab === 'channel_ops' && channelOpsSubTab === 'complaints'}
-                              >
-                                ⚠️ Complaint Management
-                              </button>
+                              {getSubItemPermissions(moduleAccess, userRole, 'channel_ops', 'complaints').view && (
+                                <button
+                                  onClick={() => handleChannelOpsSubTabChange('complaints')}
+                                  className="submenu-item"
+                                  data-active={activeTab === 'channel_ops' && channelOpsSubTab === 'complaints'}
+                                >
+                                  ⚠️ Complaint Management
+                                </button>
+                              )}
                             </div>
                           </div>
                         )}
@@ -5254,7 +5357,9 @@ export default function CRMContainer({
                     { id: 'hierarchy', label: 'Org Hierarchy', icon: Network },
                     { id: 'sessions', label: 'Active Sessions', icon: Monitor },
                     { id: 'audit', label: 'Audit Logs', icon: Clock }
-                  ].map(sub => {
+                  ].filter(sub => {
+                    return getSubItemPermissions(moduleAccess, userRole, 'user_management_new', sub.id).view;
+                  }).map(sub => {
                     const SubIcon = sub.icon;
                     const isSubActive = activeTab === 'user_management_new' && userManagementSubTab === sub.id;
                     return (
@@ -7374,6 +7479,7 @@ export default function CRMContainer({
                   <AiAdminModule 
                     userRole={userRole}
                     userId={userId}
+                    moduleAccess={moduleAccess}
                     userCompany={userCompany}
                     tenantId={effectiveTenantId}
                     isMasterAdmin={isMasterAdmin}
@@ -7460,6 +7566,8 @@ export default function CRMContainer({
                     tenantEntitlements={effectiveTenantEntitlements}
                     isAdmin={isAdmin || isMasterAdmin}
                     isMasterAdmin={isMasterAdmin}
+                    userRole={userRole}
+                    moduleAccess={moduleAccess}
                     userId={userId}
                     userEmail={userEmail}
                     currentUserCompany={(() => {
@@ -7677,6 +7785,10 @@ export default function CRMContainer({
                       initialTab={configMasterSubTab}
                       activeSubTab={configMasterSubTab}
                       onSubTabChange={handleConfigMasterSubTabChange}
+                      healthSubTab={configMasterHealthSubTab}
+                      onHealthSubTabChange={(healthTabId, slug) => {
+                        setConfigMasterHealthSubTab(slug || healthTabId);
+                      }}
                       userRole={userRole || 'admin'}
                       moduleAccess={moduleAccess}
                     />

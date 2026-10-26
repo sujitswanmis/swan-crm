@@ -2,13 +2,14 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
-  Phone, Star, Calendar, AlertTriangle, RefreshCw, Truck, Clock, Settings, Package
+  Phone, Star, Calendar, AlertTriangle, RefreshCw, Truck, Clock, Settings, Package, Shield
 } from 'lucide-react';
 import { getChannelWorkspaceData } from '@/app/actions/partyWorkspaceData';
 import {
   createPartyWorkspaceScope, readPartyWorkspaceCache, fetchPartyWorkspaceResource,
   invalidatePartyWorkspace, PARTY_WORKSPACE_UPDATED
 } from '@/utils/partyWorkspaceCache';
+import { filterVisibleSubTabs, getSubItemPermissions } from '@/utils/permissionUtils';
 
 import DailyFollowupQueueTable from '../Orders/DailyFollowupQueueTable';
 import OrderFrequencyMasterTable from '../Orders/OrderFrequencyMasterTable';
@@ -77,19 +78,29 @@ export default function ChannelOperationsModule({
 }) {
   const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
 
+  const visibleTabs = useMemo(() => {
+    return filterVisibleSubTabs(moduleAccess, userRole, 'channel_ops', OPERATIONS_TABS);
+  }, [moduleAccess, userRole]);
+
   // Active Tab State
   const [activeTab, setActiveTab] = useState(() => {
+    const isAllowed = (t) => visibleTabs.some(vt => vt.id === t);
     const raw = (activeSubTab || initialSubTab || 'frequency_rules').toLowerCase();
-    return OPERATIONS_TABS.some(t => t.id === raw) ? raw : 'frequency_rules';
+    return isAllowed(raw) ? raw : (visibleTabs[0]?.id || 'frequency_rules');
   });
 
   useEffect(() => {
-    if (activeSubTab && OPERATIONS_TABS.some(t => t.id === activeSubTab.toLowerCase())) {
+    if (activeSubTab && visibleTabs.some(t => t.id === activeSubTab.toLowerCase())) {
       setActiveTab(activeSubTab.toLowerCase());
+    } else if (visibleTabs.length > 0 && !visibleTabs.some(t => t.id === activeTab)) {
+      const fallback = visibleTabs[0]?.id || 'frequency_rules';
+      setActiveTab(fallback);
+      if (onSubTabChange) onSubTabChange(fallback);
     }
-  }, [activeSubTab]);
+  }, [activeSubTab, visibleTabs, activeTab, onSubTabChange]);
 
   const switchTab = (tabId) => {
+    if (!visibleTabs.some(vt => vt.id === tabId)) return;
     setActiveTab(tabId);
     if (onSubTabChange) {
       onSubTabChange(tabId);
@@ -256,7 +267,7 @@ export default function ChannelOperationsModule({
         minHeight: '52px',
         boxSizing: 'border-box'
       }}>
-        {OPERATIONS_TABS.map(tab => {
+        {visibleTabs.map(tab => {
           const isActive = activeTab === tab.id;
           let badgeCount = 0;
           if (tab.id === 'order_followup') badgeCount = queueDueTodayCount;
@@ -305,9 +316,22 @@ export default function ChannelOperationsModule({
         })}
       </div>
 
+      {/* Access Denied Card if current tab is not allowed */}
+      {!visibleTabs.some(vt => vt.id === activeTab) && (
+        <div style={{ textAlign: 'center', padding: '3.5rem 1.5rem', background: 'var(--bg-surface)', borderRadius: '12px', border: '1px solid var(--border-light)', margin: '2rem 0' }}>
+          <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: '#fee2e2', color: '#dc2626', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.25rem' }}>
+            <Shield size={28} />
+          </div>
+          <h3 style={{ fontSize: '1.15rem', fontWeight: 700, margin: '0 0 0.5rem 0', color: 'var(--text-primary)' }}>Access Restricted</h3>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', maxWidth: '420px', margin: '0 auto' }}>
+            You do not have permission to view this section of Channel Operations. Please contact your administrator.
+          </p>
+        </div>
+      )}
+
       {/* Tab Content Display */}
       {loadError && <div role="status" style={{ marginBottom: '0.75rem', color: 'var(--text-secondary)', fontSize: '0.82rem' }}>{loadError}</div>}
-      {activeTab === 'order_followup' && (
+      {activeTab === 'order_followup' && visibleTabs.some(vt => vt.id === 'order_followup') && (
         <DailyFollowupQueueTable
           queue={dailyQueue}
           loading={initialLoading}
@@ -320,7 +344,7 @@ export default function ChannelOperationsModule({
         />
       )}
 
-      {activeTab === 'frequency_rules' && (
+      {activeTab === 'frequency_rules' && visibleTabs.some(vt => vt.id === 'frequency_rules') && (
         <OrderFrequencyMasterTable
           schedules={schedules}
           loading={initialLoading}
@@ -329,7 +353,7 @@ export default function ChannelOperationsModule({
         />
       )}
 
-      {activeTab === 'order_pipeline' && (
+      {activeTab === 'order_pipeline' && visibleTabs.some(vt => vt.id === 'order_pipeline') && (
         <OrderDeliveryPipeline
           orders={pipelineOrders}
           loading={initialLoading}
@@ -338,7 +362,7 @@ export default function ChannelOperationsModule({
         />
       )}
 
-      {activeTab === 'order_feedback' && (
+      {activeTab === 'order_feedback' && visibleTabs.some(vt => vt.id === 'order_feedback') && (
         <PostDeliveryFeedbackTable
           deliveredOrders={deliveredOrders}
           loading={initialLoading}
@@ -347,13 +371,13 @@ export default function ChannelOperationsModule({
         />
       )}
 
-      {activeTab === 'monthly_feedback' && (
+      {activeTab === 'monthly_feedback' && visibleTabs.some(vt => vt.id === 'monthly_feedback') && (
         <MonthlyHealthCheckModule
           tenantId={effectiveTenantId}
         />
       )}
 
-      {activeTab === 'complaints' && (
+      {activeTab === 'complaints' && visibleTabs.some(vt => vt.id === 'complaints') && (
         <ComplaintManagementModule
           tenantId={effectiveTenantId}
           parties={parties}

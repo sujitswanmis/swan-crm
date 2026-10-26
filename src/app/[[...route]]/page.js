@@ -110,7 +110,16 @@ export default async function Home({ params, searchParams }) {
     _tenantId: userTenantId
   };
   const isApproved = isMasterAdminUser || effectiveRoleData?.is_approved;
-  const userCompany = effectiveRoleData?.company || '';
+  let userCompany = effectiveRoleData?.company || '';
+  if (!userCompany || userCompany.toLowerCase() === 'default') {
+    if (userTenantId === '0a37b8e8-1c28-4e19-8891-951fc3f8f8af' || userEmailLower.includes('supuja')) {
+      userCompany = 'SuPuja Creations';
+    } else if (userTenantId === '922d3e72-6588-457f-a562-4f1bdbf10d98' || userEmailLower.includes('testing')) {
+      userCompany = 'Testing New Swan Group';
+    } else {
+      userCompany = 'New Swan Group';
+    }
+  }
   const userName = effectiveRoleData?.emp_name || effectiveRoleData?.email?.split('@')[0] || 'User';
   const effectiveUserId = effectiveRoleData?.user_id || user.id;
   const effectiveUserEmail = effectiveRoleData?.email || effectiveRoleData?.emp_official_mail_id || user.email;

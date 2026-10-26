@@ -2,10 +2,11 @@
 
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { createClient as createSessionClient } from '@/utils/supabase/server';
-import { getHodTeam } from '@/utils/reportingHierarchy';
+import { getHodTeam, getReportingTeam } from '@/utils/reportingHierarchy';
 import { logAuditAction } from './audit';
 import { 
   getTodayDateString, 
+  getIstDateParts,
   calculateMinutesBetween, 
   formatMinutesToHours,
   evaluateMorningInPunch,
@@ -91,6 +92,47 @@ function cleanRequestForDb(req, tenantId = DEFAULT_TENANT_ID) {
     created_at: req.created_at || new Date().toISOString(),
     updated_at: req.updated_at || new Date().toISOString()
   };
+}
+
+// Some workspaces still use the original attendance schema. Retry only missing
+// optional shift columns; never hide other database errors or overwrite a punch.
+async function persistAttendancePunch(adminClient, record, tenantId, existingDb, punchType) {
+  const payload = cleanAttendanceRecordForDb(record, tenantId);
+  const optionalColumns = ['short_leave_type', 'is_grace_applied', 'shift_name'];
+  try {
+    for (let attempt = 0; attempt <= optionalColumns.length; attempt++) {
+      const query = existingDb
+        ? adminClient.from('attendance_records').update(payload)
+          .eq('id', existingDb.id).eq('tenant_id', tenantId)
+          .is(punchType === 'IN' ? 'in_time' : 'out_time', null)
+        : adminClient.from('attendance_records').upsert(payload, {
+          onConflict: 'email,attendance_date', ignoreDuplicates: true
+        });
+      const { data, error } = await query.select().maybeSingle();
+      if (error) {
+        const missingColumn = ['PGRST204', '42703'].includes(error.code)
+          && optionalColumns.find(column => Object.hasOwn(payload, column)
+            && new RegExp(`\\b${column}\\b`).test(error.message || ''));
+        if (!missingColumn) return { error };
+        delete payload[missingColumn];
+        continue;
+      }
+      if (data) return { data: { ...record, ...data } };
+
+      // A concurrent tab/device may have saved first. Return its original times.
+      const current = await adminClient.from('attendance_records').select('*')
+        .eq('tenant_id', tenantId).ilike('email', payload.email)
+        .eq('attendance_date', payload.attendance_date).maybeSingle();
+      if (current.error) return { error: current.error };
+      if (current.data?.[punchType === 'IN' ? 'in_time' : 'out_time']) {
+        return { data: current.data, alreadyPunched: true };
+      }
+      return { error: new Error('Attendance save was not confirmed. Please retry.') };
+    }
+    return { error: new Error('Attendance schema could not be verified. Please retry.') };
+  } catch (error) {
+    return { error };
+  }
 }
 
 const getAdminClient = () => {
@@ -608,18 +650,179 @@ async function saveFallbackLeavesData(data) {
   }
 }
 
+const LEAVE_DAY_MS = 24 * 60 * 60 * 1000;
+const leaveEmail = value => String(value || '').trim().toLowerCase();
+const leaveDateKey = value => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date(value));
+const leaveTenant = employee => {
+  const stored = employee?.tenant_id || employee?.module_access?._tenantId;
+  return isValidUuid(stored) ? stored : resolveTenantId(null, employee?.company || '');
+};
+const leaveProfileActive = employee => employee && employee.role !== 'customer' && employee.is_approved !== false
+  && !['inactive', 'in_active', 'terminated', 'resigned', 'trash', 'draft']
+    .includes(String(employee.emp_status || employee.module_access?.emp_status || 'Active').toLowerCase());
+
+function normalizeLeaveRequest(record) {
+  return {
+    ...record,
+    email: leaveEmail(record.email || record.emp_email),
+    tenant_id: record.tenant_id || DEFAULT_TENANT_ID,
+    leave_type: record.leave_type === 'HD-L' ? 'HALF_DAY' : record.leave_type,
+    total_days: Number(record.total_days ?? record.days_count ?? 0),
+    approver_remarks: record.approver_remarks || record.remarks || '',
+    // Keep existing HOD views and older clients compatible.
+    emp_email: leaveEmail(record.email || record.emp_email),
+    days_count: Number(record.total_days ?? record.days_count ?? 0)
+  };
+}
+
+function leaveDbPayload(record) {
+  const normalized = normalizeLeaveRequest(record);
+  return {
+    id: String(normalized.id), tenant_id: normalized.tenant_id,
+    user_id: isValidUuid(normalized.user_id) ? normalized.user_id : null,
+    email: normalized.email, emp_name: normalized.emp_name || '',
+    emp_code: normalized.emp_code || '', department: normalized.department || '',
+    leave_type: normalized.leave_type, from_date: normalized.from_date, to_date: normalized.to_date,
+    total_days: normalized.total_days,
+    half_day_session: normalized.leave_type === 'HALF_DAY' ? normalized.half_day_session || 'FIRST_HALF' : null,
+    reason: normalized.reason || '', status: normalized.status || 'PENDING',
+    applied_at: normalized.applied_at || new Date().toISOString(),
+    approver_id: isValidUuid(normalized.approver_id) ? normalized.approver_id : null,
+    approver_name: normalized.approver_name || null,
+    approver_remarks: normalized.approver_remarks || null, action_at: normalized.action_at || null,
+    updated_at: new Date().toISOString()
+  };
+}
+
+function leaveServiceError(error) {
+  if (['PGRST205', '42P01', 'PGRST204', '42703'].includes(error?.code)) {
+    return 'Leave service setup is pending. Please contact your administrator.';
+  }
+  if (error?.code === '23505') return 'This leave application is already pending or approved. Please refresh your leave history.';
+  return 'Leave service is unavailable. Please retry.';
+}
+
+async function getLeaveContext({ tenantId = null, userCompany = '' } = {}) {
+  const session = await createSessionClient();
+  const { data: { user } = {}, error } = await session.auth.getUser();
+  if (error || !user) throw new Error('Please sign in again.');
+  const db = getAdminClient();
+  const { data: actor, error: profileError } = await db.from('user_roles').select('*').eq('user_id', user.id).maybeSingle();
+  if (profileError || !leaveProfileActive(actor)) throw new Error('Employee profile is unavailable.');
+  const role = String(actor.role || '').toLowerCase();
+  const isAdmin = ['admin', 'superadmin', 'masteradmin', 'super_admin', 'master_admin'].includes(role);
+  const actorTenant = leaveTenant(actor);
+  const requested = !tenantId || tenantId === 'default' ? actorTenant
+    : isValidUuid(tenantId) ? tenantId : resolveTenantId(tenantId, userCompany || actor.company);
+  const selectedTenant = requested || actorTenant;
+  const canSelectWorkspace = isAdmin && (!actor.company || role.includes('master') || role.includes('super'));
+  if (selectedTenant !== actorTenant && !canSelectWorkspace) throw new Error('This workspace is not permitted.');
+  const email = leaveEmail(actor.email || user.email);
+  if (!email) throw new Error('Employee email is unavailable.');
+  return { db, actor, email, tenantId: selectedTenant, isAdmin,
+    canManage: isAdmin || actor.module_access?.attendance?.view !== false
+      && (['hod', 'manager'].includes(role) || actor.module_access?.attendance?.is_manager === true) };
+}
+
+async function getLeaveTeam(context) {
+  if (!context.canManage) throw new Error('Leave approval access is required.');
+  const { data: users, error } = await context.db.from('user_roles').select('*');
+  if (error || !Array.isArray(users)) throw new Error('Employee team is unavailable.');
+  const eligible = users.filter(employee => leaveProfileActive(employee) && leaveTenant(employee) === context.tenantId);
+  if (context.isAdmin) return eligible;
+  return String(context.actor.role).toLowerCase() === 'hod'
+    ? getHodTeam(eligible, context.actor) : getReportingTeam(eligible, context.actor);
+}
+
+async function readLeaveData(tenantId, { email = null, emails = null } = {}) {
+  const local = await getFallbackLeavesData();
+  const allowed = emails ? new Set(emails.map(leaveEmail)) : null;
+  const inScope = record => record.tenant_id === tenantId && (!email || record.email === leaveEmail(email))
+    && (!allowed || allowed.has(record.email));
+  const records = new Map((local.requests || []).map(normalizeLeaveRequest).filter(inScope).map(record => [String(record.id), record]));
+  if (allowed?.size === 0) return { ...local, requests: [], cloudAvailable: true };
+  let cloudError = null;
+  try {
+    const db = getAdminClient();
+    for (let offset = 0; ; offset += 500) {
+      let query = db.from('employee_leaves').select('*').eq('tenant_id', tenantId).order('applied_at', { ascending: false });
+      if (email) query = query.eq('email', leaveEmail(email));
+      if (allowed) query = query.in('email', [...allowed]);
+      const { data, error } = await query.range(offset, offset + 499);
+      if (error) throw error;
+      if (!Array.isArray(data)) throw new Error('Leave history could not be verified.');
+      data.map(normalizeLeaveRequest).filter(inScope).forEach(record => records.set(String(record.id), record));
+      if (data.length < 500) break;
+    }
+  } catch (error) { cloudError = error; }
+  return { ...local, requests: [...records.values()].sort((a, b) => String(b.applied_at).localeCompare(String(a.applied_at))),
+    cloudAvailable: !cloudError, warning: cloudError ? leaveServiceError(cloudError) : null };
+}
+
+function leaveDateRange(fromDate, toDate, leaveType) {
+  const parse = value => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value))) throw new Error('Please select valid leave dates.');
+    const date = new Date(`${value}T00:00:00+05:30`);
+    if (!Number.isFinite(date.getTime()) || leaveDateKey(date) !== value) throw new Error('Please select valid leave dates.');
+    return date.getTime();
+  };
+  const start = parse(fromDate), end = parse(toDate || fromDate);
+  const days = (end - start) / LEAVE_DAY_MS + 1;
+  if (days < 1 || days > 366) throw new Error('Leave dates must be in order and span at most 366 days.');
+  if (leaveType === 'HALF_DAY' && days !== 1) throw new Error('Half-day leave must be for one date.');
+  return { start, end, totalDays: leaveType === 'HALF_DAY' ? 0.5 : days };
+}
+
+async function validateLeaveAllowance(context, request, snapshot, profile, userCompany) {
+  if (request.leave_type === 'LWP') return;
+  const firstYear = Number(request.from_date.slice(0, 4));
+  const lastYear = Number(request.to_date.slice(0, 4));
+  const bucket = request.leave_type === 'HALF_DAY' ? 'cl' : request.leave_type.toLowerCase();
+  for (let year = firstYear; year <= lastYear; year++) {
+    const balance = await calculateEmployeeLeaveBalance({ email: request.email, tenantId: context.tenantId, userCompany, targetYear: year }, snapshot, profile);
+    if (!balance.success) throw new Error(balance.error);
+    if (request.leave_type === 'EL' && balance.data.el.status === 'LOCKED') throw new Error(`Earned Leave is locked until ${balance.data.el.unlockDate || 'completion of probation'}.`);
+    const from = request.from_date < `${year}-01-01` ? `${year}-01-01` : request.from_date;
+    const to = request.to_date > `${year}-12-31` ? `${year}-12-31` : request.to_date;
+    const days = request.leave_type === 'CPL' ? request.total_days : leaveDateRange(from, to, request.leave_type).totalDays;
+    if (Number(balance.data[bucket]?.balance || 0) < days) throw new Error(`Insufficient ${request.leave_type} leave balance for ${year}.`);
+    if (request.leave_type === 'CPL') break;
+  }
+}
+
+async function syncApprovedLeaveAttendance(context, request) {
+  const range = leaveDateRange(request.from_date, request.to_date, request.leave_type);
+  const status = request.leave_type === 'HALF_DAY' ? 'HALF_DAY' : 'ON_LEAVE';
+  const remarks = `Approved ${request.leave_type} Leave: ${request.reason || ''}`.trim();
+  const rows = [];
+  for (let instant = range.start; instant <= range.end; instant += LEAVE_DAY_MS) {
+    rows.push({ id: crypto.randomUUID(), tenant_id: request.tenant_id, user_id: isValidUuid(request.user_id) ? request.user_id : null,
+      email: request.email, emp_name: request.emp_name || '', emp_code: request.emp_code || '', department: request.department || '',
+      attendance_date: leaveDateKey(instant), status, remarks, total_working_minutes: 0 });
+  }
+  // Existing punches win, including concurrent punch-ins. Only untouched days
+  // may be marked on leave; no punch timestamps are written by this flow.
+  const inserted = await context.db.from('attendance_records').upsert(rows, { onConflict: 'email,attendance_date', ignoreDuplicates: true });
+  if (inserted.error) throw inserted.error;
+  const updated = await context.db.from('attendance_records').update({ status, remarks, updated_at: new Date().toISOString() })
+    .eq('tenant_id', request.tenant_id).eq('email', request.email)
+    .gte('attendance_date', request.from_date).lte('attendance_date', request.to_date)
+    .is('in_time', null).is('out_time', null);
+  if (updated.error) throw updated.error;
+}
+
 /**
  * 1. Get Today's Attendance for Current User
  */
 export async function getTodayAttendance(userEmail, userId, tenantId = DEFAULT_TENANT_ID, userCompany = '') {
   if (!userEmail) return { success: false, error: 'User email is required' };
+  if (!tenantId || tenantId === 'default') tenantId = resolveTenantId(null, userCompany);
   const adminClient = getAdminClient();
   const today = getTodayDateString();
   const normalizedEmail = userEmail.trim().toLowerCase();
 
   const now = new Date();
-  const nowYear = now.getFullYear();
-  const nowMonth = now.getMonth() + 1;
+  const { year: nowYear, month: nowMonth } = getIstDateParts(now);
   let monthlyRecords = [];
 
   // Local fallback first
@@ -632,7 +835,7 @@ export async function getTodayAttendance(userEmail, userId, tenantId = DEFAULT_T
 
   try {
     const startDateStr = `${nowYear}-${String(nowMonth).padStart(2, '0')}-01`;
-    const lastDay = new Date(nowYear, nowMonth, 0).getDate();
+    const lastDay = new Date(Date.UTC(nowYear, nowMonth, 0)).getUTCDate();
     const endDateStr = `${nowYear}-${String(nowMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
 
     const [monthRes, todayRes] = await Promise.all([
@@ -652,6 +855,7 @@ export async function getTodayAttendance(userEmail, userId, tenantId = DEFAULT_T
         .maybeSingle()
     ]);
 
+    if (todayRes.error) throw todayRes.error;
     const dbMonthRecs = monthRes?.data;
     const dbToday = todayRes?.data;
 
@@ -671,11 +875,10 @@ export async function getTodayAttendance(userEmail, userId, tenantId = DEFAULT_T
     } catch {}
     const monthlyUsage = calculateMonthlyShortLeaveUsage(monthlyRecords, nowYear, nowMonth, today, tenantPolicy);
 
-    // Pick best between Supabase and Local (if local has out_time but supabase doesn't, pick local)
-    let bestRec = dbToday || localRec || null;
-    if (localRec && localRec.out_time && (!dbToday || !dbToday.out_time)) {
-      bestRec = localRec;
-    }
+    // Confirmed database timestamps are authoritative across refreshes/devices.
+    const bestRec = dbToday
+      ? { ...(localRec?.in_time === dbToday.in_time ? localRec : {}), ...dbToday }
+      : localRec || null;
 
     return {
       success: true,
@@ -687,7 +890,8 @@ export async function getTodayAttendance(userEmail, userId, tenantId = DEFAULT_T
   } catch (err) {
     const monthlyUsage = calculateMonthlyShortLeaveUsage(local.records.filter(r => (r.tenant_id || DEFAULT_TENANT_ID) === tenantId && (r.email || '').toLowerCase() === normalizedEmail), nowYear, nowMonth, today);
     return {
-      success: true,
+      success: !!localRec,
+      error: localRec ? undefined : 'Attendance status verify nahi ho saka. Kripya dobara try karein.',
       data: localRec || null,
       date: today,
       monthlyUsage,
@@ -712,6 +916,7 @@ export async function punchIn({
   userCompany = ''
 }) {
   if (!email) return { success: false, error: 'User email is required' };
+  if (!tenantId || tenantId === 'default') tenantId = resolveTenantId(null, userCompany);
   const adminClient = getAdminClient();
   const today = getTodayDateString();
   const nowIso = new Date().toISOString();
@@ -727,22 +932,26 @@ export async function punchIn({
   let existingDb = null;
 
   try {
-    const { data: dbRec } = await adminClient
+    const { data: dbRec, error } = await adminClient
       .from('attendance_records')
       .select('*')
       .ilike('email', normalizedEmail)
       .eq('tenant_id', tenantId)
       .eq('attendance_date', today)
       .maybeSingle();
+    if (error) throw error;
     if (dbRec) existingDb = dbRec;
-  } catch {}
+  } catch (error) {
+    console.error('Attendance punch-in verification failed:', error);
+    return { success: false, error: 'Punch In verify nahi ho saka. Kripya dobara try karein.' };
+  }
 
   const currentTodayRec = existingDb || existingLocal;
 
   if (currentTodayRec && currentTodayRec.in_time) {
     return {
       success: false,
-      error: `Aapka aaj ka Punch In (${new Date(currentTodayRec.in_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}) pehle se darj hai. Ek din me sirf 1 bar Punch In kiya ja sakta hai.`,
+      error: `Aapka aaj ka Punch In (${new Date(currentTodayRec.in_time).toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })}) pehle se darj hai. Ek din me sirf 1 bar Punch In kiya ja sakta hai.`,
       alreadyPunched: true,
       data: currentTodayRec
     };
@@ -750,8 +959,7 @@ export async function punchIn({
 
   // 2. Fetch monthly records for short leave quota tracking
   const now = new Date();
-  const nowYear = now.getFullYear();
-  const nowMonth = now.getMonth() + 1;
+  const { year: nowYear, month: nowMonth } = getIstDateParts(now);
 
   let monthlyRecords = local.records.filter(r => 
     (r.tenant_id || DEFAULT_TENANT_ID) === tenantId &&
@@ -759,7 +967,7 @@ export async function punchIn({
   );
   try {
     const startDateStr = `${nowYear}-${String(nowMonth).padStart(2, '0')}-01`;
-    const lastDay = new Date(nowYear, nowMonth, 0).getDate();
+    const lastDay = new Date(Date.UTC(nowYear, nowMonth, 0)).getUTCDate();
     const endDateStr = `${nowYear}-${String(nowMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
 
     const { data: dbMonthRecs } = await adminClient
@@ -879,7 +1087,7 @@ export async function punchIn({
   const evaluation = evaluateMorningInPunch(now, monthlyUsage, resolvedEmpName, activeShift || tenantPolicy);
 
   let resultRecord = {
-    id: ensureUuid(existingLocal?.id),
+    id: ensureUuid(existingDb?.id || existingLocal?.id),
     tenant_id: tenantId,
     user_id: userId && isValidUuid(userId) ? userId : null,
     emp_code: resolvedEmpCode,
@@ -904,24 +1112,19 @@ export async function punchIn({
     updated_at: nowIso
   };
 
-  // Try inserting/saving to Supabase via upsert with clean DB schema
-  try {
-    const dbPayload = cleanAttendanceRecordForDb(resultRecord, tenantId);
-    const { data: upsertedDb, error: dbErr } = await adminClient
-      .from('attendance_records')
-      .upsert(dbPayload, { onConflict: 'email,attendance_date' })
-      .select()
-      .maybeSingle();
-    if (upsertedDb) {
-      resultRecord = { ...resultRecord, ...upsertedDb };
-    }
-    if (dbErr) console.error('Supabase punchIn upsert error:', dbErr);
-  } catch (dbErr) {
-    console.error('Supabase punchIn exception:', dbErr);
+  const saved = await persistAttendancePunch(adminClient, resultRecord, tenantId, existingDb, 'IN');
+  if (saved.error) {
+    console.error('Supabase punchIn save failed:', saved.error);
+    return { success: false, error: 'Punch In server par save nahi hua. Kripya dobara try karein.' };
   }
+  if (saved.alreadyPunched) return {
+    success: false, alreadyPunched: true, data: saved.data,
+    error: 'Aapka aaj ka Punch In pehle se saved hai.'
+  };
+  resultRecord = saved.data;
 
   // Update local fallback storage
-  const existingIdx = local.records.findIndex(r => (r.email || '').toLowerCase() === normalizedEmail && r.attendance_date === today);
+  const existingIdx = local.records.findIndex(r => (r.tenant_id || DEFAULT_TENANT_ID) === tenantId && (r.email || '').toLowerCase() === normalizedEmail && r.attendance_date === today);
   if (existingIdx >= 0) {
     local.records[existingIdx] = resultRecord;
   } else {
@@ -934,7 +1137,7 @@ export async function punchIn({
     await logAuditAction({
       module: 'attendance',
       action: 'PUNCH_IN',
-      details: `Employee ${empName || email} punched in at ${new Date(nowIso).toLocaleTimeString()} on ${today} (${location}) [${evaluation.ruleTitle}]`,
+      details: `Employee ${empName || email} punched in at ${new Date(nowIso).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })} on ${today} (${location}) [${evaluation.ruleTitle}]`,
       userEmail: normalizedEmail,
       userName: empName
     });
@@ -962,6 +1165,7 @@ export async function punchOut({
   userCompany = ''
 }) {
   if (!email) return { success: false, error: 'User email is required' };
+  if (!tenantId || tenantId === 'default') tenantId = resolveTenantId(null, userCompany);
   const adminClient = getAdminClient();
   const today = getTodayDateString();
   const nowIso = new Date().toISOString();
@@ -977,15 +1181,19 @@ export async function punchOut({
   let existingDb = null;
 
   try {
-    const { data: dbRec } = await adminClient
+    const { data: dbRec, error } = await adminClient
       .from('attendance_records')
       .select('*')
       .ilike('email', normalizedEmail)
       .eq('tenant_id', tenantId)
       .eq('attendance_date', today)
       .maybeSingle();
+    if (error) throw error;
     if (dbRec) existingDb = dbRec;
-  } catch {}
+  } catch (error) {
+    console.error('Attendance punch-out verification failed:', error);
+    return { success: false, error: 'Punch Out verify nahi ho saka. Kripya dobara try karein.' };
+  }
 
   let existing = existingDb || existingLocal;
   if (existingLocal?.in_time && !existingDb?.in_time) {
@@ -1002,7 +1210,7 @@ export async function punchOut({
   if (existing.out_time) {
     return {
       success: false,
-      error: `Aapka aaj ka Final Punch Out (${new Date(existing.out_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}) pehle hi darj ho chuka hai. Ek din me sirf 1 bar Punch Out allow hai.`,
+      error: `Aapka aaj ka Final Punch Out (${new Date(existing.out_time).toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })}) pehle hi darj ho chuka hai. Ek din me sirf 1 bar Punch Out allow hai.`,
       alreadyPunchedOut: true,
       data: existing
     };
@@ -1010,8 +1218,7 @@ export async function punchOut({
 
   // Fetch monthly records for short leave quota tracking
   const now = new Date();
-  const nowYear = now.getFullYear();
-  const nowMonth = now.getMonth() + 1;
+  const { year: nowYear, month: nowMonth } = getIstDateParts(now);
 
   let monthlyRecords = local.records.filter(r => 
     (r.tenant_id || DEFAULT_TENANT_ID) === tenantId &&
@@ -1019,7 +1226,7 @@ export async function punchOut({
   );
   try {
     const startDateStr = `${nowYear}-${String(nowMonth).padStart(2, '0')}-01`;
-    const lastDay = new Date(nowYear, nowMonth, 0).getDate();
+    const lastDay = new Date(Date.UTC(nowYear, nowMonth, 0)).getUTCDate();
     const endDateStr = `${nowYear}-${String(nowMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
 
     const { data: dbMonthRecs } = await adminClient
@@ -1154,44 +1361,40 @@ export async function punchOut({
     } catch {}
   }
 
-  // Try updating/upserting in Supabase
-  try {
-    const dbPayload = cleanAttendanceRecordForDb({
-      ...updatedRecord,
-      id: ensureUuid(existing.id),
-      tenant_id: existing.tenant_id || tenantId,
-      user_id: existing.user_id || userId || null,
-      emp_code: resolvedOutEmpCode,
-      emp_name: resolvedOutEmpName,
-      email: normalizedEmail,
-      department: resolvedOutDept,
-      attendance_date: today,
-      in_time: existing.in_time,
-      out_time: nowIso,
-      in_location: existing.in_location || location,
-      out_location: location,
-      in_method: existing.in_method || method,
-      out_method: method,
-      total_working_minutes: evaluation.total_working_minutes,
-      status: evaluation.status,
-      remarks: [geofenceRemarks, evaluation.remarks].filter(Boolean).join(' '),
-      updated_at: nowIso
-    }, tenantId);
-
-    const { data: updatedDb, error: dbErr } = await adminClient
-      .from('attendance_records')
-      .upsert(dbPayload, { onConflict: 'email,attendance_date' })
-      .select()
-      .maybeSingle();
-
-    if (updatedDb) updatedRecord = { ...updatedRecord, ...updatedDb };
-    if (dbErr) console.error('Supabase punchOut upsert error:', dbErr);
-  } catch (dbErr) {
-    console.error('Supabase punchOut exception:', dbErr);
+  const punchOutRecord = {
+    ...updatedRecord,
+    id: ensureUuid(existing.id),
+    tenant_id: existing.tenant_id || tenantId,
+    user_id: existing.user_id || userId || null,
+    emp_code: resolvedOutEmpCode,
+    emp_name: resolvedOutEmpName,
+    email: normalizedEmail,
+    department: resolvedOutDept,
+    attendance_date: today,
+    in_time: existing.in_time,
+    out_time: nowIso,
+    in_location: existing.in_location || location,
+    out_location: location,
+    in_method: existing.in_method || method,
+    out_method: method,
+    total_working_minutes: evaluation.total_working_minutes,
+    status: evaluation.status,
+    remarks: [geofenceRemarks, evaluation.remarks].filter(Boolean).join(' '),
+    updated_at: nowIso
+  };
+  const saved = await persistAttendancePunch(adminClient, punchOutRecord, tenantId, existingDb, 'OUT');
+  if (saved.error) {
+    console.error('Supabase punchOut save failed:', saved.error);
+    return { success: false, error: 'Punch Out server par save nahi hua. Kripya dobara try karein.' };
   }
+  if (saved.alreadyPunched) return {
+    success: false, alreadyPunchedOut: true, data: saved.data,
+    error: 'Aapka aaj ka Punch Out pehle se saved hai.'
+  };
+  updatedRecord = saved.data;
 
   // Update local storage
-  const existingIdx = local.records.findIndex(r => (r.email || '').toLowerCase() === normalizedEmail && r.attendance_date === today);
+  const existingIdx = local.records.findIndex(r => (r.tenant_id || DEFAULT_TENANT_ID) === tenantId && (r.email || '').toLowerCase() === normalizedEmail && r.attendance_date === today);
   if (existingIdx >= 0) {
     local.records[existingIdx] = updatedRecord;
   } else {
@@ -1204,7 +1407,7 @@ export async function punchOut({
     await logAuditAction({
       module: 'attendance',
       action: 'PUNCH_OUT',
-      details: `Employee ${empName || email} punched out at ${new Date(nowIso).toLocaleTimeString()} on ${today} (Worked: ${formatMinutesToHours(evaluation.total_working_minutes)}) [${evaluation.ruleTitle}]`,
+      details: `Employee ${empName || email} punched out at ${new Date(nowIso).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })} on ${today} (Worked: ${formatMinutesToHours(evaluation.total_working_minutes)}) [${evaluation.ruleTitle}]`,
       userEmail: normalizedEmail,
       userName: empName
     });
@@ -2481,20 +2684,19 @@ export async function getTeamMonthlyMatrix({
   } catch {}
 
   // Load approved leaves for this month
-  const localLeaves = await getFallbackLeavesData();
+  const localLeaves = await readLeaveData(effectiveTenantId);
   const allLeaveReqs = Array.isArray(localLeaves?.requests) ? localLeaves.requests : [];
   const approvedLeaves = allLeaveReqs.filter(r => r.status === 'APPROVED');
   const leavesByEmpDate = new Map();
 
   approvedLeaves.forEach(l => {
     const lEmail = (l.email || '').toLowerCase();
-    const lStart = new Date(`${l.from_date}T00:00:00`);
-    const lEnd = new Date(`${l.to_date}T00:00:00`);
-    const iter = new Date(lStart);
-    while (iter <= lEnd) {
-      const iterStr = iter.toISOString().split('T')[0];
-      leavesByEmpDate.set(`${lEmail}_${iterStr}`, l);
-      iter.setDate(iter.getDate() + 1);
+    if (l.tenant_id !== effectiveTenantId) return;
+    const start = new Date(`${l.from_date}T00:00:00+05:30`).getTime();
+    const end = new Date(`${l.to_date}T00:00:00+05:30`).getTime();
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end - start > 366 * LEAVE_DAY_MS) return;
+    for (let instant = start; instant <= end; instant += LEAVE_DAY_MS) {
+      leavesByEmpDate.set(`${lEmail}_${leaveDateKey(instant)}`, l);
     }
   });
 
@@ -2883,19 +3085,37 @@ export async function assignEmployeeShift({ email, shiftCodeOrName, assignedBy =
  * 13. Get Employee Leave Balance & Ledger (with CL, SL, and EL 1-Year Lock-in status)
  */
 export async function getEmployeeLeaveBalance({
+  email, tenantId = null, userCompany = '', targetYear = null
+}) {
+  try {
+    const context = await getLeaveContext({ tenantId, userCompany });
+    const targetEmail = leaveEmail(email);
+    let profile = context.actor;
+    if (targetEmail !== context.email) {
+      profile = (await getLeaveTeam(context)).find(employee => leaveEmail(employee.email) === targetEmail);
+      if (!profile) throw new Error('This employee is not in your permitted team.');
+    }
+    const snapshot = await readLeaveData(context.tenantId, { email: targetEmail });
+    const balance = await calculateEmployeeLeaveBalance({ email: targetEmail, tenantId: context.tenantId, userCompany, targetYear }, snapshot, profile);
+    return { ...balance, warning: snapshot.warning };
+  } catch (error) {
+    return { success: false, error: error.message || 'Leave balance is unavailable.' };
+  }
+}
+
+async function calculateEmployeeLeaveBalance({
   email,
   tenantId = null,
   userCompany = '',
   targetYear = null
-}) {
+}, snapshot = null, profile = null, activePolicy = null) {
   if (!email) return { success: false, error: 'Employee email is required' };
   const normalizedEmail = email.trim().toLowerCase();
-  const effectiveTenantId = resolveTenantId(tenantId, userCompany);
-  const currentYear = targetYear || new Date().getFullYear();
+  const effectiveTenantId = isValidUuid(tenantId) ? tenantId : resolveTenantId(tenantId, userCompany);
+  const currentYear = Number(targetYear) || getIstDateParts().year;
 
   try {
-    const policyRes = await getTenantAttendancePolicy(effectiveTenantId, userCompany);
-    const policy = policyRes?.data || {};
+    const policy = activePolicy || (await getTenantAttendancePolicy(effectiveTenantId, userCompany))?.data || {};
     const leavePolicy = policy.leave_policy || {
       cl_quota_annual: 8,
       sl_quota_annual: 6,
@@ -2912,17 +3132,13 @@ export async function getEmployeeLeaveBalance({
     let department = '';
     const adminClient = getAdminClient();
     try {
-      const { data: userRole } = await adminClient
-        .from('user_roles')
-        .select('created_at, date_of_joining, emp_name, emp_code, department')
-        .ilike('email', normalizedEmail)
-        .maybeSingle();
+      const userRole = profile || (await adminClient.from('user_roles').select('*').ilike('email', normalizedEmail).maybeSingle()).data;
 
       if (userRole) {
         doj = userRole.date_of_joining || userRole.created_at || null;
         empName = userRole.emp_name || '';
-        empCode = userRole.emp_code || '';
-        department = userRole.department || '';
+        empCode = userRole.emp_id || userRole.emp_code || '';
+        department = userRole.emp_department || userRole.department || '';
       }
     } catch {}
 
@@ -2933,25 +3149,24 @@ export async function getEmployeeLeaveBalance({
     const lockinMonths = Number(leavePolicy.el_lockin_months ?? 12);
 
     if (doj && lockinMonths > 0) {
-      const joinDate = new Date(doj);
-      const now = new Date();
-      tenureMonths = (now.getFullYear() - joinDate.getFullYear()) * 12 + (now.getMonth() - joinDate.getMonth());
-      if (tenureMonths < lockinMonths) {
-        isElLocked = true;
-        const unlockDate = new Date(joinDate);
-        unlockDate.setMonth(unlockDate.getMonth() + lockinMonths);
-        elUnlockDateStr = unlockDate.toISOString().split('T')[0];
-      }
+      const joined = getIstDateParts(new Date(String(doj).length === 10 ? `${doj}T00:00:00+05:30` : doj));
+      const now = getIstDateParts();
+      tenureMonths = Math.max(0, (now.year - joined.year) * 12 + now.month - joined.month - (now.day < joined.day ? 1 : 0));
+      const monthIndex = joined.month - 1 + lockinMonths;
+      const unlockYear = joined.year + Math.floor(monthIndex / 12);
+      const unlockMonth = monthIndex % 12 + 1;
+      const unlockDay = Math.min(joined.day, new Date(Date.UTC(unlockYear, unlockMonth, 0)).getUTCDate());
+      elUnlockDateStr = `${unlockYear}-${String(unlockMonth).padStart(2, '0')}-${String(unlockDay).padStart(2, '0')}`;
+      isElLocked = getTodayDateString() < elUnlockDateStr;
     }
 
-    // Get availed leaves for this year from employee_leaves.json (and DB)
-    const localLeaves = await getFallbackLeavesData();
+    const localLeaves = snapshot || await readLeaveData(effectiveTenantId, { email: normalizedEmail });
     const allRequests = Array.isArray(localLeaves?.requests) ? localLeaves.requests : [];
     const userLeavesThisYear = allRequests.filter(req => {
       if ((req.email || '').toLowerCase() !== normalizedEmail) return false;
+      if (req.tenant_id !== effectiveTenantId) return false;
       if (req.status !== 'APPROVED') return false;
-      const reqYear = new Date(req.from_date || req.applied_at).getFullYear();
-      return reqYear === currentYear;
+      return req.from_date <= `${currentYear}-12-31` && req.to_date >= `${currentYear}-01-01`;
     });
 
     let clAvailed = 0;
@@ -2961,7 +3176,9 @@ export async function getEmployeeLeaveBalance({
     let lwpAvailed = 0;
 
     userLeavesThisYear.forEach(req => {
-      const days = Number(req.total_days || 1);
+      const clippedFrom = req.from_date < `${currentYear}-01-01` ? `${currentYear}-01-01` : req.from_date;
+      const clippedTo = req.to_date > `${currentYear}-12-31` ? `${currentYear}-12-31` : req.to_date;
+      const days = leaveDateRange(clippedFrom, clippedTo, req.leave_type).totalDays;
       if (req.leave_type === 'CL') clAvailed += days;
       else if (req.leave_type === 'SL') slAvailed += days;
       else if (req.leave_type === 'EL') elAvailed += days;
@@ -2997,6 +3214,7 @@ export async function getEmployeeLeaveBalance({
     const allCplGrants = Array.isArray(localLeaves?.cpl_grants) ? localLeaves.cpl_grants : [];
     const userGrants = allCplGrants.filter(g => {
       if ((g.email || '').toLowerCase() !== normalizedEmail) return false;
+      if ((g.tenant_id || DEFAULT_TENANT_ID) !== effectiveTenantId) return false;
       if (g.status && g.status !== 'ACTIVE') return false;
       const grantedTime = new Date(g.granted_at || g.work_date).getTime();
       return (nowMs - grantedTime) <= validityWindowMs;
@@ -3010,14 +3228,14 @@ export async function getEmployeeLeaveBalance({
     if (cplPolicy.enabled && cplPolicy.auto_credit_on_sunday_work) {
       try {
         const attData = await getFallbackData();
-        const userRecs = (attData.records || []).filter(r => (r.email || '').toLowerCase() === normalizedEmail);
+        const userRecs = (attData.records || []).filter(r => (r.tenant_id || DEFAULT_TENANT_ID) === effectiveTenantId && (r.email || '').toLowerCase() === normalizedEmail);
         userRecs.forEach(r => {
           if (!r.attendance_date) return;
           const recTime = new Date(`${r.attendance_date}T00:00:00+05:30`).getTime();
           if ((nowMs - recTime) > validityWindowMs) return; // Expired
           
           const d = new Date(`${r.attendance_date}T00:00:00+05:30`);
-          const isSunday = d.getDay() === 0;
+          const isSunday = getIstDateParts(d).isSunday;
           if (isSunday && (r.status === 'PRESENT' || r.in_time)) {
             const alreadyGranted = userGrants.some(g => g.work_date === r.attendance_date);
             if (!alreadyGranted) {
@@ -3055,6 +3273,7 @@ export async function getEmployeeLeaveBalance({
           quota: clQuota,
           availed: clAvailed,
           balance: clBalance,
+          remaining: clBalance,
           status: 'UNLOCKED',
           statusLabel: '🟢 Unlocked (Day 1 Available)'
         },
@@ -3062,6 +3281,7 @@ export async function getEmployeeLeaveBalance({
           quota: slQuota,
           availed: slAvailed,
           balance: slBalance,
+          remaining: slBalance,
           status: 'UNLOCKED',
           statusLabel: '🟢 Unlocked'
         },
@@ -3069,6 +3289,10 @@ export async function getEmployeeLeaveBalance({
           quota: elQuota,
           availed: elAvailed,
           balance: elBalance,
+          remaining: elBalance,
+          isLocked: isElLocked,
+          unlocksOn: elUnlockDateStr,
+          lockReason: isElLocked ? `Unlocks on ${elUnlockDateStr}` : null,
           status: isElLocked ? 'LOCKED' : 'UNLOCKED',
           statusLabel: isElLocked 
             ? `🔒 Blocked (1-Year Probation Lock: Unlocks on ${elUnlockDateStr})`
@@ -3105,257 +3329,135 @@ export async function getEmployeeLeaveBalance({
  * 14. Apply for Employee Leave (Single day or Date range)
  */
 export async function applyEmployeeLeave({
-  userId,
-  email,
-  empName,
-  empCode,
-  department,
-  tenantId = null,
-  userCompany = '',
-  leaveType = 'CL', // 'CL' | 'SL' | 'EL' | 'HALF_DAY' | 'LWP'
-  fromDate,
-  toDate,
-  reason = '',
-  halfDaySession = 'FIRST_HALF'
+  userId, email, empName, empCode, department, tenantId = null, userCompany = '',
+  leaveType = 'CL', fromDate, toDate, reason = '', halfDaySession = 'FIRST_HALF'
 }) {
-  if (!email || !fromDate) {
-    return { success: false, error: 'Employee email and fromDate are required' };
-  }
-
-  const effectiveTenantId = resolveTenantId(tenantId, userCompany);
-  const normalizedEmail = email.trim().toLowerCase();
-  const cleanToDate = toDate || fromDate;
-
-  // Calculate days
-  const start = new Date(`${fromDate}T00:00:00`);
-  const end = new Date(`${cleanToDate}T00:00:00`);
-  if (end < start) {
-    return { success: false, error: 'To date cannot be earlier than From date' };
-  }
-
-  const diffTime = Math.abs(end - start);
-  let totalDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-  if (leaveType === 'HALF_DAY') totalDays = 0.5;
-
-  // Balance & Lock-in Check
-  const balanceRes = await getEmployeeLeaveBalance({ email: normalizedEmail, tenantId: effectiveTenantId, userCompany });
-  if (balanceRes.success && balanceRes.data) {
-    const b = balanceRes.data;
-    if (leaveType === 'EL') {
-      if (b.el.status === 'LOCKED') {
-        return {
-          success: false,
-          error: `Earned Leave (EL) is locked for employees under 1 year of service. Unlocks on ${b.el.unlockDate || '1st anniversary'}. Please choose Casual Leave (CL) or LWP.`
-        };
-      }
-      if (b.el.balance < totalDays) {
-        return {
-          success: false,
-          error: `Insufficient EL balance! Available: ${b.el.balance} days, Requested: ${totalDays} days. Consider applying remaining days as LWP.`
-        };
-      }
-    } else if (leaveType === 'CL' && b.cl.balance < totalDays) {
-      return {
-        success: false,
-        error: `Insufficient Casual Leave (CL) balance! Available: ${b.cl.balance} days, Requested: ${totalDays} days.`
-      };
-    } else if (leaveType === 'SL' && b.sl.balance < totalDays) {
-      return {
-        success: false,
-        error: `Insufficient Sick Leave (SL) balance! Available: ${b.sl.balance} days, Requested: ${totalDays} days.`
-      };
-    } else if (leaveType === 'CPL' && (!b.cpl || b.cpl.balance < totalDays)) {
-      return {
-        success: false,
-        error: `Insufficient CPL balance! Available: ${b.cpl?.balance || 0} day(s), Requested: ${totalDays} day(s). CPL is earned when you work on Sundays or Holidays.`
-      };
-    }
-  }
-
-  const newLeaveRequest = {
-    id: `leave_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-    tenant_id: effectiveTenantId,
-    user_id: userId || null,
-    email: normalizedEmail,
-    emp_name: empName || normalizedEmail.split('@')[0],
-    emp_code: empCode || '',
-    department: department || 'General',
-    leave_type: leaveType,
-    from_date: fromDate,
-    to_date: cleanToDate,
-    total_days: totalDays,
-    half_day_session: leaveType === 'HALF_DAY' ? halfDaySession : null,
-    reason: (reason || '').trim(),
-    status: 'PENDING',
-    applied_at: new Date().toISOString(),
-    approver_id: null,
-    approver_name: null,
-    approver_remarks: null,
-    action_at: null
-  };
-
-  const localLeaves = await getFallbackLeavesData();
-  localLeaves.requests = localLeaves.requests || [];
-  localLeaves.requests.unshift(newLeaveRequest);
-  await saveFallbackLeavesData(localLeaves);
-
   try {
-    const adminClient = getAdminClient();
-    await adminClient.from('employee_leaves').insert([newLeaveRequest]);
-  } catch {}
-
-  try {
-    await logAuditAction({
-      module: 'attendance',
-      action: 'APPLY_LEAVE',
-      details: `${newLeaveRequest.emp_name} applied for ${totalDays} day(s) ${leaveType} from ${fromDate} to ${cleanToDate}`,
-      userEmail: normalizedEmail,
-      userName: newLeaveRequest.emp_name
+    const context = await getLeaveContext({ tenantId, userCompany });
+    if (leaveEmail(email) !== context.email) throw new Error('You may apply leave only for your own account.');
+    const type = leaveType === 'HD-L' ? 'HALF_DAY' : leaveType;
+    if (!['CL', 'SL', 'EL', 'CPL', 'HALF_DAY', 'LWP'].includes(type)) throw new Error('Please select a valid leave type.');
+    const endDate = toDate || fromDate;
+    const { totalDays } = leaveDateRange(fromDate, endDate, type);
+    if (type === 'HALF_DAY' && !['FIRST_HALF', 'SECOND_HALF'].includes(halfDaySession)) throw new Error('Please select the half-day session.');
+    const cleanReason = String(reason || '').trim();
+    if (!cleanReason || cleanReason.length > 2000) throw new Error('Please provide a leave reason (up to 2000 characters).');
+    const snapshot = await readLeaveData(context.tenantId, { email: context.email });
+    if (!snapshot.cloudAvailable) throw new Error(snapshot.warning);
+    const overlap = snapshot.requests.some(request => ['PENDING', 'APPROVED'].includes(request.status)
+      && request.from_date <= endDate && request.to_date >= fromDate
+      && !(type === 'HALF_DAY' && request.leave_type === 'HALF_DAY' && request.half_day_session !== halfDaySession));
+    if (overlap) throw new Error('A pending or approved leave already covers these dates. Please check your leave history.');
+    await validateLeaveAllowance(context, { email: context.email, leave_type: type, from_date: fromDate, to_date: endDate, total_days: totalDays }, snapshot, context.actor, userCompany);
+    const request = leaveDbPayload({
+      id: crypto.randomUUID(), tenant_id: context.tenantId, user_id: context.actor.user_id,
+      email: context.email, emp_name: context.actor.emp_name || empName || context.email,
+      emp_code: context.actor.emp_id || context.actor.emp_code || empCode || '',
+      department: context.actor.emp_department || context.actor.department || department || '',
+      leave_type: type, from_date: fromDate, to_date: endDate, total_days: totalDays,
+      half_day_session: type === 'HALF_DAY' ? halfDaySession : null,
+      reason: cleanReason, status: 'PENDING', applied_at: new Date().toISOString()
     });
-  } catch {}
-
-  return {
-    success: true,
-    message: `Leave application for ${totalDays} day(s) (${leaveType}) submitted successfully! Awaiting HOD approval.`,
-    data: newLeaveRequest
-  };
-}
-
-/**
- * 15. Get Employee's own Leave Applications
- */
-export async function getMyLeaveRequests({ email, tenantId = null }) {
-  if (!email) return { success: false, error: 'Email is required' };
-  const normalizedEmail = email.trim().toLowerCase();
-  const localLeaves = await getFallbackLeavesData();
-  const requests = (localLeaves?.requests || [])
-    .filter(r => (r.email || '').toLowerCase() === normalizedEmail)
-    .sort((a, b) => new Date(b.applied_at) - new Date(a.applied_at));
-  return { success: true, data: requests };
-}
-
-/**
- * 16. Get Pending Leave Requests for HOD / Manager
- */
-export async function getHodPendingLeaveRequests({ tenantId = null, userCompany = '', department = 'All' } = {}) {
-  const effectiveTenantId = resolveTenantId(tenantId, userCompany);
-  const localLeaves = await getFallbackLeavesData();
-  let requests = (localLeaves?.requests || []).filter(r => {
-    if (r.tenant_id && r.tenant_id !== effectiveTenantId) return false;
-    if (department && department !== 'All' && r.department !== department) return false;
-    return true;
-  });
-  requests.sort((a, b) => new Date(b.applied_at) - new Date(a.applied_at));
-  return { success: true, data: requests };
-}
-
-/**
- * 17. Approve Leave Request (HOD / Manager)
- */
-export async function approveLeaveRequest({ requestId, approverId, approverName = 'HOD', remarks = '' }) {
-  if (!requestId) return { success: false, error: 'Request ID is required' };
-  const localLeaves = await getFallbackLeavesData();
-  const req = (localLeaves?.requests || []).find(r => r.id === requestId);
-  if (!req) return { success: false, error: 'Leave request not found' };
-
-  req.status = 'APPROVED';
-  req.approver_id = approverId || null;
-  req.approver_name = approverName;
-  req.approver_remarks = remarks || 'Approved by HOD';
-  req.action_at = new Date().toISOString();
-
-  await saveFallbackLeavesData(localLeaves);
-
-  // Sync to database if available
-  try {
-    const adminClient = getAdminClient();
-    await adminClient.from('employee_leaves').update({
-      status: 'APPROVED',
-      approver_id: approverId,
-      approver_name: approverName,
-      approver_remarks: req.approver_remarks,
-      action_at: req.action_at
-    }).eq('id', requestId);
-  } catch {}
-
-  // Update fallback attendance records for each date in leave period
-  const localAttendance = await getFallbackData();
-  const start = new Date(`${req.from_date}T00:00:00`);
-  const end = new Date(`${req.to_date}T00:00:00`);
-  const cur = new Date(start);
-
-  while (cur <= end) {
-    const dStr = cur.toISOString().split('T')[0];
-    const isPaid = req.leave_type !== 'LWP';
-
-    const existingRecIdx = localAttendance.records.findIndex(
-      r => (r.email || '').toLowerCase() === (req.email || '').toLowerCase() && r.attendance_date === dStr
-    );
-
-    const leaveRec = {
-      id: existingRecIdx >= 0 ? localAttendance.records[existingRecIdx].id : `rec_leave_${Date.now()}_${dStr}`,
-      tenant_id: req.tenant_id,
-      email: req.email,
-      emp_name: req.emp_name,
-      emp_code: req.emp_code,
-      department: req.department,
-      attendance_date: dStr,
-      status: req.leave_type === 'HALF_DAY' ? 'HALF_DAY' : 'ON_LEAVE',
-      remarks: `Approved ${req.leave_type} Leave: ${req.reason || ''}`.trim(),
-      is_regularized: false,
-      is_paid_leave: isPaid,
-      leave_type: req.leave_type
-    };
-
-    if (existingRecIdx >= 0) {
-      localAttendance.records[existingRecIdx] = { ...localAttendance.records[existingRecIdx], ...leaveRec };
-    } else {
-      localAttendance.records.push(leaveRec);
-    }
-
+    const { data, error } = await context.db.from('employee_leaves').insert(request).select('*').maybeSingle();
+    if (error) throw error;
+    if (!data) throw new Error('Leave save was not confirmed. Please refresh your history before retrying.');
     try {
-      const adminClient = getAdminClient();
-      await adminClient.from('attendance_records').upsert(leaveRec, { onConflict: 'email,attendance_date' });
+      await logAuditAction({ module: 'attendance', action: 'APPLY_LEAVE',
+        details: `${request.emp_name} applied for ${totalDays} day(s) ${type} from ${fromDate} to ${endDate}`,
+        userEmail: context.email, userName: request.emp_name });
     } catch {}
-
-    cur.setDate(cur.getDate() + 1);
+    return { success: true, data: normalizeLeaveRequest(data),
+      message: `Leave application for ${totalDays} day(s) (${type}) saved. Awaiting HOD approval.` };
+  } catch (error) {
+    console.error('Leave application failed:', error);
+    return { success: false, error: error.code ? leaveServiceError(error) : error.message || 'Leave could not be saved.' };
   }
-
-  await saveFallbackData(localAttendance);
-
-  return { success: true, message: `Leave request for ${req.emp_name} approved successfully!` };
 }
 
-/**
- * 18. Reject Leave Request (HOD / Manager)
- */
-export async function rejectLeaveRequest({ requestId, approverId, approverName = 'HOD', remarks = '' }) {
-  if (!requestId) return { success: false, error: 'Request ID is required' };
-  const localLeaves = await getFallbackLeavesData();
-  const req = (localLeaves?.requests || []).find(r => r.id === requestId);
-  if (!req) return { success: false, error: 'Leave request not found' };
-
-  req.status = 'REJECTED';
-  req.approver_id = approverId || null;
-  req.approver_name = approverName;
-  req.approver_remarks = remarks || 'Rejected by HOD';
-  req.action_at = new Date().toISOString();
-
-  await saveFallbackLeavesData(localLeaves);
-
+/** Employee history is scoped to the signed-in employee and workspace. */
+export async function getMyLeaveRequests({ email, tenantId = null, userCompany = '' }) {
   try {
-    const adminClient = getAdminClient();
-    await adminClient.from('employee_leaves').update({
-      status: 'REJECTED',
-      approver_id: approverId,
-      approver_name: approverName,
-      approver_remarks: req.approver_remarks,
-      action_at: req.action_at
-    }).eq('id', requestId);
-  } catch {}
-
-  return { success: true, message: `Leave request rejected.` };
+    const context = await getLeaveContext({ tenantId, userCompany });
+    if (leaveEmail(email) !== context.email) throw new Error('You may view only your own leave applications.');
+    const snapshot = await readLeaveData(context.tenantId, { email: context.email });
+    return { success: snapshot.cloudAvailable || snapshot.requests.length > 0,
+      data: snapshot.requests, warning: snapshot.warning, error: snapshot.warning };
+  } catch (error) { return { success: false, error: error.message || 'Leave history is unavailable.' }; }
 }
+
+/** HOD/managers see their mapped team; admins see the permitted workspace. */
+export async function getHodPendingLeaveRequests({ tenantId = null, userCompany = '', department = 'All' } = {}) {
+  try {
+    const context = await getLeaveContext({ tenantId, userCompany });
+    const team = (await getLeaveTeam(context)).filter(employee => department === 'All'
+      || (employee.emp_department || employee.department) === department);
+    const snapshot = await readLeaveData(context.tenantId, { emails: team.map(employee => employee.email) });
+    return { success: snapshot.cloudAvailable || snapshot.requests.length > 0,
+      data: snapshot.requests, warning: snapshot.warning, error: snapshot.warning };
+  } catch (error) { return { success: false, error: error.message || 'Leave approvals are unavailable.' }; }
+}
+
+async function processLeaveDecision({ requestId, tenantId = null, userCompany = '', remarks = '' }, status) {
+  try {
+    if (!requestId) throw new Error('Leave request ID is required.');
+    const context = await getLeaveContext({ tenantId, userCompany });
+    const team = await getLeaveTeam(context);
+    const allowed = new Set(team.map(employee => leaveEmail(employee.email)));
+    let current = await context.db.from('employee_leaves').select('*').eq('tenant_id', context.tenantId).eq('id', requestId).maybeSingle();
+    if (current.error) throw current.error;
+    if (!current.data) {
+      // Import only this permitted historical application, without rewriting local files.
+      const snapshot = await readLeaveData(context.tenantId, { emails: [...allowed] });
+      const legacy = snapshot.requests.find(request => String(request.id) === String(requestId));
+      if (!legacy) throw new Error('Leave application not found in your permitted team.');
+      current = await context.db.from('employee_leaves').upsert(leaveDbPayload(legacy), { onConflict: 'id', ignoreDuplicates: true }).select('*').maybeSingle();
+      if (current.error) throw current.error;
+      if (!current.data) current = await context.db.from('employee_leaves').select('*').eq('tenant_id', context.tenantId).eq('id', requestId).maybeSingle();
+      if (current.error) throw current.error;
+    }
+    let request = current.data && normalizeLeaveRequest(current.data);
+    if (!request || !allowed.has(request.email)) throw new Error('Leave application not found in your permitted team.');
+    if (!['PENDING', status].includes(request.status)) throw new Error('This application has already been processed. Please refresh.');
+    const cleanRemarks = String(remarks || '').trim();
+    if (cleanRemarks.length > 2000 || status === 'REJECTED' && !cleanRemarks) throw new Error('Please provide valid decision remarks (up to 2000 characters).');
+    if (request.status === 'PENDING') {
+      if (status === 'APPROVED' && request.leave_type !== 'LWP') {
+        const snapshot = await readLeaveData(context.tenantId, { email: request.email });
+        if (!snapshot.cloudAvailable) throw new Error(snapshot.warning);
+        const employee = team.find(employee => leaveEmail(employee.email) === request.email);
+        await validateLeaveAllowance(context, request, snapshot, employee, userCompany);
+      }
+      const action = { status, approver_id: context.actor.user_id, approver_name: context.actor.emp_name || context.email,
+        approver_remarks: cleanRemarks || 'Approved by HOD', action_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+      const changed = await context.db.from('employee_leaves').update(action).eq('tenant_id', context.tenantId)
+        .eq('id', requestId).eq('status', 'PENDING').select('*').maybeSingle();
+      if (changed.error) throw changed.error;
+      if (!changed.data) throw new Error('This application was processed elsewhere. Please refresh.');
+      request = normalizeLeaveRequest(changed.data);
+    }
+    let warning = null;
+    if (status === 'APPROVED') {
+      try { await syncApprovedLeaveAttendance(context, request); }
+      catch (error) {
+        console.error('Approved leave attendance sync failed:', error);
+        warning = 'Leave is approved; attendance sync is pending. Retry approval to sync it.';
+      }
+    }
+    try {
+      await logAuditAction({ module: 'attendance', action: status === 'APPROVED' ? 'APPROVE_LEAVE' : 'REJECT_LEAVE',
+        details: `${request.emp_name}: ${request.leave_type} ${request.from_date} to ${request.to_date}; ${status}`,
+        userEmail: context.email, userName: context.actor.emp_name });
+    } catch {}
+    return { success: true, data: request, warning,
+      message: warning || `Leave application ${status === 'APPROVED' ? 'approved' : 'rejected'} successfully.` };
+  } catch (error) {
+    console.error('Leave decision failed:', error);
+    return { success: false, error: error.code ? leaveServiceError(error) : error.message || 'Leave decision failed.' };
+  }
+}
+
+export async function approveLeaveRequest(options) { return processLeaveDecision(options, 'APPROVED'); }
+export async function rejectLeaveRequest(options) { return processLeaveDecision(options, 'REJECTED'); }
 
 /**
  * 19. Grant Employee CPL (Compensatory Off) Credit (Admin / HOD)
@@ -3423,10 +3525,12 @@ export async function grantEmployeeCPLCredit({
 export async function updateTenantLeavePolicy({
   tenantId = null,
   userCompany = '',
+  branch = 'All Branches',
   leavePolicy = {},
   updatedBy = 'Admin'
 }) {
   const effectiveTenantId = resolveTenantId(tenantId, userCompany);
+  const cleanBranch = (branch && branch !== 'All Branches') ? branch.trim() : null;
 
   try {
     let allPolicies = {};
@@ -3446,7 +3550,7 @@ export async function updateTenantLeavePolicy({
     }
 
     const currentTenantPolicy = allPolicies[effectiveTenantId];
-    currentTenantPolicy.leave_policy = {
+    const targetLeavePolicy = {
       ...(currentTenantPolicy.leave_policy || {}),
       ...leavePolicy,
       cpl_policy: {
@@ -3454,13 +3558,30 @@ export async function updateTenantLeavePolicy({
         ...(leavePolicy.cpl_policy || {})
       }
     };
-    currentTenantPolicy.updated_by = updatedBy;
-    currentTenantPolicy.updated_at = new Date().toISOString();
 
-    // Also sync to branch keys if they exist
-    for (const key of Object.keys(allPolicies)) {
-      if (key.startsWith(`${effectiveTenantId}:`)) {
-        allPolicies[key].leave_policy = currentTenantPolicy.leave_policy;
+    if (cleanBranch) {
+      const branchKey = `${effectiveTenantId}:${cleanBranch}`;
+      if (!allPolicies[branchKey]) {
+        allPolicies[branchKey] = {
+          tenant_id: effectiveTenantId,
+          company_name: userCompany || 'Default Company',
+          branch_name: cleanBranch,
+          ...currentTenantPolicy
+        };
+      }
+      allPolicies[branchKey].leave_policy = targetLeavePolicy;
+      allPolicies[branchKey].updated_by = updatedBy;
+      allPolicies[branchKey].updated_at = new Date().toISOString();
+    } else {
+      currentTenantPolicy.leave_policy = targetLeavePolicy;
+      currentTenantPolicy.updated_by = updatedBy;
+      currentTenantPolicy.updated_at = new Date().toISOString();
+
+      // Also sync to branch keys if they exist
+      for (const key of Object.keys(allPolicies)) {
+        if (key.startsWith(`${effectiveTenantId}:`)) {
+          allPolicies[key].leave_policy = currentTenantPolicy.leave_policy;
+        }
       }
     }
 
@@ -3469,21 +3590,26 @@ export async function updateTenantLeavePolicy({
     // Dual-write attempt to Supabase DB if table/column exists
     try {
       const adminClient = getAdminClient();
-      await adminClient
+      let query = adminClient
         .from('attendance_shift_policies')
         .update({
-          leave_policy: currentTenantPolicy.leave_policy,
+          leave_policy: targetLeavePolicy,
           updated_by: updatedBy,
-          updated_at: currentTenantPolicy.updated_at
+          updated_at: new Date().toISOString()
         })
         .eq('tenant_id', effectiveTenantId);
+
+      if (cleanBranch) {
+        query = query.eq('branch_name', cleanBranch);
+      }
+      await query;
     } catch {}
 
     try {
       await logAuditAction({
         module: 'attendance',
         action: 'UPDATE_LEAVE_POLICY',
-        details: `Updated leave policy for tenant ${effectiveTenantId} by ${updatedBy}`,
+        details: `Updated leave policy for tenant ${effectiveTenantId} (branch: ${cleanBranch || 'All Branches'}) by ${updatedBy}`,
         userEmail: updatedBy,
         userName: updatedBy
       });
@@ -3491,8 +3617,8 @@ export async function updateTenantLeavePolicy({
 
     return {
       success: true,
-      message: 'Company leave policy updated successfully!',
-      data: currentTenantPolicy.leave_policy
+      message: `${userCompany || 'Company'} leave policy updated successfully!`,
+      data: targetLeavePolicy
     };
   } catch (err) {
     console.error('Error updating tenant leave policy:', err);
@@ -3509,16 +3635,18 @@ export async function getAllTenantLeavePolicies() {
     const tenantsMap = {};
 
     const knownTenants = [
-      { id: '00000000-0000-0000-0000-000000000001', name: 'New Swan Group' },
-      { id: '0a37b8e8-1c28-4e19-8891-951fc3f8f8af', name: 'SuPuja Creations' },
-      { id: '922d3e72-6588-457f-a562-4f1bdbf10d98', name: 'Testing New Swan Group' }
+      { id: '00000000-0000-0000-0000-000000000001', code: 'TNT00002', name: 'New Swan Group' },
+      { id: '0a37b8e8-1c28-4e19-8891-951fc3f8f8af', code: 'TNT00001', name: 'SuPuja Creations' },
+      { id: '922d3e72-6588-457f-a562-4f1bdbf10d98', code: 'TNT00003', name: 'Testing New Swan Group' }
     ];
 
     knownTenants.forEach(kt => {
       const pol = fallbackPolicies[kt.id] || DEFAULT_ATTENDANCE_POLICIES[kt.id] || DEFAULT_ATTENDANCE_POLICIES[DEFAULT_TENANT_ID] || {};
       tenantsMap[kt.id] = {
         tenant_id: kt.id,
+        tenant_code: kt.code,
         company_name: pol.company_name || kt.name,
+        branch_name: 'All Branches (Default)',
         leave_policy: pol.leave_policy || DEFAULT_ATTENDANCE_POLICIES[kt.id]?.leave_policy || DEFAULT_ATTENDANCE_POLICIES[DEFAULT_TENANT_ID]?.leave_policy || {},
         updated_at: pol.updated_at || null,
         updated_by: pol.updated_by || 'Default System'
@@ -3529,7 +3657,9 @@ export async function getAllTenantLeavePolicies() {
       if (!key.includes(':') && !tenantsMap[key]) {
         tenantsMap[key] = {
           tenant_id: pol.tenant_id || key,
+          tenant_code: pol.tenant_code || 'TNT00004',
           company_name: pol.company_name || 'Enterprise',
+          branch_name: 'All Branches (Default)',
           leave_policy: pol.leave_policy || DEFAULT_ATTENDANCE_POLICIES[DEFAULT_TENANT_ID]?.leave_policy || {},
           updated_at: pol.updated_at || null,
           updated_by: pol.updated_by || 'Admin'
@@ -3550,106 +3680,37 @@ export async function getAllTenantLeavePolicies() {
 /**
  * 21. Get Comprehensive Team Leave Report & Balances Ledger (Admin / HOD)
  */
-export async function getTeamLeaveReport({
-  tenantId = null,
-  userCompany = '',
-  department = 'All',
-  year = null
-}) {
-  const effectiveTenantId = resolveTenantId(tenantId, userCompany);
-  const targetYear = year || new Date().getFullYear();
-  const adminClient = getAdminClient();
-
+export async function getTeamLeaveReport({ tenantId = null, userCompany = '', department = 'All', year = null }) {
   try {
-    let query = adminClient
-      .from('user_roles')
-      .select('id, user_id, email, emp_name, emp_code, department, role, date_of_joining, created_at')
-      .order('emp_name', { ascending: true });
-
-    if (effectiveTenantId) {
-      query = query.eq('tenant_id', effectiveTenantId);
+    const context = await getLeaveContext({ tenantId, userCompany });
+    const targetYear = Number(year) || getIstDateParts().year;
+    const team = (await getLeaveTeam(context)).filter(employee => department === 'All'
+      || (employee.emp_department || employee.department) === department);
+    const snapshot = await readLeaveData(context.tenantId, { emails: team.map(employee => employee.email) });
+    const policy = (await getTenantAttendancePolicy(context.tenantId, userCompany))?.data || {};
+    const roster = [];
+    // Reuse one cloud snapshot and one policy, avoiding parallel duplicate reads.
+    for (const employee of team) {
+      const balance = await calculateEmployeeLeaveBalance({ email: employee.email, tenantId: context.tenantId, userCompany, targetYear }, snapshot, employee, policy);
+      if (!balance.success) throw new Error(balance.error);
+      const data = balance.data;
+      roster.push({ userId: employee.user_id || employee.id, email: employee.email,
+        empName: employee.emp_name || employee.email, empCode: employee.emp_id || employee.emp_code || '',
+        department: employee.emp_department || employee.department || 'General', role: employee.role || 'employee',
+        doj: data.doj, tenureMonths: data.tenureMonths, cl: data.cl, sl: data.sl, el: data.el, cpl: data.cpl, lwp: data.lwp,
+        totalLeavesAvailed: data.cl.availed + data.sl.availed + data.el.availed + data.cpl.availed,
+        pendingRequestsCount: snapshot.requests.filter(request => request.email === leaveEmail(employee.email) && request.status === 'PENDING').length });
     }
-    const { data: users, error } = await query;
-    if (error) throw error;
-
-    let targetUsers = users || [];
-    if (department && department !== 'All') {
-      targetUsers = targetUsers.filter(u => u.department === department);
-    }
-
-    const localLeaves = await getFallbackLeavesData();
-    const allRequests = Array.isArray(localLeaves?.requests) ? localLeaves.requests : [];
-    const tenantRequests = allRequests.filter(r => !r.tenant_id || r.tenant_id === effectiveTenantId);
-
-    let totalEmployees = targetUsers.length;
-    let totalLeavesTaken = 0;
-    let pendingApprovals = 0;
-    let activeCplPool = 0;
-
-    const roster = await Promise.all(targetUsers.map(async (u) => {
-      const balanceRes = await getEmployeeLeaveBalance({
-        email: u.email,
-        tenantId: effectiveTenantId,
-        userCompany,
-        targetYear
-      });
-
-      const bData = balanceRes.data || {};
-      const cl = bData.cl || { quota: 8, availed: 0, balance: 8 };
-      const sl = bData.sl || { quota: 6, availed: 0, balance: 6 };
-      const el = bData.el || { quota: 15, availed: 0, balance: 15, status: 'UNLOCKED' };
-      const cpl = bData.cpl || { earned: 0, availed: 0, balance: 0 };
-      const lwp = bData.lwp || { availed: 0 };
-
-      const userLeaves = (cl.availed || 0) + (sl.availed || 0) + (el.availed || 0) + (cpl.availed || 0);
-      totalLeavesTaken += userLeaves;
-      activeCplPool += (cpl.balance || 0);
-
-      const userPending = tenantRequests.filter(r => (r.email || '').toLowerCase() === (u.email || '').toLowerCase() && r.status === 'PENDING').length;
-
-      return {
-        userId: u.user_id || u.id,
-        email: u.email,
-        empName: u.emp_name || u.email.split('@')[0],
-        empCode: u.emp_code || '',
-        department: u.department || 'General',
-        role: u.role || 'employee',
-        doj: bData.doj || u.date_of_joining || u.created_at || null,
-        tenureMonths: bData.tenureMonths || 0,
-        cl,
-        sl,
-        el,
-        cpl,
-        lwp,
-        totalLeavesAvailed: userLeaves,
-        pendingRequestsCount: userPending
-      };
-    }));
-
-    pendingApprovals = tenantRequests.filter(r => r.status === 'PENDING').length;
-
-    const relevantEmails = new Set(targetUsers.map(u => (u.email || '').toLowerCase()));
-    const history = tenantRequests
-      .filter(r => relevantEmails.has((r.email || '').toLowerCase()))
-      .sort((a, b) => new Date(b.applied_at) - new Date(a.applied_at));
-
-    return {
-      success: true,
-      data: {
-        kpis: {
-          totalEmployees,
-          totalLeavesTaken,
-          pendingApprovals,
-          activeCplPool
-        },
-        roster,
-        history,
-        year: targetYear,
-        department
-      }
-    };
-  } catch (err) {
-    console.error('Error fetching team leave report:', err);
-    return { success: false, error: err.message };
+    const history = snapshot.requests.filter(request => request.from_date <= `${targetYear}-12-31` && request.to_date >= `${targetYear}-01-01`);
+    return { success: snapshot.cloudAvailable || history.length > 0, warning: snapshot.warning, error: snapshot.warning,
+      data: { year: targetYear, department, roster, history, kpis: {
+        totalEmployees: roster.length,
+        totalLeavesTaken: roster.reduce((sum, employee) => sum + employee.totalLeavesAvailed, 0),
+        pendingApprovals: history.filter(request => request.status === 'PENDING').length,
+        activeCplPool: roster.reduce((sum, employee) => sum + employee.cpl.balance, 0)
+      } } };
+  } catch (error) {
+    console.error('Error fetching team leave report:', error);
+    return { success: false, error: error.message || 'Leave report is unavailable.' };
   }
 }

@@ -1,12 +1,13 @@
 import MobileTableView from '@/components/common/MobileTableView';
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { usePathname } from 'next/navigation';
-import { Bot, Save, Users, Zap, AlertTriangle, CheckCircle2, Edit2, X, FileText, Trash2, Loader2, ChevronDown, Search, Plus, Sparkles, Check, Key, Eye, EyeOff, ShieldCheck, RefreshCw, BarChart3 } from 'lucide-react';
+import { Bot, Save, Users, Zap, AlertTriangle, CheckCircle2, Edit2, X, FileText, Trash2, Loader2, ChevronDown, Search, Plus, Sparkles, Check, Key, Eye, EyeOff, ShieldCheck, RefreshCw, BarChart3, Shield } from 'lucide-react';
 import { PremiumProgressLoader } from '../PremiumProgressLoader';
 import { useTableColumnResize, ColumnResizer } from '@/utils/tableColumnResize';
 import { getTenantAiConfig, saveTenantAiConfig, testAiProviderKey } from '@/app/actions/aiConfig';
 import { getAiBillingSummary } from '@/app/actions/aiBilling';
+import { filterVisibleSubTabs, getSubItemPermissions } from '@/utils/permissionUtils';
 
 const AI_ADMIN_TABS = [
   { id: 'users', label: 'AI Chatbot Users', Icon: Users },
@@ -55,10 +56,31 @@ function getModelDropdownPosition(rect) {
   };
 }
 
-export default function AiAdminModule({ userRole, userId, userCompany, tenantId, isMasterAdmin }) {
+export default function AiAdminModule({ userRole, userId, userCompany, tenantId, isMasterAdmin, moduleAccess = {} }) {
   const pathname = usePathname();
   const sectionPath = pathname?.toLowerCase().replace(/\/$/, '');
-  const activeSection = sectionPath === '/aiadmin/users' ? 'users' : sectionPath === '/aiadmin/billing' ? 'billing' : 'models';
+
+  const visibleTabs = useMemo(() => {
+    return filterVisibleSubTabs(moduleAccess, userRole, 'aiadmin', AI_ADMIN_TABS);
+  }, [moduleAccess, userRole]);
+
+  const [currentSection, setCurrentSection] = useState(() => {
+    const isAllowed = (s) => visibleTabs.some(vt => vt.id === s);
+    const candidate = sectionPath === '/aiadmin/users' ? 'users' : sectionPath === '/aiadmin/billing' ? 'billing' : 'models';
+    return isAllowed(candidate) ? candidate : (visibleTabs[0]?.id || 'users');
+  });
+
+  useEffect(() => {
+    const isAllowed = (s) => visibleTabs.some(vt => vt.id === s);
+    const candidate = sectionPath === '/aiadmin/users' ? 'users' : sectionPath === '/aiadmin/billing' ? 'billing' : 'models';
+    if (isAllowed(candidate)) {
+      setCurrentSection(candidate);
+    } else if (visibleTabs.length > 0 && !visibleTabs.some(vt => vt.id === currentSection)) {
+      setCurrentSection(visibleTabs[0]?.id || 'users');
+    }
+  }, [sectionPath, visibleTabs, currentSection]);
+
+  const activeSection = visibleTabs.some(vt => vt.id === currentSection) ? currentSection : (visibleTabs[0]?.id || 'users');
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editingLimit, setEditingLimit] = useState(null);
@@ -409,7 +431,9 @@ export default function AiAdminModule({ userRole, userId, userCompany, tenantId,
   });
 
   const switchSection = (section) => {
+    if (!visibleTabs.some(vt => vt.id === section)) return;
     setOpenDropdownUserId(null);
+    setCurrentSection(section);
     const route = `/aiadmin/${section}`;
     if (window.location.pathname !== route) window.history.pushState(null, '', route);
   };
@@ -429,11 +453,12 @@ export default function AiAdminModule({ userRole, userId, userCompany, tenantId,
   const handleSectionKeyDown = (event) => {
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
     event.preventDefault();
-    const currentIndex = AI_ADMIN_TABS.findIndex(tab => tab.id === activeSection);
+    const currentIndex = visibleTabs.findIndex(tab => tab.id === activeSection);
+    if (currentIndex === -1 || visibleTabs.length === 0) return;
     const nextIndex = event.key === 'Home' ? 0
-      : event.key === 'End' ? AI_ADMIN_TABS.length - 1
-      : (currentIndex + (event.key === 'ArrowRight' ? 1 : -1) + AI_ADMIN_TABS.length) % AI_ADMIN_TABS.length;
-    const nextSection = AI_ADMIN_TABS[nextIndex].id;
+      : event.key === 'End' ? visibleTabs.length - 1
+      : (currentIndex + (event.key === 'ArrowRight' ? 1 : -1) + visibleTabs.length) % visibleTabs.length;
+    const nextSection = visibleTabs[nextIndex].id;
     switchSection(nextSection);
     event.currentTarget.querySelector(`[data-ai-admin-tab="${nextSection}"]`)?.focus();
   };
@@ -492,7 +517,7 @@ export default function AiAdminModule({ userRole, userId, userCompany, tenantId,
       </div>
 
       <div role="tablist" aria-label="AI admin sections" onKeyDown={handleSectionKeyDown} style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1.25rem', borderBottom: '1px solid var(--border-light)' }}>
-        {AI_ADMIN_TABS.map(({ id, label, Icon }) => {
+        {visibleTabs.map(({ id, label, Icon }) => {
           const selected = activeSection === id;
           return (
             <button
@@ -521,7 +546,20 @@ export default function AiAdminModule({ userRole, userId, userCompany, tenantId,
         })}
       </div>
 
-      <div id="ai-admin-models-panel" role="tabpanel" aria-labelledby="ai-admin-models-tab" hidden={activeSection !== 'models'}>
+      {/* Access Denied Card if current tab is not allowed */}
+      {!visibleTabs.some(vt => vt.id === activeSection) && (
+        <div style={{ textAlign: 'center', padding: '3.5rem 1.5rem', background: 'var(--bg-surface)', borderRadius: '12px', border: '1px solid var(--border-light)', margin: '2rem 0' }}>
+          <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: '#fee2e2', color: '#dc2626', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.25rem' }}>
+            <Shield size={28} />
+          </div>
+          <h3 style={{ fontSize: '1.15rem', fontWeight: 700, margin: '0 0 0.5rem 0', color: 'var(--text-primary)' }}>Access Restricted</h3>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', maxWidth: '420px', margin: '0 auto' }}>
+            You do not have permission to view this section of AI Admin. Please contact your administrator.
+          </p>
+        </div>
+      )}
+
+      <div id="ai-admin-models-panel" role="tabpanel" aria-labelledby="ai-admin-models-tab" hidden={activeSection !== 'models' || !visibleTabs.some(vt => vt.id === 'models')}>
       {/* Multi-Provider AI API Keys & Workspace Setup Card */}
       <div style={{
         background: 'var(--bg-primary)',
@@ -1134,7 +1172,7 @@ export default function AiAdminModule({ userRole, userId, userCompany, tenantId,
       </div>
       </div>
 
-      <div id="ai-admin-users-panel" role="tabpanel" aria-labelledby="ai-admin-users-tab" hidden={activeSection !== 'users'}>
+      <div id="ai-admin-users-panel" role="tabpanel" aria-labelledby="ai-admin-users-tab" hidden={activeSection !== 'users' || !visibleTabs.some(vt => vt.id === 'users')}>
       {/* User Search Bar Container */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '1rem' }}>
         <div style={{ position: 'relative', flex: '1', maxWidth: '380px' }}>
@@ -1551,7 +1589,7 @@ export default function AiAdminModule({ userRole, userId, userCompany, tenantId,
       </div>
       </div>
 
-      <div id="ai-admin-billing-panel" role="tabpanel" aria-labelledby="ai-admin-billing-tab" hidden={activeSection !== 'billing'}>
+      <div id="ai-admin-billing-panel" role="tabpanel" aria-labelledby="ai-admin-billing-tab" hidden={activeSection !== 'billing' || !visibleTabs.some(vt => vt.id === 'billing')}>
         <div style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '14px', padding: '1.25rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.25rem' }}>
             <div>

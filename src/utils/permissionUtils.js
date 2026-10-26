@@ -88,6 +88,11 @@ export function getSubItemPermissions(moduleAccess, userRole, moduleId, subItemI
       if (moduleId === 'leads' && (subItemId === '08 - Transfer to Party' || subItemId.includes('Transfer to Party') || subItemId.startsWith('08'))) {
         return { view: parentPerms.view, add: parentPerms.add, edit: parentPerms.edit, delete: false };
       }
+      // If this is my_leaves in attendance, inherit from my_attendance if not explicitly disabled
+      if (moduleId === 'attendance' && subItemId === 'my_leaves') {
+        const myAttView = subItems['my_attendance'] ? (subItems['my_attendance'].view !== false) : true;
+        return { view: myAttView, add: parentPerms.add, edit: parentPerms.edit, delete: false };
+      }
       // If granular sub_items is defined for this module and subItemId is NOT in it -> Denied!
       return { view: false, add: false, edit: false, delete: false };
     }
@@ -100,6 +105,56 @@ export function getSubItemPermissions(moduleAccess, userRole, moduleId, subItemI
       if (moduleId === 'leads' && (subItemId === '08 - Transfer to Party' || subItemId.includes('Transfer to Party') || subItemId.startsWith('08'))) {
         return { view: parentPerms.view, add: parentPerms.add, edit: parentPerms.edit, delete: false };
       }
+      return { view: false, add: false, edit: false, delete: false };
+    }
+  }
+
+  // Module-specific defensive security fallbacks when granular sub_items is not configured:
+  const isHodOrManager = userRole === 'manager' || userRole === 'hod' || m.is_manager === true;
+
+  if (moduleId === 'attendance') {
+    const isBasicEmployeeTab = ['my_attendance', 'my_leaves', 'monthly_logs', 'regularization'].includes(subItemId);
+    if (!isHodOrManager && !isBasicEmployeeTab) {
+      return { view: false, add: false, edit: false, delete: false };
+    }
+  }
+
+  if (moduleId === 'user_management_new' && !isHodOrManager) {
+    const isPrivilegedTab = ['roles', 'audit', 'sessions'].includes(subItemId);
+    if (isPrivilegedTab) {
+      return { view: false, add: false, edit: false, delete: false };
+    }
+  }
+
+  if (moduleId === 'email_config' && !isHodOrManager) {
+    const isPrivilegedTab = ['smtp', 'test'].includes(subItemId);
+    if (isPrivilegedTab) {
+      return { view: false, add: false, edit: false, delete: false };
+    }
+  }
+
+  if (moduleId === 'aiadmin' && !isHodOrManager) {
+    const isPrivilegedTab = ['billing', 'models'].includes(subItemId);
+    if (isPrivilegedTab) {
+      return { view: false, add: false, edit: false, delete: false };
+    }
+  }
+
+  if (moduleId === 'checklist' && !isHodOrManager) {
+    const isPrivilegedTab = ['templates', 'compliance'].includes(subItemId);
+    if (isPrivilegedTab) {
+      return { view: false, add: false, edit: false, delete: false };
+    }
+  }
+
+  if (moduleId === 'delegation' && !isHodOrManager) {
+    if (subItemId === 'all') {
+      return { view: false, add: false, edit: false, delete: false };
+    }
+  }
+
+  if (moduleId === 'channel_ops' && !isHodOrManager) {
+    if (subItemId === 'frequency_rules') {
       return { view: false, add: false, edit: false, delete: false };
     }
   }

@@ -1,11 +1,11 @@
 'use client';
 
 import MobileTableView from '@/components/common/MobileTableView';
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   Clock, Calendar, CheckCircle2, XCircle, AlertCircle, RefreshCw, Send,
   UserCheck, ShieldCheck, FileSpreadsheet, Filter, Search, ChevronLeft,
-  ChevronRight, ArrowRight, Check, X, Building, MapPin, Laptop, Smartphone,
+  ChevronRight, ChevronsLeft, ChevronsRight, ArrowRight, Check, X, Building, MapPin, Laptop, Smartphone,
   Info, AlertTriangle, FileText, User, Users, Download, Volume2, VolumeX, Play, Sparkles, BookOpen,
   Award, Sliders, Settings, Plus, Edit2, Trash2, Navigation
 } from 'lucide-react';
@@ -49,6 +49,19 @@ import { getTenantBranches } from '@/app/actions/tenantBranches';
 import { getCurrentGPSLocation, calculateDistanceMeters } from '@/utils/geoAttendance';
 import { enqueueOfflineAction, canPerformOfflineAction } from '@/utils/offlineSync';
 import { useTableColumnResize, ColumnResizer } from '@/utils/tableColumnResize';
+import { filterVisibleSubTabs, getSubItemPermissions } from '@/utils/permissionUtils';
+
+const ALL_ATTENDANCE_TABS = [
+  { id: 'my_attendance', label: 'Daily Punch Station' },
+  { id: 'monthly_logs', label: 'My Monthly Attendance' },
+  { id: 'regularization', label: 'My Missing Punch' },
+  { id: 'my_leaves', label: 'My Leaves' },
+  { id: 'hod_approvals', label: 'HOD Approvals' },
+  { id: 'team_report', label: 'Team Attendance Report' },
+  { id: 'shift_rules', label: 'Shift Rules' },
+  { id: 'leave_policy', label: 'Company Leave Policy' },
+  { id: 'geofencing', label: 'Office Geofencing Policy' }
+];
 
 const ATTENDANCE_TEAM_DEFAULT_COL_WIDTHS = {
   emp_code: 100,
@@ -171,6 +184,100 @@ export const formatDateIST = (dateInput, options = { day: '2-digit', month: 'sho
   }
 };
 
+const LEAVE_TABLE_COLUMNS = [
+  { key: 'employee', label: 'Employee', width: 190 },
+  { key: 'type', label: 'Leave Type', width: 125 },
+  { key: 'dates', label: 'Leave Dates', width: 210 },
+  { key: 'days', label: 'Days', width: 80 },
+  { key: 'reason', label: 'Reason', width: 250 },
+  { key: 'applied', label: 'Applied On (IST)', width: 190 },
+  { key: 'status', label: 'Status', width: 125 },
+  { key: 'decision', label: 'HOD Decision / Remarks', width: 260 },
+  { key: 'actions', label: 'Actions', width: 190 }
+];
+const LEAVE_TABLE_WIDTHS = Object.fromEntries(LEAVE_TABLE_COLUMNS.map(column => [column.key, column.width]));
+const LEAVE_TABLE_MIN_WIDTHS = Object.fromEntries(LEAVE_TABLE_COLUMNS.map(column => [column.key, column.key === 'days' ? 65 : 110]));
+const LEAVE_STICKY_HEADER = { position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' };
+
+export function LeaveApplicationsTable({ records = [], loading = false, error = null, onRefresh,
+  teamView = false, scope = '', filterKey = '', processing = false, onDecision }) {
+  const [search, setSearch] = useState('');
+  const [status, setStatus] = useState('ALL');
+  const [pageSize, setPageSize] = useState(25);
+  const [pageState, setPageState] = useState({ key: '', page: 1 });
+  const { colWidths, resizingCol, handleResizeStart, resetColWidth } = useTableColumnResize(
+    teamView ? 'hod_leave_application_columns_v1' : 'my_leave_application_columns_v1', LEAVE_TABLE_WIDTHS, LEAVE_TABLE_MIN_WIDTHS
+  );
+  const columns = LEAVE_TABLE_COLUMNS.filter(column => (teamView || column.key !== 'employee') && (onDecision || column.key !== 'actions'));
+  const filtered = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return (Array.isArray(records) ? records : []).filter(record => (teamView || status === 'ALL' || record.status === status)
+      && (!query || [record.leave_type, record.from_date, record.to_date, record.reason, record.approver_name, record.approver_remarks]
+        .some(value => String(value || '').toLowerCase().includes(query))));
+  }, [records, teamView, status, search]);
+  const viewKey = `${scope}|${filterKey}|${search}|${status}|${pageSize}`;
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const page = pageState.key === viewKey ? Math.min(pageState.page, totalPages) : 1;
+  const from = filtered.length ? (page - 1) * pageSize + 1 : 0;
+  const to = Math.min(page * pageSize, filtered.length);
+  const setPage = next => setPageState({ key: viewKey, page: Math.max(1, Math.min(totalPages, next)) });
+  const dateLabel = value => value ? formatDateIST(`${value}T00:00:00+05:30`) : '—';
+  const renderCell = (record, key) => {
+    if (key === 'employee') return <><strong>{record.emp_name || 'Employee'}</strong><div>{record.email || record.emp_email}</div></>;
+    if (key === 'type') return <>{record.leave_type === 'HALF_DAY' ? 'Half Day' : record.leave_type}{record.half_day_session && <div>{record.half_day_session === 'FIRST_HALF' ? 'First Half' : 'Second Half'}</div>}</>;
+    if (key === 'dates') return <>{dateLabel(record.from_date)}{record.to_date !== record.from_date && <> — {dateLabel(record.to_date)}</>}</>;
+    if (key === 'days') return Number(record.total_days ?? record.days_count ?? 0);
+    if (key === 'reason') return record.reason || '—';
+    if (key === 'applied') return formatDateIST(record.applied_at, { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true });
+    if (key === 'status') return <span style={{ fontWeight: 700, color: record.status === 'APPROVED' ? '#15803d' : record.status === 'REJECTED' ? '#b91c1c' : '#92400e' }}>{record.status || 'PENDING'}</span>;
+    if (key === 'decision') return record.status === 'PENDING' ? 'Awaiting HOD approval' : <>
+      <strong>{record.approver_name || 'HOD'}</strong>
+      {record.action_at && <div>{formatDateIST(record.action_at, { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })} IST</div>}
+      <div>{record.approver_remarks || record.remarks || '—'}</div>
+    </>;
+    if (key === 'actions') return record.status === 'PENDING' ? <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+      <button type="button" className="btn-action-success" disabled={processing} onClick={() => onDecision('APPROVE', record)}>Approve</button>
+      <button type="button" className="btn-action-danger" disabled={processing} onClick={() => onDecision('REJECT', record)}>Reject</button>
+    </div> : record.status === 'APPROVED' ? <button type="button" className="btn-action-secondary" disabled={processing} onClick={() => onDecision('APPROVE', record)} title="Retry attendance sync without changing the saved approval">Sync Attendance</button> : '—';
+    return '—';
+  };
+  return <div className="card" style={{ padding: '1.25rem', border: '1px solid var(--border-light)', borderRadius: '16px', background: 'var(--bg-surface)' }}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1rem' }}>
+      <h3 style={{ margin: 0, fontSize: '1rem' }}>{teamView ? 'Team Leave Applications' : 'My Leave Applications'}</h3>
+      <button type="button" className="btn-action-secondary" onClick={onRefresh} disabled={loading || processing}><RefreshCw size={14} /> Refresh History</button>
+    </div>
+    {!teamView && <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1rem' }}>
+      <input aria-label="Search my leave applications" placeholder="Search type, dates, reason or HOD remarks…" value={search} onChange={event => setSearch(event.target.value)} style={{ flex: 1, minWidth: '220px', padding: '0.55rem 0.75rem', border: '1px solid var(--border-light)', borderRadius: '8px', background: 'var(--bg-surface)', color: 'var(--text-primary)' }} />
+      <select aria-label="Leave application status" value={status} onChange={event => setStatus(event.target.value)} style={{ padding: '0.55rem', border: '1px solid var(--border-light)', borderRadius: '8px', background: 'var(--bg-surface)', color: 'var(--text-primary)' }}>
+        <option value="ALL">All Statuses</option><option value="PENDING">Pending</option><option value="APPROVED">Approved</option><option value="REJECTED">Rejected</option>
+      </select>
+    </div>}
+    {error && <div role="alert" style={{ padding: '0.75rem', marginBottom: '0.75rem', color: '#92400e', background: '#fffbeb', borderRadius: '8px' }}>{error}</div>}
+    <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 310px)', minHeight: '380px', border: '1px solid var(--border-light)', borderRadius: '10px' }}>
+      <MobileTableView tableId={teamView ? 'hod_leave_applications_table' : 'my_leave_applications_table'}>
+        <table aria-label={teamView ? 'Team Leave Applications' : 'My Leave Applications'} style={{ width: `${columns.reduce((sum, column) => sum + colWidths[column.key], 0)}px`, minWidth: '100%', tableLayout: 'fixed', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.82rem' }}>
+          <thead style={LEAVE_STICKY_HEADER}><tr>{columns.map(column => <th key={column.key} style={{ ...LEAVE_STICKY_HEADER, width: colWidths[column.key], padding: '0.85rem', textAlign: 'left', boxSizing: 'border-box' }}>
+            {column.label}<ColumnResizer colKey={column.key} isResizing={resizingCol === column.key} onResizeStart={handleResizeStart} onReset={resetColWidth} />
+          </th>)}</tr></thead>
+          <tbody>{filtered.length === 0 ? <tr><td colSpan={columns.length} style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>{loading ? 'Loading leave applications…' : error ? 'Leave history could not be fully loaded. Please retry.' : 'No leave applications found.'}</td></tr>
+            : filtered.slice((page - 1) * pageSize, page * pageSize).map(record => <tr key={record.id}>{columns.map(column => <td key={column.key} style={{ padding: '0.85rem', verticalAlign: 'top', overflowWrap: 'anywhere', borderBottom: '1px solid var(--border-light)' }}>{renderCell(record, column.key)}</td>)}</tr>)}</tbody>
+        </table>
+      </MobileTableView>
+    </div>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', marginTop: '1rem', fontSize: '0.8rem' }}>
+      <span>Showing <strong>{from}</strong> to <strong>{to}</strong> of <strong>{filtered.length}</strong> records</span>
+      <label>Rows per page <select aria-label="Rows per page" value={pageSize} onChange={event => setPageSize(Number(event.target.value))}>{[10, 25, 50, 100].map(size => <option key={size} value={size}>{size}</option>)}</select></label>
+      <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+        <button type="button" className="btn-action-secondary" aria-label="First Page" disabled={page === 1} onClick={() => setPage(1)}><ChevronsLeft size={16} /></button>
+        <button type="button" className="btn-action-secondary" aria-label="Previous Page" disabled={page === 1} onClick={() => setPage(page - 1)}><ChevronLeft size={16} /></button>
+        <span>Page {page} of {totalPages}</span>
+        <button type="button" className="btn-action-secondary" aria-label="Next Page" disabled={page === totalPages} onClick={() => setPage(page + 1)}><ChevronRight size={16} /></button>
+        <button type="button" className="btn-action-secondary" aria-label="Last Page" disabled={page === totalPages} onClick={() => setPage(totalPages)}><ChevronsRight size={16} /></button>
+      </div>
+    </div>
+  </div>;
+}
+
 export default function AttendanceModule({
   userRole = 'agent',
   userId = '',
@@ -193,18 +300,45 @@ export default function AttendanceModule({
     const comp = (userCompany || '').toLowerCase().trim();
     if (comp.includes('supuja')) return '0a37b8e8-1c28-4e19-8891-951fc3f8f8af';
     if (comp.includes('testing')) return '922d3e72-6588-457f-a562-4f1bdbf10d98';
-    return tenantId || '00000000-0000-0000-0000-000000000001';
+    return tenantId && tenantId !== 'default' ? tenantId : '00000000-0000-0000-0000-000000000001';
   }, [tenantId, userCompany]);
 
   // Active Sub-Tab: 'my_attendance' | 'monthly_logs' | 'regularization' | 'hod_approvals' | 'team_report'
-  const [activeTab, setActiveTab] = useState(initialSubTab || 'my_attendance');
+  const visibleTabs = useMemo(() => {
+    return filterVisibleSubTabs(moduleAccess, userRole, 'attendance', ALL_ATTENDANCE_TABS);
+  }, [moduleAccess, userRole]);
+
+  const [activeTab, setActiveTab] = useState(() => {
+    if (initialSubTab && visibleTabs.some(t => t.id === initialSubTab)) {
+      return initialSubTab;
+    }
+    return visibleTabs[0]?.id || 'my_attendance';
+  });
 
   // Dynamic Multi-Tenant & Multi-Shift Policy State
-  const initialCompany = (userCompany && userCompany.toLowerCase().includes('supuja'))
-    ? 'SuPuja Creations'
-    : (userCompany && userCompany.toLowerCase().includes('testing'))
-      ? 'Testing New Swan Group'
-      : 'New Swan Group';
+  const resolvedWorkspaceCompany = useMemo(() => {
+    const comp = (userCompany || '').trim();
+    if (comp && comp.toLowerCase() !== 'default') {
+      return comp;
+    }
+    const tId = String(tenantId || effectiveTenantId || '').toLowerCase();
+    if (tId === '0a37b8e8-1c28-4e19-8891-951fc3f8f8af' || (userEmail && userEmail.toLowerCase().includes('supuja'))) {
+      return 'SuPuja Creations';
+    }
+    if (tId === '922d3e72-6588-457f-a562-4f1bdbf10d98' || (userEmail && userEmail.toLowerCase().includes('testing'))) {
+      return 'Testing New Swan Group';
+    }
+    return 'New Swan Group';
+  }, [userCompany, tenantId, effectiveTenantId, userEmail]);
+
+  const resolvedTenantCode = useMemo(() => {
+    const comp = resolvedWorkspaceCompany || '';
+    if (comp.includes('SuPuja')) return 'TNT00001';
+    if (comp.includes('Testing')) return 'TNT00003';
+    return 'TNT00002';
+  }, [resolvedWorkspaceCompany]);
+
+  const initialCompany = resolvedWorkspaceCompany;
   const [selectedShiftPolicyCompany, setSelectedShiftPolicyCompany] = useState(initialCompany);
   const [selectedShiftPolicyBranch, setSelectedShiftPolicyBranch] = useState('All Branches');
   const [availablePolicyBranches, setAvailablePolicyBranches] = useState([]);
@@ -542,12 +676,19 @@ export default function AttendanceModule({
   };
 
   useEffect(() => {
-    if (initialSubTab && initialSubTab !== activeTab) {
-      setActiveTab(initialSubTab);
+    if (initialSubTab && visibleTabs.some(t => t.id === initialSubTab)) {
+      if (activeTab !== initialSubTab) {
+        setActiveTab(initialSubTab);
+      }
+    } else if (visibleTabs.length > 0 && !visibleTabs.some(t => t.id === activeTab)) {
+      const fallback = visibleTabs[0]?.id || 'my_attendance';
+      setActiveTab(fallback);
+      if (onSubTabChange) onSubTabChange(fallback);
     }
-  }, [initialSubTab]);
+  }, [initialSubTab, visibleTabs, activeTab, onSubTabChange]);
 
   const handleTabSelect = (tab) => {
+    if (!visibleTabs.some(t => t.id === tab)) return;
     setActiveTab(tab);
     if (onSubTabChange) onSubTabChange(tab);
   };
@@ -604,7 +745,14 @@ export default function AttendanceModule({
     ATTENDANCE_LEAVE_POLICIES_MIN_COL_WIDTHS
   );
 
-  // Today's punch state (with 0ms instant localStorage cache synced on mount)
+  // Cache only confirmed cloud punches or committed offline punches.
+  const attendanceDate = getTodayDateString();
+  const normalizedAttendanceEmail = userEmail.trim().toLowerCase();
+  const attendanceScope = `${effectiveTenantId}_${normalizedAttendanceEmail}_${attendanceDate}`;
+  const attendanceScopeRef = useRef(attendanceScope);
+  const todayRecordRef = useRef(null);
+  const todayLoadRef = useRef(0);
+  const punchInFlightRef = useRef(false);
   const [todayRecord, setTodayRecord] = useState(null);
   const [loadingToday, setLoadingToday] = useState(true);
   const [punchingIn, setPunchingIn] = useState(false);
@@ -616,18 +764,16 @@ export default function AttendanceModule({
   const [punchConfirm, setPunchConfirm] = useState(null); // null | 'IN' | 'OUT'
 
   // Helper to update todayRecord state + persist to localStorage
-  const updateTodayRecord = (record) => {
-    setTodayRecord(record);
+  const updateTodayRecord = useCallback((record, scope = attendanceScope) => {
     if (typeof window !== 'undefined' && userEmail) {
       try {
-        if (record) {
-          localStorage.setItem(`att_today_record_${userEmail}`, JSON.stringify(record));
-        } else {
-          localStorage.removeItem(`att_today_record_${userEmail}`);
-        }
+        localStorage.setItem(`att_today_record_${scope}`, JSON.stringify(record));
       } catch {}
     }
-  };
+    if (scope !== attendanceScopeRef.current) return;
+    todayRecordRef.current = record;
+    setTodayRecord(record);
+  }, [attendanceScope, userEmail]);
 
   // Active Selected Shift for Daily Punch Station (Tab 1)
   const [selectedPunchShiftIndex, setSelectedPunchShiftIndex] = useState(0);
@@ -674,20 +820,35 @@ export default function AttendanceModule({
   }, [activePunchShift, tenantShiftPolicy]);
 
 
-  // Sync cache if userEmail changes or on mount
+  // Restore the same employee/workspace/IST day's record after refresh or login.
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    attendanceScopeRef.current = attendanceScope;
+    let active = true;
+    let restored = null;
     try {
-      const todayStr = getTodayDateString();
-      const cached = localStorage.getItem(`att_today_record_${userEmail || 'active'}`);
+      const cached = localStorage.getItem(`att_today_record_${attendanceScope}`)
+        || localStorage.getItem(`att_today_record_${userEmail}`);
       if (cached) {
         const parsed = JSON.parse(cached);
-        if (parsed && parsed.attendance_date === todayStr) {
-          setTodayRecord(parsed);
+        if (parsed?.attendance_date === attendanceDate
+          && (parsed.email || '').trim().toLowerCase() === normalizedAttendanceEmail
+          && parsed.tenant_id === effectiveTenantId) {
+          restored = parsed;
         }
       }
     } catch {}
-  }, [userEmail]);
+    queueMicrotask(() => {
+      if (!active) return;
+      updateTodayRecord(restored);
+      setPunchConfirm(null);
+      setPunchingIn(false);
+      setPunchingOut(false);
+      setPunchError(null);
+      setPunchMessage(null);
+    });
+    return () => { active = false; };
+  }, [attendanceScope, attendanceDate, normalizedAttendanceEmail, effectiveTenantId, userEmail, updateTodayRecord]);
 
   const [currentTime, setCurrentTime] = useState(new Date());
   const [liveDuration, setLiveDuration] = useState('0m');
@@ -863,9 +1024,15 @@ export default function AttendanceModule({
   });
   const [applyingLeave, setApplyingLeave] = useState(false);
   const [leaveToast, setLeaveToast] = useState(null);
-  const [myLeaves, setMyLeaves] = useState([]);
+  const leaveHistoryScope = `${effectiveTenantId}_${userEmail.trim().toLowerCase()}`;
+  const [myLeaveState, setMyLeaveState] = useState({ scope: '', records: [], loading: true, error: null });
+  const myLeaves = myLeaveState.scope === leaveHistoryScope ? myLeaveState.records : [];
+  const myLeaveLoadRef = useRef(0);
+  const leaveApplyingRef = useRef(false);
+  const leaveDecisionRef = useRef(false);
   const [hodLeaveRequests, setHodLeaveRequests] = useState([]);
   const [loadingHodLeaves, setLoadingHodLeaves] = useState(false);
+  const [hodLeavesError, setHodLeavesError] = useState(null);
   const [hodApprovalSubTab, setHodApprovalSubTab] = useState('regularization'); // 'regularization' | 'leaves'
   const [hodLeaveFilter, setHodLeaveFilter] = useState('PENDING'); // 'PENDING' | 'APPROVED' | 'REJECTED' | 'ALL'
   const [hodLeaveSearch, setHodLeaveSearch] = useState('');
@@ -891,6 +1058,7 @@ export default function AttendanceModule({
   // Leave Report & Ledger State
   const [teamLeaveReportData, setTeamLeaveReportData] = useState(null);
   const [loadingLeaveReport, setLoadingLeaveReport] = useState(false);
+  const [leaveReportError, setLeaveReportError] = useState(null);
   const [leaveReportDept, setLeaveReportDept] = useState('All');
   const [leaveReportSearch, setLeaveReportSearch] = useState('');
 
@@ -915,9 +1083,34 @@ export default function AttendanceModule({
   });
   const [savingLeavePolicy, setSavingLeavePolicy] = useState(false);
   const [selectedLeaveCompany, setSelectedLeaveCompany] = useState(initialCompany);
+  const [selectedLeaveBranch, setSelectedLeaveBranch] = useState('All Branches');
+  const [availableLeaveBranches, setAvailableLeaveBranches] = useState([]);
   const [loadingCompanyLeavePolicy, setLoadingCompanyLeavePolicy] = useState(false);
   const [allTenantLeavePolicies, setAllTenantLeavePolicies] = useState([]);
   const [loadingAllLeavePolicies, setLoadingAllLeavePolicies] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await getTenantBranches(selectedLeaveCompany);
+        const branchList = Array.isArray(res) ? res : (res?.branches || []);
+        setAvailableLeaveBranches(branchList);
+      } catch (e) {
+        console.warn('Failed to load branches for leave policy:', e);
+      }
+    })();
+  }, [selectedLeaveCompany]);
+
+  useEffect(() => {
+    if (!isMasterAdmin) {
+      if (selectedShiftPolicyCompany !== resolvedWorkspaceCompany) {
+        setSelectedShiftPolicyCompany(resolvedWorkspaceCompany);
+      }
+      if (selectedLeaveCompany !== resolvedWorkspaceCompany) {
+        setSelectedLeaveCompany(resolvedWorkspaceCompany);
+      }
+    }
+  }, [isMasterAdmin, resolvedWorkspaceCompany, selectedShiftPolicyCompany, selectedLeaveCompany]);
 
   // Fetch Leave Balance for Current Employee
   const fetchLeaveBalance = async () => {
@@ -936,29 +1129,50 @@ export default function AttendanceModule({
   };
 
   // Fetch Employee's own leaves
-  const fetchMyLeaves = async () => {
+  const fetchMyLeaves = useCallback(async () => {
     if (!userEmail) return;
+    const scope = attendanceScope;
+    if (scope !== attendanceScopeRef.current) return;
+    const requestId = ++myLeaveLoadRef.current;
+    setMyLeaveState(previous => ({ scope: leaveHistoryScope, records: previous.scope === leaveHistoryScope ? previous.records : [], loading: true, error: null }));
     try {
-      const res = await getMyLeaveRequests({ email: userEmail, tenantId: effectiveTenantId });
-      if (res?.success && res.data) {
-        setMyLeaves(res.data);
-      }
-    } catch (e) {}
-  };
+      const res = await getMyLeaveRequests({ email: userEmail, tenantId: effectiveTenantId, userCompany });
+      if (scope !== attendanceScopeRef.current || requestId !== myLeaveLoadRef.current) return;
+      setMyLeaveState(previous => ({ scope: leaveHistoryScope,
+        records: res?.success && Array.isArray(res.data) ? res.data : previous.scope === leaveHistoryScope ? previous.records : [],
+        loading: false, error: res?.warning || (!res?.success ? res?.error || 'Leave history is unavailable. Please retry.' : null) }));
+    } catch (error) {
+      if (scope === attendanceScopeRef.current && requestId === myLeaveLoadRef.current) setMyLeaveState(previous => ({ ...previous, loading: false, error: 'Leave history is unavailable. Please retry.' }));
+    }
+  }, [userEmail, effectiveTenantId, userCompany, attendanceScope, leaveHistoryScope]);
+
+  useEffect(() => {
+    let active = true;
+    const refreshHistory = () => { if (active && (activeTab === 'my_attendance' || activeTab === 'my_leaves')) fetchMyLeaves(); };
+    queueMicrotask(refreshHistory);
+    window.addEventListener('focus', refreshHistory);
+    window.addEventListener('online', refreshHistory);
+    return () => { active = false; window.removeEventListener('focus', refreshHistory); window.removeEventListener('online', refreshHistory); };
+  }, [activeTab, fetchMyLeaves]);
 
   // Fetch Pending Leaves for HOD
   const fetchHodLeaves = async () => {
     if (!isHodOrManager) return;
+    const scope = attendanceScope;
     setLoadingHodLeaves(true);
+    setHodLeavesError(null);
     try {
       const res = await getHodPendingLeaveRequests({ tenantId: effectiveTenantId, userCompany });
+      if (scope !== attendanceScopeRef.current) return;
       if (res?.success && res.data) {
         setHodLeaveRequests(res.data);
       }
+      setHodLeavesError(res?.warning || (!res?.success ? res?.error || 'Leave approvals are unavailable.' : null));
     } catch (e) {
       console.warn('Failed to fetch HOD leaves:', e);
+      if (scope === attendanceScopeRef.current) setHodLeavesError('Leave approvals are unavailable. Please retry.');
     } finally {
-      setLoadingHodLeaves(false);
+      if (scope === attendanceScopeRef.current) setLoadingHodLeaves(false);
     }
   };
 
@@ -966,6 +1180,7 @@ export default function AttendanceModule({
   const fetchTeamLeaveReport = async () => {
     if (!isHodOrManager) return;
     setLoadingLeaveReport(true);
+    setLeaveReportError(null);
     try {
       const res = await getTeamLeaveReport({
         tenantId: effectiveTenantId,
@@ -976,8 +1191,10 @@ export default function AttendanceModule({
       if (res?.success && res.data) {
         setTeamLeaveReportData(res.data);
       }
+      setLeaveReportError(res?.warning || (!res?.success ? res?.error || 'Leave report is unavailable.' : null));
     } catch (e) {
       console.warn('Failed to fetch team leave report:', e);
+      setLeaveReportError('Leave report is unavailable. Please retry.');
     } finally {
       setLoadingLeaveReport(false);
     }
@@ -1000,12 +1217,12 @@ export default function AttendanceModule({
 
   // leavePolicyForm is now exclusively driven by selected company policy (fetchLeavePolicyForCompany)
 
-  // Fetch leave policy for selected company (Multi-Tenant Master Admin)
-  const fetchLeavePolicyForCompany = async (comp = selectedLeaveCompany) => {
+  // Fetch leave policy for selected company & branch (Multi-Tenant Master Admin)
+  const fetchLeavePolicyForCompany = async (comp = selectedLeaveCompany, branch = selectedLeaveBranch) => {
     setLoadingCompanyLeavePolicy(true);
     try {
       const targetTenantId = getCompanyTenantId(comp);
-      const res = await getTenantAttendancePolicy(targetTenantId, comp);
+      const res = await getTenantAttendancePolicy(targetTenantId, comp, branch);
       if (res?.success && res.data?.leave_policy) {
         const lp = res.data.leave_policy;
         const cp = lp.cpl_policy || {};
@@ -1034,12 +1251,12 @@ export default function AttendanceModule({
     }
   };
 
-  // Fetch tenant leave policy when activeTab is 'leave_policy' or selectedLeaveCompany changes
+  // Fetch tenant leave policy when activeTab is 'leave_policy' or selectedLeaveCompany/selectedLeaveBranch changes
   useEffect(() => {
     if (activeTab === 'leave_policy') {
-      fetchLeavePolicyForCompany(selectedLeaveCompany);
+      fetchLeavePolicyForCompany(selectedLeaveCompany, selectedLeaveBranch);
     }
-  }, [activeTab, selectedLeaveCompany]);
+  }, [activeTab, selectedLeaveCompany, selectedLeaveBranch]);
 
   // Handle Save Leave Policy (Admin/HOD)
   const handleSaveLeavePolicy = async (e) => {
@@ -1071,13 +1288,14 @@ export default function AttendanceModule({
       const res = await updateTenantLeavePolicy({
         tenantId: targetTenantId,
         userCompany: selectedLeaveCompany,
+        branch: selectedLeaveBranch,
         leavePolicy: payload,
         updatedBy: userEmail || userName || 'Admin'
       });
 
       if (res?.success) {
-        setLeaveToast({ type: 'success', message: `✅ ${selectedLeaveCompany} Leave & CPL Policy updated successfully!` });
-        await fetchLeavePolicyForCompany(selectedLeaveCompany);
+        setLeaveToast({ type: 'success', message: `✅ ${selectedLeaveCompany} (${selectedLeaveBranch}) Leave & CPL Policy updated successfully!` });
+        await fetchLeavePolicyForCompany(selectedLeaveCompany, selectedLeaveBranch);
         await fetchAllTenantLeavePolicies();
         fetchTeamLeaveReport();
         if (getCompanyTenantId(selectedLeaveCompany) === effectiveTenantId) {
@@ -1251,6 +1469,9 @@ export default function AttendanceModule({
   // Handle Apply Leave submit
   const handleApplyLeaveSubmit = async (e) => {
     e.preventDefault();
+    if (leaveApplyingRef.current) return;
+    leaveApplyingRef.current = true;
+    const scope = attendanceScope;
     setApplyingLeave(true);
     try {
       const res = await applyEmployeeLeave({
@@ -1267,12 +1488,11 @@ export default function AttendanceModule({
         reason: leaveForm.reason,
         halfDaySession: leaveForm.half_day_session
       });
-
+      if (scope !== attendanceScopeRef.current) return;
       if (res?.success) {
         setLeaveToast({ type: 'success', message: res.message || 'Leave applied successfully!' });
         setShowApplyLeaveModal(false);
         fetchLeaveBalance();
-        fetchMyLeaves();
         if (isHodOrManager) fetchHodLeaves();
       } else {
         setLeaveToast({ type: 'error', message: res?.error || 'Failed to apply leave' });
@@ -1280,13 +1500,16 @@ export default function AttendanceModule({
     } catch (err) {
       setLeaveToast({ type: 'error', message: err?.message || 'Error submitting leave request' });
     } finally {
+      leaveApplyingRef.current = false;
       setApplyingLeave(false);
+      if (scope === attendanceScopeRef.current) fetchMyLeaves();
     }
   };
 
   // Handle HOD Leave Approve / Reject
   const handleProcessLeaveAction = async () => {
-    if (!leaveActionModal?.request) return;
+    if (!leaveActionModal?.request || leaveDecisionRef.current) return;
+    leaveDecisionRef.current = true;
     setProcessingLeaveAction(true);
     try {
       const { type, request, remarks } = leaveActionModal;
@@ -1296,23 +1519,29 @@ export default function AttendanceModule({
           requestId: request.id,
           approverId: userId,
           approverName: userName || 'HOD',
-          remarks
+          remarks,
+          tenantId: effectiveTenantId,
+          userCompany
         });
       } else {
         res = await rejectLeaveRequest({
           requestId: request.id,
           approverId: userId,
           approverName: userName || 'HOD',
-          remarks
+          remarks,
+          tenantId: effectiveTenantId,
+          userCompany
         });
       }
 
       if (res?.success) {
-        setLeaveToast({ type: 'success', message: res.message || `Leave request ${type.toLowerCase()}d successfully!` });
+        setLeaveToast({ type: res.warning ? 'warning' : 'success', message: res.message || `Leave request ${type.toLowerCase()}d successfully!` });
         setLeaveActionModal(null);
         fetchHodLeaves();
         fetchMyLeaves();
         fetchLeaveBalance();
+        fetchHistory();
+        fetchTeamLeaveReport();
         if (teamReportView === 'MONTHLY_MATRIX') {
           fetchTeamMonthlyMatrix();
         } else {
@@ -1324,6 +1553,7 @@ export default function AttendanceModule({
     } catch (err) {
       setLeaveToast({ type: 'error', message: err?.message || 'Action failed' });
     } finally {
+      leaveDecisionRef.current = false;
       setProcessingLeaveAction(false);
     }
   };
@@ -1373,7 +1603,7 @@ export default function AttendanceModule({
       const q = hodLeaveSearch.toLowerCase().trim();
       list = list.filter(r => 
         (r.emp_name && r.emp_name.toLowerCase().includes(q)) ||
-        (r.emp_email && r.emp_email.toLowerCase().includes(q)) ||
+        ((r.email || r.emp_email || '').toLowerCase().includes(q)) ||
         (r.leave_type && r.leave_type.toLowerCase().includes(q)) ||
         (r.reason && r.reason.toLowerCase().includes(q))
       );
@@ -1455,21 +1685,43 @@ export default function AttendanceModule({
   }, [currentTime, todayRecord]);
 
   // 3. Load Today's Attendance
-  const fetchTodayAttendance = async () => {
-    if (!userEmail) return;
+  const fetchTodayAttendance = useCallback(async (clearError = false) => {
+    if (!userEmail || punchInFlightRef.current === attendanceScope) return;
+    const scope = attendanceScope;
+    const requestId = ++todayLoadRef.current;
+    const isCurrent = () => scope === attendanceScopeRef.current && requestId === todayLoadRef.current;
     setLoadingToday(true);
     try {
       const res = await getTodayAttendance(userEmail, userId, effectiveTenantId, userCompany);
+      if (!isCurrent()) return;
       if (res.success) {
-        updateTodayRecord(res.data);
+        if (clearError) setPunchError(null);
+        const pending = todayRecordRef.current;
+        // A cloud read cannot erase a punch still in the durable offline queue.
+        const awaitingSync = pending?._offlinePending === 'IN' && !res.data?.in_time
+          || pending?._offlinePending === 'OUT' && !res.data?.out_time;
+        updateTodayRecord(awaitingSync ? pending : res.data, scope);
         if (res.monthlyUsage) setShortLeaveUsage(res.monthlyUsage);
+      } else {
+        setPunchError(res.error || 'Attendance status load nahi ho saka. Kripya dobara try karein.');
       }
     } catch (e) {
       console.error(e);
+      if (isCurrent()) setPunchError('Attendance status load nahi ho saka. Saved punch safe hai; dobara try karein.');
     } finally {
-      setLoadingToday(false);
+      if (isCurrent()) setLoadingToday(false);
     }
-  };
+  }, [userEmail, userId, effectiveTenantId, userCompany, attendanceScope, updateTodayRecord]);
+
+  useEffect(() => {
+    const refreshPunch = () => { fetchTodayAttendance(true); };
+    window.addEventListener('focus', refreshPunch);
+    window.addEventListener('online', refreshPunch);
+    return () => {
+      window.removeEventListener('focus', refreshPunch);
+      window.removeEventListener('online', refreshPunch);
+    };
+  }, [fetchTodayAttendance]);
 
   // 4. Load Monthly History
   const fetchHistory = async () => {
@@ -1585,6 +1837,9 @@ export default function AttendanceModule({
   useEffect(() => {
     // Reset state to avoid stale flash when switching workspaces
     setHodRequests([]);
+    setHodLeaveRequests([]);
+    setHodLeavesError(null);
+    setTeamLeaveReportData(null);
     setHodPendingCount(0);
     setTeamMasterData({ records: [], summary: {}, isRange: false });
     setMonthlyMatrixData({ rows: [], monthDates: [], summary: {} });
@@ -1594,91 +1849,112 @@ export default function AttendanceModule({
     fetchTenantShiftPolicy(initialCompany, 'All Branches');
     fetchMyRequests();
     fetchLeaveBalance();
-    fetchMyLeaves();
     if (isHodOrManager) {
       fetchHodRequests();
       fetchHodLeaves();
       fetchTeamLeaveReport();
     }
-  }, [userEmail, historyYear, historyMonth, effectiveTenantId, userCompany]);
+  }, [userEmail, historyYear, historyMonth, effectiveTenantId, userCompany, attendanceDate]);
 
   useEffect(() => {
     if (activeTab === 'monthly_logs') {
       fetchHistory();
+    } else if (activeTab === 'my_leaves') {
+      fetchMyLeaves();
+      fetchLeaveBalance();
     } else if (activeTab === 'hod_approvals') {
       fetchHodRequests();
+      fetchHodLeaves();
     } else if (activeTab === 'team_report') {
       if (teamReportView === 'DAILY') {
         fetchTeamMaster();
+      } else if (teamReportView === 'LEAVE_LEDGER') {
+        fetchTeamLeaveReport();
       } else {
         fetchTeamMonthlyMatrix();
       }
     }
-  }, [activeTab, teamReportView, teamDatePreset, teamStartDate, teamEndDate, teamMasterDepartment, matrixYear, matrixMonth, effectiveTenantId, userCompany, adjustLeavesInReport]);
+  }, [activeTab, teamReportView, teamDatePreset, teamStartDate, teamEndDate, teamMasterDepartment, matrixYear, matrixMonth, effectiveTenantId, userCompany, adjustLeavesInReport, leaveReportDept]);
 
   // Handle Punch In click — show confirm popup first
   const handlePunchIn = () => {
-    if (todayRecord?.in_time) return; // already punched in
+    if (punchInFlightRef.current === attendanceScope || loadingToday || todayRecord?.in_time) return;
     setPunchConfirm('IN');
   };
 
   // Handle Punch Out click — show confirm popup first
   const handlePunchOut = () => {
-    if (!todayRecord?.in_time || todayRecord?.out_time) return; // not punched in or already out
+    if (punchInFlightRef.current === attendanceScope || loadingToday || !todayRecord?.in_time || todayRecord?.out_time) return;
     setPunchConfirm('OUT');
   };
 
-  // Confirmed Punch In (Instant Audio Feedback + Lifelike Human Female Voice + Shift Rules)
+  // A punch is shown as registered only after cloud/offline storage confirms it.
+  const saveOfflinePunch = async (type, record, location, scope) => {
+    const check = canPerformOfflineAction('attendancePunch');
+    if (!check.allowed) {
+      if (scope === attendanceScopeRef.current) setPunchError(check.reason);
+      return false;
+    }
+    try {
+      const queued = await enqueueOfflineAction('create', 'attendance', {
+        email: normalizedAttendanceEmail,
+        userId,
+        empName: userName,
+        tenant_id: effectiveTenantId,
+        attendance_date: record.attendance_date,
+        ...(type === 'IN' ? { in_time: record.in_time, in_location: location, in_method: location.startsWith('GPS') ? 'GPS_PUNCH' : 'WEB_PUNCH' }
+          : { out_time: record.out_time, out_location: location, out_method: location.startsWith('GPS') ? 'GPS_PUNCH' : 'WEB_PUNCH', total_working_minutes: record.total_working_minutes }),
+        status: record.status,
+        remarks: record.remarks
+      });
+      if (!queued) throw new Error('Offline storage could not confirm this punch.');
+      updateTodayRecord({ ...record, _offlinePending: type }, scope);
+      if (scope === attendanceScopeRef.current) setPunchMessage('⚡ Punch saved on this device. Server sync pending.');
+      return true;
+    } catch (error) {
+      console.error('Attendance offline save failed:', error);
+      if (scope === attendanceScopeRef.current) setPunchError('Punch save nahi hua. Network/storage check karke dobara try karein.');
+      return false;
+    }
+  };
+
   const handleConfirmedPunchIn = async () => {
     setPunchConfirm(null);
-
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      const check = canPerformOfflineAction('attendancePunch');
-      if (!check.allowed) {
-        alert(check.reason);
-        setPunchError(check.reason);
-        return;
-      }
-    }
-
-    // 1. INSTANT (0ms) Audio Chime + Human Female Voice Trigger
+    if (punchInFlightRef.current === attendanceScope || todayRecordRef.current?.in_time) return;
+    const scope = attendanceScope;
+    const isCurrent = () => scope === attendanceScopeRef.current;
+    punchInFlightRef.current = scope;
+    ++todayLoadRef.current;
+    setLoadingToday(false);
+    setPunchingIn(true);
+    setPunchError(null);
+    setPunchMessage(null);
     playInstantChime('in');
 
     const inDate = new Date();
-    const inTimeFormatted = formatTimeIST(inDate);
-    
-    // Evaluate shift rules immediately on client for instant voice feedback
     const evaluation = evaluateMorningInPunch(inDate, shortLeaveUsage, userName, activePunchShift || tenantShiftPolicy);
-
-    // Optimistic record update so the Live Stopwatch Timer starts ticking IMMEDIATELY (0ms)
-    const optimisticRecord = {
-      id: todayRecord?.id || `temp-${Date.now()}`,
+    const offlineRecord = {
+      id: `temp-${Date.now()}`,
+      tenant_id: effectiveTenantId,
       emp_name: userName,
-      email: userEmail,
-      attendance_date: getTodayDateString(),
+      email: normalizedAttendanceEmail,
+      attendance_date: attendanceDate,
       in_time: inDate.toISOString(),
       out_time: null,
       total_working_minutes: 0,
       status: evaluation.status,
       short_leave_type: evaluation.short_leave_type,
       is_grace_applied: evaluation.is_grace_applied,
+      shift_name: activePunchShift.shift_name || null,
       remarks: evaluation.remarks
     };
-    updateTodayRecord(optimisticRecord);
-    setLiveDuration('00h 00m 01s');
-
-    speakHumanFemaleAnnouncement(
-      `Welcome ${userName}. Your punch in time is ${inTimeFormatted}. Shift: ${activePunchShift.shift_name || "Regular Shift"}. ${evaluation.ruleTitle}`,
-      evaluation.voiceMessageHindi
-    );
-
-    setPunchError(null);
-    setPunchMessage(null);
-    setPunchingIn(true);
-
-    // 2. Parallel Background Database Persistence
+    let accepted = null;
     let punchLocation = 'Office Web Terminal';
     try {
+      if (!navigator.onLine) {
+        if (await saveOfflinePunch('IN', offlineRecord, punchLocation, scope)) accepted = offlineRecord;
+        return;
+      }
       try {
         const gps = await getCurrentGPSLocation();
         if (gps.success) {
@@ -1696,94 +1972,76 @@ export default function AttendanceModule({
         method: punchLocation.startsWith('GPS') ? 'GPS_PUNCH' : 'WEB_PUNCH',
         tenantId: effectiveTenantId
       });
+      if (!isCurrent()) return;
       if (res.success) {
         setPunchMessage(res.message);
-        if (res.data) updateTodayRecord(res.data);
+        if (res.data) {
+          updateTodayRecord(res.data, scope);
+          accepted = res.data;
+        }
         if (res.monthlyUsage) setShortLeaveUsage(res.monthlyUsage);
         fetchHistory(); // Refresh monthly history
       } else {
         if (res.alreadyPunched && res.data) {
-          updateTodayRecord(res.data);
+          updateTodayRecord(res.data, scope);
           setPunchMessage(res.error);
         } else {
           setPunchError(res.error);
-          fetchTodayAttendance();
         }
       }
     } catch (err) {
       console.warn('Network punch-in failed, queueing offline:', err);
-      const check = canPerformOfflineAction('attendancePunch');
-      if (!check.allowed) {
-        alert(check.reason);
-        setPunchError(check.reason);
-        return;
-      }
-      await enqueueOfflineAction('create', 'attendance', {
-        email: userEmail,
-        userId,
-        empName: userName,
-        attendance_date: getTodayDateString(),
-        in_time: inDate.toISOString(),
-        in_location: punchLocation,
-        in_method: punchLocation.startsWith('GPS') ? 'GPS_PUNCH' : 'WEB_PUNCH',
-        status: evaluation.status,
-        remarks: evaluation.remarks
-      });
-      setPunchMessage('⚡ Offline Punch Saved to Device! Will sync to server when online.');
+      // An online error can have an ambiguous result; verify it before retrying.
+      if (!navigator.onLine && isCurrent()
+        && await saveOfflinePunch('IN', offlineRecord, punchLocation, scope)) accepted = offlineRecord;
+      else if (isCurrent() && navigator.onLine) setPunchError('Punch In confirm nahi ho saka. Status dobara verify karein.');
     } finally {
-      setPunchingIn(false);
+      if (punchInFlightRef.current === scope) punchInFlightRef.current = false;
+      if (isCurrent()) {
+        setPunchingIn(false);
+        if (accepted) speakHumanFemaleAnnouncement(
+          `Welcome ${userName}. Your punch in time is ${formatTimeIST(accepted.in_time)}. Shift: ${activePunchShift.shift_name || 'Regular Shift'}. ${evaluation.ruleTitle}`,
+          evaluation.voiceMessageHindi
+        );
+        if (navigator.onLine) fetchTodayAttendance();
+      }
     }
   };
 
-  // Confirmed Punch Out (Instant Audio Feedback + Lifelike Human Female Voice + Shift Rules)
   const handleConfirmedPunchOut = async () => {
     setPunchConfirm(null);
-
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      const check = canPerformOfflineAction('attendancePunch');
-      if (!check.allowed) {
-        alert(check.reason);
-        setPunchError(check.reason);
-        return;
-      }
-    }
-
-    // 1. INSTANT (0ms) Audio Chime + Human Female Voice Trigger
+    if (punchInFlightRef.current === attendanceScope || !todayRecordRef.current?.in_time || todayRecordRef.current?.out_time) return;
+    const scope = attendanceScope;
+    const isCurrent = () => scope === attendanceScopeRef.current;
+    punchInFlightRef.current = scope;
+    ++todayLoadRef.current;
+    setLoadingToday(false);
+    setPunchingOut(true);
+    setPunchError(null);
+    setPunchMessage(null);
     playInstantChime('out');
 
     const outDate = new Date();
     const evaluation = evaluateEveningOutPunch(outDate, todayRecord?.in_time, todayRecord, shortLeaveUsage, userName, activePunchShift || tenantShiftPolicy);
-
-    // Optimistic punch out update
-    const optimisticRecord = {
-      ...(todayRecord || {}),
+    const offlineRecord = {
+      ...todayRecordRef.current,
       out_time: outDate.toISOString(),
       total_working_minutes: evaluation.total_working_minutes,
       status: evaluation.status,
       short_leave_type: evaluation.short_leave_type,
       remarks: evaluation.remarks
     };
-    updateTodayRecord(optimisticRecord);
-
-    speakHumanFemaleAnnouncement(
-      `Thank you ${userName}. ${evaluation.ruleTitle}`,
-      evaluation.voiceMessageHindi
-    );
-
-    setPunchError(null);
-    setPunchMessage(null);
-    setPunchingOut(true);
-
+    let accepted = false;
     let punchLocation = 'Office Web Terminal';
     try {
-      const gps = await getCurrentGPSLocation();
-      if (gps.success) {
-        punchLocation = `GPS (${gps.latitude.toFixed(4)}, ${gps.longitude.toFixed(4)})`;
+      if (!navigator.onLine) {
+        accepted = await saveOfflinePunch('OUT', offlineRecord, punchLocation, scope);
+        return;
       }
-    } catch (e) {}
-
-    // 2. Parallel Background Database Persistence
-    try {
+      try {
+        const gps = await getCurrentGPSLocation();
+        if (gps.success) punchLocation = `GPS (${gps.latitude.toFixed(4)}, ${gps.longitude.toFixed(4)})`;
+      } catch (e) {}
       const res = await punchOut({
         email: userEmail,
         userId,
@@ -1793,43 +2051,34 @@ export default function AttendanceModule({
         method: punchLocation.startsWith('GPS') ? 'GPS_PUNCH' : 'WEB_PUNCH',
         tenantId: effectiveTenantId
       });
+      if (!isCurrent()) return;
       if (res.success) {
         setPunchMessage(res.message);
-        if (res.data) updateTodayRecord(res.data);
+        if (res.data) {
+          updateTodayRecord(res.data, scope);
+          accepted = true;
+        }
         if (res.monthlyUsage) setShortLeaveUsage(res.monthlyUsage);
         fetchHistory(); // Refresh monthly history
       } else {
         if (res.alreadyPunchedOut && res.data) {
-          updateTodayRecord(res.data);
+          updateTodayRecord(res.data, scope);
           setPunchMessage(res.error);
         } else {
           setPunchError(res.error);
-          fetchTodayAttendance();
         }
       }
     } catch (err) {
       console.warn('Network punch-out failed, queueing offline:', err);
-      const check = canPerformOfflineAction('attendancePunch');
-      if (!check.allowed) {
-        alert(check.reason);
-        setPunchError(check.reason);
-        return;
-      }
-      await enqueueOfflineAction('create', 'attendance', {
-        email: userEmail,
-        userId,
-        empName: userName,
-        attendance_date: getTodayDateString(),
-        out_time: outDate.toISOString(),
-        out_location: punchLocation,
-        out_method: punchLocation.startsWith('GPS') ? 'GPS_PUNCH' : 'WEB_PUNCH',
-        total_working_minutes: evaluation.total_working_minutes,
-        status: evaluation.status,
-        remarks: evaluation.remarks
-      });
-      setPunchMessage('⚡ Offline Punch-Out Saved to Device! Will sync to server when online.');
+      if (!navigator.onLine && isCurrent()) accepted = await saveOfflinePunch('OUT', offlineRecord, punchLocation, scope);
+      else if (isCurrent()) setPunchError('Punch Out confirm nahi ho saka. Status dobara verify karein.');
     } finally {
-      setPunchingOut(false);
+      if (punchInFlightRef.current === scope) punchInFlightRef.current = false;
+      if (isCurrent()) {
+        setPunchingOut(false);
+        if (accepted) speakHumanFemaleAnnouncement(`Thank you ${userName}. ${evaluation.ruleTitle}`, evaluation.voiceMessageHindi);
+        if (navigator.onLine) fetchTodayAttendance();
+      }
     }
   };
 
@@ -2625,7 +2874,7 @@ export default function AttendanceModule({
                 alignItems: 'center',
                 gap: '4px'
               }}>
-                🏢 Workspace: {userCompany || 'Default'}
+                🏢 Workspace: {resolvedWorkspaceCompany || userCompany || 'New Swan Group'} ({resolvedTenantCode})
               </span>
             </div>
             <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0 0' }}>
@@ -2637,80 +2886,120 @@ export default function AttendanceModule({
         {/* Navigation Tabs */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: 'var(--bg-surface)', padding: '0.3rem', borderRadius: '10px', border: '1px solid var(--border-light)', flexWrap: 'wrap' }}>
           {/* Tab 1: Daily Punch Station */}
-          <button
-            type="button"
-            onClick={() => handleTabSelect('my_attendance')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.45rem',
-              padding: '0.45rem 0.85rem',
-              borderRadius: '8px',
-              border: 'none',
-              cursor: 'pointer',
-              fontSize: '0.84rem',
-              fontWeight: activeTab === 'my_attendance' ? 600 : 500,
-              backgroundColor: activeTab === 'my_attendance' ? 'var(--accent-color)' : 'transparent',
-              color: activeTab === 'my_attendance' ? '#ffffff' : 'var(--text-secondary)',
-              transition: 'all 0.2s'
-            }}
-          >
-            <Clock size={15} /> Daily Punch Station
-          </button>
+          {visibleTabs.some(t => t.id === 'my_attendance') && (
+            <button
+              type="button"
+              onClick={() => handleTabSelect('my_attendance')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                padding: '0.45rem 0.85rem',
+                borderRadius: '8px',
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: '0.84rem',
+                fontWeight: activeTab === 'my_attendance' ? 600 : 500,
+                backgroundColor: activeTab === 'my_attendance' ? 'var(--accent-color)' : 'transparent',
+                color: activeTab === 'my_attendance' ? '#ffffff' : 'var(--text-secondary)',
+                transition: 'all 0.2s'
+              }}
+            >
+              <Clock size={15} /> Daily Punch Station
+            </button>
+          )}
 
-          {/* Tab 2: Monthly Attendance Log */}
-          <button
-            type="button"
-            onClick={() => {
-              handleTabSelect('monthly_logs');
-              fetchHistory();
-            }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.45rem',
-              padding: '0.45rem 0.85rem',
-              borderRadius: '8px',
-              border: 'none',
-              cursor: 'pointer',
-              fontSize: '0.84rem',
-              fontWeight: activeTab === 'monthly_logs' ? 600 : 500,
-              backgroundColor: activeTab === 'monthly_logs' ? 'var(--accent-color)' : 'transparent',
-              color: activeTab === 'monthly_logs' ? '#ffffff' : 'var(--text-secondary)',
-              transition: 'all 0.2s'
-            }}
-          >
-            <Calendar size={15} /> Monthly Attendance Log
-          </button>
+          {/* Tab 2: My Monthly Attendance */}
+          {visibleTabs.some(t => t.id === 'monthly_logs') && (
+            <button
+              type="button"
+              onClick={() => {
+                handleTabSelect('monthly_logs');
+                fetchHistory();
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                padding: '0.45rem 0.85rem',
+                borderRadius: '8px',
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: '0.84rem',
+                fontWeight: activeTab === 'monthly_logs' ? 600 : 500,
+                backgroundColor: activeTab === 'monthly_logs' ? 'var(--accent-color)' : 'transparent',
+                color: activeTab === 'monthly_logs' ? '#ffffff' : 'var(--text-secondary)',
+                transition: 'all 0.2s'
+              }}
+            >
+              <Calendar size={15} /> My Monthly Attendance
+            </button>
+          )}
 
-          {/* Tab 3: Regularization / Missing Punch */}
-          <button
-            type="button"
-            onClick={() => handleTabSelect('regularization')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.45rem',
-              padding: '0.45rem 0.85rem',
-              borderRadius: '8px',
-              border: 'none',
-              cursor: 'pointer',
-              fontSize: '0.84rem',
-              fontWeight: activeTab === 'regularization' ? 600 : 500,
-              backgroundColor: activeTab === 'regularization' ? 'var(--accent-color)' : 'transparent',
-              color: activeTab === 'regularization' ? '#ffffff' : 'var(--text-secondary)',
-              transition: 'all 0.2s'
-            }}
-          >
-            <FileText size={15} /> Missing Punch / Regularize
-            {myRequests.length > 0 && (
-              <span style={{ fontSize: '0.7rem', padding: '0.1rem 0.4rem', borderRadius: '10px', background: activeTab === 'regularization' ? 'rgba(255,255,255,0.25)' : 'var(--border-light)', color: activeTab === 'regularization' ? '#fff' : 'var(--text-secondary)' }}>
-                {myRequests.length}
-              </span>
-            )}
-          </button>
+          {/* Tab 3: My Missing Punch */}
+          {visibleTabs.some(t => t.id === 'regularization') && (
+            <button
+              type="button"
+              onClick={() => handleTabSelect('regularization')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                padding: '0.45rem 0.85rem',
+                borderRadius: '8px',
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: '0.84rem',
+                fontWeight: activeTab === 'regularization' ? 600 : 500,
+                backgroundColor: activeTab === 'regularization' ? 'var(--accent-color)' : 'transparent',
+                color: activeTab === 'regularization' ? '#ffffff' : 'var(--text-secondary)',
+                transition: 'all 0.2s'
+              }}
+            >
+              <FileText size={15} /> My Missing Punch
+              {myRequests.length > 0 && (
+                <span style={{ fontSize: '0.7rem', padding: '0.1rem 0.4rem', borderRadius: '10px', background: activeTab === 'regularization' ? 'rgba(255,255,255,0.25)' : 'var(--border-light)', color: activeTab === 'regularization' ? '#fff' : 'var(--text-secondary)' }}>
+                  {myRequests.length}
+                </span>
+              )}
+            </button>
+          )}
 
-          {isHodOrManager && (
+          {/* Tab 4: My Leaves */}
+          {visibleTabs.some(t => t.id === 'my_leaves') && (
+            <button
+              type="button"
+              onClick={() => {
+                handleTabSelect('my_leaves');
+                fetchMyLeaves();
+                fetchLeaveBalance();
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                padding: '0.45rem 0.85rem',
+                borderRadius: '8px',
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: '0.84rem',
+                fontWeight: activeTab === 'my_leaves' ? 600 : 500,
+                backgroundColor: activeTab === 'my_leaves' ? 'var(--accent-color)' : 'transparent',
+                color: activeTab === 'my_leaves' ? '#ffffff' : 'var(--text-secondary)',
+                transition: 'all 0.2s'
+              }}
+            >
+              <Calendar size={15} /> My Leaves
+              {myLeaves.filter(l => l.status === 'PENDING').length > 0 && (
+                <span style={{ fontSize: '0.7rem', padding: '0.1rem 0.4rem', borderRadius: '10px', background: activeTab === 'my_leaves' ? 'rgba(255,255,255,0.25)' : '#fef3c7', color: activeTab === 'my_leaves' ? '#fff' : '#b45309', fontWeight: 700 }}>
+                  {myLeaves.filter(l => l.status === 'PENDING').length}
+                </span>
+              )}
+            </button>
+          )}
+
+          {/* Tab 4: HOD Approvals */}
+          {visibleTabs.some(t => t.id === 'hod_approvals') && (
             <button
               type="button"
               onClick={() => handleTabSelect('hod_approvals')}
@@ -2738,7 +3027,8 @@ export default function AttendanceModule({
             </button>
           )}
 
-          {isHodOrManager && (
+          {/* Tab 5: Team Attendance Report */}
+          {visibleTabs.some(t => t.id === 'team_report') && (
             <button
               type="button"
               onClick={() => handleTabSelect('team_report')}
@@ -2762,77 +3052,104 @@ export default function AttendanceModule({
           )}
 
           {/* Tab 6: Shift Rules */}
-          <button
-            type="button"
-            onClick={() => handleTabSelect('shift_rules')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.45rem',
-              padding: '0.45rem 0.85rem',
-              borderRadius: '8px',
-              border: 'none',
-              cursor: 'pointer',
-              fontSize: '0.84rem',
-              fontWeight: activeTab === 'shift_rules' ? 600 : 500,
-              backgroundColor: activeTab === 'shift_rules' ? 'var(--accent-color)' : 'transparent',
-              color: activeTab === 'shift_rules' ? '#ffffff' : 'var(--text-secondary)',
-              transition: 'all 0.2s'
-            }}
-          >
-            <BookOpen size={15} /> Shift Rules
-          </button>
+          {visibleTabs.some(t => t.id === 'shift_rules') && (
+            <button
+              type="button"
+              onClick={() => handleTabSelect('shift_rules')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                padding: '0.45rem 0.85rem',
+                borderRadius: '8px',
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: '0.84rem',
+                fontWeight: activeTab === 'shift_rules' ? 600 : 500,
+                backgroundColor: activeTab === 'shift_rules' ? 'var(--accent-color)' : 'transparent',
+                color: activeTab === 'shift_rules' ? '#ffffff' : 'var(--text-secondary)',
+                transition: 'all 0.2s'
+              }}
+            >
+              <BookOpen size={15} /> Shift Rules
+            </button>
+          )}
 
           {/* Tab 7: Company Leave Policy */}
-          <button
-            type="button"
-            onClick={() => handleTabSelect('leave_policy')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.45rem',
-              padding: '0.45rem 0.85rem',
-              borderRadius: '8px',
-              border: 'none',
-              cursor: 'pointer',
-              fontSize: '0.84rem',
-              fontWeight: activeTab === 'leave_policy' ? 600 : 500,
-              backgroundColor: activeTab === 'leave_policy' ? 'var(--accent-color)' : 'transparent',
-              color: activeTab === 'leave_policy' ? '#ffffff' : 'var(--text-secondary)',
-              transition: 'all 0.2s'
-            }}
-          >
-            <Award size={15} /> Company Leave Policy
-          </button>
+          {visibleTabs.some(t => t.id === 'leave_policy') && (
+            <button
+              type="button"
+              onClick={() => handleTabSelect('leave_policy')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                padding: '0.45rem 0.85rem',
+                borderRadius: '8px',
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: '0.84rem',
+                fontWeight: activeTab === 'leave_policy' ? 600 : 500,
+                backgroundColor: activeTab === 'leave_policy' ? 'var(--accent-color)' : 'transparent',
+                color: activeTab === 'leave_policy' ? '#ffffff' : 'var(--text-secondary)',
+                transition: 'all 0.2s'
+              }}
+            >
+              <Award size={15} /> Company Leave Policy
+            </button>
+          )}
 
           {/* Tab 8: Office Geofencing Policy */}
-          <button
-            type="button"
-            onClick={() => handleTabSelect('geofencing')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.45rem',
-              padding: '0.45rem 0.85rem',
-              borderRadius: '8px',
-              border: 'none',
-              cursor: 'pointer',
-              fontSize: '0.84rem',
-              fontWeight: activeTab === 'geofencing' ? 600 : 500,
-              backgroundColor: activeTab === 'geofencing' ? 'var(--accent-color)' : 'transparent',
-              color: activeTab === 'geofencing' ? '#ffffff' : 'var(--text-secondary)',
-              transition: 'all 0.2s'
-            }}
-          >
-            <MapPin size={15} /> Office Geofencing Policy
-          </button>
+          {visibleTabs.some(t => t.id === 'geofencing') && (
+            <button
+              type="button"
+              onClick={() => handleTabSelect('geofencing')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                padding: '0.45rem 0.85rem',
+                borderRadius: '8px',
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: '0.84rem',
+                fontWeight: activeTab === 'geofencing' ? 600 : 500,
+                backgroundColor: activeTab === 'geofencing' ? 'var(--accent-color)' : 'transparent',
+                color: activeTab === 'geofencing' ? '#ffffff' : 'var(--text-secondary)',
+                transition: 'all 0.2s'
+              }}
+            >
+              <MapPin size={15} /> Office Geofencing Policy
+            </button>
+          )}
         </div>
       </div>
+
+      {/* Access Denied Fallback if requested tab is not permitted */}
+      {!visibleTabs.some(t => t.id === activeTab) && (
+        <div className="card" style={{ padding: '3.5rem 2rem', textAlign: 'center', background: 'var(--bg-surface)', borderRadius: '16px', border: '1px solid var(--border-light)' }}>
+          <ShieldCheck size={52} style={{ color: '#ef4444', margin: '0 auto 1.25rem' }} />
+          <h3 style={{ fontSize: '1.3rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>Access Restricted</h3>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', maxWidth: '440px', margin: '0.6rem auto 1.5rem', lineHeight: '1.5' }}>
+            Aapke account ko iss Smart Attendance tab ({activeTab}) ka access nahi diya gaya hai. Kripya apne branch admin ya manager se sampark karein.
+          </p>
+          {visibleTabs.length > 0 && (
+            <button
+              type="button"
+              onClick={() => handleTabSelect(visibleTabs[0].id)}
+              className="btn-primary"
+              style={{ padding: '0.6rem 1.4rem', borderRadius: '8px', fontWeight: 600 }}
+            >
+              Go to {visibleTabs[0].label}
+            </button>
+          )}
+        </div>
+      )}
 
       {/* ========================================================================================= */}
       {/* TAB 1: MY ATTENDANCE & PUNCH STATION */}
       {/* ========================================================================================= */}
-      {activeTab === 'my_attendance' && (
+      {activeTab === 'my_attendance' && visibleTabs.some(t => t.id === 'my_attendance') && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
           
           {/* Top Live Punch Terminal Card */}
@@ -3030,6 +3347,7 @@ export default function AttendanceModule({
               {punchError && (
                 <div style={{ padding: '0.5rem', borderRadius: '8px', background: '#fee2e2', color: '#991b1b', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                   <AlertCircle size={14} /> {punchError}
+                  <button type="button" onClick={() => fetchTodayAttendance(true)} disabled={loadingToday || punchingIn || punchingOut}>Retry Status</button>
                 </div>
               )}
             </div>
@@ -3062,6 +3380,7 @@ export default function AttendanceModule({
                 </span>
                 <span style={{ fontSize: '0.78rem', color: todayRecord?.in_time && !todayRecord?.out_time ? '#16a34a' : 'var(--text-secondary)', fontWeight: 600 }}>
                   {todayRecord?.out_time ? '(Final Logged)' : (todayRecord?.in_time ? '● LIVE RUNNING' : '(Not Started)')}
+                  {todayRecord?._offlinePending && ' · Sync Pending'}
                 </span>
               </div>
 
@@ -3394,9 +3713,152 @@ export default function AttendanceModule({
       )}
 
       {/* ========================================================================================= */}
-      {/* TAB 2: MONTHLY ATTENDANCE LOG */}
+      {/* TAB: MY LEAVES (DEDICATED LEAVE APPLICATIONS & BALANCE VIEW)                                */}
       {/* ========================================================================================= */}
-      {activeTab === 'monthly_logs' && (
+      {activeTab === 'my_leaves' && visibleTabs.some(t => t.id === 'my_leaves') && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          
+          {/* Header Action Card */}
+          <div className="card" style={{
+            padding: '1.25rem',
+            background: 'var(--bg-surface)',
+            borderRadius: '16px',
+            border: '1px solid var(--border-light)',
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '1rem'
+          }}>
+            <div>
+              <h2 style={{ fontSize: '1.2rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Calendar size={20} style={{ color: 'var(--accent-color)' }} />
+                <span>My Leave Applications & Balances</span>
+              </h2>
+              <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0 0' }}>
+                Apply for leaves and track your approval status from HOD / Manager
+              </p>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={() => setShowApplyLeaveModal(true)}
+                className="btn-action-primary"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.45rem',
+                  padding: '0.6rem 1.15rem',
+                  borderRadius: '10px',
+                  background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+                  color: '#ffffff',
+                  fontWeight: 600,
+                  fontSize: '0.86rem',
+                  border: 'none',
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 8px rgba(37,99,235,0.25)'
+                }}
+              >
+                <Calendar size={15} /> Apply Leave
+              </button>
+              <button
+                type="button"
+                onClick={fetchMyLeaves}
+                className="btn-action-secondary"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  padding: '0.6rem 0.9rem',
+                  borderRadius: '10px',
+                  fontSize: '0.86rem',
+                  border: '1px solid var(--border-light)',
+                  background: 'var(--bg-surface)',
+                  cursor: 'pointer'
+                }}
+              >
+                <RefreshCw size={14} className={myLeaveState.loading ? 'animate-spin' : ''} />
+                <span>Refresh</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Leave Balance Summary KPI Cards */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+            gap: '1rem'
+          }}>
+            <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px', padding: '1rem', borderTop: '3px solid #059669' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Casual Leave (CL)</span>
+                <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#059669', background: '#ecfdf5', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>Paid</span>
+              </div>
+              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                {leaveBalance?.cl?.remaining ?? 12} <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-secondary)' }}>/ {leaveBalance?.cl?.quota ?? 12} days left</span>
+              </div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.35rem' }}>
+                Availed: {leaveBalance?.cl?.availed ?? 0} days
+              </div>
+            </div>
+
+            <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px', padding: '1rem', borderTop: '3px solid #2563eb' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Sick Leave (SL)</span>
+                <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#2563eb', background: '#eff6ff', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>Paid</span>
+              </div>
+              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                {leaveBalance?.sl?.remaining ?? 7} <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-secondary)' }}>/ {leaveBalance?.sl?.quota ?? 7} days left</span>
+              </div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.35rem' }}>
+                Availed: {leaveBalance?.sl?.availed ?? 0} days
+              </div>
+            </div>
+
+            {leaveBalance?.el && (
+              <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px', padding: '1rem', borderTop: '3px solid #d97706' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                  <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Earned Leave (EL)</span>
+                  <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#d97706', background: '#fffbeb', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>Privilege</span>
+                </div>
+                <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                  {leaveBalance?.el?.remaining ?? 15} <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-secondary)' }}>/ {leaveBalance?.el?.quota ?? 15} days left</span>
+                </div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.35rem' }}>
+                  Availed: {leaveBalance?.el?.availed ?? 0} days
+                </div>
+              </div>
+            )}
+
+            <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px', padding: '1rem', borderTop: '3px solid #4f46e5' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Compensatory Off (CPL)</span>
+                <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#4f46e5', background: '#eef2ff', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>Comp-Off</span>
+              </div>
+              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                {leaveBalance?.cpl?.balance ?? 0} <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-secondary)' }}>/ {leaveBalance?.cpl?.earned ?? 0} days earned</span>
+              </div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.35rem' }}>
+                Availed: {leaveBalance?.cpl?.availed ?? 0} days
+              </div>
+            </div>
+          </div>
+
+          {/* Leave Applications Table */}
+          <LeaveApplicationsTable
+            records={myLeaves}
+            loading={myLeaveState.scope !== leaveHistoryScope || myLeaveState.loading}
+            error={myLeaveState.scope === leaveHistoryScope ? myLeaveState.error : null}
+            scope={leaveHistoryScope}
+            onRefresh={fetchMyLeaves}
+          />
+        </div>
+      )}
+
+      {/* ========================================================================================= */}
+      {/* TAB 2: MY MONTHLY ATTENDANCE */}
+      {/* ========================================================================================= */}
+      {activeTab === 'monthly_logs' && visibleTabs.some(t => t.id === 'monthly_logs') && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
           
           {/* Monthly Attendance KPIs & History Matrix */}
@@ -3405,7 +3867,7 @@ export default function AttendanceModule({
             {/* Header with Month/Year picker */}
             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', marginBottom: '1.25rem' }}>
               <div>
-                <h2 style={{ fontSize: '1.15rem', fontWeight: 700, margin: 0 }}>Monthly Attendance Log</h2>
+                <h2 style={{ fontSize: '1.15rem', fontWeight: 700, margin: 0 }}>My Monthly Attendance</h2>
                 <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: '0.15rem 0 0 0' }}>
                   Detailed punch records, shift status, working hours, and regularized days
                 </p>
@@ -3609,7 +4071,7 @@ export default function AttendanceModule({
       {/* ========================================================================================= */}
       {/* TAB 2: MISSING PUNCH REGULARIZATION (APPLY & MY REQUESTS) */}
       {/* ========================================================================================= */}
-      {activeTab === 'regularization' && (
+      {activeTab === 'regularization' && visibleTabs.some(t => t.id === 'regularization') && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
           
           {/* Header Action Card */}
@@ -3625,7 +4087,7 @@ export default function AttendanceModule({
             gap: '1rem'
           }}>
             <div>
-              <h2 style={{ fontSize: '1.2rem', fontWeight: 700, margin: 0 }}>My Regularization Applications</h2>
+              <h2 style={{ fontSize: '1.2rem', fontWeight: 700, margin: 0 }}>My Missing Punch</h2>
               <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0 0' }}>
                 Track the status of your missing attendance applications submitted for HOD approval
               </p>
@@ -3749,7 +4211,7 @@ export default function AttendanceModule({
       {/* ========================================================================================= */}
       {/* TAB 3: HOD APPROVALS CONSOLE (FOR MANAGERS / HOD / ADMIN) */}
       {/* ========================================================================================= */}
-      {activeTab === 'hod_approvals' && isHodOrManager && (
+      {activeTab === 'hod_approvals' && visibleTabs.some(t => t.id === 'hod_approvals') && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
           
           {/* Top Filter Bar */}
@@ -4520,173 +4982,10 @@ export default function AttendanceModule({
 
       {/* 2. Leave Applications Sub-Tab Content */}
       {hodApprovalSubTab === 'leaves' && (
-        <div className="card" style={{
-          padding: '1.25rem',
-          background: 'var(--bg-surface)',
-          borderRadius: '16px',
-          border: '1px solid var(--border-light)'
-        }}>
-          <div style={{ overflowX: 'auto', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
-            <MobileTableView tableId="hod_leave_applications_table">
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
-                <thead>
-                  <tr style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontSize: '0.78rem' }}>
-                    <th style={{ padding: '0.85rem 1rem', fontWeight: 600 }}>Employee</th>
-                    <th style={{ padding: '0.85rem 1rem', fontWeight: 600 }}>Leave Type</th>
-                    <th style={{ padding: '0.85rem 1rem', fontWeight: 600 }}>Duration</th>
-                    <th style={{ padding: '0.85rem 1rem', fontWeight: 600 }}>Reason</th>
-                    <th style={{ padding: '0.85rem 1rem', fontWeight: 600 }}>Applied On</th>
-                    <th style={{ padding: '0.85rem 1rem', fontWeight: 600 }}>Status</th>
-                    <th style={{ padding: '0.85rem 1rem', fontWeight: 600, textAlign: 'right' }}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredHodLeaveRequests.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} style={{ padding: '3rem 1rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
-                        <Calendar size={36} style={{ margin: '0 auto 0.75rem auto', opacity: 0.35, display: 'block' }} />
-                        <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>No leave applications found</div>
-                        <div style={{ fontSize: '0.8rem', marginTop: '0.25rem' }}>
-                          {hodLeaveFilter === 'PENDING' ? 'All leave applications have been reviewed.' : 'No records match the current filter.'}
-                        </div>
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredHodLeaveRequests.map((r) => {
-                      const typeColor = r.leave_type === 'CL' ? '#2563eb' : r.leave_type === 'SL' ? '#16a34a' : r.leave_type === 'EL' ? '#9333ea' : r.leave_type === 'HD-L' ? '#d97706' : '#6b7280';
-                      const typeBg = r.leave_type === 'CL' ? '#eff6ff' : r.leave_type === 'SL' ? '#f0fdf4' : r.leave_type === 'EL' ? '#faf5ff' : r.leave_type === 'HD-L' ? '#fef3c7' : '#f3f4f6';
-                      return (
-                        <tr key={r.id} style={{ borderBottom: '1px solid var(--border-light)' }}>
-                          <td style={{ padding: '0.85rem 1rem' }}>
-                            <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{r.emp_name || 'Employee'}</div>
-                            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{r.emp_email}</div>
-                          </td>
-                          <td style={{ padding: '0.85rem 1rem' }}>
-                            <span style={{
-                              display: 'inline-block',
-                              padding: '0.2rem 0.6rem',
-                              borderRadius: '6px',
-                              background: typeBg,
-                              color: typeColor,
-                              fontSize: '0.78rem',
-                              fontWeight: 800
-                            }}>
-                              {r.leave_type} {r.half_day_session ? `(${r.half_day_session === 'FIRST_HALF' ? '1st Half' : '2nd Half'})` : ''}
-                            </span>
-                          </td>
-                          <td style={{ padding: '0.85rem 1rem' }}>
-                            <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
-                              {r.from_date === r.to_date ? r.from_date : `${r.from_date} to ${r.to_date}`}
-                            </div>
-                            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                              {r.days_count} day(s)
-                            </div>
-                          </td>
-                          <td style={{ padding: '0.85rem 1rem', maxWidth: '240px' }}>
-                            <div style={{ fontSize: '0.82rem', color: 'var(--text-primary)', wordBreak: 'break-word' }}>
-                              {r.reason || '—'}
-                            </div>
-                          </td>
-                          <td style={{ padding: '0.85rem 1rem', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                            {formatDateIST(r.applied_at, { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })}
-                          </td>
-                          <td style={{ padding: '0.85rem 1rem' }}>
-                            <span style={{
-                              display: 'inline-block',
-                              padding: '0.2rem 0.55rem',
-                              borderRadius: '6px',
-                              fontSize: '0.75rem',
-                              fontWeight: 700,
-                              background: r.status === 'APPROVED' ? '#dcfce7' : r.status === 'REJECTED' ? '#fee2e2' : '#fef3c7',
-                              color: r.status === 'APPROVED' ? '#166534' : r.status === 'REJECTED' ? '#991b1b' : '#92400e'
-                            }}>
-                              {r.status}
-                            </span>
-                          </td>
-                          <td style={{ padding: '0.85rem 1rem', textAlign: 'right' }}>
-                            {r.status === 'PENDING' ? (
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.4rem' }}>
-                                <button
-                                  type="button"
-                                  disabled={processingLeaveAction}
-                                  onClick={() => setLeaveActionModal({ type: 'APPROVE', request: r, remarks: '' })}
-                                  style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '0.25rem',
-                                    padding: '0.35rem 0.75rem',
-                                    borderRadius: '6px',
-                                    border: 'none',
-                                    background: '#16a34a',
-                                    color: '#ffffff',
-                                    fontSize: '0.78rem',
-                                    fontWeight: 700,
-                                    cursor: processingLeaveAction ? 'not-allowed' : 'pointer',
-                                    boxShadow: '0 2px 6px rgba(22, 163, 74, 0.25)'
-                                  }}
-                                >
-                                  <Check size={14} /> Approve
-                                </button>
-                                <button
-                                  type="button"
-                                  disabled={processingLeaveAction}
-                                  onClick={() => setLeaveActionModal({ type: 'REJECT', request: r, remarks: '' })}
-                                  style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '0.25rem',
-                                    padding: '0.35rem 0.75rem',
-                                    borderRadius: '6px',
-                                    border: '1px solid #fecaca',
-                                    background: '#fef2f2',
-                                    color: '#dc2626',
-                                    fontSize: '0.78rem',
-                                    fontWeight: 700,
-                                    cursor: processingLeaveAction ? 'not-allowed' : 'pointer'
-                                  }}
-                                >
-                                  <X size={14} /> Reject
-                                </button>
-                              </div>
-                            ) : r.status === 'APPROVED' ? (
-                              <div style={{ textAlign: 'right' }}>
-                                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#166534' }}>
-                                  ✓ Approved by {r.approver_name || 'HOD'}
-                                </div>
-                                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
-                                  {formatDateIST(r.action_at, { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })}
-                                </div>
-                                {r.remarks && (
-                                  <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
-                                    "{r.remarks}"
-                                  </div>
-                                )}
-                              </div>
-                            ) : (
-                              <div style={{ textAlign: 'right' }}>
-                                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#991b1b' }}>
-                                  ✕ Rejected by {r.approver_name || 'HOD'}
-                                </div>
-                                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
-                                  {formatDateIST(r.action_at, { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })}
-                                </div>
-                                {r.remarks && (
-                                  <div style={{ fontSize: '0.72rem', color: '#dc2626', fontWeight: 600 }}>
-                                    Reason: "{r.remarks}"
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </MobileTableView>
-          </div>
-        </div>
+        <LeaveApplicationsTable teamView records={filteredHodLeaveRequests} loading={loadingHodLeaves}
+          error={hodLeavesError} onRefresh={fetchHodLeaves} scope={leaveHistoryScope}
+          filterKey={`${hodLeaveFilter}_${hodLeaveSearch}`} processing={processingLeaveAction}
+          onDecision={(type, request) => setLeaveActionModal({ type, request, remarks: '' })} />
       )}
 
         </div>
@@ -4695,7 +4994,7 @@ export default function AttendanceModule({
       {/* ========================================================================================= */}
       {/* TAB 4: TEAM MASTER ATTENDANCE REPORT (FOR HOD / ADMIN) */}
       {/* ========================================================================================= */}
-      {activeTab === 'team_report' && isHodOrManager && (
+      {activeTab === 'team_report' && visibleTabs.some(t => t.id === 'team_report') && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
           
           {/* Master Filter & View Selector Bar */}
@@ -5159,6 +5458,7 @@ export default function AttendanceModule({
           {/* VIEW 3: TEAM LEAVE BALANCES & AUDIT LEDGER REPORT */}
           {teamReportView === 'LEAVE_LEDGER' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              {leaveReportError && <div role="alert" style={{ padding: '0.75rem', color: '#92400e', background: '#fffbeb', borderRadius: '8px' }}>{leaveReportError}</div>}
               {/* KPI Summary Cards */}
               <div style={{
                 display: 'grid',
@@ -5814,7 +6114,7 @@ export default function AttendanceModule({
       {/* ========================================================================================= */}
       {/* TAB 6: SHIFT RULES */}
       {/* ========================================================================================= */}
-      {activeTab === 'shift_rules' && (
+      {activeTab === 'shift_rules' && visibleTabs.some(t => t.id === 'shift_rules') && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
           
           {/* Header Banner with Multi-Tenant & Branch Selectors */}
@@ -5855,8 +6155,8 @@ export default function AttendanceModule({
 
             {/* Tenant, Branch & Admin Controls */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
-              {/* Company Selector for Master Admin / Admin */}
-              {(isAdmin || isMasterAdmin) && (
+              {/* Company Selector for Master Admin / Locked Badge for Tenant Admin */}
+              {isMasterAdmin ? (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                   <Building size={15} style={{ color: 'var(--text-secondary)' }} />
                   <select
@@ -5882,6 +6182,22 @@ export default function AttendanceModule({
                     <option value="SuPuja Creations">SuPuja Creations</option>
                     <option value="Testing New Swan Group">Testing New Swan Group</option>
                   </select>
+                </div>
+              ) : (
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  padding: '0.45rem 0.75rem',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-light)',
+                  background: 'var(--bg-primary)',
+                  fontSize: '0.82rem',
+                  fontWeight: 600,
+                  color: 'var(--text-primary)'
+                }} title="Company Workspace">
+                  <Building size={15} style={{ color: 'var(--accent-color, #2563eb)' }} />
+                  <span>{resolvedWorkspaceCompany || selectedShiftPolicyCompany} ({resolvedTenantCode})</span>
                 </div>
               )}
 
@@ -5909,7 +6225,12 @@ export default function AttendanceModule({
                   <option value="All Branches">All Branches (Default)</option>
                   {availablePolicyBranches.map((b) => {
                     const bName = typeof b === 'string' ? b : (b.name || b.branch_name || b.code);
-                    return <option key={b.id || bName} value={bName}>{bName}</option>;
+                    const bCode = b?.branch_code || b?.id || '';
+                    return (
+                      <option key={b.id || bName} value={bName}>
+                        {bName} {bCode ? `(${bCode})` : ''}
+                      </option>
+                    );
                   })}
                 </select>
               </div>
@@ -6791,7 +7112,7 @@ export default function AttendanceModule({
       {/* ========================================================================================= */}
       {/* TAB 7: COMPANY LEAVE POLICY & CPL RULES */}
       {/* ========================================================================================= */}
-      {activeTab === 'leave_policy' && (
+      {activeTab === 'leave_policy' && visibleTabs.some(t => t.id === 'leave_policy') && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
           
           {/* Header Banner */}
@@ -6825,18 +7146,21 @@ export default function AttendanceModule({
                   Official Company Leave & CPL Policy
                 </h2>
                 <p style={{ fontSize: '0.84rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0 0' }}>
-                  {selectedLeaveCompany} Enterprise Leave Rules: CL, SL, 1-Year EL Probation Lock, CPL Accrual, Sandwich & Weekly Off Policies
+                  {selectedLeaveCompany} Enterprise Leave Rules • {selectedLeaveBranch} (CL, SL, 1-Year EL Lock, CPL Accrual & Sandwich)
                 </p>
               </div>
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
-              {(isAdmin || isMasterAdmin) && (
+              {isMasterAdmin ? (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                   <Building size={15} style={{ color: 'var(--text-secondary)' }} />
                   <select
                     value={selectedLeaveCompany}
-                    onChange={(e) => setSelectedLeaveCompany(e.target.value)}
+                    onChange={(e) => {
+                      setSelectedLeaveCompany(e.target.value);
+                      setSelectedLeaveBranch('All Branches');
+                    }}
                     style={{
                       padding: '0.45rem 0.75rem',
                       borderRadius: '8px',
@@ -6854,7 +7178,54 @@ export default function AttendanceModule({
                     <option value="Testing New Swan Group">Testing New Swan Group</option>
                   </select>
                 </div>
+              ) : (
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  padding: '0.45rem 0.75rem',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-light)',
+                  background: 'var(--bg-primary)',
+                  fontSize: '0.82rem',
+                  fontWeight: 600,
+                  color: 'var(--text-primary)'
+                }} title="Company Workspace">
+                  <Building size={15} style={{ color: '#10b981' }} />
+                  <span>{resolvedWorkspaceCompany || selectedLeaveCompany} ({resolvedTenantCode})</span>
+                </div>
               )}
+
+              {/* Branch / Plant Selector for Leave Policy */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <MapPin size={15} style={{ color: 'var(--text-secondary)' }} />
+                <select
+                  value={selectedLeaveBranch}
+                  onChange={(e) => setSelectedLeaveBranch(e.target.value)}
+                  style={{
+                    padding: '0.45rem 0.75rem',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-light)',
+                    background: 'var(--bg-primary)',
+                    color: 'var(--text-primary)',
+                    fontSize: '0.82rem',
+                    fontWeight: 600,
+                    outline: 'none'
+                  }}
+                  title="Select Branch / Plant"
+                >
+                  <option value="All Branches">All Branches (Default)</option>
+                  {availableLeaveBranches.map((b) => {
+                    const bName = typeof b === 'string' ? b : (b.name || b.branch_name || b.code);
+                    const bCode = b?.branch_code || b?.id || '';
+                    return (
+                      <option key={b.id || bName} value={bName}>
+                        {bName} {bCode ? `(${bCode})` : ''}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
 
               {(isAdmin || isMasterAdmin) && (
                 <button
@@ -6894,7 +7265,7 @@ export default function AttendanceModule({
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
                       <Settings size={22} color="var(--accent-color, #2563eb)" />
                       <div>
-                        <h3 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0 }}>Company Leave Policy & Quota Settings ({selectedLeaveCompany})</h3>
+                        <h3 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0 }}>Company Leave Policy & Quota Settings ({selectedLeaveCompany} • {selectedLeaveBranch})</h3>
                         <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0.15rem 0 0 0' }}>
                           Configure annual leave quotas, EL 1-year probation lock-in, CPL earning & validity rules, and weekly attendance rules.
                         </p>
@@ -7181,10 +7552,12 @@ export default function AttendanceModule({
                     </div>
                     <div>
                       <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                        Configured Company Leave Policies Directory
+                        {isMasterAdmin ? 'Configured Company Leave Policies Directory' : `${resolvedWorkspaceCompany || selectedLeaveCompany} Leave Policy Overview`}
                       </h3>
                       <p style={{ margin: '0.15rem 0 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                        Live multi-tenant summary of configured annual leave quotas, CPL accrual rules, and sandwich policies across all entities.
+                        {isMasterAdmin
+                          ? 'Live multi-tenant summary of configured annual leave quotas, CPL accrual rules, and sandwich policies across all entities.'
+                          : `Configured annual leave quotas, CPL accrual rules, and sandwich policies for ${resolvedWorkspaceCompany || selectedLeaveCompany}.`}
                       </p>
                     </div>
                   </div>
@@ -7254,14 +7627,25 @@ export default function AttendanceModule({
                         </tr>
                       </thead>
                       <tbody>
-                        {allTenantLeavePolicies.length === 0 ? (
-                          <tr>
-                            <td colSpan={7} style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
-                              {loadingAllLeavePolicies ? 'Loading configured leave policies...' : 'No leave policies configured yet.'}
-                            </td>
-                          </tr>
-                        ) : (
-                          allTenantLeavePolicies.map((pol) => {
+                        {(() => {
+                          const displayedPolicies = isMasterAdmin
+                            ? allTenantLeavePolicies
+                            : allTenantLeavePolicies.filter(pol => (
+                                pol.company_name === (resolvedWorkspaceCompany || selectedLeaveCompany) ||
+                                (tenantId && pol.tenant_id === tenantId)
+                              ));
+
+                          if (displayedPolicies.length === 0) {
+                            return (
+                              <tr>
+                                <td colSpan={7} style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                                  {loadingAllLeavePolicies ? 'Loading configured leave policies...' : 'No leave policies configured yet.'}
+                                </td>
+                              </tr>
+                            );
+                          }
+
+                          return displayedPolicies.map((pol) => {
                             const isSelected = pol.company_name === selectedLeaveCompany;
                             const lp = pol.leave_policy || {};
                             const cp = lp.cpl_policy || {};
@@ -7294,8 +7678,11 @@ export default function AttendanceModule({
                                         </span>
                                       )}
                                     </div>
-                                    <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontFamily: 'monospace' }}>
-                                      {pol.tenant_id}
+                                    <span style={{ fontSize: '0.74rem', color: 'var(--accent-color, #2563eb)', fontWeight: 700, fontFamily: 'monospace' }}>
+                                      {pol.tenant_code || (pol.company_name?.includes('SuPuja') ? 'TNT00001' : pol.company_name?.includes('Testing') ? 'TNT00003' : 'TNT00002')}
+                                    </span>
+                                    <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                                      Branch: {pol.branch_name || 'All Branches (Default)'}
                                     </span>
                                   </div>
                                 </td>
@@ -7406,8 +7793,8 @@ export default function AttendanceModule({
                                 </td>
                               </tr>
                             );
-                          })
-                        )}
+                          });
+                        })()}
                       </tbody>
                     </table>
                   </MobileTableView>
@@ -7420,7 +7807,7 @@ export default function AttendanceModule({
       {/* ========================================================================================= */}
       {/* TAB 8: OFFICE GEOFENCING & GPS BOUNDARY POLICY */}
       {/* ========================================================================================= */}
-      {activeTab === 'geofencing' && (
+      {activeTab === 'geofencing' && visibleTabs.some(t => t.id === 'geofencing') && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
           
           {/* Header Banner with Multi-Tenant & Branch Selectors */}
@@ -7461,7 +7848,8 @@ export default function AttendanceModule({
 
             {/* Tenant, Branch & Save Controls */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
-              {(isAdmin || isMasterAdmin) && (
+              {/* Company Selector for Master Admin / Locked Badge for Tenant Admin */}
+              {isMasterAdmin ? (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                   <Building size={15} style={{ color: 'var(--text-secondary)' }} />
                   <select
@@ -7487,6 +7875,22 @@ export default function AttendanceModule({
                     <option value="Testing New Swan Group">Testing New Swan Group</option>
                   </select>
                 </div>
+              ) : (
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  padding: '0.45rem 0.75rem',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-light)',
+                  background: 'var(--bg-primary)',
+                  fontSize: '0.82rem',
+                  fontWeight: 600,
+                  color: 'var(--text-primary)'
+                }} title="Company Workspace">
+                  <Building size={15} style={{ color: '#0ea5e9' }} />
+                  <span>{resolvedWorkspaceCompany || selectedShiftPolicyCompany} ({resolvedTenantCode})</span>
+                </div>
               )}
 
               {/* Branch / Plant Selector */}
@@ -7510,7 +7914,12 @@ export default function AttendanceModule({
                   <option value="All Branches">All Branches (Default)</option>
                   {availablePolicyBranches.map((b) => {
                     const bName = typeof b === 'string' ? b : (b.name || b.branch_name || b.code);
-                    return <option key={b.id || bName} value={bName}>{bName}</option>;
+                    const bCode = b?.branch_code || b?.id || '';
+                    return (
+                      <option key={b.id || bName} value={bName}>
+                        {bName} {bCode ? `(${bCode})` : ''}
+                      </option>
+                    );
                   })}
                 </select>
               </div>
@@ -9263,7 +9672,7 @@ export default function AttendanceModule({
           bottom: '24px',
           right: '24px',
           zIndex: 10000,
-          background: leaveToast.type === 'success' ? '#16a34a' : '#dc2626',
+          background: leaveToast.type === 'success' ? '#16a34a' : leaveToast.type === 'warning' ? '#b45309' : '#dc2626',
           color: '#ffffff',
           padding: '0.75rem 1.25rem',
           borderRadius: '10px',

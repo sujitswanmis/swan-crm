@@ -30,7 +30,15 @@ const CONFIG_TABS = [
   { id: 'public_users', label: 'Public User Management', icon: Users, description: 'External candidate applicants, job portal registrations & public user controls' }
 ];
 
-export default function ConfigMasterPanel({ initialTab = 'messages', activeSubTab = null, onSubTabChange = null, userRole = 'admin', moduleAccess = {} }) {
+export default function ConfigMasterPanel({ 
+  initialTab = 'messages', 
+  activeSubTab = null, 
+  onSubTabChange = null, 
+  healthSubTab = null,
+  onHealthSubTabChange = null,
+  userRole = 'admin', 
+  moduleAccess = {} 
+}) {
   const [activeTab, setActiveTab] = useState(() => {
     let raw = activeSubTab || initialTab || 'messages';
     if (raw === 'admin_messages') raw = 'messages';
@@ -147,7 +155,14 @@ export default function ConfigMasterPanel({ initialTab = 'messages', activeSubTa
       <div style={{ width: '100%' }}>
         {activeTab === 'notifications' && <BroadcastNotificationPanel />}
         {activeTab === 'messages' && <AdminMessageConfig moduleAccess={moduleAccess} userRole={userRole || 'admin'} />}
-        {activeTab === 'status' && <SystemStatusHealth />}
+        {activeTab === 'status' && (
+          <SystemStatusHealth 
+            activeSubTab={healthSubTab}
+            onTabChange={(tabId, slug) => {
+              if (onHealthSubTabChange) onHealthSubTabChange(tabId, slug);
+            }}
+          />
+        )}
         {activeTab === 'automation' && <AutomationAPI />}
         {activeTab === 'navigation' && <PageNavigationConfig />}
         {activeTab === 'offline_rule' && <OfflineRuleModule userRole={userRole} />}
