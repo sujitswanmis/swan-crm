@@ -1385,7 +1385,7 @@ export default function DailyFollowupQueueTable({
             border: '1px solid var(--border-light)',
             borderRadius: '16px',
             width: '95vw',
-            maxWidth: '920px',
+            maxWidth: '960px',
             maxHeight: '92vh',
             display: 'flex',
             flexDirection: 'column',

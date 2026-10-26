@@ -1,14 +1,14 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { Search, ChevronDown, Check, X, Tag, IndianRupee, Package, Layers } from 'lucide-react';
+import { Search, ChevronDown, Check, X, Package, Tag, IndianRupee } from 'lucide-react';
 
 export default function SearchableProductSelect({
   products = [],
   value = '',
   onChange = () => {},
   onSelectNext = null,
-  placeholder = 'Search by product name, SKU or model...',
+  placeholder = 'Click to search and select product...',
   disabled = false,
   required = false
 }) {
@@ -17,10 +17,10 @@ export default function SearchableProductSelect({
   const [highlightedIndex, setHighlightedIndex] = useState(0);
 
   const containerRef = useRef(null);
-  const inputRef = useRef(null);
+  const searchInputRef = useRef(null);
   const listRef = useRef(null);
 
-  // Normalize products to array of objects
+  // Normalize products to uniform objects
   const normalizedProducts = useMemo(() => {
     if (!Array.isArray(products)) return [];
     return products.map(p => {
@@ -58,7 +58,19 @@ export default function SearchableProductSelect({
     return () => document.removeEventListener('mousedown', handleOutsideClick);
   }, []);
 
-  // Filter products based on search query (multi-token search)
+  // Auto focus search input when opened
+  useEffect(() => {
+    if (isOpen) {
+      setTimeout(() => {
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select?.();
+      }, 30);
+    } else {
+      setSearchTerm('');
+    }
+  }, [isOpen]);
+
+  // Multi-token search filter across name, sku, category, specs
   const filteredProducts = useMemo(() => {
     if (!searchTerm.trim()) {
       return normalizedProducts;
@@ -79,12 +91,12 @@ export default function SearchableProductSelect({
     });
   }, [normalizedProducts, searchTerm]);
 
-  // Reset highlighted index when filter changes
+  // Reset highlight index when filtered list changes
   useEffect(() => {
     setHighlightedIndex(0);
   }, [filteredProducts.length, searchTerm]);
 
-  // Scroll highlighted item into view
+  // Scroll active item into view
   useEffect(() => {
     if (isOpen && listRef.current) {
       const activeEl = listRef.current.children[highlightedIndex];
@@ -100,22 +112,12 @@ export default function SearchableProductSelect({
     setIsOpen(false);
     setSearchTerm('');
     if (typeof onSelectNext === 'function') {
-      setTimeout(() => onSelectNext(), 50);
+      setTimeout(() => onSelectNext(), 60);
     }
   }, [onChange, onSelectNext]);
 
-  // Keyboard navigation inside input
+  // Keyboard navigation inside search input
   const handleKeyDown = (e) => {
-    if (disabled) return;
-
-    if (!isOpen) {
-      if (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        setIsOpen(true);
-      }
-      return;
-    }
-
     if (e.key === 'ArrowDown') {
       e.preventDefault();
       setHighlightedIndex(prev => (prev < filteredProducts.length - 1 ? prev + 1 : 0));
@@ -143,180 +145,224 @@ export default function SearchableProductSelect({
         minWidth: 0
       }}
     >
-      {/* Trigger & Search Bar Box */}
+      {/* Trigger Bar: Always clear, readable, and clickable */}
       <div
+        role="button"
+        tabIndex={disabled ? -1 : 0}
         onClick={() => {
-          if (!disabled) {
+          if (!disabled) setIsOpen(prev => !prev);
+        }}
+        onKeyDown={(e) => {
+          if (!disabled && (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown')) {
+            e.preventDefault();
             setIsOpen(true);
-            setTimeout(() => inputRef.current?.focus(), 20);
           }
         }}
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: '0.45rem',
-          padding: '0.48rem 0.65rem',
+          justifyContent: 'space-between',
+          gap: '0.5rem',
+          padding: '0.5rem 0.75rem',
           background: 'var(--bg-primary, #ffffff)',
           border: isOpen ? '1.5px solid var(--accent-color, #2563eb)' : '1px solid var(--border-light, #cbd5e1)',
           borderRadius: '8px',
-          boxShadow: isOpen ? '0 0 0 3px rgba(37,99,235,0.12)' : 'none',
+          boxShadow: isOpen ? '0 0 0 3px rgba(37,99,235,0.15)' : 'none',
           cursor: disabled ? 'not-allowed' : 'pointer',
           transition: 'all 0.15s ease',
           boxSizing: 'border-box'
         }}
       >
-        <Search size={15} style={{ color: isOpen ? 'var(--accent-color, #2563eb)' : 'var(--text-muted, #94a3b8)', flexShrink: 0 }} />
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: '0.45rem', overflow: 'hidden' }}>
+          <Package size={15} style={{ color: isOpen ? 'var(--accent-color, #2563eb)' : 'var(--text-secondary, #64748b)', flexShrink: 0 }} />
 
-        {isOpen ? (
-          <input
-            ref={inputRef}
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={currentSelected?.name ? `Current: ${currentSelected.name}` : placeholder}
-            style={{
-              flex: 1,
-              border: 'none',
-              outline: 'none',
-              background: 'transparent',
-              fontSize: '0.82rem',
-              color: 'var(--text-primary, #0f172a)',
-              padding: 0,
-              margin: 0,
-              minWidth: 0
-            }}
-            autoFocus
-          />
-        ) : (
-          <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: '0.4rem', overflow: 'hidden' }}>
-            {currentSelected?.name ? (
-              <>
-                <span style={{
-                  fontSize: '0.82rem',
-                  fontWeight: 600,
-                  color: 'var(--text-primary, #0f172a)',
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis'
-                }}>
-                  {currentSelected.name}
-                </span>
-
-                {currentSelected.sku && (
-                  <span style={{
-                    flexShrink: 0,
-                    fontSize: '0.68rem',
-                    fontWeight: 700,
-                    padding: '1px 5px',
-                    borderRadius: '4px',
-                    background: 'rgba(56,189,248,0.12)',
-                    color: '#0284c7',
-                    border: '1px solid rgba(56,189,248,0.25)'
-                  }}>
-                    {currentSelected.sku}
-                  </span>
-                )}
-
-                {currentSelected.price != null && (
-                  <span style={{
-                    flexShrink: 0,
-                    fontSize: '0.72rem',
-                    fontWeight: 700,
-                    color: '#059669',
-                    marginLeft: 'auto'
-                  }}>
-                    ₹{Number(currentSelected.price).toLocaleString('en-IN')}
-                  </span>
-                )}
-              </>
-            ) : (
-              <span style={{ fontSize: '0.82rem', color: 'var(--text-muted, #94a3b8)' }}>
-                {placeholder}
+          {currentSelected?.name ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', minWidth: 0, overflow: 'hidden', flexWrap: 'nowrap' }}>
+              <span style={{
+                fontSize: '0.82rem',
+                fontWeight: 600,
+                color: 'var(--text-primary, #0f172a)',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis'
+              }}>
+                {currentSelected.name}
               </span>
-            )}
-          </div>
-        )}
 
-        {isOpen && searchTerm ? (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setSearchTerm('');
-              inputRef.current?.focus();
-            }}
-            style={{
-              background: 'none',
-              border: 'none',
-              padding: '2px',
-              cursor: 'pointer',
-              color: 'var(--text-secondary, #64748b)',
-              display: 'flex',
-              alignItems: 'center'
-            }}
-          >
-            <X size={14} />
-          </button>
-        ) : (
-          <ChevronDown size={14} style={{ color: 'var(--text-muted, #94a3b8)', flexShrink: 0, transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s ease' }} />
-        )}
+              {currentSelected.sku && (
+                <span style={{
+                  flexShrink: 0,
+                  fontSize: '0.68rem',
+                  fontWeight: 700,
+                  padding: '1px 5px',
+                  borderRadius: '4px',
+                  background: 'rgba(56,189,248,0.12)',
+                  color: '#0284c7',
+                  border: '1px solid rgba(56,189,248,0.25)'
+                }}>
+                  {currentSelected.sku}
+                </span>
+              )}
+
+              {currentSelected.category && (
+                <span style={{
+                  flexShrink: 0,
+                  fontSize: '0.66rem',
+                  padding: '1px 5px',
+                  borderRadius: '4px',
+                  background: 'rgba(148,163,184,0.12)',
+                  color: 'var(--text-secondary, #64748b)'
+                }}>
+                  {currentSelected.category}
+                </span>
+              )}
+            </div>
+          ) : (
+            <span style={{ fontSize: '0.82rem', color: 'var(--text-muted, #94a3b8)' }}>
+              {placeholder}
+            </span>
+          )}
+        </div>
+
+        {/* Right Action / Search Badge */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}>
+          {currentSelected?.price != null && (
+            <span style={{
+              fontSize: '0.78rem',
+              fontWeight: 700,
+              color: '#059669'
+            }}>
+              ₹{Number(currentSelected.price).toLocaleString('en-IN')}
+            </span>
+          )}
+
+          <div style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '0.2rem',
+            padding: '2px 7px',
+            borderRadius: '5px',
+            background: isOpen ? 'var(--accent-color, #2563eb)' : 'rgba(37,99,235,0.08)',
+            color: isOpen ? '#ffffff' : 'var(--accent-color, #2563eb)',
+            fontSize: '0.7rem',
+            fontWeight: 700,
+            border: isOpen ? 'none' : '1px solid rgba(37,99,235,0.2)'
+          }}>
+            <Search size={11} />
+            <span>Search</span>
+            <ChevronDown size={11} style={{ transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s ease' }} />
+          </div>
+        </div>
       </div>
 
-      {/* Floating Dropdown Results Popover */}
+      {/* Floating Popover with Dedicated Search Bar & Live Results */}
       {isOpen && (
         <div
           style={{
             position: 'absolute',
-            top: 'calc(100% + 4px)',
+            top: 'calc(100% + 5px)',
             left: 0,
             right: 0,
             zIndex: 1050,
             background: 'var(--bg-surface, #ffffff)',
-            border: '1px solid var(--border-medium, #cbd5e1)',
-            borderRadius: '10px',
-            boxShadow: '0 12px 30px -4px rgba(0,0,0,0.22), 0 4px 8px rgba(0,0,0,0.08)',
-            maxHeight: '280px',
+            border: '1.5px solid var(--border-medium, #94a3b8)',
+            borderRadius: '12px',
+            boxShadow: '0 16px 36px -4px rgba(0,0,0,0.28), 0 6px 12px rgba(0,0,0,0.1)',
+            maxHeight: '320px',
             display: 'flex',
             flexDirection: 'column',
             overflow: 'hidden'
           }}
         >
-          {/* Quick Header / Counter */}
+          {/* Dedicated Search Input Bar at top */}
+          <div style={{
+            padding: '0.6rem 0.75rem',
+            background: 'var(--bg-primary, #f8fafc)',
+            borderBottom: '1px solid var(--border-light, #e2e8f0)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem'
+          }}>
+            <Search size={16} style={{ color: 'var(--accent-color, #2563eb)', flexShrink: 0 }} />
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={`Search ${normalizedProducts.length} products by name, SKU, series or model...`}
+              style={{
+                flex: 1,
+                border: 'none',
+                outline: 'none',
+                background: 'transparent',
+                fontSize: '0.84rem',
+                fontWeight: 600,
+                color: 'var(--text-primary, #0f172a)',
+                padding: '0.1rem 0',
+                margin: 0,
+                minWidth: 0
+              }}
+            />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchTerm('');
+                  searchInputRef.current?.focus();
+                }}
+                style={{
+                  background: 'rgba(148,163,184,0.2)',
+                  border: 'none',
+                  borderRadius: '50%',
+                  padding: '3px',
+                  cursor: 'pointer',
+                  color: 'var(--text-secondary, #64748b)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+
+          {/* Subheader Counter / Tip */}
           <div style={{
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
-            padding: '0.4rem 0.75rem',
-            background: 'var(--bg-primary, #f8fafc)',
+            padding: '0.35rem 0.85rem',
+            background: 'rgba(148,163,184,0.06)',
             borderBottom: '1px solid var(--border-light, #e2e8f0)',
             fontSize: '0.7rem',
             color: 'var(--text-secondary, #64748b)'
           }}>
             <span>
               {filteredProducts.length === 0
-                ? 'No matches found'
+                ? 'No matching products'
                 : `Showing ${Math.min(filteredProducts.length, 60)} of ${filteredProducts.length} items`}
             </span>
             <span style={{ fontSize: '0.66rem', color: 'var(--text-muted, #94a3b8)' }}>
-              ↑↓ to navigate • Enter to select
+              Use ↑↓ to navigate • Enter to select
             </span>
           </div>
 
-          {/* Scrollable Items List */}
+          {/* Scrollable Products List */}
           <div
             ref={listRef}
             style={{
               overflowY: 'auto',
-              maxHeight: '240px',
+              maxHeight: '230px',
               padding: '0.25rem 0'
             }}
           >
             {filteredProducts.length === 0 ? (
-              <div style={{ padding: '1.25rem 1rem', textAlign: 'center', color: 'var(--text-muted, #94a3b8)', fontSize: '0.8rem' }}>
-                <Package size={22} style={{ margin: '0 auto 0.4rem auto', opacity: 0.5 }} />
-                <div>No products found matching &quot;{searchTerm}&quot;</div>
-                <div style={{ fontSize: '0.72rem', marginTop: '0.2rem' }}>Try searching by general name, size or SKU code</div>
+              <div style={{ padding: '1.5rem 1rem', textAlign: 'center', color: 'var(--text-muted, #94a3b8)', fontSize: '0.82rem' }}>
+                <Package size={26} style={{ margin: '0 auto 0.4rem auto', opacity: 0.4 }} />
+                <div style={{ fontWeight: 600 }}>No products found matching &quot;{searchTerm}&quot;</div>
+                <div style={{ fontSize: '0.72rem', marginTop: '0.25rem' }}>Try searching with a shorter keyword or model code</div>
               </div>
             ) : (
               filteredProducts.slice(0, 60).map((prod, index) => {
@@ -333,17 +379,17 @@ export default function SearchableProductSelect({
                       alignItems: 'center',
                       justifyContent: 'space-between',
                       gap: '0.75rem',
-                      padding: '0.55rem 0.75rem',
+                      padding: '0.55rem 0.85rem',
                       background: isHighlighted
-                        ? 'rgba(37,99,235,0.08)'
+                        ? 'rgba(37,99,235,0.09)'
                         : isSelected
-                        ? 'rgba(16,185,129,0.06)'
+                        ? 'rgba(16,185,129,0.07)'
                         : 'transparent',
                       borderLeft: isHighlighted
-                        ? '3px solid var(--accent-color, #2563eb)'
+                        ? '3.5px solid var(--accent-color, #2563eb)'
                         : isSelected
-                        ? '3px solid #10b981'
-                        : '3px solid transparent',
+                        ? '3.5px solid #10b981'
+                        : '3.5px solid transparent',
                       cursor: 'pointer',
                       transition: 'background 0.1s ease'
                     }}
@@ -356,7 +402,7 @@ export default function SearchableProductSelect({
                         flexWrap: 'wrap'
                       }}>
                         <span style={{
-                          fontSize: '0.82rem',
+                          fontSize: '0.83rem',
                           fontWeight: isSelected ? 700 : 600,
                           color: isSelected ? '#059669' : 'var(--text-primary, #0f172a)'
                         }}>
@@ -406,7 +452,7 @@ export default function SearchableProductSelect({
 
                     <div style={{ textAlign: 'right', flexShrink: 0 }}>
                       {prod.price != null && prod.price !== '' ? (
-                        <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#059669' }}>
+                        <div style={{ fontSize: '0.84rem', fontWeight: 700, color: '#059669' }}>
                           ₹{Number(prod.price).toLocaleString('en-IN')}
                         </div>
                       ) : (
