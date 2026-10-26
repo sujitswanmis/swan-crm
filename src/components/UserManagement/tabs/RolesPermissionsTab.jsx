@@ -15,7 +15,11 @@ export default function RolesPermissionsTab({
   rolesLoading = false,
   rolesError = '',
   assigningRoleUserId = null,
-  isMasterAdmin = false
+  isMasterAdmin = false,
+  activeRoleKey = null,
+  onSelectRoleKey = () => {},
+  saveBanner = null,
+  onDismissBanner = () => {}
 }) {
   const visiblePresets = useMemo(() => {
     return isMasterAdmin 
@@ -24,8 +28,15 @@ export default function RolesPermissionsTab({
   }, [isMasterAdmin]);
 
   const defaultPresetKey = isMasterAdmin ? 'master_admin' : 'admin';
-  const [selectedPresetKey, setSelectedPresetKey] = useState(defaultPresetKey);
+  const [selectedPresetKey, setSelectedPresetKey] = useState(activeRoleKey || defaultPresetKey);
   const [searchUserQuery, setSearchUserQuery] = useState('');
+
+  // Sync selected role when parent signals a new active role (e.g. newly created role)
+  useEffect(() => {
+    if (activeRoleKey) {
+      setSelectedPresetKey(activeRoleKey);
+    }
+  }, [activeRoleKey]);
 
   useEffect(() => {
     if (!isMasterAdmin && selectedPresetKey === 'master_admin') {
@@ -166,6 +177,46 @@ export default function RolesPermissionsTab({
       {rolesLoading && <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', fontSize: '0.8rem', color: 'var(--text-secondary)' }}><Loader2 size={15} className="animate-spin" /> Loading saved roles...</div>}
       {rolesError && <div role="alert" style={{ padding: '0.75rem 1rem', borderRadius: '8px', background: '#fffbeb', color: '#92400e', fontSize: '0.82rem' }}>{rolesError}</div>}
 
+      {/* Save Success Banner */}
+      {saveBanner && (
+        <div style={{
+          padding: '0.85rem 1.25rem',
+          borderRadius: '10px',
+          backgroundColor: '#ecfdf5',
+          border: '1px solid #a7f3d0',
+          color: '#065f46',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '0.75rem',
+          fontSize: '0.85rem',
+          fontWeight: 600,
+          boxShadow: '0 2px 8px rgba(16, 185, 129, 0.1)',
+          animation: 'fadeIn 0.2s ease-in-out'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
+            <CheckCircle2 size={18} style={{ color: '#059669', flexShrink: 0 }} />
+            <span>{saveBanner}</span>
+          </div>
+          <button
+            type="button"
+            onClick={onDismissBanner}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              color: '#059669',
+              fontSize: '0.82rem',
+              fontWeight: 700,
+              padding: '0.2rem 0.5rem',
+              borderRadius: '4px'
+            }}
+          >
+            ✕ Dismiss
+          </button>
+        </div>
+      )}
+
       {/* Grid: Left Column (Role Profiles List) & Right Column (Profile Inspector) */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.25rem' }}>
         {/* Left: Role Presets Cards */}
@@ -181,7 +232,11 @@ export default function RolesPermissionsTab({
             return (
               <div
                 key={preset.key}
-                onClick={() => setSelectedPresetKey(preset.key)}
+                onClick={() => {
+                  setSelectedPresetKey(preset.key);
+                  onSelectRoleKey(preset.key);
+                  if (saveBanner) onDismissBanner();
+                }}
                 style={{
                   padding: '1rem 1.25rem',
                   borderRadius: '12px',
@@ -194,9 +249,22 @@ export default function RolesPermissionsTab({
                 }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                     <span style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: preset.color }} />
                     <span style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-primary)' }}>{preset.name}</span>
+                    {preset.custom && (
+                      <span style={{
+                        fontSize: '0.68rem',
+                        fontWeight: 700,
+                        padding: '0.12rem 0.45rem',
+                        borderRadius: '6px',
+                        backgroundColor: '#ede9fe',
+                        color: '#6d28d9',
+                        border: '1px solid #ddd6fe'
+                      }}>
+                        Custom Role
+                      </span>
+                    )}
                   </div>
                   <span style={{
                     fontSize: '0.72rem',

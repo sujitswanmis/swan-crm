@@ -1542,17 +1542,25 @@ export default function RoleTemplateModal({ onClose, onSave, saving = false, use
           style={{
             flexShrink: 0,
             display: 'flex',
-            justifyContent: 'flex-end',
+            justifyContent: error ? 'space-between' : 'flex-end',
+            alignItems: 'center',
             gap: '0.75rem',
             padding: '1rem 1.75rem',
             borderTop: '1px solid var(--border-light)',
             background: 'var(--bg-surface)'
           }}
         >
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={saving}
+          {error && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: '#dc2626', fontSize: '0.82rem', fontWeight: 600, maxWidth: '65%' }}>
+              <Info size={15} style={{ flexShrink: 0 }} />
+              <span>{error}</span>
+            </div>
+          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={saving}
             style={{
               padding: '0.55rem 1.1rem',
               borderRadius: '8px',
@@ -1601,6 +1609,7 @@ export default function RoleTemplateModal({ onClose, onSave, saving = false, use
               </>
             )}
           </button>
+          </div>
         </div>
       </form>
     </div>

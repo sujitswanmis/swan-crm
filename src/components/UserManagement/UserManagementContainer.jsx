@@ -118,6 +118,8 @@ export default function UserManagementContainer({
   const [roleModalOpen, setRoleModalOpen] = useState(false);
   const [savingRole, setSavingRole] = useState(false);
   const [assigningRoleUserId, setAssigningRoleUserId] = useState(null);
+  const [selectedRoleKey, setSelectedRoleKey] = useState(null);
+  const [roleSaveBanner, setRoleSaveBanner] = useState(null);
 
   const [resetPasswordModal, setResetPasswordModal] = useState({ isOpen: false, user: null });
   const [savingPassword, setSavingPassword] = useState(false);
@@ -214,7 +216,11 @@ export default function UserManagementContainer({
       const { assignedUserIds = [], ...rolePayload } = details;
       const result = await createRoleTemplate(rolePayload);
       if (!result.success) throw new Error(result.error || 'Could not create role.');
+      
+      const newRoleKey = `custom:${result.role.id}`;
       setRoleTemplates(previous => [...previous, result.role].sort((a, b) => a.name.localeCompare(b.name)));
+      setSelectedRoleKey(newRoleKey);
+      setRoleSaveBanner(`Role template "${result.role.name}" saved successfully! You can inspect its capabilities below and assign it to staff members.`);
 
       // If user selected staff members to assign this role to immediately
       if (Array.isArray(assignedUserIds) && assignedUserIds.length > 0) {
@@ -240,10 +246,10 @@ export default function UserManagementContainer({
             console.warn('Failed assigning role to user:', uid, assignErr);
           }
         }
-        showToast(`Role "${result.role.name}" created and assigned to ${assignedCount} staff member(s)!`, 'success');
+        showToast(`Role "${result.role.name}" saved and assigned to ${assignedCount} staff member(s)!`, 'success');
         fetchUsers(false);
       } else {
-        showToast(`Role "${result.role.name}" created.`);
+        showToast(`Role "${result.role.name}" saved successfully!`, 'success');
       }
 
       setRoleModalOpen(false);
@@ -911,6 +917,10 @@ export default function UserManagementContainer({
             rolesError={rolesError}
             assigningRoleUserId={assigningRoleUserId}
             isMasterAdmin={effectiveIsMasterAdmin}
+            activeRoleKey={selectedRoleKey}
+            onSelectRoleKey={setSelectedRoleKey}
+            saveBanner={roleSaveBanner}
+            onDismissBanner={() => setRoleSaveBanner(null)}
           />
         )}
 
