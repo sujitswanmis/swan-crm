@@ -25,6 +25,7 @@ export default function RolesPermissionsTab({
 
   const defaultPresetKey = isMasterAdmin ? 'master_admin' : 'admin';
   const [selectedPresetKey, setSelectedPresetKey] = useState(defaultPresetKey);
+  const [searchUserQuery, setSearchUserQuery] = useState('');
 
   useEffect(() => {
     if (!isMasterAdmin && selectedPresetKey === 'master_admin') {
