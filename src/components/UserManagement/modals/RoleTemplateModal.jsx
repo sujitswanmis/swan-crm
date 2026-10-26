@@ -727,9 +727,12 @@ export default function RoleTemplateModal({ onClose, onSave, saving = false, use
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', fontSize: '0.85rem', fontWeight: 600 }}>
-                Role Name <span style={{ color: '#dc2626' }}>*</span>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem', alignItems: 'start' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                  <span>Role Name</span>
+                  <span style={{ color: '#dc2626' }}>*</span>
+                </label>
                 <input
                   type="text"
                   required
@@ -745,13 +748,17 @@ export default function RoleTemplateModal({ onClose, onSave, saving = false, use
                     background: 'var(--bg-primary)',
                     color: 'var(--text-primary)',
                     fontSize: '0.9rem',
-                    outline: 'none'
+                    outline: 'none',
+                    height: '42px',
+                    boxSizing: 'border-box'
                   }}
                 />
-              </label>
+              </div>
 
-              <label style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', fontSize: '0.85rem', fontWeight: 600 }}>
-                Description
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                <label style={{ display: 'inline-flex', alignItems: 'center', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                  <span>Description</span>
+                </label>
                 <input
                   type="text"
                   maxLength={240}
@@ -765,10 +772,12 @@ export default function RoleTemplateModal({ onClose, onSave, saving = false, use
                     background: 'var(--bg-primary)',
                     color: 'var(--text-primary)',
                     fontSize: '0.9rem',
-                    outline: 'none'
+                    outline: 'none',
+                    height: '42px',
+                    boxSizing: 'border-box'
                   }}
                 />
-              </label>
+              </div>
             </div>
           </div>
 
