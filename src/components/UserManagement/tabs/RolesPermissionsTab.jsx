@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Shield, CheckCircle2, Search, Plus, Loader2 } from 'lucide-react';
 import { ROLE_PRESETS } from '../utils/rolePresets';
-import { isMasterAdmin } from '../utils/userManagementUtils';
+import { isMasterAdmin as checkIsMasterAdmin } from '../utils/userManagementUtils';
 
 export default function RolesPermissionsTab({
   users = [],
@@ -14,13 +14,26 @@ export default function RolesPermissionsTab({
   canManageRoles = false,
   rolesLoading = false,
   rolesError = '',
-  assigningRoleUserId = null
+  assigningRoleUserId = null,
+  isMasterAdmin = false
 }) {
-  const [selectedPresetKey, setSelectedPresetKey] = useState('master_admin');
-  const [searchUserQuery, setSearchUserQuery] = useState('');
+  const visiblePresets = useMemo(() => {
+    return isMasterAdmin 
+      ? ROLE_PRESETS 
+      : ROLE_PRESETS.filter(p => p.key !== 'master_admin');
+  }, [isMasterAdmin]);
+
+  const defaultPresetKey = isMasterAdmin ? 'master_admin' : 'admin';
+  const [selectedPresetKey, setSelectedPresetKey] = useState(defaultPresetKey);
+
+  useEffect(() => {
+    if (!isMasterAdmin && selectedPresetKey === 'master_admin') {
+      setSelectedPresetKey('admin');
+    }
+  }, [isMasterAdmin, selectedPresetKey]);
 
   const roleProfiles = useMemo(() => [
-    ...ROLE_PRESETS,
+    ...visiblePresets,
     ...customRoles.map(role => ({
       key: `custom:${role.id}`,
       id: role.id,
@@ -32,17 +45,17 @@ export default function RolesPermissionsTab({
       badgeBorder: '#c7d2fe',
       custom: true
     }))
-  ], [customRoles]);
+  ], [visiblePresets, customRoles]);
 
   // Active Preset definition
   const currentPreset = useMemo(() => {
-    return roleProfiles.find(p => p.key === selectedPresetKey) || ROLE_PRESETS[0];
-  }, [roleProfiles, selectedPresetKey]);
+    return roleProfiles.find(p => p.key === selectedPresetKey) || roleProfiles[0] || visiblePresets[0] || ROLE_PRESETS[0];
+  }, [roleProfiles, selectedPresetKey, visiblePresets]);
 
   // Compute users per role
   const roleStats = useMemo(() => {
     const stats = {};
-    ROLE_PRESETS.forEach(p => {
+    visiblePresets.forEach(p => {
       stats[p.key] = 0;
     });
     customRoles.forEach(role => {
@@ -56,8 +69,10 @@ export default function RolesPermissionsTab({
         stats[customKey] += 1;
         return;
       }
-      if (isMasterAdmin(u)) {
-        stats.master_admin = (stats.master_admin || 0) + 1;
+      if (checkIsMasterAdmin(u)) {
+        if (isMasterAdmin && Object.hasOwn(stats, 'master_admin')) {
+          stats.master_admin = (stats.master_admin || 0) + 1;
+        }
         return;
       }
       if (u.module_access?.role_preset_key && Object.hasOwn(stats, u.module_access.role_preset_key)) {
@@ -100,7 +115,7 @@ export default function RolesPermissionsTab({
     });
 
     return stats;
-  }, [users, customRoles]);
+  }, [visiblePresets, customRoles, users, isMasterAdmin]);
 
   // Filter users matching search query for quick permission inspection
   const filteredUsers = useMemo(() => {
@@ -326,7 +341,7 @@ export default function RolesPermissionsTab({
                       <button
                         type="button"
                         onClick={() => onAssignRoleToUser(u, currentPreset)}
-                        disabled={assigningRoleUserId === u.user_id || u.role === 'customer' || isMasterAdmin(u)}
+                        disabled={assigningRoleUserId === u.user_id || u.role === 'customer' || checkIsMasterAdmin(u)}
                         style={{
                           padding: '0.25rem 0.65rem',
                           borderRadius: '6px',
@@ -335,8 +350,8 @@ export default function RolesPermissionsTab({
                           color: '#fff',
                           fontWeight: 600,
                           fontSize: '0.72rem',
-                          cursor: (assigningRoleUserId === u.user_id || u.role === 'customer' || isMasterAdmin(u)) ? 'not-allowed' : 'pointer',
-                          opacity: (assigningRoleUserId === u.user_id || u.role === 'customer' || isMasterAdmin(u)) ? 0.5 : 1
+                          cursor: (assigningRoleUserId === u.user_id || u.role === 'customer' || checkIsMasterAdmin(u)) ? 'not-allowed' : 'pointer',
+                          opacity: (assigningRoleUserId === u.user_id || u.role === 'customer' || checkIsMasterAdmin(u)) ? 0.5 : 1
                         }}
                       >
                         {assigningRoleUserId === u.user_id ? 'Assigning...' : 'Assign Role'}

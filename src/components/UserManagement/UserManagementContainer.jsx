@@ -79,6 +79,12 @@ export default function UserManagementContainer({
     return isFeatureEntitled('ai', tenantEntitlements, tenantId);
   }, [tenantEntitlements, tenantId]);
 
+  const effectiveIsMasterAdmin = Boolean(
+    isMasterAdmin ||
+    (userEmail && userEmail.toLowerCase().trim() === 'supujacreations@gmail.com') ||
+    moduleAccess?.is_master_admin === true
+  );
+
   useEffect(() => {
     const nextTab = normalizeSubTab(activeSubTab);
     if (visibleSubpages.some(t => t.id === nextTab)) {
@@ -904,6 +910,7 @@ export default function UserManagementContainer({
             rolesLoading={rolesLoading}
             rolesError={rolesError}
             assigningRoleUserId={assigningRoleUserId}
+            isMasterAdmin={effectiveIsMasterAdmin}
           />
         )}
 
