@@ -200,8 +200,8 @@ export async function createRoleTemplate(input) {
     if (name.length < 2 || name.length > 60 || description.length > 240) {
       throw new Error('Role name must be 2–60 characters and description at most 240 characters.');
     }
-    if (ROLE_PRESETS.some(preset => norm(preset.name) === norm(name))) {
-      throw new Error('A predefined role already uses this name.');
+    if (norm(name) === 'master admin' || norm(name) === 'masteradmin') {
+      throw new Error('Master Admin is a reserved platform role name.');
     }
     const permissions = sanitizePermissions(input?.permissions);
     const { data, error } = await db.from('crm_role_templates')

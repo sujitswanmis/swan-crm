@@ -1583,12 +1583,12 @@ export default function RoleTemplateModal({ onClose, onSave, saving = false, use
             ) : selectedUserIds.length > 0 ? (
               <>
                 <CheckCircle2 size={16} />
-                Create & Assign to {selectedUserIds.length} Staff
+                Save & Assign to {selectedUserIds.length} Staff
               </>
             ) : (
               <>
                 <ShieldPlus size={16} />
-                Create Role
+                Save Role Template
               </>
             )}
           </button>

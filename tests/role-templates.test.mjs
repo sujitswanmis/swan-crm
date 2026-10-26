@@ -66,7 +66,7 @@ async function actionsFor(overrides = {}) {
         maybeSingle() {
           if (operation === 'update') {
             state.writes.push({ table, operation, payload, filters });
-            if (state.target?.user_id === filters.user_id && state.target.role === filters.role) {
+            if (state.target?.user_id === filters.user_id && (!filters.role || state.target.role === filters.role)) {
               return Promise.resolve({ data: { user_id: filters.user_id }, error: null });
             }
             return Promise.resolve({ data: null, error: null });
