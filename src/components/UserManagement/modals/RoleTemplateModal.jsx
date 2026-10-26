@@ -75,7 +75,35 @@ export default function RoleTemplateModal({ onClose, onSave, saving = false, use
     if (initialRole?.permissions) return structuredClone(initialRole.permissions);
     return {};
   });
-  const [selectedUserIds, setSelectedUserIds] = useState([]);
+  const [selectedUserIds, setSelectedUserIds] = useState(() => {
+    if (!initialRole || !Array.isArray(users)) return [];
+    const roleId = initialRole.id;
+    const roleName = (initialRole.name || '').trim().toLowerCase();
+    const roleKey = (initialRole.originalKey || initialRole.key || '').trim().toLowerCase();
+    const cleanRoleName = roleName.replace(/[\s_-]+/g, '');
+
+    const explicitMatches = roleId
+      ? users.filter(u => u.module_access?.role_template_id === roleId)
+      : [];
+
+    if (explicitMatches.length > 0) {
+      return explicitMatches.map(u => u.user_id);
+    }
+
+    return users
+      .filter(u => {
+        if (u.role === 'customer' || u.emp_status === 'Trash') return false;
+        if (String(u.role || '').toLowerCase() === 'masteradmin' || String(u.emp_id || '').toUpperCase() === 'MASTERADMIN') return false;
+        if (roleName && (u.module_access?.role_template_name || '').trim().toLowerCase() === roleName) return true;
+        if (roleKey && (u.module_access?.role_preset_key || '').trim().toLowerCase() === roleKey) return true;
+        if (roleName && (u.role || '').trim().toLowerCase() === roleName) return true;
+        if (roleKey && (u.role || '').trim().toLowerCase() === roleKey) return true;
+        const desig = (u.emp_designation || '').trim().toLowerCase().replace(/[\s_-]+/g, '');
+        if (cleanRoleName && cleanRoleName.length >= 4 && desig.includes(cleanRoleName)) return true;
+        return false;
+      })
+      .map(u => u.user_id);
+  });
   const [search, setSearch] = useState('');
   const [userSearch, setUserSearch] = useState('');
   const [expandedModules, setExpandedModules] = useState(() => {

@@ -127,6 +127,9 @@ function containerHarness({ gate, fail = false, broadcastFails = false } = {}) {
       } }) })
     },
     '@/utils/saasEntitlements': { isFeatureEntitled: () => false },
+    '@/utils/permissionUtils': { filterVisibleSubTabs: (_a, _r, _m, tabs) => tabs || [], getSubItemPermissions: () => ({}), checkIsMasterAdmin: () => false },
+    '@/config/modulesConfig': { MODULES_CONFIG: [] },
+    './utils/rolePresets': { ROLE_PRESETS: [] },
     './utils/userManagementUtils': { DEFAULT_DEPARTMENTS: [] }
   };
   for (const [name, component] of Object.entries(stubs)) {

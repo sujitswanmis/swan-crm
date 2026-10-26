@@ -240,6 +240,7 @@ export default function UserManagementContainer({
       // If user selected staff members to assign this role to immediately
       if (Array.isArray(assignedUserIds) && assignedUserIds.length > 0) {
         let assignedCount = 0;
+        let lastAssignError = '';
         for (const uid of assignedUserIds) {
           try {
             const assignRes = await assignRoleTemplate(uid, result.role.id);
@@ -256,12 +257,19 @@ export default function UserManagementContainer({
               } catch (broadcastErr) {
                 console.warn('Realtime sync unavailable for user:', uid, broadcastErr);
               }
+            } else {
+              lastAssignError = assignRes.error || 'Assignment rejected';
             }
           } catch (assignErr) {
             console.warn('Failed assigning role to user:', uid, assignErr);
+            lastAssignError = assignErr.message;
           }
         }
-        showToast(`Role "${result.role.name}" saved and assigned to ${assignedCount} staff member(s)!`, 'success');
+        if (assignedCount > 0) {
+          showToast(`Role "${result.role.name}" saved and assigned to ${assignedCount} staff member(s)!`, 'success');
+        } else if (lastAssignError) {
+          showToast(`Role template saved, but staff assignment failed: ${lastAssignError}`, 'error');
+        }
         fetchUsers(false);
       }
 

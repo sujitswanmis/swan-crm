@@ -16,10 +16,11 @@ const norm = value => String(value || '').trim().toLowerCase();
 
 function workspaceKey(row) {
   const company = norm(row.company);
-  if (SWAN_COMPANIES.has(company) || (!company && !row.tenant_id && !row.module_access?._tenantId)) return 'group:swan';
-  if (company) return `company:${company}`;
+  if (company && !SWAN_COMPANIES.has(company)) return `company:${company}`;
   const tenantId = row.tenant_id || row.module_access?._tenantId;
-  return uuid(tenantId) ? `tenant:${tenantId}` : null;
+  if (uuid(tenantId)) return `tenant:${tenantId}`;
+  if (SWAN_COMPANIES.has(company) || !company) return 'group:swan';
+  return null;
 }
 
 function isMasterAdmin(row, email) {
@@ -37,8 +38,10 @@ function isActive(row) {
 function sameWorkspace(actor, target) {
   const actorTenant = actor.tenant_id || actor.module_access?._tenantId;
   const targetTenant = target.tenant_id || target.module_access?._tenantId;
-  return workspaceKey(actor) === workspaceKey(target) &&
-    (!uuid(actorTenant) || !uuid(targetTenant) || norm(actorTenant) === norm(targetTenant));
+  if (uuid(actorTenant) && uuid(targetTenant)) {
+    return norm(actorTenant) === norm(targetTenant);
+  }
+  return workspaceKey(actor) === workspaceKey(target);
 }
 
 async function getContext(requireAdmin = false, fallbackUserId = null, fallbackEmail = null, fallbackCompany = null) {
