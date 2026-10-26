@@ -53,8 +53,17 @@ export default function RolesPermissionsTab({
       if (r?.name) customRoleByName.set(r.name.trim().toLowerCase(), r);
     });
 
-    // 1. Process visiblePresets: if a custom role matches its name, override it with custom data!
+    // 1. Process visiblePresets: if a custom role matches its name, override it with custom data (except protected Admin/Master Admin)
     const processedPresets = visiblePresets.map(preset => {
+      if (preset.key === 'admin' || preset.key === 'master_admin') {
+        return {
+          ...preset,
+          originalKey: preset.key,
+          custom: false,
+          isOverride: false,
+          isSystemProtected: true
+        };
+      }
       const match = customRoleByName.get(preset.name.trim().toLowerCase());
       if (match) {
         return {
@@ -66,14 +75,16 @@ export default function RolesPermissionsTab({
           description: match.description || preset.description,
           presetData: match.permissions || preset.presetData || {},
           custom: true,
-          isOverride: true
+          isOverride: true,
+          isSystemProtected: false
         };
       }
       return {
         ...preset,
         originalKey: preset.key,
         custom: false,
-        isOverride: false
+        isOverride: false,
+        isSystemProtected: false
       };
     });
 
@@ -278,7 +289,19 @@ export default function RolesPermissionsTab({
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                     <span style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: preset.color }} />
                     <span style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-primary)' }}>{preset.name}</span>
-                    {preset.isOverride ? (
+                    {preset.isSystemProtected || preset.key === 'admin' || preset.key === 'master_admin' ? (
+                      <span style={{
+                        fontSize: '0.68rem',
+                        fontWeight: 700,
+                        padding: '0.12rem 0.45rem',
+                        borderRadius: '6px',
+                        backgroundColor: '#f8fafc',
+                        color: '#475569',
+                        border: '1px solid #cbd5e1'
+                      }}>
+                        Protected
+                      </span>
+                    ) : preset.isOverride ? (
                       <span style={{
                         fontSize: '0.68rem',
                         fontWeight: 700,
@@ -352,9 +375,15 @@ export default function RolesPermissionsTab({
                   color: currentPreset.color,
                   border: `1px solid ${currentPreset.badgeBorder}`
                 }}>
-                  {currentPreset.isOverride ? 'Customized Preset' : currentPreset.custom ? 'Custom Role' : 'Default Preset'}
+                  {currentPreset.isSystemProtected || currentPreset.key === 'admin' || currentPreset.key === 'master_admin'
+                    ? 'Protected System Role'
+                    : currentPreset.isOverride 
+                      ? 'Customized Preset' 
+                      : currentPreset.custom 
+                        ? 'Custom Role' 
+                        : 'Default Preset'}
                 </span>
-                {canManageRoles && currentPreset.key !== 'master_admin' && (
+                {canManageRoles && !currentPreset.isSystemProtected && currentPreset.key !== 'master_admin' && currentPreset.key !== 'admin' && currentPreset.originalKey !== 'admin' && (
                   <button
                     type="button"
                     onClick={() => onEditRole(currentPreset)}
