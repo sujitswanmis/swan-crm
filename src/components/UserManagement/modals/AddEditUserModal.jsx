@@ -64,6 +64,7 @@ export default function AddEditUserModal({
         emp_designation: user.emp_designation || '',
         role: user.role || 'agent',
         role_template_id: user.module_access?.role_template_id || '',
+        role_preset_key: user.module_access?.role_preset_key || (user.role?.toLowerCase() === 'admin' ? 'admin' : (user.role?.toLowerCase() === 'crm' ? 'crm' : (user.role?.toLowerCase() === 'telecaller' ? 'telecaller' : ''))),
         company: user.company || 'SuPuja Creations',
         work_location_type: user.work_location_type || (user.module_access?.work_location_type) || 'Headquarters',
         work_location_name: user.work_location_name || (user.module_access?.work_location_name) || '',
@@ -594,6 +595,7 @@ export default function AddEditUserModal({
                           handleChange('role_template_id', '');
                           handleChange('role_preset_key', pKey);
                           const systemRoleMap = {
+                            admin: 'Admin',
                             crm: 'Admin',
                             telecaller: 'agent',
                             sales_coordinator: 'Sales',

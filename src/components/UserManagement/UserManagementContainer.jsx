@@ -311,6 +311,7 @@ export default function UserManagementContainer({
           if (!res?.success) throw new Error(res?.error || 'Could not update permissions.');
 
           const systemRoleMap = {
+            admin: 'Admin',
             crm: 'Admin',
             telecaller: 'agent',
             sales_coordinator: 'Sales',

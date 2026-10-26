@@ -633,6 +633,7 @@ export default function UserManageTab({
           if (member.module_access?.role_template_id) return `custom:${member.module_access.role_template_id}`;
           if (member.module_access?.role_preset_key) return `preset:${member.module_access.role_preset_key}`;
           const r = String(member.role || '').toLowerCase().trim();
+          if (r === 'admin') return 'preset:admin';
           if (r === 'crm') return 'preset:crm';
           if (r === 'telecaller') return 'preset:telecaller';
           if (r === 'sales coordinator' || r === 'sales_coordinator') return 'preset:sales_coordinator';
@@ -640,7 +641,6 @@ export default function UserManageTab({
           if (r === 'sales') return 'preset:sales_executive';
           if (r === 'recruiter') return 'preset:hr_recruiter';
           if (r === 'manager') return 'preset:sales_manager';
-          if (r === 'admin') return 'Admin';
           return member.role || 'agent';
         };
 

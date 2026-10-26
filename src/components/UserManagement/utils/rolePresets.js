@@ -119,6 +119,121 @@ export const ROLE_PRESETS = [
     }
   },
   {
+    key: 'admin',
+    name: 'Admin',
+    description: 'Full workspace administrative access for tenant: team, settings, operations, pipelines, and reports',
+    color: '#4f46e5',
+    badgeBg: '#eef2ff',
+    badgeBorder: '#c7d2fe',
+    presetData: {
+      is_master_admin: false,
+      can_import_data: true,
+      can_export_data: true,
+      can_self_reset_password: true,
+      can_assign_leads: true,
+      can_delete_leads: true,
+      can_view_all_companies: true,
+      can_access_audit_logs: true,
+      can_manage_settings: true,
+      can_manage_column_data: true,
+      can_claim_unassigned: true,
+      can_bulk_actions: true,
+      analytics: { view: true, read: true, write: true, edit: true, export: true },
+      callcenter: { view: true, read: true, write: true, edit: true, export: true },
+      attendance: {
+        view: true, read: true, write: true, edit: true, export: true,
+        sub_items: {
+          my_attendance: { view: true },
+          monthly_logs: { view: true },
+          regularization: { view: true },
+          hod_approvals: { view: true },
+          team_report: { view: true },
+          shift_rules: { view: true },
+          geofencing: { view: true }
+        }
+      },
+      checklist: {
+        view: true, read: true, write: true, edit: true, export: true,
+        sub_items: {
+          my_checklists: { view: true },
+          templates: { view: true },
+          compliance: { view: true }
+        }
+      },
+      delegation: {
+        view: true, read: true, write: true, edit: true, export: true,
+        sub_items: {
+          dashboard: { view: true },
+          to_me: { view: true },
+          by_me: { view: true },
+          all: { view: true }
+        }
+      },
+      registration: { view: true, read: true, write: true, edit: true, export: true },
+      report: { view: true, read: true, write: true, edit: true, export: true },
+      client_report: { view: true, read: true, write: true, edit: true, export: true },
+      leads: {
+        view: true, read: true, write: true, edit: true, export: true, delete: true,
+        assigned_steps: ['lead_dashboard', 'hourly_work', 'all_leads', '01 - New Stage', '02 - Contact Stage', '03 - Qualification Stage', '04 - Follow Up Stage', '05 - Sales Process Stage', '06 - Conversion Stage', '07 - Final Stage', '08 - Transfer to Party'],
+        sub_items: {
+          lead_dashboard: { view: true },
+          hourly_work: { view: true },
+          all_leads: { view: true },
+          '01 - New Stage': { view: true },
+          '02 - Contact Stage': { view: true },
+          '03 - Qualification Stage': { view: true },
+          '04 - Follow Up Stage': { view: true },
+          '05 - Sales Process Stage': { view: true },
+          '06 - Conversion Stage': { view: true },
+          '07 - Final Stage': { view: true },
+          '08 - Transfer to Party': { view: true }
+        }
+      },
+      party: {
+        view: true, read: true, write: true, edit: true, export: true,
+        sub_items: {
+          dashboard: { view: true },
+          all_party_stage: { view: true },
+          s00: { view: true }, s01: { view: true }, s02: { view: true }, s03: { view: true },
+          s04: { view: true }, s05: { view: true }, s06: { view: true }, s07: { view: true },
+          s08: { view: true }, report: { view: true }, hierarchy_tree: { view: true },
+          order_followup: { view: true }, order_feedback: { view: true },
+          monthly_feedback: { view: true }, complaints: { view: true }
+        }
+      },
+      orders: { view: true, read: true, write: true, edit: true, export: true },
+      location_master: { view: true, read: true, write: true, edit: true, export: true },
+      mrp: { view: true, read: true, write: true, edit: true, export: true },
+      mrp_against: { view: true, read: true, write: true, edit: true, export: true },
+      recruiter: {
+        view: true, read: true, write: true, edit: true, export: true,
+        assigned_steps: ['dashboard', 'all_stages', 'S00', 'S01', 'S02', 'S03', 'S04', 'S05', 'S06', 'S07', 'S08', 'S09'],
+        sub_items: {
+          dashboard: { view: true }, all_stages: { view: true },
+          S00: { view: true }, S01: { view: true }, S02: { view: true },
+          S03: { view: true }, S04: { view: true }, S05: { view: true },
+          S06: { view: true }, S07: { view: true }, S08: { view: true }, S09: { view: true }
+        }
+      },
+      joining: { view: true, read: true, write: true, edit: true, export: true },
+      team: { view: true, read: true, write: true, edit: true, export: true },
+      workplace: { view: true, read: true, write: true, edit: true, export: true },
+      public_users: { view: true, read: true, write: true, edit: true, export: true },
+      aiadmin: { view: true, read: true, write: true, edit: true, export: true },
+      aiknowledgebase: { view: true, read: true, write: true, edit: true, export: true },
+      calladmin: { view: true, read: true, write: true, edit: true, export: true },
+      aicallcenter: { view: true, read: true, write: true, edit: true, export: true },
+      whatsapp_official: { view: true, read: true, write: true, edit: true, export: true },
+      whatsapp_unofficial: { view: true, read: true, write: true, edit: true, export: true },
+      sms_config: { view: true, read: true, write: true, edit: true, export: true },
+      rcs_config: { view: true, read: true, write: true, edit: true, export: true },
+      email_config: { view: true, read: true, write: true, edit: true, export: true },
+      admin_message_config: { view: true, read: true, write: true, edit: true, export: true },
+      offline_rule: { view: true, read: true, write: true, edit: true, export: true },
+      settings: { view: true, read: true, write: true, edit: true, export: true }
+    }
+  },
+  {
     key: 'crm',
     name: 'CRM',
     description: 'CRM operations, lead management, registration, daily followup queue, pipeline, client reporting, and communications',

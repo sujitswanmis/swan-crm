@@ -60,6 +60,31 @@ export default function RolesPermissionsTab({
         stats.master_admin = (stats.master_admin || 0) + 1;
         return;
       }
+      if (u.module_access?.role_preset_key && Object.hasOwn(stats, u.module_access.role_preset_key)) {
+        stats[u.module_access.role_preset_key] += 1;
+        return;
+      }
+      const r = (u.role || '').toLowerCase().trim();
+      if (r === 'admin' && Object.hasOwn(stats, 'admin')) {
+        stats.admin += 1;
+        return;
+      }
+      if (r === 'crm' && Object.hasOwn(stats, 'crm')) {
+        stats.crm += 1;
+        return;
+      }
+      if (r === 'telecaller' && Object.hasOwn(stats, 'telecaller')) {
+        stats.telecaller += 1;
+        return;
+      }
+      if ((r === 'sales coordinator' || r === 'sales_coordinator') && Object.hasOwn(stats, 'sales_coordinator')) {
+        stats.sales_coordinator += 1;
+        return;
+      }
+      if ((r === 'process coordinator' || r === 'process_coordinator') && Object.hasOwn(stats, 'process_coordinator')) {
+        stats.process_coordinator += 1;
+        return;
+      }
       const desig = (u.emp_designation || '').toLowerCase();
       if (desig.includes('hod') || desig.includes('director') || desig.includes('head')) {
         stats.hod_dept_head = (stats.hod_dept_head || 0) + 1;
