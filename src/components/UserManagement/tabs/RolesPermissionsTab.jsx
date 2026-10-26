@@ -33,6 +33,7 @@ export default function RolesPermissionsTab({
   const defaultPresetKey = isMasterAdmin ? 'master_admin' : 'admin';
   const [selectedPresetKey, setSelectedPresetKey] = useState(activeRoleKey || defaultPresetKey);
   const [searchUserQuery, setSearchUserQuery] = useState('');
+  const [activeRightTab, setActiveRightTab] = useState('capabilities');
 
   // Sync selected role when parent signals a new active role (e.g. newly created role)
   useEffect(() => {
@@ -181,58 +182,127 @@ export default function RolesPermissionsTab({
     return list;
   }, [users, searchUserQuery]);
 
+  // Separate modules vs global powers for clean capabilities display
+  const { moduleEntries, powerEntries } = useMemo(() => {
+    const data = currentPreset?.presetData || {};
+    const modules = [];
+    const powers = [];
+
+    Object.entries(data).forEach(([key, val]) => {
+      if (typeof val === 'object' && val?.view) {
+        modules.push([key, val]);
+      } else if (typeof val === 'boolean' && key !== 'is_master_admin') {
+        powers.push([key, val]);
+      }
+    });
+
+    return { moduleEntries: modules, powerEntries: powers };
+  }, [currentPreset]);
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', width: '100%' }}>
-      {/* Intro Header */}
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '0.65rem',
+      width: '100%',
+      height: 'calc(100vh - 195px)',
+      minHeight: '520px',
+      boxSizing: 'border-box'
+    }}>
+      {/* Sleek Compact Header */}
       <div style={{
-        padding: '1.25rem 1.5rem',
-        borderRadius: '12px',
+        padding: '0.55rem 1rem',
+        borderRadius: '10px',
         backgroundColor: 'var(--bg-surface)',
         border: '1px solid var(--border-light)',
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
         flexWrap: 'wrap',
-        gap: '1rem'
+        gap: '0.6rem',
+        flexShrink: 0
       }}>
-        <div>
-          <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <Shield size={20} style={{ color: '#7c3aed' }} />
-            Role-Based Access Control (RBAC) & Profile Templates
-          </h3>
-          <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-            Standardize security and workflow access across departments. Apply pre-configured role profiles or customize per-user overrides.
-          </p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
+          <div style={{
+            width: '30px',
+            height: '30px',
+            borderRadius: '8px',
+            background: 'linear-gradient(135deg, #ede9fe 0%, #ddd6fe 100%)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: '#7c3aed',
+            flexShrink: 0
+          }}>
+            <Shield size={16} />
+          </div>
+          <div>
+            <div style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+              Role-Based Access Control (RBAC)
+              <span style={{
+                fontSize: '0.7rem',
+                fontWeight: 600,
+                color: 'var(--text-secondary)',
+                backgroundColor: 'var(--bg-primary, #f1f5f9)',
+                padding: '0.08rem 0.45rem',
+                borderRadius: '8px',
+                border: '1px solid var(--border-light)'
+              }}>
+                {roleProfiles.length} Roles
+              </span>
+            </div>
+            <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+              Standardize security & operational permissions across teams.
+            </div>
+          </div>
         </div>
+
         {canManageRoles && (
-          <button type="button" onClick={onAddRole} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.65rem 0.9rem', borderRadius: '8px', border: 0, background: 'var(--primary-color, #2563eb)', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
-            <Plus size={16} /> Add Role
+          <button
+            type="button"
+            onClick={onAddRole}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.35rem',
+              padding: '0.4rem 0.8rem',
+              borderRadius: '7px',
+              border: 0,
+              background: 'var(--primary-color, #2563eb)',
+              color: '#fff',
+              fontSize: '0.8rem',
+              fontWeight: 700,
+              cursor: 'pointer',
+              boxShadow: '0 2px 6px rgba(37, 99, 235, 0.2)'
+            }}
+          >
+            <Plus size={14} /> Add Custom Role
           </button>
         )}
       </div>
 
-      {rolesLoading && <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', fontSize: '0.8rem', color: 'var(--text-secondary)' }}><Loader2 size={15} className="animate-spin" /> Loading saved roles...</div>}
-      {rolesError && <div role="alert" style={{ padding: '0.75rem 1rem', borderRadius: '8px', background: '#fffbeb', color: '#92400e', fontSize: '0.82rem' }}>{rolesError}</div>}
+      {rolesLoading && <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', fontSize: '0.76rem', color: 'var(--text-secondary)', flexShrink: 0 }}><Loader2 size={13} className="animate-spin" /> Loading saved roles...</div>}
+      {rolesError && <div role="alert" style={{ padding: '0.5rem 0.75rem', borderRadius: '6px', background: '#fffbeb', color: '#92400e', fontSize: '0.76rem', flexShrink: 0 }}>{rolesError}</div>}
 
       {/* Save Success Banner */}
       {saveBanner && (
         <div style={{
-          padding: '0.85rem 1.25rem',
-          borderRadius: '10px',
+          padding: '0.55rem 0.9rem',
+          borderRadius: '8px',
           backgroundColor: '#ecfdf5',
           border: '1px solid #a7f3d0',
           color: '#065f46',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          gap: '0.75rem',
-          fontSize: '0.85rem',
+          gap: '0.6rem',
+          fontSize: '0.8rem',
           fontWeight: 600,
-          boxShadow: '0 2px 8px rgba(16, 185, 129, 0.1)',
-          animation: 'fadeIn 0.2s ease-in-out'
+          boxShadow: '0 1px 4px rgba(16, 185, 129, 0.08)',
+          flexShrink: 0
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
-            <CheckCircle2 size={18} style={{ color: '#059669', flexShrink: 0 }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+            <CheckCircle2 size={16} style={{ color: '#059669', flexShrink: 0 }} />
             <span>{saveBanner}</span>
           </div>
           <button
@@ -243,9 +313,9 @@ export default function RolesPermissionsTab({
               border: 'none',
               cursor: 'pointer',
               color: '#059669',
-              fontSize: '0.82rem',
+              fontSize: '0.78rem',
               fontWeight: 700,
-              padding: '0.2rem 0.5rem',
+              padding: '0.15rem 0.4rem',
               borderRadius: '4px'
             }}
           >
@@ -255,122 +325,179 @@ export default function RolesPermissionsTab({
       )}
 
       {/* Grid: Left Column (Role Profiles List) & Right Column (Profile Inspector) */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.25rem' }}>
-        {/* Left: Role Presets Cards */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-          <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-            Role Templates ({roleProfiles.length})
-          </span>
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: '310px minmax(0, 1fr)',
+        gap: '0.75rem',
+        flex: 1,
+        minHeight: 0,
+        boxSizing: 'border-box'
+      }}>
+        {/* Left Column: Role Profiles List */}
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          height: '100%',
+          minHeight: 0,
+          background: 'var(--bg-surface)',
+          borderRadius: '10px',
+          border: '1px solid var(--border-light)',
+          padding: '0.65rem',
+          boxSizing: 'border-box'
+        }}>
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '0.5rem',
+            paddingBottom: '0.45rem',
+            borderBottom: '1px solid var(--border-light)',
+            flexShrink: 0
+          }}>
+            <span style={{ fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              Role Templates ({roleProfiles.length})
+            </span>
+          </div>
 
-          {roleProfiles.map(preset => {
-            const isSelected = selectedPresetKey === preset.key;
-            const count = roleStats[preset.key] || 0;
+          <div style={{
+            flex: 1,
+            minHeight: 0,
+            overflowY: 'auto',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.4rem',
+            paddingRight: '3px'
+          }}>
+            {roleProfiles.map(preset => {
+              const isSelected = selectedPresetKey === preset.key;
+              const count = roleStats[preset.key] || 0;
 
-            return (
-              <div
-                key={preset.key}
-                onClick={() => {
-                  setSelectedPresetKey(preset.key);
-                  onSelectRoleKey(preset.key);
-                  if (saveBanner) onDismissBanner();
-                }}
-                style={{
-                  padding: '1rem 1.25rem',
-                  borderRadius: '12px',
-                  backgroundColor: 'var(--bg-surface)',
-                  border: isSelected ? `2px solid ${preset.color}` : '1px solid var(--border-light)',
-                  cursor: 'pointer',
-                  boxShadow: isSelected ? '0 4px 15px rgba(0, 0, 0, 0.08)' : 'none',
-                  transition: 'all 0.15s ease',
-                  position: 'relative'
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                    <span style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: preset.color }} />
-                    <span style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-primary)' }}>{preset.name}</span>
-                    {preset.isSystemProtected || preset.key === 'admin' || preset.key === 'master_admin' ? (
-                      <span style={{
-                        fontSize: '0.68rem',
-                        fontWeight: 700,
-                        padding: '0.12rem 0.45rem',
-                        borderRadius: '6px',
-                        backgroundColor: '#f8fafc',
-                        color: '#475569',
-                        border: '1px solid #cbd5e1'
-                      }}>
-                        Protected
+              return (
+                <div
+                  key={preset.key}
+                  onClick={() => {
+                    setSelectedPresetKey(preset.key);
+                    onSelectRoleKey(preset.key);
+                    if (saveBanner) onDismissBanner();
+                  }}
+                  style={{
+                    padding: '0.55rem 0.75rem',
+                    borderRadius: '8px',
+                    backgroundColor: isSelected ? 'var(--bg-primary, #f8fafc)' : 'transparent',
+                    border: isSelected ? `2px solid ${preset.color}` : '1px solid var(--border-light)',
+                    cursor: 'pointer',
+                    boxShadow: isSelected ? '0 2px 6px rgba(0, 0, 0, 0.05)' : 'none',
+                    transition: 'all 0.12s ease'
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.15rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', minWidth: 0 }}>
+                      <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: preset.color, flexShrink: 0 }} />
+                      <span style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {preset.name}
                       </span>
-                    ) : preset.isOverride ? (
-                      <span style={{
-                        fontSize: '0.68rem',
-                        fontWeight: 700,
-                        padding: '0.12rem 0.45rem',
-                        borderRadius: '6px',
-                        backgroundColor: '#ede9fe',
-                        color: '#6d28d9',
-                        border: '1px solid #ddd6fe'
-                      }}>
-                        Customized
-                      </span>
-                    ) : preset.custom ? (
-                      <span style={{
-                        fontSize: '0.68rem',
-                        fontWeight: 700,
-                        padding: '0.12rem 0.45rem',
-                        borderRadius: '6px',
-                        backgroundColor: '#f1f5f9',
-                        color: '#475569',
-                        border: '1px solid #cbd5e1'
-                      }}>
-                        Custom Role
-                      </span>
-                    ) : null}
+                      {preset.isSystemProtected || preset.key === 'admin' || preset.key === 'master_admin' ? (
+                        <span style={{
+                          fontSize: '0.62rem',
+                          fontWeight: 700,
+                          padding: '0.06rem 0.35rem',
+                          borderRadius: '5px',
+                          backgroundColor: '#f1f5f9',
+                          color: '#475569',
+                          border: '1px solid #cbd5e1',
+                          flexShrink: 0
+                        }}>
+                          Protected
+                        </span>
+                      ) : preset.isOverride ? (
+                        <span style={{
+                          fontSize: '0.62rem',
+                          fontWeight: 700,
+                          padding: '0.06rem 0.35rem',
+                          borderRadius: '5px',
+                          backgroundColor: '#ede9fe',
+                          color: '#6d28d9',
+                          border: '1px solid #ddd6fe',
+                          flexShrink: 0
+                        }}>
+                          Customized
+                        </span>
+                      ) : preset.custom ? (
+                        <span style={{
+                          fontSize: '0.62rem',
+                          fontWeight: 700,
+                          padding: '0.06rem 0.35rem',
+                          borderRadius: '5px',
+                          backgroundColor: '#f1f5f9',
+                          color: '#475569',
+                          border: '1px solid #cbd5e1',
+                          flexShrink: 0
+                        }}>
+                          Custom
+                        </span>
+                      ) : null}
+                    </div>
+                    <span style={{
+                      fontSize: '0.68rem',
+                      fontWeight: 700,
+                      padding: '0.1rem 0.4rem',
+                      borderRadius: '10px',
+                      backgroundColor: preset.badgeBg,
+                      color: preset.color,
+                      border: `1px solid ${preset.badgeBorder}`,
+                      flexShrink: 0
+                    }}>
+                      {count}
+                    </span>
                   </div>
-                  <span style={{
+                  <p style={{
+                    margin: 0,
                     fontSize: '0.72rem',
-                    fontWeight: 700,
-                    padding: '0.2rem 0.55rem',
-                    borderRadius: '12px',
-                    backgroundColor: preset.badgeBg,
-                    color: preset.color,
-                    border: `1px solid ${preset.badgeBorder}`
+                    color: 'var(--text-secondary)',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis'
                   }}>
-                    {count} Users
-                  </span>
+                    {preset.description}
+                  </p>
                 </div>
-                <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                  {preset.description}
-                </p>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
 
-        {/* Right: Selected Role Capabilities & User Inspector */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          {/* Preset Capabilities Overview Card */}
+        {/* Right Column: Selected Role Capabilities & Assigned Staff */}
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          height: '100%',
+          minHeight: 0,
+          background: 'var(--bg-surface)',
+          borderRadius: '10px',
+          border: '1px solid var(--border-light)',
+          padding: '0.85rem 1rem',
+          boxSizing: 'border-box'
+        }}>
+          {/* Header Row */}
           <div style={{
-            padding: '1.25rem 1.5rem',
-            borderRadius: '12px',
-            backgroundColor: 'var(--bg-surface)',
-            border: '1px solid var(--border-light)'
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '0.65rem',
+            borderBottom: '1px solid var(--border-light)',
+            paddingBottom: '0.55rem',
+            flexShrink: 0
           }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem' }}>
-              <div>
-                <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                  {currentPreset.name} Capabilities
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <h4 style={{ margin: 0, fontSize: '0.98rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  {currentPreset.name}
                 </h4>
-                <span style={{ fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
-                  Default permissions included when this role is applied
-                </span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                 <span style={{
-                  fontSize: '0.72rem',
+                  fontSize: '0.68rem',
                   fontWeight: 700,
-                  padding: '0.2rem 0.6rem',
-                  borderRadius: '12px',
+                  padding: '0.12rem 0.5rem',
+                  borderRadius: '10px',
                   backgroundColor: currentPreset.badgeBg,
                   color: currentPreset.color,
                   border: `1px solid ${currentPreset.badgeBorder}`
@@ -383,232 +510,344 @@ export default function RolesPermissionsTab({
                         ? 'Custom Role' 
                         : 'Default Preset'}
                 </span>
-                {canManageRoles && !currentPreset.isSystemProtected && currentPreset.key !== 'master_admin' && currentPreset.key !== 'admin' && currentPreset.originalKey !== 'admin' && (
-                  <button
-                    type="button"
-                    onClick={() => onEditRole(currentPreset)}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '0.35rem',
-                      padding: '0.25rem 0.65rem',
-                      borderRadius: '6px',
-                      border: '1px solid #c7d2fe',
-                      backgroundColor: '#eef2ff',
-                      color: '#4338ca',
-                      fontSize: '0.74rem',
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                      transition: 'all 0.15s ease'
-                    }}
-                    title="Edit Role Name, Description & Permissions"
-                  >
-                    <Edit3 size={13} />
-                    <span>Edit Role</span>
-                  </button>
-                )}
-                {canManageRoles && currentPreset.isOverride && (
-                  <button
-                    type="button"
-                    onClick={() => onDeleteRole(currentPreset)}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '0.35rem',
-                      padding: '0.25rem 0.55rem',
-                      borderRadius: '6px',
-                      border: '1px solid #fed7aa',
-                      backgroundColor: '#fff7ed',
-                      color: '#c2410c',
-                      fontSize: '0.74rem',
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                      transition: 'all 0.15s ease'
-                    }}
-                    title="Reset role overrides back to factory default"
-                  >
-                    <Trash2 size={13} />
-                    <span>Reset to Default</span>
-                  </button>
-                )}
-                {canManageRoles && currentPreset.custom && !currentPreset.isOverride && (
-                  <button
-                    type="button"
-                    onClick={() => onDeleteRole(currentPreset)}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '0.35rem',
-                      padding: '0.25rem 0.55rem',
-                      borderRadius: '6px',
-                      border: '1px solid #fecaca',
-                      backgroundColor: '#fef2f2',
-                      color: '#dc2626',
-                      fontSize: '0.74rem',
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                      transition: 'all 0.15s ease'
-                    }}
-                    title="Delete Custom Role Template"
-                  >
-                    <Trash2 size={13} />
-                    <span>Delete</span>
-                  </button>
-                )}
               </div>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)' }}>Key Permissions:</div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.5rem' }}>
-                {Object.entries(currentPreset.presetData).map(([key, val]) => {
-                  if (typeof val === 'boolean') {
-                    return (
-                      <div key={key} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.76rem', color: val ? '#059669' : '#94a3b8', padding: '0.3rem 0.5rem', backgroundColor: 'var(--bg-primary, #f8fafc)', borderRadius: '6px', border: '1px solid var(--border-light)' }}>
-                        <CheckCircle2 size={14} style={{ color: val ? '#10b981' : '#cbd5e1', flexShrink: 0 }} />
-                        <span>{key.replace(/_/g, ' ')}</span>
-                      </div>
-                    );
-                  }
-                  if (typeof val === 'object' && val?.view) {
-                    const modConfig = MODULES_CONFIG.find(m => m.id === key);
-                    const modLabel = modConfig?.label || key.replace(/_/g, ' ');
-                    const activeSubs = val.sub_items 
-                      ? Object.entries(val.sub_items)
-                          .filter(([, s]) => s === true || s?.view === true)
-                          .map(([subKey]) => {
-                            const subDef = modConfig?.subItems?.find(s => s.id === subKey);
-                            return subDef?.label ? subDef.label.replace(/^[^\w\s]+/, '').trim() : subKey.replace(/_/g, ' ');
-                          })
-                      : [];
-
-                    return (
-                      <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', fontSize: '0.76rem', color: '#059669', backgroundColor: 'var(--bg-primary, #f8fafc)', padding: '0.35rem 0.5rem', borderRadius: '6px', border: '1px solid var(--border-light)' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                          <CheckCircle2 size={14} style={{ color: '#10b981', flexShrink: 0 }} />
-                          <span style={{ fontWeight: 600 }}>{modLabel}</span>
-                        </div>
-                        {activeSubs.length > 0 && (
-                          <div style={{ paddingLeft: '1.25rem', fontSize: '0.7rem', color: 'var(--text-secondary)', lineHeight: 1.3 }}>
-                            {activeSubs.slice(0, 3).join(', ')}{activeSubs.length > 3 ? ` +${activeSubs.length - 3} more` : ''}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  }
-                  return null;
-                })}
-              </div>
-            </div>
-          </div>
-
-          {/* Quick User Permission Manager */}
-          <div style={{
-            padding: '1.25rem 1.5rem',
-            borderRadius: '12px',
-            backgroundColor: 'var(--bg-surface)',
-            border: '1px solid var(--border-light)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '0.75rem'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h4 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                Customize Individual User Permissions
-              </h4>
               <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
-                {filteredUsers.length} staff members
+                {currentPreset.description}
               </span>
             </div>
 
-            {/* Quick search user */}
-            <div style={{ position: 'relative' }}>
-              <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
-              <input
-                type="text"
-                value={searchUserQuery}
-                onChange={e => setSearchUserQuery(e.target.value)}
-                placeholder="Search staff to open matrix..."
-                style={{
-                  width: '100%',
-                  padding: '0.4rem 0.75rem 0.4rem 2rem',
-                  borderRadius: '6px',
-                  border: '1px solid var(--border-light)',
-                  backgroundColor: 'var(--bg-primary, #f8fafc)',
-                  color: 'var(--text-primary)',
-                  fontSize: '0.78rem'
-                }}
-              />
-            </div>
-
-            {/* Quick staff list with 1-click matrix button */}
-            <div style={{ maxHeight: '220px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-              {filteredUsers.slice(0, 15).map(u => (
-                <div
-                  key={u.user_id}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+              {canManageRoles && !currentPreset.isSystemProtected && currentPreset.key !== 'master_admin' && currentPreset.key !== 'admin' && currentPreset.originalKey !== 'admin' && (
+                <button
+                  type="button"
+                  onClick={() => onEditRole(currentPreset)}
                   style={{
-                    display: 'flex',
+                    display: 'inline-flex',
                     alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '0.45rem 0.75rem',
-                    borderRadius: '8px',
-                    border: '1px solid var(--border-light)',
-                    backgroundColor: 'var(--bg-surface)',
-                    fontSize: '0.78rem'
+                    gap: '0.3rem',
+                    padding: '0.3rem 0.65rem',
+                    borderRadius: '6px',
+                    border: '1px solid #c7d2fe',
+                    backgroundColor: '#eef2ff',
+                    color: '#4338ca',
+                    fontSize: '0.74rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    transition: 'all 0.12s ease'
                   }}
+                  title="Edit Role Name, Description & Permissions"
                 >
-                  <div>
-                    <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{u.emp_name || u.email}</div>
-                    <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
-                      {u.emp_designation || u.emp_department || 'Staff'}
-                      {u.module_access?.role_template_name ? ` • Role: ${u.module_access.role_template_name}` : ''}
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
-                    {currentPreset.custom && canManageRoles && (
-                      <button
-                        type="button"
-                        onClick={() => onAssignRoleToUser(u, currentPreset)}
-                        disabled={assigningRoleUserId === u.user_id || u.role === 'customer' || checkIsMasterAdmin(u)}
-                        style={{
-                          padding: '0.25rem 0.65rem',
-                          borderRadius: '6px',
-                          border: 0,
-                          backgroundColor: '#4f46e5',
-                          color: '#fff',
-                          fontWeight: 600,
-                          fontSize: '0.72rem',
-                          cursor: (assigningRoleUserId === u.user_id || u.role === 'customer' || checkIsMasterAdmin(u)) ? 'not-allowed' : 'pointer',
-                          opacity: (assigningRoleUserId === u.user_id || u.role === 'customer' || checkIsMasterAdmin(u)) ? 0.5 : 1
-                        }}
-                      >
-                        {assigningRoleUserId === u.user_id ? 'Assigning...' : 'Assign Role'}
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => onManagePermissions(u)}
-                      style={{
-                        padding: '0.25rem 0.65rem',
-                        borderRadius: '6px',
-                        border: '1px solid #ddd6fe',
-                        backgroundColor: '#f5f3ff',
-                        color: '#7c3aed',
-                        fontWeight: 600,
-                        fontSize: '0.72rem',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.3rem'
-                      }}
-                    >
-                      <Shield size={12} /> Edit Matrix
-                    </button>
-                  </div>
-                </div>
-              ))}
+                  <Edit3 size={13} />
+                  <span>Edit Role</span>
+                </button>
+              )}
+              {canManageRoles && currentPreset.isOverride && (
+                <button
+                  type="button"
+                  onClick={() => onDeleteRole(currentPreset)}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.3rem',
+                    padding: '0.3rem 0.55rem',
+                    borderRadius: '6px',
+                    border: '1px solid #fed7aa',
+                    backgroundColor: '#fff7ed',
+                    color: '#c2410c',
+                    fontSize: '0.74rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    transition: 'all 0.12s ease'
+                  }}
+                  title="Reset role overrides back to factory default"
+                >
+                  <Trash2 size={13} />
+                  <span>Reset to Default</span>
+                </button>
+              )}
+              {canManageRoles && currentPreset.custom && !currentPreset.isOverride && (
+                <button
+                  type="button"
+                  onClick={() => onDeleteRole(currentPreset)}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.3rem',
+                    padding: '0.3rem 0.55rem',
+                    borderRadius: '6px',
+                    border: '1px solid #fecaca',
+                    backgroundColor: '#fef2f2',
+                    color: '#dc2626',
+                    fontSize: '0.74rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    transition: 'all 0.12s ease'
+                  }}
+                  title="Delete Custom Role Template"
+                >
+                  <Trash2 size={13} />
+                  <span>Delete</span>
+                </button>
+              )}
             </div>
           </div>
+
+          {/* Sub-tab Switch: Role Capabilities vs Assigned Staff */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.65rem', flexShrink: 0 }}>
+            <button
+              type="button"
+              onClick={() => setActiveRightTab('capabilities')}
+              style={{
+                padding: '0.3rem 0.8rem',
+                borderRadius: '6px',
+                border: 'none',
+                backgroundColor: activeRightTab === 'capabilities' ? 'var(--primary-color, #2563eb)' : 'var(--bg-primary, #f1f5f9)',
+                color: activeRightTab === 'capabilities' ? '#ffffff' : 'var(--text-secondary)',
+                fontSize: '0.76rem',
+                fontWeight: 700,
+                cursor: 'pointer'
+              }}
+            >
+              Role Capabilities
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveRightTab('staff')}
+              style={{
+                padding: '0.3rem 0.8rem',
+                borderRadius: '6px',
+                border: 'none',
+                backgroundColor: activeRightTab === 'staff' ? 'var(--primary-color, #2563eb)' : 'var(--bg-primary, #f1f5f9)',
+                color: activeRightTab === 'staff' ? '#ffffff' : 'var(--text-secondary)',
+                fontSize: '0.76rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.35rem'
+              }}
+            >
+              <span>Staff Members</span>
+              <span style={{
+                fontSize: '0.66rem',
+                padding: '0.04rem 0.35rem',
+                borderRadius: '8px',
+                backgroundColor: activeRightTab === 'staff' ? 'rgba(255,255,255,0.25)' : 'var(--bg-surface, #e2e8f0)',
+                color: activeRightTab === 'staff' ? '#fff' : 'var(--text-primary)'
+              }}>
+                {roleStats[currentPreset.key] || 0}
+              </span>
+            </button>
+          </div>
+
+          {/* Tab 1: Capabilities Overview */}
+          {activeRightTab === 'capabilities' && (
+            <div style={{
+              flex: 1,
+              minHeight: 0,
+              overflowY: 'auto',
+              paddingRight: '3px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.85rem'
+            }}>
+              {/* Modules & Subpages Section */}
+              <div>
+                <div style={{ fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.4rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <span>Modules & Pages Access</span>
+                  <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', fontWeight: 600 }}>({moduleEntries.length} enabled)</span>
+                </div>
+                {moduleEntries.length === 0 ? (
+                  <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', fontStyle: 'italic', padding: '0.4rem' }}>
+                    No specific modules enabled for this role.
+                  </div>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))', gap: '0.45rem' }}>
+                    {moduleEntries.map(([key, val]) => {
+                      const modConfig = MODULES_CONFIG.find(m => m.id === key);
+                      const modLabel = modConfig?.label || key.replace(/_/g, ' ');
+                      const activeSubs = val.sub_items
+                        ? Object.entries(val.sub_items)
+                            .filter(([, s]) => s === true || s?.view === true)
+                            .map(([subKey]) => {
+                              const subDef = modConfig?.subItems?.find(s => s.id === subKey);
+                              return subDef?.label ? subDef.label.replace(/^[^\w\s]+/, '').trim() : subKey.replace(/_/g, ' ');
+                            })
+                        : [];
+
+                      return (
+                        <div
+                          key={key}
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '0.15rem',
+                            fontSize: '0.74rem',
+                            color: '#059669',
+                            backgroundColor: 'var(--bg-primary, #f8fafc)',
+                            padding: '0.35rem 0.55rem',
+                            borderRadius: '7px',
+                            border: '1px solid var(--border-light)'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                            <CheckCircle2 size={13} style={{ color: '#10b981', flexShrink: 0 }} />
+                            <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{modLabel}</span>
+                          </div>
+                          {activeSubs.length > 0 && (
+                            <div style={{ paddingLeft: '1.15rem', fontSize: '0.68rem', color: 'var(--text-secondary)', lineHeight: 1.3 }}>
+                              {activeSubs.slice(0, 3).join(', ')}{activeSubs.length > 3 ? ` +${activeSubs.length - 3} more` : ''}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Operational Powers Section */}
+              <div>
+                <div style={{ fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.4rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <span>Operational Privileges</span>
+                  <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', fontWeight: 600 }}>({powerEntries.filter(([, val]) => Boolean(val)).length} active)</span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(175px, 1fr))', gap: '0.35rem' }}>
+                  {powerEntries.map(([key, val]) => (
+                    <div
+                      key={key}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.35rem',
+                        fontSize: '0.72rem',
+                        color: val ? '#059669' : '#94a3b8',
+                        padding: '0.25rem 0.5rem',
+                        backgroundColor: 'var(--bg-primary, #f8fafc)',
+                        borderRadius: '6px',
+                        border: '1px solid var(--border-light)'
+                      }}
+                    >
+                      <CheckCircle2 size={13} style={{ color: val ? '#10b981' : '#cbd5e1', flexShrink: 0 }} />
+                      <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {key.replace(/_/g, ' ')}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Tab 2: Assigned Staff Members */}
+          {activeRightTab === 'staff' && (
+            <div style={{
+              flex: 1,
+              minHeight: 0,
+              overflowY: 'auto',
+              paddingRight: '3px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.65rem'
+            }}>
+              {/* Search Staff */}
+              <div style={{ position: 'relative', flexShrink: 0 }}>
+                <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
+                <input
+                  type="text"
+                  value={searchUserQuery}
+                  onChange={e => setSearchUserQuery(e.target.value)}
+                  placeholder="Search staff members to customize permissions..."
+                  style={{
+                    width: '100%',
+                    padding: '0.38rem 0.75rem 0.38rem 1.9rem',
+                    borderRadius: '6px',
+                    border: '1px solid var(--border-light)',
+                    backgroundColor: 'var(--bg-primary, #f8fafc)',
+                    color: 'var(--text-primary)',
+                    fontSize: '0.76rem',
+                    boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+
+              {/* Staff List */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                {filteredUsers.length === 0 ? (
+                  <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', padding: '0.75rem', textAlign: 'center' }}>
+                    No staff members match your search.
+                  </div>
+                ) : (
+                  filteredUsers.map(u => (
+                    <div
+                      key={u.user_id}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '0.4rem 0.65rem',
+                        borderRadius: '7px',
+                        border: '1px solid var(--border-light)',
+                        backgroundColor: 'var(--bg-primary, #f8fafc)',
+                        fontSize: '0.76rem'
+                      }}
+                    >
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {u.emp_name || u.email}
+                        </div>
+                        <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>
+                          {u.emp_designation || u.emp_department || 'Staff'}
+                          {u.module_access?.role_template_name ? ` • Role: ${u.module_access.role_template_name}` : ''}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flexShrink: 0 }}>
+                        {currentPreset.custom && canManageRoles && (
+                          <button
+                            type="button"
+                            onClick={() => onAssignRoleToUser(u, currentPreset)}
+                            disabled={assigningRoleUserId === u.user_id || u.role === 'customer' || checkIsMasterAdmin(u)}
+                            style={{
+                              padding: '0.2rem 0.55rem',
+                              borderRadius: '5px',
+                              border: 0,
+                              backgroundColor: '#4f46e5',
+                              color: '#fff',
+                              fontWeight: 600,
+                              fontSize: '0.7rem',
+                              cursor: (assigningRoleUserId === u.user_id || u.role === 'customer' || checkIsMasterAdmin(u)) ? 'not-allowed' : 'pointer',
+                              opacity: (assigningRoleUserId === u.user_id || u.role === 'customer' || checkIsMasterAdmin(u)) ? 0.5 : 1
+                            }}
+                          >
+                            {assigningRoleUserId === u.user_id ? 'Assigning...' : 'Assign Role'}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => onManagePermissions(u)}
+                          style={{
+                            padding: '0.2rem 0.55rem',
+                            borderRadius: '5px',
+                            border: '1px solid #ddd6fe',
+                            backgroundColor: '#f5f3ff',
+                            color: '#7c3aed',
+                            fontWeight: 600,
+                            fontSize: '0.7rem',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.25rem'
+                          }}
+                        >
+                          <Shield size={11} /> Edit Matrix
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
