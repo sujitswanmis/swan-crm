@@ -13,6 +13,7 @@ import {
   getTenantProducts,
   saveTenantProduct,
   deleteTenantProduct,
+  deleteTenantProductsBulk,
   toggleTenantProductStatus,
   importTenantProducts
 } from '@/app/actions/tenantProducts';
@@ -36,14 +37,16 @@ const DEFAULT_CATEGORIES = [
 ];
 
 const UOM_OPTIONS = ['Units', 'Pcs', 'Kg', 'Ton', 'Box', 'Set', 'Nos', 'Mtr', 'Ltr'];
-const TAX_SLABS = [0, 5, 12, 18, 28];
+const TAX_SLABS = [0, 5, 18, 28];
 
 const INITIAL_COL_WIDTHS = {
+  select: 45,
   status: 90,
   name: 240,
   sku: 140,
   branch: 170,
   category: 140,
+  subcategory: 130,
   price: 130,
   tax: 90,
   hsn: 110,
@@ -97,6 +100,9 @@ export default function ProductListConfig({ userCompany = '' }) {
 
   // Delete confirm
   const [deletingProductId, setDeletingProductId] = useState(null);
+  const [selectedProductIds, setSelectedProductIds] = useState([]);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
 
   // Column Resizing state
   const [colWidths, setColWidths] = useState(() => {
@@ -119,10 +125,11 @@ export default function ProductListConfig({ userCompany = '' }) {
     name: '',
     sku: '',
     category: 'Implement',
+    subCategory: '',
     branchName: 'All Branches',
     uom: 'Units',
     price: '',
-    taxRate: 12,
+    taxRate: 18,
     hsnCode: '8432',
     stockQuantity: '',
     minOrderQty: 1,
@@ -248,10 +255,11 @@ export default function ProductListConfig({ userCompany = '' }) {
       name: '',
       sku: '',
       category: 'Implement',
+      subCategory: '',
       branchName: selectedBranch !== 'ALL' ? selectedBranch : 'All Branches',
       uom: 'Units',
       price: '',
-      taxRate: 12,
+      taxRate: 18,
       hsnCode: '8432',
       stockQuantity: '',
       minOrderQty: 1,
@@ -268,10 +276,11 @@ export default function ProductListConfig({ userCompany = '' }) {
       name: p.name || '',
       sku: p.sku || '',
       category: p.category || 'General',
+      subCategory: p.sub_category || '',
       branchName: p.branch_name || 'All Branches',
       uom: p.uom || 'Units',
       price: p.price ?? '',
-      taxRate: p.tax_rate ?? 12,
+      taxRate: p.tax_rate ?? 18,
       hsnCode: p.hsn_code || '',
       stockQuantity: p.stock_quantity ?? '',
       minOrderQty: p.min_order_qty ?? 1,
@@ -300,6 +309,7 @@ export default function ProductListConfig({ userCompany = '' }) {
         name: formData.name.trim(),
         sku: formData.sku.trim(),
         category: formData.category,
+        subCategory: formData.subCategory,
         uom: formData.uom,
         price: formData.price !== '' ? Number(formData.price) : 0,
         taxRate: Number(formData.taxRate) || 0,
@@ -361,6 +371,7 @@ export default function ProductListConfig({ userCompany = '' }) {
       const res = await deleteTenantProduct(id, effectiveCompany);
       if (res.success) {
         setProducts(prev => prev.filter(p => p.id !== id));
+        setSelectedProductIds(prev => prev.filter(item => item !== id));
         showToast('Product deleted successfully');
       } else {
         showToast(res.error || 'Failed to delete product', 'error');
@@ -372,6 +383,41 @@ export default function ProductListConfig({ userCompany = '' }) {
     }
   };
 
+  // --- Bulk Selection Handlers ---
+  const handleToggleSelectProduct = (id) => {
+    setSelectedProductIds(prev =>
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleToggleSelectAll = () => {
+    if (selectedProductIds.length === filteredProducts.length && filteredProducts.length > 0) {
+      setSelectedProductIds([]);
+    } else {
+      setSelectedProductIds(filteredProducts.map(p => p.id));
+    }
+  };
+
+  const handleConfirmBulkDelete = async () => {
+    if (selectedProductIds.length === 0) return;
+    setBulkDeleting(true);
+    try {
+      const res = await deleteTenantProductsBulk(selectedProductIds, effectiveCompany);
+      if (res.success) {
+        showToast(`Successfully deleted ${res.count} products!`);
+        setProducts(prev => prev.filter(p => !selectedProductIds.includes(p.id)));
+        setSelectedProductIds([]);
+        setShowBulkDeleteConfirm(false);
+      } else {
+        showToast(res.error || 'Failed to delete selected products.', 'error');
+      }
+    } catch (err) {
+      showToast(err.message || 'Error deleting products.', 'error');
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
+
   // --- Export to CSV ---
   const handleExportCSV = () => {
     if (filteredProducts.length === 0) {
@@ -380,7 +426,7 @@ export default function ProductListConfig({ userCompany = '' }) {
     }
 
     const headers = [
-      'Name', 'SKU', 'Branch', 'Category', 'UOM', 'Price', 'Tax Rate %', 'HSN Code', 'Stock Qty', 'Min Order Qty', 'Status', 'Description'
+      'Name', 'SKU', 'Branch', 'Category', 'Sub-Category', 'UOM', 'Price', 'Tax Rate %', 'HSN Code', 'Stock Qty', 'Min Order Qty', 'Status', 'Description'
     ];
 
     const rows = filteredProducts.map(p => [
@@ -388,6 +434,7 @@ export default function ProductListConfig({ userCompany = '' }) {
       `"${(p.sku || '').replace(/"/g, '""')}"`,
       `"${(p.branch_name || 'All Branches').replace(/"/g, '""')}"`,
       `"${(p.category || '').replace(/"/g, '""')}"`,
+      `"${(p.sub_category || '').replace(/"/g, '""')}"`,
       `"${(p.uom || 'Units').replace(/"/g, '""')}"`,
       p.price || 0,
       p.tax_rate || 0,
@@ -417,6 +464,7 @@ export default function ProductListConfig({ userCompany = '' }) {
       'SKU',
       'Branch',
       'Category',
+      'Sub-Category',
       'Price',
       'Tax Rate %',
       'HSN Code',
@@ -427,11 +475,11 @@ export default function ProductListConfig({ userCompany = '' }) {
     ];
 
     const sampleRows = [
-      ['Rotavator – Super Series', 'SWAN-ROTA-01', 'All Branches', 'Implement', '115000', '12', '8432', '15', '1', 'Units', 'Heavy duty super series rotavator with multi speed gearbox'],
-      ['Laser Land Leveller', 'SWAN-LLL-02', 'NSMLR', 'Land Leveller', '325000', '12', '8432', '8', '1', 'Units', 'Precision dual slope transmitter receiver system'],
-      ['Genuine Blade 28T', 'SWAN-BLD-28', 'All Branches', 'Spare Part', '650', '18', '843290', '200', '10', 'Pcs', 'High carbon boron steel rotary tiller blades'],
-      ['Super Seeder 8 Row', 'SWAN-SEED-08', 'NSTL', 'Seeder', '245000', '12', '8432', '5', '1', 'Units', 'Next generation super seeder for direct sowing'],
-      ['Hydraulic Reversible MB Plough', 'SWAN-PLOW-03', 'All Branches', 'Plough', '95000', '12', '8432', '12', '1', 'Units', 'Heavy duty reversible mould board plough']
+      ['Rotavator – Super Series', 'SWAN-ROTA-01', 'All Branches', 'Implement', 'Rotary Tiller', '115000', '18', '8432', '15', '1', 'Units', 'Heavy duty super series rotavator with multi speed gearbox'],
+      ['Laser Land Leveller', 'SWAN-LLL-02', 'NSMLR', 'Land Leveller', 'Dual Slope', '325000', '18', '8432', '8', '1', 'Units', 'Precision dual slope transmitter receiver system'],
+      ['Genuine Blade 28T', 'SWAN-BLD-28', 'All Branches', 'Spare Part', 'Rotary Blades', '650', '18', '843290', '200', '10', 'Pcs', 'High carbon boron steel rotary tiller blades'],
+      ['Super Seeder 8 Row', 'SWAN-SEED-08', 'NSTL', 'Seeder', 'Direct Sowing', '245000', '18', '8432', '5', '1', 'Units', 'Next generation super seeder for direct sowing'],
+      ['Hydraulic Reversible MB Plough', 'SWAN-PLOW-03', 'All Branches', 'Plough', 'Mould Board', '95000', '18', '8432', '12', '1', 'Units', 'Heavy duty reversible mould board plough']
     ];
 
     const csvContent = '\uFEFF' + [
@@ -464,6 +512,7 @@ export default function ProductListConfig({ userCompany = '' }) {
         { header: 'SKU', key: 'sku', width: 18 },
         { header: 'Branch', key: 'branch', width: 20 },
         { header: 'Category', key: 'category', width: 18 },
+        { header: 'Sub-Category', key: 'sub_category', width: 18 },
         { header: 'Price', key: 'price', width: 14 },
         { header: 'Tax Rate %', key: 'tax_rate', width: 14 },
         { header: 'HSN Code', key: 'hsn', width: 14 },
@@ -490,8 +539,9 @@ export default function ProductListConfig({ userCompany = '' }) {
           sku: 'SWAN-ROTA-01',
           branch: 'All Branches',
           category: 'Implement',
+          sub_category: 'Rotary Tiller',
           price: 115000,
-          tax_rate: 12,
+          tax_rate: 18,
           hsn: '8432',
           stock: 15,
           min_order_qty: 1,
@@ -503,8 +553,9 @@ export default function ProductListConfig({ userCompany = '' }) {
           sku: 'SWAN-LLL-02',
           branch: 'NSMLR',
           category: 'Land Leveller',
+          sub_category: 'Dual Slope',
           price: 325000,
-          tax_rate: 12,
+          tax_rate: 18,
           hsn: '8432',
           stock: 8,
           min_order_qty: 1,
@@ -516,6 +567,7 @@ export default function ProductListConfig({ userCompany = '' }) {
           sku: 'SWAN-BLD-28',
           branch: 'All Branches',
           category: 'Spare Part',
+          sub_category: 'Rotary Blades',
           price: 650,
           tax_rate: 18,
           hsn: '843290',
@@ -529,8 +581,9 @@ export default function ProductListConfig({ userCompany = '' }) {
           sku: 'SWAN-SEED-08',
           branch: 'NSTL',
           category: 'Seeder',
+          sub_category: 'Direct Sowing',
           price: 245000,
-          tax_rate: 12,
+          tax_rate: 18,
           hsn: '8432',
           stock: 5,
           min_order_qty: 1,
@@ -542,8 +595,9 @@ export default function ProductListConfig({ userCompany = '' }) {
           sku: 'SWAN-PLOW-03',
           branch: 'All Branches',
           category: 'Plough',
+          sub_category: 'Mould Board',
           price: 95000,
-          tax_rate: 12,
+          tax_rate: 18,
           hsn: '8432',
           stock: 12,
           min_order_qty: 1,
@@ -591,6 +645,7 @@ export default function ProductListConfig({ userCompany = '' }) {
         { header: 'SKU', key: 'sku', width: 18 },
         { header: 'Branch', key: 'branch', width: 20 },
         { header: 'Category', key: 'category', width: 18 },
+        { header: 'Sub-Category', key: 'sub_category', width: 18 },
         { header: 'Price (₹)', key: 'price', width: 14 },
         { header: 'Tax Rate %', key: 'tax_rate', width: 14 },
         { header: 'HSN Code', key: 'hsn', width: 14 },
@@ -617,6 +672,7 @@ export default function ProductListConfig({ userCompany = '' }) {
           sku: p.sku || '',
           branch: p.branch_name || 'All Branches',
           category: p.category || '',
+          sub_category: p.sub_category || '',
           price: p.price || 0,
           tax_rate: p.tax_rate || 0,
           hsn: p.hsn_code || '',
@@ -668,7 +724,16 @@ export default function ProductListConfig({ userCompany = '' }) {
       const name = findVal('product name', 'item name', 'name', 'product');
       const sku = findVal('sku', 'item code', 'product code', 'code');
       const branchVal = findVal('branch name', 'branch', 'location');
-      const categoryVal = findVal('category', 'cat');
+      const subCategoryVal = findVal('sub category', 'sub-category', 'subcategory', 'sub_cat', 'subcat', 'sub cat');
+      // Category pattern matching - ensure we don't accidentally match sub-category column
+      const matchCatKey = keys.find(k => {
+        const lk = (k || '').trim().toLowerCase();
+        return (lk.includes('category') || lk === 'cat') && !lk.includes('sub');
+      });
+      const categoryVal = (matchCatKey && row[matchCatKey] !== undefined && row[matchCatKey] !== null && String(row[matchCatKey]).trim())
+        ? String(row[matchCatKey]).trim()
+        : findVal('category', 'cat');
+
       const uom = findVal('uom', 'unit') || 'Units';
       const priceStr = findVal('base price', 'unit price', 'price', 'rate', 'mrp');
       const taxRateStr = findVal('tax rate', 'tax %', 'gst %', 'tax', 'gst');
@@ -678,7 +743,7 @@ export default function ProductListConfig({ userCompany = '' }) {
       const description = findVal('description', 'desc', 'details');
 
       const price = !isNaN(Number(priceStr)) && Number(priceStr) >= 0 ? Number(priceStr) : 0;
-      const taxRate = !isNaN(Number(taxRateStr)) && Number(taxRateStr) >= 0 ? Number(taxRateStr) : 12;
+      const taxRate = !isNaN(Number(taxRateStr)) && Number(taxRateStr) >= 0 ? Number(taxRateStr) : 18;
       const stockQuantity = !isNaN(Number(stockStr)) && Number(stockStr) >= 0 ? Number(stockStr) : 0;
       const minOrderQty = !isNaN(Number(minOrderStr)) && Number(minOrderStr) >= 1 ? Number(minOrderStr) : 1;
 
@@ -695,6 +760,7 @@ export default function ProductListConfig({ userCompany = '' }) {
         sku: sku || '',
         branch_name: branchVal || defaultBranch || 'All Branches',
         category: categoryVal || defaultCategory || 'General',
+        sub_category: subCategoryVal || '',
         uom: uom,
         price,
         tax_rate: taxRate,
@@ -897,9 +963,10 @@ export default function ProductListConfig({ userCompany = '' }) {
         sku: p.sku,
         branch_name: p.branch_name || importBranch,
         category: p.category || importCategory,
+        sub_category: p.sub_category || '',
         uom: p.uom || 'Units',
         price: p.price || 0,
-        tax_rate: p.tax_rate ?? 12,
+        tax_rate: p.tax_rate ?? 18,
         hsn_code: p.hsn_code || '',
         stock_quantity: p.stock_quantity || 0,
         min_order_qty: p.min_order_qty || 1,
@@ -935,8 +1002,9 @@ export default function ProductListConfig({ userCompany = '' }) {
         const matchesName = (p.name || '').toLowerCase().includes(q);
         const matchesSku = (p.sku || '').toLowerCase().includes(q);
         const matchesCat = (p.category || '').toLowerCase().includes(q);
+        const matchesSubCat = (p.sub_category || '').toLowerCase().includes(q);
         const matchesBranch = (p.branch_name || '').toLowerCase().includes(q);
-        if (!matchesName && !matchesSku && !matchesCat && !matchesBranch) return false;
+        if (!matchesName && !matchesSku && !matchesCat && !matchesSubCat && !matchesBranch) return false;
       }
       return true;
     });
@@ -974,9 +1042,10 @@ export default function ProductListConfig({ userCompany = '' }) {
         const matchName = (p.name || '').toLowerCase().includes(q);
         const matchSku = (p.sku || '').toLowerCase().includes(q);
         const matchCat = (p.category || '').toLowerCase().includes(q);
+        const matchSubCat = (p.sub_category || '').toLowerCase().includes(q);
         const matchHsn = (p.hsn_code || '').toLowerCase().includes(q);
         const matchDesc = (p.description || '').toLowerCase().includes(q);
-        return matchName || matchSku || matchCat || matchHsn || matchDesc;
+        return matchName || matchSku || matchCat || matchSubCat || matchHsn || matchDesc;
       }
 
       return true;
@@ -1110,33 +1179,110 @@ export default function ProductListConfig({ userCompany = '' }) {
               <span>Refresh</span>
             </button>
 
-            <button
-              onClick={handleExportCSV}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.4rem',
-                padding: '0.55rem 0.85rem',
-                borderRadius: '8px',
-                border: '1px solid #cbd5e1',
-                background: '#ffffff',
-                color: '#334155',
-                cursor: 'pointer',
-                fontSize: '0.825rem',
-                fontWeight: 600
-              }}
-            >
-              <Download size={15} />
-              <span>Export CSV</span>
-            </button>
+            {/* Export Dropdown */}
+            <div style={{ position: 'relative' }} ref={exportDropdownRef}>
+              <button
+                type="button"
+                onClick={() => setShowExportDropdown(prev => !prev)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  padding: '0.55rem 0.85rem',
+                  borderRadius: '8px',
+                  border: '1px solid #cbd5e1',
+                  background: '#ffffff',
+                  color: '#334155',
+                  cursor: 'pointer',
+                  fontSize: '0.825rem',
+                  fontWeight: 600
+                }}
+              >
+                <Download size={15} />
+                <span>Export</span>
+                <ChevronDown size={14} />
+              </button>
 
+              {showExportDropdown && (
+                <div style={{
+                  position: 'absolute',
+                  top: '100%',
+                  right: 0,
+                  marginTop: '6px',
+                  background: '#ffffff',
+                  borderRadius: '8px',
+                  border: '1px solid #e2e8f0',
+                  boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05)',
+                  zIndex: 50,
+                  minWidth: '185px',
+                  overflow: 'hidden'
+                }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowExportDropdown(false);
+                      handleExportExcel();
+                    }}
+                    disabled={isExportingExcel}
+                    style={{
+                      width: '100%',
+                      padding: '0.65rem 0.9rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.6rem',
+                      border: 'none',
+                      background: 'transparent',
+                      color: '#0f172a',
+                      fontSize: '0.8rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      textAlign: 'left'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = '#f8fafc'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                  >
+                    <FileSpreadsheet size={16} color="#16a34a" />
+                    <span>Export to Excel (.xlsx)</span>
+                  </button>
+                  <div style={{ height: '1px', background: '#f1f5f9' }} />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowExportDropdown(false);
+                      handleExportCSV();
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '0.65rem 0.9rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.6rem',
+                      border: 'none',
+                      background: 'transparent',
+                      color: '#0f172a',
+                      fontSize: '0.8rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      textAlign: 'left'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = '#f8fafc'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                  >
+                    <Download size={16} color="#2563eb" />
+                    <span>Export to CSV (.csv)</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Import Button */}
             <button
               onClick={handleOpenImportModal}
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: '0.4rem',
-                padding: '0.55rem 0.85rem',
+                padding: '0.55rem 0.95rem',
                 borderRadius: '8px',
                 border: '1px solid #cbd5e1',
                 background: '#ffffff',
@@ -1147,8 +1293,32 @@ export default function ProductListConfig({ userCompany = '' }) {
               }}
             >
               <Upload size={15} />
-              <span>Import CSV</span>
+              <span>Import (CSV / Excel)</span>
             </button>
+
+            {selectedProductIds.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowBulkDeleteConfirm(true)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  padding: '0.55rem 1rem',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: '#dc2626',
+                  color: '#ffffff',
+                  cursor: 'pointer',
+                  fontSize: '0.825rem',
+                  fontWeight: 600,
+                  boxShadow: '0 2px 6px rgba(220, 38, 38, 0.3)'
+                }}
+              >
+                <Trash2 size={15} />
+                <span>Delete Selected ({selectedProductIds.length})</span>
+              </button>
+            )}
 
             <button
               onClick={handleOpenAddModal}
@@ -1389,6 +1559,16 @@ export default function ProductListConfig({ userCompany = '' }) {
               <thead>
                 <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#475569', fontWeight: 600 }}>
                   
+                  {/* Select All Checkbox */}
+                  <th style={{ width: '45px', minWidth: '45px', padding: '0.75rem 0.75rem', textAlign: 'center' }}>
+                    <input
+                      type="checkbox"
+                      checked={selectedProductIds.length > 0 && selectedProductIds.length === filteredProducts.length}
+                      onChange={handleToggleSelectAll}
+                      style={{ cursor: 'pointer', width: '15px', height: '15px', accentColor: '#2563eb' }}
+                    />
+                  </th>
+
                   {/* Status Col */}
                   <th style={{ width: colWidths.status, minWidth: '70px', position: 'relative', padding: '0.75rem 1rem' }}>
                     Status
@@ -1450,6 +1630,19 @@ export default function ProductListConfig({ userCompany = '' }) {
                       style={{
                         position: 'absolute', right: 0, top: 0, bottom: 0, width: '6px', cursor: 'col-resize',
                         background: activeResizingCol === 'category' ? '#2563eb' : 'transparent'
+                      }}
+                    />
+                  </th>
+
+                  {/* Sub-Category Col */}
+                  <th style={{ width: colWidths.subcategory, minWidth: '100px', position: 'relative', padding: '0.75rem 1rem' }}>
+                    Sub-Category
+                    <div
+                      onMouseDown={(e) => handleMouseDownResize(e, 'subcategory')}
+                      onDoubleClick={() => handleDoubleClickResetCol('subcategory')}
+                      style={{
+                        position: 'absolute', right: 0, top: 0, bottom: 0, width: '6px', cursor: 'col-resize',
+                        background: activeResizingCol === 'subcategory' ? '#2563eb' : 'transparent'
                       }}
                     />
                   </th>
@@ -1552,6 +1745,16 @@ export default function ProductListConfig({ userCompany = '' }) {
                       onMouseEnter={(e) => e.currentTarget.style.background = '#f0f9ff'}
                       onMouseLeave={(e) => e.currentTarget.style.background = idx % 2 === 0 ? '#ffffff' : '#fafafa'}
                     >
+                      {/* Checkbox */}
+                      <td style={{ padding: '0.75rem 0.75rem', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={selectedProductIds.includes(p.id)}
+                          onChange={() => handleToggleSelectProduct(p.id)}
+                          style={{ cursor: 'pointer', width: '15px', height: '15px', accentColor: '#2563eb' }}
+                        />
+                      </td>
+
                       {/* Status */}
                       <td style={{ padding: '0.75rem 1rem' }}>
                         <button
@@ -1627,6 +1830,20 @@ export default function ProductListConfig({ userCompany = '' }) {
                           color: '#475569'
                         }}>
                           {p.category || 'General'}
+                        </span>
+                      </td>
+
+                      {/* Sub-Category */}
+                      <td style={{ padding: '0.75rem 1rem', color: '#334155' }}>
+                        <span style={{
+                          padding: '2px 6px',
+                          borderRadius: '4px',
+                          background: '#f8fafc',
+                          border: '1px solid #e2e8f0',
+                          fontSize: '0.75rem',
+                          color: '#475569'
+                        }}>
+                          {p.sub_category || '-'}
                         </span>
                       </td>
 
@@ -1842,15 +2059,15 @@ export default function ProductListConfig({ userCompany = '' }) {
                 />
               </div>
 
-              {/* SKU & Category (2 cols) */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+              {/* SKU, Category & Sub-Category (3 cols) */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr', gap: '0.75rem' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#334155', marginBottom: '4px' }}>
                     SKU / Product Code
                   </label>
                   <input
                     type="text"
-                    placeholder="e.g. SWAN-ROT-01 (Auto-generated if empty)"
+                    placeholder="e.g. SWAN-ROT-01"
                     value={formData.sku}
                     onChange={(e) => setFormData(prev => ({ ...prev, sku: e.target.value }))}
                     style={{
@@ -1871,7 +2088,7 @@ export default function ProductListConfig({ userCompany = '' }) {
                   <input
                     type="text"
                     list="product-categories-list"
-                    placeholder="e.g. Implement, Spare Part"
+                    placeholder="e.g. Implement"
                     value={formData.category}
                     onChange={(e) => setFormData(prev => ({ ...prev, category: e.target.value }))}
                     style={{
@@ -1888,6 +2105,26 @@ export default function ProductListConfig({ userCompany = '' }) {
                       <option key={c} value={c} />
                     ))}
                   </datalist>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#334155', marginBottom: '4px' }}>
+                    Sub-Category
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Rotary Tiller"
+                    value={formData.subCategory}
+                    onChange={(e) => setFormData(prev => ({ ...prev, subCategory: e.target.value }))}
+                    style={{
+                      width: '100%',
+                      padding: '0.55rem 0.75rem',
+                      borderRadius: '8px',
+                      border: '1px solid #cbd5e1',
+                      fontSize: '0.85rem',
+                      boxSizing: 'border-box'
+                    }}
+                  />
                 </div>
               </div>
 
@@ -2114,12 +2351,13 @@ export default function ProductListConfig({ userCompany = '' }) {
             background: '#ffffff',
             borderRadius: '14px',
             width: '100%',
-            maxWidth: '620px',
-            maxHeight: '90vh',
+            maxWidth: parsedItems.length > 0 ? '920px' : '640px',
+            maxHeight: '92vh',
             display: 'flex',
             flexDirection: 'column',
             boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2)',
-            overflow: 'hidden'
+            overflow: 'hidden',
+            transition: 'max-width 0.2s ease'
           }}>
             {/* Modal Header */}
             <div style={{
@@ -2130,14 +2368,18 @@ export default function ProductListConfig({ userCompany = '' }) {
               justifyContent: 'space-between',
               background: '#f8fafc'
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <FileSpreadsheet size={20} color="#2563eb" />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                <FileSpreadsheet size={22} color="#2563eb" />
                 <div>
                   <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: '#0f172a' }}>
-                    Bulk Import Products (CSV)
+                    {parsedItems.length > 0
+                      ? `Pre-Import Product Preview (${parsedItems.length} Records)`
+                      : 'Bulk Import Products (CSV / Excel)'}
                   </h3>
                   <p style={{ margin: '2px 0 0 0', fontSize: '0.75rem', color: '#64748b' }}>
-                    Upload or paste formatted product CSV for {effectiveCompany}
+                    {parsedItems.length > 0
+                      ? `Review parsed items below before confirming upload for ${effectiveCompany}`
+                      : `Upload or paste formatted product CSV or Excel (.xlsx) for ${effectiveCompany}`}
                   </p>
                 </div>
               </div>
@@ -2152,301 +2394,580 @@ export default function ProductListConfig({ userCompany = '' }) {
             {/* Modal Content Scrollable */}
             <div style={{ padding: '1.25rem 1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem', overflowY: 'auto' }}>
               
-              {/* Sample Template Download Card */}
-              <div style={{
-                padding: '0.85rem 1rem',
-                borderRadius: '10px',
-                background: '#eff6ff',
-                border: '1px solid #bfdbfe',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: '0.75rem'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-                  <Info size={20} color="#2563eb" style={{ flexShrink: 0 }} />
-                  <div>
-                    <div style={{ fontSize: '0.825rem', fontWeight: 600, color: '#1e3a8a' }}>
-                      Need the Sample CSV Template?
-                    </div>
-                    <div style={{ fontSize: '0.735rem', color: '#3b82f6' }}>
-                      Download pre-formatted sample file with required product columns
-                    </div>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleDownloadSampleCsv}
-                  style={{
+              {/* STEP 1: UPLOAD / PASTE FORM (When no products are parsed yet) */}
+              {parsedItems.length === 0 && (
+                <>
+                  {/* Sample Template Download Card with Dropdown */}
+                  <div style={{
+                    padding: '0.85rem 1rem',
+                    borderRadius: '10px',
+                    background: '#eff6ff',
+                    border: '1px solid #bfdbfe',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '0.4rem',
-                    padding: '0.45rem 0.85rem',
-                    borderRadius: '7px',
-                    border: '1px solid #93c5fd',
-                    background: '#ffffff',
-                    color: '#1d4ed8',
-                    fontSize: '0.775rem',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    whiteSpace: 'nowrap',
-                    boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
-                  }}
-                >
-                  <Download size={14} />
-                  <span>Download Sample CSV</span>
-                </button>
-              </div>
-
-              {/* Target Branch Dropdown */}
-              <div>
-                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#334155', marginBottom: '4px' }}>
-                  Default Branch for Imported Products
-                </label>
-                <select
-                  value={importBranch}
-                  onChange={(e) => setImportBranch(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '0.55rem 0.75rem',
-                    borderRadius: '8px',
-                    border: '1px solid #cbd5e1',
-                    fontSize: '0.85rem',
-                    background: '#ffffff',
-                    color: '#0f172a'
-                  }}
-                >
-                  <option value="All Branches">🌐 All Branches (Universal)</option>
-                  {branches.map(b => (
-                    <option key={b.id || b.branch_code} value={b.branch_name}>
-                      📍 {b.branch_name}
-                    </option>
-                  ))}
-                </select>
-                <span style={{ fontSize: '0.725rem', color: '#64748b', marginTop: '2px', display: 'block' }}>
-                  Used as default if an imported product row doesn&apos;t specify a branch.
-                </span>
-              </div>
-
-              {/* Import Mode Tabs */}
-              <div>
-                <div style={{
-                  display: 'flex',
-                  gap: '0.5rem',
-                  borderBottom: '1px solid #e2e8f0',
-                  paddingBottom: '0.5rem'
-                }}>
-                  <button
-                    type="button"
-                    onClick={() => setImportMode('file')}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.4rem',
-                      padding: '0.45rem 0.85rem',
-                      borderRadius: '6px',
-                      border: 'none',
-                      background: importMode === 'file' ? '#eff6ff' : 'transparent',
-                      color: importMode === 'file' ? '#2563eb' : '#64748b',
-                      fontSize: '0.8rem',
-                      fontWeight: importMode === 'file' ? 700 : 500,
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <Upload size={14} />
-                    <span>Upload CSV File</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setImportMode('text')}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.4rem',
-                      padding: '0.45rem 0.85rem',
-                      borderRadius: '6px',
-                      border: 'none',
-                      background: importMode === 'text' ? '#eff6ff' : 'transparent',
-                      color: importMode === 'text' ? '#2563eb' : '#64748b',
-                      fontSize: '0.8rem',
-                      fontWeight: importMode === 'text' ? 700 : 500,
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <FileText size={14} />
-                    <span>Paste Raw CSV</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Tab 1: File Upload Mode */}
-              {importMode === 'file' && (
-                <div>
-                  <input
-                    type="file"
-                    ref={fileInputRef}
-                    accept=".csv,text/csv"
-                    onChange={handleFileChange}
-                    style={{ display: 'none' }}
-                  />
-
-                  {!importFile ? (
-                    <div
-                      onDragOver={handleDragOver}
-                      onDragLeave={handleDragLeave}
-                      onDrop={handleDrop}
-                      onClick={() => fileInputRef.current?.click()}
-                      style={{
-                        border: isDragging ? '2px dashed #2563eb' : '2px dashed #cbd5e1',
-                        borderRadius: '12px',
-                        padding: '1.75rem 1.5rem',
-                        textAlign: 'center',
-                        backgroundColor: isDragging ? '#eff6ff' : '#f8fafc',
-                        cursor: 'pointer',
-                        transition: 'all 0.15s ease'
-                      }}
-                    >
-                      <FileUp size={36} color={isDragging ? '#2563eb' : '#64748b'} style={{ margin: '0 auto 0.6rem auto' }} />
-                      <div style={{ fontSize: '0.86rem', fontWeight: 600, color: '#1e293b', marginBottom: '0.25rem' }}>
-                        Click to Choose File or Drag & Drop
+                    justifyContent: 'space-between',
+                    gap: '0.75rem',
+                    flexWrap: 'wrap'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                      <Info size={20} color="#2563eb" style={{ flexShrink: 0 }} />
+                      <div>
+                        <div style={{ fontSize: '0.825rem', fontWeight: 600, color: '#1e3a8a' }}>
+                          Need the Sample Product Template?
+                        </div>
+                        <div style={{ fontSize: '0.735rem', color: '#3b82f6' }}>
+                          Download pre-formatted sample Excel or CSV with required columns
+                        </div>
                       </div>
-                      <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '0.85rem' }}>
-                        Supports UTF-8 encoded .csv files
-                      </div>
+                    </div>
+
+                    {/* Sample Template Dropdown */}
+                    <div style={{ position: 'relative' }} ref={sampleDropdownRef}>
                       <button
                         type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          fileInputRef.current?.click();
-                        }}
+                        onClick={() => setShowSampleDropdown(prev => !prev)}
                         style={{
-                          padding: '0.45rem 1.15rem',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.4rem',
+                          padding: '0.45rem 0.85rem',
                           borderRadius: '7px',
-                          backgroundColor: '#ffffff',
-                          border: '1px solid #cbd5e1',
-                          color: '#334155',
-                          fontSize: '0.8rem',
+                          border: '1px solid #93c5fd',
+                          background: '#ffffff',
+                          color: '#1d4ed8',
+                          fontSize: '0.775rem',
                           fontWeight: 600,
                           cursor: 'pointer',
+                          whiteSpace: 'nowrap',
                           boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
                         }}
                       >
-                        Choose CSV File
+                        <Download size={14} />
+                        <span>Download Sample Template</span>
+                        <ChevronDown size={13} />
                       </button>
-                    </div>
-                  ) : (
-                    <div style={{
-                      borderRadius: '10px',
-                      border: '1px solid #bbf7d0',
-                      backgroundColor: '#f0fdf4',
-                      padding: '1rem',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '0.6rem'
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                          <FileSpreadsheet size={24} color="#16a34a" />
-                          <div>
-                            <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#14532d' }}>
-                              {importFile.name}
-                            </div>
-                            <div style={{ fontSize: '0.725rem', color: '#166534' }}>
-                              {(importFile.size / 1024).toFixed(1)} KB
-                            </div>
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setImportFile(null);
-                            setParsedPreview(null);
-                            if (fileInputRef.current) fileInputRef.current.value = '';
-                          }}
-                          style={{
-                            border: '1px solid #cbd5e1',
-                            background: '#ffffff',
-                            borderRadius: '6px',
-                            color: '#475569',
-                            fontSize: '0.75rem',
-                            fontWeight: 600,
-                            padding: '0.35rem 0.65rem',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          Change File
-                        </button>
-                      </div>
 
-                      {parsedPreview && (
+                      {showSampleDropdown && (
                         <div style={{
-                          fontSize: '0.785rem',
-                          padding: '0.5rem 0.75rem',
-                          borderRadius: '6px',
-                          background: parsedPreview.count > 0 ? '#dcfce7' : '#fee2e2',
-                          color: parsedPreview.count > 0 ? '#15803d' : '#991b1b',
-                          fontWeight: 600,
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '0.4rem'
+                          position: 'absolute',
+                          top: '100%',
+                          right: 0,
+                          marginTop: '6px',
+                          background: '#ffffff',
+                          borderRadius: '8px',
+                          border: '1px solid #cbd5e1',
+                          boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05)',
+                          zIndex: 60,
+                          minWidth: '210px',
+                          overflow: 'hidden'
                         }}>
-                          {parsedPreview.count > 0 ? (
-                            <>
-                              <CheckCircle2 size={15} />
-                              <span>{parsedPreview.count} valid products detected and ready to import</span>
-                            </>
-                          ) : (
-                            <>
-                              <AlertCircle size={15} />
-                              <span>0 valid products found. Ensure column header includes &quot;Name&quot;</span>
-                            </>
-                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowSampleDropdown(false);
+                              handleDownloadSampleExcel();
+                            }}
+                            style={{
+                              width: '100%',
+                              padding: '0.65rem 0.9rem',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.6rem',
+                              border: 'none',
+                              background: 'transparent',
+                              color: '#0f172a',
+                              fontSize: '0.785rem',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              textAlign: 'left'
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.background = '#f8fafc'}
+                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                          >
+                            <FileSpreadsheet size={16} color="#16a34a" />
+                            <span>Download Excel (.xlsx)</span>
+                          </button>
+                          <div style={{ height: '1px', background: '#f1f5f9' }} />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowSampleDropdown(false);
+                              handleDownloadSampleCsv();
+                            }}
+                            style={{
+                              width: '100%',
+                              padding: '0.65rem 0.9rem',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.6rem',
+                              border: 'none',
+                              background: 'transparent',
+                              color: '#0f172a',
+                              fontSize: '0.785rem',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              textAlign: 'left'
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.background = '#f8fafc'}
+                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                          >
+                            <Download size={16} color="#2563eb" />
+                            <span>Download CSV (.csv)</span>
+                          </button>
                         </div>
                       )}
                     </div>
+                  </div>
+
+                  {/* Dual Fallback Dropdowns: Branch & Category */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#334155', marginBottom: '4px' }}>
+                        Default Branch for Imported Products
+                      </label>
+                      <select
+                        value={importBranch}
+                        onChange={(e) => setImportBranch(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '0.55rem 0.75rem',
+                          borderRadius: '8px',
+                          border: '1px solid #cbd5e1',
+                          fontSize: '0.825rem',
+                          background: '#ffffff',
+                          color: '#0f172a'
+                        }}
+                      >
+                        <option value="All Branches">🌐 All Branches (Universal)</option>
+                        {branches.map(b => (
+                          <option key={b.id || b.branch_code} value={b.branch_name}>
+                            📍 {b.branch_name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#334155', marginBottom: '4px' }}>
+                        Default Category for Imported Products
+                      </label>
+                      <select
+                        value={importCategory}
+                        onChange={(e) => setImportCategory(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '0.55rem 0.75rem',
+                          borderRadius: '8px',
+                          border: '1px solid #cbd5e1',
+                          fontSize: '0.825rem',
+                          background: '#ffffff',
+                          color: '#0f172a'
+                        }}
+                      >
+                        {DEFAULT_CATEGORIES.map(cat => (
+                          <option key={cat} value={cat}>📁 {cat}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <span style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '-0.4rem', display: 'block' }}>
+                    Applied automatically as defaults if a product row does not specify branch or category.
+                  </span>
+
+                  {/* Import Mode Tabs */}
+                  <div>
+                    <div style={{
+                      display: 'flex',
+                      gap: '0.5rem',
+                      borderBottom: '1px solid #e2e8f0',
+                      paddingBottom: '0.5rem'
+                    }}>
+                      <button
+                        type="button"
+                        onClick={() => setImportMode('file')}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.4rem',
+                          padding: '0.45rem 0.85rem',
+                          borderRadius: '6px',
+                          border: 'none',
+                          background: importMode === 'file' ? '#eff6ff' : 'transparent',
+                          color: importMode === 'file' ? '#2563eb' : '#64748b',
+                          fontSize: '0.8rem',
+                          fontWeight: importMode === 'file' ? 700 : 500,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <Upload size={14} />
+                        <span>Upload File (Excel / CSV)</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setImportMode('text')}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.4rem',
+                          padding: '0.45rem 0.85rem',
+                          borderRadius: '6px',
+                          border: 'none',
+                          background: importMode === 'text' ? '#eff6ff' : 'transparent',
+                          color: importMode === 'text' ? '#2563eb' : '#64748b',
+                          fontSize: '0.8rem',
+                          fontWeight: importMode === 'text' ? 700 : 500,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <FileText size={14} />
+                        <span>Paste Raw CSV</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Mode 1: File Upload (Excel or CSV) */}
+                  {importMode === 'file' && (
+                    <div>
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        accept=".csv,.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
+                        onChange={handleFileChange}
+                        style={{ display: 'none' }}
+                      />
+
+                      <div
+                        onDragOver={handleDragOver}
+                        onDragLeave={handleDragLeave}
+                        onDrop={handleDrop}
+                        onClick={() => fileInputRef.current?.click()}
+                        style={{
+                          border: isDragging ? '2px dashed #2563eb' : '2px dashed #cbd5e1',
+                          borderRadius: '12px',
+                          padding: '2rem 1.5rem',
+                          textAlign: 'center',
+                          backgroundColor: isDragging ? '#eff6ff' : '#f8fafc',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        <FileUp size={38} color={isDragging ? '#2563eb' : '#64748b'} style={{ margin: '0 auto 0.6rem auto' }} />
+                        <div style={{ fontSize: '0.875rem', fontWeight: 600, color: '#1e293b', marginBottom: '0.25rem' }}>
+                          Click to Choose File or Drag & Drop
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '0.85rem' }}>
+                          Supports Excel (.xlsx, .xls) and CSV (.csv) files
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            fileInputRef.current?.click();
+                          }}
+                          style={{
+                            padding: '0.5rem 1.25rem',
+                            borderRadius: '7px',
+                            backgroundColor: '#ffffff',
+                            border: '1px solid #cbd5e1',
+                            color: '#334155',
+                            fontSize: '0.8rem',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                          }}
+                        >
+                          Choose Excel / CSV File
+                        </button>
+                      </div>
+                    </div>
                   )}
-                </div>
+
+                  {/* Mode 2: Raw CSV Text */}
+                  {importMode === 'text' && (
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                        <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#334155' }}>
+                          Paste CSV Data (Include Header)
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setImportText(`Name,SKU,Branch,Category,Sub-Category,Price,Tax Rate %,HSN Code,Stock Qty,Min Order Qty,UOM,Description\nRotavator – Super Series,SWAN-ROTA-01,All Branches,Implement,Rotary Tiller,115000,18,8432,15,1,Units,Heavy duty super series rotavator\nLaser Land Leveller,SWAN-LLL-02,NSMLR,Land Leveller,Dual Slope,325000,18,8432,8,1,Units,Dual slope transmitter receiver system\nGenuine Blade 28T,SWAN-BLD-28,All Branches,Spare Part,Rotary Blades,650,18,843290,200,10,Pcs,High carbon boron steel blades`);
+                          }}
+                          style={{
+                            border: 'none',
+                            background: 'none',
+                            color: '#2563eb',
+                            fontSize: '0.75rem',
+                            cursor: 'pointer',
+                            fontWeight: 600
+                          }}
+                        >
+                          Paste Sample Template
+                        </button>
+                      </div>
+                      <textarea
+                        rows={6}
+                        placeholder="Name,SKU,Branch,Category,Sub-Category,Price,Tax Rate %,HSN Code,Stock Qty,Min Order Qty,UOM,Description&#10;Rotavator,SWAN-01,All Branches,Implement,Rotary Tiller,85000,18,8432,10,1,Units,Sample item"
+                        value={importText}
+                        onChange={(e) => setImportText(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '0.65rem',
+                          borderRadius: '8px',
+                          border: '1px solid #cbd5e1',
+                          fontSize: '0.8rem',
+                          fontFamily: 'monospace',
+                          boxSizing: 'border-box'
+                        }}
+                      />
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+                        <button
+                          type="button"
+                          onClick={handleParseRawText}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.35rem',
+                            padding: '0.45rem 1rem',
+                            borderRadius: '7px',
+                            background: '#2563eb',
+                            color: '#ffffff',
+                            fontSize: '0.785rem',
+                            fontWeight: 600,
+                            border: 'none',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <Eye size={14} />
+                          <span>Preview &amp; Validate Products</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
 
-              {/* Tab 2: Raw Text Mode */}
-              {importMode === 'text' && (
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                    <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#334155' }}>
-                      Paste CSV Data (Include Header)
-                    </label>
+              {/* STEP 2: PREVIEW TABLE & CONFIRM UPLOAD (When products are parsed) */}
+              {parsedItems.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                  
+                  {/* Top Bar: Source file name & filter pills */}
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    flexWrap: 'wrap',
+                    gap: '0.6rem',
+                    padding: '0.65rem 0.85rem',
+                    background: '#f8fafc',
+                    borderRadius: '8px',
+                    border: '1px solid #e2e8f0'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontWeight: 600, fontSize: '0.825rem', color: '#0f172a' }}>
+                        <FileSpreadsheet size={16} color="#16a34a" />
+                        <span>{importFile ? importFile.name : 'Pasted CSV Data'}</span>
+                        {importFile && (
+                          <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 400 }}>
+                            ({(importFile.size / 1024).toFixed(1)} KB)
+                          </span>
+                        )}
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
+                        <button
+                          type="button"
+                          onClick={() => setPreviewFilter('ALL')}
+                          style={{
+                            padding: '0.25rem 0.6rem',
+                            borderRadius: '5px',
+                            fontSize: '0.735rem',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            border: previewFilter === 'ALL' ? '1px solid #2563eb' : '1px solid #cbd5e1',
+                            background: previewFilter === 'ALL' ? '#eff6ff' : '#ffffff',
+                            color: previewFilter === 'ALL' ? '#2563eb' : '#475569'
+                          }}
+                        >
+                          All ({parsedItems.length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPreviewFilter('VALID')}
+                          style={{
+                            padding: '0.25rem 0.6rem',
+                            borderRadius: '5px',
+                            fontSize: '0.735rem',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            border: previewFilter === 'VALID' ? '1px solid #16a34a' : '1px solid #cbd5e1',
+                            background: previewFilter === 'VALID' ? '#f0fdf4' : '#ffffff',
+                            color: previewFilter === 'VALID' ? '#16a34a' : '#475569'
+                          }}
+                        >
+                          ✓ Ready ({previewValidCount})
+                        </button>
+                        {previewIssuesCount > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setPreviewFilter('ISSUES')}
+                            style={{
+                              padding: '0.25rem 0.6rem',
+                              borderRadius: '5px',
+                              fontSize: '0.735rem',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              border: previewFilter === 'ISSUES' ? '1px solid #dc2626' : '1px solid #fca5a5',
+                              background: previewFilter === 'ISSUES' ? '#fef2f2' : '#ffffff',
+                              color: '#dc2626'
+                            }}
+                          >
+                            ⚠️ Issues ({previewIssuesCount})
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
                     <button
                       type="button"
                       onClick={() => {
-                        setImportText(`Name,SKU,Branch,Category,Price,Tax Rate %,HSN Code,Stock Qty,Min Order Qty,UOM,Description\nRotavator – Super Series,SWAN-ROTA-01,All Branches,Implement,115000,12,8432,15,1,Units,Heavy duty super series rotavator\nLaser Land Leveller,SWAN-LLL-02,NSMLR,Land Leveller,325000,12,8432,8,1,Units,Dual slope transmitter receiver system\nGenuine Blade 28T,SWAN-BLD-28,All Branches,Spare Part,650,18,843290,200,10,Pcs,High carbon boron steel blades`);
+                        setParsedItems([]);
+                        setImportFile(null);
+                        setImportResult(null);
+                        if (fileInputRef.current) fileInputRef.current.value = '';
                       }}
                       style={{
-                        border: 'none',
-                        background: 'none',
-                        color: '#2563eb',
+                        padding: '0.35rem 0.75rem',
+                        borderRadius: '6px',
+                        border: '1px solid #cbd5e1',
+                        background: '#ffffff',
+                        color: '#475569',
                         fontSize: '0.75rem',
-                        cursor: 'pointer',
-                        fontWeight: 600
+                        fontWeight: 600,
+                        cursor: 'pointer'
                       }}
                     >
-                      Paste Sample Template
+                      Change File
                     </button>
                   </div>
-                  <textarea
-                    rows={6}
-                    placeholder="Name,SKU,Branch,Category,Price,Tax Rate %,HSN Code,Stock Qty,Min Order Qty,UOM,Description&#10;Rotavator,SWAN-01,All Branches,Implement,85000,12,8432,10,1,Units,Sample item"
-                    value={importText}
-                    onChange={(e) => setImportText(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '0.65rem',
-                      borderRadius: '8px',
-                      border: '1px solid #cbd5e1',
-                      fontSize: '0.8rem',
-                      fontFamily: 'monospace',
-                      boxSizing: 'border-box'
-                    }}
-                  />
+
+                  {/* Quick Search in Preview */}
+                  <div style={{ position: 'relative' }}>
+                    <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+                    <input
+                      type="text"
+                      placeholder="Search preview by name, SKU, branch, or category..."
+                      value={previewSearch}
+                      onChange={(e) => setPreviewSearch(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '0.45rem 2rem 0.45rem 2rem',
+                        borderRadius: '7px',
+                        border: '1px solid #cbd5e1',
+                        fontSize: '0.8rem',
+                        background: '#ffffff',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                    {previewSearch && (
+                      <X
+                        size={14}
+                        onClick={() => setPreviewSearch('')}
+                        style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', cursor: 'pointer' }}
+                      />
+                    )}
+                  </div>
+
+                  {/* Interactive Preview Table with Frozen Sticky Header */}
+                  <div style={{
+                    maxHeight: '340px',
+                    overflow: 'auto',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '8px',
+                    background: '#ffffff'
+                  }}>
+                    <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.785rem', textAlign: 'left' }}>
+                      <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: '#f8fafc' }}>
+                        <tr style={{ background: '#f8fafc', color: '#475569', borderBottom: '1px solid #e2e8f0' }}>
+                          <th style={{ padding: '0.55rem 0.75rem', position: 'sticky', top: 0, background: '#f8fafc', borderBottom: '1px solid #e2e8f0', width: '45px' }}>#</th>
+                          <th style={{ padding: '0.55rem 0.75rem', position: 'sticky', top: 0, background: '#f8fafc', borderBottom: '1px solid #e2e8f0', minWidth: '180px' }}>Product Name</th>
+                          <th style={{ padding: '0.55rem 0.75rem', position: 'sticky', top: 0, background: '#f8fafc', borderBottom: '1px solid #e2e8f0', minWidth: '120px' }}>SKU</th>
+                          <th style={{ padding: '0.55rem 0.75rem', position: 'sticky', top: 0, background: '#f8fafc', borderBottom: '1px solid #e2e8f0', minWidth: '110px' }}>Category</th>
+                          <th style={{ padding: '0.55rem 0.75rem', position: 'sticky', top: 0, background: '#f8fafc', borderBottom: '1px solid #e2e8f0', minWidth: '110px' }}>Sub-Category</th>
+                          <th style={{ padding: '0.55rem 0.75rem', position: 'sticky', top: 0, background: '#f8fafc', borderBottom: '1px solid #e2e8f0', minWidth: '120px' }}>Branch</th>
+                          <th style={{ padding: '0.55rem 0.75rem', position: 'sticky', top: 0, background: '#f8fafc', borderBottom: '1px solid #e2e8f0', minWidth: '90px', textAlign: 'right' }}>Price (₹)</th>
+                          <th style={{ padding: '0.55rem 0.75rem', position: 'sticky', top: 0, background: '#f8fafc', borderBottom: '1px solid #e2e8f0', minWidth: '70px', textAlign: 'right' }}>Tax %</th>
+                          <th style={{ padding: '0.55rem 0.75rem', position: 'sticky', top: 0, background: '#f8fafc', borderBottom: '1px solid #e2e8f0', minWidth: '75px', textAlign: 'right' }}>Stock</th>
+                          <th style={{ padding: '0.55rem 0.75rem', position: 'sticky', top: 0, background: '#f8fafc', borderBottom: '1px solid #e2e8f0', minWidth: '95px' }}>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {displayedPreviewRows.length === 0 ? (
+                          <tr>
+                            <td colSpan={10} style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>
+                              No products match the filter or search query.
+                            </td>
+                          </tr>
+                        ) : (
+                          displayedPreviewRows.map((r, i) => (
+                            <tr
+                              key={r._id || i}
+                              style={{
+                                borderBottom: '1px solid #f1f5f9',
+                                background: r._isValid ? 'transparent' : '#fef2f2'
+                              }}
+                            >
+                              <td style={{ padding: '0.5rem 0.75rem', color: '#64748b', borderBottom: '1px solid #f1f5f9' }}>{r._rowNum}</td>
+                              <td style={{ padding: '0.5rem 0.75rem', fontWeight: 600, color: '#0f172a', borderBottom: '1px solid #f1f5f9' }}>
+                                {r.name || <span style={{ color: '#dc2626', fontStyle: 'italic' }}>Missing Name</span>}
+                              </td>
+                              <td style={{ padding: '0.5rem 0.75rem', fontFamily: 'monospace', color: '#334155', borderBottom: '1px solid #f1f5f9' }}>{r.sku || '-'}</td>
+                              <td style={{ padding: '0.5rem 0.75rem', color: '#475569', borderBottom: '1px solid #f1f5f9' }}>{r.category || '-'}</td>
+                              <td style={{ padding: '0.5rem 0.75rem', color: '#475569', borderBottom: '1px solid #f1f5f9' }}>{r.sub_category || '-'}</td>
+                              <td style={{ padding: '0.5rem 0.75rem', color: '#475569', borderBottom: '1px solid #f1f5f9' }}>{r.branch_name || '-'}</td>
+                              <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right', fontWeight: 600, color: '#0f172a', borderBottom: '1px solid #f1f5f9' }}>
+                                ₹{Number(r.price || 0).toLocaleString('en-IN')}
+                              </td>
+                              <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right', color: '#475569', borderBottom: '1px solid #f1f5f9' }}>{r.tax_rate}%</td>
+                              <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right', color: '#475569', borderBottom: '1px solid #f1f5f9' }}>{r.stock_quantity}</td>
+                              <td style={{ padding: '0.5rem 0.75rem', borderBottom: '1px solid #f1f5f9' }}>
+                                {r._isValid ? (
+                                  <span style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '0.25rem',
+                                    padding: '0.15rem 0.45rem',
+                                    borderRadius: '4px',
+                                    background: '#dcfce7',
+                                    color: '#15803d',
+                                    fontSize: '0.72rem',
+                                    fontWeight: 700
+                                  }}>
+                                    <Check size={12} /> Ready
+                                  </span>
+                                ) : (
+                                  <span style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '0.25rem',
+                                    padding: '0.15rem 0.45rem',
+                                    borderRadius: '4px',
+                                    background: '#fee2e2',
+                                    color: '#b91c1c',
+                                    fontSize: '0.72rem',
+                                    fontWeight: 700
+                                  }}>
+                                    <AlertCircle size={12} /> Issue
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               )}
 
@@ -2469,52 +2990,151 @@ export default function ProductListConfig({ userCompany = '' }) {
               )}
 
               {/* Actions Footer */}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', paddingTop: '0.25rem' }}>
-                <button
-                  type="button"
-                  onClick={handleCloseImportModal}
-                  style={{
-                    padding: '0.55rem 1rem',
-                    borderRadius: '8px',
-                    border: '1px solid #cbd5e1',
-                    background: '#ffffff',
-                    color: '#475569',
-                    fontSize: '0.825rem',
-                    fontWeight: 600,
-                    cursor: 'pointer'
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  disabled={importing || (importMode === 'file' && (!importFile || parsedPreview?.count === 0))}
-                  onClick={handleImportCSV}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.4rem',
-                    padding: '0.55rem 1.25rem',
-                    borderRadius: '8px',
-                    border: 'none',
-                    background: '#2563eb',
-                    color: '#ffffff',
-                    fontSize: '0.825rem',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    opacity: (importing || (importMode === 'file' && (!importFile || parsedPreview?.count === 0))) ? 0.6 : 1
-                  }}
-                >
-                  {importing ? (
-                    <>
-                      <Loader2 size={15} className="animate-spin" />
-                      <span>Importing...</span>
-                    </>
-                  ) : (
-                    <span>Start Import</span>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '0.5rem', borderTop: '1px solid #f1f5f9' }}>
+                <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                  {parsedItems.length > 0 && (
+                    <span>
+                      Showing <strong>{displayedPreviewRows.length}</strong> of <strong>{parsedItems.length}</strong> records (<strong>{previewValidCount}</strong> valid ready to import)
+                    </span>
                   )}
-                </button>
+                </div>
+
+                <div style={{ display: 'flex', gap: '0.75rem' }}>
+                  <button
+                    type="button"
+                    onClick={handleCloseImportModal}
+                    style={{
+                      padding: '0.55rem 1rem',
+                      borderRadius: '8px',
+                      border: '1px solid #cbd5e1',
+                      background: '#ffffff',
+                      color: '#475569',
+                      fontSize: '0.825rem',
+                      fontWeight: 600,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Cancel
+                  </button>
+
+                  {parsedItems.length > 0 ? (
+                    <button
+                      type="button"
+                      disabled={importing || previewValidCount === 0}
+                      onClick={handleConfirmImport}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.4rem',
+                        padding: '0.55rem 1.35rem',
+                        borderRadius: '8px',
+                        border: 'none',
+                        background: '#16a34a',
+                        color: '#ffffff',
+                        fontSize: '0.825rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        boxShadow: '0 2px 6px rgba(22, 163, 74, 0.3)',
+                        opacity: (importing || previewValidCount === 0) ? 0.6 : 1
+                      }}
+                    >
+                      {importing ? (
+                        <>
+                          <Loader2 size={15} className="animate-spin" />
+                          <span>Importing {previewValidCount} Products...</span>
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle size={15} />
+                          <span>Confirm &amp; Upload All ({previewValidCount} Products)</span>
+                        </>
+                      )}
+                    </button>
+                  ) : null}
+                </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- BULK DELETE CONFIRM MODAL --- */}
+      {showBulkDeleteConfirm && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(15, 23, 42, 0.55)',
+          backdropFilter: 'blur(3px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 10000,
+          padding: '1.5rem'
+        }}>
+          <div style={{
+            background: '#ffffff',
+            borderRadius: '12px',
+            width: '100%',
+            maxWidth: '440px',
+            padding: '1.5rem',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.75rem' }}>
+              <div style={{ padding: '0.5rem', borderRadius: '8px', background: '#fee2e2', color: '#dc2626' }}>
+                <Trash2 size={20} />
+              </div>
+              <h3 style={{ margin: 0, color: '#b91c1c', fontSize: '1.1rem', fontWeight: 700 }}>
+                Delete {selectedProductIds.length} Products?
+              </h3>
+            </div>
+            <p style={{ margin: '0 0 1.25rem 0', color: '#475569', fontSize: '0.85rem', lineHeight: '1.5' }}>
+              Are you sure you want to delete these <strong>{selectedProductIds.length}</strong> selected products from {effectiveCompany}&apos;s catalog? This action will remove them from future order punch selection.
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              <button
+                type="button"
+                onClick={() => setShowBulkDeleteConfirm(false)}
+                style={{
+                  padding: '0.5rem 1rem',
+                  borderRadius: '6px',
+                  border: '1px solid #cbd5e1',
+                  background: '#ffffff',
+                  color: '#475569',
+                  fontSize: '0.825rem',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={bulkDeleting}
+                onClick={handleConfirmBulkDelete}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  padding: '0.5rem 1.15rem',
+                  borderRadius: '6px',
+                  border: 'none',
+                  background: '#dc2626',
+                  color: '#ffffff',
+                  fontSize: '0.825rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  opacity: bulkDeleting ? 0.7 : 1
+                }}
+              >
+                {bulkDeleting ? (
+                  <>
+                    <Loader2 size={14} className="animate-spin" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <span>Yes, Delete All</span>
+                )}
+              </button>
             </div>
           </div>
         </div>

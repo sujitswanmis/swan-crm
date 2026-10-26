@@ -294,7 +294,11 @@ function uiHarness(options = {}) {
   };
   app.dependencies.react = hooks;
   app.dependencies['lucide-react'] = require('lucide-react');
-  app.dependencies['@/components/common/MobileTableView'] = ({ children }) => children;
+  app.dependencies['@/components/common/MobileTableView'] = Object.assign(({ children }) => children, {
+    useTableViewPreference: () => hooks.useState('table'), TableViewToggle: () => null
+  });
+  app.dependencies['./CallCenterPagination'] = app.load(compile('src/components/CallCenter/CallCenterPagination.jsx'));
+  app.dependencies['./callCenterViewCache'] = {};
   app.dependencies['../PremiumProgressLoader'] = { PremiumProgressLoader: () => null };
   app.dependencies['@/utils/tableColumnResize'] = { useTableColumnResize: (_key, widths) => ({ colWidths: widths, getTotalTableWidth: () => 1500 }), ColumnResizer: () => null };
   app.dependencies['@/app/actions/team'] = {
@@ -336,12 +340,76 @@ test('table header stays in a bounded scroll region and retains every column res
   const tree = uiHarness().render();
   const region = nodes(tree, node => node.props.id === 'calladmin-agents-scroll')[0];
   assert.equal(region.props.style.overflow, 'auto');
-  assert.equal(region.props.style.maxHeight, '65vh');
+  assert.equal(region.props.style.maxHeight, 'calc(100vh - 310px)');
+  assert.equal(region.props.style.minHeight, '380px');
   const header = nodes(region, node => node.type === 'thead')[0];
   assert.equal(header.props.style.position, 'sticky');
   assert.equal(header.props.style.top, 0);
   assert.equal(nodes(header, node => node.type === 'th').length, 7);
   assert.equal(nodes(header, node => node.props.colKey !== undefined).length, 7);
+  for (const th of nodes(header, node => node.type === 'th')) {
+    assert.equal(th.props.style.position, 'sticky');
+    assert.equal(th.props.style.zIndex, 10);
+  }
+});
+
+test('the agent toolbar keeps search and the single view toggle outside horizontal table scrolling', () => {
+  const app = uiHarness(), tree = app.render();
+  const toggle = app.dependencies['@/components/common/MobileTableView'].TableViewToggle;
+  const toolbar = nodes(tree, node => node.props['data-call-toolbar'] === 'agents')[0];
+  const region = nodes(tree, node => node.props.id === 'calladmin-agents-scroll')[0];
+  assert.equal(nodes(toolbar, node => node.type === toggle).length, 1);
+  assert.equal(nodes(region, node => node.type === toggle).length, 0);
+  assert.equal(nodes(region, node => node.props.id === 'CallCenter/CallAdminModule-1')[0].props.hideToggle, true);
+  nodes(toolbar, node => node.type === toggle)[0].props.onChange('tiles');
+  assert.equal(nodes(app.render(), node => node.props.id === 'CallCenter/CallAdminModule-1')[0].props.view, 'tiles');
+});
+
+test('agent rows show current employee identity when an old display name is saved', () => {
+  const app = uiHarness();
+  app.tables.call_agents[0].display_name = 'Former Employee - 50646';
+  const body = nodes(app.render(), node => node.type === 'tbody')[0];
+  assert.match(text(body), /Asha Verma - 50714/);
+  assert.ok(!text(body).includes('Former Employee'));
+});
+
+test('SIP selection includes live-only endpoints and resolves a saved legacy registry key', () => {
+  const app = uiHarness();
+  app.props.endpoints = [
+    { endpoint_key: 'LEGACY', endpoint_id: '174793004058391', username: 'sip-a', alias: 'Assigned Endpoint' },
+    { endpoint_id: '174793004058392', username: 'live-only', alias: 'Live Only Endpoint' }
+  ];
+  app.tables.call_agents[0].plivo_endpoint_key = 'LEGACY';
+  const tree = app.render();
+  const select = nodes(tree, node => node.type === 'select' && node.props.value === '174793004058391')[0];
+  assert.ok(select);
+  assert.ok(nodes(select, node => node.type === 'option' && node.props.value === '174793004058392').length);
+});
+
+test('Unauthorize removes the employee row and makes the same employee available again without losing SIP or history', async () => {
+  const app = uiHarness();
+  const original = copy(app.tables.call_agents[0]);
+  const button = nodes(app.render(), node => node.type === 'button' && text(node) === 'Unauthorize')[0];
+  await button.props.onClick();
+  const tree = app.render();
+  const body = nodes(tree, node => node.type === 'tbody')[0];
+  assert.ok(!text(body).includes('Asha Verma'));
+  const updated = app.tables.call_agents[0];
+  assert.equal(updated.is_active, false);
+  assert.equal(updated.plivo_username, original.plivo_username);
+  assert.equal(updated.plivo_password, original.plivo_password);
+  nodes(tree, node => node.props.role === 'combobox')[0].props.onFocus();
+  const option = nodes(app.render(), node => node.props.role === 'option' && text(node).includes('Asha Verma'))[0];
+  assert.ok(option);
+  assert.notEqual(option.props['aria-disabled'], true);
+});
+
+test('Unauthorize reports active-call protection and retains the authorized row', async () => {
+  const app = uiHarness();
+  app.tables.call_sessions.push({ id: 'live', agent_id: 'agent-a', status: 'connected' });
+  await nodes(app.render(), node => node.type === 'button' && text(node) === 'Unauthorize')[0].props.onClick();
+  assert.equal(app.tables.call_agents[0].is_active, true);
+  assert.match(text(nodes(app.render(), node => node.props.role === 'alert')[0]), /call in progress/);
 });
 
 test('caller-ID UI displays confirmed saves and actual failures instead of an unconditional tick', async () => {

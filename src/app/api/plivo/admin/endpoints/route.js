@@ -1,15 +1,17 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getWorkspaceTelephonyConfig, getCompanySlug } from '@/utils/telephonyConfig';
+import { requireCallCenterAccess, readWorkspaceAdmin, privateHeaders } from '@/lib/callCenterPageData';
 
 // GET /api/plivo/admin/endpoints
 // Fetch Plivo endpoints using offset-based pagination.
 export async function GET(req) {
   try {
-    const company = req?.nextUrl?.searchParams?.get('company') || '';
-    const tenantId = req?.nextUrl?.searchParams?.get('tenant_id') || null;
+    const assignment = new URL(req.url).searchParams.get('purpose') === 'assignment';
+    const context = await requireCallCenterAccess(req, { section: assignment ? 'agents' : 'endpoints' });
+    const { company, tenantId } = context;
 
-    const { authId, authToken, isSwan, mode } = await getWorkspaceTelephonyConfig(company, tenantId);
+    const { authId, authToken, isSwan, mode, callingSeatLimit: configuredSeatLimit } = await getWorkspaceTelephonyConfig(company, tenantId);
 
     if (!authId || !authToken) {
       return NextResponse.json(
@@ -26,6 +28,7 @@ export async function GET(req) {
     let offset = 0;
     let totalCount = 0;
     let allEndpoints = [];
+    const signal = AbortSignal.timeout(15000);
 
     for (let page = 0; page < maxPages; page += 1) {
       const url =
@@ -37,6 +40,7 @@ export async function GET(req) {
           Authorization: `Basic ${b64}`,
         },
         cache: 'no-store',
+        signal,
       });
 
       const data = await res.json();
@@ -61,12 +65,12 @@ export async function GET(req) {
 
       const hasNextPage =
         Boolean(data?.meta?.next) &&
-        currentPageEndpoints.length > 0 &&
-        allEndpoints.length < totalCount;
+        currentPageEndpoints.length > 0;
 
       if (!hasNextPage) {
         break;
       }
+      if (page === maxPages - 1) throw new Error('The full SIP endpoint list could not be loaded. Please retry.');
 
       offset += currentPageEndpoints.length;
     }
@@ -85,10 +89,11 @@ export async function GET(req) {
       process.env.SUPABASE_SERVICE_ROLE_KEY
     );
 
-    const { data: dbAgents } = await adminClient
+    const { data: dbAgents, error: credentialReadError } = await adminClient
       .from('call_agents')
       .select('plivo_username, plivo_endpoint_key, plivo_password')
       .not('plivo_password', 'is', null);
+    if (credentialReadError) throw new Error('CRM endpoint credentials could not be loaded. Please retry.');
 
     const passwordMap = {};
     (dbAgents || []).forEach(a => {
@@ -178,9 +183,7 @@ export async function GET(req) {
       });
     }
 
-    const { getWorkspaceTelephonyConfig: getTelConfigHelper } = await import('@/utils/telephonyConfig');
-    const wsTelConfig = await getTelConfigHelper(company, tenantId);
-    const callingSeatLimit = isSwan ? 300 : (wsTelConfig?.callingSeatLimit || 5);
+    const callingSeatLimit = isSwan ? 300 : (configuredSeatLimit || 5);
 
     return NextResponse.json({
       endpoints,
@@ -188,7 +191,7 @@ export async function GET(req) {
       fetched: endpoints.length,
       callingSeatLimit,
       isSwan
-    });
+    }, { headers: privateHeaders });
   } catch (error) {
     console.error('Admin endpoints error:', error);
 
@@ -196,7 +199,7 @@ export async function GET(req) {
       {
         error: error.message || 'Unable to fetch Plivo endpoints.',
       },
-      { status: 500 }
+      { status: error.status || 500, headers: privateHeaders }
     );
   }
 }
@@ -206,28 +209,54 @@ export async function GET(req) {
 export async function POST(req) {
   try {
     const body = await req.json();
+    const context = await requireCallCenterAccess(req, { section: 'endpoints', operation: body.action ? 'edit' : 'add', body });
+    body.company = context.company;
+    body.tenantId = context.tenantId;
 
     // ── Handle SIP Password Update ───────────────────────────
     if (body.action === 'update_password') {
-      const { endpointId, username, password, company, tenantId } = body;
-      if (!endpointId || !password) {
-        return NextResponse.json({ error: 'Endpoint ID and password are required.' }, { status: 400 });
+      const { endpointId, password, company, tenantId } = body;
+      const cleanPassword = String(password || '').trim();
+      if (!/^\d+$/.test(String(endpointId || '')) || cleanPassword.length < 5) {
+        return NextResponse.json({ error: 'A valid Endpoint ID and password of at least 5 characters are required.' }, { status: 400 });
       }
 
-      const { authId, authToken } = await getWorkspaceTelephonyConfig(company, tenantId);
+      const tel = await getWorkspaceTelephonyConfig(company, tenantId);
+      const { authId, authToken } = tel;
       if (!authId || !authToken) {
         return NextResponse.json({ error: 'Plivo credentials are not configured.' }, { status: 500 });
       }
 
       const b64 = Buffer.from(`${authId}:${authToken}`).toString('base64');
       const plivoUrl = `https://api.plivo.com/v1/Account/${authId}/Endpoint/${endpointId}/`;
+      // Resolve the actual provider username instead of trusting the browser's alias/username.
+      const endpointResponse = await fetch(plivoUrl, { headers: { Authorization: `Basic ${b64}` }, cache: 'no-store', signal: AbortSignal.timeout(10000) });
+      const endpoint = await endpointResponse.json();
+      if (!endpointResponse.ok || !endpoint.username) throw new Error('The endpoint could not be verified on Plivo.');
+      const cleanUser = String(endpoint.username).toLowerCase().trim();
+      const workspace = await readWorkspaceAdmin(context);
+      const linked = workspace.agents.some(agent => String(agent.plivo_endpoint_key) === String(endpointId) || String(agent.plivo_username || '').toLowerCase() === cleanUser)
+        || workspace.endpoints.some(ep => String(ep.endpoint_id) === String(endpointId) || String(ep.username || '').toLowerCase() === cleanUser);
+      const slug = getCompanySlug(company);
+      const label = `${endpoint.alias || ''} ${cleanUser}`.toLowerCase();
+      if (!tel.isSwan && tel.mode !== 'byoc' && !linked && !(slug && label.includes(slug))) {
+        return NextResponse.json({ error: 'This endpoint is outside your workspace.' }, { status: 403 });
+      }
+      const { data: matches, error: readError } = await context.db.from('call_agents').select('id, user_id, plivo_username, plivo_endpoint_key')
+        .or(`plivo_username.ilike.${cleanUser},plivo_endpoint_key.eq.${endpointId}`);
+      if (readError) throw new Error('Could not verify CRM credential storage. Please retry.');
+      const allowedIds = new Set(workspace.agents.map(agent => agent.id));
+      if ((matches || []).some(agent => agent.user_id && !allowedIds.has(agent.id))) {
+        return NextResponse.json({ error: 'This endpoint is assigned outside your workspace.' }, { status: 403 });
+      }
       const plivoRes = await fetch(plivoUrl, {
         method: 'POST',
         headers: {
           'Authorization': `Basic ${b64}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ password: String(password).trim() })
+        body: JSON.stringify({ password: cleanPassword }),
+        signal: AbortSignal.timeout(10000)
       });
 
       if (!plivoRes.ok) {
@@ -240,13 +269,25 @@ export async function POST(req) {
         process.env.SUPABASE_SERVICE_ROLE_KEY
       );
 
-      const cleanUser = String(username || '').toLowerCase().trim();
-      if (cleanUser) {
-        await adminClient.from('call_agents').update({ plivo_password: String(password).trim() }).eq('plivo_username', cleanUser);
+      try {
+        let saved;
+        if (matches?.length) {
+          saved = await adminClient.from('call_agents').update({ plivo_password: cleanPassword }).in('id', matches.map(agent => agent.id))
+            .or(`plivo_username.ilike.${cleanUser},plivo_endpoint_key.eq.${endpointId}`).select('id');
+          if (!saved.data?.length || saved.data.length !== matches.length) throw new Error('No matching CRM record was updated.');
+        } else {
+          // Existing endpoint credential storage pattern; no employee or endpoint is reassigned.
+          saved = await adminClient.from('call_agents').insert({ user_id: null, display_name: `Endpoint ${endpoint.alias || cleanUser}`,
+            plivo_username: cleanUser, plivo_endpoint_key: String(endpointId), plivo_sip_uri: endpoint.sip_uri || `sip:${cleanUser}@phone.plivo.com`,
+            plivo_password: cleanPassword, is_active: false, status: 'offline' }).select('id');
+        }
+        if (saved.error || !saved.data?.length) throw new Error('CRM credential write failed.');
+        const verified = await adminClient.from('call_agents').select('id, plivo_password').in('id', saved.data.map(agent => agent.id));
+        if (verified.error || verified.data?.length !== saved.data.length || verified.data.some(agent => agent.plivo_password !== cleanPassword)) throw new Error('CRM credential verification failed.');
+      } catch {
+        return NextResponse.json({ success: false, providerUpdated: true, error: 'Plivo password changed, but CRM synchronization could not be verified. Retry saving the same password before reconnecting this endpoint.' }, { status: 503, headers: privateHeaders });
       }
-      await adminClient.from('call_agents').update({ plivo_password: String(password).trim() }).eq('plivo_endpoint_key', endpointId);
-
-      return NextResponse.json({ success: true, message: 'Password updated successfully on Plivo and CRM!' });
+      return NextResponse.json({ success: true, endpointId: String(endpointId), message: 'Password saved and verified on Plivo and CRM.' }, { headers: privateHeaders });
     }
 
     // ── Handle SIP Alias / Friendly Name Update ──────────────
@@ -468,7 +509,7 @@ export async function POST(req) {
     console.error('Error creating Plivo endpoint:', err);
     return NextResponse.json(
       { error: err.message || 'Internal server error creating Plivo endpoint.' },
-      { status: 500 }
+      { status: err.status || 500, headers: privateHeaders }
     );
   }
 }

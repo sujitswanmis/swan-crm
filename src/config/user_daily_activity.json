@@ -711,11 +711,22 @@
       "userId": "07fa35d3-f50a-4e41-ae15-b2692e393ea0",
       "email": "admin@newswangroup.com",
       "empName": "New Swan Admin",
-      "activeSeconds": 3297,
-      "idleSeconds": 2942,
+      "activeSeconds": 6643,
+      "idleSeconds": 4318,
       "firstSeen": "2026-10-25T18:31:04.442893+00:00",
-      "lastSeen": "2026-10-25T20:30:38.775Z",
+      "lastSeen": "2026-10-26T06:29:24.995Z",
       "status": "away",
+      "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36"
+    },
+    "15e6a4bb-ca0c-4743-bf79-494ae64074ee": {
+      "userId": "15e6a4bb-ca0c-4743-bf79-494ae64074ee",
+      "email": "supujacreations@gmail.com",
+      "empName": "SuPuja Creations",
+      "activeSeconds": 60,
+      "idleSeconds": 0,
+      "firstSeen": "2026-10-26T05:30:09.578144+00:00",
+      "lastSeen": "2026-10-26T05:31:09.812Z",
+      "status": "working",
       "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36"
     }
   }

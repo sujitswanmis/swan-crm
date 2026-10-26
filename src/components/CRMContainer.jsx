@@ -7414,6 +7414,7 @@ export default function CRMContainer({
               >
                 <ErrorBoundary>
                   <CallAdminModule 
+                    userId={userId}
                     moduleAccess={moduleAccess} 
                     userRole={userRole} 
                     activeSubTab={callAdminSubTab}

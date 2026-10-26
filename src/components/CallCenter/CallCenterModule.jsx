@@ -1,12 +1,13 @@
 'use client';
 import MobileTableView, { TableViewToggle, useTableViewPreference } from '@/components/common/MobileTableView';
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   PhoneCall, Users, Clock, Database, Loader2, ShieldAlert,
   Calendar, Search, RefreshCw, FileSpreadsheet, Play, Pause,
   Download, PhoneIncoming, PhoneOutgoing
 } from 'lucide-react';
-import { getAgentProfile, getRecentCalls, updateCallAgentAdmin } from '@/app/actions/team';
+import CallCenterPagination, { stickyHeader, tableScroll } from './CallCenterPagination';
+import { viewScope, readViewCache, writeViewCache, clearViewCache, fetchPageData } from './callCenterViewCache';
 import { useTableColumnResize, ColumnResizer } from '@/utils/tableColumnResize';
 
 const CALL_CENTER_DEFAULT_COL_WIDTHS = {
@@ -144,7 +145,11 @@ const getISTDateRange = (preset, customStart, customEnd) => {
 };
 
 export default function CallCenterModule({ userId, userCompany = '', tenantId = null }) {
-  const [agentData, setAgentData] = useState(null);
+  const scope = viewScope(userId, tenantId, userCompany);
+  const [agentData, setAgentData] = useState(() => readViewCache(scope, 'desk-profile')?.data || null);
+  const [deskError, setDeskError] = useState('');
+  const profileRequest = useRef(0);
+  const callsRequest = useRef(0);
   const [loading, setLoading] = useState(true);
   const [callsLoading, setCallsLoading] = useState(false);
   const [agentStatus, setAgentStatus] = useState('offline');
@@ -169,61 +174,7 @@ export default function CallCenterModule({ userId, userCompany = '', tenantId = 
     CALL_CENTER_MIN_COL_WIDTHS
   );
 
-  // Rows per page (synced with crmPageNavSettings)
-  const [pageSize, setPageSize] = useState(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const settings = JSON.parse(localStorage.getItem('crmPageNavSettings') || '{}');
-        if (settings.defaultPageSize) {
-          if (settings.defaultPageSize === 'All') return 10000;
-          return parseInt(settings.defaultPageSize, 10) || 20;
-        }
-      } catch (e) {}
-    }
-    return 20;
-  });
-
-  const [availablePageSizes, setAvailablePageSizes] = useState(() => {
-    let sizes = [10, 20, 50, 100];
-    if (typeof window !== 'undefined') {
-      try {
-        const settings = JSON.parse(localStorage.getItem('crmPageNavSettings') || '{}');
-        if (settings.availablePageSizes) {
-          const parsed = settings.availablePageSizes.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
-          if (parsed.length > 0) sizes = parsed;
-        }
-      } catch (e) {}
-    }
-    return sizes;
-  });
-
-  useEffect(() => {
-    const handleNavUpdate = () => {
-      try {
-        const cached = localStorage.getItem('crmPageNavSettings');
-        if (cached) {
-          const settings = JSON.parse(cached);
-          if (settings.defaultPageSize !== undefined) {
-            let size = 20;
-            if (settings.defaultPageSize === 'All') size = 10000;
-            else size = parseInt(settings.defaultPageSize, 10) || 20;
-            setPageSize(size);
-          }
-          if (settings.availablePageSizes) {
-            const sizes = settings.availablePageSizes.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
-            if (sizes.length > 0) setAvailablePageSizes(sizes);
-          }
-        }
-      } catch (e) {}
-    };
-
-    window.addEventListener('crm_page_nav_updated', handleNavUpdate);
-    window.addEventListener('crm_config_updated', handleNavUpdate);
-    return () => {
-      window.removeEventListener('crm_page_nav_updated', handleNavUpdate);
-      window.removeEventListener('crm_config_updated', handleNavUpdate);
-    };
-  }, []);
+  const [pageSize, setPageSize] = useState(25);
 
   // Quick Date Presets (Strict IST)
   const [datePreset, setDatePreset] = useState('today');
@@ -258,54 +209,53 @@ export default function CallCenterModule({ userId, userCompany = '', tenantId = 
 
   const fetchCalls = useCallback(async (agentId, pg, pSize, preset, cStart, cEnd, searchTerm) => {
     if (!agentId) return;
-    setCallsLoading(true);
+    const request = ++callsRequest.current;
+    const { startDate, endDate } = getISTDateRange(preset, cStart, cEnd);
+    const q = new URLSearchParams({ section: 'calls', limit: String(pSize), offset: String(pg * pSize),
+      start_date: startDate, end_date: endDate, search: searchTerm || '', viewer: userId });
+    const key = `desk-calls:${q}`;
+    const cached = readViewCache(scope, key);
+    setRecentCalls(cached?.calls || []); setTotalCalls(cached?.total || 0);
+    setCallsLoading(true); setDeskError('');
     try {
-      const { startDate, endDate } = getISTDateRange(preset, cStart, cEnd);
-      const res = await getRecentCalls(agentId, {
-        limit: pSize,
-        offset: pg * pSize,
-        startDate,
-        endDate,
-        search: searchTerm
-      });
-
-      if (res.data) {
-        setRecentCalls(res.data);
-        setTotalCalls(res.total || 0);
-      }
-    } catch (err) {
-      console.error('Error fetching call logs:', err);
-    } finally {
-      setCallsLoading(false);
-    }
-  }, []);
+      const data = await fetchPageData(`/api/plivo/desk-data?${q}`);
+      if (request !== callsRequest.current) return;
+      setRecentCalls(data.calls || []); setTotalCalls(data.total || 0); writeViewCache(scope, key, data);
+      const last = Math.max(0, Math.ceil((data.total || 0) / pSize) - 1);
+      if (pg > last) setPage(last);
+    } catch (error) {
+      if (request !== callsRequest.current) return;
+      setDeskError(error.message);
+      if ([401, 403].includes(error.status)) { setRecentCalls([]); setTotalCalls(0); clearViewCache(scope, key); }
+    } finally { if (request === callsRequest.current) setCallsLoading(false); }
+  }, [scope, userId]);
 
   const fetchAgentProfile = useCallback(async () => {
+    const request = ++profileRequest.current;
+    setLoading(true); setDeskError('');
+    const cached = readViewCache(scope, 'desk-profile');
+    setAgentData(cached?.data || null);
     try {
-      const { data, error } = await getAgentProfile(userId);
-      if (data) {
-        setAgentData(data);
-        if (data.status) {
-          setAgentStatus(data.status);
-        }
-        await fetchCalls(data.id, page, pageSize, datePreset, customStartDate, customEndDate, search);
-      }
-    } catch (err) {
-      console.error('Error fetching agent profile', err);
-    } finally {
-      setLoading(false);
-    }
-  }, [userId, page, pageSize, datePreset, customStartDate, customEndDate, search, fetchCalls]);
+      const result = await fetchPageData(`/api/plivo/desk-data?section=profile&viewer=${encodeURIComponent(userId || '')}`);
+      if (request !== profileRequest.current) return;
+      setAgentData(result.data || null); setAgentStatus(result.data?.status || 'offline');
+      writeViewCache(scope, 'desk-profile', result);
+    } catch (error) {
+      if (request !== profileRequest.current) return;
+      setDeskError(error.message);
+      if ([401, 403].includes(error.status)) { setAgentData(null); clearViewCache(scope, 'desk-profile'); }
+    } finally { if (request === profileRequest.current) setLoading(false); }
+  }, [userId, scope]);
 
   useEffect(() => {
     fetchAgentProfile();
+    return () => { profileRequest.current += 1; callsRequest.current += 1; };
   }, [fetchAgentProfile]);
 
-  // Refetch calls when pagination, datePreset, or search changes
   useEffect(() => {
-    if (agentData?.id) {
-      fetchCalls(agentData.id, page, pageSize, datePreset, customStartDate, customEndDate, search);
-    }
+    if (!agentData?.id) return;
+    const timer = setTimeout(() => fetchCalls(agentData.id, page, pageSize, datePreset, customStartDate, customEndDate, search), search.trim() ? 200 : 0);
+    return () => { clearTimeout(timer); callsRequest.current += 1; };
   }, [agentData?.id, page, pageSize, datePreset, customStartDate, customEndDate, search, fetchCalls]);
 
   const exportToExcel = async () => {
@@ -367,15 +317,6 @@ export default function CallCenterModule({ userId, userCompany = '', tenantId = 
     }
   };
 
-  if (loading) {
-    return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', color: '#666', gap: '0.5rem' }}>
-        <Loader2 className="spin" size={24} color="#3b82f6" />
-        <span>Loading Call Center...</span>
-      </div>
-    );
-  }
-
   const handleSelfActivate = async () => {
     setActivating(true);
     try {
@@ -395,6 +336,15 @@ export default function CallCenterModule({ userId, userCompany = '', tenantId = 
       setActivating(false);
     }
   };
+
+  if (!agentData && (loading || deskError)) {
+    return <div style={{ padding: '1.5rem' }}>
+      <h1 style={{ fontSize: '1.6rem', color: '#1e293b' }}>Telecalling Desk</h1>
+      <p>My Call Logs</p>
+      {deskError ? <div role="alert">{deskError} <button type="button" onClick={fetchAgentProfile}>Retry</button></div>
+        : <p role="status" style={{ color: '#64748b' }}><Loader2 size={16} className="spin" /> Loading your call records…</p>}
+    </div>;
+  }
 
   if (!agentData) {
     return (
@@ -605,6 +555,7 @@ export default function CallCenterModule({ userId, userCompany = '', tenantId = 
         </span>
       </div>
 
+      {deskError && <div role="alert" style={{ padding: 12, color: "#b91c1c" }}>{deskError}</div>}
       {/* Main Call Logs Card */}
       <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
         <div style={{ padding: '0.85rem 1.25rem', borderBottom: '1px solid #f1f5f9', background: '#f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
@@ -620,59 +571,59 @@ export default function CallCenterModule({ userId, userCompany = '', tenantId = 
         </div>
 
         {/* Responsive Table with Draggable Resizable Columns */}
-        <div style={{ overflowX: 'auto' }}>
+        <div style={tableScroll}>
           <MobileTableView id="CallCenter/CallCenterModule-1" view={callLogView} hideToggle={true}><table style={{ width: `${Math.max(1185, getTotalTableWidth())}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
-            <thead style={{ backgroundColor: 'var(--th-bg, #f8fafc)' }}>
+            <thead style={stickyHeader}>
               <tr style={{ fontSize: '0.76rem', textTransform: 'uppercase', color: 'var(--text-secondary, #64748b)', borderBottom: '1px solid #e2e8f0', letterSpacing: '0.04em' }}>
-                <th style={{ width: `${colWidths.time}px`, padding: '0.65rem 0.75rem', fontWeight: 700, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                <th style={{ width: `${colWidths.time}px`, padding: '0.65rem 0.75rem', fontWeight: 700, ...stickyHeader, boxSizing: 'border-box', verticalAlign: 'middle' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
                     <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25, fontSize: '0.78rem' }}>Calling Timestamp</span>
                   </div>
                   <ColumnResizer colKey="time" isResizing={resizingCol === 'time'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
                 </th>
-                <th style={{ width: `${colWidths.direction}px`, padding: '0.65rem 0.75rem', fontWeight: 700, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                <th style={{ width: `${colWidths.direction}px`, padding: '0.65rem 0.75rem', fontWeight: 700, ...stickyHeader, boxSizing: 'border-box', verticalAlign: 'middle' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
                     <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25, fontSize: '0.78rem' }}>Direction</span>
                   </div>
                   <ColumnResizer colKey="direction" isResizing={resizingCol === 'direction'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
                 </th>
-                <th style={{ width: `${colWidths.customer}px`, padding: '0.65rem 0.75rem', fontWeight: 700, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                <th style={{ width: `${colWidths.customer}px`, padding: '0.65rem 0.75rem', fontWeight: 700, ...stickyHeader, boxSizing: 'border-box', verticalAlign: 'middle' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
                     <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25, fontSize: '0.78rem' }}>Customer Number</span>
                   </div>
                   <ColumnResizer colKey="customer" isResizing={resizingCol === 'customer'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
                 </th>
-                <th style={{ width: `${colWidths.status}px`, padding: '0.65rem 0.75rem', fontWeight: 700, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                <th style={{ width: `${colWidths.status}px`, padding: '0.65rem 0.75rem', fontWeight: 700, ...stickyHeader, boxSizing: 'border-box', verticalAlign: 'middle' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
                     <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25, fontSize: '0.78rem' }}>Status</span>
                   </div>
                   <ColumnResizer colKey="status" isResizing={resizingCol === 'status'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
                 </th>
-                <th style={{ width: `${colWidths.answer_time}px`, padding: '0.65rem 0.75rem', fontWeight: 700, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                <th style={{ width: `${colWidths.answer_time}px`, padding: '0.65rem 0.75rem', fontWeight: 700, ...stickyHeader, boxSizing: 'border-box', verticalAlign: 'middle' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
                     <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25, fontSize: '0.78rem' }}>Answer Time (IST)</span>
                   </div>
                   <ColumnResizer colKey="answer_time" isResizing={resizingCol === 'answer_time'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
                 </th>
-                <th style={{ width: `${colWidths.end_time}px`, padding: '0.65rem 0.75rem', fontWeight: 700, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                <th style={{ width: `${colWidths.end_time}px`, padding: '0.65rem 0.75rem', fontWeight: 700, ...stickyHeader, boxSizing: 'border-box', verticalAlign: 'middle' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
                     <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25, fontSize: '0.78rem' }}>End Time (IST)</span>
                   </div>
                   <ColumnResizer colKey="end_time" isResizing={resizingCol === 'end_time'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
                 </th>
-                <th style={{ width: `${colWidths.ringing}px`, padding: '0.65rem 0.75rem', fontWeight: 700, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                <th style={{ width: `${colWidths.ringing}px`, padding: '0.65rem 0.75rem', fontWeight: 700, ...stickyHeader, boxSizing: 'border-box', verticalAlign: 'middle' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
                     <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25, fontSize: '0.78rem' }}>Ringing Duration</span>
                   </div>
                   <ColumnResizer colKey="ringing" isResizing={resizingCol === 'ringing'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
                 </th>
-                <th style={{ width: `${colWidths.talk}px`, padding: '0.65rem 0.75rem', fontWeight: 700, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                <th style={{ width: `${colWidths.talk}px`, padding: '0.65rem 0.75rem', fontWeight: 700, ...stickyHeader, boxSizing: 'border-box', verticalAlign: 'middle' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
                     <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25, fontSize: '0.78rem' }}>Talk Duration</span>
                   </div>
                   <ColumnResizer colKey="talk" isResizing={resizingCol === 'talk'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
                 </th>
-                <th style={{ width: `${colWidths.recording}px`, padding: '0.65rem 0.75rem', fontWeight: 700, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                <th style={{ width: `${colWidths.recording}px`, padding: '0.65rem 0.75rem', fontWeight: 700, ...stickyHeader, boxSizing: 'border-box', verticalAlign: 'middle' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
                     <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25, fontSize: '0.78rem' }}>Recording</span>
                   </div>
@@ -681,7 +632,7 @@ export default function CallCenterModule({ userId, userCompany = '', tenantId = 
               </tr>
             </thead>
             <tbody>
-              {callsLoading ? (
+              {callsLoading && !recentCalls.length ? (
                 <tr>
                   <td colSpan={9} style={{ padding: '3rem', textAlign: 'center' }}>
                     <Loader2 className="spin" size={24} color="#3b82f6" style={{ margin: '0 auto 0.5rem' }} />
@@ -797,64 +748,7 @@ export default function CallCenterModule({ userId, userCompany = '', tenantId = 
           </table></MobileTableView>
         </div>
 
-        {/* Pagination & Rows Per Page Controls */}
-        <div style={{ padding: '0.85rem 1.25rem', borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '0.82rem', color: '#64748b' }}>
-              Showing {totalCalls === 0 ? 0 : page * pageSize + 1}–{Math.min((page + 1) * pageSize, totalCalls)} of {totalCalls} records
-            </span>
-            <select
-              value={pageSize}
-              onChange={(e) => {
-                const newSize = Number(e.target.value);
-                setPageSize(newSize);
-                setPage(0);
-              }}
-              style={{
-                padding: '0.35rem 0.65rem',
-                borderRadius: '6px',
-                border: '1px solid #cbd5e1',
-                fontSize: '0.82rem',
-                background: 'white',
-                color: '#1e293b',
-                fontWeight: 600,
-                cursor: 'pointer'
-              }}
-            >
-              {(() => {
-                const optionsSet = new Set(availablePageSizes);
-                if (pageSize !== 10000 && !isNaN(pageSize)) optionsSet.add(pageSize);
-                const list = Array.from(optionsSet).sort((a, b) => a - b);
-                list.push(10000);
-                return list.map(sz => (
-                  <option key={sz} value={sz}>
-                    {sz === 10000 ? 'All' : `Show ${sz}`}
-                  </option>
-                ));
-              })()}
-            </select>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <button 
-              onClick={() => setPage(p => Math.max(0, p - 1))} 
-              disabled={page === 0 || callsLoading} 
-              style={{ padding: '0.4rem 0.9rem', border: '1px solid #cbd5e1', borderRadius: '6px', background: 'white', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 500, opacity: page === 0 || callsLoading ? 0.4 : 1 }}
-            >
-              ← Prev
-            </button>
-            <span style={{ fontSize: '0.82rem', color: '#475569', fontWeight: 600 }}>
-              Page {totalCalls === 0 ? 1 : page + 1} of {Math.max(1, Math.ceil(totalCalls / pageSize))}
-            </span>
-            <button 
-              onClick={() => setPage(p => p + 1)} 
-              disabled={(page + 1) * pageSize >= totalCalls || callsLoading} 
-              style={{ padding: '0.4rem 0.9rem', border: '1px solid #cbd5e1', borderRadius: '6px', background: 'white', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 500, opacity: (page + 1) * pageSize >= totalCalls || callsLoading ? 0.4 : 1 }}
-            >
-              Next →
-            </button>
-          </div>
-        </div>
+        <CallCenterPagination total={totalCalls} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} disabled={callsLoading} />
       </div>
     </div>
   );

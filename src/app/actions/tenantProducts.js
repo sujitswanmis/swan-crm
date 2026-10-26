@@ -154,10 +154,29 @@ export async function getTenantProducts(companyOrTenantId = 'Default', branchFil
       );
     }
 
-    // Merge DB & Local products (ID deduplication)
+    // Merge DB & Local products (Deduplicate strictly by company + SKU, then Name fallback, then ID)
     const mergedMap = new Map();
-    dbProducts.forEach(p => mergedMap.set(p.id || p.sku || p.name, p));
-    localProducts.forEach(p => mergedMap.set(p.id || p.sku || p.name, p));
+    const getDedupeKey = (p) => {
+      const c = p.company || key;
+      if (p.sku && String(p.sku).trim()) return `${c}_SKU_${String(p.sku).trim().toUpperCase()}`;
+      if (p.name && String(p.name).trim()) return `${c}_NAME_${String(p.name).trim().toLowerCase()}_${p.branch_name || 'All'}`;
+      return p.id;
+    };
+
+    dbProducts.forEach(p => mergedMap.set(getDedupeKey(p), p));
+    localProducts.forEach(p => {
+      const k = getDedupeKey(p);
+      const existing = mergedMap.get(k);
+      if (existing) {
+        mergedMap.set(k, {
+          ...existing,
+          ...p,
+          sub_category: p.sub_category || existing.sub_category || ''
+        });
+      } else {
+        mergedMap.set(k, p);
+      }
+    });
 
     let finalProducts = Array.from(mergedMap.values());
 
@@ -265,6 +284,8 @@ export async function saveTenantProduct({
   name,
   sku = '',
   category = 'General',
+  subCategory = '',
+  sub_category = '',
   uom = 'Pcs',
   price = 0,
   taxRate = 18,
@@ -284,6 +305,7 @@ export async function saveTenantProduct({
     const cleanSku = (sku || `PRD-${cleanName.replace(/[^a-zA-Z0-9]/g, '').slice(0, 4).toUpperCase()}-${Date.now().toString().slice(-4)}`).trim().toUpperCase();
     const prodId = id || `prod_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const istTime = getISTTimestamp();
+    const cleanSubCategory = (subCategory || sub_category || '').trim();
 
     const productRecord = {
       id: prodId,
@@ -294,6 +316,7 @@ export async function saveTenantProduct({
       name: cleanName,
       sku: cleanSku,
       category: (category || 'General').trim(),
+      sub_category: cleanSubCategory,
       uom: (uom || 'Pcs').trim(),
       price: Number(price) >= 0 ? Number(price) : 0,
       tax_rate: Number(taxRate) >= 0 ? Number(taxRate) : 18,
@@ -310,7 +333,12 @@ export async function saveTenantProduct({
     try {
       const admin = getAdminClient();
       if (admin) {
-        await admin.from('tenant_products').upsert(productRecord, { onConflict: 'id' });
+        const { error: upsertErr } = await admin.from('tenant_products').upsert(productRecord, { onConflict: 'id' });
+        // Fallback if sub_category column does not exist yet in DB schema cache
+        if (upsertErr && (upsertErr.message?.includes('sub_category') || upsertErr.code === 'PGRST204')) {
+          const { sub_category: _sc, ...dbSafeRecord } = productRecord;
+          await admin.from('tenant_products').upsert(dbSafeRecord, { onConflict: 'id' });
+        }
       }
     } catch (_dbErr) {
       // Table may not exist yet, fallback to JSON storage
@@ -429,6 +457,47 @@ export async function deleteTenantProduct(productId, company = 'Default') {
 }
 
 /**
+ * Bulk delete multiple products
+ */
+export async function deleteTenantProductsBulk(productIds = [], company = 'Default') {
+  try {
+    if (!Array.isArray(productIds) || productIds.length === 0) {
+      return { success: false, error: 'No product IDs provided.' };
+    }
+    const { key } = resolveTenantKey(company);
+
+    // 1. Supabase bulk delete
+    try {
+      const admin = getAdminClient();
+      if (admin) {
+        await admin.from('tenant_products').delete().in('id', productIds);
+      }
+    } catch (_) {}
+
+    // 2. Remove from local JSON
+    const localMap = await readLocalProducts();
+    if (Array.isArray(localMap[key])) {
+      localMap[key] = localMap[key].filter(p => !productIds.includes(p.id));
+      await writeLocalProducts(localMap);
+    }
+
+    try {
+      const { logAuditAction } = await import('@/app/actions/audit');
+      await logAuditAction('Delete Products Bulk', `${productIds.length} products removed from ${key}`);
+    } catch (_) {}
+
+    return {
+      success: true,
+      count: productIds.length,
+      message: `Successfully deleted ${productIds.length} products.`
+    };
+  } catch (err) {
+    console.error('deleteTenantProductsBulk error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
  * Bulk import products for a tenant
  */
 export async function importTenantProducts(productsList = [], company = 'Default', targetBranch = 'All Branches') {
@@ -440,27 +509,57 @@ export async function importTenantProducts(productsList = [], company = 'Default
     const { key } = resolveTenantKey(company);
     const istTime = getISTTimestamp();
 
+    // 1. Pre-lookup existing products for this company to prevent duplicate entries
+    const existingBySku = new Map();
+    const existingByName = new Map();
+
+    const localMap = await readLocalProducts();
+    const localList = Array.isArray(localMap[key]) ? localMap[key] : [];
+    localList.forEach(p => {
+      if (p.sku && String(p.sku).trim()) existingBySku.set(String(p.sku).trim().toUpperCase(), p);
+      if (p.name && String(p.name).trim()) existingByName.set(String(p.name).trim().toLowerCase(), p);
+    });
+
+    try {
+      const admin = getAdminClient();
+      if (admin) {
+        const { data: dbRows } = await admin.from('tenant_products').select('id, name, sku, company').ilike('company', key);
+        if (Array.isArray(dbRows)) {
+          dbRows.forEach(p => {
+            if (p.sku && String(p.sku).trim()) existingBySku.set(String(p.sku).trim().toUpperCase(), p);
+            if (p.name && String(p.name).trim()) existingByName.set(String(p.name).trim().toLowerCase(), p);
+          });
+        }
+      }
+    } catch (_) {}
+
     const prepared = productsList
       .filter(p => p && (p.name || p.product_name))
       .map((p, idx) => {
         const cleanName = (p.name || p.product_name).trim();
-        const cleanSku = (p.sku || p.code || `PRD-${cleanName.replace(/[^a-zA-Z0-9]/g, '').slice(0, 4).toUpperCase()}-${(Date.now() + idx).toString().slice(-4)}`).trim().toUpperCase();
+        const rawSku = (p.sku || p.code || '').trim().toUpperCase();
+        const existing = (rawSku && existingBySku.get(rawSku)) || existingByName.get(cleanName.toLowerCase());
+
+        const matchedId = p.id || existing?.id || `prod_${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 6)}`;
+        const cleanSku = rawSku || existing?.sku || `PRD-${cleanName.replace(/[^a-zA-Z0-9]/g, '').slice(0, 4).toUpperCase()}-${(Date.now() + idx).toString().slice(-4)}`;
+
         return {
-          id: p.id || `prod_${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 6)}`,
+          id: matchedId,
           company: key,
-          branch_name: p.branch_name || targetBranch || 'All Branches',
+          branch_name: p.branch_name || targetBranch || existing?.branch_name || 'All Branches',
           name: cleanName,
           sku: cleanSku,
-          category: (p.category || 'General').trim(),
-          uom: (p.uom || 'Pcs').trim(),
+          category: (p.category || existing?.category || 'General').trim(),
+          sub_category: (p.sub_category || p.subCategory || existing?.sub_category || '').trim(),
+          uom: (p.uom || existing?.uom || 'Pcs').trim(),
           price: Number(p.price) >= 0 ? Number(p.price) : 0,
-          tax_rate: Number(p.tax_rate) >= 0 ? Number(p.tax_rate) : 18,
-          hsn_code: (p.hsn_code || p.hsn || '').trim().toUpperCase(),
-          stock_quantity: Number(p.stock_quantity || p.stock) >= 0 ? Number(p.stock_quantity || p.stock) : 0,
+          tax_rate: Number(p.tax_rate) >= 0 ? Number(p.tax_rate) : (existing?.tax_rate ?? 18),
+          hsn_code: (p.hsn_code || p.hsn || existing?.hsn_code || '').trim().toUpperCase(),
+          stock_quantity: Number(p.stock_quantity || p.stock) >= 0 ? Number(p.stock_quantity || p.stock) : (existing?.stock_quantity ?? 0),
           min_order_qty: Number(p.min_order_qty || p.moq) >= 1 ? Number(p.min_order_qty || p.moq) : 1,
-          description: (p.description || '').trim(),
+          description: (p.description || existing?.description || '').trim(),
           is_active: p.is_active !== false,
-          created_at: istTime,
+          created_at: existing?.created_at || istTime,
           updated_at: istTime
         };
       });
@@ -469,21 +568,25 @@ export async function importTenantProducts(productsList = [], company = 'Default
       return { success: false, error: 'No valid products could be parsed.' };
     }
 
-    // 1. Try DB bulk upsert
+    // 2. Try DB bulk upsert
     try {
       const admin = getAdminClient();
       if (admin) {
-        await admin.from('tenant_products').upsert(prepared, { onConflict: 'id' });
+        const { error: bulkErr } = await admin.from('tenant_products').upsert(prepared, { onConflict: 'id' });
+        // Fallback if sub_category column does not exist yet in DB schema cache
+        if (bulkErr && (bulkErr.message?.includes('sub_category') || bulkErr.code === 'PGRST204')) {
+          const dbSafe = prepared.map(({ sub_category: _sc, ...rest }) => rest);
+          await admin.from('tenant_products').upsert(dbSafe, { onConflict: 'id' });
+        }
       }
     } catch (_) {}
 
-    // 2. Update local JSON
-    const localMap = await readLocalProducts();
+    // 3. Update local JSON
     if (!Array.isArray(localMap[key])) {
       localMap[key] = [];
     }
 
-    // Merge by ID / SKU
+    // Merge by SKU / ID
     const existingMap = new Map();
     localMap[key].forEach(p => existingMap.set(p.sku || p.id, p));
     prepared.forEach(p => existingMap.set(p.sku || p.id, p));

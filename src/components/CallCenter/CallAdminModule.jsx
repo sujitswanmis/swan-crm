@@ -1,5 +1,7 @@
 'use client';
-import MobileTableView from '@/components/common/MobileTableView';
+import MobileTableView, { TableViewToggle, useTableViewPreference } from '@/components/common/MobileTableView';
+import CallCenterPagination, { stickyHeader, tableScroll } from './CallCenterPagination';
+import { viewScope, readViewCache, writeViewCache, clearViewCache, fetchPageData, mergeEndpointLists } from './callCenterViewCache';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Settings, Users, Phone, Loader2, RefreshCw, PhoneCall,
@@ -11,7 +13,7 @@ import {
   Calendar, Search, ToggleLeft, ToggleRight, Save, Bell, FileSpreadsheet,
   Plus, X, Key, KeyRound, ShieldCheck, Cpu, Copy, Building2, Globe, EyeOff, ExternalLink
 } from 'lucide-react';
-import { getTeamMembers, getCallAdminData, addCallAgentAdmin, updateCallAgentAdmin, saveCallAgentCallerIdAdmin, setCallAgentAuthorizationAdmin } from '@/app/actions/team';
+import { addCallAgentAdmin, updateCallAgentAdmin, saveCallAgentCallerIdAdmin, setCallAgentAuthorizationAdmin } from '@/app/actions/team';
 import { PremiumProgressLoader } from '../PremiumProgressLoader';
 import { filterVisibleSubTabs, getSubItemPermissions } from '@/utils/permissionUtils';
 import { useTableColumnResize, ColumnResizer } from '@/utils/tableColumnResize';
@@ -277,10 +279,13 @@ const getISTDateRange = (preset, customStart, customEnd) => {
 // ─── Sub-components ─────────────────────────────────────────
 
 // ── Tab: Agents ──────────────────────────────────────────────
-function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, addCallAgentAdmin, userCompany = '', tenantId = null, defaultCallerId = '', seatQuota = null }) {
+function TabAgents({ agents, endpoints, endpointsReady = true, users, onRefresh, onAgentChange, updateCallAgentAdmin, addCallAgentAdmin, userCompany = '', tenantId = null, defaultCallerId = '', seatQuota = null }) {
+  const [agentView, setAgentView] = useTableViewPreference('CallCenter/CallAdminModule-1');
   const [saving, setSaving] = useState({});
   const [rowFeedback, setRowFeedback] = useState({});
   const [callerIdDrafts, setCallerIdDrafts] = useState({});
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(25);
   const [agentSearch, setAgentSearch] = useState('');
   const [selectedUserId, setSelectedUserId] = useState('');
   const [userSearch, setUserSearch] = useState('');
@@ -290,7 +295,7 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
   const userInputRef = useRef(null);
   const [adding, setAdding] = useState(false);
   const [workspaceNumbers, setWorkspaceNumbers] = useState([]);
-  const employeeAgents = useMemo(() => agents.filter(agent => agent.user_id && !String(agent.plivo_username || '').startsWith('system_')), [agents]);
+  const employeeAgents = useMemo(() => agents.filter(agent => agent.user_id && agent.is_active !== false && !String(agent.plivo_username || '').startsWith('system_')), [agents]);
   const assignedUserIds = useMemo(() => new Set(employeeAgents.filter(agent => agent.is_active !== false).map(a => a.user_id)), [employeeAgents]);
   const activeUsers = useMemo(() => users.filter(u => {
     // Employee status and login approval are separate settings in User Management.
@@ -310,6 +315,13 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
     });
   }, [activeUsers, userSearch]);
   const userMap = new Map((users || []).map(u => [u.user_id, u]));
+  const getAgentLabel = agent => {
+    const user = userMap.get(agent.user_id);
+    if (!user) return agent.display_name || 'Employee';
+    const name = user.emp_name || user.email || 'Employee';
+    const id = user.emp_id || user.emp_code;
+    return id && !String(name).includes(String(id)) ? `${name} - ${id}` : name;
+  };
   const getCallerId = agent => Object.hasOwn(agent, 'outgoing_caller_id')
     ? (agent.outgoing_caller_id || '')
     : (/^\+?[0-9]{8,15}$/.test(String(agent.agent_code || '').trim()) ? String(agent.agent_code).trim() : '');
@@ -321,7 +333,7 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
       const user = members.get(agent.user_id) || {};
       const endpoint = endpoints.find(ep => [ep.endpoint_key, ep.endpoint_id].includes(agent.plivo_endpoint_key));
       const callerId = Object.hasOwn(agent, 'outgoing_caller_id') ? agent.outgoing_caller_id : agent.agent_code;
-      const text = [agent.display_name, agent.mobile_number, agent.plivo_username, agent.plivo_sip_uri,
+      const text = [members.has(agent.user_id) ? (user.emp_name || user.email) : agent.display_name, agent.mobile_number, agent.plivo_username, agent.plivo_sip_uri,
         endpoint?.alias, callerId, !callerId ? defaultCallerId : '', agent.default_calling_mode, agent.status,
         agent.is_active === false ? 'revoked unauthorized' : 'authorized', user.emp_name, user.emp_id, user.emp_code,
         user.email, user.emp_official_mail_id, user.emp_department, user.company, user.work_location_name, user.work_location_type]
@@ -329,6 +341,9 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
       return terms.every(term => text.includes(term));
     });
   }, [agentSearch, employeeAgents, users, endpoints, defaultCallerId]);
+
+  const safePage = Math.min(page, Math.max(0, Math.ceil(filteredAgents.length / pageSize) - 1));
+  const pageAgents = filteredAgents.slice(safePage * pageSize, (safePage + 1) * pageSize);
 
   const getUserLabel = (user) => {
     const name = user.emp_name || user.email || user.emp_official_mail_id || 'Employee';
@@ -488,9 +503,18 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
   };
 
   const handleAuthorization = async (agent) => {
-    const authorize = agent.is_active === false;
-    if (!authorize && !window.confirm(`Revoke call center access for ${agent.display_name || 'this employee'}? Call history and SIP settings will be kept.`)) return;
-    await saveAgentChange(agent.id, () => setCallAgentAuthorizationAdmin(agent.id, authorize), authorize ? 'Access authorized' : 'Access revoked');
+    if (saving[agent.id]) return;
+    if (!window.confirm(`Unauthorize ${getAgentLabel(agent)} from the call center? Call history and SIP settings will be kept.`)) return;
+    setSaving(previous => ({ ...previous, [agent.id]: true }));
+    try {
+      const result = await setCallAgentAuthorizationAdmin(agent.id, false);
+      if (!result?.success) throw new Error(result?.error || 'Could not unauthorize this employee.');
+      onAgentChange?.(agent.id, { is_active: false, status: 'offline' });
+      if (!onAgentChange) await onRefresh();
+      setPage(0);
+    } catch (error) {
+      setRowFeedback(previous => ({ ...previous, [agent.id]: { success: false, text: error.message } }));
+    } finally { setSaving(previous => ({ ...previous, [agent.id]: false })); }
   };
 
   const handleEndpoint = async (agentId, endpointKey) => {
@@ -667,63 +691,66 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
 
       {/* Agents Table */}
       <div style={{ background:'white', borderRadius:'12px', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0', overflow:'hidden' }}>
-        <div style={{ padding:'1.25rem 1.5rem', borderBottom:'1px solid #f1f5f9', display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:'0.75rem' }}>
-          <h3 style={{ fontSize:'1rem', fontWeight:600, color:'#1e293b', display:'flex', alignItems:'center', gap:'0.5rem' }}>
+        <div data-call-toolbar="agents" style={{ padding:'0.9rem 1.25rem', borderBottom:'1px solid #f1f5f9', display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:'0.75rem' }}>
+          <h3 style={{ margin:0, fontSize:'1rem', fontWeight:600, color:'#1e293b', display:'flex', alignItems:'center', gap:'0.5rem', flexShrink:0 }}>
             <Phone size={18} color="#3b82f6" /> Call Agents ({filteredAgents.length}{agentSearch.trim() ? ` / ${employeeAgents.length}` : ''})
           </h3>
-          <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', flex:'0 1 420px', minWidth:0, border:'1px solid #cbd5e1', borderRadius:'8px', padding:'0.5rem 0.75rem' }}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'flex-end', gap:'0.65rem', flex:'1 1 440px', minWidth:0, flexWrap:'wrap' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', flex:'1 1 240px', maxWidth:480, minWidth:0, height:38, boxSizing:'border-box', border:'1px solid #cbd5e1', borderRadius:'8px', padding:'0 0.75rem' }}>
             <Search size={17} color="#64748b" aria-hidden="true" />
             <input
               type="search"
               aria-label="Search call agents"
               placeholder="Search agents, employee ID, email, SIP or caller ID…"
               value={agentSearch}
-              onChange={event => setAgentSearch(event.target.value)}
-              style={{ width:'100%', minWidth:0, border:'none', outline:'none', fontSize:'0.85rem', background:'transparent', color:'#1e293b' }}
+              onChange={event => { setAgentSearch(event.target.value); setPage(0); }}
+              style={{ width:'100%', minWidth:0, minHeight:0, padding:0, margin:0, border:'none', outline:'none', boxShadow:'none', lineHeight:1.3, fontSize:'0.85rem', background:'transparent', color:'#1e293b' }}
             />
           </div>
+          <TableViewToggle view={agentView} onChange={setAgentView} style={{ marginLeft:0, height:38, boxSizing:'border-box' }} />
+          </div>
         </div>
-        <div id="calladmin-agents-scroll" role="region" aria-label="Call agents table" tabIndex={0} style={{ overflow:'auto', maxHeight:'65vh', position:'relative' }}>
-          <MobileTableView id="CallCenter/CallAdminModule-1"><table style={{ width: `${getTotalTableWidth()}px`, borderCollapse:'separate', borderSpacing:0, tableLayout: 'fixed' }}>
-            <thead style={{ position:'sticky', top:0, zIndex:2, backgroundColor:'var(--th-bg, #e2e8f0)', boxShadow:'0 2px 0 #cbd5e1' }}>
+        <div id="calladmin-agents-scroll" role="region" aria-label="Call agents table" tabIndex={0} style={tableScroll}>
+          <MobileTableView id="CallCenter/CallAdminModule-1" view={agentView} hideToggle={true}><table style={{ width: `${getTotalTableWidth()}px`, borderCollapse:'separate', borderSpacing:0, tableLayout: 'fixed' }}>
+            <thead style={stickyHeader}>
               <tr style={{ fontSize: '0.78rem', textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>
-                <th style={{ width: `${colWidths.agent}px`, padding: '0.75rem 1rem', textAlign: 'left', fontWeight: 600, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                <th style={{ width: `${colWidths.agent}px`, padding: '0.75rem 1rem', textAlign: 'left', fontWeight: 600, ...stickyHeader, boxSizing: 'border-box', verticalAlign: 'middle' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
                     <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Agent</span>
                   </div>
                   <ColumnResizer colKey="agent" isResizing={resizingCol === 'agent'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
                 </th>
-                <th style={{ width: `${colWidths.calling_mode}px`, padding: '0.75rem 1rem', textAlign: 'left', fontWeight: 600, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                <th style={{ width: `${colWidths.calling_mode}px`, padding: '0.75rem 1rem', textAlign: 'left', fontWeight: 600, ...stickyHeader, boxSizing: 'border-box', verticalAlign: 'middle' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
                     <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Calling Mode</span>
                   </div>
                   <ColumnResizer colKey="calling_mode" isResizing={resizingCol === 'calling_mode'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
                 </th>
-                <th style={{ width: `${colWidths.sip_endpoint}px`, padding: '0.75rem 1rem', textAlign: 'left', fontWeight: 600, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                <th style={{ width: `${colWidths.sip_endpoint}px`, padding: '0.75rem 1rem', textAlign: 'left', fontWeight: 600, ...stickyHeader, boxSizing: 'border-box', verticalAlign: 'middle' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
                     <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>SIP Endpoint</span>
                   </div>
                   <ColumnResizer colKey="sip_endpoint" isResizing={resizingCol === 'sip_endpoint'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
                 </th>
-                <th style={{ width: `${colWidths.assigned_caller_id || 200}px`, padding: '0.75rem 1rem', textAlign: 'left', fontWeight: 600, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                <th style={{ width: `${colWidths.assigned_caller_id || 200}px`, padding: '0.75rem 1rem', textAlign: 'left', fontWeight: 600, ...stickyHeader, boxSizing: 'border-box', verticalAlign: 'middle' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
                     <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Outgoing Caller ID</span>
                   </div>
                   <ColumnResizer colKey="assigned_caller_id" isResizing={resizingCol === 'assigned_caller_id'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
                 </th>
-                <th style={{ width: `${colWidths.password_set}px`, padding: '0.75rem 1rem', textAlign: 'left', fontWeight: 600, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                <th style={{ width: `${colWidths.password_set}px`, padding: '0.75rem 1rem', textAlign: 'left', fontWeight: 600, ...stickyHeader, boxSizing: 'border-box', verticalAlign: 'middle' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
                     <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Password Set</span>
                   </div>
                   <ColumnResizer colKey="password_set" isResizing={resizingCol === 'password_set'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
                 </th>
-                <th style={{ width: `${colWidths.status}px`, padding: '0.75rem 1rem', textAlign: 'left', fontWeight: 600, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                <th style={{ width: `${colWidths.status}px`, padding: '0.75rem 1rem', textAlign: 'left', fontWeight: 600, ...stickyHeader, boxSizing: 'border-box', verticalAlign: 'middle' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
                     <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Status</span>
                   </div>
                   <ColumnResizer colKey="status" isResizing={resizingCol === 'status'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
                 </th>
-                <th style={{ width: `${colWidths.actions}px`, padding: '0.75rem 1rem', textAlign: 'left', fontWeight: 600, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                <th style={{ width: `${colWidths.actions}px`, padding: '0.75rem 1rem', textAlign: 'left', fontWeight: 600, ...stickyHeader, right: 0, boxSizing: 'border-box', verticalAlign: 'middle' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
                     <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Actions</span>
                   </div>
@@ -732,14 +759,16 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
               </tr>
             </thead>
             <tbody>
-              {filteredAgents.map((agent, i) => {
+              {pageAgents.map((agent, i) => {
                 const u = userMap.get(agent.user_id);
+                const selectedEndpoint = endpoints.find(ep => [ep.endpoint_id, ep.endpoint_key].filter(Boolean).map(String).includes(String(agent.plivo_endpoint_key))
+                  || (agent.plivo_username && String(ep.username || '').toLowerCase() === String(agent.plivo_username).toLowerCase()));
                 const loc = u?.work_location_name || u?.work_location_type || 'Headquarter';
                 const dept = u?.emp_department || '';
                 return (
                   <tr key={agent.id || `agent-${i}`} style={{ borderBottom:'1px solid #f1f5f9', background: i%2===0?'white':'#fafafa' }}>
-                    <td style={{ width: `${colWidths.agent}px`, padding:'1rem', fontWeight:600, fontSize:'0.9rem', color:'#1e293b', boxSizing: 'border-box', verticalAlign: 'top' }} title={agent.display_name}>
-                      <div style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }}>{agent.display_name}</div>
+                    <td style={{ width: `${colWidths.agent}px`, padding:'1rem', fontWeight:600, fontSize:'0.9rem', color:'#1e293b', boxSizing: 'border-box', verticalAlign: 'top' }} title={getAgentLabel(agent)}>
+                      <div style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }}>{getAgentLabel(agent)}</div>
                       {agent.mobile_number && <div style={{ fontSize:'0.75rem', color:'#94a3b8', whiteSpace: 'normal', wordBreak: 'break-word', marginTop: '0.2rem' }}>{agent.mobile_number}</div>}
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '0.3rem', flexWrap: 'wrap' }}>
                         {dept && (
@@ -766,15 +795,15 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
                   </td>
                   <td style={{ width: `${colWidths.sip_endpoint}px`, padding:'1rem', boxSizing: 'border-box' }}>
                     <select
-                      value={agent.plivo_endpoint_key || ''}
-                      disabled={saving[agent.id] || agent.is_active === false}
+                      value={selectedEndpoint?.endpoint_id || selectedEndpoint?.endpoint_key || agent.plivo_endpoint_key || ''}
+                      disabled={!endpointsReady || saving[agent.id] || agent.is_active === false}
                       onChange={e => handleEndpoint(agent.id, e.target.value)}
                       style={{ padding:'0.4rem 0.6rem', borderRadius:'6px', border:'1px solid #cbd5e1', fontSize:'0.85rem', background:'white', width: '100%', maxWidth: '100%', cursor:'pointer' }}
                     >
                       <option value="">— No Endpoint —</option>
                       {endpoints.map((ep, epIdx) => {
                         const epKey = ep.endpoint_id || ep.endpoint_key || `ep-${epIdx}`;
-                        return <option key={epKey} value={epKey}>{ep.alias}</option>;
+                        return <option key={epKey} value={epKey}>{ep.alias || ep.username || epKey}</option>;
                       })}
                     </select>
                     {agent.plivo_sip_uri && (
@@ -804,7 +833,7 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
                   </td>
                   <td style={{ width: `${colWidths.password_set}px`, padding:'1rem', boxSizing: 'border-box' }}>
                     <div style={{ display:'flex', alignItems:'center', gap:'0.5rem' }}>
-                      {agent.plivo_password
+                      {(agent.plivo_password || agent.has_password)
                         ? <CheckCircle size={18} color="#16a34a" />
                         : <XCircle size={18} color="#dc2626" />}
                       <button
@@ -820,14 +849,14 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
                   <td style={{ width: `${colWidths.status}px`, padding:'1rem', boxSizing: 'border-box' }}>
                     {agent.is_active === false ? <span style={{ color:'#b91c1c', fontSize:'0.8rem', fontWeight:600 }}>Revoked</span> : statusBadge(agent.status)}
                   </td>
-                  <td style={{ width: `${colWidths.actions}px`, padding:'1rem', boxSizing: 'border-box' }}>
+                  <td style={{ width: `${colWidths.actions}px`, padding:'1rem', boxSizing: 'border-box', position:'sticky', right:0, zIndex:2, background:'var(--bg-surface, white)' }}>
                     <button
                       type="button"
                       onClick={() => handleAuthorization(agent)}
                       disabled={saving[agent.id] || (agent.is_active === false && seatQuota?.canAdd === false)}
                       style={{ width:'100%', padding:'0.4rem 0.5rem', border:'1px solid', borderColor:agent.is_active === false ? '#bbf7d0' : '#fecaca', borderRadius:'6px', background:agent.is_active === false ? '#f0fdf4' : '#fff7f7', color:agent.is_active === false ? '#15803d' : '#b91c1c', fontSize:'0.78rem', fontWeight:600, cursor:saving[agent.id] ? 'wait' : 'pointer' }}
                     >
-                      {agent.is_active === false ? 'Re-authorize' : 'Revoke'}
+                      {saving[agent.id] ? 'Saving…' : 'Unauthorize'}
                     </button>
                     {saving[agent.id] && <div role="status" style={{ display:'flex', alignItems:'center', gap:'0.3rem', marginTop:'0.4rem', fontSize:'0.75rem', color:'#3b82f6' }}><Loader2 size={13} className="spin" /> Saving…</div>}
                     {rowFeedback[agent.id] && (
@@ -845,14 +874,35 @@ function TabAgents({ agents, endpoints, users, onRefresh, updateCallAgentAdmin, 
             </tbody>
           </table></MobileTableView>
         </div>
+        <CallCenterPagination total={filteredAgents.length} page={safePage} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
       </div>
     </div>
   );
 }
 
 // ── Tab: SIP Endpoints ────────────────────────────────────────
-function TabEndpoints({ userCompany = '', tenantId = null, agents = [], onRefresh = null, seatQuota = null, isMasterAdmin = false }) {
-  const [endpoints, setEndpoints] = useState([]);
+function TabEndpoints({ scope = '', initialEndpoints = [], userCompany = '', tenantId = null, agents = [], onRefresh = null, seatQuota = null, isMasterAdmin = false }) {
+  const [endpointView, setEndpointView] = useTableViewPreference('CallCenter/CallAdminModule-2');
+  const [endpoints, setEndpoints] = useState(() => readViewCache(scope, 'endpoints')?.endpoints || initialEndpoints);
+  const [verified, setVerified] = useState(false);
+  const [endpointError, setEndpointError] = useState('');
+  const [passwordFeedback, setPasswordFeedback] = useState('');
+  const [savingPassword, setSavingPassword] = useState(false);
+  const passwordSaveRef = useRef(false);
+  const endpointRequest = useRef(0);
+  const [endpointSearch, setEndpointSearch] = useState('');
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(25);
+  const filteredEndpoints = useMemo(() => {
+    const terms = endpointSearch.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (!terms.length) return endpoints;
+    return endpoints.filter(endpoint => {
+      const text = [endpoint.alias, endpoint.endpoint_id, endpoint.endpoint_key, endpoint.username, endpoint.sip_uri]
+        .map(value => String(value ?? '').toLowerCase()).join(' ');
+      return terms.every(term => text.includes(term));
+    });
+  }, [endpoints, endpointSearch]);
+  const safePage = Math.min(page, Math.max(0, Math.ceil(filteredEndpoints.length / pageSize) - 1));
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(null);
   const [seatLimit, setSeatLimit] = useState(5);
@@ -898,9 +948,11 @@ function TabEndpoints({ userCompany = '', tenantId = null, agents = [], onRefres
   };
 
   const handleUpdatePassword = async (ep) => {
+    if (!verified || passwordSaveRef.current) return;
     const newPwd = prompt(`Enter new SIP Password for "${ep.alias}" (${ep.username}):`, ep.password || '');
     if (!newPwd || !newPwd.trim()) return;
 
+    passwordSaveRef.current = true; setSavingPassword(true); setPasswordFeedback('');
     try {
       const res = await fetch('/api/plivo/admin/endpoints', {
         method: 'POST',
@@ -918,12 +970,15 @@ function TabEndpoints({ userCompany = '', tenantId = null, agents = [], onRefres
       if (!res.ok || !data.success) {
         throw new Error(data.error || 'Failed to update password');
       }
-      alert('Password updated successfully on Plivo and CRM!');
-      await fetchEndpoints();
-      if (onRefresh) await onRefresh();
+      setEndpoints(previous => {
+        const next = previous.map(endpoint => String(endpoint.endpoint_id) === String(ep.endpoint_id) ? { ...endpoint, password: newPwd.trim(), has_password: true } : endpoint);
+        writeViewCache(scope, 'endpoints', { endpoints: next }); return next;
+      });
+      setPasswordFeedback('Password saved and verified on Plivo and CRM.');
+      onRefresh?.();
     } catch (err) {
-      alert('Error updating password: ' + err.message);
-    }
+      setPasswordFeedback(err.message || 'Password could not be saved.');
+    } finally { passwordSaveRef.current = false; setSavingPassword(false); }
   };
 
   const handleUpdateAlias = async (ep) => {
@@ -962,23 +1017,29 @@ function TabEndpoints({ userCompany = '', tenantId = null, agents = [], onRefres
     }
   };
 
-  const fetchEndpoints = useCallback(async () => {
-    setLoading(true);
+  const fetchEndpoints = useCallback(async ({ fresh = true } = {}) => {
+    const request = ++endpointRequest.current;
+    setLoading(true); setEndpointError('');
     try {
-      const q = new URLSearchParams();
-      if (userCompany) q.set('company', userCompany);
-      if (tenantId) q.set('tenant_id', tenantId);
-      const res = await fetch(`/api/plivo/admin/endpoints?${q.toString()}`);
-      const data = await res.json();
-      setEndpoints(data.endpoints || []);
+      const q = new URLSearchParams({ company: userCompany, tenant_id: tenantId || '', viewer: scope });
+      const data = await fetchPageData(`/api/plivo/admin/endpoints?${q}`, { fresh });
+      if (request !== endpointRequest.current) return;
+      setEndpoints(data.endpoints || []); setVerified(true);
+      writeViewCache(scope, 'endpoints', data);
       if (data.callingSeatLimit) setSeatLimit(data.callingSeatLimit);
       if (data.isSwan !== undefined) setIsSwanWs(Boolean(data.isSwan));
       setLastRefresh(new Date());
-    } catch (e) { console.error(e); }
-    setLoading(false);
-  }, [userCompany, tenantId]);
+    } catch (error) {
+      if (request !== endpointRequest.current) return;
+      setEndpointError(error.message); setVerified(false);
+      if ([401, 403].includes(error.status)) { setEndpoints([]); clearViewCache(scope, 'endpoints'); }
+    } finally { if (request === endpointRequest.current) setLoading(false); }
+  }, [userCompany, tenantId, scope]);
 
-  useEffect(() => { fetchEndpoints(); }, [fetchEndpoints]);
+  useEffect(() => {
+    fetchEndpoints({ fresh: false });
+    return () => { endpointRequest.current += 1; };
+  }, [fetchEndpoints]);
 
   const generateRandomCredentials = () => {
     const rand = Math.random().toString(36).substring(2, 7);
@@ -1057,24 +1118,40 @@ function TabEndpoints({ userCompany = '', tenantId = null, agents = [], onRefres
       </div>
 
       <div style={{ background:'white', borderRadius:'12px', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0', overflow:'hidden' }}>
-        <div style={{ padding:'1.25rem 1.5rem', borderBottom:'1px solid #f1f5f9', display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:'1rem' }}>
-          <h3 style={{ fontSize:'1rem', fontWeight:600, color:'#1e293b', display:'flex', alignItems:'center', gap:'0.5rem', margin:0 }}>
-            <Server size={18} color="#3b82f6" /> Plivo SIP Endpoints
-          </h3>
-          <div style={{ display:'flex', alignItems:'center', gap:'0.75rem' }}>
-            <div style={{
-              display: 'inline-flex', alignItems: 'center', gap: '0.4rem',
-              padding: '0.35rem 0.85rem', borderRadius: '8px',
-              fontSize: '0.82rem', fontWeight: 700,
+        <div data-call-toolbar="endpoints" style={{ padding:'0.9rem 1.25rem', borderBottom:'1px solid #f1f5f9', display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:'0.75rem' }}>
+          <div style={{ minWidth:0, flex:'0 1 220px' }}>
+            <h3 style={{ fontSize:'1rem', fontWeight:600, color:'#1e293b', display:'flex', alignItems:'center', gap:'0.5rem', margin:0 }}>
+              <Server size={18} color="#3b82f6" /> Plivo SIP Endpoints
+            </h3>
+            <div style={{ display:'flex', alignItems:'center', flexWrap:'wrap', gap:'0.4rem', marginTop:'0.3rem' }}>
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: '0.25rem',
+              padding: '0.15rem 0.35rem', borderRadius: '6px', whiteSpace:'nowrap',
+              fontSize: '0.7rem', fontWeight: 600,
               background: isQuotaReached ? '#fef2f2' : '#eff6ff',
               color: isQuotaReached ? '#dc2626' : '#1e40af',
               border: isQuotaReached ? '1px solid #fecaca' : '1px solid #bfdbfe'
-            }}>
-              <Users size={14} />
-              Calling Seats Quota: {endpoints.length} / {effectiveLimit} Endpoints {isQuotaReached ? '(FULL)' : ''}
+            }} title="Calling seats quota">
+              <Users size={12} />
+              {endpoints.length} / {effectiveLimit} endpoints {isQuotaReached ? '(FULL)' : ''}
+            </span>
+            {lastRefresh && <span style={{ fontSize:'0.68rem', color:'#94a3b8', whiteSpace:'nowrap' }}>Updated {lastRefresh.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })}</span>}
             </div>
-            {lastRefresh && <span style={{ fontSize:'0.75rem', color:'#94a3b8' }}>Updated {lastRefresh.toLocaleTimeString()}</span>}
+          </div>
+          <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', flex:'1 1 190px', maxWidth:340, minWidth:0, height:38, boxSizing:'border-box', border:'1px solid #cbd5e1', borderRadius:'8px', padding:'0 0.75rem' }}>
+            <Search size={17} color="#64748b" aria-hidden="true" />
+            <input
+              type="search"
+              aria-label="Search SIP endpoints"
+              placeholder="Search alias, Endpoint ID or SIP URI…"
+              value={endpointSearch}
+              onChange={event => { setEndpointSearch(event.target.value); setPage(0); }}
+              style={{ width:'100%', minWidth:0, minHeight:0, padding:0, margin:0, border:'none', outline:'none', boxShadow:'none', lineHeight:1.3, fontSize:'0.82rem', background:'transparent', color:'#1e293b' }}
+            />
+          </div>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'flex-end', flexWrap:'wrap', gap:'0.5rem', minWidth:0 }}>
             <button
+              disabled={!verified || loading || savingPassword}
               onClick={() => {
                 if (isQuotaReached) {
                   alert(`Calling seat quota reached (${endpoints.length}/${effectiveLimit}). You cannot create more than ${effectiveLimit} SIP endpoints. Please upgrade your calling plan or contact Master Admin to increase seats.`);
@@ -1086,7 +1163,7 @@ function TabEndpoints({ userCompany = '', tenantId = null, agents = [], onRefres
               }}
               style={{
                 display:'flex', alignItems:'center', gap:'0.4rem',
-                padding:'0.5rem 1rem',
+                padding:'0 0.75rem', height:38, whiteSpace:'nowrap',
                 background: isQuotaReached ? '#94a3b8' : '#2563eb',
                 color:'white',
                 border:'none', borderRadius:'8px',
@@ -1098,14 +1175,19 @@ function TabEndpoints({ userCompany = '', tenantId = null, agents = [], onRefres
             >
               <Plus size={15} /> Create SIP Endpoint
             </button>
-            <button onClick={fetchEndpoints} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.5rem 1rem', background:'#f1f5f9', border:'none', borderRadius:'8px', cursor:'pointer', fontSize:'0.85rem', fontWeight:500 }}>
+            <button disabled={loading} onClick={fetchEndpoints} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0 0.75rem', height:38, whiteSpace:'nowrap', background:'#f1f5f9', border:'none', borderRadius:'8px', cursor:'pointer', fontSize:'0.85rem', fontWeight:500 }}>
               <RefreshCw size={14} className={loading ? 'spin' : ''} /> Refresh
             </button>
+            <TableViewToggle view={endpointView} onChange={setEndpointView} style={{ marginLeft:0, height:38, boxSizing:'border-box' }} />
           </div>
         </div>
-        <div style={{ overflowX:'auto' }}>
-          <MobileTableView id="CallCenter/CallAdminModule-2"><table style={{ width: `${getTotalTableWidth()}px`, borderCollapse: 'collapse', tableLayout: 'fixed' }}>
-            <thead style={{ backgroundColor: 'var(--th-bg)' }}>
+        {endpointError && <div role="alert" style={{ padding: '0.75rem 1rem', color: '#b91c1c' }}>{endpointError}</div>}
+        {passwordFeedback && <div role="status" style={{ padding: '0.75rem 1rem' }}>{passwordFeedback}</div>}
+        {savingPassword && <div role="status" style={{ padding: '0.5rem 1rem' }}>Saving password…</div>}
+        <fieldset disabled={!verified || savingPassword} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
+        <div style={tableScroll}>
+          <MobileTableView id="CallCenter/CallAdminModule-2" view={endpointView} hideToggle={true}><table style={{ width: `${getTotalTableWidth()}px`, borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+            <thead style={stickyHeader}>
               <tr style={{ fontSize:'0.78rem', textTransform:'uppercase', color:'var(--text-secondary)' }}>
                 {[
                   { key: 'alias', label: 'Alias', width: colWidths.alias },
@@ -1122,7 +1204,7 @@ function TabEndpoints({ userCompany = '', tenantId = null, agents = [], onRefres
                       padding: '0.75rem 1rem',
                       textAlign: 'left',
                       fontWeight: 600,
-                      position: 'relative',
+                      ...stickyHeader,
                       boxSizing: 'border-box'
                     }}
                   >
@@ -1148,9 +1230,9 @@ function TabEndpoints({ userCompany = '', tenantId = null, agents = [], onRefres
               </tr>
             </thead>
             <tbody>
-              {loading ? (
+              {loading && !endpoints.length ? (
                 <tr><td colSpan="6" style={{ padding:'3rem', textAlign:'center', color:'#94a3b8' }}><Loader2 className="spin" size={24} /></td></tr>
-              ) : endpoints.map((ep, i) => (
+              ) : filteredEndpoints.slice(safePage * pageSize, (safePage + 1) * pageSize).map((ep, i) => (
                 <tr key={ep.endpoint_id || ep.endpoint_key || ep.id || `ep-row-${i}`} style={{ borderBottom:'1px solid #f1f5f9', background: i%2===0?'white':'#fafafa' }}>
                   <td style={{ width: `${colWidths.alias}px`, padding:'0.85rem 1rem', boxSizing: 'border-box', verticalAlign: 'top' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.4rem' }}>
@@ -1185,7 +1267,7 @@ function TabEndpoints({ userCompany = '', tenantId = null, agents = [], onRefres
                   <td style={{ width: `${colWidths.password}px`, padding:'1rem', boxSizing: 'border-box', verticalAlign: 'middle' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', justifyContent: 'space-between' }}>
                       <span style={{ fontFamily: 'monospace', fontSize: '0.82rem', color: ep.password ? '#1e293b' : '#94a3b8' }}>
-                        {ep.password
+                        {(ep.password || ep.has_password)
                           ? (visiblePasswords[ep.endpoint_id || ep.endpoint_key] ? ep.password : '••••••••')
                           : 'Not Stored'}
                       </span>
@@ -1229,6 +1311,9 @@ function TabEndpoints({ userCompany = '', tenantId = null, agents = [], onRefres
                   <td style={{ width: `${colWidths.status}px`, padding:'1rem', boxSizing: 'border-box' }}>{sipBadge(ep.sip_registered)}</td>
                 </tr>
               ))}
+              {filteredEndpoints.length === 0 && endpoints.length > 0 && !loading && (
+                <tr><td colSpan="6" style={{ padding:'2rem', textAlign:'center', color:'#64748b' }}>No SIP endpoints match your search.</td></tr>
+              )}
               {endpoints.length === 0 && !loading && (
                 <tr>
                   <td colSpan="6" style={{ padding:'3.5rem 2rem', textAlign:'center', color:'#64748b' }}>
@@ -1260,7 +1345,8 @@ function TabEndpoints({ userCompany = '', tenantId = null, agents = [], onRefres
               )}
             </tbody>
           </table></MobileTableView>
-        </div>
+        </div></fieldset>
+        <CallCenterPagination total={filteredEndpoints.length} page={safePage} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
       </div>
 
       {/* Direct Plivo SIP Endpoint Creation Modal */}
@@ -1413,7 +1499,7 @@ function TabEndpoints({ userCompany = '', tenantId = null, agents = [], onRefres
 }
 
 // ── Tab: Call Logs ────────────────────────────────────────────
-function TabCallLogs({ userCompany = '', tenantId = null }) {
+function TabCallLogs({ scope = '', userCompany = '', tenantId = null }) {
   const [calls, setCalls] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -1434,61 +1520,9 @@ function TabCallLogs({ userCompany = '', tenantId = null }) {
     CALL_ADMIN_PLIVO_MIN_COL_WIDTHS
   );
 
-  // Lead Data Page Size settings (from crmPageNavSettings)
-  const [pageSize, setPageSize] = useState(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const settings = JSON.parse(localStorage.getItem('crmPageNavSettings') || '{}');
-        if (settings.defaultPageSize) {
-          if (settings.defaultPageSize === 'All') return 10000;
-          return parseInt(settings.defaultPageSize, 10) || 20;
-        }
-      } catch (e) {}
-    }
-    return 20;
-  });
-
-  const [availablePageSizes, setAvailablePageSizes] = useState(() => {
-    let sizes = [10, 20, 50, 100];
-    if (typeof window !== 'undefined') {
-      try {
-        const settings = JSON.parse(localStorage.getItem('crmPageNavSettings') || '{}');
-        if (settings.availablePageSizes) {
-          const parsed = settings.availablePageSizes.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
-          if (parsed.length > 0) sizes = parsed;
-        }
-      } catch (e) {}
-    }
-    return sizes;
-  });
-
-  useEffect(() => {
-    const handleNavUpdate = () => {
-      try {
-        const cached = localStorage.getItem('crmPageNavSettings');
-        if (cached) {
-          const settings = JSON.parse(cached);
-          if (settings.defaultPageSize !== undefined) {
-            let size = 20;
-            if (settings.defaultPageSize === 'All') size = 10000;
-            else size = parseInt(settings.defaultPageSize, 10) || 20;
-            setPageSize(size);
-          }
-          if (settings.availablePageSizes) {
-            const sizes = settings.availablePageSizes.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
-            if (sizes.length > 0) setAvailablePageSizes(sizes);
-          }
-        }
-      } catch (e) {}
-    };
-
-    window.addEventListener('crm_page_nav_updated', handleNavUpdate);
-    window.addEventListener('crm_config_updated', handleNavUpdate);
-    return () => {
-      window.removeEventListener('crm_page_nav_updated', handleNavUpdate);
-      window.removeEventListener('crm_config_updated', handleNavUpdate);
-    };
-  }, []);
+  const [pageSize, setPageSize] = useState(25);
+  const [logsError, setLogsError] = useState('');
+  const logsRequest = useRef(0);
 
   // Quick Date Presets (Strict IST)
   const [datePreset, setDatePreset] = useState('today');
@@ -1533,34 +1567,35 @@ function TabCallLogs({ userCompany = '', tenantId = null }) {
     }
   }, [source]);
 
-  const fetchLogs = useCallback(async (src, pg, pSize, preset, cStart, cEnd) => {
-    setLoading(true);
+  const fetchLogs = useCallback(async (src, pg, pSize, preset, cStart, cEnd, term = '') => {
+    const request = ++logsRequest.current;
+    const { startDate, endDate } = getISTDateRange(preset, cStart, cEnd);
+    const q = new URLSearchParams({ source: src, limit: String(pSize), offset: String(pg * pSize), company: userCompany,
+      tenant_id: tenantId || '', start_date: startDate, end_date: endDate, search: src === 'db' ? term : '', viewer: scope });
+    const cacheKey = `logs:${q}`;
+    const cached = readViewCache(scope, cacheKey);
+    setCalls(cached?.calls || []); setTotal(cached?.total || 0);
+    setLoading(true); setLogsError('');
     try {
-      const { startDate, endDate } = getISTDateRange(preset, cStart, cEnd);
-      let queryUrl = `/api/plivo/admin/call-logs?source=${src}&limit=${pSize}&offset=${pg * pSize}`;
-      if (userCompany) queryUrl += `&company=${encodeURIComponent(userCompany)}`;
-      if (tenantId) queryUrl += `&tenant_id=${encodeURIComponent(tenantId)}`;
-      if (startDate) queryUrl += `&start_date=${encodeURIComponent(startDate)}`;
-      if (endDate) queryUrl += `&end_date=${encodeURIComponent(endDate)}`;
-
-      const res = await fetch(queryUrl);
-      const data = await res.json();
-      setCalls(data.calls || []);
-      setTotal(data.total || 0);
-    } catch (e) {
-      console.error('fetchLogs error:', e);
-    } finally {
-      setLoading(false);
-    }
-  }, [userCompany, tenantId]);
+      const data = await fetchPageData(`/api/plivo/admin/call-logs?${q}`);
+      if (request !== logsRequest.current) return;
+      setCalls(data.calls || []); setTotal(data.total || 0); writeViewCache(scope, cacheKey, data);
+      const last = Math.max(0, Math.ceil((data.total || 0) / pSize) - 1);
+      if (pg > last) setPage(last);
+    } catch (error) {
+      if (request !== logsRequest.current) return;
+      setLogsError(error.message);
+      if ([401, 403].includes(error.status)) { setCalls([]); setTotal(0); clearViewCache(scope, cacheKey); }
+    } finally { if (request === logsRequest.current) setLoading(false); }
+  }, [userCompany, tenantId, scope]);
 
   useEffect(() => {
-    fetchLogs(source, page, pageSize, datePreset, customStartDate, customEndDate);
-  }, [source, page, pageSize, datePreset, customStartDate, customEndDate, fetchLogs]);
+    const timer = setTimeout(() => fetchLogs(source, page, pageSize, datePreset, customStartDate, customEndDate, search), search.trim() ? 200 : 0);
+    return () => { clearTimeout(timer); logsRequest.current += 1; };
+  }, [source, page, pageSize, datePreset, customStartDate, customEndDate, search, fetchLogs]);
 
-  const filtered = search
-    ? calls.filter(c => JSON.stringify(c).toLowerCase().includes(search.toLowerCase()))
-    : calls;
+  const filtered = source === 'plivo' && search
+    ? calls.filter(call => JSON.stringify(call).toLowerCase().includes(search.toLowerCase())) : calls;
 
   // Multi-page persistent selection handlers
   const isAllCurrentPageSelected = filtered.length > 0 && filtered.every((c, i) => {
@@ -1784,7 +1819,7 @@ function TabCallLogs({ userCompany = '', tenantId = null }) {
           <input
             placeholder="Search calls…"
             value={search}
-            onChange={e => setSearch(e.target.value)}
+            onChange={e => { setSearch(e.target.value); setPage(0); }}
             style={{ width:'100%', padding:'0.55rem 1rem 0.55rem 2.25rem', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'0.85rem', background:'white', boxSizing:'border-box' }}
           />
         </div>
@@ -1854,7 +1889,7 @@ function TabCallLogs({ userCompany = '', tenantId = null }) {
 
         {/* Refresh Button */}
         <button 
-          onClick={() => fetchLogs(source, page, pageSize, datePreset, customStartDate, customEndDate)} 
+          onClick={() => fetchLogs(source, page, pageSize, datePreset, customStartDate, customEndDate, search)}
           style={{ 
             display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.55rem 0.9rem', 
             background:'#3b82f6', color:'white', border:'none', borderRadius:'8px', cursor:'pointer', 
@@ -1870,6 +1905,7 @@ function TabCallLogs({ userCompany = '', tenantId = null }) {
         </span>
       </div>
 
+      {logsError && <div role="alert" style={{ padding: 12, color: "#b91c1c" }}>{logsError}</div>}
       {/* Multi-Page Persistent Selection Banner */}
       {source === 'db' && selectedCallsMap.size > 0 && (
         <div style={{
@@ -1951,12 +1987,12 @@ function TabCallLogs({ userCompany = '', tenantId = null }) {
 
         {/* Main Table */}
         <div style={{ background:'white', borderRadius:'12px', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0', overflow:'hidden' }}>
-          <div style={{ overflowX:'auto' }}>
+          <div style={tableScroll}>
             <MobileTableView id="CallCenter/CallAdminModule-3"><table style={{ width: source === 'db' ? `${Math.max(1400, dbColResize.getTotalTableWidth() + 40)}px` : `${Math.max(900, plivoColResize.getTotalTableWidth())}px`, tableLayout: 'fixed', borderCollapse:'collapse' }}>
-              <thead style={{ backgroundColor: 'var(--th-bg, #f8fafc)' }}>
+              <thead style={stickyHeader}>
                 <tr style={{ fontSize:'0.78rem', textTransform:'uppercase', color:'var(--text-secondary, #64748b)', borderBottom:'1px solid #e2e8f0' }}>
                   {source === 'db' && (
-                    <th style={{ padding:'0.75rem 1rem', width:'40px', textAlign:'center', boxSizing:'border-box' }}>
+                    <th style={{ ...stickyHeader, padding:'0.75rem 1rem', width:'40px', textAlign:'center', boxSizing:'border-box' }}>
                       <input 
                         type="checkbox" 
                         checked={isAllCurrentPageSelected} 
@@ -1981,7 +2017,7 @@ function TabCallLogs({ userCompany = '', tenantId = null }) {
                     { id: 'recording', label: 'Recording' },
                     { id: 'room', label: 'Room' }
                   ].map(h => (
-                    <th key={h.id} style={{ width: `${dbColResize.colWidths[h.id]}px`, padding:'0.65rem 0.75rem', textAlign:'left', fontWeight:700, position:'relative', boxSizing:'border-box', verticalAlign:'middle' }}>
+                    <th key={h.id} style={{ width: `${dbColResize.colWidths[h.id]}px`, padding:'0.65rem 0.75rem', textAlign:'left', fontWeight:700, ...stickyHeader, boxSizing:'border-box', verticalAlign:'middle' }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
                         <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25, fontSize: '0.78rem' }}>{h.label}</span>
                       </div>
@@ -1996,7 +2032,7 @@ function TabCallLogs({ userCompany = '', tenantId = null }) {
                     { id: 'hangup', label: 'Hangup Cause' },
                     { id: 'cost', label: 'Cost' }
                   ].map(h => (
-                    <th key={h.id} style={{ width: `${plivoColResize.colWidths[h.id]}px`, padding:'0.65rem 0.75rem', textAlign:'left', fontWeight:700, position:'relative', boxSizing:'border-box', verticalAlign:'middle' }}>
+                    <th key={h.id} style={{ width: `${plivoColResize.colWidths[h.id]}px`, padding:'0.65rem 0.75rem', textAlign:'left', fontWeight:700, ...stickyHeader, boxSizing:'border-box', verticalAlign:'middle' }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
                         <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25, fontSize: '0.78rem' }}>{h.label}</span>
                       </div>
@@ -2006,7 +2042,7 @@ function TabCallLogs({ userCompany = '', tenantId = null }) {
                 </tr>
               </thead>
               <tbody>
-                {loading ? (
+                {loading && !calls.length ? (
                   <tr><td colSpan={source === 'db' ? 14 : 7} style={{ padding:'3rem', textAlign:'center' }}><Loader2 className="spin" size={24} color="#3b82f6" /></td></tr>
                 ) : filtered.length === 0 ? (
                   <tr><td colSpan={source === 'db' ? 14 : 7} style={{ padding:'3rem', textAlign:'center', color:'#94a3b8' }}>No call records found.</td></tr>
@@ -2105,64 +2141,7 @@ function TabCallLogs({ userCompany = '', tenantId = null }) {
           </table></MobileTableView>
         </div>
 
-        {/* Pagination & Lead Data Page Size Controls */}
-        <div style={{ padding:'1rem 1.5rem', borderTop:'1px solid #f1f5f9', display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:'1rem' }}>
-          <div style={{ display:'flex', alignItems:'center', gap:'0.75rem', flexWrap:'wrap' }}>
-            <span style={{ fontSize:'0.82rem', color:'#64748b' }}>
-              Showing {total === 0 ? 0 : page * pageSize + 1}–{Math.min((page + 1) * pageSize, total)} of {total} records
-            </span>
-            <select
-              value={pageSize}
-              onChange={(e) => {
-                const newSize = Number(e.target.value);
-                setPageSize(newSize);
-                setPage(0);
-              }}
-              style={{
-                padding: '0.35rem 0.65rem',
-                borderRadius: '6px',
-                border: '1px solid #cbd5e1',
-                fontSize: '0.82rem',
-                background: 'white',
-                color: '#1e293b',
-                fontWeight: 600,
-                cursor: 'pointer'
-              }}
-            >
-              {(() => {
-                const optionsSet = new Set(availablePageSizes);
-                if (pageSize !== 10000 && !isNaN(pageSize)) optionsSet.add(pageSize);
-                const list = Array.from(optionsSet).sort((a, b) => a - b);
-                list.push(10000);
-                return list.map(sz => (
-                  <option key={sz} value={sz}>
-                    {sz === 10000 ? 'All' : `Show ${sz}`}
-                  </option>
-                ));
-              })()}
-            </select>
-          </div>
-
-          <div style={{ display:'flex', alignItems:'center', gap:'0.5rem' }}>
-            <button 
-              onClick={() => setPage(p => Math.max(0, p - 1))} 
-              disabled={page === 0} 
-              style={{ padding:'0.4rem 0.9rem', border:'1px solid #cbd5e1', borderRadius:'6px', background:'white', cursor:'pointer', fontSize:'0.85rem', opacity: page === 0 ? 0.4 : 1 }}
-            >
-              ← Prev
-            </button>
-            <span style={{ fontSize:'0.82rem', color:'#475569', fontWeight:600 }}>
-              Page {total === 0 ? 1 : page + 1} of {Math.max(1, Math.ceil(total / pageSize))}
-            </span>
-            <button 
-              onClick={() => setPage(p => p + 1)} 
-              disabled={(page + 1) * pageSize >= total} 
-              style={{ padding:'0.4rem 0.9rem', border:'1px solid #cbd5e1', borderRadius:'6px', background:'white', cursor:'pointer', fontSize:'0.85rem', opacity: (page + 1) * pageSize >= total ? 0.4 : 1 }}
-            >
-              Next →
-            </button>
-          </div>
-        </div>
+        <CallCenterPagination total={total} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} disabled={loading} />
       </div>
     </div>
   );
@@ -3964,7 +3943,13 @@ function TabSettings({ agents = [], userCompany = '', tenantId = null }) {
 }
 
 // ─── Main Component ──────────────────────────────────────────
-export default function CallAdminModule({ 
+export default function CallAdminModule(props) {
+  const scope = viewScope(props.userId, props.tenantId, props.userCompany, JSON.stringify([props.userRole, props.moduleAccess]));
+  return <CallAdminPage key={scope} {...props} />;
+}
+
+function CallAdminPage({
+  userId = '',
   moduleAccess = {}, 
   userRole = '', 
   activeSubTab = null, 
@@ -4001,42 +3986,88 @@ export default function CallAdminModule({
     }
   };
 
-  const [agents, setAgents] = useState([]);
-  const [endpoints, setEndpoints] = useState([]);
-  const [users, setUsers] = useState([]);
-  const [seatQuota, setSeatQuota] = useState(null);
-  const [defaultCallerId, setDefaultCallerId] = useState('');
+  const scope = viewScope(userId, tenantId, userCompany, JSON.stringify([userRole, moduleAccess]));
+  const [agents, setAgents] = useState(() => readViewCache(scope, 'admin')?.agents || []);
+  const [endpoints, setEndpoints] = useState(() => mergeEndpointLists(readViewCache(scope, 'admin')?.endpoints, readViewCache(scope, 'endpoints')?.endpoints));
+  const [endpointsReady, setEndpointsReady] = useState(false);
+  const [endpointListError, setEndpointListError] = useState('');
+  const agentEndpointRequest = useRef(0);
+  const [users, setUsers] = useState(() => readViewCache(scope, 'admin')?.users || []);
+  const [seatQuota, setSeatQuota] = useState(() => readViewCache(scope, 'summary')?.seatQuota || null);
+  const [defaultCallerId, setDefaultCallerId] = useState(() => readViewCache(scope, 'summary')?.defaultCallerId || '');
   const [loading, setLoading] = useState(true);
-
-  const fetchData = useCallback(async () => {
+  const [verified, setVerified] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const requestRef = useRef(0);
+  const needsData = ['agents', 'endpoints', 'monitor', 'settings'].includes(activeTab);
+  const fetchData = useCallback(async ({ fresh = true } = {}) => {
+    const request = ++requestRef.current;
+    setLoading(true); setVerified(false);
+    setLoadError('');
+    const q = new URLSearchParams({ company: userCompany, tenant_id: tenantId || '', section: activeTab, viewer: userId });
+    const summaryQuery = new URLSearchParams(q); summaryQuery.set('summary', '1');
+    fetchPageData(`/api/plivo/admin/data?${summaryQuery}`, { fresh }).then(data => {
+      if (request !== requestRef.current) return;
+      setSeatQuota(data.seatQuota); setDefaultCallerId(data.defaultCallerId || '');
+      writeViewCache(scope, 'summary', data);
+    }).catch(() => {});
     try {
-      const q = new URLSearchParams();
-      if (userCompany) q.set('company', userCompany);
-      if (tenantId) q.set('tenant_id', tenantId);
-
-      const [userData, adminData, endpointsRes, settingsRes] = await Promise.all([
-        getTeamMembers(userCompany, tenantId),
-        getCallAdminData(userCompany, tenantId),
-        fetch(`/api/plivo/admin/endpoints?${q.toString()}`).then(r => r.json()).catch(() => ({ endpoints: [] })),
-        fetch(`/api/plivo/admin/settings?${q.toString()}`).then(r => r.json()).catch(() => ({}))
-      ]);
-      if (Array.isArray(userData)) setUsers(userData.filter(u => u.user_id));
-      setEndpoints(adminData.endpoints?.length ? adminData.endpoints : (endpointsRes.endpoints || []));
-      setAgents(adminData.agents || []);
-      if (settingsRes?.fromNumber !== undefined) setDefaultCallerId(settingsRes.fromNumber || '');
-      if (settingsRes?.seatQuota) {
-        setSeatQuota(settingsRes.seatQuota);
+      const data = await fetchPageData(`/api/plivo/admin/data?${q}`, { fresh });
+      if (request !== requestRef.current) return;
+      setUsers(data.users || []);
+      setEndpoints(previous => mergeEndpointLists(previous, data.endpoints || []));
+      setAgents(data.agents || []);
+      setVerified(true);
+      writeViewCache(scope, 'admin', data);
+    } catch (error) {
+      if (request !== requestRef.current) return;
+      setLoadError(error.message);
+      setVerified(false);
+      if ([401, 403].includes(error.status)) {
+        clearViewCache(scope, 'admin');
+        setUsers([]); setAgents([]); setEndpoints([]);
       }
-    } catch (err) {
-      console.error(err);
     } finally {
-      setLoading(false);
+      if (request === requestRef.current) setLoading(false);
     }
-  }, [userCompany, tenantId]);
+  }, [userCompany, tenantId, activeTab, userId, scope]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    if (needsData) fetchData({ fresh: false });
+    return () => { requestRef.current += 1; };
+  }, [fetchData, needsData]);
 
-  if (loading) return <PremiumProgressLoader message="Loading Call Center Administration" active={loading} />;
+  const fetchAgentEndpoints = useCallback(async ({ fresh = true } = {}) => {
+    const request = ++agentEndpointRequest.current;
+    // A Strict Mode cleanup can cancel this read before its effect is mounted.
+    await Promise.resolve();
+    if (request !== agentEndpointRequest.current) return;
+    setEndpointsReady(false); setEndpointListError('');
+    try {
+      const q = new URLSearchParams({ company: userCompany, tenant_id: tenantId || '', purpose: 'assignment', viewer: userId });
+      const data = await fetchPageData(`/api/plivo/admin/endpoints?${q}`, { fresh });
+      if (request !== agentEndpointRequest.current) return;
+      setEndpoints(previous => mergeEndpointLists(previous, data.endpoints || []));
+      setEndpointsReady(true); writeViewCache(scope, 'endpoints', data);
+    } catch (error) {
+      if (request === agentEndpointRequest.current) setEndpointListError(error.message);
+    }
+  }, [userCompany, tenantId, userId, scope]);
+
+  useEffect(() => {
+    if (activeTab === 'agents') fetchAgentEndpoints({ fresh: false });
+    return () => { agentEndpointRequest.current += 1; };
+  }, [activeTab, fetchAgentEndpoints]);
+
+  const onAgentChange = (agentId, updates) => {
+    setAgents(previous => {
+      const next = previous.map(agent => agent.id === agentId ? { ...agent, ...updates } : agent);
+      writeViewCache(scope, 'admin', { agents: next, endpoints, users });
+      return next;
+    });
+    if (updates.is_active !== undefined) setSeatQuota(previous => previous ? { ...previous, used: Math.max(0, previous.used + (updates.is_active ? 1 : -1)), canAdd: updates.is_active ? previous.used + 1 < previous.total : true } : previous);
+    fetchData();
+  };
 
   if (visibleTabs.length === 0) {
     return (
@@ -4086,12 +4117,19 @@ export default function CallAdminModule({
         </div>
       </div>
 
+      {loadError && <div role="alert" style={{ padding: '0.75rem 2rem', color: '#b91c1c' }}>{loadError} <button type="button" onClick={fetchData}>Retry</button></div>}
+      {needsData && loading && <div role="status" style={{ padding: '0.35rem 2rem', color: '#64748b', fontSize: '0.8rem' }}>Refreshing call administration…</div>}
+      {activeTab === 'agents' && !endpointsReady && <div role={endpointListError ? 'alert' : 'status'} style={{ padding: '0.35rem 2rem', color: '#64748b', fontSize: '0.8rem' }}>
+        {endpointListError || 'Loading complete SIP endpoint list…'} {endpointListError && <button type="button" onClick={fetchAgentEndpoints}>Retry SIP list</button>}
+      </div>}
       {/* Tab Content */}
       <div style={{ flex:1, overflowY:'auto', padding:'1.5rem 2rem' }}>
         {activeTab === 'agents' && (
-          <TabAgents
+          <fieldset disabled={!verified} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}><TabAgents
             agents={agents}
+            onAgentChange={onAgentChange}
             endpoints={endpoints}
+            endpointsReady={endpointsReady}
             users={users}
             onRefresh={fetchData}
             updateCallAgentAdmin={updateCallAgentAdmin}
@@ -4100,11 +4138,11 @@ export default function CallAdminModule({
             tenantId={tenantId}
             defaultCallerId={defaultCallerId}
             seatQuota={seatQuota}
-          />
+          /></fieldset>
         )}
-        {activeTab === 'endpoints' && <TabEndpoints userCompany={userCompany} tenantId={tenantId} agents={agents} onRefresh={fetchData} seatQuota={seatQuota} isMasterAdmin={isMasterAdmin} />}
+        {activeTab === 'endpoints' && <TabEndpoints key={scope} scope={scope} initialEndpoints={endpoints} userCompany={userCompany} tenantId={tenantId} agents={agents} onRefresh={fetchData} seatQuota={seatQuota} isMasterAdmin={isMasterAdmin} />}
         {activeTab === 'telephony' && <TabTelephonyGateway userCompany={userCompany} tenantId={tenantId} onRefresh={fetchData} isMasterAdmin={isMasterAdmin} />}
-        {activeTab === 'calllogs' && <TabCallLogs userCompany={userCompany} tenantId={tenantId} />}
+        {activeTab === 'calllogs' && <TabCallLogs scope={scope} userCompany={userCompany} tenantId={tenantId} />}
         {activeTab === 'monitor' && <TabMonitor agents={agents} onRefresh={fetchData} />}
         {activeTab === 'settings' && <TabSettings agents={agents} userCompany={userCompany} tenantId={tenantId} />}
       </div>
