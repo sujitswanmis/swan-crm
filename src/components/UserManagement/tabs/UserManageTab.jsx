@@ -11,6 +11,7 @@ import {
 import { 
   getStatusBadgeStyle, HoverIconButton, isMasterAdmin, EMP_STATUS_OPTIONS 
 } from '../utils/userManagementUtils';
+import { ROLE_PRESETS } from '../utils/rolePresets';
 import useTableColumnResize, { ColumnResizer } from '@/utils/tableColumnResize';
 import ColumnSelectorModal from '@/components/TableControls/ColumnSelectorModal';
 import MultiColumnFilterModal from '@/components/TableControls/MultiColumnFilterModal';
@@ -83,6 +84,7 @@ export default function UserManageTab({
   onManagePermissions = () => {},
   onChangeRole = () => {},
   onAssignRole = () => {},
+  onAssignPreset = () => {},
   onResetPassword = () => {},
   onSendResetEmail = () => {},
   onViewChat = () => {},
@@ -261,7 +263,8 @@ export default function UserManageTab({
       let v = '';
       if (colKey === 'role') {
         const matched = roleTemplates.find(rt => rt.id === (u.role_template_id || u.module_access?.role_template_id));
-        v = matched?.name || (isMasterAdmin(u) ? 'Master Admin' : (u.role || 'Staff'));
+        const presetMatched = ROLE_PRESETS.find(p => p.key === u.module_access?.role_preset_key);
+        v = matched?.name || presetMatched?.name || (isMasterAdmin(u) ? 'Master Admin' : (u.role || 'Staff'));
       } else if (colKey === 'approval_status') {
         const isApproved = u.is_approved === true || u.is_approved === 'true' || u.module_access?.is_approved === true;
         v = isApproved ? 'Approved' : 'Pending';
@@ -332,7 +335,8 @@ export default function UserManageTab({
       result = result.filter(u => {
         const isApproved = u.is_approved === true || u.is_approved === 'true' || u.module_access?.is_approved === true;
         const matchedRole = roleTemplates.find(rt => rt.id === (u.role_template_id || u.module_access?.role_template_id));
-        const roleLabel = matchedRole?.name || (isMasterAdmin(u) ? 'Master Admin' : (u.role || 'Staff'));
+        const presetMatched = ROLE_PRESETS.find(p => p.key === u.module_access?.role_preset_key);
+        const roleLabel = matchedRole?.name || presetMatched?.name || (isMasterAdmin(u) ? 'Master Admin' : (u.role || 'Staff'));
 
         for (let i = 0; i < compiledRules.length; i++) {
           const { key, condition, targetVal } = compiledRules[i];
@@ -624,7 +628,24 @@ export default function UserManageTab({
           </td>
         );
 
-      case 'role':
+      case 'role': {
+        const resolveUserRoleValue = (member) => {
+          if (member.module_access?.role_template_id) return `custom:${member.module_access.role_template_id}`;
+          if (member.module_access?.role_preset_key) return `preset:${member.module_access.role_preset_key}`;
+          const r = String(member.role || '').toLowerCase().trim();
+          if (r === 'crm') return 'preset:crm';
+          if (r === 'telecaller') return 'preset:telecaller';
+          if (r === 'sales coordinator' || r === 'sales_coordinator') return 'preset:sales_coordinator';
+          if (r === 'process coordinator' || r === 'process_coordinator') return 'preset:process_coordinator';
+          if (r === 'sales') return 'preset:sales_executive';
+          if (r === 'recruiter') return 'preset:hr_recruiter';
+          if (r === 'manager') return 'preset:sales_manager';
+          if (r === 'admin') return 'Admin';
+          return member.role || 'agent';
+        };
+
+        const activeValue = resolveUserRoleValue(u);
+
         return (
           <td key="role" style={{ padding: '0.75rem 0.65rem', verticalAlign: 'middle' }}>
             {isMaster ? (
@@ -645,13 +666,17 @@ export default function UserManageTab({
               </span>
             ) : (
               <select
-                value={u.module_access?.role_template_id ? `custom:${u.module_access.role_template_id}` : (u.role || 'agent')}
+                value={activeValue}
                 onChange={(e) => {
                   const val = e.target.value;
                   if (val.startsWith('custom:')) {
                     const tId = val.replace('custom:', '');
                     const template = (roleTemplates || []).find(r => r.id === tId);
                     if (template) onAssignRole(u, template);
+                  } else if (val.startsWith('preset:')) {
+                    const pKey = val.replace('preset:', '');
+                    const preset = (ROLE_PRESETS || []).find(p => p.key === pKey);
+                    if (preset) onAssignPreset(u, preset);
                   } else {
                     onChangeRole(u, val);
                   }
@@ -669,14 +694,12 @@ export default function UserManageTab({
                 }}
                 title="Change System Role or Assign Role Template"
               >
-                <optgroup label="System Base Roles">
-                  <option value="Admin">Admin</option>
-                  <option value="Manager">Manager</option>
-                  <option value="Supervisor">Supervisor</option>
-                  <option value="Sales">Sales</option>
-                  <option value="Recruiter">Recruiter</option>
-                  <option value="Purchase">Purchase</option>
-                  <option value="agent">Agent (Standard Staff)</option>
+                <optgroup label="Roles & Permissions Presets">
+                  {ROLE_PRESETS.filter(p => p.key !== 'master_admin').map(preset => (
+                    <option key={preset.key} value={`preset:${preset.key}`}>
+                      {preset.name}
+                    </option>
+                  ))}
                 </optgroup>
                 {roleTemplates && roleTemplates.length > 0 && (
                   <optgroup label="Custom Role Templates (RBAC)">
@@ -687,10 +710,20 @@ export default function UserManageTab({
                     ))}
                   </optgroup>
                 )}
+                <optgroup label="System Base Fallback">
+                  <option value="Admin">Admin</option>
+                  <option value="Manager">Manager</option>
+                  <option value="Supervisor">Supervisor</option>
+                  <option value="Sales">Sales</option>
+                  <option value="Recruiter">Recruiter</option>
+                  <option value="Purchase">Purchase</option>
+                  <option value="agent">Agent (Standard Staff)</option>
+                </optgroup>
               </select>
             )}
           </td>
         );
+      }
 
       case 'actions':
         return (

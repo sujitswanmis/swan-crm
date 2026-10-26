@@ -5,6 +5,7 @@ import { X, User, Phone, Mail, Building, MapPin, Shield, Key, Eye, EyeOff, Save,
 import SearchableEmployeeSelect from '@/components/common/SearchableEmployeeSelect';
 import { getReportingEmail, getReportingFields } from '@/utils/reportingHierarchy';
 import { DEFAULT_DEPARTMENTS, DESIGNATIONS, WORK_LOCATION_TYPES, EMP_STATUS_OPTIONS } from '../utils/userManagementUtils';
+import { ROLE_PRESETS } from '../utils/rolePresets';
 import { getTenantBranches } from '@/app/actions/tenantBranches';
 import { getTenantAttendancePolicy } from '@/app/actions/attendance';
 
@@ -576,15 +577,37 @@ export default function AddEditUserModal({
                       System Role & Access Template
                     </label>
                     <select
-                      value={formData.role_template_id ? `custom:${formData.role_template_id}` : (formData.role || 'agent')}
+                      value={
+                        formData.role_template_id 
+                          ? `custom:${formData.role_template_id}` 
+                          : (formData.role_preset_key ? `preset:${formData.role_preset_key}` : (formData.role || 'agent'))
+                      }
                       onChange={e => {
                         const val = e.target.value;
                         if (val.startsWith('custom:')) {
                           const tId = val.replace('custom:', '');
                           handleChange('role_template_id', tId);
+                          handleChange('role_preset_key', '');
                           handleChange('role', 'agent');
+                        } else if (val.startsWith('preset:')) {
+                          const pKey = val.replace('preset:', '');
+                          handleChange('role_template_id', '');
+                          handleChange('role_preset_key', pKey);
+                          const systemRoleMap = {
+                            crm: 'Admin',
+                            telecaller: 'agent',
+                            sales_coordinator: 'Sales',
+                            process_coordinator: 'Supervisor',
+                            hod_dept_head: 'Manager',
+                            sales_manager: 'Manager',
+                            sales_executive: 'Sales',
+                            hr_recruiter: 'Recruiter',
+                            read_only_viewer: 'agent'
+                          };
+                          handleChange('role', systemRoleMap[pKey] || 'agent');
                         } else {
                           handleChange('role_template_id', '');
+                          handleChange('role_preset_key', '');
                           handleChange('role', val);
                         }
                       }}
@@ -598,14 +621,12 @@ export default function AddEditUserModal({
                         fontSize: '0.85rem'
                       }}
                     >
-                      <optgroup label="System Base Roles">
-                        <option value="Admin">Admin</option>
-                        <option value="Manager">Manager</option>
-                        <option value="Supervisor">Supervisor</option>
-                        <option value="Sales">Sales</option>
-                        <option value="Recruiter">Recruiter</option>
-                        <option value="Purchase">Purchase</option>
-                        <option value="agent">Agent (Standard Staff)</option>
+                      <optgroup label="Roles & Permissions Presets">
+                        {ROLE_PRESETS.filter(p => p.key !== 'master_admin').map(preset => (
+                          <option key={preset.key} value={`preset:${preset.key}`}>
+                            {preset.name}
+                          </option>
+                        ))}
                       </optgroup>
                       {roleTemplates && roleTemplates.length > 0 && (
                         <optgroup label="Custom Role Templates (RBAC)">
@@ -616,6 +637,15 @@ export default function AddEditUserModal({
                           ))}
                         </optgroup>
                       )}
+                      <optgroup label="System Base Fallback">
+                        <option value="Admin">Admin</option>
+                        <option value="Manager">Manager</option>
+                        <option value="Supervisor">Supervisor</option>
+                        <option value="Sales">Sales</option>
+                        <option value="Recruiter">Recruiter</option>
+                        <option value="Purchase">Purchase</option>
+                        <option value="agent">Agent (Standard Staff)</option>
+                      </optgroup>
                     </select>
                   </div>
 

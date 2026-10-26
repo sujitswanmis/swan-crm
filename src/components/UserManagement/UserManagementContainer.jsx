@@ -35,6 +35,8 @@ import ConfirmActionModal from './modals/ConfirmActionModal';
 import { isFeatureEntitled } from '@/utils/saasEntitlements';
 import { DEFAULT_DEPARTMENTS } from './utils/userManagementUtils';
 import { filterVisibleSubTabs, getSubItemPermissions } from '@/utils/permissionUtils';
+import { MODULES_CONFIG } from '@/config/modulesConfig';
+import { ROLE_PRESETS } from './utils/rolePresets';
 
 const USER_MANAGEMENT_TABS = [
   { id: 'user_manage', label: 'User Manage', icon: Users },
@@ -274,6 +276,83 @@ export default function UserManagementContainer({
     });
   };
 
+  const handleAssignPreset = (user, preset) => {
+    if (!user?.user_id || !preset) return;
+    confirmUserChange({
+      title: 'Apply Role & Permission Preset?',
+      message: `Assign "${preset.name}" preset permissions to ${user.emp_name || user.email}? Their module permissions will be updated to match the Roles & Permissions preset.`,
+      confirmText: 'Assign Role Preset',
+      action: async () => {
+        setAssigningRoleUserId(user.user_id);
+        try {
+          const roleData = structuredClone(preset.presetData || {});
+          delete roleData.is_master_admin;
+
+          MODULES_CONFIG.forEach(mod => {
+            if (roleData[mod.id]?.view && mod.subItems?.length && !roleData[mod.id].sub_items) {
+              const subs = {};
+              mod.subItems.forEach(s => {
+                subs[s.id] = { view: true, add: false, edit: false, delete: false };
+              });
+              roleData[mod.id].sub_items = subs;
+            }
+          });
+
+          const nextAccess = {
+            ...(user.module_access || {}),
+            ...roleData,
+            role_preset_key: preset.key,
+            role_preset_name: preset.name
+          };
+          delete nextAccess.role_template_id;
+          delete nextAccess.role_template_name;
+
+          const res = await updateModuleAccess(user.user_id, nextAccess);
+          if (!res?.success) throw new Error(res?.error || 'Could not update permissions.');
+
+          const systemRoleMap = {
+            crm: 'Admin',
+            telecaller: 'agent',
+            sales_coordinator: 'Sales',
+            process_coordinator: 'Supervisor',
+            hod_dept_head: 'Manager',
+            sales_manager: 'Manager',
+            sales_executive: 'Sales',
+            hr_recruiter: 'Recruiter',
+            read_only_viewer: 'agent'
+          };
+          const mappedRole = systemRoleMap[preset.key] || user.role || 'agent';
+          if (mappedRole !== user.role) {
+            try { await updateUserRole(user.user_id, mappedRole); } catch (e) { console.warn(e); }
+          }
+
+          setUsers(previous => previous.map(member => member.user_id === user.user_id ? {
+            ...member,
+            role: mappedRole,
+            module_access: res.moduleAccess || nextAccess
+          } : member));
+
+          showToast(`Role "${preset.name}" assigned to ${user.emp_name || user.email}.`);
+
+          try {
+            const supabase = createClient();
+            await supabase.channel('crm_realtime_permission_sync').send({
+              type: 'broadcast',
+              event: 'permission_updated',
+              payload: { userId: user.user_id, moduleAccess: res.moduleAccess || nextAccess, timestamp: Date.now() }
+            });
+          } catch (broadcastError) {
+            console.warn('Role permission broadcast unavailable:', broadcastError);
+          }
+        } catch (err) {
+          showToast(err.message || 'Failed to assign role preset', 'error');
+        } finally {
+          setAssigningRoleUserId(null);
+        }
+      }
+    });
+  };
+
   // Fetch users from backend
   const fetchUsers = useCallback(async (showLoader = true) => {
     if (showLoader) setLoading(true);
@@ -332,7 +411,7 @@ export default function UserManagementContainer({
   const handleSaveAddEditUser = async (formData) => {
     setSavingAddEdit(true);
     try {
-      const { role, role_template_id, ...profileData } = formData;
+      const { role, role_template_id, role_preset_key, ...profileData } = formData;
       if (addEditModal.user) {
         // Edit Mode
         const res = await updateEmployeeDetailsAdmin(addEditModal.user.user_id, profileData);
@@ -342,6 +421,34 @@ export default function UserManagementContainer({
           }
           if (role_template_id && role_template_id !== addEditModal.user.module_access?.role_template_id) {
             try { await assignRoleTemplate(addEditModal.user.user_id, role_template_id); } catch (e) { console.warn('Role template assign notice:', e); }
+          } else if (role_preset_key) {
+            const preset = ROLE_PRESETS.find(p => p.key === role_preset_key);
+            if (preset) {
+              try {
+                const roleData = structuredClone(preset.presetData || {});
+                delete roleData.is_master_admin;
+                MODULES_CONFIG.forEach(mod => {
+                  if (roleData[mod.id]?.view && mod.subItems?.length && !roleData[mod.id].sub_items) {
+                    const subs = {};
+                    mod.subItems.forEach(s => {
+                      subs[s.id] = { view: true, add: false, edit: false, delete: false };
+                    });
+                    roleData[mod.id].sub_items = subs;
+                  }
+                });
+                const nextAccess = {
+                  ...(addEditModal.user.module_access || {}),
+                  ...roleData,
+                  role_preset_key: preset.key,
+                  role_preset_name: preset.name
+                };
+                delete nextAccess.role_template_id;
+                delete nextAccess.role_template_name;
+                await updateModuleAccess(addEditModal.user.user_id, nextAccess);
+              } catch (e) {
+                console.warn('Role preset assign notice:', e);
+              }
+            }
           }
           showToast(`Profile updated for ${formData.emp_name}!`, 'success');
           setAddEditModal({ isOpen: false, user: null });
@@ -361,6 +468,31 @@ export default function UserManagementContainer({
             }
             if (role_template_id) {
               try { await assignRoleTemplate(newUserId, role_template_id); } catch (e) { console.warn('Role template assign notice:', e); }
+            } else if (role_preset_key) {
+              const preset = ROLE_PRESETS.find(p => p.key === role_preset_key);
+              if (preset) {
+                try {
+                  const roleData = structuredClone(preset.presetData || {});
+                  delete roleData.is_master_admin;
+                  MODULES_CONFIG.forEach(mod => {
+                    if (roleData[mod.id]?.view && mod.subItems?.length && !roleData[mod.id].sub_items) {
+                      const subs = {};
+                      mod.subItems.forEach(s => {
+                        subs[s.id] = { view: true, add: false, edit: false, delete: false };
+                      });
+                      roleData[mod.id].sub_items = subs;
+                    }
+                  });
+                  const nextAccess = {
+                    ...roleData,
+                    role_preset_key: preset.key,
+                    role_preset_name: preset.name
+                  };
+                  await updateModuleAccess(newUserId, nextAccess);
+                } catch (e) {
+                  console.warn('Role preset assign notice:', e);
+                }
+              }
             }
           }
           showToast(`Account created for ${formData.emp_name}!`, 'success');
@@ -662,13 +794,18 @@ export default function UserManagementContainer({
       {/* Subpage Navigation Bar */}
       <div style={{
         display: 'flex',
-        flexShrink: 0,
         alignItems: 'center',
-        gap: '0.5rem',
-        borderBottom: '2px solid var(--border-light, #e2e8f0)',
+        gap: '0.4rem',
+        background: 'var(--bg-surface)',
+        padding: '0.35rem 0.5rem',
+        borderRadius: '12px',
+        border: '1px solid var(--border-light)',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
         overflowX: 'auto',
-        paddingBottom: '2px',
-        marginBottom: '0.75rem'
+        width: 'fit-content',
+        maxWidth: '100%',
+        marginBottom: '0.75rem',
+        flexShrink: 0
       }}>
         {visibleSubpages.map(sub => {
           const Icon = sub.icon;
@@ -679,38 +816,31 @@ export default function UserManagementContainer({
               key={sub.id}
               type="button"
               onClick={() => handleTabSwitch(sub.id)}
-              onMouseEnter={(e) => {
-                if (!isActive) e.currentTarget.style.color = 'var(--text-primary, #1e293b)';
-              }}
-              onMouseLeave={(e) => {
-                if (!isActive) e.currentTarget.style.color = 'var(--text-secondary, #64748b)';
-              }}
               style={{
-                flexShrink: 0,
-                padding: '0.65rem 1.25rem',
-                border: 'none',
-                background: 'transparent',
-                cursor: 'pointer',
-                fontSize: '0.88rem',
-                fontWeight: isActive ? 700 : 500,
-                color: isActive ? 'var(--accent-color, #2563eb)' : 'var(--text-secondary, #64748b)',
-                borderBottom: isActive ? '3px solid var(--accent-color, #2563eb)' : '3px solid transparent',
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: '0.5rem',
+                padding: '0.55rem 1.15rem',
+                borderRadius: '8px',
+                border: 'none',
+                background: isActive ? 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)' : 'transparent',
+                color: isActive ? '#ffffff' : 'var(--text-secondary, #64748b)',
+                fontWeight: isActive ? 700 : 600,
+                fontSize: '0.85rem',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
                 whiteSpace: 'nowrap',
-                marginBottom: '-2px',
-                transition: 'all 0.15s ease'
+                flexShrink: 0
               }}
             >
-              <Icon size={16} style={{ color: isActive ? 'var(--accent-color, #2563eb)' : 'inherit' }} />
+              <Icon size={16} />
               <span>{sub.label}</span>
               {typeof sub.badge === 'number' && sub.badge > 0 && (
                 <span style={{
                   fontSize: '0.72rem',
                   padding: '0.1rem 0.45rem',
                   borderRadius: '10px',
-                  backgroundColor: isActive ? 'var(--accent-color, #2563eb)' : 'var(--bg-primary, #f1f5f9)',
+                  backgroundColor: isActive ? 'rgba(255, 255, 255, 0.25)' : 'var(--bg-primary, #f1f5f9)',
                   color: isActive ? '#ffffff' : 'var(--text-primary)',
                   fontWeight: 700
                 }}>
@@ -746,6 +876,7 @@ export default function UserManagementContainer({
             onManagePermissions={(u) => setPermissionModal({ isOpen: true, user: u })}
             onChangeRole={handleChangeRole}
             onAssignRole={handleAssignRole}
+            onAssignPreset={handleAssignPreset}
             onResetPassword={(u) => setResetPasswordModal({ isOpen: true, user: u })}
             onSendResetEmail={(u) => setSendResetEmailModal({ isOpen: true, user: u })}
             onViewChat={(u) => setViewChatModal({ isOpen: true, user: u })}

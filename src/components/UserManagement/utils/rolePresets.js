@@ -119,6 +119,256 @@ export const ROLE_PRESETS = [
     }
   },
   {
+    key: 'crm',
+    name: 'CRM',
+    description: 'CRM operations, lead management, registration, daily followup queue, pipeline, client reporting, and communications',
+    color: '#0284c7',
+    badgeBg: '#f0f9ff',
+    badgeBorder: '#bae6fd',
+    presetData: {
+      can_import_data: true,
+      can_export_data: true,
+      can_self_reset_password: true,
+      can_assign_leads: true,
+      can_delete_leads: false,
+      can_view_all_companies: true,
+      can_access_audit_logs: false,
+      can_manage_settings: false,
+      can_manage_column_data: true,
+      can_claim_unassigned: true,
+      can_bulk_actions: true,
+      analytics: { view: true, read: true, write: true, edit: true, export: true },
+      callcenter: { view: true, read: true, write: true, edit: true, export: true },
+      registration: { view: true, read: true, write: true, edit: true, export: true },
+      report: { view: true, read: true, write: true, edit: true, export: true },
+      client_report: { view: true, read: true, write: true, edit: true, export: true },
+      leads: {
+        view: true, read: true, write: true, edit: true, export: true,
+        assigned_steps: ['lead_dashboard', 'hourly_work', 'all_leads', '01 - New Stage', '02 - Contact Stage', '03 - Qualification Stage', '04 - Follow Up Stage', '05 - Sales Process Stage', '06 - Conversion Stage', '07 - Final Stage', '08 - Transfer to Party'],
+        sub_items: {
+          lead_dashboard: { view: true },
+          hourly_work: { view: true },
+          all_leads: { view: true },
+          '01 - New Stage': { view: true },
+          '02 - Contact Stage': { view: true },
+          '03 - Qualification Stage': { view: true },
+          '04 - Follow Up Stage': { view: true },
+          '05 - Sales Process Stage': { view: true },
+          '06 - Conversion Stage': { view: true },
+          '07 - Final Stage': { view: true },
+          '08 - Transfer to Party': { view: true }
+        }
+      },
+      party: {
+        view: true, read: true, write: true, edit: true, export: true,
+        sub_items: {
+          dashboard: { view: true },
+          all_party_stage: { view: true },
+          s00: { view: true }, s01: { view: true }, s02: { view: true }, s03: { view: true },
+          s04: { view: true }, s05: { view: true }, s06: { view: true }, s07: { view: true },
+          s08: { view: true }, report: { view: true }, hierarchy_tree: { view: true },
+          order_followup: { view: true }, order_feedback: { view: true },
+          monthly_feedback: { view: true }, complaints: { view: true }
+        }
+      },
+      orders: { view: true, read: true, write: true, edit: true, export: true },
+      attendance: {
+        view: true, read: true, write: true, edit: false, export: false,
+        sub_items: {
+          my_attendance: { view: true },
+          monthly_logs: { view: true },
+          regularization: { view: true }
+        }
+      },
+      checklist: {
+        view: true, read: true, write: true, edit: false, export: false,
+        sub_items: {
+          my_checklists: { view: true }
+        }
+      },
+      delegation: {
+        view: true, read: true, write: true, edit: true, export: true,
+        sub_items: {
+          dashboard: { view: true },
+          to_me: { view: true },
+          by_me: { view: true },
+          all: { view: true }
+        }
+      }
+    }
+  },
+  {
+    key: 'telecaller',
+    name: 'Telecaller',
+    description: 'Inbound and outbound calling, dialer controls, lead contact, followups & daily call logs',
+    color: '#0d9488',
+    badgeBg: '#f0fdfa',
+    badgeBorder: '#99f6e4',
+    presetData: {
+      can_import_data: false,
+      can_export_data: false,
+      can_self_reset_password: true,
+      can_assign_leads: false,
+      can_delete_leads: false,
+      can_view_all_companies: false,
+      can_access_audit_logs: false,
+      can_manage_settings: false,
+      can_manage_column_data: false,
+      can_claim_unassigned: true,
+      can_bulk_actions: false,
+      callcenter: { view: true, read: true, write: true, edit: true, export: false },
+      registration: { view: true, read: true, write: true, edit: false, export: false },
+      leads: {
+        view: true, read: true, write: true, edit: true, export: false,
+        assigned_steps: ['lead_dashboard', '01 - New Stage', '02 - Contact Stage', '04 - Follow Up Stage'],
+        sub_items: {
+          lead_dashboard: { view: true },
+          '01 - New Stage': { view: true },
+          '02 - Contact Stage': { view: true },
+          '04 - Follow Up Stage': { view: true }
+        }
+      },
+      attendance: {
+        view: true, read: true, write: true, edit: false, export: false,
+        sub_items: {
+          my_attendance: { view: true },
+          monthly_logs: { view: true },
+          regularization: { view: true }
+        }
+      },
+      checklist: {
+        view: true, read: true, write: true, edit: false, export: false,
+        sub_items: {
+          my_checklists: { view: true }
+        }
+      },
+      delegation: {
+        view: true, read: true, write: true, edit: false, export: false,
+        sub_items: {
+          to_me: { view: true }
+        }
+      }
+    }
+  },
+  {
+    key: 'sales_coordinator',
+    name: 'Sales Coordinator',
+    description: 'Order coordination, order punch station, delivery pipeline, party master and dispatch tracking',
+    color: '#d97706',
+    badgeBg: '#fffbeb',
+    badgeBorder: '#fde68a',
+    presetData: {
+      can_import_data: true,
+      can_export_data: true,
+      can_self_reset_password: true,
+      can_assign_leads: false,
+      can_delete_leads: false,
+      can_view_all_companies: true,
+      can_access_audit_logs: false,
+      can_manage_settings: false,
+      can_manage_column_data: false,
+      can_claim_unassigned: true,
+      can_bulk_actions: true,
+      callcenter: { view: true, read: true, write: true, edit: true, export: false },
+      orders: { view: true, read: true, write: true, edit: true, export: true },
+      party: {
+        view: true, read: true, write: true, edit: true, export: true,
+        sub_items: {
+          dashboard: { view: true },
+          all_party_stage: { view: true },
+          order_followup: { view: true },
+          order_feedback: { view: true },
+          monthly_feedback: { view: true },
+          complaints: { view: true }
+        }
+      },
+      leads: {
+        view: true, read: true, write: true, edit: true, export: true,
+        assigned_steps: ['lead_dashboard', 'hourly_work', '05 - Sales Process Stage', '06 - Conversion Stage', '07 - Final Stage', '08 - Transfer to Party'],
+        sub_items: {
+          lead_dashboard: { view: true },
+          hourly_work: { view: true },
+          '05 - Sales Process Stage': { view: true },
+          '06 - Conversion Stage': { view: true },
+          '07 - Final Stage': { view: true },
+          '08 - Transfer to Party': { view: true }
+        }
+      },
+      attendance: {
+        view: true, read: true, write: true, edit: false, export: false,
+        sub_items: {
+          my_attendance: { view: true },
+          monthly_logs: { view: true },
+          regularization: { view: true }
+        }
+      },
+      checklist: {
+        view: true, read: true, write: true, edit: false, export: false,
+        sub_items: {
+          my_checklists: { view: true }
+        }
+      },
+      delegation: {
+        view: true, read: true, write: true, edit: true, export: false,
+        sub_items: {
+          dashboard: { view: true },
+          to_me: { view: true },
+          by_me: { view: true }
+        }
+      }
+    }
+  },
+  {
+    key: 'process_coordinator',
+    name: 'Process Coordinator',
+    description: 'Cross-functional process coordination, checklist templates, compliance monitoring, and delegation tracking',
+    color: '#9333ea',
+    badgeBg: '#faf5ff',
+    badgeBorder: '#f3e8ff',
+    presetData: {
+      can_import_data: false,
+      can_export_data: true,
+      can_self_reset_password: true,
+      can_assign_leads: false,
+      can_delete_leads: false,
+      can_view_all_companies: true,
+      can_access_audit_logs: false,
+      can_manage_settings: false,
+      can_manage_column_data: false,
+      can_claim_unassigned: false,
+      can_bulk_actions: true,
+      checklist: {
+        view: true, read: true, write: true, edit: true, export: true,
+        sub_items: {
+          my_checklists: { view: true },
+          templates: { view: true },
+          compliance: { view: true }
+        }
+      },
+      delegation: {
+        view: true, read: true, write: true, edit: true, export: true,
+        sub_items: {
+          dashboard: { view: true },
+          to_me: { view: true },
+          by_me: { view: true },
+          all: { view: true }
+        }
+      },
+      workplace: { view: true, read: true, write: true, edit: true, export: true },
+      analytics: { view: true, read: true, write: false, edit: false, export: true },
+      report: { view: true, read: true, write: false, edit: false, export: true },
+      attendance: {
+        view: true, read: true, write: true, edit: false, export: false,
+        sub_items: {
+          my_attendance: { view: true },
+          monthly_logs: { view: true },
+          regularization: { view: true },
+          team_report: { view: true }
+        }
+      }
+    }
+  },
+  {
     key: 'hod_dept_head',
     name: 'Department Head / HOD',
     description: 'Attendance approvals, team reports, delegation monitoring, and department dashboards',
