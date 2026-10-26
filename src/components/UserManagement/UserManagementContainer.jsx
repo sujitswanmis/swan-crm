@@ -12,7 +12,7 @@ import {
   updateUserRole
 } from '@/app/actions/team';
 import { createClient } from '@/utils/supabase/client';
-import { getRoleTemplates, createRoleTemplate, assignRoleTemplate } from '@/app/actions/roleTemplates';
+import { getRoleTemplates, createRoleTemplate, assignRoleTemplate, updateRoleTemplate, deleteRoleTemplate } from '@/app/actions/roleTemplates';
 
 // Tabs
 import UserManageTab from './tabs/UserManageTab';
@@ -120,6 +120,7 @@ export default function UserManagementContainer({
   const [assigningRoleUserId, setAssigningRoleUserId] = useState(null);
   const [selectedRoleKey, setSelectedRoleKey] = useState(null);
   const [roleSaveBanner, setRoleSaveBanner] = useState(null);
+  const [editingRole, setEditingRole] = useState(null);
 
   const [resetPasswordModal, setResetPasswordModal] = useState({ isOpen: false, user: null });
   const [savingPassword, setSavingPassword] = useState(false);
@@ -210,17 +211,30 @@ export default function UserManagementContainer({
     return () => { active = false; };
   }, [isAdmin, isMasterAdmin, userId, userEmail, currentUserCompany]);
 
-  const handleCreateRole = async details => {
+  const handleSaveRole = async details => {
     setSavingRole(true);
     try {
-      const { assignedUserIds = [], ...rolePayload } = details;
-      const result = await createRoleTemplate(rolePayload);
-      if (!result.success) throw new Error(result.error || 'Could not create role.');
-      
-      const newRoleKey = `custom:${result.role.id}`;
-      setRoleTemplates(previous => [...previous, result.role].sort((a, b) => a.name.localeCompare(b.name)));
-      setSelectedRoleKey(newRoleKey);
-      setRoleSaveBanner(`Role template "${result.role.name}" saved successfully! You can inspect its capabilities below and assign it to staff members.`);
+      const { assignedUserIds = [], id: roleId, ...rolePayload } = details;
+      const isUpdating = Boolean(roleId || editingRole?.id);
+      const targetRoleId = roleId || editingRole?.id;
+
+      let result;
+      if (isUpdating) {
+        result = await updateRoleTemplate({ id: targetRoleId, ...rolePayload });
+        if (!result.success) throw new Error(result.error || 'Could not update role template.');
+        setRoleTemplates(previous => previous.map(r => r.id === targetRoleId ? result.role : r).sort((a, b) => a.name.localeCompare(b.name)));
+        showToast(`Role template "${result.role.name}" updated successfully!`, 'success');
+        setRoleSaveBanner(`Role template "${result.role.name}" updated successfully!`);
+      } else {
+        result = await createRoleTemplate(rolePayload);
+        if (!result.success) throw new Error(result.error || 'Could not create role.');
+        setRoleTemplates(previous => [...previous, result.role].sort((a, b) => a.name.localeCompare(b.name)));
+        showToast(`Role template "${result.role.name}" saved successfully!`, 'success');
+        setRoleSaveBanner(`Role template "${result.role.name}" saved successfully! You can inspect its capabilities below and assign it to staff members.`);
+      }
+
+      const activeKey = `custom:${result.role.id}`;
+      setSelectedRoleKey(activeKey);
 
       // If user selected staff members to assign this role to immediately
       if (Array.isArray(assignedUserIds) && assignedUserIds.length > 0) {
@@ -248,14 +262,35 @@ export default function UserManagementContainer({
         }
         showToast(`Role "${result.role.name}" saved and assigned to ${assignedCount} staff member(s)!`, 'success');
         fetchUsers(false);
-      } else {
-        showToast(`Role "${result.role.name}" saved successfully!`, 'success');
       }
 
       setRoleModalOpen(false);
+      setEditingRole(null);
     } finally {
       setSavingRole(false);
     }
+  };
+
+  const handleDeleteRole = (role) => {
+    if (!role?.id) return;
+    confirmUserChange({
+      title: 'Delete Custom Role Template?',
+      message: `Are you sure you want to delete role template "${role.name}"? Any staff members with this template will have it unlinked.`,
+      confirmText: 'Delete Role',
+      type: 'danger',
+      action: async () => {
+        try {
+          const res = await deleteRoleTemplate(role.id);
+          if (!res.success) throw new Error(res.error || 'Failed to delete role.');
+          setRoleTemplates(prev => prev.filter(r => r.id !== role.id));
+          setSelectedRoleKey('admin');
+          showToast(`Role template "${role.name}" deleted successfully.`);
+          fetchUsers(false);
+        } catch (err) {
+          showToast(err.message || 'Failed to delete role', 'error');
+        }
+      }
+    });
   };
 
   const handleAssignRole = (user, role) => {
@@ -910,7 +945,9 @@ export default function UserManagementContainer({
             users={users}
             onManagePermissions={(u) => setPermissionModal({ isOpen: true, user: u })}
             onAssignRoleToUser={handleAssignRole}
-            onAddRole={() => setRoleModalOpen(true)}
+            onAddRole={() => { setEditingRole(null); setRoleModalOpen(true); }}
+            onEditRole={(role) => { setEditingRole(role); setRoleModalOpen(true); }}
+            onDeleteRole={handleDeleteRole}
             customRoles={roleTemplates}
             canManageRoles={canManageRoles}
             rolesLoading={rolesLoading}
@@ -965,10 +1002,14 @@ export default function UserManagementContainer({
 
       {roleModalOpen && (
         <RoleTemplateModal
-          onClose={() => setRoleModalOpen(false)}
-          onSave={handleCreateRole}
+          onClose={() => {
+            setRoleModalOpen(false);
+            setEditingRole(null);
+          }}
+          onSave={handleSaveRole}
           saving={savingRole}
           users={users}
+          initialRole={editingRole}
         />
       )}
 

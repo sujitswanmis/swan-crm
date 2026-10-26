@@ -65,15 +65,29 @@ function saveColumnWidths(widths) {
   }
 }
 
-export default function RoleTemplateModal({ onClose, onSave, saving = false, users = [] }) {
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
+export default function RoleTemplateModal({ onClose, onSave, saving = false, users = [], initialRole = null }) {
+  const isEdit = Boolean(initialRole?.id);
+  const [name, setName] = useState(initialRole?.name || '');
+  const [description, setDescription] = useState(initialRole?.description || '');
   const [selectedPresetKey, setSelectedPresetKey] = useState('');
-  const [permissions, setPermissions] = useState({});
+  const [permissions, setPermissions] = useState(() => {
+    if (initialRole?.presetData) return structuredClone(initialRole.presetData);
+    if (initialRole?.permissions) return structuredClone(initialRole.permissions);
+    return {};
+  });
   const [selectedUserIds, setSelectedUserIds] = useState([]);
   const [search, setSearch] = useState('');
   const [userSearch, setUserSearch] = useState('');
-  const [expandedModules, setExpandedModules] = useState({});
+  const [expandedModules, setExpandedModules] = useState(() => {
+    const perms = initialRole?.presetData || initialRole?.permissions || {};
+    const initialExpanded = {};
+    Object.keys(perms).forEach(k => {
+      if (perms[k]?.sub_items && Object.values(perms[k].sub_items).some(s => s?.view)) {
+        initialExpanded[k] = true;
+      }
+    });
+    return initialExpanded;
+  });
   const [error, setError] = useState('');
 
   // Column Resizing State
@@ -556,6 +570,7 @@ export default function RoleTemplateModal({ onClose, onSave, saving = false, use
 
     try {
       await onSave({
+        ...(initialRole?.id ? { id: initialRole.id } : {}),
         name: cleanName,
         description: description.trim(),
         permissions: finalPermissions,
@@ -626,10 +641,12 @@ export default function RoleTemplateModal({ onClose, onSave, saving = false, use
               }}
             >
               <ShieldPlus size={22} style={{ color: 'var(--accent-color, #2563eb)' }} />
-              Add Role & Permission Matrix
+              {isEdit ? `Edit Role Template: ${initialRole.name}` : 'Add Role & Permission Matrix'}
             </h3>
             <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
-              Configure role identity, global operational privileges, granular module access, and assign to staff members
+              {isEdit
+                ? `Update role identity, global operational privileges, and granular module access for "${initialRole.name}"`
+                : 'Configure role identity, global operational privileges, granular module access, and assign to staff members'}
             </p>
           </div>
           <button

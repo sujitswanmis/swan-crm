@@ -273,3 +273,123 @@ export async function assignRoleTemplate(userId, roleId) {
     return { success: false, error: error.message };
   }
 }
+
+export async function updateRoleTemplate(input) {
+  try {
+    const roleId = input?.id || input?.roleId;
+    if (!uuid(roleId)) throw new Error('Select a valid role template to update.');
+    const { db, actor, scope } = await getContext(true);
+    const name = String(input?.name || '').trim().replace(/\s+/g, ' ');
+    const description = String(input?.description || '').trim();
+    if (name.length < 2 || name.length > 60 || description.length > 240) {
+      throw new Error('Role name must be 2–60 characters and description at most 240 characters.');
+    }
+    if (norm(name) === 'master admin' || norm(name) === 'masteradmin') {
+      throw new Error('Master Admin is a reserved platform role name.');
+    }
+    const permissions = sanitizePermissions(input?.permissions);
+
+    const { data: existing, error: findError } = await db.from('crm_role_templates')
+      .select('id, name, permissions')
+      .eq('id', roleId)
+      .eq('workspace_key', scope)
+      .maybeSingle();
+
+    if (findError) throw new Error(databaseError(findError));
+    if (!existing) throw new Error('Role template not found in this workspace.');
+
+    const { data, error } = await db.from('crm_role_templates')
+      .update({ name, description, permissions })
+      .eq('id', roleId)
+      .eq('workspace_key', scope)
+      .select('id,name,description,permissions,created_at')
+      .single();
+
+    if (error) throw new Error(databaseError(error));
+
+    // Sync updated permissions to any users currently assigned this role template
+    try {
+      const { data: assignedUsers } = await db.from('user_roles')
+        .select('user_id, module_access, company')
+        .contains('module_access', { role_template_id: roleId });
+
+      if (Array.isArray(assignedUsers) && assignedUsers.length > 0) {
+        for (const u of assignedUsers) {
+          const nextAccess = { ...(u.module_access || {}) };
+          for (const moduleDef of MODULES_CONFIG) delete nextAccess[moduleDef.id];
+          for (const flag of GLOBAL_PERMISSION_KEYS) delete nextAccess[flag];
+          delete nextAccess.can_import_export;
+          Object.assign(nextAccess, permissions, { role_template_id: roleId, role_template_name: name });
+
+          await db.from('user_roles')
+            .update({
+              module_access: nextAccess,
+              can_self_reset_password: permissions.can_self_reset_password === true
+            })
+            .eq('user_id', u.user_id);
+        }
+      }
+    } catch (syncErr) {
+      console.warn('Sync assigned users on role template update:', syncErr);
+    }
+
+    try {
+      await logAuditAction('Update Role Template', `Updated role template "${name}" by ${actor.emp_name || actor.email}`);
+    } catch (auditError) {
+      console.warn('Role audit log unavailable:', auditError);
+    }
+    return { success: true, role: data };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+export async function deleteRoleTemplate(roleId) {
+  try {
+    if (!uuid(roleId)) throw new Error('Select a valid role template to delete.');
+    const { db, actor, scope } = await getContext(true);
+
+    const { data: existing, error: findError } = await db.from('crm_role_templates')
+      .select('id, name')
+      .eq('id', roleId)
+      .eq('workspace_key', scope)
+      .maybeSingle();
+
+    if (findError) throw new Error(databaseError(findError));
+    if (!existing) throw new Error('Role template not found in this workspace.');
+
+    const { error: delError } = await db.from('crm_role_templates')
+      .delete()
+      .eq('id', roleId)
+      .eq('workspace_key', scope);
+
+    if (delError) throw new Error(databaseError(delError));
+
+    // Clear role_template_id from any users that had it
+    try {
+      const { data: assignedUsers } = await db.from('user_roles')
+        .select('user_id, module_access')
+        .contains('module_access', { role_template_id: roleId });
+
+      if (Array.isArray(assignedUsers) && assignedUsers.length > 0) {
+        for (const u of assignedUsers) {
+          const nextAccess = { ...(u.module_access || {}) };
+          delete nextAccess.role_template_id;
+          delete nextAccess.role_template_name;
+          await db.from('user_roles').update({ module_access: nextAccess }).eq('user_id', u.user_id);
+        }
+      }
+    } catch (unlinkErr) {
+      console.warn('Unlink role template from users notice:', unlinkErr);
+    }
+
+    try {
+      await logAuditAction('Delete Role Template', `Deleted role template "${existing.name}" by ${actor.emp_name || actor.email}`);
+    } catch (auditError) {
+      console.warn('Role audit log unavailable:', auditError);
+    }
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}

@@ -1,15 +1,18 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Shield, CheckCircle2, Search, Plus, Loader2 } from 'lucide-react';
+import { Shield, CheckCircle2, Search, Plus, Loader2, Edit3, Trash2 } from 'lucide-react';
 import { ROLE_PRESETS } from '../utils/rolePresets';
 import { isMasterAdmin as checkIsMasterAdmin } from '../utils/userManagementUtils';
+import { MODULES_CONFIG } from '@/config/modulesConfig';
 
 export default function RolesPermissionsTab({
   users = [],
   onManagePermissions = () => {},
   onAssignRoleToUser = () => {},
   onAddRole = () => {},
+  onEditRole = () => {},
+  onDeleteRole = () => {},
   customRoles = [],
   canManageRoles = false,
   rolesLoading = false,
@@ -304,36 +307,104 @@ export default function RolesPermissionsTab({
                   Default permissions included when this role is applied
                 </span>
               </div>
-              <span style={{
-                fontSize: '0.72rem',
-                fontWeight: 700,
-                padding: '0.2rem 0.6rem',
-                borderRadius: '12px',
-                backgroundColor: currentPreset.badgeBg,
-                color: currentPreset.color,
-                border: `1px solid ${currentPreset.badgeBorder}`
-              }}>
-                {currentPreset.custom ? 'Custom Role' : 'Role Template'}
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <span style={{
+                  fontSize: '0.72rem',
+                  fontWeight: 700,
+                  padding: '0.2rem 0.6rem',
+                  borderRadius: '12px',
+                  backgroundColor: currentPreset.badgeBg,
+                  color: currentPreset.color,
+                  border: `1px solid ${currentPreset.badgeBorder}`
+                }}>
+                  {currentPreset.custom ? 'Custom Role' : 'Role Template'}
+                </span>
+                {currentPreset.custom && canManageRoles && (
+                  <button
+                    type="button"
+                    onClick={() => onEditRole(currentPreset)}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.35rem',
+                      padding: '0.25rem 0.65rem',
+                      borderRadius: '6px',
+                      border: '1px solid #c7d2fe',
+                      backgroundColor: '#eef2ff',
+                      color: '#4338ca',
+                      fontSize: '0.74rem',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease'
+                    }}
+                    title="Edit Role Name, Description & Permissions"
+                  >
+                    <Edit3 size={13} />
+                    <span>Edit Role</span>
+                  </button>
+                )}
+                {currentPreset.custom && canManageRoles && (
+                  <button
+                    type="button"
+                    onClick={() => onDeleteRole(currentPreset)}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.35rem',
+                      padding: '0.25rem 0.55rem',
+                      borderRadius: '6px',
+                      border: '1px solid #fecaca',
+                      backgroundColor: '#fef2f2',
+                      color: '#dc2626',
+                      fontSize: '0.74rem',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease'
+                    }}
+                    title="Delete Custom Role Template"
+                  >
+                    <Trash2 size={13} />
+                    <span>Delete</span>
+                  </button>
+                )}
+              </div>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
               <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)' }}>Key Permissions:</div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.5rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.5rem' }}>
                 {Object.entries(currentPreset.presetData).map(([key, val]) => {
                   if (typeof val === 'boolean') {
                     return (
-                      <div key={key} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.76rem', color: val ? '#059669' : '#94a3b8' }}>
-                        <CheckCircle2 size={14} style={{ color: val ? '#10b981' : '#cbd5e1' }} />
+                      <div key={key} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.76rem', color: val ? '#059669' : '#94a3b8', padding: '0.3rem 0.5rem', backgroundColor: 'var(--bg-primary, #f8fafc)', borderRadius: '6px', border: '1px solid var(--border-light)' }}>
+                        <CheckCircle2 size={14} style={{ color: val ? '#10b981' : '#cbd5e1', flexShrink: 0 }} />
                         <span>{key.replace(/_/g, ' ')}</span>
                       </div>
                     );
                   }
                   if (typeof val === 'object' && val?.view) {
+                    const modConfig = MODULES_CONFIG.find(m => m.id === key);
+                    const modLabel = modConfig?.label || key.replace(/_/g, ' ');
+                    const activeSubs = val.sub_items 
+                      ? Object.entries(val.sub_items)
+                          .filter(([, s]) => s === true || s?.view === true)
+                          .map(([subKey]) => {
+                            const subDef = modConfig?.subItems?.find(s => s.id === subKey);
+                            return subDef?.label ? subDef.label.replace(/^[^\w\s]+/, '').trim() : subKey.replace(/_/g, ' ');
+                          })
+                      : [];
+
                     return (
-                      <div key={key} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.76rem', color: '#059669' }}>
-                        <CheckCircle2 size={14} style={{ color: '#10b981' }} />
-                        <span>Module: <strong>{key}</strong></span>
+                      <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', fontSize: '0.76rem', color: '#059669', backgroundColor: 'var(--bg-primary, #f8fafc)', padding: '0.35rem 0.5rem', borderRadius: '6px', border: '1px solid var(--border-light)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                          <CheckCircle2 size={14} style={{ color: '#10b981', flexShrink: 0 }} />
+                          <span style={{ fontWeight: 600 }}>{modLabel}</span>
+                        </div>
+                        {activeSubs.length > 0 && (
+                          <div style={{ paddingLeft: '1.25rem', fontSize: '0.7rem', color: 'var(--text-secondary)', lineHeight: 1.3 }}>
+                            {activeSubs.slice(0, 3).join(', ')}{activeSubs.length > 3 ? ` +${activeSubs.length - 3} more` : ''}
+                          </div>
+                        )}
                       </div>
                     );
                   }
