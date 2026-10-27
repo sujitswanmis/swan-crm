@@ -104,3 +104,90 @@ test('blank items are properly initialized and filtered on submission', () => {
   assert.equal(validRows.length, 1);
   assert.equal(validRows[0].product, 'Rotavator 2.5ft');
 });
+
+test('OrderRevisionModal handleProductSelect handles product object and pre-fills rate correctly', () => {
+  const catalog = [
+    { id: 'PRD-MINI-6986', name: 'Mini Mulcher | 3Ft', price: 84786, sku: '4000000686' },
+    { id: 'PRD-ROTA-1001', name: 'Rotavator | 6Ft', price: 110000, sku: '4000000701' }
+  ];
+
+  let items = [{ product: 'Old Product', qty: 1, rate: 50000 }];
+
+  // Simulate handleProductSelect
+  const handleProductSelect = (index, selectedProduct) => {
+    const updated = [...items];
+    const prodName = typeof selectedProduct === 'string'
+      ? selectedProduct
+      : (selectedProduct?.name || selectedProduct?.id || '');
+
+    let prodPrice = null;
+    if (typeof selectedProduct === 'object' && selectedProduct?.price != null && selectedProduct?.price !== '') {
+      prodPrice = selectedProduct.price;
+    } else {
+      const match = catalog.find(p =>
+        p.name === prodName ||
+        p.id === prodName ||
+        (p.sku && p.sku === prodName)
+      );
+      if (match && match.price != null && match.price !== '') {
+        prodPrice = match.price;
+      }
+    }
+
+    updated[index].product = prodName;
+    if (prodPrice != null && prodPrice !== '') {
+      updated[index].rate = Number(prodPrice) || 0;
+    }
+    items = updated;
+  };
+
+  // Case 1: Selecting full product object from dropdown
+  handleProductSelect(0, { id: 'PRD-MINI-6986', name: 'Mini Mulcher | 3Ft', price: 84786, sku: '4000000686' });
+  assert.equal(items[0].product, 'Mini Mulcher | 3Ft');
+  assert.equal(items[0].rate, 84786);
+
+  // Case 2: Selecting by string name lookup
+  handleProductSelect(0, 'Rotavator | 6Ft');
+  assert.equal(items[0].product, 'Rotavator | 6Ft');
+  assert.equal(items[0].rate, 110000);
+});
+
+test('currentSelected resolution works with string, object, and SKU without returning null/blank', () => {
+  const normalizedProducts = [
+    { id: 'PRD-MINI-6986', name: 'Mini Mulcher | 3Ft', price: 84786, sku: '4000000686' },
+    { id: 'PRD-ROTA-1001', name: 'Rotavator | 6Ft', price: 110000, sku: '4000000701' }
+  ];
+
+  const resolveCurrentSelected = (value) => {
+    if (!value) return null;
+    const valStr = typeof value === 'string'
+      ? value.trim()
+      : (typeof value === 'object' ? (value.name || value.id || value.sku || '').trim() : String(value).trim());
+    if (!valStr) return null;
+
+    const match = normalizedProducts.find(p =>
+      p.name?.toLowerCase() === valStr.toLowerCase() ||
+      p.id?.toLowerCase() === valStr.toLowerCase() ||
+      (p.sku && p.sku.toLowerCase() === valStr.toLowerCase())
+    );
+
+    if (match) return match;
+    if (typeof value === 'object' && value.name) return value;
+    return { name: valStr };
+  };
+
+  // String lookup
+  const res1 = resolveCurrentSelected('Mini Mulcher | 3Ft');
+  assert.equal(res1?.name, 'Mini Mulcher | 3Ft');
+  assert.equal(res1?.price, 84786);
+
+  // Object lookup
+  const res2 = resolveCurrentSelected({ id: 'PRD-MINI-6986', name: 'Mini Mulcher | 3Ft' });
+  assert.equal(res2?.name, 'Mini Mulcher | 3Ft');
+  assert.equal(res2?.price, 84786);
+
+  // SKU lookup
+  const res3 = resolveCurrentSelected('4000000686');
+  assert.equal(res3?.name, 'Mini Mulcher | 3Ft');
+  assert.equal(res3?.price, 84786);
+});

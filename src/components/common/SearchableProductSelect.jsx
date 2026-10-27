@@ -40,10 +40,23 @@ export default function SearchableProductSelect({
     });
   }, [products]);
 
-  // Find currently selected product object
+  // Find currently selected product object (handles string name, SKU, or object value)
   const currentSelected = useMemo(() => {
-    if (!value || typeof value !== 'string' || !value.trim()) return null;
-    return normalizedProducts.find(p => p.name === value || p.id === value) || { name: value };
+    if (!value) return null;
+    const valStr = typeof value === 'string'
+      ? value.trim()
+      : (typeof value === 'object' ? (value.name || value.id || value.sku || '').trim() : String(value).trim());
+    if (!valStr) return null;
+
+    const match = normalizedProducts.find(p =>
+      p.name?.toLowerCase() === valStr.toLowerCase() ||
+      p.id?.toLowerCase() === valStr.toLowerCase() ||
+      (p.sku && p.sku.toLowerCase() === valStr.toLowerCase())
+    );
+
+    if (match) return match;
+    if (typeof value === 'object' && value.name) return value;
+    return { name: valStr };
   }, [normalizedProducts, value]);
 
   // Close on outside click

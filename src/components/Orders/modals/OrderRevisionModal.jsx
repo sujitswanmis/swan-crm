@@ -69,12 +69,30 @@ export default function OrderRevisionModal({
     setItems(updated);
   };
 
-  const handleProductSelect = (index, selectedName) => {
+  const handleProductSelect = (index, selectedProduct) => {
     const updated = [...items];
-    updated[index].product = selectedName;
-    const match = availableProducts.find(p => p.name === selectedName);
-    if (match && match.price != null && match.price !== '') {
-      updated[index].rate = Number(match.price) || 0;
+    const prodName = typeof selectedProduct === 'string'
+      ? selectedProduct
+      : (selectedProduct?.name || selectedProduct?.id || '');
+
+    // Resolve rate from selectedProduct object or availableProducts catalog lookup
+    let prodPrice = null;
+    if (typeof selectedProduct === 'object' && selectedProduct?.price != null && selectedProduct?.price !== '') {
+      prodPrice = selectedProduct.price;
+    } else {
+      const match = availableProducts.find(p =>
+        p.name === prodName ||
+        p.id === prodName ||
+        (p.sku && p.sku === prodName)
+      );
+      if (match && match.price != null && match.price !== '') {
+        prodPrice = match.price;
+      }
+    }
+
+    updated[index].product = prodName;
+    if (prodPrice != null && prodPrice !== '') {
+      updated[index].rate = Number(prodPrice) || 0;
     }
     setItems(updated);
   };
@@ -136,7 +154,7 @@ export default function OrderRevisionModal({
         border: '1px solid var(--border-light)',
         borderRadius: '14px',
         width: '100%',
-        maxWidth: '720px',
+        maxWidth: '920px',
         maxHeight: '90vh',
         display: 'flex',
         flexDirection: 'column',
@@ -202,8 +220,8 @@ export default function OrderRevisionModal({
 
             {/* Line Items List */}
             <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                <label style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.65rem' }}>
+                <label style={{ fontSize: '0.86rem', fontWeight: 700, color: 'var(--text-primary)' }}>
                   Ordered Products &amp; Quantities:
                 </label>
                 <button
@@ -228,14 +246,35 @@ export default function OrderRevisionModal({
                 </button>
               </div>
 
+              {/* Column Titles Header */}
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'minmax(320px, 1fr) 90px 130px 130px 38px',
+                  gap: '0.65rem',
+                  padding: '0.35rem 0.75rem',
+                  fontSize: '0.72rem',
+                  fontWeight: 700,
+                  color: 'var(--text-secondary)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.04em'
+                }}
+              >
+                <div>Product</div>
+                <div style={{ textAlign: 'center' }}>Qty</div>
+                <div style={{ textAlign: 'right' }}>Rate (₹)</div>
+                <div style={{ textAlign: 'right' }}>Total (₹)</div>
+                <div></div>
+              </div>
+
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
                 {items.map((item, idx) => (
                   <div
                     key={idx}
                     style={{
                       display: 'grid',
-                      gridTemplateColumns: 'minmax(200px, 1fr) 90px 110px 100px 36px',
-                      gap: '0.5rem',
+                      gridTemplateColumns: 'minmax(320px, 1fr) 90px 130px 130px 38px',
+                      gap: '0.65rem',
                       alignItems: 'center',
                       background: 'var(--bg-primary)',
                       padding: '0.6rem 0.75rem',
@@ -248,7 +287,7 @@ export default function OrderRevisionModal({
                       <SearchableProductSelect
                         products={availableProducts}
                         value={item.product}
-                        onChange={(name) => handleProductSelect(idx, name)}
+                        onChange={(selected) => handleProductSelect(idx, selected)}
                         placeholder="Search product..."
                       />
                     </div>
