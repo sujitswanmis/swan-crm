@@ -4,10 +4,11 @@ import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   Package, Truck, CheckCircle2, Clock, AlertTriangle, Search, Filter,
   RefreshCw, ChevronRight, FileText, ExternalLink, Calendar, MapPin,
-  Edit3, Ban, ArrowRight, Sparkles, Building2, Layers
+  Edit3, Ban, ArrowRight, Sparkles, Building2, Layers, Lock, ShieldCheck, UserCheck
 } from 'lucide-react';
 import { useTableColumnResize, ColumnResizer } from '@/utils/tableColumnResize';
 import { getOrderPipelineConfig } from '@/app/actions/orderPipelineConfig';
+import { getSubItemPermissions, checkIsAdminRole } from '@/utils/permissionUtils';
 import StandardTablePagination from '../common/StandardTablePagination';
 import OrderRevisionModal from './modals/OrderRevisionModal';
 import CancelOrderModal from './modals/CancelOrderModal';
@@ -124,13 +125,78 @@ function computeOrderSLA(order, currentStage) {
   }
 }
 
+// 3-Tier Stage Execution Authorization
+function checkCanUserExecuteStage({
+  stage,
+  userRole = '',
+  userId = '',
+  moduleAccess = null
+}) {
+  const isAdmin = checkIsAdminRole(userRole);
+  if (isAdmin) {
+    return { allowed: true, reason: 'Admin Access' };
+  }
+
+  if (!stage) {
+    return { allowed: false, reason: 'Invalid Stage' };
+  }
+
+  // 1. Specific Assigned Incharge
+  if (stage.assigned_emp_id) {
+    if (userId && String(userId) === String(stage.assigned_emp_id)) {
+      return { allowed: true, reason: 'Assigned Stage Incharge' };
+    }
+    return {
+      allowed: false,
+      reason: `Restricted to Stage Incharge (${stage.assigned_emp_name || 'Assigned Staff'})`
+    };
+  }
+
+  // 2. Authorized Roles
+  const roles = Array.isArray(stage.authorized_roles) ? stage.authorized_roles : [];
+  if (roles.length > 0) {
+    const rLower = String(userRole || '').trim().toLowerCase();
+    const roleMatches = roles.some(r => {
+      const target = String(r || '').toLowerCase().trim();
+      if (rLower === target) return true;
+      if (target === 'accounts_team' && rLower.includes('account')) return true;
+      if (target === 'sales_coordinator' && rLower.includes('sales')) return true;
+      if (target === 'plant_supervisor' && (rLower.includes('plant') || rLower.includes('work'))) return true;
+      if (target === 'quality_assurance' && (rLower.includes('qc') || rLower.includes('quality'))) return true;
+      if (target === 'logistics_incharge' && (rLower.includes('logistics') || rLower.includes('dispatch'))) return true;
+      return false;
+    });
+    if (roleMatches) {
+      return { allowed: true, reason: 'Authorized Role' };
+    }
+    return {
+      allowed: false,
+      reason: `Restricted to authorized roles: ${roles.join(', ')}`
+    };
+  }
+
+  // 3. Open Fallback: Both blank -> Governed directly by Permission Matrix (Edit/Add)
+  const subPerms = getSubItemPermissions(moduleAccess, userRole, 'channel_ops', 'order_pipeline');
+  if (subPerms && (subPerms.edit || subPerms.add)) {
+    return { allowed: true, reason: 'Permission Matrix (Edit Access)' };
+  }
+
+  return {
+    allowed: false,
+    reason: 'Permission Matrix Edit permission required'
+  };
+}
+
 export default function OrderDeliveryPipeline({
   orders = [],
   loading = false,
   onRefresh,
   tenantId = 'TNT00002',
   userCompany = 'New Swan Group',
-  userName = 'Operations'
+  userName = 'Operations',
+  userRole = '',
+  userId = '',
+  moduleAccess = null
 }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [stageFilter, setStageFilter] = useState('ALL');
@@ -564,9 +630,19 @@ export default function OrderDeliveryPipeline({
                         }}>
                           {currentStage.id} — {currentStage.name}
                         </span>
-                        <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
-                          {currentStage.department}
-                        </div>
+                        {currentStage.assigned_emp_name ? (
+                          <div style={{ fontSize: '0.71rem', color: '#10b981', marginTop: '0.25rem', fontWeight: 600 }}>
+                            👤 {currentStage.assigned_emp_name}
+                          </div>
+                        ) : (Array.isArray(currentStage.authorized_roles) && currentStage.authorized_roles.length > 0) ? (
+                          <div style={{ fontSize: '0.71rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
+                            👥 {currentStage.authorized_roles.slice(0, 2).join(', ')}{currentStage.authorized_roles.length > 2 ? '...' : ''}
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: '0.71rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
+                            {currentStage.department || 'Open / Matrix'}
+                          </div>
+                        )}
                       </td>
 
                       {/* SLA TAT & Deadline */}
@@ -614,108 +690,144 @@ export default function OrderDeliveryPipeline({
 
                       {/* Actions */}
                       <td style={{ padding: '0.85rem 1rem', textAlign: 'center' }}>
-                        {currentStage.is_cancelled ? (
-                          <span style={{ fontSize: '0.76rem', color: '#ef4444', fontWeight: 800 }}>
-                            Cancelled
-                          </span>
-                        ) : currentStage.id === 'S01' ? (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', alignItems: 'center' }}>
-                            <div style={{ display: 'flex', gap: '0.35rem' }}>
-                              <button
-                                type="button"
-                                onClick={() => handleOpenModify(order)}
-                                title="Modify Line Items / Quantities / Rates"
-                                style={{
-                                  padding: '0.3rem 0.55rem',
-                                  background: 'rgba(56, 189, 248, 0.15)',
-                                  border: '1px solid #38bdf8',
-                                  color: '#0284c7',
-                                  borderRadius: '6px',
-                                  fontSize: '0.72rem',
-                                  fontWeight: 700,
-                                  cursor: 'pointer',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '0.25rem'
-                                }}
-                              >
-                                <Edit3 size={12} />
-                                Modify
-                              </button>
+                        {(() => {
+                          if (currentStage.is_cancelled) {
+                            return (
+                              <span style={{ fontSize: '0.76rem', color: '#ef4444', fontWeight: 800 }}>
+                                Cancelled
+                              </span>
+                            );
+                          }
 
-                              <button
-                                type="button"
-                                onClick={() => handleOpenCancel(order)}
-                                title="Cancel Sales Order"
-                                style={{
-                                  padding: '0.3rem 0.55rem',
-                                  background: 'rgba(239, 68, 68, 0.12)',
-                                  border: '1px solid #ef4444',
-                                  color: '#ef4444',
-                                  borderRadius: '6px',
-                                  fontSize: '0.72rem',
-                                  fontWeight: 700,
-                                  cursor: 'pointer',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '0.25rem'
-                                }}
-                              >
-                                <Ban size={12} />
-                                Cancel
-                              </button>
-                            </div>
+                          const currentAuth = checkCanUserExecuteStage({ stage: currentStage, userRole, userId, moduleAccess });
+                          const nextAuth = nextStage
+                            ? checkCanUserExecuteStage({ stage: nextStage, userRole, userId, moduleAccess })
+                            : { allowed: false, reason: 'Completed' };
+                          const canAdvance = currentAuth.allowed || nextAuth.allowed;
 
-                            {nextStage && (
+                          if (currentStage.id === 'S01') {
+                            return (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', alignItems: 'center' }}>
+                                <div style={{ display: 'flex', gap: '0.35rem' }}>
+                                  <button
+                                    type="button"
+                                    disabled={!currentAuth.allowed}
+                                    onClick={() => currentAuth.allowed && handleOpenModify(order)}
+                                    title={currentAuth.allowed ? 'Modify Line Items / Quantities / Rates' : `Locked: ${currentAuth.reason}`}
+                                    style={{
+                                      padding: '0.3rem 0.55rem',
+                                      background: currentAuth.allowed ? 'rgba(56, 189, 248, 0.15)' : 'var(--bg-primary)',
+                                      border: currentAuth.allowed ? '1px solid #38bdf8' : '1px solid var(--border-light)',
+                                      color: currentAuth.allowed ? '#0284c7' : 'var(--text-secondary)',
+                                      borderRadius: '6px',
+                                      fontSize: '0.72rem',
+                                      fontWeight: 700,
+                                      cursor: currentAuth.allowed ? 'pointer' : 'not-allowed',
+                                      opacity: currentAuth.allowed ? 1 : 0.6,
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '0.25rem'
+                                    }}
+                                  >
+                                    {!currentAuth.allowed ? <Lock size={11} /> : <Edit3 size={12} />}
+                                    Modify
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    disabled={!currentAuth.allowed}
+                                    onClick={() => currentAuth.allowed && handleOpenCancel(order)}
+                                    title={currentAuth.allowed ? 'Cancel Sales Order' : `Locked: ${currentAuth.reason}`}
+                                    style={{
+                                      padding: '0.3rem 0.55rem',
+                                      background: currentAuth.allowed ? 'rgba(239, 68, 68, 0.12)' : 'var(--bg-primary)',
+                                      border: currentAuth.allowed ? '1px solid #ef4444' : '1px solid var(--border-light)',
+                                      color: currentAuth.allowed ? '#ef4444' : 'var(--text-secondary)',
+                                      borderRadius: '6px',
+                                      fontSize: '0.72rem',
+                                      fontWeight: 700,
+                                      cursor: currentAuth.allowed ? 'pointer' : 'not-allowed',
+                                      opacity: currentAuth.allowed ? 1 : 0.6,
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '0.25rem'
+                                    }}
+                                  >
+                                    {!currentAuth.allowed ? <Lock size={11} /> : <Ban size={12} />}
+                                    Cancel
+                                  </button>
+                                </div>
+
+                                {nextStage && (
+                                  <button
+                                    type="button"
+                                    disabled={!canAdvance}
+                                    onClick={() => canAdvance && handleOpenAdvance(order, nextStage)}
+                                    title={canAdvance ? `Confirm & Advance to ${nextStage.id}` : `Locked: ${nextAuth.reason || currentAuth.reason}`}
+                                    style={{
+                                      width: '100%',
+                                      padding: '0.35rem 0.65rem',
+                                      background: canAdvance ? '#2563eb' : '#64748b',
+                                      border: 'none',
+                                      color: '#ffffff',
+                                      borderRadius: '6px',
+                                      fontSize: '0.75rem',
+                                      fontWeight: 700,
+                                      cursor: canAdvance ? 'pointer' : 'not-allowed',
+                                      opacity: canAdvance ? 1 : 0.65,
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      gap: '0.3rem'
+                                    }}
+                                  >
+                                    {!canAdvance && <Lock size={12} />}
+                                    Confirm ➔ {nextStage.id}
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          }
+
+                          if (nextStage) {
+                            return (
                               <button
                                 type="button"
-                                onClick={() => handleOpenAdvance(order, nextStage)}
+                                disabled={!canAdvance}
+                                onClick={() => canAdvance && handleOpenAdvance(order, nextStage)}
+                                title={canAdvance ? `Advance to ${nextStage.id} (${nextStage.name})` : `Locked: ${nextAuth.reason || currentAuth.reason}`}
                                 style={{
-                                  width: '100%',
-                                  padding: '0.35rem 0.65rem',
-                                  background: '#2563eb',
+                                  padding: '0.4rem 0.75rem',
+                                  background: canAdvance ? (nextStage.color || '#2563eb') : '#64748b',
                                   border: 'none',
                                   color: '#ffffff',
                                   borderRadius: '6px',
-                                  fontSize: '0.75rem',
+                                  fontSize: '0.76rem',
                                   fontWeight: 700,
-                                  cursor: 'pointer',
+                                  cursor: canAdvance ? 'pointer' : 'not-allowed',
+                                  opacity: canAdvance ? 1 : 0.65,
                                   display: 'inline-flex',
                                   alignItems: 'center',
-                                  justifyContent: 'center',
-                                  gap: '0.3rem'
+                                  gap: '0.3rem',
+                                  boxShadow: canAdvance ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
                                 }}
                               >
-                                Confirm ➔ {nextStage.id}
+                                {!canAdvance && <Lock size={12} />}
+                                <span>Advance ➔ {nextStage.id}</span>
                               </button>
-                            )}
-                          </div>
-                        ) : nextStage ? (
-                          <button
-                            type="button"
-                            onClick={() => handleOpenAdvance(order, nextStage)}
-                            style={{
-                              padding: '0.4rem 0.75rem',
-                              background: nextStage.color || '#2563eb',
-                              border: 'none',
-                              color: '#ffffff',
-                              borderRadius: '6px',
-                              fontSize: '0.76rem',
-                              fontWeight: 700,
-                              cursor: 'pointer',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '0.3rem',
-                              boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-                            }}
-                          >
-                            <span>Advance ➔ {nextStage.id}</span>
-                          </button>
-                        ) : currentStage.id === 'S13' ? (
-                          <span style={{ fontSize: '0.78rem', color: '#10b981', fontWeight: 800 }}>
-                            ✓ Complete
-                          </span>
-                        ) : null}
+                            );
+                          }
+
+                          if (currentStage.id === 'S13') {
+                            return (
+                              <span style={{ fontSize: '0.78rem', color: '#10b981', fontWeight: 800 }}>
+                                ✓ Complete
+                              </span>
+                            );
+                          }
+
+                          return null;
+                        })()}
                       </td>
                     </tr>
                   );

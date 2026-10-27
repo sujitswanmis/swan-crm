@@ -361,6 +361,9 @@ export default function ChannelOperationsModule({
           tenantId={effectiveTenantId}
           userCompany={userCompany}
           userName={userName}
+          userRole={userRole}
+          userId={userId}
+          moduleAccess={moduleAccess}
         />
       )}
 

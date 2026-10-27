@@ -56,3 +56,16 @@ test('Commercial policies: auto skip balance and partial lot settings are active
   assert.equal(cfg.allow_partial_split_lots, true);
   assert.equal(cfg.tat_mode, 'DYNAMIC');
 });
+
+test('3-Tier stage ownership: all stages have authorized_roles, assigned_emp_id, and assigned_emp_name keys', async () => {
+  const configPath = path.join(process.cwd(), 'src', 'config', 'order_pipeline_config.json');
+  const content = await fs.readFile(configPath, 'utf-8');
+  const data = JSON.parse(content);
+  const stages = data['TNT00002']['All Branches'].stages;
+
+  for (const st of stages) {
+    assert.ok(Array.isArray(st.authorized_roles), `Stage ${st.id} has authorized_roles array`);
+    assert.equal(typeof st.assigned_emp_id, 'string', `Stage ${st.id} has assigned_emp_id string`);
+    assert.equal(typeof st.assigned_emp_name, 'string', `Stage ${st.id} has assigned_emp_name string`);
+  }
+});

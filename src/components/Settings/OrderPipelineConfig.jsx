@@ -3,7 +3,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Truck, Settings2, Plus, Trash2, Save, RefreshCw, CheckCircle2,
-  Clock, AlertCircle, Building2, Layers, CheckSquare, Sparkles, X, Edit3, ArrowRight, Lock
+  Clock, AlertCircle, Building2, Layers, CheckSquare, Sparkles, X, Edit3, ArrowRight, Lock,
+  ShieldCheck, Users, UserCheck
 } from 'lucide-react';
 import {
   getOrderPipelineConfig,
@@ -11,6 +12,7 @@ import {
   resetOrderPipelineConfig
 } from '@/app/actions/orderPipelineConfig';
 import { getTenantBranches } from '@/app/actions/tenantBranches';
+import { getTeamMembers } from '@/app/actions/team';
 
 const ALL_TENANTS = [
   { code: 'TNT00002', name: 'New Swan Group' },
@@ -30,6 +32,22 @@ const DEPARTMENTS = [
   'Godown / Logistics',
   'Gate & Logistics',
   'Customer Support'
+];
+
+const AVAILABLE_ROLES = [
+  { key: 'admin', label: 'Admin / Master Admin', color: '#dc2626' },
+  { key: 'crm', label: 'CRM Head', color: '#2563eb' },
+  { key: 'sales_coordinator', label: 'Sales Coordinator', color: '#7c3aed' },
+  { key: 'sales_manager', label: 'Sales Manager', color: '#0284c7' },
+  { key: 'sales_executive', label: 'Sales Executive', color: '#0d9488' },
+  { key: 'accounts_team', label: 'Accounts & Billing', color: '#4f46e5' },
+  { key: 'process_coordinator', label: 'Process Coordinator', color: '#0891b2' },
+  { key: 'plant_supervisor', label: 'Plant / Works Supervisor', color: '#d97706' },
+  { key: 'quality_assurance', label: 'Quality Assurance (QC)', color: '#16a34a' },
+  { key: 'logistics_incharge', label: 'Logistics & Dispatch', color: '#ea580c' },
+  { key: 'customer_support', label: 'Customer Support', color: '#db2777' },
+  { key: 'telecaller', label: 'Telecaller / Order Desk', color: '#64748b' },
+  { key: 'hod_dept_head', label: 'HOD / Dept Head', color: '#9333ea' }
 ];
 
 const FIELD_TYPES = [
@@ -113,6 +131,30 @@ export default function OrderPipelineConfig({
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [teamMembers, setTeamMembers] = useState([]);
+  const [loadingMembers, setLoadingMembers] = useState(false);
+
+  // Load team members for selected tenant
+  useEffect(() => {
+    async function loadTeam() {
+      setLoadingMembers(true);
+      try {
+        const tenantObj = ALL_TENANTS.find(t => t.code === selectedTenant) || userTenant;
+        const members = await getTeamMembers(tenantObj.name, selectedTenant);
+        if (Array.isArray(members)) {
+          setTeamMembers(members);
+        } else {
+          setTeamMembers([]);
+        }
+      } catch (err) {
+        console.warn('Failed to load team members:', err);
+        setTeamMembers([]);
+      } finally {
+        setLoadingMembers(false);
+      }
+    }
+    loadTeam();
+  }, [selectedTenant, userTenant]);
 
   // Pipeline Config State
   const [config, setConfig] = useState({
@@ -165,6 +207,55 @@ export default function OrderPipelineConfig({
       stages: (prev.stages || []).map(st => {
         if (st.id === stageId) {
           return { ...st, [field]: value };
+        }
+        return st;
+      })
+    }));
+  };
+
+  // Add role to stage
+  const handleAddRoleToStage = (stageId, roleKey) => {
+    if (!roleKey) return;
+    setConfig(prev => ({
+      ...prev,
+      stages: (prev.stages || []).map(st => {
+        if (st.id === stageId) {
+          const current = Array.isArray(st.authorized_roles) ? st.authorized_roles : [];
+          if (!current.includes(roleKey)) {
+            return { ...st, authorized_roles: [...current, roleKey] };
+          }
+        }
+        return st;
+      })
+    }));
+  };
+
+  // Remove role from stage
+  const handleRemoveRoleFromStage = (stageId, roleKey) => {
+    setConfig(prev => ({
+      ...prev,
+      stages: (prev.stages || []).map(st => {
+        if (st.id === stageId) {
+          const current = Array.isArray(st.authorized_roles) ? st.authorized_roles : [];
+          return { ...st, authorized_roles: current.filter(r => r !== roleKey) };
+        }
+        return st;
+      })
+    }));
+  };
+
+  // Assign employee incharge to stage
+  const handleAssignEmpToStage = (stageId, empId) => {
+    const emp = teamMembers.find(m => String(m.user_id || m.id) === String(empId));
+    setConfig(prev => ({
+      ...prev,
+      stages: (prev.stages || []).map(st => {
+        if (st.id === stageId) {
+          return {
+            ...st,
+            assigned_emp_id: empId || '',
+            assigned_emp_name: emp ? (emp.name || emp.full_name || emp.email || '') : ''
+          };
         }
         return st;
       })
@@ -611,7 +702,7 @@ export default function OrderPipelineConfig({
               13-Stage Master Lifecycle Flow
             </h3>
             <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-              Configure stage names, responsible departments, target TAT hours, and dynamic custom fields.
+              Configure stage names, authorized roles, stage incharge, target TAT hours, and dynamic custom fields.
             </span>
           </div>
           <span style={{
@@ -626,6 +717,36 @@ export default function OrderPipelineConfig({
           </span>
         </div>
 
+        {/* 3-Tier Execution Control Banner */}
+        <div style={{
+          margin: '0.85rem 1.25rem',
+          padding: '0.75rem 1rem',
+          background: 'rgba(59, 130, 246, 0.08)',
+          border: '1px solid rgba(59, 130, 246, 0.25)',
+          borderRadius: '8px',
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: '0.75rem',
+          fontSize: '0.8rem',
+          color: 'var(--text-secondary)'
+        }}>
+          <ShieldCheck size={18} style={{ color: '#2563eb', flexShrink: 0, marginTop: '2px' }} />
+          <div>
+            <strong style={{ color: 'var(--text-primary)' }}>3-Tier Stage Execution Control &amp; Permission Matrix Fallback:</strong>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.5rem', marginTop: '0.35rem' }}>
+              <div>
+                <span style={{ color: '#10b981', fontWeight: 700 }}>1. Stage Incharge:</span> If an employee is selected, only they (or Admins) can advance this stage.
+              </div>
+              <div>
+                <span style={{ color: '#38bdf8', fontWeight: 700 }}>2. Authorized Roles:</span> If roles are picked, any staff with those roles can execute.
+              </div>
+              <div>
+                <span style={{ color: '#f59e0b', fontWeight: 700 }}>3. Open Matrix Fallback:</span> If both are blank, access is decided directly by individual user <strong>Permission Matrix (View + Edit)</strong>.
+              </div>
+            </div>
+          </div>
+        </div>
+
         {loading ? (
           <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
             <RefreshCw size={24} className="animate-spin" style={{ margin: '0 auto 0.5rem auto' }} />
@@ -636,18 +757,21 @@ export default function OrderPipelineConfig({
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.83rem' }}>
               <thead>
                 <tr style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
-                  <th style={{ padding: '0.75rem 1rem', width: '80px' }}>Stage</th>
-                  <th style={{ padding: '0.75rem 1rem', width: '80px' }}>Active</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>Stage Name</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>Department Responsible</th>
-                  <th style={{ padding: '0.75rem 1rem', width: '120px' }}>Target TAT</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>Default Note</th>
-                  <th style={{ padding: '0.75rem 1rem', width: '180px', textAlign: 'center' }}>Custom Fields</th>
+                  <th style={{ padding: '0.75rem 0.85rem', width: '70px' }}>Stage</th>
+                  <th style={{ padding: '0.75rem 0.85rem', width: '60px' }}>Active</th>
+                  <th style={{ padding: '0.75rem 0.85rem', minWidth: '150px' }}>Stage Name</th>
+                  <th style={{ padding: '0.75rem 0.85rem', minWidth: '230px' }}>Authorized Roles (Multi-Select)</th>
+                  <th style={{ padding: '0.75rem 0.85rem', minWidth: '200px' }}>Stage Incharge (Assigned Emp)</th>
+                  <th style={{ padding: '0.75rem 0.85rem', width: '105px' }}>Target TAT</th>
+                  <th style={{ padding: '0.75rem 0.85rem', minWidth: '160px' }}>Default Note</th>
+                  <th style={{ padding: '0.75rem 0.85rem', width: '130px', textAlign: 'center' }}>Custom Fields</th>
                 </tr>
               </thead>
               <tbody>
                 {(config.stages || []).map((stage) => {
                   const customFieldsCount = (stage.custom_fields || []).length;
+                  const currentRoles = Array.isArray(stage.authorized_roles) ? stage.authorized_roles : [];
+
                   return (
                     <tr
                       key={stage.id}
@@ -658,7 +782,7 @@ export default function OrderPipelineConfig({
                       }}
                     >
                       {/* Stage ID */}
-                      <td style={{ padding: '0.85rem 1rem' }}>
+                      <td style={{ padding: '0.85rem 0.85rem' }}>
                         <span style={{
                           display: 'inline-block',
                           padding: '0.25rem 0.5rem',
@@ -674,7 +798,7 @@ export default function OrderPipelineConfig({
                       </td>
 
                       {/* Active Toggle Switch */}
-                      <td style={{ padding: '0.85rem 1rem' }}>
+                      <td style={{ padding: '0.85rem 0.85rem' }}>
                         <input
                           type="checkbox"
                           checked={stage.is_enabled !== false}
@@ -684,7 +808,7 @@ export default function OrderPipelineConfig({
                       </td>
 
                       {/* Stage Name */}
-                      <td style={{ padding: '0.85rem 1rem' }}>
+                      <td style={{ padding: '0.85rem 0.85rem' }}>
                         <input
                           type="text"
                           value={stage.name}
@@ -702,29 +826,126 @@ export default function OrderPipelineConfig({
                         />
                       </td>
 
-                      {/* Department */}
-                      <td style={{ padding: '0.85rem 1rem' }}>
-                        <select
-                          value={stage.department || DEPARTMENTS[0]}
-                          onChange={e => handleStageChange(stage.id, 'department', e.target.value)}
-                          style={{
-                            width: '100%',
-                            padding: '0.4rem 0.6rem',
-                            background: 'var(--bg-primary)',
-                            border: '1px solid var(--border-light)',
-                            borderRadius: '6px',
-                            color: 'var(--text-primary)',
-                            fontSize: '0.8rem'
-                          }}
-                        >
-                          {DEPARTMENTS.map(d => (
-                            <option key={d} value={d}>{d}</option>
-                          ))}
-                        </select>
+                      {/* Authorized Roles (Multi-Select Tags) */}
+                      <td style={{ padding: '0.85rem 0.85rem' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', minHeight: '26px', alignItems: 'center' }}>
+                            {currentRoles.length === 0 ? (
+                              <span style={{ fontSize: '0.73rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
+                                🔓 All Roles / Fallback to Matrix
+                              </span>
+                            ) : (
+                              currentRoles.map(rKey => {
+                                const rObj = AVAILABLE_ROLES.find(r => r.key === rKey);
+                                const rLabel = rObj?.label || rKey;
+                                const rColor = rObj?.color || '#3b82f6';
+                                return (
+                                  <span
+                                    key={rKey}
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '0.25rem',
+                                      fontSize: '0.71rem',
+                                      fontWeight: 700,
+                                      padding: '0.15rem 0.4rem',
+                                      borderRadius: '4px',
+                                      background: `${rColor}15`,
+                                      color: rColor,
+                                      border: `1px solid ${rColor}35`
+                                    }}
+                                  >
+                                    {rLabel}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveRoleFromStage(stage.id, rKey)}
+                                      title={`Remove ${rLabel}`}
+                                      style={{
+                                        background: 'transparent',
+                                        border: 'none',
+                                        cursor: 'pointer',
+                                        padding: 0,
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        color: 'inherit'
+                                      }}
+                                    >
+                                      <X size={11} />
+                                    </button>
+                                  </span>
+                                );
+                              })
+                            )}
+                          </div>
+
+                          <select
+                            value=""
+                            onChange={e => {
+                              if (e.target.value) {
+                                handleAddRoleToStage(stage.id, e.target.value);
+                              }
+                            }}
+                            style={{
+                              width: '100%',
+                              padding: '0.3rem 0.5rem',
+                              background: 'var(--bg-primary)',
+                              border: '1px solid var(--border-light)',
+                              borderRadius: '6px',
+                              color: 'var(--text-primary)',
+                              fontSize: '0.75rem'
+                            }}
+                          >
+                            <option value="">➕ Add Authorized Role...</option>
+                            {AVAILABLE_ROLES
+                              .filter(r => !currentRoles.includes(r.key))
+                              .map(r => (
+                                <option key={r.key} value={r.key}>
+                                  {r.label}
+                                </option>
+                              ))}
+                          </select>
+                        </div>
+                      </td>
+
+                      {/* Stage Incharge (Assigned Employee) */}
+                      <td style={{ padding: '0.85rem 0.85rem' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                          <select
+                            value={stage.assigned_emp_id || ''}
+                            onChange={e => handleAssignEmpToStage(stage.id, e.target.value)}
+                            style={{
+                              width: '100%',
+                              padding: '0.35rem 0.5rem',
+                              background: 'var(--bg-primary)',
+                              border: stage.assigned_emp_id ? '1px solid #10b981' : '1px solid var(--border-light)',
+                              borderRadius: '6px',
+                              color: stage.assigned_emp_id ? '#10b981' : 'var(--text-primary)',
+                              fontSize: '0.76rem',
+                              fontWeight: stage.assigned_emp_id ? 700 : 400
+                            }}
+                          >
+                            <option value="">👥 Anyone with Role / Open</option>
+                            {teamMembers.map(emp => {
+                              const empId = emp.user_id || emp.id;
+                              const empName = emp.name || emp.full_name || emp.email;
+                              const empRole = emp.role || 'Staff';
+                              return (
+                                <option key={empId} value={empId}>
+                                  👤 {empName} ({empRole})
+                                </option>
+                              );
+                            })}
+                          </select>
+                          {stage.assigned_emp_name && (
+                            <span style={{ fontSize: '0.71rem', color: '#10b981', fontWeight: 600 }}>
+                              ✓ Incharge: {stage.assigned_emp_name}
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       {/* Target TAT */}
-                      <td style={{ padding: '0.85rem 1rem' }}>
+                      <td style={{ padding: '0.85rem 0.85rem' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
                           <input
                             type="number"
@@ -733,22 +954,22 @@ export default function OrderPipelineConfig({
                             value={stage.tat_hours ?? 4}
                             onChange={e => handleStageChange(stage.id, 'tat_hours', Number(e.target.value) || 0)}
                             style={{
-                              width: '65px',
-                              padding: '0.4rem 0.5rem',
+                              width: '55px',
+                              padding: '0.35rem 0.4rem',
                               background: 'var(--bg-primary)',
                               border: '1px solid var(--border-light)',
                               borderRadius: '6px',
                               color: 'var(--text-primary)',
-                              fontSize: '0.83rem',
+                              fontSize: '0.82rem',
                               textAlign: 'center'
                             }}
                           />
-                          <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Hrs</span>
+                          <span style={{ fontSize: '0.76rem', color: 'var(--text-secondary)' }}>Hrs</span>
                         </div>
                       </td>
 
                       {/* Default Note */}
-                      <td style={{ padding: '0.85rem 1rem' }}>
+                      <td style={{ padding: '0.85rem 0.85rem' }}>
                         <input
                           type="text"
                           value={stage.default_note || ''}
@@ -756,23 +977,23 @@ export default function OrderPipelineConfig({
                           placeholder="Standard note text..."
                           style={{
                             width: '100%',
-                            padding: '0.4rem 0.6rem',
+                            padding: '0.35rem 0.5rem',
                             background: 'var(--bg-primary)',
                             border: '1px solid var(--border-light)',
                             borderRadius: '6px',
                             color: 'var(--text-primary)',
-                            fontSize: '0.8rem'
+                            fontSize: '0.78rem'
                           }}
                         />
                       </td>
 
                       {/* Custom Fields Action */}
-                      <td style={{ padding: '0.85rem 1rem', textAlign: 'center' }}>
+                      <td style={{ padding: '0.85rem 0.85rem', textAlign: 'center' }}>
                         <button
                           type="button"
                           onClick={() => openFieldModal(stage)}
                           style={{
-                            padding: '0.35rem 0.75rem',
+                            padding: '0.35rem 0.65rem',
                             background: customFieldsCount > 0 ? 'rgba(99, 102, 241, 0.15)' : 'var(--bg-primary)',
                             border: customFieldsCount > 0 ? '1px solid #6366f1' : '1px solid var(--border-light)',
                             borderRadius: '6px',

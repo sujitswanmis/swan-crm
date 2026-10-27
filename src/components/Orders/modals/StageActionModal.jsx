@@ -252,7 +252,14 @@ export default function StageActionModal({
               </h3>
             </div>
             <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-              Dept: <strong style={{ color: 'var(--text-primary)' }}>{targetStage.department}</strong> • Target TAT: <strong>{targetStage.tat_hours} Hours</strong>
+              {targetStage.assigned_emp_name ? (
+                <span>Incharge: <strong style={{ color: '#10b981' }}>{targetStage.assigned_emp_name}</strong> • </span>
+              ) : (Array.isArray(targetStage.authorized_roles) && targetStage.authorized_roles.length > 0) ? (
+                <span>Roles: <strong style={{ color: '#38bdf8' }}>{targetStage.authorized_roles.join(', ')}</strong> • </span>
+              ) : (
+                <span>Dept / Access: <strong style={{ color: 'var(--text-primary)' }}>{targetStage.department || 'Open / Matrix'}</strong> • </span>
+              )}
+              Target TAT: <strong>{targetStage.tat_hours} Hours</strong>
             </p>
           </div>
           <button
