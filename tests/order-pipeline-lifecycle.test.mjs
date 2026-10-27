@@ -240,3 +240,101 @@ test('S12 Split Lot Inheritance: reads S07 allocations to prefill Lot-A and Lot-
   assert.equal(remainingItems[1].qty, 3);
   assert.equal(remainingItems.reduce((sum, p) => sum + p.qty, 0), 5, 'Total Lot-B units must equal 5');
 });
+
+test('Audit Matrix Table: creates S00 punch, S01 revision, planned vs actual timestamp, and SLA duration', () => {
+  const order = {
+    order_number: 'SO-2026-41220',
+    total_ordered_qty: 10,
+    total_amount: 886748,
+    created_at: '2026-10-28T00:42:00.000Z',
+    assigned_caller_name: 'Test Desk',
+    stage_history: [
+      {
+        stage_id: 'S01_REVISION',
+        stage_name: 'Order Revision',
+        action_by: 'New Swan Admin',
+        notes: 'Order items modified in Stage S01',
+        previous_amount: 886748,
+        new_amount: 1250000,
+        actual_timestamp: '2026-10-28T01:12:00.000Z'
+      },
+      {
+        stage_id: 'S02',
+        stage_name: 'PI Generation',
+        department: 'Accounts / Billing',
+        tat_hours: 2,
+        action_by: 'New Swan Admin',
+        actual_timestamp: '2026-10-28T01:13:00.000Z',
+        custom_fields_data: { pi_number: 'test0001', bank_account_selected: 'HDFC Bank - CC A/c' }
+      },
+      {
+        stage_id: 'S05',
+        stage_name: 'Receive Advance Payment',
+        department: 'Accounts Team',
+        tat_hours: 24,
+        action_by: 'New Swan Admin',
+        // Planned target would be 24h after S02 (2026-10-29T01:13:00Z)
+        // Simulated delayed action taking 30h
+        actual_timestamp: '2026-10-29T07:13:00.000Z',
+        tat_breached: true
+      }
+    ]
+  };
+
+  // Replicate row builder
+  const rows = [];
+  const createdDate = new Date(order.created_at);
+  const createdMs = createdDate.getTime();
+
+  // S00 row
+  rows.push({
+    stage_id: 'STAGE S00',
+    stage_name: 'Order Booked & Punched into Pipeline',
+    planned_timestamp: order.created_at,
+    actual_timestamp: order.created_at,
+    tat_hours: 0,
+    badge_type: 'PUNCH'
+  });
+
+  let prevActualMs = createdMs;
+  order.stage_history.forEach((entry) => {
+    const tatHours = Number(entry.tat_hours) || 2;
+    const actualMs = new Date(entry.actual_timestamp).getTime();
+    const plannedMs = prevActualMs + (tatHours * 3600 * 1000);
+    const isDelayed = entry.tat_breached === true || (actualMs > plannedMs);
+
+    rows.push({
+      stage_id: entry.stage_id,
+      stage_name: entry.stage_name,
+      planned_timestamp: new Date(plannedMs).toISOString(),
+      actual_timestamp: entry.actual_timestamp,
+      tat_hours: tatHours,
+      time_taken_ms: Math.max(0, actualMs - prevActualMs),
+      tat_breached: isDelayed,
+      badge_type: entry.stage_id.includes('REVISION') ? 'REVISION' : 'STAGE'
+    });
+
+    prevActualMs = actualMs;
+  });
+
+  assert.equal(rows.length, 4, 'Total rows should be 4 (1 S00 + 3 history)');
+  
+  // Verify S00 Punch row
+  assert.equal(rows[0].stage_id, 'STAGE S00');
+  assert.equal(rows[0].badge_type, 'PUNCH');
+  assert.equal(rows[0].tat_hours, 0);
+
+  // Verify S01 Revision row
+  assert.equal(rows[1].stage_id, 'S01_REVISION');
+  assert.equal(rows[1].badge_type, 'REVISION');
+  assert.equal(rows[1].tat_breached, false, 'Revision was done on-time');
+
+  // Verify S02 PI Generation
+  assert.equal(rows[2].stage_id, 'S02');
+  assert.equal(rows[2].tat_breached, false, 'S02 was done on-time within 2 hours');
+
+  // Verify S05 Delayed stage
+  assert.equal(rows[3].stage_id, 'S05');
+  assert.equal(rows[3].tat_breached, true, 'S05 was delayed past 24 hours target');
+  assert.ok(rows[3].time_taken_ms > 24 * 3600 * 1000, 'Time taken exceeds 24 hours');
+});
