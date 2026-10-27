@@ -128,7 +128,7 @@ export default function SettingsContainer({
       <div className="card" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', width: '100%', borderRadius: 0, border: 'none', boxShadow: 'none' }}>
         {activeTab === 'business' && <BusinessProfile userCompany={userCompany} />}
         {activeTab === 'products' && <ProductListConfig userCompany={userCompany} />}
-        {activeTab === 'order_pipeline' && <OrderPipelineConfig userCompany={userCompany} />}
+        {activeTab === 'order_pipeline' && <OrderPipelineConfig userCompany={userCompany} isMasterAdmin={isMasterAdmin} userRole={userRole} />}
         {activeTab === 'crm' && <CRMConfig userCompany={userCompany} />}
         {activeTab === 'fields' && <CustomFields />}
         {activeTab === 'templates' && <WorkspaceMessageTemplates userCompany={userCompany} />}

@@ -1,29 +1,39 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Truck, Settings2, Plus, Trash2, Save, RefreshCw, CheckCircle2,
-  Clock, AlertCircle, Building2, Layers, CheckSquare, Sparkles, X, Edit3, ArrowRight
+  Clock, AlertCircle, Building2, Layers, CheckSquare, Sparkles, X, Edit3, ArrowRight, Lock
 } from 'lucide-react';
 import {
   getOrderPipelineConfig,
   saveOrderPipelineConfig,
   resetOrderPipelineConfig
 } from '@/app/actions/orderPipelineConfig';
+import { getTenantBranches } from '@/app/actions/tenantBranches';
 
-const TENANTS = [
+const ALL_TENANTS = [
   { code: 'TNT00002', name: 'New Swan Group' },
   { code: 'TNT00001', name: 'SuPuja Creations' },
   { code: 'TNT00003', name: 'Testing NSG' }
 ];
 
-const BRANCHES = [
-  { code: 'All Branches', label: 'All Branches (Default Baseline)' },
-  { code: 'NSMLR [TNT00002-B0001]', label: 'NSMLR — Ludhiana Plant [TNT00002-B0001]' },
-  { code: 'NSTL [TNT00002-B0002]', label: 'NSTL — Tubing Line [TNT00002-B0002]' },
-  { code: 'NSMTL [TNT00002-B0003]', label: 'NSMTL — Modern Tech [TNT00002-B0003]' },
-  { code: 'NSW-01 [TNT00001-B0001]', label: 'SuPuja Creations — Plant 1 [TNT00001-B0001]' }
-];
+const TENANT_BRANCHES_MAP = {
+  TNT00002: [
+    { code: 'All Branches', label: 'All Branches (Default Baseline)' },
+    { code: 'NSMLR [TNT00002-B0001]', label: 'NSMLR — Ludhiana Plant [TNT00002-B0001]' },
+    { code: 'NSTL [TNT00002-B0002]', label: 'NSTL — Tubing Line [TNT00002-B0002]' },
+    { code: 'NSMTL [TNT00002-B0003]', label: 'NSMTL — Modern Tech [TNT00002-B0003]' }
+  ],
+  TNT00001: [
+    { code: 'All Branches', label: 'All Branches (Default Baseline)' },
+    { code: 'NSW-01 [TNT00001-B0001]', label: 'SuPuja Creations — Plant 1 [TNT00001-B0001]' }
+  ],
+  TNT00003: [
+    { code: 'All Branches', label: 'All Branches (Default Baseline)' },
+    { code: 'TEST-B01 [TNT00003-B0001]', label: 'Testing NSG — Branch 1 [TNT00003-B0001]' }
+  ]
+};
 
 const DEPARTMENTS = [
   'Sales / Order Desk',
@@ -48,11 +58,74 @@ const FIELD_TYPES = [
   { value: 'file', label: 'File / Document Upload' }
 ];
 
-export default function OrderPipelineConfig({ userCompany = 'New Swan Group' }) {
-  // Resolve initial tenant code from userCompany
-  const initialTenant = userCompany?.toLowerCase().includes('supuja') ? 'TNT00001' : 'TNT00002';
-  const [selectedTenant, setSelectedTenant] = useState(initialTenant);
+export default function OrderPipelineConfig({
+  userCompany = 'New Swan Group',
+  isMasterAdmin = false,
+  userRole = ''
+}) {
+  const isMaster = isMasterAdmin === true || userRole === 'master_admin';
+
+  // Determine user's company tenant code
+  const userTenant = useMemo(() => {
+    const comp = (userCompany || '').toLowerCase();
+    if (comp.includes('supuja')) {
+      return { code: 'TNT00001', name: 'SuPuja Creations' };
+    }
+    if (comp.includes('testing')) {
+      return { code: 'TNT00003', name: 'Testing NSG' };
+    }
+    return { code: 'TNT00002', name: 'New Swan Group' };
+  }, [userCompany]);
+
+  // Only Master Admin can see other tenants. Tenant Admins strictly see their own!
+  const availableTenants = useMemo(() => {
+    if (isMaster) {
+      return ALL_TENANTS;
+    }
+    return [userTenant];
+  }, [isMaster, userTenant]);
+
+  const [selectedTenant, setSelectedTenant] = useState(userTenant.code);
   const [selectedBranch, setSelectedBranch] = useState('All Branches');
+  const [dynamicBranches, setDynamicBranches] = useState([]);
+
+  // Load actual dynamic branches for selected tenant
+  useEffect(() => {
+    async function loadBranches() {
+      try {
+        const tenantObj = ALL_TENANTS.find(t => t.code === selectedTenant) || userTenant;
+        const res = await getTenantBranches(tenantObj.name);
+        if (res?.success && Array.isArray(res.branches)) {
+          setDynamicBranches(res.branches);
+        }
+      } catch (_) {}
+    }
+    loadBranches();
+  }, [selectedTenant, userTenant]);
+
+  // Combine static and dynamic branches for selected tenant strictly
+  const availableBranches = useMemo(() => {
+    const baseList = TENANT_BRANCHES_MAP[selectedTenant] || [
+      { code: 'All Branches', label: 'All Branches (Default Baseline)' }
+    ];
+
+    if (dynamicBranches.length > 0) {
+      const addedCodes = new Set(baseList.map(b => b.code));
+      const extras = [];
+      dynamicBranches.forEach(db => {
+        const branchCode = db.branch_code || db.id;
+        const branchName = db.name || db.branch_name || 'Branch';
+        const formattedCode = `${branchName} [${branchCode}]`;
+        if (!addedCodes.has(formattedCode) && !addedCodes.has(branchCode)) {
+          extras.push({ code: formattedCode, label: formattedCode });
+          addedCodes.add(formattedCode);
+        }
+      });
+      return [...baseList, ...extras];
+    }
+
+    return baseList;
+  }, [selectedTenant, dynamicBranches]);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -361,15 +434,38 @@ export default function OrderPipelineConfig({ userCompany = 'New Swan Group' }) 
         flexWrap: 'wrap',
         alignItems: 'center'
       }}>
+        {/* Tenant Scope */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: '1 1 280px' }}>
           <Building2 size={16} style={{ color: '#38bdf8' }} />
           <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
             Tenant / Company:
           </span>
-          <select
-            value={selectedTenant}
-            onChange={e => setSelectedTenant(e.target.value)}
-            style={{
+          {isMaster ? (
+            <select
+              value={selectedTenant}
+              onChange={e => {
+                setSelectedTenant(e.target.value);
+                setSelectedBranch('All Branches');
+              }}
+              style={{
+                flex: 1,
+                padding: '0.5rem 0.75rem',
+                background: 'var(--bg-primary)',
+                border: '1px solid var(--border-light)',
+                borderRadius: '8px',
+                color: 'var(--text-primary)',
+                fontSize: '0.84rem',
+                fontWeight: 700
+              }}
+            >
+              {availableTenants.map(t => (
+                <option key={t.code} value={t.code}>
+                  {t.name} [{t.code}]
+                </option>
+              ))}
+            </select>
+          ) : (
+            <div style={{
               flex: 1,
               padding: '0.5rem 0.75rem',
               background: 'var(--bg-primary)',
@@ -377,17 +473,30 @@ export default function OrderPipelineConfig({ userCompany = 'New Swan Group' }) 
               borderRadius: '8px',
               color: 'var(--text-primary)',
               fontSize: '0.84rem',
-              fontWeight: 700
-            }}
-          >
-            {TENANTS.map(t => (
-              <option key={t.code} value={t.code}>
-                {t.name} [{t.code}]
-              </option>
-            ))}
-          </select>
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <span>{userTenant.name} [{userTenant.code}]</span>
+              <span style={{
+                fontSize: '0.72rem',
+                color: '#10b981',
+                fontWeight: 700,
+                background: 'rgba(16,185,129,0.1)',
+                padding: '0.15rem 0.45rem',
+                borderRadius: '4px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.25rem'
+              }}>
+                <Lock size={11} /> Workspace Locked
+              </span>
+            </div>
+          )}
         </div>
 
+        {/* Branch Scope */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: '1 1 340px' }}>
           <Layers size={16} style={{ color: '#a855f7' }} />
           <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
@@ -407,7 +516,7 @@ export default function OrderPipelineConfig({ userCompany = 'New Swan Group' }) 
               fontWeight: 700
             }}
           >
-            {BRANCHES.map(b => (
+            {availableBranches.map(b => (
               <option key={b.code} value={b.code}>
                 {b.label}
               </option>
