@@ -108,4 +108,19 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
   15. **Preservation of Golden Backups**: The folders `CRM-Backups Plivo Calling Perfect 2.1/`, `CRM-Backups Plivo Calling Perfect 2.5/`, `CRM-Backups Plivo Calling Perfect 2.9/`, and `CRM-Backups Plivo Calling Perfect 2.14/` are permanent golden backups and must NEVER be deleted, overwritten, purged, or modified under any circumstances.
 - **Documentation Only**: Recording this fixed baseline must not change runtime files, database data, credentials, or either runtime version. Version increment rules apply only to a future explicitly requested and approved product update.
 
+# Mandatory Universal Page, Sub-Page & Tab Registration Rule (Zero-Orphan Tab Policy)
+- **Mandatory Synchronous Registration**: Whenever any AI assistant or developer creates, adds, renames, or modifies ANY Module, Page, Sub-Page, Sub-Tab, Pipeline Stage, or Workflow Step anywhere in the CRM (UI components, sidebar, routes, modals), they MUST AT THE SAME TIME register and synchronize it across all 4 core permission pillars:
+  1. **Source of Truth (`src/config/modulesConfig.jsx`)**:
+     - The module and its complete `subItems` array MUST be registered with exact matching `id` and descriptive `label`.
+     - Sub-tab counts displayed in UI badges MUST 100% match the actual rendered tabs in the component.
+     - Never leave `subItems` undefined or mismatched with actual component tabs.
+  2. **Defensive Backward-Compatibility (`src/utils/permissionUtils.js`)**:
+     - Whenever a new sub-tab or stage is introduced, a defensive fallback MUST be added in `getSubItemPermissions` so existing active users who already possess the parent module's access seamlessly inherit access to the new sub-item without getting locked out.
+  3. **Role Presets Synchronization (`src/components/UserManagement/utils/rolePresets.js`)**:
+     - All affected predefined role templates (Master Admin, Admin, Manager, HOD, Executive, Telecaller) MUST be immediately updated to include the new sub-item in their `sub_items` payload.
+  4. **CRM Container Permitted Registry (`src/components/CRMContainer.jsx`)**:
+     - Ensure `isTabPermitted`, `salesTabs`/`purchaseTabs`, and the sidebar navigation renderers recognize the new page or stage with correct category mapping.
+- **Strict Verification Before Turn Completion**: Before marking any task involving a new page/tab complete, the AI MUST verify that the new item appears in the Role & Permission Matrix and that no discrepancy exists between sidebar tabs and permission checkboxes.
+
+
 
