@@ -628,6 +628,19 @@ export default function OrderDeliveryPipeline({
                         <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
                           📅 {formatIST(order.created_at)}
                         </div>
+                        {order.order_number?.endsWith('-B') ? (
+                          <div style={{ marginTop: '0.2rem' }}>
+                            <span style={{ fontSize: '0.66rem', fontWeight: 800, padding: '1px 5px', borderRadius: '4px', background: 'rgba(245,158,11,0.15)', color: '#d97706', border: '1px solid rgba(245,158,11,0.3)' }}>
+                              LOT-B (IN ASSEMBLY)
+                            </span>
+                          </div>
+                        ) : (Array.isArray(order.stage_history) && order.stage_history.some(h => h.stage_id === 'PARTIAL_LOT_DISPATCH')) ? (
+                          <div style={{ marginTop: '0.2rem' }}>
+                            <span style={{ fontSize: '0.66rem', fontWeight: 800, padding: '1px 5px', borderRadius: '4px', background: 'rgba(37,99,235,0.12)', color: '#2563eb', border: '1px solid rgba(37,99,235,0.25)' }}>
+                              LOT-A DISPATCH
+                            </span>
+                          </div>
+                        ) : null}
                         {order.order_status === 'FULL_PAID' && (
                           <div style={{ marginTop: '0.25rem' }}>
                             <span style={{ fontSize: '0.68rem', fontWeight: 800, padding: '0.15rem 0.4rem', borderRadius: '4px', background: 'rgba(16,185,129,0.15)', color: '#10b981' }}>

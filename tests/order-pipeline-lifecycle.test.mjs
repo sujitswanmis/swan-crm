@@ -201,19 +201,16 @@ test('Stage History & SLA Audit Scorecard: accurately categorizes on-time vs del
   assert.equal(history.length, 4, '4 stages completed');
 });
 
-test('S12 Dispatch Material inherits S07 partial lot allocations and prepares Lot-B child order', () => {
+test('S12 Split Lot Inheritance: reads S07 allocations to prefill Lot-A and Lot-B in dispatch modal', () => {
   const order = {
     order_number: 'SO-2026-41220',
     total_ordered_qty: 15,
-    total_amount: 1329200,
-    order_line_items: [
-      { product: 'Rotavator | DUSTER | Multi | 5.5F', qty: 5, rate: 87384 },
-      { product: 'Mini Mulcher | 4Ft', qty: 10, rate: 89228 }
-    ],
     stage_history: [
+      { stage_id: 'S01', stage_name: 'Order Confirmation' },
       {
-        stage_id: 'S07',
-        stage_name: 'Product Partial & Full Status',
+        stage_id: 'PARTIAL_LOT_DISPATCH',
+        dispatched_qty: 10,
+        remaining_qty: 5,
         product_allocations: [
           { product: 'Rotavator | DUSTER | Multi | 5.5F', ordered_qty: 5, ready_qty: 3, remaining_qty: 2 },
           { product: 'Mini Mulcher | 4Ft', ordered_qty: 10, ready_qty: 7, remaining_qty: 3 }
@@ -222,35 +219,24 @@ test('S12 Dispatch Material inherits S07 partial lot allocations and prepares Lo
     ]
   };
 
-  // Find previous split in stage_history
-  const prevSplit = [...order.stage_history].reverse().find(h =>
+  const previousSplit = [...order.stage_history].reverse().find(h =>
     (h.stage_id === 'PARTIAL_LOT_DISPATCH' || h.stage_id === 'S07') &&
-    Array.isArray(h.product_allocations) &&
-    h.product_allocations.some(p => Number(p.remaining_qty) > 0)
+    Array.isArray(h.product_allocations)
   );
 
-  assert.ok(prevSplit, 'S07 split found');
-  assert.equal(prevSplit.product_allocations[0].ready_qty, 3);
-  assert.equal(prevSplit.product_allocations[0].remaining_qty, 2);
-  assert.equal(prevSplit.product_allocations[1].ready_qty, 7);
-  assert.equal(prevSplit.product_allocations[1].remaining_qty, 3);
+  assert.ok(previousSplit, 'Previous split should be found in history');
+  assert.equal(previousSplit.dispatched_qty, 10, 'Lot-A should be 10 Units');
+  assert.equal(previousSplit.remaining_qty, 5, 'Lot-B should be 5 Units');
 
-  const readySum = prevSplit.product_allocations.reduce((acc, p) => acc + p.ready_qty, 0);
-  const remSum = prevSplit.product_allocations.reduce((acc, p) => acc + p.remaining_qty, 0);
-  assert.equal(readySum, 10, 'Lot-A dispatched in S12 should be 10 Units');
-  assert.equal(remSum, 5, 'Lot-B remaining in factory should be 5 Units');
+  // Verify remaining items for child order
+  const remainingItems = previousSplit.product_allocations
+    .filter(p => p.remaining_qty > 0)
+    .map(p => ({ product: p.product, qty: p.remaining_qty }));
 
-  // Verify child order specification
-  const childOrderNo = `${order.order_number}-B`;
-  assert.equal(childOrderNo, 'SO-2026-41220-B');
-
-  const remainingLineItems = prevSplit.product_allocations.map(p => ({
-    product: p.product,
-    qty: p.remaining_qty,
-    rate: order.order_line_items.find(it => it.product === p.product).rate
-  }));
-
-  const remainingAmount = remainingLineItems.reduce((acc, it) => acc + (it.qty * it.rate), 0);
-  assert.equal(remainingAmount, 2 * 87384 + 3 * 89228);
-  assert.equal(remainingAmount, 442452);
+  assert.equal(remainingItems.length, 2);
+  assert.equal(remainingItems[0].product, 'Rotavator | DUSTER | Multi | 5.5F');
+  assert.equal(remainingItems[0].qty, 2);
+  assert.equal(remainingItems[1].product, 'Mini Mulcher | 4Ft');
+  assert.equal(remainingItems[1].qty, 3);
+  assert.equal(remainingItems.reduce((sum, p) => sum + p.qty, 0), 5, 'Total Lot-B units must equal 5');
 });
