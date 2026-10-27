@@ -18,23 +18,6 @@ const ALL_TENANTS = [
   { code: 'TNT00003', name: 'Testing NSG' }
 ];
 
-const TENANT_BRANCHES_MAP = {
-  TNT00002: [
-    { code: 'All Branches', label: 'All Branches (Default Baseline)' },
-    { code: 'NSMLR [TNT00002-B0001]', label: 'NSMLR — Ludhiana Plant [TNT00002-B0001]' },
-    { code: 'NSTL [TNT00002-B0002]', label: 'NSTL — Tubing Line [TNT00002-B0002]' },
-    { code: 'NSMTL [TNT00002-B0003]', label: 'NSMTL — Modern Tech [TNT00002-B0003]' }
-  ],
-  TNT00001: [
-    { code: 'All Branches', label: 'All Branches (Default Baseline)' },
-    { code: 'NSW-01 [TNT00001-B0001]', label: 'SuPuja Creations — Plant 1 [TNT00001-B0001]' }
-  ],
-  TNT00003: [
-    { code: 'All Branches', label: 'All Branches (Default Baseline)' },
-    { code: 'TEST-B01 [TNT00003-B0001]', label: 'Testing NSG — Branch 1 [TNT00003-B0001]' }
-  ]
-};
-
 const DEPARTMENTS = [
   'Sales / Order Desk',
   'Accounts / Billing',
@@ -89,7 +72,7 @@ export default function OrderPipelineConfig({
   const [selectedBranch, setSelectedBranch] = useState('All Branches');
   const [dynamicBranches, setDynamicBranches] = useState([]);
 
-  // Load actual dynamic branches for selected tenant
+  // Load actual registered branches for selected tenant strictly from system records
   useEffect(() => {
     async function loadBranches() {
       try {
@@ -97,35 +80,34 @@ export default function OrderPipelineConfig({
         const res = await getTenantBranches(tenantObj.name);
         if (res?.success && Array.isArray(res.branches)) {
           setDynamicBranches(res.branches);
+        } else {
+          setDynamicBranches([]);
         }
-      } catch (_) {}
+      } catch (_) {
+        setDynamicBranches([]);
+      }
     }
     loadBranches();
   }, [selectedTenant, userTenant]);
 
-  // Combine static and dynamic branches for selected tenant strictly
+  // Construct branches list strictly from registered branches (No duplicates)
   const availableBranches = useMemo(() => {
-    const baseList = TENANT_BRANCHES_MAP[selectedTenant] || [
+    const list = [
       { code: 'All Branches', label: 'All Branches (Default Baseline)' }
     ];
 
-    if (dynamicBranches.length > 0) {
-      const addedCodes = new Set(baseList.map(b => b.code));
-      const extras = [];
-      dynamicBranches.forEach(db => {
-        const branchCode = db.branch_code || db.id;
-        const branchName = db.name || db.branch_name || 'Branch';
-        const formattedCode = `${branchName} [${branchCode}]`;
-        if (!addedCodes.has(formattedCode) && !addedCodes.has(branchCode)) {
-          extras.push({ code: formattedCode, label: formattedCode });
-          addedCodes.add(formattedCode);
-        }
+    (dynamicBranches || []).forEach(db => {
+      const branchCode = db.branch_code || db.id;
+      const branchName = db.branch_name || db.name || 'Branch';
+      const label = `${branchName} [${branchCode}]`;
+      list.push({
+        code: label,
+        label: label
       });
-      return [...baseList, ...extras];
-    }
+    });
 
-    return baseList;
-  }, [selectedTenant, dynamicBranches]);
+    return list;
+  }, [dynamicBranches]);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
