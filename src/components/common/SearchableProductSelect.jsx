@@ -186,81 +186,69 @@ export default function SearchableProductSelect({
           boxSizing: 'border-box'
         }}
       >
-        <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: '0.45rem', overflow: 'hidden' }}>
-          <Package size={15} style={{ color: isOpen ? 'var(--accent-color, #2563eb)' : 'var(--text-secondary, #64748b)', flexShrink: 0 }} />
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
+          <Package size={16} style={{ color: isOpen ? 'var(--accent-color, #2563eb)' : 'var(--text-secondary, #64748b)', flexShrink: 0 }} />
 
           {currentSelected?.name ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', minWidth: 0, overflow: 'hidden', flexWrap: 'nowrap' }}>
-              <span style={{
-                fontSize: '0.82rem',
-                fontWeight: 600,
-                color: 'var(--text-primary, #0f172a)',
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis'
-              }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0, flex: 1, flexWrap: 'nowrap' }}>
+              <span
+                title={currentSelected.name}
+                style={{
+                  fontSize: '0.86rem',
+                  fontWeight: 600,
+                  color: 'var(--text-primary, #0f172a)',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  flex: 1
+                }}
+              >
                 {currentSelected.name}
               </span>
 
               {currentSelected.sku && (
-                <span style={{
-                  flexShrink: 0,
-                  fontSize: '0.68rem',
-                  fontWeight: 700,
-                  padding: '1px 5px',
-                  borderRadius: '4px',
-                  background: 'rgba(56,189,248,0.12)',
-                  color: '#0284c7',
-                  border: '1px solid rgba(56,189,248,0.25)'
-                }}>
+                <span
+                  title={`SKU: ${currentSelected.sku}`}
+                  style={{
+                    flexShrink: 0,
+                    fontSize: '0.7rem',
+                    fontWeight: 700,
+                    padding: '1px 6px',
+                    borderRadius: '4px',
+                    background: 'rgba(56,189,248,0.12)',
+                    color: '#0284c7',
+                    border: '1px solid rgba(56,189,248,0.25)',
+                    whiteSpace: 'nowrap'
+                  }}
+                >
                   {currentSelected.sku}
-                </span>
-              )}
-
-              {currentSelected.category && (
-                <span style={{
-                  flexShrink: 0,
-                  fontSize: '0.66rem',
-                  padding: '1px 5px',
-                  borderRadius: '4px',
-                  background: 'rgba(148,163,184,0.12)',
-                  color: 'var(--text-secondary, #64748b)'
-                }}>
-                  {currentSelected.category}
                 </span>
               )}
             </div>
           ) : (
-            <span style={{ fontSize: '0.82rem', color: 'var(--text-muted, #94a3b8)' }}>
+            <span style={{ fontSize: '0.84rem', color: 'var(--text-muted, #94a3b8)' }}>
               {placeholder}
             </span>
           )}
         </div>
 
-        {/* Right Action / Search Badge */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}>
-          {currentSelected?.price != null && (
-            <span style={{
-              fontSize: '0.78rem',
-              fontWeight: 700,
-              color: '#059669'
-            }}>
-              ₹{Number(currentSelected.price).toLocaleString('en-IN')}
-            </span>
-          )}
-
-          <div style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '0.2rem',
-            padding: '2px 7px',
-            borderRadius: '5px',
-            background: isOpen ? 'var(--accent-color, #2563eb)' : 'rgba(37,99,235,0.08)',
-            color: isOpen ? '#ffffff' : 'var(--accent-color, #2563eb)',
-            fontSize: '0.7rem',
-            fontWeight: 700,
-            border: isOpen ? 'none' : '1px solid rgba(37,99,235,0.2)'
-          }}>
+        {/* Right Action: Clean Search Trigger */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexShrink: 0 }}>
+          <div
+            title="Click to search or change product"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.25rem',
+              padding: '2px 7px',
+              borderRadius: '5px',
+              background: isOpen ? 'var(--accent-color, #2563eb)' : 'rgba(37,99,235,0.08)',
+              color: isOpen ? '#ffffff' : 'var(--accent-color, #2563eb)',
+              fontSize: '0.72rem',
+              fontWeight: 600,
+              border: isOpen ? 'none' : '1px solid rgba(37,99,235,0.2)'
+            }}
+          >
             <Search size={11} />
             <span>Search</span>
             <ChevronDown size={11} style={{ transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s ease' }} />

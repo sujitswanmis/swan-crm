@@ -153,8 +153,8 @@ export default function OrderRevisionModal({
         background: 'var(--bg-surface)',
         border: '1px solid var(--border-light)',
         borderRadius: '14px',
-        width: '100%',
-        maxWidth: '920px',
+        width: '96%',
+        maxWidth: '1200px',
         maxHeight: '90vh',
         display: 'flex',
         flexDirection: 'column',
@@ -250,7 +250,7 @@ export default function OrderRevisionModal({
               <div
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: 'minmax(320px, 1fr) 90px 130px 130px 38px',
+                  gridTemplateColumns: '1fr 95px 135px 135px 38px',
                   gap: '0.65rem',
                   padding: '0.35rem 0.75rem',
                   fontSize: '0.72rem',
@@ -273,7 +273,7 @@ export default function OrderRevisionModal({
                     key={idx}
                     style={{
                       display: 'grid',
-                      gridTemplateColumns: 'minmax(320px, 1fr) 90px 130px 130px 38px',
+                      gridTemplateColumns: '1fr 95px 135px 135px 38px',
                       gap: '0.65rem',
                       alignItems: 'center',
                       background: 'var(--bg-primary)',
