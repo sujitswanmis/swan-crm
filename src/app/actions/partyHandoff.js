@@ -261,37 +261,39 @@ export async function sendLeadToParty(leadId, userId, tenantId = null) {
 /**
  * Fetch all leads transferred to Party Master (S00) scoped to workspace tenant
  */
-export async function getTransferredLeads(tenantId = DEFAULT_TENANT_ID) {
+export async function getTransferredLeads(tenantId = DEFAULT_TENANT_ID, enableAutoHeal = false) {
   const adminClient = getAdminClient();
   try {
-    // 0. Auto-Heal: Ensure any leads marked "Transfer to Party Master" in leads table are recorded in handoffs
-    try {
-      // NOTE: leads table has no tenant_id column; tenant scoping is strictly applied via lead_party_handoffs and party_master
-      const { data: markedLeads } = await adminClient
-        .from('leads')
-        .select('id')
-        .ilike('status', '%transfer to party master%')
-        .limit(50);
+    // 0. Auto-Heal: Only run heavy scan if explicitly requested (prevents 30s polling from pegging DB CPU at 100%)
+    if (enableAutoHeal) {
+      try {
+        // Use exact status matches instead of table-wide '%...%' ilike scans
+        const { data: markedLeads } = await adminClient
+          .from('leads')
+          .select('id')
+          .in('status', ['Transfer to Party Master', 'Transfer to Party Master (S00)'])
+          .limit(50);
 
-      if (markedLeads && markedLeads.length > 0) {
-        const { data: existingHandoffs } = await adminClient
-          .from('lead_party_handoffs')
-          .select('lead_id')
-          .in('lead_id', markedLeads.map(l => l.id));
+        if (markedLeads && markedLeads.length > 0) {
+          const { data: existingHandoffs } = await adminClient
+            .from('lead_party_handoffs')
+            .select('lead_id')
+            .in('lead_id', markedLeads.map(l => l.id));
 
-        const existingSet = new Set((existingHandoffs || []).map(h => h.lead_id));
-        const missingLeads = markedLeads.filter(l => !existingSet.has(l.id));
+          const existingSet = new Set((existingHandoffs || []).map(h => h.lead_id));
+          const missingLeads = markedLeads.filter(l => !existingSet.has(l.id));
 
-        for (const m of missingLeads) {
-          try {
-            await sendLeadToParty(m.id, null, tenantId);
-          } catch (autoErr) {
-            console.warn('Auto-heal sendLeadToParty notice:', autoErr.message);
+          for (const m of missingLeads) {
+            try {
+              await sendLeadToParty(m.id, null, tenantId);
+            } catch (autoErr) {
+              console.warn('Auto-heal sendLeadToParty notice:', autoErr.message);
+            }
           }
         }
+      } catch (healErr) {
+        console.warn('Auto-heal check warning:', healErr.message);
       }
-    } catch (healErr) {
-      console.warn('Auto-heal check warning:', healErr.message);
     }
 
     let hQuery = adminClient

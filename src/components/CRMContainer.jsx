@@ -350,16 +350,15 @@ export default function CRMContainer({
       })
       .subscribe();
 
-    // 2. Postgres changes fallback on user_roles
+    // 2. Postgres changes fallback on user_roles (filters inside callback to prevent Realtime P0001 column filter error)
     const roleChannel = supabase
       .channel(`user_role_realtime_${userId}`)
       .on('postgres_changes', { 
         event: 'UPDATE', 
         schema: 'public', 
-        table: 'user_roles', 
-        filter: `user_id=eq.${userId}` 
+        table: 'user_roles' 
       }, (payload) => {
-        if (payload.new && payload.new.module_access) {
+        if (payload?.new && (payload.new.user_id === userId || payload.new.id === userId) && payload.new.module_access) {
           setModuleAccess(payload.new.module_access);
         }
       })
@@ -1904,10 +1903,14 @@ export default function CRMContainer({
           if (!_agentCompanyFilter && assignees.length <= new Set([userId, userName].filter(Boolean)).size) return [];
           const assigned = [];
           for (let page = 0; page < 100; page++) {
-            const { data, error } = await supabase
+            let assignedQuery = supabase
               .from('leads')
               .select('*')
-              .in('assigned_to', assignees)
+              .in('assigned_to', assignees);
+            if (_agentCompanyFilter) {
+              assignedQuery = assignedQuery.eq('our_company', _agentCompanyFilter);
+            }
+            const { data, error } = await assignedQuery
               .order('created_at', { ascending: false })
               .order('id')
               .range(page * 1000, (page + 1) * 1000 - 1);
