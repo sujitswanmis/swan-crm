@@ -22,6 +22,18 @@ import MaskedPhoneDisplay from '../common/MaskedPhoneDisplay';
 import StandardTablePagination from '../common/StandardTablePagination';
 import { fetchPartyWorkspaceResource } from '@/utils/partyWorkspaceCache';
 
+const formatRescheduledDisplay = (val) => {
+  if (!val) return '—';
+  if (val.includes('(')) return val;
+  try {
+    const d = new Date(val);
+    if (isNaN(d.getTime())) return val;
+    return d.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' });
+  } catch (_) {
+    return val;
+  }
+};
+
 export default function DailyFollowupQueueTable({
   queue = [],
   loading = false,
@@ -336,8 +348,23 @@ export default function DailyFollowupQueueTable({
       }
 
       let resolvedRescheduledTime = null;
+      let finalFollowupNotes = callNotes || '';
       if (callOutcome === 'RESCHEDULED' && rescheduleDate) {
-        resolvedRescheduledTime = `${rescheduleDate} (${rescheduleTimeSlot})`;
+        let slotHour = 11;
+        let slotMin = 0;
+        const match = (rescheduleTimeSlot || '').match(/^(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+        if (match) {
+          let h = parseInt(match[1], 10);
+          const m = parseInt(match[2], 10);
+          const ampm = match[3].toUpperCase();
+          if (ampm === 'PM' && h < 12) h += 12;
+          if (ampm === 'AM' && h === 12) h = 0;
+          slotHour = h;
+          slotMin = m;
+        }
+        const pad = (n) => String(n).padStart(2, '0');
+        resolvedRescheduledTime = `${rescheduleDate}T${pad(slotHour)}:${pad(slotMin)}:00+05:30`;
+        finalFollowupNotes = (finalFollowupNotes ? `${finalFollowupNotes} | ` : '') + `[Rescheduled Slot: ${rescheduleTimeSlot}]`;
       }
 
       const res = await saveOrderFollowupAndRecur({
@@ -354,7 +381,7 @@ export default function DailyFollowupQueueTable({
         next_followup_date: (callOutcome === 'RESCHEDULED' && rescheduleDate) ? rescheduleDate : null,
         no_order_reason: resolvedReason,
         rescheduled_time: resolvedRescheduledTime,
-        notes: callNotes
+        notes: finalFollowupNotes
       }, tenantId);
 
       if (res.success) {
@@ -541,7 +568,7 @@ export default function DailyFollowupQueueTable({
           billing_route: log.billing_route || '—',
           dispatch_date: log.preferred_dispatch_date || '—',
           no_order_reason: log.no_order_reason || '—',
-          rescheduled_time: log.rescheduled_time || '—',
+          rescheduled_time: formatRescheduledDisplay(log.rescheduled_time) || '—',
           notes: log.notes || '—'
         });
       });
@@ -1342,7 +1369,7 @@ export default function DailyFollowupQueueTable({
                               </div>
                             ) : log.rescheduled_time ? (
                               <div style={{ color: '#f59e0b', fontWeight: 600 }}>
-                                Callback at: {log.rescheduled_time}
+                                Callback at: {formatRescheduledDisplay(log.rescheduled_time)}
                               </div>
                             ) : (
                               <span style={{ color: 'var(--text-muted)' }}>—</span>
@@ -2076,7 +2103,7 @@ export default function DailyFollowupQueueTable({
 
                           {log.rescheduled_time && (
                             <div style={{ fontSize: '0.76rem', color: '#f59e0b', marginBottom: '0.35rem' }}>
-                              <strong>Callback Time:</strong> {log.rescheduled_time}
+                              <strong>Callback Time:</strong> {formatRescheduledDisplay(log.rescheduled_time)}
                             </div>
                           )}
 

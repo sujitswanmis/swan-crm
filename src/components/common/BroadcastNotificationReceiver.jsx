@@ -148,7 +148,11 @@ export default function BroadcastNotificationReceiver({ userId }) {
     try {
       db = createClient();
       channel = db.channel(`crm-announcements:${userId}`)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'crm_broadcast_recipients', filter: `user_id=eq.${userId}` }, () => refresh())
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'crm_broadcast_recipients' }, (payload) => {
+          if (!payload?.new?.user_id || payload.new.user_id === userId) {
+            refresh();
+          }
+        })
         .subscribe(status => { if (status === 'SUBSCRIBED') refresh(); });
     } catch { /* Periodic fetch remains available if realtime is unavailable. */ }
     document.addEventListener('visibilitychange', wake);

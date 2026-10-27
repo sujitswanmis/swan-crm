@@ -220,6 +220,38 @@ export async function saveOrderFollowupAndRecur(followupData, tenantId = DEFAULT
   }
 
   // 2B. Insert call log into party_order_followups
+  let validRescheduledTime = null;
+  let finalNotes = followupData.notes || '';
+  if (followupData.rescheduled_time) {
+    const rawTime = String(followupData.rescheduled_time).trim();
+    const parsed = Date.parse(rawTime);
+    if (!isNaN(parsed) && !rawTime.includes('(')) {
+      validRescheduledTime = new Date(parsed).toISOString();
+    } else {
+      // Parse "YYYY-MM-DD (HH:MM AM - HH:MM PM)"
+      const dateMatch = rawTime.match(/(\d{4}-\d{2}-\d{2})/);
+      const timeMatch = rawTime.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+      if (dateMatch) {
+        const dStr = dateMatch[1];
+        let h = 11;
+        let m = 0;
+        if (timeMatch) {
+          h = parseInt(timeMatch[1], 10);
+          m = parseInt(timeMatch[2], 10);
+          const ampm = timeMatch[3].toUpperCase();
+          if (ampm === 'PM' && h < 12) h += 12;
+          if (ampm === 'AM' && h === 12) h = 0;
+        }
+        const pad = (n) => String(n).padStart(2, '0');
+        validRescheduledTime = `${dStr}T${pad(h)}:${pad(m)}:00+05:30`;
+        const slotMatch = rawTime.match(/\(([^)]+)\)/);
+        if (slotMatch && !finalNotes.includes(slotMatch[1])) {
+          finalNotes = (finalNotes ? `${finalNotes} | ` : '') + `[Rescheduled Slot: ${slotMatch[1]}]`;
+        }
+      }
+    }
+  }
+
   const callPayload = {
     tenant_id: effectiveTenantId,
     party_id: followupData.party_id,
@@ -233,8 +265,8 @@ export async function saveOrderFollowupAndRecur(followupData, tenantId = DEFAULT
     billing_route: followupData.billing_route || 'DIRECT_COMPANY_BILLING',
     preferred_dispatch_date: followupData.preferred_dispatch_date || null,
     no_order_reason: followupData.no_order_reason || '',
-    rescheduled_time: followupData.rescheduled_time || null,
-    notes: followupData.notes || '',
+    rescheduled_time: validRescheduledTime,
+    notes: finalNotes,
     created_at: new Date().toISOString()
   };
 
