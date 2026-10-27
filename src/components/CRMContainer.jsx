@@ -9,7 +9,7 @@ import { isFeatureEntitled } from '@/utils/saasEntitlements';
 import SubscriptionExpiryBanner from './SaaS/SubscriptionExpiryBanner';
 import SubscriptionExpiredModal from './SaaS/SubscriptionExpiredModal';
 import AddonPurchaseModal from './SaaS/AddonPurchaseModal';
-import { Database, LayoutDashboard, Users, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, MessageSquare, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen, Building2, MapPin, ShieldCheck, Camera, User, Upload, Loader2, Trash2, Calendar, Clock, AlertTriangle, AlertCircle, X, ExternalLink, CheckSquare, WifiOff, Sparkles, Volume2, CheckCircle2, Play, Settings2, FormInput, Workflow, Monitor, Target, FileType, Compass, Layers, Network, Activity, Crown, GitMerge, Sliders, Send, Mail, Zap, Package } from 'lucide-react';
+import { Database, LayoutDashboard, Users, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, MessageSquare, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen, Building2, MapPin, ShieldCheck, Camera, User, Upload, Loader2, Trash2, Calendar, Clock, AlertTriangle, AlertCircle, X, ExternalLink, CheckSquare, WifiOff, Sparkles, Volume2, CheckCircle2, Play, Settings2, FormInput, Workflow, Monitor, Target, FileType, Compass, Layers, Network, Activity, Crown, GitMerge, Sliders, Send, Mail, Zap, Package, Truck } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { getTeamMembers } from '@/app/actions/team';
@@ -92,6 +92,7 @@ const THEMES = [
 const SETTINGS_MODULE_ITEMS = [
   { id: 'business', label: 'Business Profile & Branches', icon: Building2 },
   { id: 'products', label: 'Product List', icon: Package },
+  { id: 'order_pipeline', label: 'Order to Delivery Config', icon: Truck },
   { id: 'crm', label: 'CRM & Lead Config', icon: Settings2 },
   { id: 'fields', label: 'Custom Fields', icon: FormInput },
   { id: 'templates', label: 'Message & WhatsApp Templates', icon: MessageSquare },
@@ -3303,6 +3304,7 @@ export default function CRMContainer({
   const handleSettingSubTabChange = (subTabId) => {
     let cleanSub = subTabId;
     if (cleanSub === 'products' || cleanSub === 'product-list' || cleanSub === 'products-list') cleanSub = 'products';
+    if (cleanSub === 'order_pipeline' || cleanSub === 'order-pipeline' || cleanSub === 'order-config' || cleanSub === 'order_config') cleanSub = 'order_pipeline';
     if (cleanSub === 'crm-config' || cleanSub === 'crm_config') cleanSub = 'crm';
     if (cleanSub === 'custom-fields' || cleanSub === 'custom_fields') cleanSub = 'fields';
     if (cleanSub === 'business-profile' || cleanSub === 'branches') cleanSub = 'business';

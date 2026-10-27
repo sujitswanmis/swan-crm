@@ -101,6 +101,10 @@ export function getSubItemPermissions(moduleAccess, userRole, moduleId, subItemI
       if (moduleId === 'email_config') {
         return { view: parentPerms.view, add: parentPerms.add, edit: parentPerms.edit, delete: false };
       }
+      // If this is order_pipeline in settings, inherit from parent settings view if not explicitly disabled
+      if (moduleId === 'settings' && subItemId === 'order_pipeline') {
+        return { view: parentPerms.view, add: parentPerms.add, edit: parentPerms.edit, delete: false };
+      }
       // Legacy WhatsApp Unofficial alias compatibility (templates <-> live_chat)
       if (moduleId === 'whatsapp_unofficial' && subItemId === 'templates' && subItems['live_chat'] !== undefined) {
         const legacy = subItems['live_chat'];
