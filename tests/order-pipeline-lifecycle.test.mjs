@@ -122,3 +122,47 @@ test('Granular permissions: channel_ops contains all_orders and s01..s13 in modu
   const allOrdersPerm = getSubItemPermissions(granularAccess, 'Staff', 'channel_ops', 'all_orders');
   assert.equal(allOrdersPerm.view, false, 'Explicitly denied all_orders is false');
 });
+
+test('Option A: Product-wise partial split allocation calculates remaining quantities and total sums accurately', () => {
+  const lineItems = [
+    { product: 'Rotavator | MINI | Single | 2.5ft', qty: 5 },
+    { product: 'Mini Mulcher | 3Ft', qty: 10 }
+  ];
+
+  let allocations = lineItems.map((it, idx) => ({
+    id: idx,
+    product: it.product,
+    ordered_qty: it.qty,
+    ready_qty: it.qty,
+    remaining_qty: 0
+  }));
+
+  // Initial state: all ready
+  let totalDispatched = allocations.reduce((sum, p) => sum + p.ready_qty, 0);
+  let totalRemaining = allocations.reduce((sum, p) => sum + p.remaining_qty, 0);
+  assert.equal(totalDispatched, 15);
+  assert.equal(totalRemaining, 0);
+
+  // User sets: Rotavator = 5 (all ready), Mini Mulcher = 2 (ready)
+  const updateAlloc = (idx, val) => {
+    const item = allocations[idx];
+    const ready = Math.min(item.ordered_qty, Math.max(0, val));
+    allocations[idx] = {
+      ...item,
+      ready_qty: ready,
+      remaining_qty: item.ordered_qty - ready
+    };
+  };
+
+  updateAlloc(0, 5); // 5 ready, 0 remaining
+  updateAlloc(1, 2); // 2 ready, 8 remaining
+
+  assert.equal(allocations[0].remaining_qty, 0, 'Rotavator remaining should be 0');
+  assert.equal(allocations[1].remaining_qty, 8, 'Mini Mulcher remaining should be 8');
+
+  totalDispatched = allocations.reduce((sum, p) => sum + p.ready_qty, 0);
+  totalRemaining = allocations.reduce((sum, p) => sum + p.remaining_qty, 0);
+
+  assert.equal(totalDispatched, 7, 'Total ready for Lot-A should be 7 Units');
+  assert.equal(totalRemaining, 8, 'Total remaining for Lot-B should be 8 Units');
+});

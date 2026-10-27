@@ -41,6 +41,7 @@ export default function StageActionModal({
   const [customValues, setCustomValues] = useState({});
   const [note, setNote] = useState('');
   const [isPartialLot, setIsPartialLot] = useState(false);
+  const [productAllocations, setProductAllocations] = useState([]);
   const [partialLotData, setPartialLotData] = useState({
     lot_no: 'Lot-A',
     dispatched_qty: 1,
@@ -113,10 +114,31 @@ export default function StageActionModal({
     setNote(targetStage.default_note || '');
     setErrorMsg('');
     setIsPartialLot(false);
+
+    // Initialize product-wise allocations from order_line_items or fallback
+    const rawItems = Array.isArray(order.order_line_items) && order.order_line_items.length > 0
+      ? order.order_line_items
+      : [{ product: order.product_name || 'Standard Product', qty: totalQty }];
+
+    const initialAlloc = rawItems.map((it, idx) => {
+      const q = Number(it.qty) || 1;
+      return {
+        id: idx,
+        product: it.product || it.name || `Product #${idx + 1}`,
+        ordered_qty: q,
+        ready_qty: q,
+        remaining_qty: 0
+      };
+    });
+    setProductAllocations(initialAlloc);
+
+    const initReadySum = initialAlloc.reduce((sum, it) => sum + it.ready_qty, 0);
+    const initRemSum = initialAlloc.reduce((sum, it) => sum + it.remaining_qty, 0);
+
     setPartialLotData({
       lot_no: 'Lot-A',
-      dispatched_qty: Math.max(1, Math.floor(totalQty / 2)),
-      remaining_qty: Math.max(0, totalQty - Math.max(1, Math.floor(totalQty / 2))),
+      dispatched_qty: initReadySum,
+      remaining_qty: initRemSum,
       transporter_name: order.transporter_name || '',
       lr_number: order.lr_number || '',
       vehicle_number: order.vehicle_number || ''
@@ -129,13 +151,55 @@ export default function StageActionModal({
     setCustomValues(prev => ({ ...prev, [fieldId]: val }));
   };
 
+  const handleProductAllocChange = (index, val) => {
+    setProductAllocations(prev => {
+      const updated = [...prev];
+      const item = updated[index];
+      if (!item) return prev;
+
+      const numVal = Math.min(item.ordered_qty, Math.max(0, Number(val) || 0));
+      const rem = Math.max(0, item.ordered_qty - numVal);
+
+      updated[index] = {
+        ...item,
+        ready_qty: numVal,
+        remaining_qty: rem
+      };
+
+      const totalDispatched = updated.reduce((sum, it) => sum + (Number(it.ready_qty) || 0), 0);
+      const totalRemaining = updated.reduce((sum, it) => sum + (Number(it.remaining_qty) || 0), 0);
+
+      setPartialLotData(d => ({
+        ...d,
+        dispatched_qty: totalDispatched,
+        remaining_qty: totalRemaining
+      }));
+
+      return updated;
+    });
+  };
+
   const handlePartialLotChange = (field, val) => {
     const totalQty = Number(order.total_ordered_qty) || 1;
     let updated = { ...partialLotData, [field]: val };
     if (field === 'dispatched_qty') {
-      const dQty = Math.min(totalQty, Math.max(1, Number(val) || 1));
+      const dQty = Math.min(totalQty, Math.max(0, Number(val) || 0));
       updated.dispatched_qty = dQty;
       updated.remaining_qty = Math.max(0, totalQty - dQty);
+
+      // Distribute dQty sequentially across product allocations
+      setProductAllocations(prev => {
+        let remainingToDistribute = dQty;
+        return prev.map(item => {
+          const alloc = Math.min(item.ordered_qty, remainingToDistribute);
+          remainingToDistribute = Math.max(0, remainingToDistribute - alloc);
+          return {
+            ...item,
+            ready_qty: alloc,
+            remaining_qty: Math.max(0, item.ordered_qty - alloc)
+          };
+        });
+      });
     }
     setPartialLotData(updated);
   };
@@ -163,6 +227,7 @@ export default function StageActionModal({
         // Dispatch partial lot
         const lotRes = await dispatchPartialLot(order.id, {
           ...partialLotData,
+          product_allocations: productAllocations,
           notes: note
         }, userName, tenantId);
 
@@ -218,7 +283,7 @@ export default function StageActionModal({
         border: '1px solid var(--border-light)',
         borderRadius: '14px',
         width: '100%',
-        maxWidth: '680px',
+        maxWidth: '820px',
         maxHeight: '90vh',
         display: 'flex',
         flexDirection: 'column',
@@ -532,42 +597,143 @@ export default function StageActionModal({
                 </label>
 
                 {isPartialLot && (
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem', marginTop: '0.35rem' }}>
-                    <div>
-                      <label style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>Ready to Dispatch (Lot-A Units):</label>
-                      <input
-                        type="number"
-                        min="1"
-                        max={order.total_ordered_qty || 1}
-                        value={partialLotData.dispatched_qty}
-                        onChange={e => handlePartialLotChange('dispatched_qty', e.target.value)}
-                        style={{
-                          width: '100%',
-                          padding: '0.4rem 0.6rem',
-                          background: 'var(--bg-surface)',
-                          border: '1px solid var(--border-light)',
-                          borderRadius: '6px',
-                          color: 'var(--text-primary)',
-                          fontSize: '0.82rem'
-                        }}
-                      />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.35rem' }}>
+                    {/* Top Total Summary Cards */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem' }}>
+                      <div style={{
+                        padding: '0.6rem 0.85rem',
+                        background: 'rgba(37,99,235,0.08)',
+                        border: '1px solid rgba(37,99,235,0.25)',
+                        borderRadius: '8px'
+                      }}>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                          Ready to Dispatch (Lot-A):
+                        </div>
+                        <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#2563eb', marginTop: '0.15rem' }}>
+                          {partialLotData.dispatched_qty} Unit(s)
+                        </div>
+                      </div>
+
+                      <div style={{
+                        padding: '0.6rem 0.85rem',
+                        background: partialLotData.remaining_qty > 0 ? 'rgba(245,158,11,0.08)' : 'rgba(16,185,129,0.08)',
+                        border: `1px solid ${partialLotData.remaining_qty > 0 ? 'rgba(245,158,11,0.25)' : 'rgba(16,185,129,0.25)'}`,
+                        borderRadius: '8px'
+                      }}>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                          Remaining in Assembly (Lot-B):
+                        </div>
+                        <div style={{ fontSize: '1.15rem', fontWeight: 800, color: partialLotData.remaining_qty > 0 ? '#d97706' : '#10b981', marginTop: '0.15rem' }}>
+                          {partialLotData.remaining_qty} Unit(s)
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <label style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>Remaining in Assembly (Lot-B Units):</label>
-                      <input
-                        type="number"
-                        disabled
-                        value={partialLotData.remaining_qty}
-                        style={{
-                          width: '100%',
-                          padding: '0.4rem 0.6rem',
-                          background: 'var(--bg-primary)',
-                          border: '1px solid var(--border-light)',
-                          borderRadius: '6px',
-                          color: 'var(--text-secondary)',
-                          fontSize: '0.82rem'
-                        }}
-                      />
+
+                    {/* Product-Wise Dispatch Allocation Table */}
+                    <div style={{
+                      border: '1px solid var(--border-light)',
+                      borderRadius: '8px',
+                      overflow: 'hidden',
+                      background: 'var(--bg-surface)'
+                    }}>
+                      {/* Table Header */}
+                      <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'minmax(240px, 1fr) 85px 125px 150px',
+                        gap: '0.5rem',
+                        padding: '0.5rem 0.75rem',
+                        background: 'rgba(148,163,184,0.1)',
+                        fontSize: '0.72rem',
+                        fontWeight: 700,
+                        color: 'var(--text-secondary)',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.04em'
+                      }}>
+                        <div>Product Name</div>
+                        <div style={{ textAlign: 'center' }}>Ordered</div>
+                        <div style={{ textAlign: 'center' }}>Ready (Lot-A)</div>
+                        <div style={{ textAlign: 'center' }}>Remaining (Lot-B)</div>
+                      </div>
+
+                      {/* Product Rows */}
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        {productAllocations.map((item, idx) => (
+                          <div
+                            key={idx}
+                            style={{
+                              display: 'grid',
+                              gridTemplateColumns: 'minmax(240px, 1fr) 85px 125px 150px',
+                              gap: '0.5rem',
+                              alignItems: 'center',
+                              padding: '0.55rem 0.75rem',
+                              borderTop: idx > 0 ? '1px solid var(--border-light)' : 'none'
+                            }}
+                          >
+                            {/* Product Name */}
+                            <div style={{ fontSize: '0.84rem', fontWeight: 600, color: 'var(--text-primary)', wordBreak: 'break-word', lineHeight: 1.3 }}>
+                              {item.product}
+                            </div>
+
+                            {/* Ordered Qty */}
+                            <div style={{ textAlign: 'center', fontSize: '0.86rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
+                              {item.ordered_qty}
+                            </div>
+
+                            {/* Ready to Dispatch Input (Lot-A) */}
+                            <div style={{ display: 'flex', justifyContent: 'center' }}>
+                              <input
+                                type="number"
+                                min="0"
+                                max={item.ordered_qty}
+                                value={item.ready_qty}
+                                onChange={e => handleProductAllocChange(idx, e.target.value)}
+                                style={{
+                                  width: '85px',
+                                  padding: '0.35rem 0.5rem',
+                                  background: 'var(--bg-primary)',
+                                  border: '1.5px solid var(--accent-color, #2563eb)',
+                                  borderRadius: '6px',
+                                  color: 'var(--text-primary)',
+                                  fontSize: '0.86rem',
+                                  fontWeight: 700,
+                                  textAlign: 'center'
+                                }}
+                              />
+                            </div>
+
+                            {/* Remaining in Assembly (Lot-B) */}
+                            <div style={{ textAlign: 'center' }}>
+                              {item.remaining_qty === 0 ? (
+                                <span style={{
+                                  fontSize: '0.74rem',
+                                  fontWeight: 700,
+                                  color: '#059669',
+                                  background: 'rgba(16,185,129,0.12)',
+                                  padding: '2px 8px',
+                                  borderRadius: '12px',
+                                  border: '1px solid rgba(16,185,129,0.25)',
+                                  whiteSpace: 'nowrap'
+                                }}>
+                                  Full Ready (0)
+                                </span>
+                              ) : (
+                                <span style={{
+                                  fontSize: '0.74rem',
+                                  fontWeight: 700,
+                                  color: '#d97706',
+                                  background: 'rgba(245,158,11,0.12)',
+                                  padding: '2px 8px',
+                                  borderRadius: '12px',
+                                  border: '1px solid rgba(245,158,11,0.25)',
+                                  whiteSpace: 'nowrap'
+                                }}>
+                                  {item.remaining_qty} in Assembly
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 )}

@@ -746,6 +746,10 @@ export async function dispatchPartialLot(orderId, lotData = {}, dispatchedBy = '
     const nowISO = new Date().toISOString();
     const currentHistory = Array.isArray(currentOrder?.stage_history) ? currentOrder.stage_history : [];
     
+    const allocSummary = Array.isArray(lotData.product_allocations) && lotData.product_allocations.length > 0
+      ? lotData.product_allocations.map(p => `${p.ready_qty}/${p.ordered_qty}x ${p.product}`).join(', ')
+      : `${lotData.dispatched_qty || 0} Units`;
+
     const lotLog = {
       stage_id: 'PARTIAL_LOT_DISPATCH',
       stage_name: `Partial Lot Dispatched (${lotData.dispatched_qty || 0} Units)`,
@@ -757,14 +761,19 @@ export async function dispatchPartialLot(orderId, lotData = {}, dispatchedBy = '
       vehicle_number: lotData.vehicle_number || '',
       action_by: dispatchedBy,
       notes: lotData.notes || '',
+      product_allocations: lotData.product_allocations || [],
       created_at: nowISO
     };
+
+    const deliveryNoteText = lotData.transporter_name
+      ? `\n[Lot-A Dispatched]: ${lotData.dispatched_qty} Units (${allocSummary}) via ${lotData.transporter_name} (LR: ${lotData.lr_number || 'N/A'})`
+      : `\n[Lot-A Dispatched]: ${lotData.dispatched_qty} Units (${allocSummary})`;
 
     const payload = {
       transporter_name: lotData.transporter_name || currentOrder.transporter_name,
       lr_number: lotData.lr_number || currentOrder.lr_number,
       vehicle_number: lotData.vehicle_number || currentOrder.vehicle_number,
-      delivery_notes: `${currentOrder.delivery_notes || ''}\n[Lot-A Dispatched]: ${lotData.dispatched_qty} Units via ${lotData.transporter_name} (LR: ${lotData.lr_number})`,
+      delivery_notes: `${currentOrder.delivery_notes || ''}${deliveryNoteText}`,
       updated_at: nowISO
     };
 
