@@ -807,7 +807,7 @@ export default function StageActionModal({
               }}
             >
               <CheckCircle2 size={15} />
-              {saving ? 'Advancing Stage...' : `Advance to ${targetStage.id}`}
+              {saving ? 'Confirming Stage...' : `Confirm: ${targetStage.name} (${targetStage.id})`}
             </button>
           </div>
         </form>

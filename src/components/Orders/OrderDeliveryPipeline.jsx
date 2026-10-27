@@ -4,7 +4,7 @@ import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   Package, Truck, CheckCircle2, Clock, AlertTriangle, Search, Filter,
   RefreshCw, ChevronRight, FileText, ExternalLink, Calendar, MapPin,
-  Edit3, Ban, ArrowRight, Sparkles, Building2, Layers, Lock, ShieldCheck, UserCheck
+  Edit3, Ban, ArrowRight, Sparkles, Building2, Layers, Lock, ShieldCheck, UserCheck, History
 } from 'lucide-react';
 import { useTableColumnResize, ColumnResizer } from '@/utils/tableColumnResize';
 import { getOrderPipelineConfig } from '@/app/actions/orderPipelineConfig';
@@ -13,6 +13,7 @@ import StandardTablePagination from '../common/StandardTablePagination';
 import OrderRevisionModal from './modals/OrderRevisionModal';
 import CancelOrderModal from './modals/CancelOrderModal';
 import StageActionModal from './modals/StageActionModal';
+import OrderStageHistoryModal from './modals/OrderStageHistoryModal';
 
 // Master 13 Stages Baseline Fallback
 const DEFAULT_13_STAGES = [
@@ -220,6 +221,7 @@ export default function OrderDeliveryPipeline({
   // Modals state
   const [modifyingOrder, setModifyingOrder] = useState(null);
   const [cancellingOrder, setCancellingOrder] = useState(null);
+  const [historyOrder, setHistoryOrder] = useState(null);
   const [stageActionState, setStageActionState] = useState({
     isOpen: false,
     order: null,
@@ -633,6 +635,29 @@ export default function OrderDeliveryPipeline({
                             </span>
                           </div>
                         )}
+                        <div style={{ marginTop: '0.35rem' }}>
+                          <button
+                            type="button"
+                            onClick={() => setHistoryOrder(order)}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.3rem',
+                              padding: '2px 8px',
+                              borderRadius: '5px',
+                              background: 'rgba(56, 189, 248, 0.12)',
+                              border: '1px solid rgba(56, 189, 248, 0.3)',
+                              color: '#0284c7',
+                              fontSize: '0.71rem',
+                              fontWeight: 700,
+                              cursor: 'pointer'
+                            }}
+                            title="View stage history, SLA performance and full audit timeline"
+                          >
+                            <History size={12} />
+                            <span>Stage History</span>
+                          </button>
+                        </div>
                       </td>
 
                       {/* Partner */}
@@ -809,7 +834,7 @@ export default function OrderDeliveryPipeline({
                                     type="button"
                                     disabled={!canAdvance}
                                     onClick={() => canAdvance && handleOpenAdvance(order, nextStage)}
-                                    title={canAdvance ? `Confirm & Advance to ${nextStage.id}` : `Locked: ${nextAuth.reason || currentAuth.reason}`}
+                                    title={canAdvance ? `Confirm & Advance to ${nextStage.name} (${nextStage.id})` : `Locked: ${nextAuth.reason || currentAuth.reason}`}
                                     style={{
                                       width: '100%',
                                       padding: '0.35rem 0.65rem',
@@ -828,7 +853,7 @@ export default function OrderDeliveryPipeline({
                                     }}
                                   >
                                     {!canAdvance && <Lock size={12} />}
-                                    Confirm ➔ {nextStage.id}
+                                    Confirm ➔ {nextStage.name} ({nextStage.id})
                                   </button>
                                 )}
                               </div>
@@ -841,7 +866,7 @@ export default function OrderDeliveryPipeline({
                                 type="button"
                                 disabled={!canAdvance}
                                 onClick={() => canAdvance && handleOpenAdvance(order, nextStage)}
-                                title={canAdvance ? `Advance to ${nextStage.id} (${nextStage.name})` : `Locked: ${nextAuth.reason || currentAuth.reason}`}
+                                title={canAdvance ? `Confirm & Move to ${nextStage.name} (${nextStage.id})` : `Locked: ${nextAuth.reason || currentAuth.reason}`}
                                 style={{
                                   padding: '0.4rem 0.75rem',
                                   background: canAdvance ? (nextStage.color || '#2563eb') : '#64748b',
@@ -859,7 +884,7 @@ export default function OrderDeliveryPipeline({
                                 }}
                               >
                                 {!canAdvance && <Lock size={12} />}
-                                <span>Advance ➔ {nextStage.id}</span>
+                                <span>Confirm ➔ {nextStage.name} ({nextStage.id})</span>
                               </button>
                             );
                           }
@@ -930,6 +955,16 @@ export default function OrderDeliveryPipeline({
           tatMode={pipelineConfig?.tat_mode || 'DYNAMIC'}
           allowPartialSplit={pipelineConfig?.allow_partial_split_lots !== false}
           autoSkipBalanceOnFullAdvance={pipelineConfig?.auto_skip_balance_on_full_advance !== false}
+        />
+      )}
+
+      {/* Order Stage History & SLA Audit Modal */}
+      {historyOrder && (
+        <OrderStageHistoryModal
+          isOpen={!!historyOrder}
+          order={historyOrder}
+          onClose={() => setHistoryOrder(null)}
+          masterStages={stages}
         />
       )}
     </div>

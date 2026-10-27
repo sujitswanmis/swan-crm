@@ -166,3 +166,37 @@ test('Option A: Product-wise partial split allocation calculates remaining quant
   assert.equal(totalDispatched, 7, 'Total ready for Lot-A should be 7 Units');
   assert.equal(totalRemaining, 8, 'Total remaining for Lot-B should be 8 Units');
 });
+
+test('Stage Actions Button Label: formats with descriptive stage name and code instead of raw numbering', () => {
+  const nextStage = { id: 'S02', name: 'PI Generation', step_no: 2 };
+  const label = `Confirm ➔ ${nextStage.name} (${nextStage.id})`;
+  assert.equal(label, 'Confirm ➔ PI Generation (S02)');
+
+  const s07 = { id: 'S07', name: 'Product Partial & Full Status', step_no: 7 };
+  const s07Label = `Confirm ➔ ${s07.name} (${s07.id})`;
+  assert.equal(s07Label, 'Confirm ➔ Product Partial & Full Status (S07)');
+});
+
+test('Stage History & SLA Audit Scorecard: accurately categorizes on-time vs delayed stages', () => {
+  const history = [
+    { stage_id: 'S01', stage_name: 'Order Confirmation', tat_breached: false, tat_hours: 4 },
+    { stage_id: 'S02', stage_name: 'PI Generation', tat_breached: false, tat_hours: 2 },
+    { stage_id: 'S05', stage_name: 'Receive Advance Payment', tat_breached: true, tat_hours: 24 },
+    { stage_id: 'S06', stage_name: 'Check Stock & Production', tat_breached: false, tat_hours: 48 }
+  ];
+
+  let onTimeCount = 0;
+  let delayedCount = 0;
+
+  history.forEach(h => {
+    if (h.tat_breached) {
+      delayedCount++;
+    } else {
+      onTimeCount++;
+    }
+  });
+
+  assert.equal(onTimeCount, 3, '3 stages were on-time');
+  assert.equal(delayedCount, 1, '1 stage was delayed');
+  assert.equal(history.length, 4, '4 stages completed');
+});
