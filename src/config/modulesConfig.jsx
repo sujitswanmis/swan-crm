@@ -381,6 +381,7 @@ export const MODULES_CONFIG = [
     subItems: [
       { id: 'business', label: 'Business Profile & Branches' },
       { id: 'products', label: 'Product List & Branches' },
+      { id: 'order_pipeline', label: 'Order to Delivery Config' },
       { id: 'crm', label: 'CRM & Lead Config' },
       { id: 'fields', label: 'Custom Fields' },
       { id: 'templates', label: 'Message & WhatsApp Templates' },

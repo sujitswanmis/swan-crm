@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Building2, Settings2, FormInput, Bell, Database, Target, FileType, MessageSquare, Monitor, Package } from 'lucide-react';
+import { Building2, Settings2, FormInput, Bell, Database, Target, FileType, MessageSquare, Monitor, Package, Truck } from 'lucide-react';
 
 // Subcomponents
 import BusinessProfile from './BusinessProfile';
@@ -13,11 +13,13 @@ import FileMedia from './FileMedia';
 import ManageDepartments from './ManageDepartments';
 import ActiveSessionsConfig from './ActiveSessionsConfig';
 import ProductListConfig from './ProductListConfig';
+import OrderPipelineConfig from './OrderPipelineConfig';
 import { filterVisibleSubTabs } from '@/utils/permissionUtils';
 
 const SETTINGS_TABS = [
   { id: 'business', label: 'Business Profile & Branches', icon: <Building2 size={18} /> },
   { id: 'products', label: 'Product List & Branches', icon: <Package size={18} /> },
+  { id: 'order_pipeline', label: 'Order to Delivery Config', icon: <Truck size={18} /> },
   { id: 'crm', label: 'CRM & Lead Config', icon: <Settings2 size={18} /> },
   { id: 'fields', label: 'Custom Fields', icon: <FormInput size={18} /> },
   { id: 'templates', label: 'Message & WhatsApp Templates', icon: <MessageSquare size={18} /> },
@@ -46,6 +48,7 @@ export default function SettingsContainer({
       if (path.startsWith('settings/')) {
         const sub = path.split('/')[1];
         if (['products', 'product-list', 'products-list'].includes(sub)) return 'products';
+        if (['order-pipeline', 'order_pipeline', 'order-config', 'order_config'].includes(sub)) return 'order_pipeline';
         if (['crm-config', 'crm_config'].includes(sub)) return 'crm';
         if (['custom-fields', 'custom_fields'].includes(sub)) return 'fields';
         if (['business-profile', 'branches'].includes(sub)) return 'business';
@@ -125,6 +128,7 @@ export default function SettingsContainer({
       <div className="card" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', width: '100%', borderRadius: 0, border: 'none', boxShadow: 'none' }}>
         {activeTab === 'business' && <BusinessProfile userCompany={userCompany} />}
         {activeTab === 'products' && <ProductListConfig userCompany={userCompany} />}
+        {activeTab === 'order_pipeline' && <OrderPipelineConfig userCompany={userCompany} />}
         {activeTab === 'crm' && <CRMConfig userCompany={userCompany} />}
         {activeTab === 'fields' && <CustomFields />}
         {activeTab === 'templates' && <WorkspaceMessageTemplates userCompany={userCompany} />}

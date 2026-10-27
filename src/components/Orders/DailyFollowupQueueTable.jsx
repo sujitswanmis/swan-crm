@@ -247,9 +247,14 @@ export default function DailyFollowupQueueTable({
     setSelectedParty(partyItem);
     setCallOutcome(defaultOutcome);
     setFeedbackSuccess('');
-    // Start with a clean blank row so executive searches and selects product freshly
+    // Pre-fill with first active configured product from Settings or clean row
+    const firstProd = products && products.length > 0 ? products[0] : null;
     setOrderItems([
-      { product: '', qty: 1, rate: 0 }
+      {
+        product: firstProd?.name || '',
+        qty: 1,
+        rate: (firstProd && firstProd.price != null && firstProd.price !== '') ? Number(firstProd.price) : 0
+      }
     ]);
     setBillingRoute(partyItem.party?.billing_route_type || 'DIRECT_COMPANY_BILLING');
     setPreferredDispatchDate('');

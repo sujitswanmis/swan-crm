@@ -1,102 +1,208 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   Package, Truck, CheckCircle2, Clock, AlertTriangle, Search, Filter,
-  RefreshCw, ChevronRight, FileText, ExternalLink, Calendar, MapPin
+  RefreshCw, ChevronRight, FileText, ExternalLink, Calendar, MapPin,
+  Edit3, Ban, ArrowRight, Sparkles, Building2, Layers
 } from 'lucide-react';
 import { useTableColumnResize, ColumnResizer } from '@/utils/tableColumnResize';
-import { updateOrderLifecycleStatus } from '@/app/actions/orderFulfillment';
-import MaskedPhoneDisplay from '../common/MaskedPhoneDisplay';
+import { getOrderPipelineConfig } from '@/app/actions/orderPipelineConfig';
 import StandardTablePagination from '../common/StandardTablePagination';
+import OrderRevisionModal from './modals/OrderRevisionModal';
+import CancelOrderModal from './modals/CancelOrderModal';
+import StageActionModal from './modals/StageActionModal';
 
-const STAGES = [
-  { id: 'PUNCHED', label: '1. Order Punched', color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' },
-  { id: 'CONFIRMED', label: '2. Confirmed', color: '#38bdf8', bg: 'rgba(56,189,248,0.15)' },
-  { id: 'PROCESSING', label: '3. Allocation & Packing', color: '#a78bfa', bg: 'rgba(167,139,250,0.15)' },
-  { id: 'DISPATCHED', label: '4. Dispatched & In-Transit', color: '#fb923c', bg: 'rgba(251,146,60,0.15)' },
-  { id: 'DELIVERED', label: '5. Delivered', color: '#10b981', bg: 'rgba(16,185,129,0.15)' }
+// Master 13 Stages Baseline Fallback
+const DEFAULT_13_STAGES = [
+  { id: 'S01', step_no: 1, name: 'Order Confirmation', short_code: 'CONFIRMED', department: 'Sales / Order Desk', tat_hours: 4, color: '#3b82f6', is_enabled: true },
+  { id: 'S02', step_no: 2, name: 'PI Generation', short_code: 'PI_GENERATED', department: 'Accounts / Billing', tat_hours: 2, color: '#6366f1', is_enabled: true },
+  { id: 'S03', step_no: 3, name: 'PI Shared', short_code: 'PI_SHARED', department: 'Sales / Coordination', tat_hours: 2, color: '#8b5cf6', is_enabled: true },
+  { id: 'S04', step_no: 4, name: 'Request Advance Payment', short_code: 'ADVANCE_REQUESTED', department: 'Accounts & Sales', tat_hours: 4, color: '#ec4899', is_enabled: true },
+  { id: 'S05', step_no: 5, name: 'Receive Advance Payment', short_code: 'ADVANCE_RECEIVED', department: 'Accounts Team', tat_hours: 24, color: '#14b8a6', is_enabled: true },
+  { id: 'S06', step_no: 6, name: 'Check Stock & Production', short_code: 'IN_PRODUCTION', department: 'Plant / Works', tat_hours: 48, color: '#f59e0b', is_enabled: true },
+  { id: 'S07', step_no: 7, name: 'Product Partial & Full Status', short_code: 'BATCH_READINESS', department: 'Plant Floor Supervisor', tat_hours: 12, color: '#d97706', is_enabled: true },
+  { id: 'S08', step_no: 8, name: 'Quality Check (PDI)', short_code: 'PDI_PASSED', department: 'Quality Assurance (QC)', tat_hours: 8, color: '#10b981', is_enabled: true },
+  { id: 'S09', step_no: 9, name: 'Request 70% Balance', short_code: 'BALANCE_REQUESTED', department: 'Accounts & Sales', tat_hours: 4, color: '#8b5cf6', is_enabled: true },
+  { id: 'S10', step_no: 10, name: 'Receive 70% Balance', short_code: 'BALANCE_RECEIVED', department: 'Accounts Team', tat_hours: 24, color: '#059669', is_enabled: true },
+  { id: 'S11', step_no: 11, name: 'Ready for Dispatch', short_code: 'READY_FOR_DISPATCH', department: 'Godown / Logistics', tat_hours: 6, color: '#0284c7', is_enabled: true },
+  { id: 'S12', step_no: 12, name: 'Dispatch Material', short_code: 'DISPATCHED', department: 'Gate & Logistics', tat_hours: 12, color: '#ea580c', is_enabled: true },
+  { id: 'S13', step_no: 13, name: 'Material Delivered (POD)', short_code: 'DELIVERED', department: 'Customer Support', tat_hours: 48, color: '#15803d', is_enabled: true }
 ];
+
+function formatIST(isoDate) {
+  if (!isoDate) return '-';
+  try {
+    const d = new Date(isoDate);
+    return new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      day: '2-digit',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    }).format(d);
+  } catch (_) {
+    return String(isoDate).slice(0, 16);
+  }
+}
+
+// Stage resolver helper
+function resolveOrderStage(order, stages = []) {
+  if (order.order_status === 'CANCELLED' || order.delivery_status === 'CANCELLED') {
+    return { id: 'CANCELLED', name: 'Order Cancelled', color: '#ef4444', is_cancelled: true };
+  }
+
+  const raw = order.delivery_status || 'S01';
+  const direct = stages.find(s => s.id === raw);
+  if (direct) return direct;
+
+  // Legacy status mapping
+  if (raw === 'PUNCHED') return stages.find(s => s.id === 'S01') || stages[0];
+  if (raw === 'CONFIRMED') return stages.find(s => s.id === 'S02') || stages[1];
+  if (raw === 'PROCESSING') return stages.find(s => s.id === 'S06') || stages[5];
+  if (raw === 'DISPATCHED') return stages.find(s => s.id === 'S12') || stages[11];
+  if (raw === 'DELIVERED') return stages.find(s => s.id === 'S13') || stages[12];
+
+  return stages[0] || DEFAULT_13_STAGES[0];
+}
+
+// Next stage resolver
+function getNextStage(currentStage, stages, order) {
+  if (!currentStage || currentStage.id === 'CANCELLED') return null;
+  const activeStages = stages.filter(s => s.is_enabled !== false);
+  const currentIndex = activeStages.findIndex(s => s.id === currentStage.id);
+  if (currentIndex === -1 || currentIndex >= activeStages.length - 1) return null;
+
+  // Check if 100% payment credited: skip S09 & S10
+  const isFullPaid = order.order_status === 'FULL_PAID' || 
+    (Array.isArray(order.stage_history) && order.stage_history.some(h => h.stage_id === 'S05' && h.custom_fields_data?.is_100_percent_paid));
+
+  if (isFullPaid && currentStage.id === 'S08') {
+    const s11 = activeStages.find(s => s.id === 'S11');
+    if (s11) return s11;
+  }
+
+  return activeStages[currentIndex + 1];
+}
+
+// SLA & TAT status calculator
+function computeOrderSLA(order, currentStage) {
+  if (order.order_status === 'CANCELLED') {
+    return { status: 'CANCELLED', badge: 'Cancelled', color: '#ef4444', bg: 'rgba(239, 68, 68, 0.15)' };
+  }
+  if (currentStage.id === 'S13' || order.delivery_status === 'DELIVERED') {
+    return { status: 'COMPLETED', badge: 'Delivered', color: '#10b981', bg: 'rgba(16, 185, 129, 0.15)' };
+  }
+
+  const tatHours = Number(currentStage.tat_hours) || 4;
+  const history = Array.isArray(order.stage_history) ? order.stage_history : [];
+  const lastEntry = history[history.length - 1];
+
+  const baseDate = lastEntry?.actual_timestamp ? new Date(lastEntry.actual_timestamp) : new Date(order.created_at || Date.now());
+  const plannedDeadline = new Date(baseDate.getTime() + (tatHours * 60 * 60 * 1000));
+  const now = new Date();
+
+  if (now.getTime() > plannedDeadline.getTime()) {
+    const hoursOver = Math.round((now.getTime() - plannedDeadline.getTime()) / (1000 * 60 * 60));
+    return {
+      status: 'BREACHED',
+      badge: `Overdue (+${hoursOver}h)`,
+      color: '#ef4444',
+      bg: 'rgba(239, 68, 68, 0.15)',
+      deadlineFormatted: formatIST(plannedDeadline)
+    };
+  } else {
+    const hoursRemaining = Math.max(0, Math.round((plannedDeadline.getTime() - now.getTime()) / (1000 * 60 * 60)));
+    return {
+      status: 'ON_TIME',
+      badge: `On Time (${hoursRemaining}h left)`,
+      color: '#10b981',
+      bg: 'rgba(16, 185, 129, 0.15)',
+      deadlineFormatted: formatIST(plannedDeadline)
+    };
+  }
+}
 
 export default function OrderDeliveryPipeline({
   orders = [],
   loading = false,
   onRefresh,
-  tenantId
+  tenantId = 'TNT00002',
+  userCompany = 'New Swan Group',
+  userName = 'Operations'
 }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [stageFilter, setStageFilter] = useState('ALL');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
-  const [selectedOrderForAction, setSelectedOrderForAction] = useState(null);
-  const [actionStage, setActionStage] = useState('');
-  const [actionForm, setActionForm] = useState({
-    transporter_name: '',
-    lr_number: '',
-    vehicle_number: '',
-    eway_bill_no: '',
-    estimated_delivery_date: '',
-    pod_document_url: '',
-    delivery_confirmed_by: 'Customer Telephonic Confirmation',
-    delivery_notes: ''
+
+  // Active Pipeline Config loaded from backend
+  const [pipelineConfig, setPipelineConfig] = useState(null);
+  const [stages, setStages] = useState(DEFAULT_13_STAGES);
+
+  // Modals state
+  const [modifyingOrder, setModifyingOrder] = useState(null);
+  const [cancellingOrder, setCancellingOrder] = useState(null);
+  const [stageActionState, setStageActionState] = useState({
+    isOpen: false,
+    order: null,
+    targetStage: null
   });
-  const [updating, setUpdating] = useState(false);
 
   // Table Column Resizer
   const defaultCols = {
     order_no: 160,
-    partner: 240,
+    partner: 220,
     line_items: 220,
-    stage: 180,
-    logistics: 220,
-    dates: 180,
-    actions: 140
+    stage: 200,
+    sla_tat: 180,
+    logistics: 200,
+    actions: 180
   };
-  const { columnWidths, startResize, resetWidths } = useTableColumnResize('order_pipeline_table_widths', defaultCols);
+  const { columnWidths, startResize, resetWidths } = useTableColumnResize('order_pipeline_table_v2', defaultCols);
 
-  const openActionModal = (order, targetStage) => {
-    setSelectedOrderForAction(order);
-    setActionStage(targetStage);
-    setActionForm({
-      transporter_name: order.transporter_name || '',
-      lr_number: order.lr_number || '',
-      vehicle_number: order.vehicle_number || '',
-      eway_bill_no: order.eway_bill_no || '',
-      estimated_delivery_date: order.estimated_delivery_date || '',
-      pod_document_url: order.pod_document_url || '',
-      delivery_confirmed_by: order.delivery_confirmed_by || 'Customer Telephonic Confirmation',
-      delivery_notes: order.delivery_notes || ''
+  // Load active pipeline configuration
+  const loadConfig = useCallback(async () => {
+    try {
+      const res = await getOrderPipelineConfig(tenantId, 'All Branches');
+      if (res.success && res.config) {
+        setPipelineConfig(res.config);
+        if (Array.isArray(res.config.stages) && res.config.stages.length > 0) {
+          setStages(res.config.stages);
+        }
+      }
+    } catch (_) {
+      setStages(DEFAULT_13_STAGES);
+    }
+  }, [tenantId]);
+
+  useEffect(() => {
+    loadConfig();
+  }, [loadConfig]);
+
+  // Handle Action Triggers
+  const handleOpenModify = (order) => setModifyingOrder(order);
+  const handleOpenCancel = (order) => setCancellingOrder(order);
+  const handleOpenAdvance = (order, targetStage) => {
+    setStageActionState({
+      isOpen: true,
+      order,
+      targetStage
     });
   };
 
-  const handleUpdateStage = async (e) => {
-    e.preventDefault();
-    if (!selectedOrderForAction || !actionStage) return;
-    setUpdating(true);
-    try {
-      const res = await updateOrderLifecycleStatus(selectedOrderForAction.id, {
-        delivery_status: actionStage,
-        ...actionForm
-      }, tenantId);
-
-      if (res.success) {
-        setSelectedOrderForAction(null);
-        if (onRefresh) onRefresh();
-      } else {
-        alert('Failed to update stage: ' + (res.error || 'Unknown error'));
-      }
-    } catch (err) {
-      alert('Error updating order stage: ' + err.message);
-    } finally {
-      setUpdating(false);
-    }
+  const handleModalSuccess = () => {
+    if (onRefresh) onRefresh();
   };
 
   // Filtered orders
   const filteredOrders = useMemo(() => {
     return orders.filter(order => {
-      const currentStage = order.delivery_status || 'PUNCHED';
-      if (stageFilter !== 'ALL' && currentStage !== stageFilter) return false;
+      const resolvedStage = resolveOrderStage(order, stages);
+      if (stageFilter !== 'ALL' && resolvedStage.id !== stageFilter) {
+        return false;
+      }
 
       if (!searchTerm) return true;
       const term = searchTerm.toLowerCase().trim();
@@ -105,13 +211,14 @@ export default function OrderDeliveryPipeline({
       const lr = (order.lr_number || '').toLowerCase();
       const veh = (order.vehicle_number || '').toLowerCase();
       const trans = (order.transporter_name || '').toLowerCase();
+      const owner = (order.party?.owner_name || '').toLowerCase();
 
-      return num.includes(term) || firm.includes(term) || lr.includes(term) || veh.includes(term) || trans.includes(term);
+      return num.includes(term) || firm.includes(term) || lr.includes(term) || veh.includes(term) || trans.includes(term) || owner.includes(term);
     });
-  }, [orders, stageFilter, searchTerm]);
+  }, [orders, stageFilter, searchTerm, stages]);
 
-  // Auto-reset page on filter changes
-  React.useEffect(() => {
+  // Auto-reset page on filter/search change
+  useEffect(() => {
     setCurrentPage(1);
   }, [searchTerm, stageFilter, pageSize]);
 
@@ -121,26 +228,66 @@ export default function OrderDeliveryPipeline({
     return filteredOrders.slice(start, start + pageSize);
   }, [filteredOrders, currentPage, pageSize]);
 
-  // Stage counts for quick summary
+  // Stage counts for progress strip
   const stageCounts = useMemo(() => {
-    const map = { PUNCHED: 0, CONFIRMED: 0, PROCESSING: 0, DISPATCHED: 0, DELIVERED: 0 };
+    const map = { ALL: orders.length, CANCELLED: 0 };
+    stages.forEach(st => { map[st.id] = 0; });
+
     orders.forEach(o => {
-      const st = o.delivery_status || 'PUNCHED';
-      if (map[st] !== undefined) map[st]++;
+      const st = resolveOrderStage(o, stages);
+      if (st.is_cancelled) {
+        map.CANCELLED++;
+      } else if (map[st.id] !== undefined) {
+        map[st.id]++;
+      }
     });
     return map;
-  }, [orders]);
+  }, [orders, stages]);
 
   return (
-    <div>
-      {/* Stage Flow Indicator Banner */}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+      {/* 13-Stage Visual Progress Bar Strip */}
       <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-        gap: '0.65rem',
-        marginBottom: '1rem'
+        background: 'var(--bg-surface)',
+        border: '1px solid var(--border-light)',
+        borderRadius: '12px',
+        padding: '0.75rem 1rem',
+        overflowX: 'auto',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '0.5rem'
       }}>
-        {STAGES.map(st => {
+        <div
+          onClick={() => setStageFilter('ALL')}
+          style={{
+            padding: '0.5rem 0.85rem',
+            borderRadius: '8px',
+            background: stageFilter === 'ALL' ? 'var(--accent-color, #2563eb)' : 'var(--bg-primary)',
+            color: stageFilter === 'ALL' ? '#ffffff' : 'var(--text-primary)',
+            border: '1px solid var(--border-light)',
+            cursor: 'pointer',
+            fontSize: '0.78rem',
+            fontWeight: 800,
+            whiteSpace: 'nowrap',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.4rem',
+            transition: 'all 0.15s ease'
+          }}
+        >
+          <span>All Orders</span>
+          <span style={{
+            fontSize: '0.72rem',
+            padding: '0.1rem 0.4rem',
+            borderRadius: '10px',
+            background: stageFilter === 'ALL' ? 'rgba(255,255,255,0.25)' : 'var(--border-light)',
+            color: stageFilter === 'ALL' ? '#ffffff' : 'var(--text-secondary)'
+          }}>
+            {stageCounts.ALL}
+          </span>
+        </div>
+
+        {stages.map(st => {
           const count = stageCounts[st.id] || 0;
           const isSelected = stageFilter === st.id;
           return (
@@ -148,31 +295,86 @@ export default function OrderDeliveryPipeline({
               key={st.id}
               onClick={() => setStageFilter(isSelected ? 'ALL' : st.id)}
               style={{
-                background: isSelected ? st.bg : 'var(--bg-surface)',
+                padding: '0.45rem 0.75rem',
+                borderRadius: '8px',
+                background: isSelected ? `${st.color}20` : 'var(--bg-primary)',
                 border: isSelected ? `2px solid ${st.color}` : '1px solid var(--border-light)',
-                borderRadius: '10px',
-                padding: '0.75rem 1rem',
                 cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.45rem',
                 transition: 'all 0.15s ease'
               }}
             >
-              <div style={{ fontSize: '0.72rem', color: st.color, fontWeight: 700, textTransform: 'uppercase' }}>
-                {st.label}
-              </div>
-              <div style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: '0.15rem' }}>
+              <span style={{
+                fontSize: '0.7rem',
+                fontWeight: 800,
+                color: st.color,
+                background: `${st.color}20`,
+                padding: '0.1rem 0.35rem',
+                borderRadius: '4px'
+              }}>
+                {st.id}
+              </span>
+              <span style={{
+                fontSize: '0.76rem',
+                fontWeight: isSelected ? 800 : 600,
+                color: isSelected ? st.color : 'var(--text-primary)'
+              }}>
+                {st.name}
+              </span>
+              <span style={{
+                fontSize: '0.72rem',
+                fontWeight: 800,
+                padding: '0.1rem 0.4rem',
+                borderRadius: '10px',
+                background: isSelected ? st.color : 'var(--border-light)',
+                color: isSelected ? '#ffffff' : 'var(--text-secondary)'
+              }}>
                 {count}
-              </div>
+              </span>
             </div>
           );
         })}
+
+        {stageCounts.CANCELLED > 0 && (
+          <div
+            onClick={() => setStageFilter(stageFilter === 'CANCELLED' ? 'ALL' : 'CANCELLED')}
+            style={{
+              padding: '0.45rem 0.75rem',
+              borderRadius: '8px',
+              background: stageFilter === 'CANCELLED' ? 'rgba(239,68,68,0.2)' : 'var(--bg-primary)',
+              border: stageFilter === 'CANCELLED' ? '2px solid #ef4444' : '1px solid var(--border-light)',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.45rem'
+            }}
+          >
+            <span style={{ fontSize: '0.76rem', fontWeight: 800, color: '#ef4444' }}>
+              Cancelled
+            </span>
+            <span style={{
+              fontSize: '0.72rem',
+              fontWeight: 800,
+              padding: '0.1rem 0.4rem',
+              borderRadius: '10px',
+              background: '#ef4444',
+              color: '#ffffff'
+            }}>
+              {stageCounts.CANCELLED}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Filter and Search Bar */}
       <div style={{
         background: 'var(--bg-surface)',
-        padding: '0.85rem 1rem',
+        padding: '0.75rem 1rem',
         borderRadius: '10px',
-        marginBottom: '1rem',
         border: '1px solid var(--border-light)',
         display: 'flex',
         justifyContent: 'space-between',
@@ -180,14 +382,14 @@ export default function OrderDeliveryPipeline({
         flexWrap: 'wrap',
         gap: '0.75rem'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flex: '1 1 300px', maxWidth: '420px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flex: '1 1 300px', maxWidth: '440px' }}>
           <div style={{ position: 'relative', width: '100%' }}>
             <Search size={15} style={{ position: 'absolute', left: '10px', top: '10px', color: 'var(--text-secondary)' }} />
             <input
               type="text"
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
-              placeholder="Search Order #, Dealer, Transporter, LR/Bilty..."
+              placeholder="Search Order #, Partner, City, Transporter, LR/Bilty..."
               style={{
                 width: '100%',
                 padding: '0.5rem 0.65rem 0.5rem 2.2rem',
@@ -214,10 +416,11 @@ export default function OrderDeliveryPipeline({
               fontSize: '0.82rem'
             }}
           >
-            <option value="ALL">All Lifecycle Stages</option>
-            {STAGES.map(s => (
-              <option key={s.id} value={s.id}>{s.label}</option>
+            <option value="ALL">All Stages ({orders.length})</option>
+            {stages.map(s => (
+              <option key={s.id} value={s.id}>{s.id} — {s.name}</option>
             ))}
+            <option value="CANCELLED">Cancelled Orders</option>
           </select>
 
           <button
@@ -257,7 +460,7 @@ export default function OrderDeliveryPipeline({
             <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)' }}>
               <tr style={{ background: 'var(--bg-surface)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
                 <th style={{ width: `${columnWidths.order_no}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
-                  Order #
+                  Order # / Date
                   <ColumnResizer onMouseDown={e => startResize('order_no', e)} onDoubleClick={() => resetWidths()} />
                 </th>
                 <th style={{ width: `${columnWidths.partner}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
@@ -265,23 +468,23 @@ export default function OrderDeliveryPipeline({
                   <ColumnResizer onMouseDown={e => startResize('partner', e)} onDoubleClick={() => resetWidths()} />
                 </th>
                 <th style={{ width: `${columnWidths.line_items}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
-                  Ordered Items
+                  Products &amp; Amount
                   <ColumnResizer onMouseDown={e => startResize('line_items', e)} onDoubleClick={() => resetWidths()} />
                 </th>
                 <th style={{ width: `${columnWidths.stage}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                   Current Stage
                   <ColumnResizer onMouseDown={e => startResize('stage', e)} onDoubleClick={() => resetWidths()} />
                 </th>
+                <th style={{ width: `${columnWidths.sla_tat}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
+                  SLA TAT &amp; Deadline
+                  <ColumnResizer onMouseDown={e => startResize('sla_tat', e)} onDoubleClick={() => resetWidths()} />
+                </th>
                 <th style={{ width: `${columnWidths.logistics}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
-                  Logistics &amp; LR / Bilty
+                  Logistics &amp; Dispatch
                   <ColumnResizer onMouseDown={e => startResize('logistics', e)} onDoubleClick={() => resetWidths()} />
                 </th>
-                <th style={{ width: `${columnWidths.dates}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
-                  Timeline (IST)
-                  <ColumnResizer onMouseDown={e => startResize('dates', e)} onDoubleClick={() => resetWidths()} />
-                </th>
                 <th style={{ width: `${columnWidths.actions}px`, padding: '0.85rem 1rem', textAlign: 'center', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
-                  Update Stage
+                  Stage Actions
                   <ColumnResizer onMouseDown={e => startResize('actions', e)} onDoubleClick={() => resetWidths()} />
                 </th>
               </tr>
@@ -289,75 +492,112 @@ export default function OrderDeliveryPipeline({
             <tbody>
               {filteredOrders.length === 0 ? (
                 <tr>
-                  <td colSpan="7" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
-                    No sales orders found in this stage.
+                  <td colSpan="7" style={{ padding: '3.5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                    No sales orders found in this view.
                   </td>
                 </tr>
               ) : (
                 paginatedOrders.map(order => {
                   const p = order.party;
-                  const currentStage = order.delivery_status || 'PUNCHED';
-                  const stageObj = STAGES.find(s => s.id === currentStage) || STAGES[0];
-
+                  const currentStage = resolveOrderStage(order, stages);
+                  const nextStage = getNextStage(currentStage, stages, order);
+                  const sla = computeOrderSLA(order, currentStage);
                   const items = Array.isArray(order.order_line_items) ? order.order_line_items : [];
 
                   return (
                     <tr key={order.id} style={{ borderBottom: '1px solid var(--border-light)' }}>
+                      {/* Order # */}
                       <td style={{ padding: '0.85rem 1rem' }}>
                         <div style={{ fontWeight: 800, color: '#38bdf8', fontSize: '0.9rem' }}>
                           {order.order_number}
                         </div>
                         <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
-                          {order.created_at?.slice(0, 10)}
+                          📅 {formatIST(order.created_at)}
                         </div>
-                      </td>
-
-                      <td style={{ padding: '0.85rem 1rem' }}>
-                        <div style={{ fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.2rem' }}>
-                          {p?.firm_name || 'Direct Customer'}
-                        </div>
-                        <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                          {p?.owner_name} • {p?.district_name}, {p?.state_name}
-                        </div>
-                      </td>
-
-                      <td style={{ padding: '0.85rem 1rem' }}>
-                        {items.length === 0 ? (
-                          <div style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
-                            Qty: {order.total_ordered_qty || 1} Unit(s)
+                        {order.order_status === 'FULL_PAID' && (
+                          <div style={{ marginTop: '0.25rem' }}>
+                            <span style={{ fontSize: '0.68rem', fontWeight: 800, padding: '0.15rem 0.4rem', borderRadius: '4px', background: 'rgba(16,185,129,0.15)', color: '#10b981' }}>
+                              100% ADVANCE
+                            </span>
                           </div>
-                        ) : (
-                          items.map((it, idx) => (
-                            <div key={idx} style={{ fontSize: '0.8rem', fontWeight: 600 }}>
-                              • {it.product || it.name} ({it.qty || 1}x)
-                            </div>
-                          ))
                         )}
                       </td>
 
+                      {/* Partner */}
+                      <td style={{ padding: '0.85rem 1rem' }}>
+                        <div style={{ fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.15rem' }}>
+                          {p?.firm_name || 'Channel Partner'}
+                        </div>
+                        <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                          {p?.owner_name} • {p?.district_name || p?.city}, {p?.state_name}
+                        </div>
+                      </td>
+
+                      {/* Products & Amount */}
+                      <td style={{ padding: '0.85rem 1rem' }}>
+                        <div style={{ fontWeight: 800, color: '#10b981', fontSize: '0.88rem' }}>
+                          ₹{Number(order.total_amount || 0).toLocaleString('en-IN')}
+                        </div>
+                        <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
+                          {items.length === 0 ? (
+                            <span>{order.total_ordered_qty || 1} Unit(s)</span>
+                          ) : (
+                            items.slice(0, 2).map((it, idx) => (
+                              <div key={idx}>• {it.product || it.name} ({it.qty || 1}x)</div>
+                            ))
+                          )}
+                          {items.length > 2 && <div>+{items.length - 2} more...</div>}
+                        </div>
+                      </td>
+
+                      {/* Current Stage */}
                       <td style={{ padding: '0.85rem 1rem' }}>
                         <span style={{
                           display: 'inline-block',
-                          fontSize: '0.74rem',
-                          fontWeight: 700,
+                          fontSize: '0.76rem',
+                          fontWeight: 800,
                           padding: '0.25rem 0.6rem',
                           borderRadius: '6px',
-                          background: stageObj.bg,
-                          color: stageObj.color,
-                          border: `1px solid ${stageObj.color}40`
+                          background: `${currentStage.color || '#3b82f6'}20`,
+                          color: currentStage.color || '#3b82f6',
+                          border: `1px solid ${currentStage.color || '#3b82f6'}40`
                         }}>
-                          {stageObj.label}
+                          {currentStage.id} — {currentStage.name}
                         </span>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+                          {currentStage.department}
+                        </div>
                       </td>
 
-                      <td style={{ padding: '0.85rem 1rem', fontSize: '0.8rem' }}>
+                      {/* SLA TAT & Deadline */}
+                      <td style={{ padding: '0.85rem 1rem' }}>
+                        <span style={{
+                          display: 'inline-block',
+                          fontSize: '0.72rem',
+                          fontWeight: 800,
+                          padding: '0.2rem 0.5rem',
+                          borderRadius: '6px',
+                          background: sla.bg,
+                          color: sla.color
+                        }}>
+                          {sla.badge}
+                        </span>
+                        {sla.deadlineFormatted && (
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+                            Target: {sla.deadlineFormatted}
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Logistics & Dispatch */}
+                      <td style={{ padding: '0.85rem 1rem', fontSize: '0.78rem' }}>
                         {order.transporter_name || order.lr_number ? (
                           <div>
                             <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
-                              🚛 {order.transporter_name || 'Transport'}
+                              🚛 {order.transporter_name || 'Transporter'}
                             </div>
                             <div style={{ color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
-                              LR: <span style={{ color: '#38bdf8', fontWeight: 600 }}>{order.lr_number || 'N/A'}</span>
+                              LR: <span style={{ color: '#38bdf8', fontWeight: 600 }}>{order.lr_number || '-'}</span>
                             </div>
                             {order.vehicle_number && (
                               <div style={{ color: 'var(--text-secondary)' }}>
@@ -372,63 +612,110 @@ export default function OrderDeliveryPipeline({
                         )}
                       </td>
 
-                      <td style={{ padding: '0.85rem 1rem', fontSize: '0.8rem' }}>
-                        {order.actual_dispatch_date && (
-                          <div>Dispatched: {order.actual_dispatch_date.slice(0, 10)}</div>
-                        )}
-                        {order.actual_delivery_date ? (
-                          <div style={{ color: '#10b981', fontWeight: 700, marginTop: '0.15rem' }}>
-                            Delivered: {order.actual_delivery_date.slice(0, 10)}
-                          </div>
-                        ) : order.estimated_delivery_date ? (
-                          <div style={{ color: '#f59e0b', marginTop: '0.15rem' }}>
-                            EDD: {order.estimated_delivery_date}
-                          </div>
-                        ) : null}
-                      </td>
-
+                      {/* Actions */}
                       <td style={{ padding: '0.85rem 1rem', textAlign: 'center' }}>
-                        {currentStage === 'PUNCHED' && (
+                        {currentStage.is_cancelled ? (
+                          <span style={{ fontSize: '0.76rem', color: '#ef4444', fontWeight: 800 }}>
+                            Cancelled
+                          </span>
+                        ) : currentStage.id === 'S01' ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', alignItems: 'center' }}>
+                            <div style={{ display: 'flex', gap: '0.35rem' }}>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenModify(order)}
+                                title="Modify Line Items / Quantities / Rates"
+                                style={{
+                                  padding: '0.3rem 0.55rem',
+                                  background: 'rgba(56, 189, 248, 0.15)',
+                                  border: '1px solid #38bdf8',
+                                  color: '#0284c7',
+                                  borderRadius: '6px',
+                                  fontSize: '0.72rem',
+                                  fontWeight: 700,
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.25rem'
+                                }}
+                              >
+                                <Edit3 size={12} />
+                                Modify
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => handleOpenCancel(order)}
+                                title="Cancel Sales Order"
+                                style={{
+                                  padding: '0.3rem 0.55rem',
+                                  background: 'rgba(239, 68, 68, 0.12)',
+                                  border: '1px solid #ef4444',
+                                  color: '#ef4444',
+                                  borderRadius: '6px',
+                                  fontSize: '0.72rem',
+                                  fontWeight: 700,
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.25rem'
+                                }}
+                              >
+                                <Ban size={12} />
+                                Cancel
+                              </button>
+                            </div>
+
+                            {nextStage && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenAdvance(order, nextStage)}
+                                style={{
+                                  width: '100%',
+                                  padding: '0.35rem 0.65rem',
+                                  background: '#2563eb',
+                                  border: 'none',
+                                  color: '#ffffff',
+                                  borderRadius: '6px',
+                                  fontSize: '0.75rem',
+                                  fontWeight: 700,
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: '0.3rem'
+                                }}
+                              >
+                                Confirm ➔ {nextStage.id}
+                              </button>
+                            )}
+                          </div>
+                        ) : nextStage ? (
                           <button
                             type="button"
-                            onClick={() => openActionModal(order, 'CONFIRMED')}
-                            style={{ padding: '0.35rem 0.75rem', background: 'rgba(56,189,248,0.15)', border: '1px solid #38bdf8', color: '#38bdf8', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer' }}
+                            onClick={() => handleOpenAdvance(order, nextStage)}
+                            style={{
+                              padding: '0.4rem 0.75rem',
+                              background: nextStage.color || '#2563eb',
+                              border: 'none',
+                              color: '#ffffff',
+                              borderRadius: '6px',
+                              fontSize: '0.76rem',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.3rem',
+                              boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                            }}
                           >
-                            Approve Order
+                            <span>Advance ➔ {nextStage.id}</span>
                           </button>
-                        )}
-                        {currentStage === 'CONFIRMED' && (
-                          <button
-                            type="button"
-                            onClick={() => openActionModal(order, 'PROCESSING')}
-                            style={{ padding: '0.35rem 0.75rem', background: 'rgba(167,139,250,0.15)', border: '1px solid #a78bfa', color: '#a78bfa', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer' }}
-                          >
-                            Packing &amp; Stock
-                          </button>
-                        )}
-                        {currentStage === 'PROCESSING' && (
-                          <button
-                            type="button"
-                            onClick={() => openActionModal(order, 'DISPATCHED')}
-                            style={{ padding: '0.35rem 0.75rem', background: 'rgba(251,146,60,0.15)', border: '1px solid #fb923c', color: '#fb923c', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer' }}
-                          >
-                            Dispatch Goods
-                          </button>
-                        )}
-                        {currentStage === 'DISPATCHED' && (
-                          <button
-                            type="button"
-                            onClick={() => openActionModal(order, 'DELIVERED')}
-                            style={{ padding: '0.35rem 0.75rem', background: 'rgba(16,185,129,0.15)', border: '1px solid #10b981', color: '#34d399', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer' }}
-                          >
-                            Mark Delivered
-                          </button>
-                        )}
-                        {currentStage === 'DELIVERED' && (
-                          <span style={{ fontSize: '0.76rem', color: '#10b981', fontWeight: 700 }}>
+                        ) : currentStage.id === 'S13' ? (
+                          <span style={{ fontSize: '0.78rem', color: '#10b981', fontWeight: 800 }}>
                             ✓ Complete
                           </span>
-                        )}
+                        ) : null}
                       </td>
                     </tr>
                   );
@@ -448,206 +735,44 @@ export default function OrderDeliveryPipeline({
         />
       </div>
 
-      {/* Stage Progression Modal */}
-      {selectedOrderForAction && (
-        <div style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(0,0,0,0.7)',
-          backdropFilter: 'blur(4px)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 9999,
-          padding: '1rem'
-        }}>
-          <div style={{
-            background: 'var(--bg-surface)',
-            border: '1px solid var(--border-light)',
-            borderRadius: '16px',
-            width: '100%',
-            maxWidth: '520px',
-            boxShadow: '0 20px 40px rgba(0,0,0,0.5)',
-            overflow: 'hidden'
-          }}>
-            <div style={{
-              padding: '1.2rem 1.5rem',
-              borderBottom: '1px solid var(--border-light)',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              background: 'linear-gradient(135deg, rgba(37,99,235,0.1) 0%, transparent 100%)'
-            }}>
-              <div>
-                <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                  Update Order Stage ➔ {STAGES.find(s => s.id === actionStage)?.label}
-                </h3>
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
-                  Order #{selectedOrderForAction.order_number} • {selectedOrderForAction.party?.firm_name}
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelectedOrderForAction(null)}
-                style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '1.2rem' }}
-              >
-                ✕
-              </button>
-            </div>
+      {/* S01 Order Revision Modal */}
+      {modifyingOrder && (
+        <OrderRevisionModal
+          isOpen={!!modifyingOrder}
+          order={modifyingOrder}
+          onClose={() => setModifyingOrder(null)}
+          onSuccess={handleModalSuccess}
+          userName={userName}
+          tenantId={tenantId}
+        />
+      )}
 
-            <form onSubmit={handleUpdateStage} style={{ padding: '1.5rem' }}>
-              {/* Form fields for Dispatch */}
-              {actionStage === 'DISPATCHED' && (
-                <div>
-                  <div style={{ marginBottom: '1rem' }}>
-                    <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>
-                      Transporter / Logistics Company Name *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={actionForm.transporter_name}
-                      onChange={e => setActionForm({ ...actionForm, transporter_name: e.target.value })}
-                      placeholder="e.g. V-Trans, TCI Freight, Local Truck Union"
-                      style={{ width: '100%', padding: '0.6rem 0.8rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.88rem' }}
-                    />
-                  </div>
+      {/* S01 Order Cancellation Modal */}
+      {cancellingOrder && (
+        <CancelOrderModal
+          isOpen={!!cancellingOrder}
+          order={cancellingOrder}
+          onClose={() => setCancellingOrder(null)}
+          onSuccess={handleModalSuccess}
+          userName={userName}
+          tenantId={tenantId}
+        />
+      )}
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1rem' }}>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>
-                        LR / Bilty Number *
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={actionForm.lr_number}
-                        onChange={e => setActionForm({ ...actionForm, lr_number: e.target.value })}
-                        placeholder="e.g. VT-98421"
-                        style={{ width: '100%', padding: '0.6rem 0.8rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.88rem' }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>
-                        Vehicle / Truck Number
-                      </label>
-                      <input
-                        type="text"
-                        value={actionForm.vehicle_number}
-                        onChange={e => setActionForm({ ...actionForm, vehicle_number: e.target.value })}
-                        placeholder="e.g. PB-10-DF-4421"
-                        style={{ width: '100%', padding: '0.6rem 0.8rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.88rem' }}
-                      />
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1rem' }}>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>
-                        E-Way Bill Number
-                      </label>
-                      <input
-                        type="text"
-                        value={actionForm.eway_bill_no}
-                        onChange={e => setActionForm({ ...actionForm, eway_bill_no: e.target.value })}
-                        placeholder="12-digit E-Way Bill"
-                        style={{ width: '100%', padding: '0.6rem 0.8rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.88rem' }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>
-                        Estimated Delivery Date (EDD)
-                      </label>
-                      <input
-                        type="date"
-                        value={actionForm.estimated_delivery_date}
-                        onChange={e => setActionForm({ ...actionForm, estimated_delivery_date: e.target.value })}
-                        style={{ width: '100%', padding: '0.6rem 0.8rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.88rem' }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Form fields for Delivered */}
-              {actionStage === 'DELIVERED' && (
-                <div>
-                  <div style={{
-                    padding: '0.75rem 1rem',
-                    background: 'rgba(16,185,129,0.1)',
-                    borderRadius: '8px',
-                    border: '1px solid rgba(16,185,129,0.3)',
-                    marginBottom: '1rem',
-                    fontSize: '0.82rem',
-                    color: '#34d399'
-                  }}>
-                    ✓ Marking this order as <strong>DELIVERED</strong> will record the delivery timestamp in IST and automatically queue this order for <strong>Post-Delivery Feedback</strong>.
-                  </div>
-
-                  <div style={{ marginBottom: '1rem' }}>
-                    <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>
-                      Delivery Confirmation Mode / Receiver *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={actionForm.delivery_confirmed_by}
-                      onChange={e => setActionForm({ ...actionForm, delivery_confirmed_by: e.target.value })}
-                      placeholder="e.g. Received by Dealer Owner, Stamped Delivery Challan"
-                      style={{ width: '100%', padding: '0.6rem 0.8rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.88rem' }}
-                    />
-                  </div>
-
-                  <div style={{ marginBottom: '1rem' }}>
-                    <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>
-                      Delivery / Proof Notes (Optional)
-                    </label>
-                    <textarea
-                      rows="2"
-                      value={actionForm.delivery_notes}
-                      onChange={e => setActionForm({ ...actionForm, delivery_notes: e.target.value })}
-                      placeholder="e.g. Safe delivery, goods unloaded at main godown..."
-                      style={{ width: '100%', padding: '0.6rem 0.8rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.88rem' }}
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Default confirmation for Confirmed or Processing */}
-              {(actionStage === 'CONFIRMED' || actionStage === 'PROCESSING') && (
-                <div style={{ padding: '1rem', background: 'var(--bg-primary)', borderRadius: '8px', marginBottom: '1.25rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                  Are you sure you want to transition Order <strong>#{selectedOrderForAction.order_number}</strong> to <strong>{STAGES.find(s => s.id === actionStage)?.label}</strong>?
-                </div>
-              )}
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
-                <button
-                  type="button"
-                  onClick={() => setSelectedOrderForAction(null)}
-                  style={{ padding: '0.6rem 1.2rem', background: 'transparent', border: '1px solid var(--border-light)', color: 'var(--text-secondary)', borderRadius: '8px', cursor: 'pointer', fontSize: '0.84rem' }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={updating}
-                  style={{
-                    padding: '0.6rem 1.4rem',
-                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                    border: 'none',
-                    color: '#fff',
-                    fontWeight: 700,
-                    borderRadius: '8px',
-                    cursor: updating ? 'not-allowed' : 'pointer',
-                    fontSize: '0.84rem'
-                  }}
-                >
-                  {updating ? 'Updating...' : `Confirm Stage ➔ ${actionStage}`}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {/* Stage Progression Action Modal (Dynamic Fields) */}
+      {stageActionState.isOpen && stageActionState.order && stageActionState.targetStage && (
+        <StageActionModal
+          isOpen={stageActionState.isOpen}
+          order={stageActionState.order}
+          targetStage={stageActionState.targetStage}
+          onClose={() => setStageActionState({ isOpen: false, order: null, targetStage: null })}
+          onSuccess={handleModalSuccess}
+          userName={userName}
+          tenantId={tenantId}
+          tatMode={pipelineConfig?.tat_mode || 'DYNAMIC'}
+          allowPartialSplit={pipelineConfig?.allow_partial_split_lots !== false}
+          autoSkipBalanceOnFullAdvance={pipelineConfig?.auto_skip_balance_on_full_advance !== false}
+        />
       )}
     </div>
   );

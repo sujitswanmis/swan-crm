@@ -326,12 +326,13 @@ function componentHarness(filename, modules) {
   const exports = {};
   const noop = () => {};
   vm.runInNewContext(compiled, {
-    exports, console, window: globalThis.window, CustomEvent, Intl, Date,
+    exports, console, window: globalThis.window, CustomEvent, Intl, Date, alert: noop,
     setTimeout(callback, ms = 0) { const id = ++timerId; timers.set(id, { callback, ms }); return id; },
     clearTimeout: id => timers.delete(id), setInterval: () => 0, clearInterval: noop,
     require(name) {
       if (name === 'react') return hooks;
       if (modules[name]) return modules[name];
+      if (name.includes('permissionUtils')) return { filterVisibleSubTabs: (_access, _role, _mod, tabs) => tabs, getSubItemPermissions: () => ({ view: true, edit: true, create: true }) };
       if (name.includes('tableColumnResize')) return { __esModule: true, default: resize, useTableColumnResize: resize, ColumnResizer: noop };
       if (name.includes('MobileTableView')) return { __esModule: true, default: noop, useTableViewPreference: () => ['table', noop], TableViewToggle: noop };
       if (name.includes('indianStateDistricts')) return { INDIAN_STATE_DISTRICTS: {}, ALL_INDIAN_STATES: [] };

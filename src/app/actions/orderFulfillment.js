@@ -452,48 +452,350 @@ export async function getOrderPipelineList(tenantId = DEFAULT_TENANT_ID, statusF
 }
 
 /**
- * 6. UPDATE ORDER LIFECYCLE STAGE (Punched -> Confirmed -> Packing -> Dispatched -> Delivered)
+ * 6. UPDATE ORDER LIFECYCLE STAGE (S01 to S13 & Legacy Statuses)
  */
 export async function updateOrderLifecycleStatus(orderId, updateData, tenantId = DEFAULT_TENANT_ID) {
   const adminClient = getAdminClient();
   const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
 
-  const payload = {
-    delivery_status: updateData.delivery_status,
-    updated_at: new Date().toISOString()
-  };
-
-  if (updateData.delivery_status === 'DISPATCHED') {
-    payload.transporter_name = updateData.transporter_name || '';
-    payload.lr_number = updateData.lr_number || '';
-    payload.vehicle_number = updateData.vehicle_number || '';
-    payload.eway_bill_no = updateData.eway_bill_no || '';
-    payload.actual_dispatch_date = new Date().toISOString();
-    payload.estimated_delivery_date = updateData.estimated_delivery_date || null;
-    payload.order_status = 'DISPATCHED';
-  }
-
-  if (updateData.delivery_status === 'DELIVERED') {
-    payload.actual_delivery_date = new Date().toISOString();
-    payload.pod_document_url = updateData.pod_document_url || '';
-    payload.delivery_confirmed_by = updateData.delivery_confirmed_by || 'Verified by Customer';
-    payload.delivery_notes = updateData.delivery_notes || '';
-    payload.order_status = 'BILLED';
-  }
-
   try {
-    const { data, error } = await adminClient
+    // 1. Fetch current order to preserve line items and history
+    const { data: currentOrder, error: fetchErr } = await adminClient
       .from('sales_orders')
-      .update(payload)
+      .select('*')
       .eq('id', orderId)
       .eq('tenant_id', effectiveTenantId)
-      .select()
       .single();
 
-    if (error) throw error;
-    return { success: true, order: data };
+    if (fetchErr) {
+      console.warn('Could not fetch current order for stage transition:', fetchErr.message);
+    }
+
+    const currentHistory = Array.isArray(currentOrder?.stage_history) 
+      ? currentOrder.stage_history 
+      : (Array.isArray(currentOrder?.order_line_items?.stage_history) ? currentOrder.order_line_items.stage_history : []);
+
+    const nowISO = new Date().toISOString();
+    const newStageEntry = {
+      stage_id: updateData.stage_id || updateData.delivery_status,
+      stage_name: updateData.stage_name || updateData.delivery_status,
+      department: updateData.department || '',
+      tat_hours: Number(updateData.tat_hours) || 0,
+      planned_timestamp: updateData.planned_timestamp || null,
+      actual_timestamp: nowISO,
+      tat_breached: !!updateData.tat_breached,
+      action_by: updateData.action_by || 'User',
+      notes: updateData.notes || updateData.delivery_notes || '',
+      custom_fields_data: updateData.custom_fields_data || {},
+      created_at: nowISO
+    };
+
+    const updatedHistory = [...currentHistory, newStageEntry];
+
+    const payload = {
+      delivery_status: updateData.delivery_status,
+      updated_at: nowISO
+    };
+
+    // Specific Stage Handlers
+    if (updateData.delivery_status === 'S12' || updateData.delivery_status === 'DISPATCHED') {
+      payload.transporter_name = updateData.transporter_name || updateData.custom_fields_data?.transporter_name || '';
+      payload.lr_number = updateData.lr_number || updateData.custom_fields_data?.lr_number || '';
+      payload.vehicle_number = updateData.vehicle_number || updateData.custom_fields_data?.vehicle_number || '';
+      payload.eway_bill_no = updateData.eway_bill_no || updateData.custom_fields_data?.eway_bill_no || '';
+      payload.actual_dispatch_date = nowISO;
+      payload.estimated_delivery_date = updateData.estimated_delivery_date || null;
+      payload.order_status = 'DISPATCHED';
+    }
+
+    if (updateData.delivery_status === 'S13' || updateData.delivery_status === 'DELIVERED') {
+      payload.actual_delivery_date = updateData.actual_delivery_date || nowISO;
+      payload.pod_document_url = updateData.pod_document_url || '';
+      payload.delivery_confirmed_by = updateData.delivery_confirmed_by || updateData.custom_fields_data?.received_by_person || 'Verified by Customer';
+      payload.delivery_notes = updateData.delivery_notes || updateData.notes || '';
+      payload.order_status = 'BILLED';
+    }
+
+    // Advance payment handler (S05)
+    if (updateData.stage_id === 'S05' || updateData.delivery_status === 'S05_ADVANCE_RECEIVED') {
+      if (updateData.custom_fields_data?.is_100_percent_paid) {
+        payload.order_status = 'FULL_PAID';
+      }
+    }
+
+    // Try updating with stage_history column
+    let resultData = null;
+    try {
+      const { data, error } = await adminClient
+        .from('sales_orders')
+        .update({
+          ...payload,
+          stage_history: updatedHistory
+        })
+        .eq('id', orderId)
+        .eq('tenant_id', effectiveTenantId)
+        .select()
+        .single();
+
+      if (error) throw error;
+      resultData = data;
+    } catch (dbErr) {
+      // If stage_history column does not exist, store safely inside order_line_items envelope or notes
+      const lineItems = Array.isArray(currentOrder?.order_line_items) ? currentOrder.order_line_items : [];
+      let updatedLineItems = lineItems;
+      if (Array.isArray(lineItems)) {
+        updatedLineItems = [...lineItems];
+        updatedLineItems._stage_history = updatedHistory;
+      }
+
+      const fallbackPayload = {
+        ...payload,
+        delivery_notes: `${payload.delivery_notes || ''}\n[Stage History JSON]: ${JSON.stringify(updatedHistory).slice(0, 1000)}`
+      };
+
+      const { data: fbData, error: fbErr } = await adminClient
+        .from('sales_orders')
+        .update(fallbackPayload)
+        .eq('id', orderId)
+        .eq('tenant_id', effectiveTenantId)
+        .select()
+        .single();
+
+      if (fbErr) throw fbErr;
+      resultData = fbData;
+    }
+
+    return { success: true, order: resultData };
   } catch (err) {
     console.error('updateOrderLifecycleStatus error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * 6B. REVISE ORDER ITEMS (S01 Modification: Add/Remove/Change Qty & Rate)
+ */
+export async function reviseOrderItems(orderId, updatedItems = [], updatedBy = 'Sales User', revisionReason = '', tenantId = DEFAULT_TENANT_ID) {
+  const adminClient = getAdminClient();
+  const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
+
+  try {
+    const { data: currentOrder, error: fetchErr } = await adminClient
+      .from('sales_orders')
+      .select('*')
+      .eq('id', orderId)
+      .eq('tenant_id', effectiveTenantId)
+      .single();
+
+    if (fetchErr) throw fetchErr;
+
+    // Recalculate totals
+    let newTotalQty = 0;
+    let newTotalAmount = 0;
+    const sanitizedItems = updatedItems.map(it => {
+      const q = Math.max(1, Number(it.qty) || 1);
+      const r = Math.max(0, Number(it.rate) || 0);
+      newTotalQty += q;
+      newTotalAmount += (q * r);
+      return {
+        product: it.product || it.name || 'Product',
+        qty: q,
+        rate: r,
+        amount: q * r
+      };
+    });
+
+    const nowISO = new Date().toISOString();
+    const currentHistory = Array.isArray(currentOrder?.stage_history) ? currentOrder.stage_history : [];
+    const revisionLog = {
+      stage_id: 'S01_REVISION',
+      stage_name: 'Order Revision',
+      action_by: updatedBy,
+      notes: revisionReason || 'Order items modified in Stage S01',
+      previous_items: currentOrder.order_line_items,
+      previous_amount: currentOrder.total_amount,
+      new_amount: newTotalAmount,
+      created_at: nowISO
+    };
+
+    const updatedHistory = [...currentHistory, revisionLog];
+
+    const payload = {
+      order_line_items: sanitizedItems,
+      total_ordered_qty: newTotalQty,
+      total_amount: newTotalAmount,
+      updated_at: nowISO
+    };
+
+    try {
+      const { data, error } = await adminClient
+        .from('sales_orders')
+        .update({
+          ...payload,
+          stage_history: updatedHistory
+        })
+        .eq('id', orderId)
+        .eq('tenant_id', effectiveTenantId)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return { success: true, order: data };
+    } catch (_) {
+      const { data, error } = await adminClient
+        .from('sales_orders')
+        .update(payload)
+        .eq('id', orderId)
+        .eq('tenant_id', effectiveTenantId)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return { success: true, order: data };
+    }
+  } catch (err) {
+    console.error('reviseOrderItems error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * 6C. CANCEL ORDER (S01 Cancellation with Structured Reason)
+ */
+export async function cancelOrder(orderId, cancelReason = '', cancelledBy = 'Sales User', notes = '', tenantId = DEFAULT_TENANT_ID) {
+  const adminClient = getAdminClient();
+  const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
+
+  try {
+    const { data: currentOrder, error: fetchErr } = await adminClient
+      .from('sales_orders')
+      .select('*')
+      .eq('id', orderId)
+      .eq('tenant_id', effectiveTenantId)
+      .single();
+
+    if (fetchErr) throw fetchErr;
+
+    const nowISO = new Date().toISOString();
+    const currentHistory = Array.isArray(currentOrder?.stage_history) ? currentOrder.stage_history : [];
+    const cancelLog = {
+      stage_id: 'CANCELLED',
+      stage_name: 'Order Cancelled',
+      action_by: cancelledBy,
+      cancel_reason: cancelReason,
+      notes: notes || '',
+      created_at: nowISO
+    };
+
+    const payload = {
+      order_status: 'CANCELLED',
+      delivery_status: 'CANCELLED',
+      delivery_notes: `[CANCELLED by ${cancelledBy}]: ${cancelReason} - ${notes}`,
+      updated_at: nowISO
+    };
+
+    try {
+      const { data, error } = await adminClient
+        .from('sales_orders')
+        .update({
+          ...payload,
+          stage_history: [...currentHistory, cancelLog]
+        })
+        .eq('id', orderId)
+        .eq('tenant_id', effectiveTenantId)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return { success: true, order: data };
+    } catch (_) {
+      const { data, error } = await adminClient
+        .from('sales_orders')
+        .update(payload)
+        .eq('id', orderId)
+        .eq('tenant_id', effectiveTenantId)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return { success: true, order: data };
+    }
+  } catch (err) {
+    console.error('cancelOrder error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * 6D. DISPATCH PARTIAL SPLIT LOT (Lot-A Dispatched, Lot-B Retained in Pipeline)
+ */
+export async function dispatchPartialLot(orderId, lotData = {}, dispatchedBy = 'Logistics', tenantId = DEFAULT_TENANT_ID) {
+  const adminClient = getAdminClient();
+  const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
+
+  try {
+    const { data: currentOrder, error: fetchErr } = await adminClient
+      .from('sales_orders')
+      .select('*')
+      .eq('id', orderId)
+      .eq('tenant_id', effectiveTenantId)
+      .single();
+
+    if (fetchErr) throw fetchErr;
+
+    const nowISO = new Date().toISOString();
+    const currentHistory = Array.isArray(currentOrder?.stage_history) ? currentOrder.stage_history : [];
+    
+    const lotLog = {
+      stage_id: 'PARTIAL_LOT_DISPATCH',
+      stage_name: `Partial Lot Dispatched (${lotData.dispatched_qty || 0} Units)`,
+      lot_no: lotData.lot_no || 'Lot-A',
+      dispatched_qty: Number(lotData.dispatched_qty) || 0,
+      remaining_qty: Number(lotData.remaining_qty) || 0,
+      transporter_name: lotData.transporter_name || '',
+      lr_number: lotData.lr_number || '',
+      vehicle_number: lotData.vehicle_number || '',
+      action_by: dispatchedBy,
+      notes: lotData.notes || '',
+      created_at: nowISO
+    };
+
+    const payload = {
+      transporter_name: lotData.transporter_name || currentOrder.transporter_name,
+      lr_number: lotData.lr_number || currentOrder.lr_number,
+      vehicle_number: lotData.vehicle_number || currentOrder.vehicle_number,
+      delivery_notes: `${currentOrder.delivery_notes || ''}\n[Lot-A Dispatched]: ${lotData.dispatched_qty} Units via ${lotData.transporter_name} (LR: ${lotData.lr_number})`,
+      updated_at: nowISO
+    };
+
+    try {
+      const { data, error } = await adminClient
+        .from('sales_orders')
+        .update({
+          ...payload,
+          stage_history: [...currentHistory, lotLog]
+        })
+        .eq('id', orderId)
+        .eq('tenant_id', effectiveTenantId)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return { success: true, order: data };
+    } catch (_) {
+      const { data, error } = await adminClient
+        .from('sales_orders')
+        .update(payload)
+        .eq('id', orderId)
+        .eq('tenant_id', effectiveTenantId)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return { success: true, order: data };
+    }
+  } catch (err) {
+    console.error('dispatchPartialLot error:', err);
     return { success: false, error: err.message };
   }
 }

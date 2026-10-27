@@ -359,6 +359,8 @@ export default function ChannelOperationsModule({
           loading={initialLoading}
           onRefresh={loadOperationsData}
           tenantId={effectiveTenantId}
+          userCompany={userCompany}
+          userName={userName}
         />
       )}
 

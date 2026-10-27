@@ -1,0 +1,427 @@
+{
+  "TNT00002": {
+    "All Branches": {
+      "tat_mode": "DYNAMIC",
+      "default_advance_pct": 30,
+      "auto_skip_balance_on_full_advance": true,
+      "allow_regular_party_credit_waiver": true,
+      "allow_partial_split_lots": true,
+      "stages": [
+        {
+          "id": "S01",
+          "step_no": 1,
+          "name": "Order Confirmation",
+          "short_code": "CONFIRMED",
+          "department": "Sales / Order Desk",
+          "tat_hours": 4,
+          "color": "#3b82f6",
+          "is_enabled": true,
+          "default_note": "Order confirmed with channel partner after reviewing quantities and rates.",
+          "allow_modify": true,
+          "allow_cancel": true,
+          "custom_fields": [
+            {
+              "id": "dealer_po_no",
+              "label": "Dealer PO Number",
+              "type": "text",
+              "default_value": "",
+              "placeholder": "Enter Dealer PO No. (if provided)",
+              "required": false
+            },
+            {
+              "id": "dealer_po_date",
+              "label": "Dealer PO Date",
+              "type": "date",
+              "default_value": "",
+              "required": false
+            }
+          ]
+        },
+        {
+          "id": "S02",
+          "step_no": 2,
+          "name": "PI Generation",
+          "short_code": "PI_GENERATED",
+          "department": "Accounts / Billing",
+          "tat_hours": 2,
+          "color": "#6366f1",
+          "is_enabled": true,
+          "default_note": "Proforma Invoice generated with GST, HSN codes, and company bank details.",
+          "custom_fields": [
+            {
+              "id": "pi_number",
+              "label": "Tally / SAP PI Number",
+              "type": "text",
+              "default_value": "",
+              "placeholder": "e.g. TALLY/PI/24-25/0842",
+              "required": false
+            },
+            {
+              "id": "bank_account_selected",
+              "label": "Bank Account for Deposit",
+              "type": "select",
+              "options": ["HDFC Bank - CC A/c", "State Bank of India - CA A/c", "ICICI Bank - CA A/c", "Axis Bank - CA A/c"],
+              "default_value": "HDFC Bank - CC A/c",
+              "required": false
+            }
+          ]
+        },
+        {
+          "id": "S03",
+          "step_no": 3,
+          "name": "PI Shared",
+          "short_code": "PI_SHARED",
+          "department": "Sales / Coordination",
+          "tat_hours": 2,
+          "color": "#8b5cf6",
+          "is_enabled": true,
+          "default_note": "Proforma Invoice PDF officially shared with partner for advance processing.",
+          "custom_fields": [
+            {
+              "id": "shared_medium",
+              "label": "Sharing Channel",
+              "type": "select",
+              "options": ["WhatsApp Official", "Email Delivery", "Handover / Printout", "Partner Portal"],
+              "default_value": "WhatsApp Official",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "S04",
+          "step_no": 4,
+          "name": "Request Advance Payment",
+          "short_code": "ADVANCE_REQUESTED",
+          "department": "Accounts & Sales",
+          "tat_hours": 4,
+          "color": "#ec4899",
+          "is_enabled": true,
+          "default_note": "Advance payment requested as per commercial policy terms.",
+          "custom_fields": [
+            {
+              "id": "advance_payment_terms",
+              "label": "Payment Terms Policy",
+              "type": "select",
+              "options": ["Standard 30% Advance", "100% Full Advance Upfront", "Regular Party Credit (0% Advance Waived)"],
+              "default_value": "Standard 30% Advance",
+              "required": true
+            },
+            {
+              "id": "advance_target_amount",
+              "label": "Advance Amount Requested (₹)",
+              "type": "number",
+              "default_value": "",
+              "placeholder": "Auto-calculated 30% or custom amount",
+              "required": false
+            }
+          ]
+        },
+        {
+          "id": "S05",
+          "step_no": 5,
+          "name": "Receive Advance Payment",
+          "short_code": "ADVANCE_RECEIVED",
+          "department": "Accounts Team",
+          "tat_hours": 24,
+          "color": "#14b8a6",
+          "is_enabled": true,
+          "default_note": "Advance payment verified and credited in bank ledger.",
+          "custom_fields": [
+            {
+              "id": "advance_utr_no",
+              "label": "Bank UTR / Cheque Reference",
+              "type": "text",
+              "default_value": "",
+              "placeholder": "Enter 12/16-digit UTR No.",
+              "required": false
+            },
+            {
+              "id": "advance_received_amount",
+              "label": "Actual Advance Received (₹)",
+              "type": "number",
+              "default_value": "",
+              "required": false
+            },
+            {
+              "id": "is_100_percent_paid",
+              "label": "Is 100% Full Payment Received?",
+              "type": "checkbox",
+              "default_value": false,
+              "required": false
+            }
+          ]
+        },
+        {
+          "id": "S06",
+          "step_no": 6,
+          "name": "Check Stock & Production",
+          "short_code": "IN_PRODUCTION",
+          "department": "Plant / Works",
+          "tat_hours": 48,
+          "color": "#f59e0b",
+          "is_enabled": true,
+          "default_note": "Stock check completed and manufacturing job card released to assembly floor.",
+          "custom_fields": [
+            {
+              "id": "stock_status_type",
+              "label": "Availability Source",
+              "type": "select",
+              "options": ["Fresh Assembly Line Production", "Ex-Stock Ready in Godown (Fast-Track)", "Component Fabrication in Progress"],
+              "default_value": "Fresh Assembly Line Production",
+              "required": true
+            },
+            {
+              "id": "production_batch_no",
+              "label": "Plant Batch / Job Card No.",
+              "type": "text",
+              "default_value": "",
+              "placeholder": "e.g. BATCH-2026-R4",
+              "required": false
+            }
+          ]
+        },
+        {
+          "id": "S07",
+          "step_no": 7,
+          "name": "Product Partial & Full Status",
+          "short_code": "BATCH_READINESS",
+          "department": "Plant Floor Supervisor",
+          "tat_hours": 12,
+          "color": "#d97706",
+          "is_enabled": true,
+          "default_note": "Assembly line batch progress and ready unit count verified.",
+          "custom_fields": [
+            {
+              "id": "batch_readiness_status",
+              "label": "Overall Readiness State",
+              "type": "select",
+              "options": ["100% Full Order Ready", "Partial Ready (Split Lot Eligible)", "Finishing & Paint Shop"],
+              "default_value": "100% Full Order Ready",
+              "required": true
+            },
+            {
+              "id": "units_ready_count",
+              "label": "Ready Units Count",
+              "type": "number",
+              "default_value": "",
+              "placeholder": "Units completely assembled",
+              "required": false
+            }
+          ]
+        },
+        {
+          "id": "S08",
+          "step_no": 8,
+          "name": "Quality Check (PDI)",
+          "short_code": "PDI_PASSED",
+          "department": "Quality Assurance (QC)",
+          "tat_hours": 8,
+          "color": "#10b981",
+          "is_enabled": true,
+          "default_note": "Pre-delivery inspection passed: gearbox oil, paint finish, torque test & accessories checked.",
+          "custom_fields": [
+            {
+              "id": "pdi_engineer_name",
+              "label": "QC Inspector / Engineer",
+              "type": "text",
+              "default_value": "",
+              "placeholder": "Name of inspector",
+              "required": false
+            },
+            {
+              "id": "pdi_result",
+              "label": "Inspection Outcome",
+              "type": "select",
+              "options": ["Passed - Grade A", "Passed with Minor Touchup", "Hold - Rework Required"],
+              "default_value": "Passed - Grade A",
+              "required": true
+            },
+            {
+              "id": "machine_chassis_nos",
+              "label": "Machine Serial / Chassis Nos.",
+              "type": "text",
+              "default_value": "",
+              "placeholder": "Comma separated serial numbers",
+              "required": false
+            }
+          ]
+        },
+        {
+          "id": "S09",
+          "step_no": 9,
+          "name": "Request 70% Balance",
+          "short_code": "BALANCE_REQUESTED",
+          "department": "Accounts & Sales",
+          "tat_hours": 4,
+          "color": "#8b5cf6",
+          "is_enabled": true,
+          "default_note": "Inspection cleared dispatch notice and balance payment requested.",
+          "custom_fields": [
+            {
+              "id": "balance_amount_requested",
+              "label": "Balance Payment Requested (₹)",
+              "type": "number",
+              "default_value": "",
+              "required": false
+            }
+          ]
+        },
+        {
+          "id": "S10",
+          "step_no": 10,
+          "name": "Receive 70% Balance",
+          "short_code": "BALANCE_RECEIVED",
+          "department": "Accounts Team",
+          "tat_hours": 24,
+          "color": "#059669",
+          "is_enabled": true,
+          "default_note": "Balance payment cleared in ledger. Accounts release issued for dispatch.",
+          "custom_fields": [
+            {
+              "id": "balance_utr_no",
+              "label": "Balance Bank UTR / Ref No.",
+              "type": "text",
+              "default_value": "",
+              "placeholder": "Enter balance UTR",
+              "required": false
+            },
+            {
+              "id": "accounts_clearance_status",
+              "label": "Accounts Clearance Status",
+              "type": "select",
+              "options": ["Cleared - 100% Payment Received", "Approved on Approved Ledger Credit Limit", "Special MD Approval"],
+              "default_value": "Cleared - 100% Payment Received",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "S11",
+          "step_no": 11,
+          "name": "Ready for Dispatch",
+          "short_code": "READY_FOR_DISPATCH",
+          "department": "Godown / Logistics",
+          "tat_hours": 6,
+          "color": "#0284c7",
+          "is_enabled": true,
+          "default_note": "Machine packaging, strapping complete. Tax invoice and E-way bill attached.",
+          "custom_fields": [
+            {
+              "id": "tax_invoice_number",
+              "label": "Tally / SAP Tax Invoice No.",
+              "type": "text",
+              "default_value": "",
+              "placeholder": "e.g. NSG/24-25/1109",
+              "required": false
+            },
+            {
+              "id": "eway_bill_no",
+              "label": "E-Way Bill Number",
+              "type": "text",
+              "default_value": "",
+              "placeholder": "12-digit E-way bill",
+              "required": false
+            },
+            {
+              "id": "final_billed_amount",
+              "label": "Final Actual Billed Amount (₹)",
+              "type": "number",
+              "default_value": "",
+              "placeholder": "Actual amount from Tally invoice",
+              "required": false
+            }
+          ]
+        },
+        {
+          "id": "S12",
+          "step_no": 12,
+          "name": "Dispatch Material",
+          "short_code": "DISPATCHED",
+          "department": "Gate & Logistics",
+          "tat_hours": 12,
+          "color": "#ea580c",
+          "is_enabled": true,
+          "default_note": "Material loaded on vehicle and LR / Bilty handed over to transporter.",
+          "custom_fields": [
+            {
+              "id": "dispatch_type",
+              "label": "Dispatch Scope",
+              "type": "select",
+              "options": ["Full Order Dispatch", "Partial Dispatch (Split Lot 1)", "Partial Dispatch (Balance Lot)"],
+              "default_value": "Full Order Dispatch",
+              "required": true
+            },
+            {
+              "id": "transporter_name",
+              "label": "Transporter / Logistics Co.",
+              "type": "text",
+              "default_value": "",
+              "placeholder": "e.g. VRL Logistics, TCI Express",
+              "required": false
+            },
+            {
+              "id": "lr_number",
+              "label": "LR / Bilty Number",
+              "type": "text",
+              "default_value": "",
+              "placeholder": "Consignment Note / Bilty No.",
+              "required": false
+            },
+            {
+              "id": "vehicle_number",
+              "label": "Vehicle / Truck Number",
+              "type": "text",
+              "default_value": "",
+              "placeholder": "e.g. PB10-CX-1234",
+              "required": false
+            },
+            {
+              "id": "driver_mobile",
+              "label": "Driver Contact Mobile",
+              "type": "text",
+              "default_value": "",
+              "placeholder": "10-digit mobile",
+              "required": false
+            }
+          ]
+        },
+        {
+          "id": "S13",
+          "step_no": 13,
+          "name": "Material Delivered (POD)",
+          "short_code": "DELIVERED",
+          "department": "Customer Support",
+          "tat_hours": 48,
+          "color": "#15803d",
+          "is_enabled": true,
+          "default_note": "Material safely delivered at dealer premises. Signed POD verified and feedback queued.",
+          "custom_fields": [
+            {
+              "id": "actual_delivery_date",
+              "label": "Actual Delivery Date",
+              "type": "date",
+              "default_value": "",
+              "required": false
+            },
+            {
+              "id": "received_by_person",
+              "label": "Received By (Dealer Rep Name)",
+              "type": "text",
+              "default_value": "",
+              "placeholder": "Name of receiver",
+              "required": false
+            },
+            {
+              "id": "delivery_condition",
+              "label": "Delivery Material Condition",
+              "type": "select",
+              "options": ["Intact / Excellent - Zero Damage", "Minor Scratch (Acceptable)", "Transit Shortage / Damage Reported"],
+              "default_value": "Intact / Excellent - Zero Damage",
+              "required": true
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
