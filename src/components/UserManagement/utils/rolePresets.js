@@ -92,6 +92,17 @@ export const ROLE_PRESETS = [
         }
       },
       orders: { view: true, read: true, write: true, edit: true, export: true },
+      channel_ops: {
+        view: true, read: true, write: true, edit: true, export: true, delete: true,
+        sub_items: {
+          frequency_rules: { view: true }, order_followup: { view: true }, order_pipeline: { view: true },
+          all_orders: { view: true }, s01: { view: true }, s02: { view: true }, s03: { view: true },
+          s04: { view: true }, s05: { view: true }, s06: { view: true }, s07: { view: true },
+          s08: { view: true }, s09: { view: true }, s10: { view: true }, s11: { view: true },
+          s12: { view: true }, s13: { view: true }, order_feedback: { view: true },
+          monthly_feedback: { view: true }, complaints: { view: true }
+        }
+      },
       location_master: { view: true, read: true, write: true, edit: true, export: true },
       mrp: { view: true, read: true, write: true, edit: true, export: true },
       mrp_against: { view: true, read: true, write: true, edit: true, export: true },
@@ -212,6 +223,17 @@ export const ROLE_PRESETS = [
         }
       },
       orders: { view: true, read: true, write: true, edit: true, export: true },
+      channel_ops: {
+        view: true, read: true, write: true, edit: true, export: true, delete: true,
+        sub_items: {
+          frequency_rules: { view: true }, order_followup: { view: true }, order_pipeline: { view: true },
+          all_orders: { view: true }, s01: { view: true }, s02: { view: true }, s03: { view: true },
+          s04: { view: true }, s05: { view: true }, s06: { view: true }, s07: { view: true },
+          s08: { view: true }, s09: { view: true }, s10: { view: true }, s11: { view: true },
+          s12: { view: true }, s13: { view: true }, order_feedback: { view: true },
+          monthly_feedback: { view: true }, complaints: { view: true }
+        }
+      },
       location_master: { view: true, read: true, write: true, edit: true, export: true },
       mrp: { view: true, read: true, write: true, edit: true, export: true },
       mrp_against: { view: true, read: true, write: true, edit: true, export: true },
@@ -297,6 +319,17 @@ export const ROLE_PRESETS = [
         }
       },
       orders: { view: true, read: true, write: true, edit: true, export: true },
+      channel_ops: {
+        view: true, read: true, write: true, edit: true, export: true, delete: true,
+        sub_items: {
+          frequency_rules: { view: true }, order_followup: { view: true }, order_pipeline: { view: true },
+          all_orders: { view: true }, s01: { view: true }, s02: { view: true }, s03: { view: true },
+          s04: { view: true }, s05: { view: true }, s06: { view: true }, s07: { view: true },
+          s08: { view: true }, s09: { view: true }, s10: { view: true }, s11: { view: true },
+          s12: { view: true }, s13: { view: true }, order_feedback: { view: true },
+          monthly_feedback: { view: true }, complaints: { view: true }
+        }
+      },
       attendance: {
         view: true, read: true, write: true, edit: false, export: false,
         sub_items: {
@@ -398,6 +431,17 @@ export const ROLE_PRESETS = [
       can_bulk_actions: true,
       callcenter: { view: true, read: true, write: true, edit: true, export: false },
       orders: { view: true, read: true, write: true, edit: true, export: true },
+      channel_ops: {
+        view: true, read: true, write: true, edit: true, export: true, delete: true,
+        sub_items: {
+          frequency_rules: { view: true }, order_followup: { view: true }, order_pipeline: { view: true },
+          all_orders: { view: true }, s01: { view: true }, s02: { view: true }, s03: { view: true },
+          s04: { view: true }, s05: { view: true }, s06: { view: true }, s07: { view: true },
+          s08: { view: true }, s09: { view: true }, s10: { view: true }, s11: { view: true },
+          s12: { view: true }, s13: { view: true }, order_feedback: { view: true },
+          monthly_feedback: { view: true }, complaints: { view: true }
+        }
+      },
       party: {
         view: true, read: true, write: true, edit: true, export: true,
         sub_items: {
@@ -618,6 +662,17 @@ export const ROLE_PRESETS = [
         }
       },
       orders: { view: true, read: true, write: true, edit: true, export: true },
+      channel_ops: {
+        view: true, read: true, write: true, edit: true, export: true, delete: true,
+        sub_items: {
+          frequency_rules: { view: true }, order_followup: { view: true }, order_pipeline: { view: true },
+          all_orders: { view: true }, s01: { view: true }, s02: { view: true }, s03: { view: true },
+          s04: { view: true }, s05: { view: true }, s06: { view: true }, s07: { view: true },
+          s08: { view: true }, s09: { view: true }, s10: { view: true }, s11: { view: true },
+          s12: { view: true }, s13: { view: true }, order_feedback: { view: true },
+          monthly_feedback: { view: true }, complaints: { view: true }
+        }
+      },
       attendance: {
         view: true, read: true, write: true, edit: false, export: false,
         sub_items: {
@@ -775,7 +830,18 @@ export const ROLE_PRESETS = [
       analytics: { view: true, read: true, write: false, edit: false, export: false },
       report: { view: true, read: true, write: false, edit: false, export: false },
       party: { view: true, read: true, write: false, edit: false, export: false },
-      orders: { view: true, read: true, write: false, edit: false, export: false }
+      orders: { view: true, read: true, write: false, edit: false, export: false },
+      channel_ops: {
+        view: true, read: true, write: false, edit: false, export: false,
+        sub_items: {
+          frequency_rules: { view: true }, order_followup: { view: true }, order_pipeline: { view: true },
+          all_orders: { view: true }, s01: { view: true }, s02: { view: true }, s03: { view: true },
+          s04: { view: true }, s05: { view: true }, s06: { view: true }, s07: { view: true },
+          s08: { view: true }, s09: { view: true }, s10: { view: true }, s11: { view: true },
+          s12: { view: true }, s13: { view: true }, order_feedback: { view: true },
+          monthly_feedback: { view: true }, complaints: { view: true }
+        }
+      }
     }
   }
 ];

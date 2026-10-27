@@ -105,6 +105,17 @@ export function getSubItemPermissions(moduleAccess, userRole, moduleId, subItemI
       if (moduleId === 'settings' && subItemId === 'order_pipeline') {
         return { view: parentPerms.view, add: parentPerms.add, edit: parentPerms.edit, delete: false };
       }
+      // If this is all_orders or individual stages (s01..s13) in channel_ops, inherit from parent order_pipeline if not explicitly disabled
+      if (moduleId === 'channel_ops' && (subItemId === 'all_orders' || /^s\d{2}$/i.test(subItemId))) {
+        const pipePerm = subItems['order_pipeline'];
+        if (pipePerm !== undefined) {
+          const isView = typeof pipePerm === 'object' ? pipePerm.view !== false : !!pipePerm;
+          const isAdd = typeof pipePerm === 'object' ? pipePerm.add !== false : !!pipePerm;
+          const isEdit = typeof pipePerm === 'object' ? pipePerm.edit !== false : !!pipePerm;
+          return { view: isView, add: isAdd && parentPerms.add, edit: isEdit && parentPerms.edit, delete: false };
+        }
+        return { view: parentPerms.view, add: parentPerms.add, edit: parentPerms.edit, delete: false };
+      }
       // Legacy WhatsApp Unofficial alias compatibility (templates <-> live_chat)
       if (moduleId === 'whatsapp_unofficial' && subItemId === 'templates' && subItems['live_chat'] !== undefined) {
         const legacy = subItems['live_chat'];

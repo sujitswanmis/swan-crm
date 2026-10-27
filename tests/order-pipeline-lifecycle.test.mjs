@@ -69,3 +69,56 @@ test('3-Tier stage ownership: all stages have authorized_roles, assigned_emp_id,
     assert.equal(typeof st.assigned_emp_name, 'string', `Stage ${st.id} has assigned_emp_name string`);
   }
 });
+
+test('Granular permissions: channel_ops contains all_orders and s01..s13 in modulesConfig with backward compatibility', async () => {
+  const modPath = path.join(process.cwd(), 'src', 'config', 'modulesConfig.jsx');
+  const content = await fs.readFile(modPath, 'utf-8');
+
+  // Verify all_orders and all 13 stages are in modulesConfig
+  assert.ok(content.includes("id: 'all_orders'"), 'Contains all_orders in modulesConfig');
+  for (let i = 1; i <= 13; i++) {
+    const sId = `s${String(i).padStart(2, '0')}`;
+    assert.ok(content.includes(`id: '${sId}'`), `Contains stage ${sId} in modulesConfig`);
+  }
+
+  // Import permissionUtils to test backward compatibility inheritance
+  const { getSubItemPermissions } = await import('../src/utils/permissionUtils.js');
+
+  // Case 1: Legacy user with only order_pipeline granted -> automatically inherits S01..S13 and all_orders
+  const legacyAccess = {
+    channel_ops: {
+      view: true,
+      sub_items: {
+        order_pipeline: { view: true, add: true, edit: true }
+      }
+    }
+  };
+  const inheritedS01 = getSubItemPermissions(legacyAccess, 'Executive', 'channel_ops', 's01');
+  assert.equal(inheritedS01.view, true, 'Inherits S01 view from order_pipeline');
+  assert.equal(inheritedS01.edit, true, 'Inherits S01 edit from order_pipeline');
+
+  const inheritedAll = getSubItemPermissions(legacyAccess, 'Executive', 'channel_ops', 'all_orders');
+  assert.equal(inheritedAll.view, true, 'Inherits all_orders view from order_pipeline');
+
+  // Case 2: Explicit override in Permission Matrix (S06 denied, S07 granted)
+  const granularAccess = {
+    channel_ops: {
+      view: true,
+      sub_items: {
+        order_pipeline: { view: true, add: true, edit: true },
+        all_orders: { view: false },
+        s06: { view: false, edit: false },
+        s07: { view: true, edit: true }
+      }
+    }
+  };
+  const s06Perm = getSubItemPermissions(granularAccess, 'Staff', 'channel_ops', 's06');
+  assert.equal(s06Perm.view, false, 'Explicitly denied S06 is false');
+
+  const s07Perm = getSubItemPermissions(granularAccess, 'Staff', 'channel_ops', 's07');
+  assert.equal(s07Perm.view, true, 'Explicitly granted S07 is true');
+  assert.equal(s07Perm.edit, true, 'Explicitly granted S07 edit is true');
+
+  const allOrdersPerm = getSubItemPermissions(granularAccess, 'Staff', 'channel_ops', 'all_orders');
+  assert.equal(allOrdersPerm.view, false, 'Explicitly denied all_orders is false');
+});

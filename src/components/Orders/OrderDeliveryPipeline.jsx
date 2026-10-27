@@ -141,6 +141,16 @@ function checkCanUserExecuteStage({
     return { allowed: false, reason: 'Invalid Stage' };
   }
 
+  // 0. Granular Stage Permission (S01..S13 from Permission Matrix)
+  const stageKey = (stage.id || '').toLowerCase();
+  const granularPerm = getSubItemPermissions(moduleAccess, userRole, 'channel_ops', stageKey);
+  if (granularPerm && granularPerm.view === false) {
+    return { allowed: false, reason: `View access to ${stage.id} denied in Permission Matrix` };
+  }
+  if (granularPerm && (granularPerm.edit || granularPerm.add)) {
+    return { allowed: true, reason: `Permission Matrix (${stage.id} Edit Access)` };
+  }
+
   // 1. Specific Assigned Incharge
   if (stage.assigned_emp_id) {
     if (userId && String(userId) === String(stage.assigned_emp_id)) {
@@ -262,10 +272,43 @@ export default function OrderDeliveryPipeline({
     if (onRefresh) onRefresh();
   };
 
+  // Granular Stage Access Permissions
+  const allOrdersPerm = useMemo(() => {
+    return getSubItemPermissions(moduleAccess, userRole, 'channel_ops', 'all_orders');
+  }, [moduleAccess, userRole]);
+
+  // Permitted stages that the user can view
+  const visibleStages = useMemo(() => {
+    const isAdmin = checkIsAdminRole(userRole);
+    if (isAdmin) return stages;
+    return stages.filter(st => {
+      const p = getSubItemPermissions(moduleAccess, userRole, 'channel_ops', st.id.toLowerCase());
+      return p.view !== false;
+    });
+  }, [stages, moduleAccess, userRole]);
+
+  // If user does not have All Orders access and currently stageFilter is 'ALL', default to their first visible stage
+  useEffect(() => {
+    const isAdmin = checkIsAdminRole(userRole);
+    if (!isAdmin && allOrdersPerm.view === false && stageFilter === 'ALL' && visibleStages.length > 0) {
+      setStageFilter(visibleStages[0].id);
+    }
+  }, [allOrdersPerm.view, stageFilter, visibleStages, userRole]);
+
   // Filtered orders
   const filteredOrders = useMemo(() => {
+    const isAdmin = checkIsAdminRole(userRole);
+
     return orders.filter(order => {
       const resolvedStage = resolveOrderStage(order, stages);
+
+      // If user does not have All Orders permission, they only see orders for their permitted stages
+      if (!isAdmin && allOrdersPerm.view === false) {
+        if (!visibleStages.some(vs => vs.id === resolvedStage.id)) {
+          return false;
+        }
+      }
+
       if (stageFilter !== 'ALL' && resolvedStage.id !== stageFilter) {
         return false;
       }
@@ -281,7 +324,7 @@ export default function OrderDeliveryPipeline({
 
       return num.includes(term) || firm.includes(term) || lr.includes(term) || veh.includes(term) || trans.includes(term) || owner.includes(term);
     });
-  }, [orders, stageFilter, searchTerm, stages]);
+  }, [orders, stageFilter, searchTerm, stages, userRole, allOrdersPerm.view, visibleStages]);
 
   // Auto-reset page on filter/search change
   useEffect(() => {
@@ -323,37 +366,40 @@ export default function OrderDeliveryPipeline({
         alignItems: 'center',
         gap: '0.5rem'
       }}>
-        <div
-          onClick={() => setStageFilter('ALL')}
-          style={{
-            padding: '0.5rem 0.85rem',
-            borderRadius: '8px',
-            background: stageFilter === 'ALL' ? 'var(--accent-color, #2563eb)' : 'var(--bg-primary)',
-            color: stageFilter === 'ALL' ? '#ffffff' : 'var(--text-primary)',
-            border: '1px solid var(--border-light)',
-            cursor: 'pointer',
-            fontSize: '0.78rem',
-            fontWeight: 800,
-            whiteSpace: 'nowrap',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.4rem',
-            transition: 'all 0.15s ease'
-          }}
-        >
-          <span>All Orders</span>
-          <span style={{
-            fontSize: '0.72rem',
-            padding: '0.1rem 0.4rem',
-            borderRadius: '10px',
-            background: stageFilter === 'ALL' ? 'rgba(255,255,255,0.25)' : 'var(--border-light)',
-            color: stageFilter === 'ALL' ? '#ffffff' : 'var(--text-secondary)'
-          }}>
-            {stageCounts.ALL}
-          </span>
-        </div>
+        {/* All Orders Tab (Rendered if user has all_orders view or is Admin) */}
+        {(checkIsAdminRole(userRole) || allOrdersPerm.view !== false) && (
+          <div
+            onClick={() => setStageFilter('ALL')}
+            style={{
+              padding: '0.5rem 0.85rem',
+              borderRadius: '8px',
+              background: stageFilter === 'ALL' ? 'var(--accent-color, #2563eb)' : 'var(--bg-primary)',
+              color: stageFilter === 'ALL' ? '#ffffff' : 'var(--text-primary)',
+              border: '1px solid var(--border-light)',
+              cursor: 'pointer',
+              fontSize: '0.78rem',
+              fontWeight: 800,
+              whiteSpace: 'nowrap',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.4rem',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <span>All Orders</span>
+            <span style={{
+              fontSize: '0.72rem',
+              padding: '0.1rem 0.4rem',
+              borderRadius: '10px',
+              background: stageFilter === 'ALL' ? 'rgba(255,255,255,0.25)' : 'var(--border-light)',
+              color: stageFilter === 'ALL' ? '#ffffff' : 'var(--text-secondary)'
+            }}>
+              {stageCounts.ALL}
+            </span>
+          </div>
+        )}
 
-        {stages.map(st => {
+        {visibleStages.map(st => {
           const count = stageCounts[st.id] || 0;
           const isSelected = stageFilter === st.id;
           return (
