@@ -1037,7 +1037,8 @@ export default function RoleTemplateModal({ onClose, onSave, saving = false, use
                   borderCollapse: 'separate',
                   borderSpacing: 0,
                   tableLayout: 'fixed',
-                  width: tableWidth,
+                  width: '100%',
+                  minWidth: `${tableWidth}px`,
                   fontSize: '0.82rem'
                 }}
               >

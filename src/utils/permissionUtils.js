@@ -93,6 +93,20 @@ export function getSubItemPermissions(moduleAccess, userRole, moduleId, subItemI
         const myAttView = subItems['my_attendance'] ? (subItems['my_attendance'].view !== false) : true;
         return { view: myAttView, add: parentPerms.add, edit: parentPerms.edit, delete: false };
       }
+      // If this is dashboard or holidays in checklist, inherit from parent checklist view if not explicitly disabled
+      if (moduleId === 'checklist' && (subItemId === 'dashboard' || subItemId === 'holidays')) {
+        return { view: parentPerms.view, add: parentPerms.add, edit: parentPerms.edit, delete: false };
+      }
+      // If this is email_config tabs, inherit from parent email_config view if not explicitly disabled
+      if (moduleId === 'email_config') {
+        return { view: parentPerms.view, add: parentPerms.add, edit: parentPerms.edit, delete: false };
+      }
+      // Legacy WhatsApp Unofficial alias compatibility (templates <-> live_chat)
+      if (moduleId === 'whatsapp_unofficial' && subItemId === 'templates' && subItems['live_chat'] !== undefined) {
+        const legacy = subItems['live_chat'];
+        const isAllowed = typeof legacy === 'object' ? legacy.view !== false : !!legacy;
+        return { view: isAllowed, add: parentPerms.add, edit: parentPerms.edit, delete: false };
+      }
       // If granular sub_items is defined for this module and subItemId is NOT in it -> Denied!
       return { view: false, add: false, edit: false, delete: false };
     }

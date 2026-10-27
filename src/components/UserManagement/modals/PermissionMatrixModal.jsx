@@ -881,7 +881,8 @@ export default function PermissionMatrixModal({
                   borderCollapse: 'separate',
                   borderSpacing: 0,
                   tableLayout: 'fixed',
-                  width: tableWidth,
+                  width: '100%',
+                  minWidth: `${tableWidth}px`,
                   fontSize: '0.82rem'
                 }}
               >

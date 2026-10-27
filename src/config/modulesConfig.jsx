@@ -87,6 +87,7 @@ export const MODULES_CONFIG = [
       { id: 'my_attendance', label: 'Daily Punch Station' },
       { id: 'monthly_logs', label: 'Monthly Attendance Log' },
       { id: 'regularization', label: 'Missing Punch / Regularize' },
+      { id: 'my_leaves', label: 'My Leaves' },
       { id: 'hod_approvals', label: 'HOD Approvals' },
       { id: 'team_report', label: 'Team Attendance Report' },
       { id: 'shift_rules', label: 'Shift Rules' },
@@ -102,9 +103,11 @@ export const MODULES_CONFIG = [
     icon: <CheckSquare size={20} />,
     subItemsType: 'tabs',
     subItems: [
+      { id: 'dashboard', label: '📊 Checklist Dashboard' },
       { id: 'my_checklists', label: '📋 My Checklists' },
       { id: 'templates', label: '📑 Templates Master' },
-      { id: 'compliance', label: '📊 Compliance & Audit' }
+      { id: 'compliance', label: '📊 Compliance & Audit' },
+      { id: 'holidays', label: '🎉 Holidays Calendar' }
     ]
   },
   {
@@ -311,6 +314,7 @@ export const MODULES_CONFIG = [
     subItemsType: 'tabs',
     subItems: [
       { id: 'dashboard', label: 'Dashboard' },
+      { id: 'templates', label: 'Message Templates' },
       { id: 'live_chat', label: 'Live Chat Inbox' },
       { id: 'instances', label: 'Instance Management' },
       { id: 'settings', label: 'API & BSP Setup' },
@@ -324,6 +328,14 @@ export const MODULES_CONFIG = [
   {
     id: 'email_config', path: 'email_config', label: 'Email Configuration', category: 'Communication Center',
     icon: <MessageCircle size={20} />,
+    subItemsType: 'tabs',
+    subItems: [
+      { id: 'smtp', label: '⚙️ SMTP Server Settings' },
+      { id: 'templates', label: '📝 Email Templates' },
+      { id: 'automations', label: '⚡ Stage Automations' },
+      { id: 'test', label: '🚀 Live Email Test' },
+      { id: 'logs', label: '📜 Sent History' }
+    ],
     roleDisplayTabs: [
       { id: 'smtp', label: 'SMTP Server Settings' },
       { id: 'templates', label: 'Email Templates' },
@@ -367,22 +379,17 @@ export const MODULES_CONFIG = [
     icon: <Settings2 size={20} />,
     subItemsType: 'tabs',
     subItems: [
-      { id: 'business', label: 'Business Profile' },
-      { id: 'products', label: 'Product List' },
+      { id: 'business', label: 'Business Profile & Branches' },
+      { id: 'products', label: 'Product List & Branches' },
       { id: 'crm', label: 'CRM & Lead Config' },
       { id: 'fields', label: 'Custom Fields' },
       { id: 'templates', label: 'Message & WhatsApp Templates' },
       { id: 'notifications', label: 'Notifications & Alerts' },
-      { id: 'roles', label: 'Roles & Permissions' },
-      { id: 'automation', label: 'Automation & API' },
-      { id: 'sessions', label: 'Monitor Sessions' },
-      { id: 'audit', label: 'Activity Audit Logs' },
-      { id: 'data', label: 'Data Management' },
-      { id: 'targets', label: 'Targets & Performance' },
-      { id: 'media', label: 'File & Media Settings' },
-      { id: 'navigation', label: 'Page Navigation' },
       { id: 'departments', label: 'Manage Departments' },
-      { id: 'status', label: 'System Health & Status' }
+      { id: 'targets', label: 'Targets & Performance' },
+      { id: 'sessions', label: 'Work & Session Rules' },
+      { id: 'data', label: 'Data Management' },
+      { id: 'media', label: 'File & Media Settings' }
     ]
   }
 ];

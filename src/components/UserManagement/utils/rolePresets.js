@@ -32,18 +32,23 @@ export const ROLE_PRESETS = [
           my_attendance: { view: true },
           monthly_logs: { view: true },
           regularization: { view: true },
+          my_leaves: { view: true },
+          my_leaves: { view: true },
           hod_approvals: { view: true },
           team_report: { view: true },
           shift_rules: { view: true },
+          leave_policy: { view: true },
           geofencing: { view: true }
         }
       },
       checklist: {
         view: true, read: true, write: true, edit: true, export: true,
         sub_items: {
+          dashboard: { view: true },
           my_checklists: { view: true },
           templates: { view: true },
-          compliance: { view: true }
+          compliance: { view: true },
+          holidays: { view: true }
         }
       },
       delegation: {
@@ -146,18 +151,23 @@ export const ROLE_PRESETS = [
           my_attendance: { view: true },
           monthly_logs: { view: true },
           regularization: { view: true },
+          my_leaves: { view: true },
+          my_leaves: { view: true },
           hod_approvals: { view: true },
           team_report: { view: true },
           shift_rules: { view: true },
+          leave_policy: { view: true },
           geofencing: { view: true }
         }
       },
       checklist: {
         view: true, read: true, write: true, edit: true, export: true,
         sub_items: {
+          dashboard: { view: true },
           my_checklists: { view: true },
           templates: { view: true },
-          compliance: { view: true }
+          compliance: { view: true },
+          holidays: { view: true }
         }
       },
       delegation: {
@@ -292,7 +302,8 @@ export const ROLE_PRESETS = [
         sub_items: {
           my_attendance: { view: true },
           monthly_logs: { view: true },
-          regularization: { view: true }
+          regularization: { view: true },
+          my_leaves: { view: true }
         }
       },
       checklist: {
@@ -348,7 +359,8 @@ export const ROLE_PRESETS = [
         sub_items: {
           my_attendance: { view: true },
           monthly_logs: { view: true },
-          regularization: { view: true }
+          regularization: { view: true },
+          my_leaves: { view: true }
         }
       },
       checklist: {
@@ -414,7 +426,8 @@ export const ROLE_PRESETS = [
         sub_items: {
           my_attendance: { view: true },
           monthly_logs: { view: true },
-          regularization: { view: true }
+          regularization: { view: true },
+          my_leaves: { view: true }
         }
       },
       checklist: {
@@ -478,6 +491,7 @@ export const ROLE_PRESETS = [
           my_attendance: { view: true },
           monthly_logs: { view: true },
           regularization: { view: true },
+          my_leaves: { view: true },
           team_report: { view: true }
         }
       }
@@ -509,18 +523,23 @@ export const ROLE_PRESETS = [
           my_attendance: { view: true },
           monthly_logs: { view: true },
           regularization: { view: true },
+          my_leaves: { view: true },
+          my_leaves: { view: true },
           hod_approvals: { view: true },
           team_report: { view: true },
           shift_rules: { view: true },
+          leave_policy: { view: true },
           geofencing: { view: true }
         }
       },
       checklist: {
         view: true, read: true, write: true, edit: true, export: true,
         sub_items: {
+          dashboard: { view: true },
           my_checklists: { view: true },
           templates: { view: true },
-          compliance: { view: true }
+          compliance: { view: true },
+          holidays: { view: true }
         }
       },
       delegation: {
@@ -604,7 +623,8 @@ export const ROLE_PRESETS = [
         sub_items: {
           my_attendance: { view: true },
           monthly_logs: { view: true },
-          regularization: { view: true }
+          regularization: { view: true },
+          my_leaves: { view: true }
         }
       },
       delegation: {
@@ -659,7 +679,8 @@ export const ROLE_PRESETS = [
         sub_items: {
           my_attendance: { view: true },
           monthly_logs: { view: true },
-          regularization: { view: true }
+          regularization: { view: true },
+          my_leaves: { view: true }
         }
       },
       checklist: {
@@ -711,7 +732,8 @@ export const ROLE_PRESETS = [
         sub_items: {
           my_attendance: { view: true },
           monthly_logs: { view: true },
-          regularization: { view: true }
+          regularization: { view: true },
+          my_leaves: { view: true }
         }
       },
       checklist: {
