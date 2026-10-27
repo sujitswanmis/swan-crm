@@ -769,11 +769,113 @@ export async function dispatchPartialLot(orderId, lotData = {}, dispatchedBy = '
       ? `\n[Lot-A Dispatched]: ${lotData.dispatched_qty} Units (${allocSummary}) via ${lotData.transporter_name} (LR: ${lotData.lr_number || 'N/A'})`
       : `\n[Lot-A Dispatched]: ${lotData.dispatched_qty} Units (${allocSummary})`;
 
+    // Check if there are remaining units to create Lot-B child order in pipeline
+    const remainingUnits = Number(lotData.remaining_qty) || 0;
+    let childOrderCreated = null;
+
+    if (remainingUnits > 0) {
+      const childOrderNo = `${currentOrder.order_number}-B`;
+
+      const remainingLineItems = (lotData.product_allocations || [])
+        .filter(p => Number(p.remaining_qty) > 0)
+        .map(p => {
+          const orig = (Array.isArray(currentOrder.order_line_items) ? currentOrder.order_line_items : []).find(it =>
+            (it.product || it.name) === p.product
+          );
+          const rate = Number(orig?.rate) || (currentOrder.total_ordered_qty ? Math.round(Number(currentOrder.total_amount) / Number(currentOrder.total_ordered_qty)) : 0);
+          return {
+            product: p.product,
+            qty: Number(p.remaining_qty),
+            rate
+          };
+        });
+
+      const remainingAmount = remainingLineItems.reduce((sum, it) => sum + (it.qty * it.rate), 0)
+        || Math.round((Number(currentOrder.total_amount) / (Number(currentOrder.total_ordered_qty) || 1)) * remainingUnits);
+
+      try {
+        // Prevent duplicate child order if already created
+        const { data: existingChild } = await adminClient
+          .from('sales_orders')
+          .select('id, order_number')
+          .eq('order_number', childOrderNo)
+          .eq('tenant_id', effectiveTenantId)
+          .maybeSingle();
+
+        if (!existingChild) {
+          const childHistory = [{
+            stage_id: 'S06',
+            stage_name: 'Check Stock & Production (Lot-B)',
+            department: 'Plant / Works',
+            tat_hours: 48,
+            action_by: dispatchedBy,
+            notes: `Split Lot-B created from parent order ${currentOrder.order_number}. Remaining ${remainingUnits} unit(s) pending in assembly.`,
+            created_at: nowISO
+          }];
+
+          const childPayload = {
+            tenant_id: effectiveTenantId,
+            order_number: childOrderNo,
+            party_id: currentOrder.party_id,
+            dealer_party_id: currentOrder.dealer_party_id || null,
+            distributor_party_id: currentOrder.distributor_party_id || null,
+            demand_flow_type: currentOrder.demand_flow_type || 'MAKE_TO_STOCK',
+            total_ordered_qty: remainingUnits,
+            total_amount: remainingAmount,
+            order_status: 'IN_PRODUCTION',
+            delivery_status: 'S06',
+            billing_route: currentOrder.billing_route || 'DIRECT_COMPANY_BILLING',
+            order_line_items: remainingLineItems,
+            stage_history: childHistory,
+            delivery_notes: `[Linked Lot-B Child Order]: Remaining ${remainingUnits} unit(s) from parent order ${currentOrder.order_number}. Factory can complete this order to dispatch remaining lot.`,
+            created_at: nowISO
+          };
+
+          const { data: newChild, error: childErr } = await adminClient
+            .from('sales_orders')
+            .insert([childPayload])
+            .select()
+            .single();
+
+          if (!childErr && newChild) {
+            childOrderCreated = newChild;
+          }
+        }
+      } catch (childEx) {
+        console.warn('Could not insert child order for Lot-B:', childEx.message);
+      }
+    }
+
+    // Dispatched items for parent order (Lot-A)
+    const dispatchedUnits = Number(lotData.dispatched_qty) || currentOrder.total_ordered_qty;
+    const dispatchedLineItems = (lotData.product_allocations || [])
+      .filter(p => Number(p.ready_qty) > 0)
+      .map(p => {
+        const orig = (Array.isArray(currentOrder.order_line_items) ? currentOrder.order_line_items : []).find(it =>
+          (it.product || it.name) === p.product
+        );
+        const rate = Number(orig?.rate) || 0;
+        return {
+          product: p.product,
+          qty: Number(p.ready_qty),
+          rate
+        };
+      });
+
+    const dispatchedAmount = dispatchedLineItems.reduce((sum, it) => sum + (it.qty * it.rate), 0);
+
+    const childLinkNote = childOrderCreated
+      ? `\n[Linked Order Created]: ${childOrderCreated.order_number} created for remaining ${remainingUnits} Unit(s) in production.`
+      : '';
+
     const payload = {
       transporter_name: lotData.transporter_name || currentOrder.transporter_name,
       lr_number: lotData.lr_number || currentOrder.lr_number,
       vehicle_number: lotData.vehicle_number || currentOrder.vehicle_number,
-      delivery_notes: `${currentOrder.delivery_notes || ''}${deliveryNoteText}`,
+      delivery_notes: `${currentOrder.delivery_notes || ''}${deliveryNoteText}${childLinkNote}`,
+      total_ordered_qty: dispatchedUnits,
+      total_amount: dispatchedAmount > 0 ? dispatchedAmount : currentOrder.total_amount,
+      order_line_items: dispatchedLineItems.length > 0 ? dispatchedLineItems : currentOrder.order_line_items,
       updated_at: nowISO
     };
 

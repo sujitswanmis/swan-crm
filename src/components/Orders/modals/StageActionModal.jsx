@@ -113,36 +113,74 @@ export default function StageActionModal({
     setCustomValues(initial);
     setNote(targetStage.default_note || '');
     setErrorMsg('');
-    setIsPartialLot(false);
 
-    // Initialize product-wise allocations from order_line_items or fallback
-    const rawItems = Array.isArray(order.order_line_items) && order.order_line_items.length > 0
-      ? order.order_line_items
-      : [{ product: order.product_name || 'Standard Product', qty: totalQty }];
+    // Check if order previously recorded a partial lot split (e.g. in S07)
+    const prevSplit = Array.isArray(order.stage_history)
+      ? [...order.stage_history].reverse().find(h =>
+          (h.stage_id === 'PARTIAL_LOT_DISPATCH' || h.stage_id === 'S07') &&
+          Array.isArray(h.product_allocations) && h.product_allocations.length > 0 &&
+          h.product_allocations.some(p => Number(p.remaining_qty) > 0)
+        )
+      : null;
 
-    const initialAlloc = rawItems.map((it, idx) => {
-      const q = Number(it.qty) || 1;
-      return {
+    if (prevSplit && (targetStage.id === 'S12' || targetStage.id === 'S11' || targetStage.id === 'S07')) {
+      setIsPartialLot(true);
+      if (initial.dispatch_scope !== undefined) {
+        initial.dispatch_scope = 'Partial Order Dispatch (Lot-A)';
+      }
+
+      const inheritedAlloc = prevSplit.product_allocations.map((p, idx) => ({
         id: idx,
-        product: it.product || it.name || `Product #${idx + 1}`,
-        ordered_qty: q,
-        ready_qty: q,
-        remaining_qty: 0
-      };
-    });
-    setProductAllocations(initialAlloc);
+        product: p.product,
+        ordered_qty: Number(p.ordered_qty) || 1,
+        ready_qty: Number(p.ready_qty) || 0,
+        remaining_qty: Number(p.remaining_qty) || 0
+      }));
+      setProductAllocations(inheritedAlloc);
 
-    const initReadySum = initialAlloc.reduce((sum, it) => sum + it.ready_qty, 0);
-    const initRemSum = initialAlloc.reduce((sum, it) => sum + it.remaining_qty, 0);
+      const dSum = inheritedAlloc.reduce((sum, it) => sum + it.ready_qty, 0);
+      const rSum = inheritedAlloc.reduce((sum, it) => sum + it.remaining_qty, 0);
 
-    setPartialLotData({
-      lot_no: 'Lot-A',
-      dispatched_qty: initReadySum,
-      remaining_qty: initRemSum,
-      transporter_name: order.transporter_name || '',
-      lr_number: order.lr_number || '',
-      vehicle_number: order.vehicle_number || ''
-    });
+      setPartialLotData({
+        lot_no: 'Lot-A',
+        dispatched_qty: dSum,
+        remaining_qty: rSum,
+        transporter_name: order.transporter_name || '',
+        lr_number: order.lr_number || '',
+        vehicle_number: order.vehicle_number || ''
+      });
+    } else {
+      setIsPartialLot(false);
+
+      // Initialize product-wise allocations from order_line_items or fallback
+      const rawItems = Array.isArray(order.order_line_items) && order.order_line_items.length > 0
+        ? order.order_line_items
+        : [{ product: order.product_name || 'Standard Product', qty: totalQty }];
+
+      const initialAlloc = rawItems.map((it, idx) => {
+        const q = Number(it.qty) || 1;
+        return {
+          id: idx,
+          product: it.product || it.name || `Product #${idx + 1}`,
+          ordered_qty: q,
+          ready_qty: q,
+          remaining_qty: 0
+        };
+      });
+      setProductAllocations(initialAlloc);
+
+      const initReadySum = initialAlloc.reduce((sum, it) => sum + it.ready_qty, 0);
+      const initRemSum = initialAlloc.reduce((sum, it) => sum + it.remaining_qty, 0);
+
+      setPartialLotData({
+        lot_no: 'Lot-A',
+        dispatched_qty: initReadySum,
+        remaining_qty: initRemSum,
+        transporter_name: order.transporter_name || '',
+        lr_number: order.lr_number || '',
+        vehicle_number: order.vehicle_number || ''
+      });
+    }
   }, [order, targetStage]);
 
   if (!isOpen || !order || !targetStage) return null;
