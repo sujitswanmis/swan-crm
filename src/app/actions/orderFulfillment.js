@@ -2,7 +2,7 @@
 
 import { getAdminClient } from '@/utils/supabase/adminClient';
 import { calculateNextDueDate, getISTDateString, getISTCurrentPeriod } from '@/utils/orderFrequency';
-import { getPartyList } from './partyMaster';
+import { getPartyList, resolveDbTenantUuid } from './partyMaster';
 
 const DEFAULT_TENANT_ID = '00000000-0000-0000-0000-000000000001';
 
@@ -1193,7 +1193,7 @@ export async function saveMonthlyHealthCheckAudit(auditData, tenantId = DEFAULT_
  */
 export async function getComplaintsTickets(tenantId = DEFAULT_TENANT_ID, filters = {}) {
   const adminClient = getAdminClient();
-  const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
+  const effectiveTenantId = await resolveDbTenantUuid(tenantId);
 
   try {
     // 1. Fetch parties list to get full enriched data (district, state, etc.)
@@ -1316,7 +1316,7 @@ export async function getComplaintsTickets(tenantId = DEFAULT_TENANT_ID, filters
  */
 export async function createComplaintTicketDirect(complaintData, tenantId = DEFAULT_TENANT_ID) {
   const adminClient = getAdminClient();
-  const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
+  const effectiveTenantId = await resolveDbTenantUuid(tenantId);
 
   const ticketNo = `CMP-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`;
   
@@ -1388,7 +1388,7 @@ export async function createComplaintTicketDirect(complaintData, tenantId = DEFA
  */
 export async function advanceComplaintTicketStage(ticketId, stagePayload, tenantId = DEFAULT_TENANT_ID) {
   const adminClient = getAdminClient();
-  const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
+  const effectiveTenantId = await resolveDbTenantUuid(tenantId);
 
   const { targetStage, formState = {}, executedBy = 'Operations' } = stagePayload;
   const nowIso = new Date().toISOString();

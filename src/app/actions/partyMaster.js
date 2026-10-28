@@ -12,6 +12,20 @@ const getAdminClient = () => {
 
 const DEFAULT_TENANT_ID = '00000000-0000-0000-0000-000000000001';
 
+const TENANT_UUID_MAP = {
+  'TNT00001': '0a37b8e8-1c28-4e19-8891-951fc3f8f8af',
+  'TNT00002': '00000000-0000-0000-0000-000000000001',
+  'TNT00003': '922d3e72-6588-457f-a562-4f1bdbf10d98'
+};
+
+export async function resolveDbTenantUuid(tenantId) {
+  if (!tenantId) return DEFAULT_TENANT_ID;
+  const str = String(tenantId).trim();
+  if (TENANT_UUID_MAP[str]) return TENANT_UUID_MAP[str];
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str)) return str;
+  return DEFAULT_TENANT_ID;
+}
+
 function getISTTimestamp() {
   return new Intl.DateTimeFormat('en-IN', {
     timeZone: 'Asia/Kolkata',
@@ -72,24 +86,30 @@ export async function updatePartyMeta(adminClient, partyId, partialMeta) {
  */
 export async function getPartyList(tenantId = DEFAULT_TENANT_ID, options = {}) {
   const adminClient = getAdminClient();
-  const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
+  const dbTenantId = await resolveDbTenantUuid(tenantId);
   try {
     let partyQuery = adminClient
       .from('party_master')
       .select('*, party_roles(*), party_contacts(*), party_commercial_terms(*), party_addresses(*)')
+      .eq('tenant_id', dbTenantId)
       .order('created_at', { ascending: false });
 
-    if (effectiveTenantId === 'TNT00002' || effectiveTenantId === '00000000-0000-0000-0000-000000000001') {
-      partyQuery = partyQuery.or('tenant_id.eq.00000000-0000-0000-0000-000000000001,tenant_id.eq.TNT00002');
-    } else if (effectiveTenantId === 'TNT00001' || effectiveTenantId === '0a37b8e8-1c28-4e19-8891-951fc3f8f8af') {
-      partyQuery = partyQuery.or('tenant_id.eq.0a37b8e8-1c28-4e19-8891-951fc3f8f8af,tenant_id.eq.TNT00001');
-    } else if (effectiveTenantId === 'TNT00003' || effectiveTenantId === '922d3e72-6588-457f-a562-4f1bdbf10d98') {
-      partyQuery = partyQuery.or('tenant_id.eq.922d3e72-6588-457f-a562-4f1bdbf10d98,tenant_id.eq.TNT00003');
-    } else {
-      partyQuery = partyQuery.eq('tenant_id', effectiveTenantId);
-    }
+    let { data, error } = await partyQuery;
 
-    const { data, error } = await partyQuery;
+    // Defensive fallback: If relational join fails (schema cache or FK issue), try simple select
+    if (error) {
+      console.warn('getPartyList relational query issue, trying simple select fallback:', error.message);
+      const fallbackQuery = await adminClient
+        .from('party_master')
+        .select('*')
+        .eq('tenant_id', dbTenantId)
+        .order('created_at', { ascending: false });
+
+      if (!fallbackQuery.error && fallbackQuery.data) {
+        data = fallbackQuery.data;
+        error = null;
+      }
+    }
 
     if (error) {
       console.error('Error fetching party list:', error);
@@ -124,9 +144,9 @@ export async function getPartyList(tenantId = DEFAULT_TENANT_ID, options = {}) {
 
     try {
       const [authRes, terrRes, teamRes] = await Promise.all([
-        adminClient.from('party_product_authorizations').select('*').eq('tenant_id', effectiveTenantId),
-        adminClient.from('party_territory_allocations').select('*').eq('tenant_id', effectiveTenantId),
-        adminClient.from('party_team_assignments').select('*').eq('tenant_id', effectiveTenantId)
+        adminClient.from('party_product_authorizations').select('*').eq('tenant_id', dbTenantId),
+        adminClient.from('party_territory_allocations').select('*').eq('tenant_id', dbTenantId),
+        adminClient.from('party_team_assignments').select('*').eq('tenant_id', dbTenantId)
       ]);
 
       if (authRes.data) {
@@ -2132,7 +2152,7 @@ export async function bulkImportPartyMaster(partiesList = [], importMode = 'FULL
  */
 export async function checkPartyAndLeadDuplicates(rawPhones = [], tenantId = DEFAULT_TENANT_ID, rawGSTINs = []) {
   const adminClient = getAdminClient();
-  const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
+  const effectiveTenantId = await resolveDbTenantUuid(tenantId);
 
   const cleanPhones = Array.from(new Set(
     (rawPhones || [])

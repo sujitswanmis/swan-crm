@@ -1,6 +1,6 @@
 'use server';
 
-import { getPartyList, getOrderFollowups, getOrderFeedbackList, getMonthlyFeedbackList, getComplaintsList } from './partyMaster';
+import { getPartyList, getOrderFollowups, getOrderFeedbackList, getMonthlyFeedbackList, getComplaintsList, resolveDbTenantUuid } from './partyMaster';
 import { getEmployeesMaster } from './employee';
 import { getStatesCentral, getDistrictsCentral } from './centralLocationMaster';
 import { getTransferredLeads } from './partyHandoff';
@@ -66,12 +66,13 @@ async function readDailyQueue(tenantId) {
 // A single client dispatch; independent reads run concurrently on the server.
 export async function getPartyWorkspaceData(tenantId, section = 'parties', company = null) {
   try {
-    if (!tenantId || !/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(tenantId)) throw new Error('Invalid workspace');
+    const effectiveTenantId = await resolveDbTenantUuid(tenantId);
+    if (!effectiveTenantId || !/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(effectiveTenantId)) throw new Error('Invalid workspace');
     let data;
-    if (section === 'parties') data = await getPartyList(tenantId, { throwOnError: true });
-    else if (section === 'transfers') data = await getTransferredLeads(tenantId);
+    if (section === 'parties') data = await getPartyList(effectiveTenantId, { throwOnError: true });
+    else if (section === 'transfers') data = await getTransferredLeads(effectiveTenantId);
     else if (section === 'reference') {
-      const [employeeResult, stateResult] = await Promise.allSettled([getEmployeesMaster(tenantId, company), getStatesCentral()]);
+      const [employeeResult, stateResult] = await Promise.allSettled([getEmployeesMaster(effectiveTenantId, company), getStatesCentral()]);
       data = {};
       if (employeeResult.status === 'fulfilled') data.employees = employeeResult.value;
       const states = stateResult.status === 'fulfilled' ? stateResult.value : [];
@@ -80,7 +81,7 @@ export async function getPartyWorkspaceData(tenantId, section = 'parties', compa
       data.districts = await getDistrictsCentral(punjab?.id || null, 'Punjab').catch(() => []);
     } else if (section === 'dashboard') {
       const results = await Promise.allSettled([
-        getOrderFollowups(tenantId), getOrderFeedbackList(tenantId), getMonthlyFeedbackList(tenantId), getComplaintsList(tenantId)
+        getOrderFollowups(effectiveTenantId), getOrderFeedbackList(effectiveTenantId), getMonthlyFeedbackList(effectiveTenantId), getComplaintsList(effectiveTenantId)
       ]);
       data = {};
       ['orderFollowups', 'orderFeedbacks', 'monthlyFeedbacks', 'complaints'].forEach((name, index) => {
@@ -96,14 +97,15 @@ export async function getPartyWorkspaceData(tenantId, section = 'parties', compa
 
 export async function getChannelWorkspaceData(tenantId, tab) {
   try {
-    if (!tenantId || !/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(tenantId)) throw new Error('Invalid workspace');
+    const effectiveTenantId = await resolveDbTenantUuid(tenantId);
+    if (!effectiveTenantId || !/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(effectiveTenantId)) throw new Error('Invalid workspace');
     let data;
-    if (tab === 'order_followup') data = await readDailyQueue(tenantId);
-    else if (tab === 'frequency_rules') data = await readSchedules(tenantId);
-    else if (tab === 'order_pipeline') data = await getOrderPipelineList(tenantId);
-    else if (tab === 'order_feedback') data = await getDeliveredOrdersPendingFeedback(tenantId);
-    else if (tab === 'complaints') data = await getPartyList(tenantId, { throwOnError: true });
-    else if (tab === 'monthly_feedback') data = [];
+    if (tab === 'order_followup') data = await readDailyQueue(effectiveTenantId);
+    else if (tab === 'frequency_rules') data = await readSchedules(effectiveTenantId);
+    else if (tab === 'order_pipeline') data = await getOrderPipelineList(effectiveTenantId);
+    else if (tab === 'order_feedback') data = await getDeliveredOrdersPendingFeedback(effectiveTenantId);
+    else if (tab === 'complaints') data = await getPartyList(effectiveTenantId, { throwOnError: true });
+    else if (tab === 'monthly_feedback' || tab === 'end_customers') data = [];
     else throw new Error('Unknown operations tab');
     return { success: true, data };
   } catch (err) {

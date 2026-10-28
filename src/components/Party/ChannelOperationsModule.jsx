@@ -140,7 +140,7 @@ export default function ChannelOperationsModule({
   const loadOperationsData = useCallback(async (force = true) => {
     const requestId = ++requestRef.current;
     if (force !== false) invalidatePartyWorkspace(scope, 'channel');
-    if (activeTab === 'monthly_feedback') { setLoading(false); return; }
+    if (activeTab === 'monthly_feedback' || activeTab === 'end_customers') { setLoading(false); return; }
     const resource = `channel:${activeTab}`;
     let fresh = false;
     const isCurrent = () => requestRef.current === requestId && contextRef.current === contextKey;

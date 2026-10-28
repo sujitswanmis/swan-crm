@@ -125,12 +125,19 @@ export default function RegisterEndCustomerModal({
   const [dealerSearch, setDealerSearch] = useState('');
   const [showDealerDropdown, setShowDealerDropdown] = useState(false);
   const [liveParties, setLiveParties] = useState(parties || []);
-  const [dealerDisplayLimit, setDealerDisplayLimit] = useState(50);
+  const [dealerDisplayLimit, setDealerDisplayLimit] = useState(100);
   const [availableProducts, setAvailableProducts] = useState(PRODUCT_GROUPS);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [uploadingDoc, setUploadingDoc] = useState(false);
   const [uploadingChassis, setUploadingChassis] = useState(false);
+
+  // Sync parties prop when updated by parent
+  React.useEffect(() => {
+    if (parties && parties.length > 0) {
+      setLiveParties(parties);
+    }
+  }, [parties]);
 
   // Load live parties from Party Master directly to guarantee 100% complete dealer list
   React.useEffect(() => {
@@ -269,22 +276,26 @@ export default function RegisterEndCustomerModal({
     });
   }, [liveParties, parties, dealerSearch]);
 
-  // Sliced for infinite scrolling without freezing UI
+  // If total matching dealers <= 300, show ALL matching dealers directly so scrolling never gets stuck!
+  // Otherwise, display in smooth batches with infinite scroll + "Load all" option.
   const visibleDealers = useMemo(() => {
+    if (allMatchingDealers.length <= 300) {
+      return allMatchingDealers;
+    }
     return allMatchingDealers.slice(0, dealerDisplayLimit);
   }, [allMatchingDealers, dealerDisplayLimit]);
 
   // Reset display limit when user types in search
   React.useEffect(() => {
-    setDealerDisplayLimit(50);
+    setDealerDisplayLimit(100);
   }, [dealerSearch]);
 
   // Infinite scroll trigger on dropdown scroll
   const handleDealerDropdownScroll = (e) => {
     const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
-    if (scrollTop + clientHeight >= scrollHeight - 35) {
+    if (scrollTop + clientHeight >= scrollHeight - 60) {
       if (dealerDisplayLimit < allMatchingDealers.length) {
-        setDealerDisplayLimit(prev => prev + 50);
+        setDealerDisplayLimit(prev => Math.min(prev + 100, allMatchingDealers.length));
       }
     }
   };
@@ -752,12 +763,33 @@ export default function RegisterEndCustomerModal({
                         Showing <strong>{Math.min(visibleDealers.length, allMatchingDealers.length)}</strong> of <strong>{allMatchingDealers.length}</strong> Channel Partners
                       </span>
                       {visibleDealers.length < allMatchingDealers.length ? (
-                        <span style={{ fontSize: '0.68rem', color: '#38bdf8', fontWeight: 600 }}>
-                          📜 Scroll for more...
-                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <span style={{ fontSize: '0.68rem', color: '#38bdf8', fontWeight: 600 }}>
+                            📜 Scroll for more...
+                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDealerDisplayLimit(allMatchingDealers.length);
+                            }}
+                            style={{
+                              background: '#3b82f6',
+                              color: '#fff',
+                              border: 'none',
+                              borderRadius: '4px',
+                              padding: '2px 7px',
+                              fontSize: '0.68rem',
+                              cursor: 'pointer',
+                              fontWeight: 600
+                            }}
+                          >
+                            Load All ({allMatchingDealers.length})
+                          </button>
+                        </div>
                       ) : (
                         <span style={{ fontSize: '0.68rem', color: '#10b981', fontWeight: 600 }}>
-                          ✓ All loaded
+                          ✓ All loaded ({allMatchingDealers.length})
                         </span>
                       )}
                     </div>
@@ -796,8 +828,9 @@ export default function RegisterEndCustomerModal({
                             </span>
                           </div>
                           <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '2px', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                            <span>📍 {[party.district_name || party.city_name, party.state_name].filter(Boolean).join(', ') || 'No territory set'}</span>
+                            <span>📍 {[party.city_village || party.city_name, party.district_name, party.state_name].filter(Boolean).join(', ') || 'No territory set'}</span>
                             {party.primary_mobile && <span>📞 {party.primary_mobile}</span>}
+                            {party.party_type && <span style={{ color: '#38bdf8' }}>🏷️ {party.party_type}</span>}
                           </div>
                         </div>
                       ))
