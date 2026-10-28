@@ -10,6 +10,7 @@ import { INDIAN_STATE_DISTRICTS } from '@/config/indianStateDistricts';
 import { PRODUCT_GROUPS } from '@/config/productCatalog';
 import { getTenantProducts } from '@/app/actions/tenantProducts';
 import { getStatesCentral, getDistrictsCentral } from '@/app/actions/centralLocationMaster';
+import { getPartyList } from '@/app/actions/partyMaster';
 import SearchableProductSelect from '@/components/common/SearchableProductSelect';
 import { createEndCustomer } from '@/app/actions/endCustomers';
 import { calculateWarrantyStatus } from '@/utils/warrantyUtils';
@@ -123,11 +124,32 @@ export default function RegisterEndCustomerModal({
 
   const [dealerSearch, setDealerSearch] = useState('');
   const [showDealerDropdown, setShowDealerDropdown] = useState(false);
+  const [liveParties, setLiveParties] = useState(parties || []);
+  const [dealerDisplayLimit, setDealerDisplayLimit] = useState(50);
   const [availableProducts, setAvailableProducts] = useState(PRODUCT_GROUPS);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [uploadingDoc, setUploadingDoc] = useState(false);
   const [uploadingChassis, setUploadingChassis] = useState(false);
+
+  // Load live parties from Party Master directly to guarantee 100% complete dealer list
+  React.useEffect(() => {
+    if (!isOpen) return;
+    let isMounted = true;
+    async function loadDealers() {
+      try {
+        const partyRes = await getPartyList(tenantId || 'TNT00002');
+        const list = Array.isArray(partyRes?.data) ? partyRes.data : (Array.isArray(partyRes) ? partyRes : []);
+        if (isMounted && list.length > 0) {
+          setLiveParties(list);
+        }
+      } catch (err) {
+        console.warn('Failed to load live parties in RegisterEndCustomerModal:', err);
+      }
+    }
+    loadDealers();
+    return () => { isMounted = false; };
+  }, [isOpen, tenantId]);
 
   // Load live tenant catalog products
   React.useEffect(() => {
@@ -225,17 +247,47 @@ export default function RegisterEndCustomerModal({
     return INDIAN_STATE_DISTRICTS[formData.state_name] || [];
   }, [locationDistricts, formData.state_name]);
 
-  // Live filtered dealers
-  const filteredDealers = useMemo(() => {
-    if (!dealerSearch) return parties.slice(0, 50);
-    const q = dealerSearch.toLowerCase();
-    return parties.filter(p => {
+  // Live filtered dealers across ALL channel partners (No hardcoded 50 cap!)
+  const allMatchingDealers = useMemo(() => {
+    const source = (liveParties && liveParties.length > 0) ? liveParties : (parties || []);
+    if (!dealerSearch || !dealerSearch.trim()) return source;
+    const q = dealerSearch.toLowerCase().trim();
+    return source.filter(p => {
       const name = (p.firm_name || p.legal_name || '').toLowerCase();
-      const code = (p.party_universal_code || p.external_sap_code || '').toLowerCase();
-      const city = (p.district_name || p.city_name || '').toLowerCase();
-      return name.includes(q) || code.includes(q) || city.includes(q);
-    }).slice(0, 50);
-  }, [parties, dealerSearch]);
+      const code = (
+        p.party_universal_code ||
+        p.distributor_code ||
+        p.dealer_code ||
+        p.sub_dealer_code ||
+        p.external_sap_code ||
+        ''
+      ).toLowerCase();
+      const city = (p.district_name || p.city_name || p.city || '').toLowerCase();
+      const state = (p.state_name || p.state || '').toLowerCase();
+      const mobile = (p.primary_mobile || p.biz_contact_no_1 || '').toLowerCase();
+      return name.includes(q) || code.includes(q) || city.includes(q) || state.includes(q) || mobile.includes(q);
+    });
+  }, [liveParties, parties, dealerSearch]);
+
+  // Sliced for infinite scrolling without freezing UI
+  const visibleDealers = useMemo(() => {
+    return allMatchingDealers.slice(0, dealerDisplayLimit);
+  }, [allMatchingDealers, dealerDisplayLimit]);
+
+  // Reset display limit when user types in search
+  React.useEffect(() => {
+    setDealerDisplayLimit(50);
+  }, [dealerSearch]);
+
+  // Infinite scroll trigger on dropdown scroll
+  const handleDealerDropdownScroll = (e) => {
+    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+    if (scrollTop + clientHeight >= scrollHeight - 35) {
+      if (dealerDisplayLimit < allMatchingDealers.length) {
+        setDealerDisplayLimit(prev => prev + 50);
+      }
+    }
+  };
 
   // Realtime Warranty Preview Calculation
   const warrantyPreview = useMemo(() => {
@@ -664,29 +716,63 @@ export default function RegisterEndCustomerModal({
                 />
 
                 {showDealerDropdown && (
-                  <div style={{
-                    position: 'absolute',
-                    top: '100%',
-                    left: 0,
-                    right: 0,
-                    maxHeight: '180px',
-                    overflowY: 'auto',
-                    background: 'var(--bg-surface, #1e293b)',
-                    border: '1px solid var(--border-light, #334155)',
-                    borderRadius: '6px',
-                    zIndex: 50,
-                    marginTop: '4px',
-                    boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.5)'
-                  }}>
-                    {filteredDealers.length === 0 ? (
-                      <div style={{ padding: '0.6rem 0.75rem', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>No dealers matching</div>
+                  <div
+                    onScroll={handleDealerDropdownScroll}
+                    style={{
+                      position: 'absolute',
+                      top: '100%',
+                      left: 0,
+                      right: 0,
+                      maxHeight: '290px',
+                      overflowY: 'auto',
+                      background: 'var(--bg-surface, #1e293b)',
+                      border: '1px solid var(--border-light, #334155)',
+                      borderRadius: '8px',
+                      zIndex: 50,
+                      marginTop: '4px',
+                      boxShadow: '0 12px 24px -4px rgba(0, 0, 0, 0.5)'
+                    }}
+                  >
+                    {/* Header Counter Bar */}
+                    <div style={{
+                      padding: '0.45rem 0.75rem',
+                      background: 'rgba(59, 130, 246, 0.08)',
+                      borderBottom: '1px solid var(--border-light)',
+                      fontSize: '0.72rem',
+                      color: 'var(--text-secondary)',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      position: 'sticky',
+                      top: 0,
+                      zIndex: 2,
+                      backgroundColor: 'var(--bg-surface)'
+                    }}>
+                      <span>
+                        Showing <strong>{Math.min(visibleDealers.length, allMatchingDealers.length)}</strong> of <strong>{allMatchingDealers.length}</strong> Channel Partners
+                      </span>
+                      {visibleDealers.length < allMatchingDealers.length ? (
+                        <span style={{ fontSize: '0.68rem', color: '#38bdf8', fontWeight: 600 }}>
+                          📜 Scroll for more...
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: '0.68rem', color: '#10b981', fontWeight: 600 }}>
+                          ✓ All loaded
+                        </span>
+                      )}
+                    </div>
+
+                    {visibleDealers.length === 0 ? (
+                      <div style={{ padding: '1rem', fontSize: '0.8rem', color: 'var(--text-secondary)', textAlign: 'center' }}>
+                        No channel partners found matching &quot;{dealerSearch}&quot;
+                      </div>
                     ) : (
-                      filteredDealers.map(party => (
+                      visibleDealers.map(party => (
                         <div
                           key={party.id}
                           onClick={() => handleSelectDealer(party)}
                           style={{
-                            padding: '0.5rem 0.75rem',
+                            padding: '0.55rem 0.75rem',
                             borderBottom: '1px solid var(--border-light)',
                             cursor: 'pointer',
                             fontSize: '0.8rem',
@@ -695,10 +781,24 @@ export default function RegisterEndCustomerModal({
                           onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.15)'}
                           onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
                         >
-                          <strong>{party.firm_name}</strong>
-                          <span style={{ fontSize: '0.72rem', color: '#94a3b8', marginLeft: '0.5rem' }}>
-                            [{party.party_universal_code || party.id}] — {party.district_name || party.city_name}
-                          </span>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <strong style={{ color: 'var(--text-primary)' }}>{party.firm_name}</strong>
+                            <span style={{
+                              fontSize: '0.7rem',
+                              fontWeight: 700,
+                              padding: '1px 5px',
+                              borderRadius: '4px',
+                              background: 'rgba(234, 88, 12, 0.12)',
+                              color: '#ea580c',
+                              fontFamily: 'monospace'
+                            }}>
+                              {party.party_universal_code || party.external_sap_code || party.id?.slice(0, 8)}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '2px', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                            <span>📍 {[party.district_name || party.city_name, party.state_name].filter(Boolean).join(', ') || 'No territory set'}</span>
+                            {party.primary_mobile && <span>📞 {party.primary_mobile}</span>}
+                          </div>
                         </div>
                       ))
                     )}

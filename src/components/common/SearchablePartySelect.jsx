@@ -25,6 +25,7 @@ export default function SearchablePartySelect({
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [displayLimit, setDisplayLimit] = useState(50);
   const containerRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -52,13 +53,13 @@ export default function SearchablePartySelect({
     return parties.find(p => String(p.id) === String(selectedId)) || null;
   }, [parties, selectedId]);
 
-  // Filter parties based on search term
-  const filteredParties = useMemo(() => {
+  // Filter parties based on search term (all matching)
+  const allMatchingParties = useMemo(() => {
     if (!searchTerm.trim()) {
-      return parties.slice(0, 50);
+      return parties;
     }
     const q = searchTerm.trim().toLowerCase();
-    const matches = parties.filter(p => {
+    return parties.filter(p => {
       const firm = (p.firm_name || '').toLowerCase();
       const code = (
         p.party_universal_code ||
@@ -87,9 +88,27 @@ export default function SearchablePartySelect({
 
       return firm.includes(q) || code.includes(q) || location.includes(q) || mobile.includes(q);
     });
-
-    return matches.slice(0, 50);
   }, [parties, searchTerm]);
+
+  // Infinite scroll sliced parties
+  const filteredParties = useMemo(() => {
+    return allMatchingParties.slice(0, displayLimit);
+  }, [allMatchingParties, displayLimit]);
+
+  // Reset display limit when search changes
+  useEffect(() => {
+    setDisplayLimit(50);
+  }, [searchTerm]);
+
+  // Infinite scroll trigger on dropdown scroll
+  const handleDropdownScroll = (e) => {
+    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+    if (scrollTop + clientHeight >= scrollHeight - 35) {
+      if (displayLimit < allMatchingParties.length) {
+        setDisplayLimit(prev => prev + 50);
+      }
+    }
+  };
 
   const handleSelect = (party) => {
     onChange(party ? party.id : '');
@@ -335,22 +354,25 @@ export default function SearchablePartySelect({
 
           {/* Floating Dropdown Results */}
           {isOpen && (
-            <div style={{
-              position: 'absolute',
-              top: 'calc(100% + 4px)',
-              left: 0,
-              right: 0,
-              maxHeight: '260px',
-              overflowY: 'auto',
-              background: 'var(--bg-surface, #ffffff)',
-              border: '1px solid var(--border-light, #cbd5e1)',
-              borderRadius: '8px',
-              boxShadow: '0 12px 28px -4px rgba(0, 0, 0, 0.28)',
-              zIndex: 99999,
-              padding: '0.3rem 0'
-            }}>
+            <div
+              onScroll={handleDropdownScroll}
+              style={{
+                position: 'absolute',
+                top: 'calc(100% + 4px)',
+                left: 0,
+                right: 0,
+                maxHeight: '300px',
+                overflowY: 'auto',
+                background: 'var(--bg-surface, #ffffff)',
+                border: '1px solid var(--border-light, #cbd5e1)',
+                borderRadius: '8px',
+                boxShadow: '0 12px 28px -4px rgba(0, 0, 0, 0.28)',
+                zIndex: 99999,
+                padding: '0.3rem 0'
+              }}
+            >
               <div style={{
-                padding: '0.4rem 0.85rem',
+                padding: '0.45rem 0.85rem',
                 fontSize: '0.72rem',
                 fontWeight: 600,
                 color: 'var(--text-secondary)',
@@ -358,16 +380,21 @@ export default function SearchablePartySelect({
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
-                background: 'var(--bg-primary)'
+                background: 'var(--bg-primary)',
+                position: 'sticky',
+                top: 0,
+                zIndex: 10
               }}>
                 <span>
                   {parties.length === 0
                     ? 'No channel partners loaded'
-                    : searchTerm
-                    ? `Matching ${filteredParties.length} partner(s)`
-                    : `Showing first ${filteredParties.length} of ${parties.length} partners`}
+                    : `Showing ${Math.min(filteredParties.length, allMatchingParties.length)} of ${allMatchingParties.length} partner(s)`}
                 </span>
-                <span style={{ fontSize: '0.68rem', opacity: 0.8 }}>Type to search</span>
+                {filteredParties.length < allMatchingParties.length ? (
+                  <span style={{ fontSize: '0.68rem', color: '#2563eb', fontWeight: 700 }}>📜 Scroll down for more...</span>
+                ) : (
+                  <span style={{ fontSize: '0.68rem', opacity: 0.8 }}>All loaded</span>
+                )}
               </div>
 
               {filteredParties.length === 0 ? (

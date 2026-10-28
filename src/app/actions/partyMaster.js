@@ -74,11 +74,22 @@ export async function getPartyList(tenantId = DEFAULT_TENANT_ID, options = {}) {
   const adminClient = getAdminClient();
   const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
   try {
-    const { data, error } = await adminClient
+    let partyQuery = adminClient
       .from('party_master')
       .select('*, party_roles(*), party_contacts(*), party_commercial_terms(*), party_addresses(*)')
-      .eq('tenant_id', effectiveTenantId)
       .order('created_at', { ascending: false });
+
+    if (effectiveTenantId === 'TNT00002' || effectiveTenantId === '00000000-0000-0000-0000-000000000001') {
+      partyQuery = partyQuery.or('tenant_id.eq.00000000-0000-0000-0000-000000000001,tenant_id.eq.TNT00002');
+    } else if (effectiveTenantId === 'TNT00001' || effectiveTenantId === '0a37b8e8-1c28-4e19-8891-951fc3f8f8af') {
+      partyQuery = partyQuery.or('tenant_id.eq.0a37b8e8-1c28-4e19-8891-951fc3f8f8af,tenant_id.eq.TNT00001');
+    } else if (effectiveTenantId === 'TNT00003' || effectiveTenantId === '922d3e72-6588-457f-a562-4f1bdbf10d98') {
+      partyQuery = partyQuery.or('tenant_id.eq.922d3e72-6588-457f-a562-4f1bdbf10d98,tenant_id.eq.TNT00003');
+    } else {
+      partyQuery = partyQuery.eq('tenant_id', effectiveTenantId);
+    }
+
+    const { data, error } = await partyQuery;
 
     if (error) {
       console.error('Error fetching party list:', error);
