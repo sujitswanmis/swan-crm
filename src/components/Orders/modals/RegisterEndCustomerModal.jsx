@@ -9,6 +9,7 @@ import {
 import { INDIAN_STATE_DISTRICTS } from '@/config/indianStateDistricts';
 import { PRODUCT_GROUPS } from '@/config/productCatalog';
 import { getTenantProducts } from '@/app/actions/tenantProducts';
+import { getStatesCentral, getDistrictsCentral } from '@/app/actions/centralLocationMaster';
 import SearchableProductSelect from '@/components/common/SearchableProductSelect';
 import { createEndCustomer } from '@/app/actions/endCustomers';
 import { calculateWarrantyStatus } from '@/utils/warrantyUtils';
@@ -152,11 +153,77 @@ export default function RegisterEndCustomerModal({
     return () => { isMounted = false; };
   }, [isOpen, tenantId]);
 
-  // States & Dependent Districts
-  const statesList = useMemo(() => Object.keys(INDIAN_STATE_DISTRICTS), []);
+  const [locationStates, setLocationStates] = useState([]);
+  const [locationDistricts, setLocationDistricts] = useState([]);
+  const [loadingLocation, setLoadingLocation] = useState(false);
+
+  // 1. Load authoritative States from Location Master
+  React.useEffect(() => {
+    if (!isOpen) return;
+    let isMounted = true;
+    async function loadMasterStates() {
+      try {
+        const statesData = await getStatesCentral();
+        if (isMounted && Array.isArray(statesData) && statesData.length > 0) {
+          const names = statesData.map(s => s.state_name || s.name).filter(Boolean);
+          setLocationStates(names);
+        } else if (isMounted) {
+          setLocationStates(Object.keys(INDIAN_STATE_DISTRICTS));
+        }
+      } catch (err) {
+        console.warn('Failed to load Location Master states, using fallback:', err);
+        if (isMounted) setLocationStates(Object.keys(INDIAN_STATE_DISTRICTS));
+      }
+    }
+    loadMasterStates();
+    return () => { isMounted = false; };
+  }, [isOpen]);
+
+  // 2. Load authoritative Districts for selected state from Location Master
+  React.useEffect(() => {
+    if (!isOpen || !formData.state_name) return;
+    let isMounted = true;
+    async function loadMasterDistricts() {
+      setLoadingLocation(true);
+      try {
+        const distData = await getDistrictsCentral(null, formData.state_name);
+        if (isMounted && Array.isArray(distData) && distData.length > 0) {
+          const dNames = distData.map(d => d.name || d.district_name).filter(Boolean);
+          setLocationDistricts(dNames);
+          if (!formData.district_name || !dNames.includes(formData.district_name)) {
+            setFormData(prev => ({ ...prev, district_name: dNames[0] || '' }));
+          }
+        } else if (isMounted) {
+          const fallbackDists = INDIAN_STATE_DISTRICTS[formData.state_name] || [];
+          setLocationDistricts(fallbackDists);
+          if (!formData.district_name || !fallbackDists.includes(formData.district_name)) {
+            setFormData(prev => ({ ...prev, district_name: fallbackDists[0] || '' }));
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to load Location Master districts, using fallback:', err);
+        if (isMounted) {
+          const fallbackDists = INDIAN_STATE_DISTRICTS[formData.state_name] || [];
+          setLocationDistricts(fallbackDists);
+        }
+      } finally {
+        if (isMounted) setLoadingLocation(false);
+      }
+    }
+    loadMasterDistricts();
+    return () => { isMounted = false; };
+  }, [isOpen, formData.state_name]);
+
+  // States & Dependent Districts (Synced with Location Master)
+  const statesList = useMemo(() => {
+    if (locationStates.length > 0) return locationStates;
+    return Object.keys(INDIAN_STATE_DISTRICTS);
+  }, [locationStates]);
+
   const districtsList = useMemo(() => {
+    if (locationDistricts.length > 0) return locationDistricts;
     return INDIAN_STATE_DISTRICTS[formData.state_name] || [];
-  }, [formData.state_name]);
+  }, [locationDistricts, formData.state_name]);
 
   // Live filtered dealers
   const filteredDealers = useMemo(() => {
@@ -178,11 +245,10 @@ export default function RegisterEndCustomerModal({
   if (!isOpen) return null;
 
   const handleStateChange = (stateName) => {
-    const districts = INDIAN_STATE_DISTRICTS[stateName] || [];
     setFormData(prev => ({
       ...prev,
       state_name: stateName,
-      district_name: districts[0] || ''
+      district_name: ''
     }));
   };
 
@@ -674,6 +740,7 @@ export default function RegisterEndCustomerModal({
                   value={formData.product_name || formData.product_id}
                   onChange={handleSelectProduct}
                   placeholder="Click to search model name, SKU, or category..."
+                  showPrice={false}
                 />
               </div>
 

@@ -43,7 +43,7 @@ const AVAILABLE_ROLES = [
 
 const FIELD_TYPES = [
   { value: 'text', label: 'Single-line Text' },
-  { value: 'number', label: 'Number / Amount' },
+  { value: 'number', label: 'Numeric Value (Quantity / Count)' },
   { value: 'date', label: 'Date Picker (IST)' },
   { value: 'select', label: 'Dropdown / Multiple Choice' },
   { value: 'checkbox', label: 'Yes/No Checkbox' },

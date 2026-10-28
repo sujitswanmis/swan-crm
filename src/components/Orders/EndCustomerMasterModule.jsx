@@ -10,6 +10,7 @@ import {
 import { getEndCustomers } from '@/app/actions/endCustomers';
 import { getPartyList } from '@/app/actions/partyMaster';
 import { getComplaintsTickets } from '@/app/actions/orderFulfillment';
+import { getStatesCentral } from '@/app/actions/centralLocationMaster';
 import RegisterEndCustomerModal from './modals/RegisterEndCustomerModal';
 import useTableColumnResize, { ColumnResizer } from '@/utils/tableColumnResize';
 import MaskedPhoneDisplay from '@/components/common/MaskedPhoneDisplay';
@@ -97,18 +98,37 @@ export default function EndCustomerMasterModule({
     }
   }, [tenantId]);
 
+  const [masterStates, setMasterStates] = useState([]);
+
   useEffect(() => {
     loadData();
   }, [loadData]);
 
-  // Extract unique states for filter
-  const uniqueStates = useMemo(() => {
+  // Load authoritative States from Location Master
+  useEffect(() => {
+    async function loadMasterStates() {
+      try {
+        const statesData = await getStatesCentral();
+        if (Array.isArray(statesData) && statesData.length > 0) {
+          const names = statesData.map(s => s.state_name || s.name).filter(Boolean);
+          setMasterStates(names);
+        }
+      } catch (err) {
+        console.warn('Failed to load Location Master states in EndCustomerMasterModule:', err);
+      }
+    }
+    loadMasterStates();
+  }, []);
+
+  // Location Master synced available states for filter
+  const availableStates = useMemo(() => {
+    if (masterStates.length > 0) return masterStates;
     const s = new Set();
     customers.forEach(c => {
       if (c.state_name) s.add(c.state_name);
     });
     return Array.from(s).sort();
-  }, [customers]);
+  }, [masterStates, customers]);
 
   // Filtered customers
   const filteredCustomers = useMemo(() => {
@@ -429,8 +449,8 @@ export default function EndCustomerMasterModule({
             </select>
           </div>
 
-          {/* State Filter */}
-          {uniqueStates.length > 0 && (
+          {/* State Filter (Location Master Synced) */}
+          {availableStates.length > 0 && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
               <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600 }}>State:</span>
               <select
@@ -446,7 +466,7 @@ export default function EndCustomerMasterModule({
                 }}
               >
                 <option value="ALL">All States</option>
-                {uniqueStates.map(st => (
+                {availableStates.map(st => (
                   <option key={st} value={st}>{st}</option>
                 ))}
               </select>

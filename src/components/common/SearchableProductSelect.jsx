@@ -10,7 +10,8 @@ export default function SearchableProductSelect({
   onSelectNext = null,
   placeholder = 'Click to search and select product...',
   disabled = false,
-  required = false
+  required = false,
+  showPrice = true
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -452,14 +453,16 @@ export default function SearchableProductSelect({
                     </div>
 
                     <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                      {prod.price != null && prod.price !== '' ? (
-                        <div style={{ fontSize: '0.84rem', fontWeight: 700, color: '#059669' }}>
-                          ₹{Number(prod.price).toLocaleString('en-IN')}
-                        </div>
-                      ) : (
-                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted, #94a3b8)' }}>
-                          --
-                        </div>
+                      {showPrice && (
+                        prod.price != null && prod.price !== '' ? (
+                          <div style={{ fontSize: '0.84rem', fontWeight: 700, color: '#059669' }}>
+                            ₹{Number(prod.price).toLocaleString('en-IN')}
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted, #94a3b8)' }}>
+                            --
+                          </div>
+                        )
                       )}
                       {isSelected && (
                         <span style={{
