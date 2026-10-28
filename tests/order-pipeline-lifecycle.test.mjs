@@ -499,3 +499,122 @@ test('Pipeline Quick Date Presets: filters orders accurately in Indian Standard 
   const range = filterByDate(orders, 'custom', '2026-10-26', '2026-10-27');
   assert.equal(range.length, 2, '2 orders in range 26 to 27 Oct');
 });
+
+test('Party Tier & Multi-Mobile Resolution: extracts tier badges and deduplicates contact numbers with search matching', () => {
+  function resolveTier(party) {
+    if (!party) return { label: 'Dealer', text: '#2563eb' };
+    const rawTier = party.tier || party.party_tier || party.meta?.tier || party.party_type || 'Dealer';
+    const tierStr = String(rawTier).trim();
+
+    if (tierStr.toLowerCase().includes('distributor') || tierStr.toLowerCase() === 'tier-1' || tierStr.toLowerCase() === 'tier 1') {
+      return { label: tierStr, text: '#7c3aed' };
+    }
+    if (tierStr.toLowerCase().includes('sub-dealer') || tierStr.toLowerCase().includes('sub dealer') || tierStr.toLowerCase() === 'tier-3' || tierStr.toLowerCase() === 'tier 3') {
+      return { label: tierStr, text: '#0d9488' };
+    }
+    if (tierStr.toLowerCase().includes('dealer') || tierStr.toLowerCase() === 'tier-2' || tierStr.toLowerCase() === 'tier 2') {
+      return { label: tierStr, text: '#2563eb' };
+    }
+    return { label: tierStr, text: '#4f46e5' };
+  }
+
+  function extractMobiles(party) {
+    if (!party) return [];
+    const candidates = [
+      party.primary_mobile,
+      party.biz_contact_no_1,
+      party.biz_contact_no_2,
+      party.contact_mobile_1_1,
+      party.contact_mobile_1_2,
+      party.contact_mobile_2_1,
+      party.contact_mobile_2_2,
+      party.contact_mobile_3_1,
+      party.contact_mobile_3_2,
+      party.biz_alt_no_1,
+      party.biz_alt_no_2,
+      party.contact_alt_mobile_1_1,
+      party.contact_alt_mobile_1_2,
+      party.lead?.phone,
+      party.lead?.mobile,
+      party.phone,
+      party.mobile
+    ];
+
+    if (Array.isArray(party.party_contacts)) {
+      party.party_contacts.forEach(c => {
+        if (c) {
+          if (c.primary_mobile) candidates.push(c.primary_mobile);
+          if (c.alt_mobile) candidates.push(c.alt_mobile);
+          if (c.phone) candidates.push(c.phone);
+        }
+      });
+    }
+
+    const seen = new Set();
+    const result = [];
+
+    for (const raw of candidates) {
+      if (!raw) continue;
+      const str = String(raw).trim();
+      if (!str || str === '-' || str.toLowerCase() === 'null' || str.toLowerCase() === 'undefined') continue;
+      
+      const parts = str.split(/[,|/;\n\r]+/).map(p => p.trim()).filter(Boolean);
+      for (const part of parts) {
+        const digits = part.replace(/\D/g, '');
+        const key = digits.length >= 10 ? digits.slice(-10) : digits;
+        if (key && key.length >= 10 && !seen.has(key)) {
+          seen.add(key);
+          result.push(part);
+        }
+      }
+    }
+
+    return result;
+  }
+
+  // 1. Tier Resolution checks
+  assert.equal(resolveTier({ party_type: 'Distributor' }).text, '#7c3aed', 'Distributor has purple badge');
+  assert.equal(resolveTier({ party_type: 'Dealer' }).text, '#2563eb', 'Dealer has blue badge');
+  assert.equal(resolveTier({ party_type: 'Sub-Dealer' }).text, '#0d9488', 'Sub-Dealer has teal badge');
+  assert.equal(resolveTier({ tier: 'Tier-1' }).text, '#7c3aed', 'Tier-1 has purple badge');
+  assert.equal(resolveTier(null).label, 'Dealer', 'Null party defaults to Dealer');
+
+  // 2. Multi-Mobile Deduplication checks
+  const mockParty = {
+    firm_name: 'Kisan Agro Traders',
+    party_type: 'Dealer',
+    primary_mobile: '9876543210',
+    biz_contact_no_1: '+91 98765 43210', // duplicate of primary
+    biz_contact_no_2: '9123456789',       // unique
+    contact_mobile_1_1: '9876543210',     // duplicate
+    contact_mobile_2_1: '9988776655',     // unique
+    party_contacts: [
+      { primary_mobile: '9123456789' },   // duplicate of biz_contact_no_2
+      { alt_mobile: '8877665544' }        // unique
+    ]
+  };
+
+  const mobiles = extractMobiles(mockParty);
+  assert.equal(mobiles.length, 4, 'Deduplicates identical numbers across multiple fields to 4 unique contacts');
+  assert.deepEqual(mobiles, ['9876543210', '9123456789', '9988776655', '8877665544']);
+
+  // 3. Search Matching with Mobile and Tier
+  const order = {
+    order_number: 'SO-2026-0001',
+    party: mockParty
+  };
+
+  function matchesSearch(ord, term) {
+    const q = term.toLowerCase().trim();
+    const num = (ord.order_number || '').toLowerCase();
+    const firm = (ord.party?.firm_name || '').toLowerCase();
+    const tier = (ord.party?.party_type || '').toLowerCase();
+    const mobStr = extractMobiles(ord.party).join(' ');
+    return num.includes(q) || firm.includes(q) || tier.includes(q) || mobStr.includes(q);
+  }
+
+  assert.equal(matchesSearch(order, '9123456789'), true, 'Finds order by secondary mobile number');
+  assert.equal(matchesSearch(order, 'Dealer'), true, 'Finds order by party tier');
+  assert.equal(matchesSearch(order, 'Kisan'), true, 'Finds order by firm name');
+  assert.equal(matchesSearch(order, '9999999999'), false, 'Returns false for non-matching number');
+});

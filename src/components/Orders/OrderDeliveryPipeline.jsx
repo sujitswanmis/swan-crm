@@ -11,6 +11,7 @@ import { getOrderPipelineConfig } from '@/app/actions/orderPipelineConfig';
 import { getSubItemPermissions, checkIsAdminRole } from '@/utils/permissionUtils';
 import StandardTablePagination from '../common/StandardTablePagination';
 import DateRangePicker from '../common/DateRangePicker';
+import MaskedPhoneDisplay from '../common/MaskedPhoneDisplay';
 import OrderRevisionModal from './modals/OrderRevisionModal';
 import CancelOrderModal from './modals/CancelOrderModal';
 import StageActionModal from './modals/StageActionModal';
@@ -48,6 +49,83 @@ function formatIST(isoDate) {
   } catch (_) {
     return String(isoDate).slice(0, 16);
   }
+}
+
+/**
+ * Resolves Party Tier with high-contrast badge styling
+ */
+export function resolvePartyTier(party) {
+  if (!party) return { label: 'Dealer', bg: 'rgba(37,99,235,0.12)', text: '#2563eb', border: 'rgba(37,99,235,0.3)' };
+  const rawTier = party.tier || party.party_tier || party.meta?.tier || party.party_type || 'Dealer';
+  const tierStr = String(rawTier).trim();
+
+  if (tierStr.toLowerCase().includes('distributor') || tierStr.toLowerCase() === 'tier-1' || tierStr.toLowerCase() === 'tier 1') {
+    return { label: tierStr, bg: 'rgba(139,92,246,0.14)', text: '#7c3aed', border: 'rgba(139,92,246,0.35)' };
+  }
+  if (tierStr.toLowerCase().includes('sub-dealer') || tierStr.toLowerCase().includes('sub dealer') || tierStr.toLowerCase() === 'tier-3' || tierStr.toLowerCase() === 'tier 3') {
+    return { label: tierStr, bg: 'rgba(13,148,136,0.14)', text: '#0d9488', border: 'rgba(13,148,136,0.35)' };
+  }
+  if (tierStr.toLowerCase().includes('dealer') || tierStr.toLowerCase() === 'tier-2' || tierStr.toLowerCase() === 'tier 2') {
+    return { label: tierStr, bg: 'rgba(37,99,235,0.14)', text: '#2563eb', border: 'rgba(37,99,235,0.35)' };
+  }
+  return { label: tierStr, bg: 'rgba(99,102,241,0.14)', text: '#4f46e5', border: 'rgba(99,102,241,0.35)' };
+}
+
+/**
+ * Extracts and deduplicates all unique valid 10-digit mobile numbers for a partner
+ */
+export function extractPartyMobiles(party) {
+  if (!party) return [];
+  const candidates = [
+    party.primary_mobile,
+    party.biz_contact_no_1,
+    party.biz_contact_no_2,
+    party.contact_mobile_1_1,
+    party.contact_mobile_1_2,
+    party.contact_mobile_2_1,
+    party.contact_mobile_2_2,
+    party.contact_mobile_3_1,
+    party.contact_mobile_3_2,
+    party.biz_alt_no_1,
+    party.biz_alt_no_2,
+    party.contact_alt_mobile_1_1,
+    party.contact_alt_mobile_1_2,
+    party.lead?.phone,
+    party.lead?.mobile,
+    party.phone,
+    party.mobile
+  ];
+
+  if (Array.isArray(party.party_contacts)) {
+    party.party_contacts.forEach(c => {
+      if (c) {
+        if (c.primary_mobile) candidates.push(c.primary_mobile);
+        if (c.alt_mobile) candidates.push(c.alt_mobile);
+        if (c.phone) candidates.push(c.phone);
+      }
+    });
+  }
+
+  const seen = new Set();
+  const result = [];
+
+  for (const raw of candidates) {
+    if (!raw) continue;
+    const str = String(raw).trim();
+    if (!str || str === '-' || str.toLowerCase() === 'null' || str.toLowerCase() === 'undefined') continue;
+    
+    const parts = str.split(/[,|/;\n\r]+/).map(p => p.trim()).filter(Boolean);
+    for (const part of parts) {
+      const digits = part.replace(/\D/g, '');
+      const key = digits.length >= 10 ? digits.slice(-10) : digits;
+      if (key && key.length >= 10 && !seen.has(key)) {
+        seen.add(key);
+        result.push(part);
+      }
+    }
+  }
+
+  return result;
 }
 
 // Stage resolver helper
@@ -364,8 +442,10 @@ export default function OrderDeliveryPipeline({
       const veh = (order.vehicle_number || '').toLowerCase();
       const trans = (order.transporter_name || '').toLowerCase();
       const owner = (order.party?.owner_name || '').toLowerCase();
+      const tier = (order.party?.tier || order.party?.party_tier || order.party?.meta?.tier || order.party?.party_type || '').toLowerCase();
+      const partyMobilesStr = extractPartyMobiles(order.party).join(' ');
 
-      return num.includes(term) || firm.includes(term) || lr.includes(term) || veh.includes(term) || trans.includes(term) || owner.includes(term);
+      return num.includes(term) || firm.includes(term) || lr.includes(term) || veh.includes(term) || trans.includes(term) || owner.includes(term) || tier.includes(term) || partyMobilesStr.includes(term);
     });
   }, [orders, stageFilter, searchTerm, stages, userRole, allOrdersPerm.view, visibleStages, pipelineDatePreset, pipelineStartDate, pipelineEndDate]);
 
@@ -745,12 +825,51 @@ export default function OrderDeliveryPipeline({
 
                       {/* Partner */}
                       <td style={{ padding: '0.85rem 1rem' }}>
-                        <div style={{ fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.15rem' }}>
-                          {p?.firm_name || 'Channel Partner'}
-                        </div>
-                        <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                          {p?.owner_name} • {p?.district_name || p?.city}, {p?.state_name}
-                        </div>
+                        {(() => {
+                          const tierInfo = resolvePartyTier(p);
+                          const mobiles = extractPartyMobiles(p);
+                          return (
+                            <>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.2rem' }}>
+                                <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+                                  {p?.firm_name || 'Channel Partner'}
+                                </span>
+                                {tierInfo?.label && (
+                                  <span style={{
+                                    fontSize: '0.67rem',
+                                    fontWeight: 800,
+                                    padding: '0.12rem 0.45rem',
+                                    borderRadius: '4px',
+                                    background: tierInfo.bg,
+                                    color: tierInfo.text,
+                                    border: `1px solid ${tierInfo.border}`,
+                                    letterSpacing: '0.02em',
+                                    display: 'inline-block'
+                                  }}>
+                                    {tierInfo.label}
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Multi-Mobile Numbers Display */}
+                              {mobiles.length > 0 && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', marginTop: '0.25rem', marginBottom: '0.3rem' }}>
+                                  {mobiles.map((mob, mIdx) => (
+                                    <div key={mIdx} style={{ display: 'flex', alignItems: 'center' }}>
+                                      <MaskedPhoneDisplay phone={mob} size="sm" />
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+
+                              {/* Owner Name & Location */}
+                              <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
+                                {p?.owner_name ? <span>{p.owner_name} • </span> : null}
+                                {p?.district_name || p?.city || 'HQ'}, {p?.state_name || 'State'}
+                              </div>
+                            </>
+                          );
+                        })()}
                       </td>
 
                       {/* Products & Amount */}

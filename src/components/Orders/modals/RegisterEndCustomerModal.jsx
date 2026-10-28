@@ -8,6 +8,8 @@ import {
 } from 'lucide-react';
 import { INDIAN_STATE_DISTRICTS } from '@/config/indianStateDistricts';
 import { PRODUCT_GROUPS } from '@/config/productCatalog';
+import { getTenantProducts } from '@/app/actions/tenantProducts';
+import SearchableProductSelect from '@/components/common/SearchableProductSelect';
 import { createEndCustomer } from '@/app/actions/endCustomers';
 import { calculateWarrantyStatus } from '@/utils/warrantyUtils';
 
@@ -120,10 +122,35 @@ export default function RegisterEndCustomerModal({
 
   const [dealerSearch, setDealerSearch] = useState('');
   const [showDealerDropdown, setShowDealerDropdown] = useState(false);
+  const [availableProducts, setAvailableProducts] = useState(PRODUCT_GROUPS);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [uploadingDoc, setUploadingDoc] = useState(false);
   const [uploadingChassis, setUploadingChassis] = useState(false);
+
+  // Load live tenant catalog products
+  React.useEffect(() => {
+    if (!isOpen) return;
+    let isMounted = true;
+    async function loadCatalog() {
+      try {
+        const res = await getTenantProducts(tenantId || 'TNT00002', 'ALL');
+        const list = Array.isArray(res) ? res : (Array.isArray(res?.products) ? res.products : []);
+        if (isMounted) {
+          if (list.length > 0) {
+            setAvailableProducts(list);
+          } else {
+            setAvailableProducts(PRODUCT_GROUPS);
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to load live tenant products in RegisterEndCustomerModal, fallback to groups:', err);
+        if (isMounted) setAvailableProducts(PRODUCT_GROUPS);
+      }
+    }
+    loadCatalog();
+    return () => { isMounted = false; };
+  }, [isOpen, tenantId]);
 
   // States & Dependent Districts
   const statesList = useMemo(() => Object.keys(INDIAN_STATE_DISTRICTS), []);
@@ -176,12 +203,21 @@ export default function RegisterEndCustomerModal({
   };
 
   const handleSelectProduct = (prod) => {
+    if (!prod) return;
+    const prodId = prod.id || prod.sku || prod.name || '';
+    const prodName = prod.name || (typeof prod === 'string' ? prod : '');
+    const category = prod.category || prod.sub_category || '';
+    
+    // Default warranty based on category (Land Leveller gets 24 months, others 12 months)
+    const isLandLeveller = String(category).toLowerCase().includes('land leveller') || 
+      String(prodName).toLowerCase().includes('laser land') || 
+      String(prodName).toLowerCase().includes('leveller');
+
     setFormData(prev => ({
       ...prev,
-      product_id: prod.id,
-      product_name: prod.name,
-      // Default warranty based on category
-      warranty_months: prod.category === 'Land Leveller' ? 24 : 12
+      product_id: prodId,
+      product_name: prodName,
+      warranty_months: isLandLeveller ? 24 : 12
     }));
   };
 
@@ -631,21 +667,14 @@ export default function RegisterEndCustomerModal({
 
               <div>
                 <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
-                  Product Fetched from Product Master
+                  Product Model (Searchable Product Master) <span style={{ color: '#ef4444' }}>*</span>
                 </label>
-                <select
-                  value={formData.product_id}
-                  onChange={e => {
-                    const prod = PRODUCT_GROUPS.find(p => p.id === e.target.value);
-                    if (prod) handleSelectProduct(prod);
-                  }}
-                  style={{ width: '100%', padding: '0.5rem 0.65rem', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '6px', color: 'var(--text-primary)', fontSize: '0.82rem' }}
-                >
-                  <option value="">-- Select Product Model --</option>
-                  {PRODUCT_GROUPS.map(prod => (
-                    <option key={prod.id} value={prod.id}>{prod.name}</option>
-                  ))}
-                </select>
+                <SearchableProductSelect
+                  products={availableProducts}
+                  value={formData.product_name || formData.product_id}
+                  onChange={handleSelectProduct}
+                  placeholder="Click to search model name, SKU, or category..."
+                />
               </div>
 
               <div>
