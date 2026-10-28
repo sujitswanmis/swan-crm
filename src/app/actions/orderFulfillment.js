@@ -158,6 +158,61 @@ export async function getDailyOrderFollowupQueue(tenantId = DEFAULT_TENANT_ID, t
 }
 
 /**
+ * 3B. GENERATE NEXT SEQUENTIAL SALES ORDER NUMBER (e.g. SO-2026-0001, SO-2026-0002)
+ * Atomic, deterministic, year-prefixed sequence.
+ */
+export async function generateNextSalesOrderNumber(tenantId = DEFAULT_TENANT_ID) {
+  const adminClient = getAdminClient();
+  const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
+  const currentYear = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric' }).format(new Date());
+  const prefix = `SO-${currentYear}-`;
+
+  try {
+    const { data: orders, error } = await adminClient
+      .from('sales_orders')
+      .select('order_number')
+      .eq('tenant_id', effectiveTenantId)
+      .ilike('order_number', `${prefix}%`)
+      .order('created_at', { ascending: false })
+      .limit(100);
+
+    if (error) {
+      console.warn('generateNextSalesOrderNumber query warning:', error.message);
+    }
+
+    let maxSeq = 0;
+    let baseOrderCount = 0;
+
+    if (Array.isArray(orders) && orders.length > 0) {
+      for (const ord of orders) {
+        const raw = (ord.order_number || '').trim();
+        // Ignore child suffix -B / -C
+        if (raw.endsWith('-B') || raw.endsWith('-C')) continue;
+
+        baseOrderCount++;
+        if (raw.startsWith(prefix)) {
+          const numPartStr = raw.slice(prefix.length).split('-')[0];
+          const numPart = parseInt(numPartStr, 10);
+          // Only treat 4-digit numbers < 5000 as clean sequential (ignoring legacy 5-digit random timestamp slices)
+          if (numPartStr.length === 4 && !isNaN(numPart) && numPart > 0 && numPart < 5000 && numPart > maxSeq) {
+            maxSeq = numPart;
+          }
+        }
+      }
+    }
+
+    // Next sequence: if maxSeq exists use maxSeq + 1; otherwise if there are base orders use baseOrderCount + 1, else 1
+    const nextSeq = maxSeq > 0 ? maxSeq + 1 : (baseOrderCount > 0 ? baseOrderCount + 1 : 1);
+    const paddedSeq = String(nextSeq).padStart(4, '0');
+    return `${prefix}${paddedSeq}`;
+  } catch (err) {
+    console.error('generateNextSalesOrderNumber error:', err);
+    const fallbackSeq = String(Math.floor(Date.now() % 10000)).padStart(4, '0');
+    return `${prefix}${fallbackSeq}`;
+  }
+}
+
+/**
  * 4. SAVE ORDER FOLLOWUP & AUTO-RECUR (Calls log, punches SO if placed, & schedules next cycle)
  */
 export async function saveOrderFollowupAndRecur(followupData, tenantId = DEFAULT_TENANT_ID) {
@@ -168,9 +223,9 @@ export async function saveOrderFollowupAndRecur(followupData, tenantId = DEFAULT
   const isOrder = followupData.call_status === 'ORDER_PLACED';
   let generatedOrderNo = null;
 
-  // 1. If order placed, generate Sales Order
+  // 1. If order placed, generate Sales Order with sequential numbering (e.g. SO-2026-0001)
   if (isOrder) {
-    generatedOrderNo = `SO-${new Date().getFullYear()}-${Date.now().toString().slice(-5)}`;
+    generatedOrderNo = await generateNextSalesOrderNumber(effectiveTenantId);
     try {
       await adminClient
         .from('sales_orders')

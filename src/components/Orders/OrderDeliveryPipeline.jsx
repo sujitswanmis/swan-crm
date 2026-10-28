@@ -10,6 +10,7 @@ import { useTableColumnResize, ColumnResizer } from '@/utils/tableColumnResize';
 import { getOrderPipelineConfig } from '@/app/actions/orderPipelineConfig';
 import { getSubItemPermissions, checkIsAdminRole } from '@/utils/permissionUtils';
 import StandardTablePagination from '../common/StandardTablePagination';
+import DateRangePicker from '../common/DateRangePicker';
 import OrderRevisionModal from './modals/OrderRevisionModal';
 import CancelOrderModal from './modals/CancelOrderModal';
 import StageActionModal from './modals/StageActionModal';
@@ -228,6 +229,18 @@ export default function OrderDeliveryPipeline({
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
 
+  // Quick Date Presets State (Strict IST)
+  const [pipelineDatePreset, setPipelineDatePreset] = useState('all');
+  const [pipelineStartDate, setPipelineStartDate] = useState('');
+  const [pipelineEndDate, setPipelineEndDate] = useState('');
+
+  const handleDateRangeChange = ({ preset, startDate, endDate }) => {
+    setPipelineDatePreset(preset);
+    setPipelineStartDate(startDate);
+    setPipelineEndDate(endDate);
+    setCurrentPage(1);
+  };
+
   // Active Pipeline Config loaded from backend
   const [pipelineConfig, setPipelineConfig] = useState(null);
   const [stages, setStages] = useState(DEFAULT_13_STAGES);
@@ -316,6 +329,20 @@ export default function OrderDeliveryPipeline({
     const isAdmin = checkIsAdminRole(userRole);
 
     return orders.filter(order => {
+      // Date range filter in IST Asia/Kolkata
+      if (pipelineDatePreset !== 'all' && (pipelineStartDate || pipelineEndDate)) {
+        if (!order.created_at) return false;
+        try {
+          const orderDateIST = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date(order.created_at));
+          if (pipelineStartDate && orderDateIST < pipelineStartDate) return false;
+          if (pipelineEndDate && orderDateIST > pipelineEndDate) return false;
+        } catch (_) {
+          const isoDate = String(order.created_at).slice(0, 10);
+          if (pipelineStartDate && isoDate < pipelineStartDate) return false;
+          if (pipelineEndDate && isoDate > pipelineEndDate) return false;
+        }
+      }
+
       const resolvedStage = resolveOrderStage(order, stages);
 
       // If user does not have All Orders permission, they only see orders for their permitted stages
@@ -340,12 +367,12 @@ export default function OrderDeliveryPipeline({
 
       return num.includes(term) || firm.includes(term) || lr.includes(term) || veh.includes(term) || trans.includes(term) || owner.includes(term);
     });
-  }, [orders, stageFilter, searchTerm, stages, userRole, allOrdersPerm.view, visibleStages]);
+  }, [orders, stageFilter, searchTerm, stages, userRole, allOrdersPerm.view, visibleStages, pipelineDatePreset, pipelineStartDate, pipelineEndDate]);
 
   // Auto-reset page on filter/search change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, stageFilter, pageSize]);
+  }, [searchTerm, stageFilter, pageSize, pipelineDatePreset, pipelineStartDate, pipelineEndDate]);
 
   const paginatedOrders = useMemo(() => {
     if (pageSize === 100000) return filteredOrders;
@@ -355,10 +382,25 @@ export default function OrderDeliveryPipeline({
 
   // Stage counts for progress strip
   const stageCounts = useMemo(() => {
-    const map = { ALL: orders.length, CANCELLED: 0 };
+    const map = { ALL: 0, CANCELLED: 0 };
     stages.forEach(st => { map[st.id] = 0; });
 
     orders.forEach(o => {
+      // Date filter check
+      if (pipelineDatePreset !== 'all' && (pipelineStartDate || pipelineEndDate)) {
+        if (!o.created_at) return;
+        try {
+          const oDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date(o.created_at));
+          if (pipelineStartDate && oDate < pipelineStartDate) return;
+          if (pipelineEndDate && oDate > pipelineEndDate) return;
+        } catch (_) {
+          const isoDate = String(o.created_at).slice(0, 10);
+          if (pipelineStartDate && isoDate < pipelineStartDate) return;
+          if (pipelineEndDate && isoDate > pipelineEndDate) return;
+        }
+      }
+
+      map.ALL++;
       const st = resolveOrderStage(o, stages);
       if (st.is_cancelled) {
         map.CANCELLED++;
@@ -367,7 +409,7 @@ export default function OrderDeliveryPipeline({
       }
     });
     return map;
-  }, [orders, stages]);
+  }, [orders, stages, pipelineDatePreset, pipelineStartDate, pipelineEndDate]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
@@ -532,6 +574,16 @@ export default function OrderDeliveryPipeline({
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+          {/* Quick Date Presets Dropdown */}
+          <DateRangePicker
+            preset={pipelineDatePreset}
+            startDate={pipelineStartDate}
+            endDate={pipelineEndDate}
+            allowAllTime={true}
+            title="Filter Order Pipeline by Date"
+            onChange={handleDateRangeChange}
+          />
+
           <select
             value={stageFilter}
             onChange={e => setStageFilter(e.target.value)}
@@ -544,11 +596,11 @@ export default function OrderDeliveryPipeline({
               fontSize: '0.82rem'
             }}
           >
-            <option value="ALL">All Stages ({orders.length})</option>
+            <option value="ALL">All Stages ({stageCounts.ALL})</option>
             {stages.map(s => (
-              <option key={s.id} value={s.id}>{s.id} — {s.name}</option>
+              <option key={s.id} value={s.id}>{s.id} — {s.name} ({stageCounts[s.id] || 0})</option>
             ))}
-            <option value="CANCELLED">Cancelled Orders</option>
+            <option value="CANCELLED">Cancelled Orders ({stageCounts.CANCELLED || 0})</option>
           </select>
 
           <button

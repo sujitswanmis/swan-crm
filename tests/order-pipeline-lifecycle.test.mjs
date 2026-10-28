@@ -417,3 +417,85 @@ test('Lot-B Commercial & Splitting Rules: child order disables re-splitting and 
 
   assert.equal(nextFromS08.id, 'S11', 'From S08, full-paid child order must skip S09 & S10 and advance directly to S11');
 });
+
+test('Sequential Order Numbering: increments deterministically and ignores child -B suffix', () => {
+  const currentYear = new Date().getFullYear();
+  const prefix = `SO-${currentYear}-`;
+
+  function calcNextSeq(orders) {
+    let maxSeq = 0;
+    let baseOrderCount = 0;
+
+    if (Array.isArray(orders) && orders.length > 0) {
+      for (const ord of orders) {
+        const raw = (ord.order_number || '').trim();
+        if (raw.endsWith('-B') || raw.endsWith('-C')) continue;
+
+        baseOrderCount++;
+        if (raw.startsWith(prefix)) {
+          const numPartStr = raw.slice(prefix.length).split('-')[0];
+          const numPart = parseInt(numPartStr, 10);
+          if (numPartStr.length === 4 && !isNaN(numPart) && numPart > 0 && numPart < 5000 && numPart > maxSeq) {
+            maxSeq = numPart;
+          }
+        }
+      }
+    }
+
+    const nextSeq = maxSeq > 0 ? maxSeq + 1 : (baseOrderCount > 0 ? baseOrderCount + 1 : 1);
+    return `${prefix}${String(nextSeq).padStart(4, '0')}`;
+  }
+
+  // 1. Fresh database
+  assert.equal(calcNextSeq([]), `SO-${currentYear}-0001`, 'Fresh DB starts at 0001');
+
+  // 2. Increments past existing sequential orders
+  const existingSeq = [
+    { order_number: `SO-${currentYear}-0001` },
+    { order_number: `SO-${currentYear}-0002` },
+    { order_number: `SO-${currentYear}-0002-B` } // should be ignored
+  ];
+  assert.equal(calcNextSeq(existingSeq), `SO-${currentYear}-0003`, 'Next sequential should be 0003');
+
+  // 3. Handles legacy random timestamp orders by counting base orders
+  const legacyOrders = [
+    { order_number: `SO-${currentYear}-13147` },
+    { order_number: `SO-${currentYear}-61254` },
+    { order_number: `SO-${currentYear}-05012` },
+    { order_number: `SO-${currentYear}-41220` },
+    { order_number: `SO-${currentYear}-41220-B` }
+  ];
+  assert.equal(calcNextSeq(legacyOrders), `SO-${currentYear}-0005`, 'Next order after 4 legacy base orders should be 0005');
+});
+
+test('Pipeline Quick Date Presets: filters orders accurately in Indian Standard Time (IST)', () => {
+  const orders = [
+    { order_number: 'SO-2026-0001', created_at: '2026-10-28T02:00:00.000Z' }, // 28 Oct 07:30 IST
+    { order_number: 'SO-2026-0002', created_at: '2026-10-27T10:00:00.000Z' }, // 27 Oct 15:30 IST
+    { order_number: 'SO-2026-0003', created_at: '2026-10-26T04:00:00.000Z' }  // 26 Oct 09:30 IST
+  ];
+
+  function filterByDate(ords, preset, startDate, endDate) {
+    return ords.filter(order => {
+      if (preset !== 'all' && (startDate || endDate)) {
+        if (!order.created_at) return false;
+        const orderDateIST = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date(order.created_at));
+        if (startDate && orderDateIST < startDate) return false;
+        if (endDate && orderDateIST > endDate) return false;
+      }
+      return true;
+    });
+  }
+
+  // All time
+  assert.equal(filterByDate(orders, 'all', '', '').length, 3, 'All time shows all 3 orders');
+
+  // Today (28 Oct 2026)
+  const todayOnly = filterByDate(orders, 'today', '2026-10-28', '2026-10-28');
+  assert.equal(todayOnly.length, 1, 'Only 1 order created on 28 Oct');
+  assert.equal(todayOnly[0].order_number, 'SO-2026-0001');
+
+  // Date range (26 Oct to 27 Oct)
+  const range = filterByDate(orders, 'custom', '2026-10-26', '2026-10-27');
+  assert.equal(range.length, 2, '2 orders in range 26 to 27 Oct');
+});
