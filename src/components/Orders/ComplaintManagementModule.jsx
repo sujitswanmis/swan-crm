@@ -1,100 +1,170 @@
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   AlertTriangle, Shield, CheckCircle2, Clock, Search, Filter,
-  RefreshCw, Plus, ArrowRight, CheckSquare, Phone, User, ExternalLink
+  RefreshCw, Plus, ArrowRight, CheckSquare, Phone, User, ExternalLink,
+  LayoutGrid, List, Users, Wrench, ShieldAlert, Sparkles, Building2, MapPin, Eye, FileText
 } from 'lucide-react';
 import { useTableColumnResize, ColumnResizer } from '@/utils/tableColumnResize';
 import {
   getComplaintsTickets,
   createComplaintTicketDirect,
   updateComplaintTicketAction,
-  verifyAndCloseComplaintTicket
+  verifyAndCloseComplaintTicket,
+  advanceComplaintTicketStage
 } from '@/app/actions/orderFulfillment';
+import { getComplaintPipelineConfig } from '@/app/actions/complaintPipelineConfig';
+import { getEndCustomers } from '@/app/actions/endCustomers';
+import { getTeamMembers } from '@/app/actions/team';
 import MaskedPhoneDisplay from '../common/MaskedPhoneDisplay';
 import StandardTablePagination from '../common/StandardTablePagination';
 import SearchablePartySelect from '../common/SearchablePartySelect';
+import ComplaintStageActionModal from './modals/ComplaintStageActionModal';
+import ComplaintStageHistoryModal from './modals/ComplaintStageHistoryModal';
+import RegisterEndCustomerModal from './modals/RegisterEndCustomerModal';
 
-const CATEGORIES = [
-  { id: 'MANUFACTURING_DEFECT', label: 'Manufacturing Defect (QA)', dept: 'QUALITY_ASSURANCE', sla: '48h' },
-  { id: 'TRANSIT_DAMAGE', label: 'Transit Damage (Logistics)', dept: 'LOGISTICS_DISPATCH', sla: '24h' },
-  { id: 'SHORTAGE_MISSING_PARTS', label: 'Shortage / Missing Parts', dept: 'LOGISTICS_DISPATCH', sla: '24h' },
-  { id: 'BILLING_DISPUTE', label: 'Billing / Scheme Dispute', dept: 'ACCOUNTS_FINANCE', sla: '24h' },
-  { id: 'DELIVERY_DELAY', label: 'Delivery Delay / Untraceable', dept: 'LOGISTICS_DISPATCH', sla: '12h' },
-  { id: 'SERVICE_WARRANTY', label: 'Service / Warranty Claim', dept: 'SERVICE_ENGINEERING', sla: '72h' }
+// Master 8 Categories Baseline
+const DEFAULT_CATEGORIES = [
+  { id: 'MANUFACTURING_DEFECT', label: 'Manufacturing Defect', dept: 'QUALITY_ASSURANCE', sla: '48h', color: '#ef4444' },
+  { id: 'TRANSIT_DAMAGE', label: 'Transit Damage (Logistics)', dept: 'LOGISTICS_DISPATCH', sla: '24h', color: '#f97316' },
+  { id: 'SHORTAGE_PRODUCT_SPAREPART', label: 'Shortage Product / Sparepart', dept: 'LOGISTICS_DISPATCH', sla: '24h', color: '#eab308' },
+  { id: 'DELIVERY_DELAY', label: 'Delivery Delay', dept: 'LOGISTICS_DISPATCH', sla: '12h', color: '#06b6d4' },
+  { id: 'BILLING_ISSUES', label: 'Billing Issues', dept: 'ACCOUNTS_FINANCE', sla: '24h', color: '#6366f1' },
+  { id: 'ORDER_RELATED_ISSUES', label: 'Order Related Issues', dept: 'SALES_DESK', sla: '12h', color: '#8b5cf6' },
+  { id: 'SERVICE_ISSUES', label: 'Service Issues', dept: 'SERVICE_ENGINEERING', sla: '48h', color: '#ec4899' },
+  { id: 'WARRANTY_CLAIM', label: 'Warranty Claim', dept: 'SERVICE_ENGINEERING', sla: '72h', color: '#dc2626' }
 ];
 
 const DEPARTMENTS = [
   { id: 'QUALITY_ASSURANCE', label: 'Plant Quality Assurance (QA)' },
   { id: 'LOGISTICS_DISPATCH', label: 'Logistics & Dispatch' },
   { id: 'ACCOUNTS_FINANCE', label: 'Accounts & Billing' },
-  { id: 'SERVICE_ENGINEERING', label: 'Field Service Engineering' }
+  { id: 'SERVICE_ENGINEERING', label: 'Field Service Engineering' },
+  { id: 'SALES_DESK', label: 'Sales Coordination / Order Desk' }
 ];
 
-const CLOSURE_METHODS = [
-  { id: 'PHONE_CALL', label: '📞 Phone Call Confirmation with Partner' },
-  { id: 'WHATSAPP_CONFIRMED', label: '💬 WhatsApp Written Confirmation' },
-  { id: 'SIGNED_SLIP', label: '📝 Signed Delivery Slip / Replacement POD' },
-  { id: 'FIELD_VISIT', label: '🧑‍🔧 Field Visit by Service Engineer' }
+const DEFAULT_STAGES = [
+  { id: 'C01', step_no: 1, name: 'Ticket Logged & Triaged', short_code: 'LOGGED', color: '#3b82f6', is_enabled: true },
+  { id: 'C02', step_no: 2, name: 'Internal Dept RCA', short_code: 'RCA', color: '#6366f1', is_enabled: true },
+  { id: 'C03', step_no: 3, name: 'Technician Deputed', short_code: 'DEPUTED', color: '#8b5cf6', is_enabled: true },
+  { id: 'C04', step_no: 4, name: 'On-Site Job Card', short_code: 'JOB_CARD', color: '#f59e0b', is_enabled: true },
+  { id: 'C05', step_no: 5, name: 'Customer OTP Sign-off', short_code: 'VERIFICATION', color: '#14b8a6', is_enabled: true },
+  { id: 'C06', step_no: 6, name: 'Quality Audit & Closed', short_code: 'CLOSED', color: '#10b981', is_enabled: true }
 ];
+
+function formatIST(isoDate) {
+  if (!isoDate) return '-';
+  try {
+    const d = new Date(isoDate);
+    return new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      day: '2-digit',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    }).format(d);
+  } catch (_) {
+    return String(isoDate).slice(0, 16);
+  }
+}
 
 export default function ComplaintManagementModule({
-  tenantId,
-  parties = []
+  tenantId = 'TNT00002',
+  parties = [],
+  userName = 'Operations',
+  userId = '',
+  userRole = ''
 }) {
+  const [viewMode, setViewMode] = useState('pipeline'); // 'pipeline' | 'table' | 'customers'
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [stageFilter, setStageFilter] = useState('ALL');
+  const [deptFilter, setDeptFilter] = useState('ALL');
+  const [categoryFilter, setCategoryFilter] = useState('ALL');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
-  const [deptFilter, setDeptFilter] = useState('ALL');
 
-  // Modals
+  // Dynamic Pipeline Config & Team
+  const [stages, setStages] = useState(DEFAULT_STAGES);
+  const [teamMembers, setTeamMembers] = useState([]);
+  const [endCustomers, setEndCustomers] = useState([]);
+  const [loadingCustomers, setLoadingCustomers] = useState(false);
+
+  // Modals State
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showRegisterCustomerModal, setShowRegisterCustomerModal] = useState(false);
+  const [stageActionModal, setStageActionModal] = useState({ isOpen: false, ticket: null, targetStage: null });
+  const [stageHistoryModal, setStageHistoryModal] = useState({ isOpen: false, ticket: null });
+
+  // Ticket Creation Form State
   const [createForm, setCreateForm] = useState({
+    complaint_type: 'CHANNEL_PARTNER', // 'CHANNEL_PARTNER' | 'END_CUSTOMER'
     party_id: '',
+    customer_id: '',
+    customer_name: '',
+    customer_phone: '',
     category: 'MANUFACTURING_DEFECT',
     priority: 'HIGH',
     assigned_department: 'QUALITY_ASSURANCE',
     issue_description: ''
   });
-
-  const [selectedTicketForAction, setSelectedTicketForAction] = useState(null);
-  const [actionForm, setActionForm] = useState({
-    resolution_type: 'REPLACEMENT_DISPATCHED',
-    action_reference_no: '',
-    resolution_notes: ''
-  });
-
-  const [selectedTicketForClose, setSelectedTicketForClose] = useState(null);
-  const [closeForm, setCloseForm] = useState({
-    closure_method: 'PHONE_CALL',
-    closure_notes: '',
-    dealer_satisfaction_rating: 5,
-    partner_remarks: ''
-  });
-
   const [submitting, setSubmitting] = useState(false);
 
   // Table Column Resizer
   const defaultCols = {
     ticket_id: 170,
-    partner: 240,
+    source_target: 240,
     category_dept: 220,
-    sla_status: 180,
+    stage_sla: 200,
     issue: 260,
-    status: 150,
+    technician: 180,
     actions: 140
   };
-  const { columnWidths, startResize, resetWidths } = useTableColumnResize('complaints_table_widths', defaultCols);
+  const { columnWidths, startResize, resetWidths } = useTableColumnResize('complaints_table_v2', defaultCols);
 
-  const loadTickets = async () => {
+  // Load Pipeline Config
+  const loadConfig = useCallback(async () => {
+    try {
+      const res = await getComplaintPipelineConfig(tenantId, 'All Branches');
+      if (res.success && res.config?.stages?.length > 0) {
+        setStages(res.config.stages);
+      }
+    } catch (_) {
+      setStages(DEFAULT_STAGES);
+    }
+  }, [tenantId]);
+
+  // Load Team Members
+  const loadTeam = useCallback(async () => {
+    try {
+      const members = await getTeamMembers('', tenantId);
+      if (Array.isArray(members)) setTeamMembers(members);
+    } catch (_) {
+      setTeamMembers([]);
+    }
+  }, [tenantId]);
+
+  // Load End Customers
+  const loadCustomers = useCallback(async () => {
+    setLoadingCustomers(true);
+    try {
+      const list = await getEndCustomers(tenantId);
+      if (Array.isArray(list)) setEndCustomers(list);
+    } catch (_) {
+      setEndCustomers([]);
+    } finally {
+      setLoadingCustomers(false);
+    }
+  }, [tenantId]);
+
+  // Load Tickets
+  const loadTickets = useCallback(async () => {
     setLoading(true);
     try {
       const data = await getComplaintsTickets(tenantId, {
-        status: statusFilter,
         department: deptFilter
       });
       setTickets(data || []);
@@ -103,25 +173,79 @@ export default function ComplaintManagementModule({
     } finally {
       setLoading(false);
     }
-  };
+  }, [tenantId, deptFilter]);
+
+  useEffect(() => {
+    loadConfig();
+    loadTeam();
+    loadCustomers();
+  }, [loadConfig, loadTeam, loadCustomers]);
 
   useEffect(() => {
     loadTickets();
-  }, [statusFilter, deptFilter, tenantId]);
+  }, [loadTickets]);
 
+  // Resolve Stage Helper
+  const resolveTicketStage = (ticket) => {
+    const rawStage = ticket.stage_id;
+    const direct = stages.find(s => s.id === rawStage);
+    if (direct) return direct;
+    if (ticket.ticket_status === 'RESOLVED_CLOSED') return stages[stages.length - 1] || DEFAULT_STAGES[5];
+    if (ticket.ticket_status === 'ACTION_TAKEN') return stages[3] || DEFAULT_STAGES[3];
+    return stages[0] || DEFAULT_STAGES[0];
+  };
+
+  // Get Next Stage Helper
+  const getNextStage = (currentStageId) => {
+    const idx = stages.findIndex(s => s.id === currentStageId);
+    if (idx !== -1 && idx < stages.length - 1) {
+      return stages[idx + 1];
+    }
+    return null;
+  };
+
+  // Open Stage Action Modal
+  const handleOpenAdvanceStage = (ticket, targetStage) => {
+    setStageActionModal({
+      isOpen: true,
+      ticket,
+      targetStage
+    });
+  };
+
+  // Handle Advance Stage Success
+  const handleStageActionSuccess = async (actionPayload) => {
+    const res = await advanceComplaintTicketStage(actionPayload.ticketId, actionPayload, tenantId);
+    if (res.success) {
+      loadTickets();
+    } else {
+      alert('Failed to advance stage: ' + (res.error || 'Unknown error'));
+    }
+  };
+
+  // Handle Create Ticket
   const handleCreateTicket = async (e) => {
     e.preventDefault();
-    if (!createForm.party_id) {
+    if (createForm.complaint_type === 'CHANNEL_PARTNER' && !createForm.party_id) {
       alert('Please select a Channel Partner.');
       return;
     }
+    if (createForm.complaint_type === 'END_CUSTOMER' && !createForm.customer_name) {
+      alert('Please select or register an End Customer.');
+      return;
+    }
+
     setSubmitting(true);
     try {
       const res = await createComplaintTicketDirect(createForm, tenantId);
       if (res.success) {
         setShowCreateModal(false);
         setCreateForm({
+          complaint_type: 'CHANNEL_PARTNER',
           party_id: '',
+          customer_id: '',
+          customer_name: '',
+          customer_phone: '',
           category: 'MANUFACTURING_DEFECT',
           priority: 'HIGH',
           assigned_department: 'QUALITY_ASSURANCE',
@@ -138,69 +262,37 @@ export default function ComplaintManagementModule({
     }
   };
 
-  const handleSaveAction = async (e) => {
-    e.preventDefault();
-    if (!selectedTicketForAction) return;
-    setSubmitting(true);
-    try {
-      const res = await updateComplaintTicketAction(selectedTicketForAction.id, actionForm, tenantId);
-      if (res.success) {
-        setSelectedTicketForAction(null);
-        loadTickets();
-      } else {
-        alert('Failed to update action: ' + (res.error || 'Unknown error'));
-      }
-    } catch (err) {
-      alert('Error updating action: ' + err.message);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleVerifyClose = async (e) => {
-    e.preventDefault();
-    if (!selectedTicketForClose) return;
-    setSubmitting(true);
-    try {
-      const methodObj = CLOSURE_METHODS.find(m => m.id === closeForm.closure_method);
-      const methodLabel = methodObj?.label || closeForm.closure_method;
-      const notesPart = closeForm.closure_notes ? ` - ${closeForm.closure_notes}` : '';
-      const remarksPart = closeForm.partner_remarks ? ` | Partner Remarks: ${closeForm.partner_remarks}` : '';
-      const payload = {
-        closure_otp: `${methodLabel}${notesPart}${remarksPart}`,
-        dealer_satisfaction_rating: Number(closeForm.dealer_satisfaction_rating) || 5
-      };
-      const res = await verifyAndCloseComplaintTicket(selectedTicketForClose.id, payload, tenantId);
-      if (res.success) {
-        setSelectedTicketForClose(null);
-        loadTickets();
-      } else {
-        alert('Failed to close ticket: ' + (res.error || 'Unknown error'));
-      }
-    } catch (err) {
-      alert('Error closing ticket: ' + err.message);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
   // Filtered tickets
   const filteredTickets = useMemo(() => {
     return tickets.filter(t => {
+      const st = resolveTicketStage(t);
+
+      if (stageFilter === 'BREACHED') {
+        if (!t.isSlaBreached) return false;
+      } else if (stageFilter !== 'ALL' && st.id !== stageFilter) {
+        return false;
+      }
+
+      if (categoryFilter !== 'ALL' && t.category !== categoryFilter) {
+        return false;
+      }
+
       if (!searchTerm) return true;
       const term = searchTerm.toLowerCase().trim();
       const num = (t.ticket_number || '').toLowerCase();
-      const firm = (t.party?.firm_name || '').toLowerCase();
+      const party = (t.party?.firm_name || '').toLowerCase();
+      const cust = (t.customer_name || '').toLowerCase();
       const desc = (t.issue_description || '').toLowerCase();
+      const tech = (t.technician_name || '').toLowerCase();
 
-      return num.includes(term) || firm.includes(term) || desc.includes(term);
+      return num.includes(term) || party.includes(term) || cust.includes(term) || desc.includes(term) || tech.includes(term);
     });
-  }, [tickets, searchTerm]);
+  }, [tickets, stageFilter, categoryFilter, searchTerm, stages]);
 
-  // Auto-reset page on filter changes
+  // Reset page on filter changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, statusFilter, pageSize]);
+  }, [searchTerm, stageFilter, categoryFilter, pageSize]);
 
   const paginatedTickets = useMemo(() => {
     if (pageSize === 100000) return filteredTickets;
@@ -208,42 +300,54 @@ export default function ComplaintManagementModule({
     return filteredTickets.slice(start, start + pageSize);
   }, [filteredTickets, currentPage, pageSize]);
 
-  // KPI Ribbon counts
+  // Stage counts for visual progress strip
+  const stageCounts = useMemo(() => {
+    const map = { ALL: tickets.length, BREACHED: 0 };
+    stages.forEach(s => { map[s.id] = 0; });
+
+    tickets.forEach(t => {
+      const st = resolveTicketStage(t);
+      if (t.isSlaBreached) map.BREACHED++;
+      if (map[st.id] !== undefined) map[st.id]++;
+    });
+    return map;
+  }, [tickets, stages]);
+
+  // KPI Ribbon stats
   const kpis = useMemo(() => {
     const total = tickets.length;
-    const open = tickets.filter(t => t.ticket_status === 'OPEN').length;
-    const actionTaken = tickets.filter(t => t.ticket_status === 'ACTION_TAKEN').length;
-    const closed = tickets.filter(t => t.ticket_status === 'RESOLVED_CLOSED').length;
+    const open = tickets.filter(t => t.stage_id !== 'C06' && t.ticket_status !== 'RESOLVED_CLOSED').length;
+    const underService = tickets.filter(t => t.stage_id === 'C03' || t.stage_id === 'C04').length;
+    const closed = tickets.filter(t => t.stage_id === 'C06' || t.ticket_status === 'RESOLVED_CLOSED').length;
     const breached = tickets.filter(t => t.isSlaBreached).length;
-    return { total, open, actionTaken, closed, breached };
+    return { total, open, underService, closed, breached };
   }, [tickets]);
 
   return (
-    <div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
       {/* KPI Ribbon */}
       <div style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-        gap: '0.75rem',
-        marginBottom: '1rem'
+        gap: '0.75rem'
       }}>
         <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '10px', padding: '0.85rem 1rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <div style={{ width: '40px', height: '40px', borderRadius: '8px', background: 'rgba(239,68,68,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ef4444' }}>
             <AlertTriangle size={20} />
           </div>
           <div>
-            <div style={{ fontSize: '0.72rem', color: '#ef4444', fontWeight: 600, textTransform: 'uppercase' }}>Open Tickets</div>
+            <div style={{ fontSize: '0.72rem', color: '#ef4444', fontWeight: 600, textTransform: 'uppercase' }}>Active Complaints</div>
             <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#ef4444' }}>{kpis.open}</div>
           </div>
         </div>
 
         <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '10px', padding: '0.85rem 1rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <div style={{ width: '40px', height: '40px', borderRadius: '8px', background: 'rgba(59,130,246,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#3b82f6' }}>
-            <Clock size={20} />
+          <div style={{ width: '40px', height: '40px', borderRadius: '8px', background: 'rgba(245,158,11,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#f59e0b' }}>
+            <Wrench size={20} />
           </div>
           <div>
-            <div style={{ fontSize: '0.72rem', color: '#60a5fa', fontWeight: 600, textTransform: 'uppercase' }}>Action Recorded</div>
-            <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#60a5fa' }}>{kpis.actionTaken}</div>
+            <div style={{ fontSize: '0.72rem', color: '#fbbf24', fontWeight: 600, textTransform: 'uppercase' }}>Field Service / Tech</div>
+            <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#fbbf24' }}>{kpis.underService}</div>
           </div>
         </div>
 
@@ -259,7 +363,7 @@ export default function ComplaintManagementModule({
 
         <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '10px', padding: '0.85rem 1rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <div style={{ width: '40px', height: '40px', borderRadius: '8px', background: 'rgba(239,68,68,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ef4444' }}>
-            <Shield size={20} />
+            <ShieldAlert size={20} />
           </div>
           <div>
             <div style={{ fontSize: '0.72rem', color: '#ef4444', fontWeight: 600, textTransform: 'uppercase' }}>SLA Breached</div>
@@ -268,12 +372,135 @@ export default function ComplaintManagementModule({
         </div>
       </div>
 
-      {/* Filter and Action Bar */}
+      {/* Visual 6-Stage Progress Strip */}
+      <div style={{
+        background: 'var(--bg-surface)',
+        border: '1px solid var(--border-light)',
+        borderRadius: '12px',
+        padding: '0.75rem 1rem',
+        overflowX: 'auto',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '0.5rem'
+      }}>
+        {/* All Tab */}
+        <div
+          onClick={() => setStageFilter('ALL')}
+          style={{
+            padding: '0.45rem 0.85rem',
+            borderRadius: '8px',
+            background: stageFilter === 'ALL' ? 'var(--accent-color, #2563eb)' : 'var(--bg-primary)',
+            color: stageFilter === 'ALL' ? '#ffffff' : 'var(--text-primary)',
+            border: '1px solid var(--border-light)',
+            cursor: 'pointer',
+            fontSize: '0.76rem',
+            fontWeight: 800,
+            whiteSpace: 'nowrap',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.4rem',
+            transition: 'all 0.15s ease'
+          }}
+        >
+          <span>All Complaints</span>
+          <span style={{
+            fontSize: '0.72rem',
+            padding: '0.1rem 0.4rem',
+            borderRadius: '10px',
+            background: stageFilter === 'ALL' ? 'rgba(255,255,255,0.25)' : 'var(--border-light)',
+            color: stageFilter === 'ALL' ? '#ffffff' : 'var(--text-secondary)'
+          }}>
+            {stageCounts.ALL}
+          </span>
+        </div>
+
+        {/* Stages C01 to C06 */}
+        {stages.map(st => {
+          const count = stageCounts[st.id] || 0;
+          const isSelected = stageFilter === st.id;
+          return (
+            <div
+              key={st.id}
+              onClick={() => setStageFilter(isSelected ? 'ALL' : st.id)}
+              style={{
+                padding: '0.45rem 0.75rem',
+                borderRadius: '8px',
+                background: isSelected ? `${st.color}20` : 'var(--bg-primary)',
+                border: isSelected ? `2px solid ${st.color}` : '1px solid var(--border-light)',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <span style={{
+                fontSize: '0.7rem',
+                fontWeight: 800,
+                color: st.color,
+                background: `${st.color}20`,
+                padding: '0.1rem 0.35rem',
+                borderRadius: '4px'
+              }}>
+                {st.id}
+              </span>
+              <span style={{
+                fontSize: '0.76rem',
+                fontWeight: isSelected ? 800 : 600,
+                color: isSelected ? 'var(--text-primary)' : 'var(--text-secondary)'
+              }}>
+                {st.name}
+              </span>
+              <span style={{
+                fontSize: '0.7rem',
+                fontWeight: 700,
+                padding: '0.05rem 0.35rem',
+                borderRadius: '10px',
+                background: isSelected ? `${st.color}30` : 'var(--border-light)',
+                color: isSelected ? st.color : 'var(--text-secondary)'
+              }}>
+                {count}
+              </span>
+            </div>
+          );
+        })}
+
+        {/* Breached Tab */}
+        <div
+          onClick={() => setStageFilter(stageFilter === 'BREACHED' ? 'ALL' : 'BREACHED')}
+          style={{
+            padding: '0.45rem 0.75rem',
+            borderRadius: '8px',
+            background: stageFilter === 'BREACHED' ? 'rgba(239,68,68,0.2)' : 'var(--bg-primary)',
+            border: stageFilter === 'BREACHED' ? '2px solid #ef4444' : '1px solid var(--border-light)',
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.45rem',
+            marginLeft: 'auto'
+          }}
+        >
+          <span style={{ fontSize: '0.74rem', fontWeight: 800, color: '#ef4444' }}>⚠️ SLA Breached</span>
+          <span style={{
+            fontSize: '0.7rem',
+            fontWeight: 800,
+            padding: '0.05rem 0.35rem',
+            borderRadius: '10px',
+            background: 'rgba(239,68,68,0.25)',
+            color: '#ef4444'
+          }}>
+            {stageCounts.BREACHED}
+          </span>
+        </div>
+      </div>
+
+      {/* Control Bar (Search, Category Filter, View Switcher & Log Ticket) */}
       <div style={{
         background: 'var(--bg-surface)',
         padding: '0.85rem 1rem',
         borderRadius: '10px',
-        marginBottom: '1rem',
         border: '1px solid var(--border-light)',
         display: 'flex',
         justifyContent: 'space-between',
@@ -281,14 +508,15 @@ export default function ComplaintManagementModule({
         flexWrap: 'wrap',
         gap: '0.75rem'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flex: '1 1 300px', maxWidth: '420px' }}>
+        {/* Search */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flex: '1 1 280px', maxWidth: '380px' }}>
           <div style={{ position: 'relative', width: '100%' }}>
             <Search size={15} style={{ position: 'absolute', left: '10px', top: '10px', color: 'var(--text-secondary)' }} />
             <input
               type="text"
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
-              placeholder="Search Ticket #, Partner, Issue description..."
+              placeholder="Search Ticket #, Customer, Dealer, Technician..."
               style={{
                 width: '100%',
                 padding: '0.5rem 0.65rem 0.5rem 2.2rem',
@@ -296,16 +524,18 @@ export default function ComplaintManagementModule({
                 border: '1px solid var(--border-light)',
                 borderRadius: '8px',
                 color: 'var(--text-primary)',
-                fontSize: '0.84rem'
+                fontSize: '0.82rem'
               }}
             />
           </div>
         </div>
 
+        {/* Filters and View Switcher */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+          {/* Category Filter (8 Categories) */}
           <select
-            value={statusFilter}
-            onChange={e => setStatusFilter(e.target.value)}
+            value={categoryFilter}
+            onChange={e => setCategoryFilter(e.target.value)}
             style={{
               padding: '0.5rem 0.75rem',
               background: 'var(--bg-primary)',
@@ -315,29 +545,75 @@ export default function ComplaintManagementModule({
               fontSize: '0.82rem'
             }}
           >
-            <option value="ALL">All Ticket Statuses</option>
-            <option value="OPEN">🔴 Open</option>
-            <option value="ACTION_TAKEN">🔵 Action Taken</option>
-            <option value="RESOLVED_CLOSED">🟢 Verified &amp; Closed</option>
-          </select>
-
-          <select
-            value={deptFilter}
-            onChange={e => setDeptFilter(e.target.value)}
-            style={{
-              padding: '0.5rem 0.75rem',
-              background: 'var(--bg-primary)',
-              border: '1px solid var(--border-light)',
-              borderRadius: '8px',
-              color: 'var(--text-primary)',
-              fontSize: '0.82rem'
-            }}
-          >
-            <option value="ALL">All Departments</option>
-            {DEPARTMENTS.map(d => (
-              <option key={d.id} value={d.id}>{d.label}</option>
+            <option value="ALL">All 8 Categories</option>
+            {DEFAULT_CATEGORIES.map(c => (
+              <option key={c.id} value={c.id}>{c.label}</option>
             ))}
           </select>
+
+          {/* View Mode Buttons */}
+          <div style={{ display: 'flex', background: 'var(--bg-primary)', borderRadius: '8px', border: '1px solid var(--border-light)', padding: '2px' }}>
+            <button
+              type="button"
+              onClick={() => setViewMode('pipeline')}
+              style={{
+                padding: '0.4rem 0.65rem',
+                borderRadius: '6px',
+                background: viewMode === 'pipeline' ? 'var(--accent-color, #2563eb)' : 'transparent',
+                color: viewMode === 'pipeline' ? '#fff' : 'var(--text-secondary)',
+                border: 'none',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                fontSize: '0.78rem',
+                fontWeight: 700
+              }}
+            >
+              <LayoutGrid size={13} />
+              Pipeline
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('table')}
+              style={{
+                padding: '0.4rem 0.65rem',
+                borderRadius: '6px',
+                background: viewMode === 'table' ? 'var(--accent-color, #2563eb)' : 'transparent',
+                color: viewMode === 'table' ? '#fff' : 'var(--text-secondary)',
+                border: 'none',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                fontSize: '0.78rem',
+                fontWeight: 700
+              }}
+            >
+              <List size={13} />
+              Table
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('customers')}
+              style={{
+                padding: '0.4rem 0.65rem',
+                borderRadius: '6px',
+                background: viewMode === 'customers' ? 'var(--accent-color, #2563eb)' : 'transparent',
+                color: viewMode === 'customers' ? '#fff' : 'var(--text-secondary)',
+                border: 'none',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                fontSize: '0.78rem',
+                fontWeight: 700
+              }}
+            >
+              <Users size={13} />
+              End Customers ({endCustomers.length})
+            </button>
+          </div>
 
           <button
             type="button"
@@ -383,696 +659,752 @@ export default function ComplaintManagementModule({
         </div>
       </div>
 
-      {/* Table with Resizable Columns and Sticky Header */}
-      <div style={{
-        background: 'var(--bg-surface)',
-        borderRadius: '12px',
-        border: '1px solid var(--border-light)',
-        overflow: 'hidden',
-        display: 'flex',
-        flexDirection: 'column'
-      }}>
-        <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 310px)', minHeight: '380px', width: '100%' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.84rem' }}>
-            <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)' }}>
-              <tr style={{ background: 'var(--bg-surface)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
-                <th style={{ width: `${columnWidths.ticket_id}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
-                  Ticket # &amp; Priority
-                  <ColumnResizer onMouseDown={e => startResize('ticket_id', e)} onDoubleClick={() => resetWidths()} />
-                </th>
-                <th style={{ width: `${columnWidths.partner}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
-                  Channel Partner
-                  <ColumnResizer onMouseDown={e => startResize('partner', e)} onDoubleClick={() => resetWidths()} />
-                </th>
-                <th style={{ width: `${columnWidths.category_dept}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
-                  Category &amp; Department
-                  <ColumnResizer onMouseDown={e => startResize('category_dept', e)} onDoubleClick={() => resetWidths()} />
-                </th>
-                <th style={{ width: `${columnWidths.sla_status}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
-                  SLA Status (IST)
-                  <ColumnResizer onMouseDown={e => startResize('sla_status', e)} onDoubleClick={() => resetWidths()} />
-                </th>
-                <th style={{ width: `${columnWidths.issue}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
-                  Issue Description
-                  <ColumnResizer onMouseDown={e => startResize('issue', e)} onDoubleClick={() => resetWidths()} />
-                </th>
-                <th style={{ width: `${columnWidths.status}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
-                  Ticket Status
-                  <ColumnResizer onMouseDown={e => startResize('status', e)} onDoubleClick={() => resetWidths()} />
-                </th>
-                <th style={{ width: `${columnWidths.actions}px`, padding: '0.85rem 1rem', textAlign: 'center', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
-                  Resolution Action
-                  <ColumnResizer onMouseDown={e => startResize('actions', e)} onDoubleClick={() => resetWidths()} />
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredTickets.length === 0 ? (
-                <tr>
-                  <td colSpan="7" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
-                    No complaint tickets found matching filter.
-                  </td>
+      {/* VIEW 1: KANBAN PIPELINE BOARD */}
+      {viewMode === 'pipeline' && (
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: `repeat(${stages.length}, minmax(260px, 1fr))`,
+          gap: '0.75rem',
+          overflowX: 'auto',
+          paddingBottom: '0.75rem',
+          minHeight: '480px'
+        }}>
+          {stages.map(st => {
+            const columnTickets = filteredTickets.filter(t => resolveTicketStage(t).id === st.id);
+            const nextSt = getNextStage(st.id);
+
+            return (
+              <div
+                key={st.id}
+                style={{
+                  background: 'var(--bg-surface)',
+                  border: '1px solid var(--border-light)',
+                  borderRadius: '12px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  overflow: 'hidden'
+                }}
+              >
+                {/* Column Header */}
+                <div style={{
+                  padding: '0.75rem 0.9rem',
+                  borderBottom: `2px solid ${st.color}`,
+                  background: 'var(--bg-primary)',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                    <span style={{
+                      fontSize: '0.72rem',
+                      fontWeight: 800,
+                      color: st.color,
+                      background: `${st.color}20`,
+                      padding: '0.1rem 0.35rem',
+                      borderRadius: '4px'
+                    }}>
+                      {st.id}
+                    </span>
+                    <strong style={{ fontSize: '0.82rem', color: 'var(--text-primary)' }}>{st.name}</strong>
+                  </div>
+                  <span style={{
+                    fontSize: '0.74rem',
+                    fontWeight: 800,
+                    padding: '0.1rem 0.45rem',
+                    borderRadius: '10px',
+                    background: `${st.color}25`,
+                    color: st.color
+                  }}>
+                    {columnTickets.length}
+                  </span>
+                </div>
+
+                {/* Cards List */}
+                <div style={{ padding: '0.65rem', overflowY: 'auto', maxHeight: 'calc(100vh - 350px)', display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                  {columnTickets.length === 0 ? (
+                    <div style={{ padding: '2rem 1rem', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.78rem' }}>
+                      No tickets in {st.id}
+                    </div>
+                  ) : (
+                    columnTickets.map(ticket => {
+                      const catObj = DEFAULT_CATEGORIES.find(c => c.id === ticket.category) || {};
+                      return (
+                        <div
+                          key={ticket.id}
+                          style={{
+                            background: 'var(--bg-primary)',
+                            border: ticket.isSlaBreached ? '1px solid rgba(239,68,68,0.5)' : '1px solid var(--border-light)',
+                            borderRadius: '8px',
+                            padding: '0.75rem',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '0.45rem',
+                            boxShadow: ticket.isSlaBreached ? '0 0 10px rgba(239,68,68,0.2)' : 'none',
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          {/* Ticket Number & Urgency */}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--accent-color, #38bdf8)' }}>
+                              #{ticket.ticket_number}
+                            </span>
+
+                            {ticket.isSlaBreached ? (
+                              <span style={{ fontSize: '0.68rem', fontWeight: 800, background: 'rgba(239,68,68,0.2)', color: '#ef4444', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>
+                                Breached
+                              </span>
+                            ) : (
+                              <span style={{ fontSize: '0.68rem', fontWeight: 700, background: 'rgba(16,185,129,0.15)', color: '#10b981', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>
+                                {ticket.slaHoursRemaining ? `${ticket.slaHoursRemaining}h left` : 'On Time'}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Target Person / Party */}
+                          <div>
+                            <div style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                              {ticket.customer_name ? (
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                                  <User size={12} style={{ color: '#38bdf8' }} />
+                                  {ticket.customer_name}
+                                </span>
+                              ) : (
+                                <span>{ticket.party?.firm_name || 'Dealer Partner'}</span>
+                              )}
+                            </div>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
+                              {ticket.customer_phone ? (
+                                <MaskedPhoneDisplay phone={ticket.customer_phone} />
+                              ) : ticket.party?.primary_mobile ? (
+                                <MaskedPhoneDisplay phone={ticket.party.primary_mobile} />
+                              ) : null}
+                            </div>
+                          </div>
+
+                          {/* Category Badge */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
+                            <span style={{
+                              fontSize: '0.68rem',
+                              fontWeight: 700,
+                              background: `${catObj.color || '#6366f1'}20`,
+                              color: catObj.color || '#6366f1',
+                              padding: '0.1rem 0.35rem',
+                              borderRadius: '4px'
+                            }}>
+                              {catObj.label || ticket.category}
+                            </span>
+                            <span style={{ fontSize: '0.66rem', color: 'var(--text-secondary)' }}>
+                              • {ticket.priority || 'NORMAL'}
+                            </span>
+                          </div>
+
+                          {/* Issue Description Snippet */}
+                          <p style={{ margin: 0, fontSize: '0.74rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                            {ticket.issue_description || 'No description'}
+                          </p>
+
+                          {/* Technician Assigned Badge (if C03+) */}
+                          {ticket.technician_name && (
+                            <div style={{ fontSize: '0.7rem', background: 'rgba(139, 92, 246, 0.15)', color: '#c084fc', padding: '0.2rem 0.4rem', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                              <Wrench size={11} />
+                              <span>Tech: <strong>{ticket.technician_name}</strong></span>
+                            </div>
+                          )}
+
+                          {/* Card Action Footer */}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '0.4rem', borderTop: '1px solid var(--border-light)' }}>
+                            <button
+                              type="button"
+                              onClick={() => setStageHistoryModal({ isOpen: true, ticket })}
+                              title="View Stage History"
+                              style={{
+                                background: 'none',
+                                border: 'none',
+                                color: 'var(--text-secondary)',
+                                cursor: 'pointer',
+                                fontSize: '0.7rem',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.2rem'
+                              }}
+                            >
+                              <Clock size={12} />
+                              History
+                            </button>
+
+                            {nextSt && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenAdvanceStage(ticket, nextSt)}
+                                style={{
+                                  padding: '0.3rem 0.6rem',
+                                  borderRadius: '6px',
+                                  background: `${nextSt.color}25`,
+                                  border: `1px solid ${nextSt.color}`,
+                                  color: nextSt.color,
+                                  cursor: 'pointer',
+                                  fontSize: '0.72rem',
+                                  fontWeight: 700,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '0.25rem'
+                                }}
+                              >
+                                <span>Advance ➔</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* VIEW 2: TABULAR GRID VIEW */}
+      {viewMode === 'table' && (
+        <div style={{
+          background: 'var(--bg-surface)',
+          borderRadius: '12px',
+          border: '1px solid var(--border-light)',
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column'
+        }}>
+          <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 310px)', minHeight: '380px', width: '100%' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.84rem' }}>
+              <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)' }}>
+                <tr style={{ background: 'var(--bg-surface)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
+                  <th style={{ width: `${columnWidths.ticket_id}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
+                    Ticket # &amp; Priority
+                    <ColumnResizer onMouseDown={e => startResize('ticket_id', e)} onDoubleClick={() => resetWidths()} />
+                  </th>
+                  <th style={{ width: `${columnWidths.source_target}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
+                    Raised By / Customer / Dealer
+                    <ColumnResizer onMouseDown={e => startResize('source_target', e)} onDoubleClick={() => resetWidths()} />
+                  </th>
+                  <th style={{ width: `${columnWidths.category_dept}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
+                    Category &amp; Department
+                    <ColumnResizer onMouseDown={e => startResize('category_dept', e)} onDoubleClick={() => resetWidths()} />
+                  </th>
+                  <th style={{ width: `${columnWidths.stage_sla}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
+                    Current Stage &amp; SLA Status
+                    <ColumnResizer onMouseDown={e => startResize('stage_sla', e)} onDoubleClick={() => resetWidths()} />
+                  </th>
+                  <th style={{ width: `${columnWidths.technician}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
+                    Assigned Technician
+                    <ColumnResizer onMouseDown={e => startResize('technician', e)} onDoubleClick={() => resetWidths()} />
+                  </th>
+                  <th style={{ width: `${columnWidths.actions}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
+                    Actions
+                    <ColumnResizer onMouseDown={e => startResize('actions', e)} onDoubleClick={() => resetWidths()} />
+                  </th>
                 </tr>
-              ) : (
-                paginatedTickets.map(t => {
-                  const p = t.party;
-                  const isClosed = t.ticket_status === 'RESOLVED_CLOSED';
+              </thead>
+              <tbody>
+                {paginatedTickets.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                      No complaint tickets found matching criteria.
+                    </td>
+                  </tr>
+                ) : (
+                  paginatedTickets.map(ticket => {
+                    const st = resolveTicketStage(ticket);
+                    const catObj = DEFAULT_CATEGORIES.find(c => c.id === ticket.category) || {};
+                    const nextSt = getNextStage(st.id);
 
-                  return (
-                    <tr key={t.id} style={{ borderBottom: '1px solid var(--border-light)' }}>
-                      <td style={{ padding: '0.85rem 1rem' }}>
-                        <div style={{ fontWeight: 800, color: '#f87171', fontSize: '0.88rem' }}>
-                          {t.ticket_number}
-                        </div>
-                        <span style={{
-                          display: 'inline-block',
-                          fontSize: '0.7rem',
-                          fontWeight: 700,
-                          padding: '0.12rem 0.45rem',
-                          borderRadius: '4px',
-                          marginTop: '0.25rem',
-                          background: t.priority === 'CRITICAL' ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.2)',
-                          color: t.priority === 'CRITICAL' ? '#ef4444' : '#f59e0b'
-                        }}>
-                          {t.priority}
-                        </span>
-                      </td>
-
-                      <td style={{ padding: '0.85rem 1rem' }}>
-                        <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
-                          {p?.firm_name || 'Direct Customer'}
-                        </div>
-                        <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
-                          {[p?.district_name || p?.district, p?.state_name || p?.state].filter(Boolean).join(', ') || 'N/A'}
-                        </div>
-                        {(p?.primary_mobile || p?.biz_contact_no_1) && (
-                          <div style={{ marginTop: '0.25rem' }}>
-                            <MaskedPhoneDisplay phone={p.primary_mobile || p.biz_contact_no_1} size="sm" />
+                    return (
+                      <tr key={ticket.id} style={{ borderBottom: '1px solid var(--border-light)' }}>
+                        <td style={{ padding: '0.85rem 1rem' }}>
+                          <strong style={{ color: 'var(--accent-color, #38bdf8)' }}>#{ticket.ticket_number}</strong>
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                            {formatIST(ticket.created_at)}
                           </div>
-                        )}
-                      </td>
+                        </td>
 
-                      <td style={{ padding: '0.85rem 1rem', fontSize: '0.82rem' }}>
-                        <div style={{ fontWeight: 600, color: '#60a5fa' }}>
-                          {t.category?.replace(/_/g, ' ')}
-                        </div>
-                        <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', marginTop: '0.15rem' }}>
-                          Dept: {t.assigned_department?.replace(/_/g, ' ')}
-                        </div>
-                      </td>
-
-                      <td style={{ padding: '0.85rem 1rem' }}>
-                        {isClosed ? (
-                          <span style={{ color: '#10b981', fontWeight: 700, fontSize: '0.8rem' }}>
-                            ✓ Resolved within SLA
-                          </span>
-                        ) : t.isSlaBreached ? (
-                          <span style={{
-                            display: 'inline-block',
-                            fontSize: '0.74rem',
-                            fontWeight: 800,
-                            padding: '0.2rem 0.5rem',
-                            borderRadius: '4px',
-                            background: 'rgba(239,68,68,0.2)',
-                            color: '#ef4444'
-                          }}>
-                            ⚠️ SLA Breached ({Math.abs(t.slaHoursRemaining)}h ago)
-                          </span>
-                        ) : (
-                          <span style={{
-                            display: 'inline-block',
-                            fontSize: '0.74rem',
-                            fontWeight: 700,
-                            padding: '0.2rem 0.5rem',
-                            borderRadius: '4px',
-                            background: 'rgba(16,185,129,0.15)',
-                            color: '#10b981'
-                          }}>
-                            🟢 {t.slaHoursRemaining}h remaining
-                          </span>
-                        )}
-                      </td>
-
-                      <td style={{ padding: '0.85rem 1rem', fontSize: '0.8rem' }}>
-                        <div style={{ maxWidth: '240px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {t.issue_description}
-                        </div>
-                        {t.action_reference_no && (
-                          <div style={{ color: '#38bdf8', fontSize: '0.74rem', marginTop: '0.2rem' }}>
-                            Ref: {t.action_reference_no} ({t.resolution_type})
+                        <td style={{ padding: '0.85rem 1rem' }}>
+                          <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+                            {ticket.customer_name ? (
+                              <span style={{ color: '#38bdf8' }}>👤 {ticket.customer_name}</span>
+                            ) : (
+                              <span>🏢 {ticket.party?.firm_name || 'Dealer Partner'}</span>
+                            )}
                           </div>
-                        )}
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                            {ticket.customer_phone || ticket.party?.primary_mobile || '-'}
+                          </div>
+                        </td>
+
+                        <td style={{ padding: '0.85rem 1rem' }}>
+                          <span style={{ fontSize: '0.72rem', fontWeight: 700, background: `${catObj.color || '#6366f1'}20`, color: catObj.color || '#6366f1', padding: '0.15rem 0.4rem', borderRadius: '4px' }}>
+                            {catObj.label || ticket.category}
+                          </span>
+                          <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                            {ticket.assigned_department}
+                          </div>
+                        </td>
+
+                        <td style={{ padding: '0.85rem 1rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                            <span style={{ fontSize: '0.72rem', fontWeight: 800, color: st.color, background: `${st.color}20`, padding: '0.1rem 0.35rem', borderRadius: '4px' }}>
+                              {st.id}
+                            </span>
+                            <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                              {st.name}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '0.7rem', marginTop: '2px' }}>
+                            {ticket.isSlaBreached ? (
+                              <span style={{ color: '#ef4444', fontWeight: 700 }}>⚠️ SLA Breached</span>
+                            ) : (
+                              <span style={{ color: '#10b981' }}>✓ On Time</span>
+                            )}
+                          </div>
+                        </td>
+
+                        <td style={{ padding: '0.85rem 1rem' }}>
+                          {ticket.technician_name ? (
+                            <div>
+                              <strong style={{ fontSize: '0.78rem', color: '#c084fc' }}>{ticket.technician_name}</strong>
+                              <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{ticket.technician_phone || '-'}</div>
+                            </div>
+                          ) : (
+                            <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>Not Deputed</span>
+                          )}
+                        </td>
+
+                        <td style={{ padding: '0.85rem 1rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                            {nextSt && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenAdvanceStage(ticket, nextSt)}
+                                style={{
+                                  padding: '0.35rem 0.65rem',
+                                  borderRadius: '6px',
+                                  background: `${nextSt.color}25`,
+                                  border: `1px solid ${nextSt.color}`,
+                                  color: nextSt.color,
+                                  cursor: 'pointer',
+                                  fontSize: '0.72rem',
+                                  fontWeight: 700
+                                }}
+                              >
+                                Advance ➔
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => setStageHistoryModal({ isOpen: true, ticket })}
+                              title="View History"
+                              style={{
+                                background: 'none',
+                                border: '1px solid var(--border-light)',
+                                borderRadius: '6px',
+                                padding: '0.3rem',
+                                color: 'var(--text-secondary)',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              <Clock size={14} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Unified Standard Table Pagination */}
+          <StandardTablePagination
+            currentPage={currentPage}
+            pageSize={pageSize}
+            totalItems={filteredTickets.length}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={setPageSize}
+          />
+        </div>
+      )}
+
+      {/* VIEW 3: END CUSTOMERS DIRECTORY */}
+      {viewMode === 'customers' && (
+        <div style={{
+          background: 'var(--bg-surface)',
+          borderRadius: '12px',
+          border: '1px solid var(--border-light)',
+          padding: '1.25rem',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '1rem'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                End Customers &amp; Farmers Directory
+              </h3>
+              <p style={{ margin: 0, fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
+                Retail machine owners mapped to parent dealers with active warranty tracking
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowRegisterCustomerModal(true)}
+              style={{
+                padding: '0.5rem 0.95rem',
+                borderRadius: '8px',
+                background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+                border: 'none',
+                color: '#fff',
+                fontSize: '0.82rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem'
+              }}
+            >
+              <Plus size={14} />
+              + Register End Customer
+            </button>
+          </div>
+
+          {/* Table */}
+          <div style={{ overflowX: 'auto', border: '1px solid var(--border-light)', borderRadius: '8px' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem' }}>
+              <thead>
+                <tr style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
+                  <th style={{ padding: '0.75rem 1rem' }}>Customer ID &amp; Name</th>
+                  <th style={{ padding: '0.75rem 1rem' }}>Contact (Mobile 1 &amp; 2)</th>
+                  <th style={{ padding: '0.75rem 1rem' }}>Location / Village</th>
+                  <th style={{ padding: '0.75rem 1rem' }}>Linked Dealer (Party Master)</th>
+                  <th style={{ padding: '0.75rem 1rem' }}>Machine &amp; Serial #</th>
+                  <th style={{ padding: '0.75rem 1rem' }}>Warranty Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {endCustomers.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                      No end customers registered yet. Click "+ Register End Customer" to add one!
+                    </td>
+                  </tr>
+                ) : (
+                  endCustomers.map(cust => (
+                    <tr key={cust.id} style={{ borderBottom: '1px solid var(--border-light)' }}>
+                      <td style={{ padding: '0.75rem 1rem' }}>
+                        <strong style={{ color: 'var(--text-primary)' }}>{cust.full_name}</strong>
+                        <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>{cust.customer_code}</div>
                       </td>
 
-                      <td style={{ padding: '0.85rem 1rem' }}>
+                      <td style={{ padding: '0.75rem 1rem' }}>
+                        <div><MaskedPhoneDisplay phone={cust.mobile_1} /></div>
+                        {cust.mobile_2 && <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}><MaskedPhoneDisplay phone={cust.mobile_2} /></div>}
+                      </td>
+
+                      <td style={{ padding: '0.75rem 1rem' }}>
+                        <div>{cust.district_name}, {cust.state_name}</div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{cust.landmark || cust.block_area_name || cust.pin_code}</div>
+                      </td>
+
+                      <td style={{ padding: '0.75rem 1rem' }}>
+                        <strong style={{ color: '#fbbf24' }}>{cust.linked_party_name || '-'}</strong>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{cust.dealer_city_district}</div>
+                      </td>
+
+                      <td style={{ padding: '0.75rem 1rem' }}>
+                        <div style={{ fontWeight: 600 }}>{cust.product_name || 'Machine Implement'}</div>
+                        <div style={{ fontSize: '0.7rem', color: '#38bdf8' }}>SN: {cust.chassis_serial_number || 'N/A'}</div>
+                      </td>
+
+                      <td style={{ padding: '0.75rem 1rem' }}>
                         <span style={{
-                          display: 'inline-block',
                           fontSize: '0.72rem',
                           fontWeight: 700,
-                          padding: '0.2rem 0.55rem',
-                          borderRadius: '4px',
-                          background: t.ticket_status === 'OPEN'
-                            ? 'rgba(239,68,68,0.15)'
-                            : t.ticket_status === 'ACTION_TAKEN'
-                            ? 'rgba(59,130,246,0.15)'
-                            : 'rgba(16,185,129,0.15)',
-                          color: t.ticket_status === 'OPEN'
-                            ? '#ef4444'
-                            : t.ticket_status === 'ACTION_TAKEN'
-                            ? '#60a5fa'
-                            : '#34d399'
+                          padding: '0.15rem 0.45rem',
+                          borderRadius: '10px',
+                          background: `${cust.warranty_info?.color || '#10b981'}20`,
+                          color: cust.warranty_info?.color || '#10b981',
+                          border: `1px solid ${cust.warranty_info?.color || '#10b981'}`
                         }}>
-                          {t.ticket_status?.replace(/_/g, ' ')}
+                          {cust.warranty_info?.label || 'Active'}
                         </span>
                       </td>
-
-                      <td style={{ padding: '0.85rem 1rem', textAlign: 'center' }}>
-                        {t.ticket_status === 'OPEN' && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSelectedTicketForAction(t);
-                              setActionForm({
-                                resolution_type: 'REPLACEMENT_DISPATCHED',
-                                action_reference_no: '',
-                                resolution_notes: ''
-                              });
-                            }}
-                            style={{
-                              padding: '0.35rem 0.75rem',
-                              background: 'rgba(59,130,246,0.15)',
-                              border: '1px solid #3b82f6',
-                              color: '#60a5fa',
-                              borderRadius: '6px',
-                              fontSize: '0.78rem',
-                              fontWeight: 700,
-                              cursor: 'pointer'
-                            }}
-                          >
-                            Take Action
-                          </button>
-                        )}
-                        {t.ticket_status === 'ACTION_TAKEN' && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSelectedTicketForClose(t);
-                              setCloseForm({
-                                closure_method: 'PHONE_CALL',
-                                closure_notes: '',
-                                dealer_satisfaction_rating: 5,
-                                partner_remarks: ''
-                              });
-                            }}
-                            style={{
-                              padding: '0.35rem 0.75rem',
-                              background: 'rgba(16,185,129,0.15)',
-                              border: '1px solid #10b981',
-                              color: '#34d399',
-                              borderRadius: '6px',
-                              fontSize: '0.78rem',
-                              fontWeight: 700,
-                              cursor: 'pointer'
-                            }}
-                          >
-                            Verify &amp; Close
-                          </button>
-                        )}
-                        {isClosed && (
-                          <span style={{ color: '#10b981', fontSize: '0.78rem', fontWeight: 700 }}>
-                            ⭐ {t.dealer_satisfaction_rating || 5}/5 Partner Verified
-                          </span>
-                        )}
-                      </td>
                     </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
+      )}
 
-        {/* Standard Table Pagination Footer */}
-        <StandardTablePagination
-          currentPage={currentPage}
-          totalRecords={filteredTickets.length}
-          pageSize={pageSize}
-          onPageChange={setCurrentPage}
-          onPageSizeChange={setPageSize}
-        />
-      </div>
-
-      {/* Create Ticket Modal */}
+      {/* MODAL 1: Log Complaint Ticket Modal */}
       {showCreateModal && (
         <div style={{
           position: 'fixed',
-          inset: 0,
-          background: 'rgba(0,0,0,0.7)',
-          backdropFilter: 'blur(4px)',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.7)',
+          zIndex: 9999,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          zIndex: 9999,
           padding: '1rem'
         }}>
           <div style={{
             background: 'var(--bg-surface)',
             border: '1px solid var(--border-light)',
-            borderRadius: '16px',
+            borderRadius: '14px',
             width: '100%',
-            maxWidth: '540px',
-            boxShadow: '0 20px 40px rgba(0,0,0,0.5)',
-            overflow: 'visible'
+            maxWidth: '620px',
+            maxHeight: '90vh',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden'
           }}>
-            <div style={{
-              padding: '1.2rem 1.5rem',
-              borderBottom: '1px solid var(--border-light)',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              borderTopLeftRadius: '15px',
-              borderTopRightRadius: '15px',
-              background: 'linear-gradient(135deg, rgba(239,68,68,0.1) 0%, transparent 100%)'
-            }}>
+            <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid var(--border-light)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <AlertTriangle size={20} color="#ef4444" />
-                <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                  Log Channel Partner Complaint
+                <AlertTriangle size={18} style={{ color: '#ef4444' }} />
+                <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                  Log New Complaint Ticket (C01)
                 </h3>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowCreateModal(false)}
-                style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '1.2rem' }}
-              >
-                ✕
+              <button onClick={() => setShowCreateModal(false)} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}>
+                <X size={18} />
               </button>
             </div>
 
-            <form onSubmit={handleCreateTicket} style={{ padding: '1.5rem' }}>
-              <div style={{ marginBottom: '1rem' }}>
-                <SearchablePartySelect
-                  parties={parties}
-                  selectedId={createForm.party_id}
-                  onChange={(id) => setCreateForm(prev => ({ ...prev, party_id: id }))}
-                  label="Select Channel Partner"
-                  placeholder="Type to search partner by name, code, district, phone..."
-                  color="#ef4444"
-                  required
-                />
+            <form onSubmit={handleCreateTicket} style={{ padding: '1.25rem', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              {/* Dual Selector: Channel Partner vs End Customer */}
+              <div style={{ background: 'var(--bg-primary)', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
+                <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '0.45rem' }}>
+                  Complaint Raised By:
+                </label>
+                <div style={{ display: 'flex', gap: '1.25rem' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.82rem', color: 'var(--text-primary)', cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="comp_type"
+                      checked={createForm.complaint_type === 'CHANNEL_PARTNER'}
+                      onChange={() => setCreateForm({ ...createForm, complaint_type: 'CHANNEL_PARTNER' })}
+                    />
+                    <span>🏢 Channel Partner (Dealer / Distributor)</span>
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.82rem', color: 'var(--text-primary)', cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="comp_type"
+                      checked={createForm.complaint_type === 'END_CUSTOMER'}
+                      onChange={() => setCreateForm({ ...createForm, complaint_type: 'END_CUSTOMER' })}
+                    />
+                    <span>👤 End Customer / Farmer</span>
+                  </label>
+                </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1rem' }}>
+              {/* Channel Partner Select */}
+              {createForm.complaint_type === 'CHANNEL_PARTNER' ? (
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>
-                    Complaint Category *
+                  <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
+                    Select Channel Partner <span style={{ color: '#ef4444' }}>*</span>
                   </label>
+                  <SearchablePartySelect
+                    parties={parties}
+                    value={createForm.party_id}
+                    onChange={val => setCreateForm({ ...createForm, party_id: val })}
+                    placeholder="Search Distributor or Dealer..."
+                  />
+                </div>
+              ) : (
+                /* End Customer Select / Register */
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
+                    <label style={{ fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                      Select Registered End Customer <span style={{ color: '#ef4444' }}>*</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setShowRegisterCustomerModal(true)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'var(--accent-color, #38bdf8)',
+                        fontSize: '0.75rem',
+                        fontWeight: 700,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      + Register New Customer
+                    </button>
+                  </div>
                   <select
-                    value={createForm.category}
+                    value={createForm.customer_id}
                     onChange={e => {
-                      const cat = CATEGORIES.find(c => c.id === e.target.value);
-                      setCreateForm({
-                        ...createForm,
-                        category: e.target.value,
-                        assigned_department: cat?.dept || createForm.assigned_department
-                      });
+                      const cust = endCustomers.find(c => c.id === e.target.value);
+                      if (cust) {
+                        setCreateForm(prev => ({
+                          ...prev,
+                          customer_id: cust.id,
+                          customer_name: cust.full_name,
+                          customer_phone: cust.mobile_1,
+                          party_id: cust.linked_party_id || ''
+                        }));
+                      }
                     }}
-                    style={{ width: '100%', padding: '0.6rem 0.8rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.85rem' }}
+                    style={{ width: '100%', padding: '0.5rem 0.65rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '6px', color: 'var(--text-primary)', fontSize: '0.82rem' }}
                   >
-                    {CATEGORIES.map(c => (
-                      <option key={c.id} value={c.id}>{c.label} ({c.sla})</option>
+                    <option value="">-- Choose End Customer --</option>
+                    {endCustomers.map(c => (
+                      <option key={c.id} value={c.id}>
+                        {c.full_name} ({c.mobile_1}) - {c.district_name} [Dealer: {c.linked_party_name || 'Direct'}]
+                      </option>
                     ))}
                   </select>
                 </div>
+              )}
 
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>
-                    Priority *
-                  </label>
-                  <select
-                    value={createForm.priority}
-                    onChange={e => setCreateForm({ ...createForm, priority: e.target.value })}
-                    style={{ width: '100%', padding: '0.6rem 0.8rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.85rem' }}
-                  >
-                    <option value="CRITICAL">🔴 Critical (Immediate Action)</option>
-                    <option value="HIGH">🟠 High (Within SLA)</option>
-                    <option value="MEDIUM">🟡 Medium</option>
-                    <option value="LOW">🟢 Low</option>
-                  </select>
-                </div>
-              </div>
-
-              <div style={{ marginBottom: '1.25rem' }}>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>
-                  Issue Description &amp; Partner Voice *
-                </label>
-                <textarea
-                  rows="3"
-                  required
-                  value={createForm.issue_description}
-                  onChange={e => setCreateForm({ ...createForm, issue_description: e.target.value })}
-                  placeholder="Detail the exact problem reported by channel partner (e.g. Broken gear tooth in rotavator chassis #8421)..."
-                  style={{ width: '100%', padding: '0.6rem 0.8rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.88rem' }}
-                />
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
-                <button
-                  type="button"
-                  onClick={() => setShowCreateModal(false)}
-                  style={{ padding: '0.6rem 1.2rem', background: 'transparent', border: '1px solid var(--border-light)', color: 'var(--text-secondary)', borderRadius: '8px', cursor: 'pointer', fontSize: '0.84rem' }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  style={{
-                    padding: '0.6rem 1.4rem',
-                    background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
-                    border: 'none',
-                    color: '#fff',
-                    fontWeight: 700,
-                    borderRadius: '8px',
-                    cursor: submitting ? 'not-allowed' : 'pointer',
-                    fontSize: '0.84rem'
-                  }}
-                >
-                  {submitting ? 'Creating Ticket...' : 'Generate Ticket'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Action Taken Modal */}
-      {selectedTicketForAction && (
-        <div style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(0,0,0,0.7)',
-          backdropFilter: 'blur(4px)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 9999,
-          padding: '1rem'
-        }}>
-          <div style={{
-            background: 'var(--bg-surface)',
-            border: '1px solid var(--border-light)',
-            borderRadius: '16px',
-            width: '100%',
-            maxWidth: '520px',
-            boxShadow: '0 20px 40px rgba(0,0,0,0.5)',
-            overflow: 'hidden'
-          }}>
-            <div style={{
-              padding: '1.2rem 1.5rem',
-              borderBottom: '1px solid var(--border-light)',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              background: 'linear-gradient(135deg, rgba(59,130,246,0.1) 0%, transparent 100%)'
-            }}>
+              {/* 8 Categories */}
               <div>
-                <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                  Record Corrective Action
-                </h3>
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
-                  Ticket #{selectedTicketForAction.ticket_number} • {selectedTicketForAction.party?.firm_name}
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelectedTicketForAction(null)}
-                style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '1.2rem' }}
-              >
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveAction} style={{ padding: '1.5rem' }}>
-              <div style={{ marginBottom: '1rem' }}>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>
-                  Resolution / Corrective Action Type *
+                <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
+                  Complaint Category (8 Categories) <span style={{ color: '#ef4444' }}>*</span>
                 </label>
                 <select
-                  value={actionForm.resolution_type}
-                  onChange={e => setActionForm({ ...actionForm, resolution_type: e.target.value })}
-                  style={{ width: '100%', padding: '0.6rem 0.8rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.85rem' }}
-                >
-                  <option value="REPLACEMENT_DISPATCHED">📦 Free Replacement Dispatched</option>
-                  <option value="CREDIT_NOTE_ISSUED">💰 Credit Note / Billing Adjustment</option>
-                  <option value="SPARE_PARTS_SENT">⚙️ Free Spare Parts Dispatched</option>
-                  <option value="SERVICE_ENGINEER_VISIT">🧑‍🔧 Service Engineer Deputed On-site</option>
-                  <option value="TECHNICAL_CLARIFICATION">📞 Technical Guidance Provided</option>
-                </select>
-              </div>
-
-              <div style={{ marginBottom: '1rem' }}>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>
-                  Action Reference Voucher / LR / Service No *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={actionForm.action_reference_no}
-                  onChange={e => setActionForm({ ...actionForm, action_reference_no: e.target.value })}
-                  placeholder="e.g. Replacement Bilty #VT-4412 or Credit Note #CN-881"
-                  style={{ width: '100%', padding: '0.6rem 0.8rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.88rem' }}
-                />
-              </div>
-
-              <div style={{ marginBottom: '1.25rem' }}>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>
-                  Action Notes
-                </label>
-                <textarea
-                  rows="2"
-                  value={actionForm.resolution_notes}
-                  onChange={e => setActionForm({ ...actionForm, resolution_notes: e.target.value })}
-                  placeholder="Details of action taken, dispatch courier, technician name..."
-                  style={{ width: '100%', padding: '0.6rem 0.8rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.88rem' }}
-                />
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
-                <button
-                  type="button"
-                  onClick={() => setSelectedTicketForAction(null)}
-                  style={{ padding: '0.6rem 1.2rem', background: 'transparent', border: '1px solid var(--border-light)', color: 'var(--text-secondary)', borderRadius: '8px', cursor: 'pointer', fontSize: '0.84rem' }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  style={{
-                    padding: '0.6rem 1.4rem',
-                    background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
-                    border: 'none',
-                    color: '#fff',
-                    fontWeight: 700,
-                    borderRadius: '8px',
-                    cursor: submitting ? 'not-allowed' : 'pointer',
-                    fontSize: '0.84rem'
+                  value={createForm.category}
+                  onChange={e => {
+                    const catObj = DEFAULT_CATEGORIES.find(c => c.id === e.target.value);
+                    setCreateForm(prev => ({
+                      ...prev,
+                      category: e.target.value,
+                      assigned_department: catObj?.dept || prev.assigned_department
+                    }));
                   }}
+                  style={{ width: '100%', padding: '0.5rem 0.65rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '6px', color: 'var(--text-primary)', fontSize: '0.82rem' }}
                 >
-                  {submitting ? 'Saving...' : 'Record Action'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Channel Partner Verified Closure Modal */}
-      {selectedTicketForClose && (
-        <div style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(0,0,0,0.7)',
-          backdropFilter: 'blur(4px)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 9999,
-          padding: '1rem'
-        }}>
-          <div style={{
-            background: 'var(--bg-surface)',
-            border: '1px solid var(--border-light)',
-            borderRadius: '16px',
-            width: '100%',
-            maxWidth: '540px',
-            boxShadow: '0 20px 40px rgba(0,0,0,0.5)',
-            maxHeight: '92vh',
-            overflowY: 'auto'
-          }}>
-            <div style={{
-              padding: '1.2rem 1.5rem',
-              borderBottom: '1px solid var(--border-light)',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'flex-start',
-              background: 'linear-gradient(135deg, rgba(16,185,129,0.1) 0%, transparent 100%)'
-            }}>
-              <div>
-                <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                  Channel Partner Verified Closure
-                </h3>
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                  <span style={{ fontWeight: 700, color: '#10b981' }}>#{selectedTicketForClose.ticket_number}</span>
-                  <span>•</span>
-                  <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{selectedTicketForClose.party?.firm_name || 'Channel Partner'}</span>
-                  {selectedTicketForClose.party?.primary_mobile && (
-                    <MaskedPhoneDisplay phone={selectedTicketForClose.party.primary_mobile} size="sm" />
-                  )}
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelectedTicketForClose(null)}
-                style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '1.2rem', padding: '0.2rem' }}
-              >
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleVerifyClose} style={{ padding: '1.4rem' }}>
-              {/* Context Summary Card: Original Issue & Action Taken */}
-              <div style={{
-                background: 'var(--bg-primary)',
-                border: '1px solid var(--border-light)',
-                borderRadius: '10px',
-                padding: '0.85rem 1rem',
-                marginBottom: '1.15rem',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '0.55rem',
-                fontSize: '0.82rem'
-              }}>
-                <div>
-                  <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
-                    Reported Grievance:
-                  </span>
-                  <div style={{ color: 'var(--text-primary)', marginTop: '0.15rem', fontWeight: 600 }}>
-                    {selectedTicketForClose.issue_description}
-                  </div>
-                </div>
-
-                <div style={{ borderTop: '1px solid var(--border-light)', paddingTop: '0.45rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
-                  <div>
-                    <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
-                      Corrective Action Taken:
-                    </span>
-                    <div style={{ color: '#3b82f6', fontWeight: 700, marginTop: '0.1rem' }}>
-                      {selectedTicketForClose.resolution_type?.replace(/_/g, ' ') || 'Action Recorded'}
-                      {selectedTicketForClose.action_reference_no && ` (Ref: ${selectedTicketForClose.action_reference_no})`}
-                    </div>
-                  </div>
-                  {selectedTicketForClose.resolution_notes && (
-                    <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
-                      "{selectedTicketForClose.resolution_notes}"
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Closure Verification Method (Selection List) */}
-              <div style={{ marginBottom: '1rem' }}>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>
-                  Closure Verification Method *
-                </label>
-                <select
-                  required
-                  value={closeForm.closure_method}
-                  onChange={e => setCloseForm({ ...closeForm, closure_method: e.target.value })}
-                  style={{ width: '100%', padding: '0.6rem 0.8rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.86rem', fontWeight: 600 }}
-                >
-                  {CLOSURE_METHODS.map(m => (
-                    <option key={m.id} value={m.id}>{m.label}</option>
+                  {DEFAULT_CATEGORIES.map(c => (
+                    <option key={c.id} value={c.id}>{c.label} (SLA: {c.sla})</option>
                   ))}
                 </select>
               </div>
 
-              {/* Spoke with Person / Verification Note */}
-              <div style={{ marginBottom: '1rem' }}>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>
-                  Person Spoke With / Verification Note
-                </label>
-                <input
-                  type="text"
-                  value={closeForm.closure_notes}
-                  onChange={e => setCloseForm({ ...closeForm, closure_notes: e.target.value })}
-                  placeholder="e.g. Confirmed with Proprietor Mr. Sharma / Signed voucher collected"
-                  style={{ width: '100%', padding: '0.6rem 0.8rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.86rem' }}
-                />
+              {/* Priority & Assigned Department */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
+                    Priority
+                  </label>
+                  <select
+                    value={createForm.priority}
+                    onChange={e => setCreateForm({ ...createForm, priority: e.target.value })}
+                    style={{ width: '100%', padding: '0.5rem 0.65rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '6px', color: 'var(--text-primary)', fontSize: '0.82rem' }}
+                  >
+                    <option value="CRITICAL">🔴 Critical (P1)</option>
+                    <option value="HIGH">🟠 High (P2)</option>
+                    <option value="MEDIUM">🟡 Medium (P3)</option>
+                    <option value="LOW">🟢 Low (P4)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
+                    Assigned Department
+                  </label>
+                  <select
+                    value={createForm.assigned_department}
+                    onChange={e => setCreateForm({ ...createForm, assigned_department: e.target.value })}
+                    style={{ width: '100%', padding: '0.5rem 0.65rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '6px', color: 'var(--text-primary)', fontSize: '0.82rem' }}
+                  >
+                    {DEPARTMENTS.map(d => (
+                      <option key={d.id} value={d.id}>{d.label}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
-              {/* Partner Resolution Satisfaction Score */}
-              <div style={{ marginBottom: '1rem' }}>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>
-                  Partner Resolution Satisfaction Score *
-                </label>
-                <select
-                  value={closeForm.dealer_satisfaction_rating}
-                  onChange={e => setCloseForm({ ...closeForm, dealer_satisfaction_rating: Number(e.target.value) })}
-                  style={{ width: '100%', padding: '0.6rem 0.8rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.88rem', fontWeight: 700 }}
-                >
-                  <option value={5}>⭐⭐⭐⭐⭐ 5 - Highly Satisfied</option>
-                  <option value={4}>⭐⭐⭐⭐ 4 - Satisfied</option>
-                  <option value={3}>⭐⭐⭐ 3 - Acceptable</option>
-                  <option value={2}>⭐⭐ 2 - Partially Satisfied</option>
-                  <option value={1}>⭐ 1 - Not Satisfied</option>
-                </select>
-              </div>
-
-              {/* Partner Remarks / Closing Feedback Textarea */}
-              <div style={{ marginBottom: '1.25rem' }}>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>
-                  Partner Closing Remarks / Additional Feedback
+              {/* Issue Description */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
+                  Issue Description &amp; Problem Details <span style={{ color: '#ef4444' }}>*</span>
                 </label>
                 <textarea
-                  rows="2"
-                  value={closeForm.partner_remarks}
-                  onChange={e => setCloseForm({ ...closeForm, partner_remarks: e.target.value })}
-                  placeholder="Record any comments, remarks, or observations shared by the partner..."
-                  style={{ width: '100%', padding: '0.6rem 0.8rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.86rem' }}
+                  rows={3}
+                  required
+                  placeholder="Describe the complaint in detail..."
+                  value={createForm.issue_description}
+                  onChange={e => setCreateForm({ ...createForm, issue_description: e.target.value })}
+                  style={{ width: '100%', padding: '0.5rem 0.65rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '6px', color: 'var(--text-primary)', fontSize: '0.82rem' }}
                 />
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              {/* Footer */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border-light)' }}>
                 <button
                   type="button"
-                  onClick={() => setSelectedTicketForClose(null)}
-                  style={{ padding: '0.6rem 1.2rem', background: 'transparent', border: '1px solid var(--border-light)', color: 'var(--text-secondary)', borderRadius: '8px', cursor: 'pointer', fontSize: '0.84rem' }}
+                  onClick={() => setShowCreateModal(false)}
+                  style={{ padding: '0.5rem 1rem', borderRadius: '6px', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', color: 'var(--text-primary)', cursor: 'pointer', fontSize: '0.82rem' }}
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  style={{
-                    padding: '0.6rem 1.4rem',
-                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                    border: 'none',
-                    color: '#fff',
-                    fontWeight: 700,
-                    borderRadius: '8px',
-                    cursor: submitting ? 'not-allowed' : 'pointer',
-                    fontSize: '0.84rem'
-                  }}
+                  style={{ padding: '0.5rem 1.25rem', borderRadius: '6px', background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)', border: 'none', color: '#fff', fontWeight: 700, cursor: submitting ? 'not-allowed' : 'pointer', fontSize: '0.84rem' }}
                 >
-                  {submitting ? 'Verifying & Closing...' : 'Verify & Close Ticket'}
+                  {submitting ? 'Logging...' : 'Create Ticket'}
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
+
+      {/* MODAL 2: Register End Customer Modal */}
+      <RegisterEndCustomerModal
+        isOpen={showRegisterCustomerModal}
+        onClose={() => setShowRegisterCustomerModal(false)}
+        parties={parties}
+        tenantId={tenantId}
+        onSuccess={newCustomer => {
+          setEndCustomers(prev => [newCustomer, ...prev]);
+          setCreateForm(prev => ({
+            ...prev,
+            complaint_type: 'END_CUSTOMER',
+            customer_id: newCustomer.id,
+            customer_name: newCustomer.full_name,
+            customer_phone: newCustomer.mobile_1,
+            party_id: newCustomer.linked_party_id || ''
+          }));
+        }}
+      />
+
+      {/* MODAL 3: Complaint Stage Action Modal */}
+      <ComplaintStageActionModal
+        isOpen={stageActionModal.isOpen}
+        onClose={() => setStageActionModal({ isOpen: false, ticket: null, targetStage: null })}
+        ticket={stageActionModal.ticket}
+        targetStage={stageActionModal.targetStage}
+        teamMembers={teamMembers}
+        userName={userName}
+        userId={userId}
+        onSuccess={handleStageActionSuccess}
+      />
+
+      {/* MODAL 4: Complaint Stage History Audit Modal */}
+      <ComplaintStageHistoryModal
+        isOpen={stageHistoryModal.isOpen}
+        onClose={() => setStageHistoryModal({ isOpen: false, ticket: null })}
+        ticket={stageHistoryModal.ticket}
+      />
     </div>
   );
 }

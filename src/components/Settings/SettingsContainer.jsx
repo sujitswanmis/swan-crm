@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Building2, Settings2, FormInput, Bell, Database, Target, FileType, MessageSquare, Monitor, Package, Truck } from 'lucide-react';
+import { Building2, Settings2, FormInput, Bell, Database, Target, FileType, MessageSquare, Monitor, Package, Truck, AlertTriangle } from 'lucide-react';
 
 // Subcomponents
 import BusinessProfile from './BusinessProfile';
@@ -14,12 +14,14 @@ import ManageDepartments from './ManageDepartments';
 import ActiveSessionsConfig from './ActiveSessionsConfig';
 import ProductListConfig from './ProductListConfig';
 import OrderPipelineConfig from './OrderPipelineConfig';
+import ComplaintPipelineConfig from './ComplaintPipelineConfig';
 import { filterVisibleSubTabs } from '@/utils/permissionUtils';
 
 const SETTINGS_TABS = [
   { id: 'business', label: 'Business Profile & Branches', icon: <Building2 size={18} /> },
   { id: 'products', label: 'Product List & Branches', icon: <Package size={18} /> },
   { id: 'order_pipeline', label: 'Order to Delivery Config', icon: <Truck size={18} /> },
+  { id: 'complaints_config', label: 'Complaint Management Config', icon: <AlertTriangle size={18} /> },
   { id: 'crm', label: 'CRM & Lead Config', icon: <Settings2 size={18} /> },
   { id: 'fields', label: 'Custom Fields', icon: <FormInput size={18} /> },
   { id: 'templates', label: 'Message & WhatsApp Templates', icon: <MessageSquare size={18} /> },
@@ -49,6 +51,7 @@ export default function SettingsContainer({
         const sub = path.split('/')[1];
         if (['products', 'product-list', 'products-list'].includes(sub)) return 'products';
         if (['order-pipeline', 'order_pipeline', 'order-config', 'order_config'].includes(sub)) return 'order_pipeline';
+        if (['complaints', 'complaint-config', 'complaint_config', 'complaints_config', 'complaint-pipeline'].includes(sub)) return 'complaints_config';
         if (['crm-config', 'crm_config'].includes(sub)) return 'crm';
         if (['custom-fields', 'custom_fields'].includes(sub)) return 'fields';
         if (['business-profile', 'branches'].includes(sub)) return 'business';
@@ -129,6 +132,7 @@ export default function SettingsContainer({
         {activeTab === 'business' && <BusinessProfile userCompany={userCompany} />}
         {activeTab === 'products' && <ProductListConfig userCompany={userCompany} />}
         {activeTab === 'order_pipeline' && <OrderPipelineConfig userCompany={userCompany} isMasterAdmin={isMasterAdmin} userRole={userRole} />}
+        {activeTab === 'complaints_config' && <ComplaintPipelineConfig userCompany={userCompany} isMasterAdmin={isMasterAdmin} userRole={userRole} />}
         {activeTab === 'crm' && <CRMConfig userCompany={userCompany} />}
         {activeTab === 'fields' && <CustomFields />}
         {activeTab === 'templates' && <WorkspaceMessageTemplates userCompany={userCompany} />}

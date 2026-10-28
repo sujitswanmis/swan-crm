@@ -211,7 +211,13 @@ export const MODULES_CONFIG = [
       { id: 's13', label: 'S13 - Material Delivered (POD)' },
       { id: 'order_feedback', label: '⭐ Post-Order Feedback' },
       { id: 'monthly_feedback', label: '📅 Monthly Health Checks' },
-      { id: 'complaints', label: '⚠️ Complaint Management' }
+      { id: 'complaints', label: '⚠️ Complaint Management' },
+      { id: 'c01', label: 'C01 - Ticket Logged & Triaged' },
+      { id: 'c02', label: 'C02 - Internal Dept RCA' },
+      { id: 'c03', label: 'C03 - Service Engineer Deputed' },
+      { id: 'c04', label: 'C04 - On-Site Job Card' },
+      { id: 'c05', label: 'C05 - Customer OTP Verification' },
+      { id: 'c06', label: 'C06 - Quality Audit & Closed' }
     ]
   },
   { 
@@ -401,6 +407,7 @@ export const MODULES_CONFIG = [
       { id: 'business', label: 'Business Profile & Branches' },
       { id: 'products', label: 'Product List & Branches' },
       { id: 'order_pipeline', label: 'Order to Delivery Config' },
+      { id: 'complaints_config', label: 'Complaint Management Config' },
       { id: 'crm', label: 'CRM & Lead Config' },
       { id: 'fields', label: 'Custom Fields' },
       { id: 'templates', label: 'Message & WhatsApp Templates' },

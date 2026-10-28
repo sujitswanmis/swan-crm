@@ -105,6 +105,21 @@ export function getSubItemPermissions(moduleAccess, userRole, moduleId, subItemI
       if (moduleId === 'settings' && subItemId === 'order_pipeline') {
         return { view: parentPerms.view, add: parentPerms.add, edit: parentPerms.edit, delete: false };
       }
+      // If this is complaints_config in settings, inherit from parent settings view if not explicitly disabled
+      if (moduleId === 'settings' && subItemId === 'complaints_config') {
+        return { view: parentPerms.view, add: parentPerms.add, edit: parentPerms.edit, delete: false };
+      }
+      // If this is complaint stages (c01..c06) in channel_ops, inherit from complaints if not explicitly disabled
+      if (moduleId === 'channel_ops' && /^c\d{2}$/i.test(subItemId)) {
+        const compPerm = subItems['complaints'];
+        if (compPerm !== undefined) {
+          const isView = typeof compPerm === 'object' ? compPerm.view !== false : !!compPerm;
+          const isAdd = typeof compPerm === 'object' ? compPerm.add !== false : !!compPerm;
+          const isEdit = typeof compPerm === 'object' ? compPerm.edit !== false : !!compPerm;
+          return { view: isView, add: isAdd && parentPerms.add, edit: isEdit && parentPerms.edit, delete: false };
+        }
+        return { view: parentPerms.view, add: parentPerms.add, edit: parentPerms.edit, delete: false };
+      }
       // If this is all_orders or individual stages (s01..s13) in channel_ops, inherit from parent order_pipeline if not explicitly disabled
       if (moduleId === 'channel_ops' && (subItemId === 'all_orders' || /^s\d{2}$/i.test(subItemId))) {
         const pipePerm = subItems['order_pipeline'];

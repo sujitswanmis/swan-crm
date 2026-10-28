@@ -93,6 +93,7 @@ const SETTINGS_MODULE_ITEMS = [
   { id: 'business', label: 'Business Profile & Branches', icon: Building2 },
   { id: 'products', label: 'Product List', icon: Package },
   { id: 'order_pipeline', label: 'Order to Delivery Config', icon: Truck },
+  { id: 'complaints_config', label: 'Complaint Management Config', icon: AlertTriangle },
   { id: 'crm', label: 'CRM & Lead Config', icon: Settings2 },
   { id: 'fields', label: 'Custom Fields', icon: FormInput },
   { id: 'templates', label: 'Message & WhatsApp Templates', icon: MessageSquare },

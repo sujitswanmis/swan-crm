@@ -1239,7 +1239,7 @@ export async function getComplaintsTickets(tenantId = DEFAULT_TENANT_ID, filters
       let isBreached = false;
       let hoursRemaining = null;
 
-      if (ticket.sla_deadline && ticket.ticket_status !== 'RESOLVED_CLOSED' && ticket.ticket_status !== 'REJECTED') {
+      if (ticket.sla_deadline && ticket.ticket_status !== 'RESOLVED_CLOSED' && ticket.ticket_status !== 'REJECTED' && ticket.stage_id !== 'C06') {
         const deadlineMs = new Date(ticket.sla_deadline).getTime();
         const diffHours = (deadlineMs - now) / (1000 * 60 * 60);
         hoursRemaining = Math.round(diffHours * 10) / 10;
@@ -1253,8 +1253,53 @@ export async function getComplaintsTickets(tenantId = DEFAULT_TENANT_ID, filters
         ...(ticket.party || {})
       };
 
+      // Resolve Stage ID (C01..C06) with backward-compatibility
+      let resolvedStageId = ticket.stage_id;
+      if (!resolvedStageId) {
+        if (ticket.ticket_status === 'RESOLVED_CLOSED') resolvedStageId = 'C06';
+        else if (ticket.ticket_status === 'ACTION_TAKEN') resolvedStageId = 'C04';
+        else resolvedStageId = 'C01';
+      }
+
+      // Ensure stage history array
+      let history = Array.isArray(ticket.stage_history) ? ticket.stage_history : [];
+      if (history.length === 0) {
+        history = [
+          {
+            stage_id: 'C01',
+            stage_name: 'Ticket Logged & Triaged',
+            stage_color: '#3b82f6',
+            executed_at: ticket.created_at || new Date().toISOString(),
+            executed_by: ticket.assigned_employee_name || 'Operations',
+            notes: ticket.issue_description || 'Complaint registered.'
+          }
+        ];
+        if (ticket.ticket_status === 'ACTION_TAKEN' || ticket.ticket_status === 'RESOLVED_CLOSED') {
+          history.push({
+            stage_id: 'C04',
+            stage_name: 'On-Site Execution & Digital Job Card',
+            stage_color: '#f59e0b',
+            executed_at: ticket.action_taken_at || ticket.created_at || new Date().toISOString(),
+            executed_by: ticket.action_taken_by || 'Field Service Team',
+            notes: ticket.action_notes || ticket.resolution_notes || 'Action recorded.'
+          });
+        }
+        if (ticket.ticket_status === 'RESOLVED_CLOSED') {
+          history.push({
+            stage_id: 'C06',
+            stage_name: 'Quality Audit & Verified Closure',
+            stage_color: '#10b981',
+            executed_at: ticket.closed_at || new Date().toISOString(),
+            executed_by: ticket.resolved_by || 'Quality Assurance',
+            notes: ticket.closure_otp || 'Verified and closed.'
+          });
+        }
+      }
+
       return {
         ...ticket,
+        stage_id: resolvedStageId,
+        stage_history: history,
         party: mergedParty,
         isSlaBreached: isBreached,
         slaHoursRemaining: hoursRemaining
@@ -1267,7 +1312,7 @@ export async function getComplaintsTickets(tenantId = DEFAULT_TENANT_ID, filters
 }
 
 /**
- * 12. CREATE COMPLAINT TICKET (With Category SLA Deadline in IST)
+ * 12. CREATE COMPLAINT TICKET (With 8 Categories, SLA Deadline in IST & End Customer Linking)
  */
 export async function createComplaintTicketDirect(complaintData, tenantId = DEFAULT_TENANT_ID) {
   const adminClient = getAdminClient();
@@ -1275,22 +1320,32 @@ export async function createComplaintTicketDirect(complaintData, tenantId = DEFA
 
   const ticketNo = `CMP-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`;
   
-  // Standard SLA hours by category
+  // Standard SLA hours by 8 categories
   const slaHoursMap = {
     MANUFACTURING_DEFECT: 48,
     TRANSIT_DAMAGE: 24,
+    SHORTAGE_PRODUCT_SPAREPART: 24,
     SHORTAGE_MISSING_PARTS: 24,
-    BILLING_DISPUTE: 24,
     DELIVERY_DELAY: 12,
-    SERVICE_WARRANTY: 72
+    BILLING_ISSUES: 24,
+    BILLING_DISPUTE: 24,
+    ORDER_RELATED_ISSUES: 12,
+    SERVICE_ISSUES: 48,
+    SERVICE_WARRANTY: 48,
+    WARRANTY_CLAIM: 72
   };
   const hours = slaHoursMap[complaintData.category] || 48;
   const deadline = new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
+  const nowIso = new Date().toISOString();
 
   const payload = {
     tenant_id: effectiveTenantId,
     ticket_number: ticketNo,
-    party_id: complaintData.party_id,
+    party_id: complaintData.party_id || null,
+    complaint_type: complaintData.complaint_type || 'CHANNEL_PARTNER',
+    customer_id: complaintData.customer_id || null,
+    customer_name: complaintData.customer_name || '',
+    customer_phone: complaintData.customer_phone || '',
     complaint_source: complaintData.complaint_source || 'DIRECT_PHONE',
     category: complaintData.category || 'MANUFACTURING_DEFECT',
     priority: complaintData.priority || 'MEDIUM',
@@ -1299,7 +1354,18 @@ export async function createComplaintTicketDirect(complaintData, tenantId = DEFA
     assigned_employee_name: complaintData.assigned_employee_name || '',
     sla_deadline: deadline,
     ticket_status: 'OPEN',
-    created_at: new Date().toISOString()
+    stage_id: 'C01',
+    stage_history: [
+      {
+        stage_id: 'C01',
+        stage_name: 'Ticket Logged & Triaged',
+        stage_color: '#3b82f6',
+        executed_at: nowIso,
+        executed_by: complaintData.assigned_employee_name || 'Operations',
+        notes: complaintData.issue_description || 'Complaint registered.'
+      }
+    ],
+    created_at: nowIso
   };
 
   try {
@@ -1313,6 +1379,91 @@ export async function createComplaintTicketDirect(complaintData, tenantId = DEFA
     return { success: true, ticket: data };
   } catch (err) {
     console.error('createComplaintTicketDirect error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * 13. ADVANCE COMPLAINT TICKET STAGE (C01 -> C06 with IST Audit Trail)
+ */
+export async function advanceComplaintTicketStage(ticketId, stagePayload, tenantId = DEFAULT_TENANT_ID) {
+  const adminClient = getAdminClient();
+  const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
+
+  const { targetStage, formState = {}, executedBy = 'Operations' } = stagePayload;
+  const nowIso = new Date().toISOString();
+
+  // Fetch current ticket
+  try {
+    const { data: currentTicket, error: fetchErr } = await adminClient
+      .from('party_complaints')
+      .select('*')
+      .eq('id', ticketId)
+      .eq('tenant_id', effectiveTenantId)
+      .single();
+
+    if (fetchErr) throw fetchErr;
+
+    // Backward-compatible ticket_status
+    let status = 'OPEN';
+    if (targetStage.id === 'C06') status = 'RESOLVED_CLOSED';
+    else if (['C04', 'C05'].includes(targetStage.id)) status = 'ACTION_TAKEN';
+
+    // Construct stage history entry
+    const historyEntry = {
+      stage_id: targetStage.id,
+      stage_name: targetStage.name,
+      stage_color: targetStage.color || '#3b82f6',
+      executed_at: nowIso,
+      executed_by: executedBy,
+      notes: formState.notes || targetStage.default_note || '',
+      metadata: {
+        ...formState
+      }
+    };
+
+    const updatedHistory = Array.isArray(currentTicket.stage_history) ? [...currentTicket.stage_history, historyEntry] : [historyEntry];
+
+    const updateFields = {
+      stage_id: targetStage.id,
+      ticket_status: status,
+      stage_history: updatedHistory
+    };
+
+    // Specific stage mappings into table columns
+    if (targetStage.id === 'C02') {
+      updateFields.action_notes = formState.rca_root_cause || '';
+    } else if (targetStage.id === 'C03') {
+      updateFields.assigned_employee_name = formState.technician_name || currentTicket.assigned_employee_name;
+      updateFields.technician_name = formState.technician_name || '';
+      updateFields.technician_phone = formState.technician_phone || '';
+      updateFields.scheduled_visit_date = formState.scheduled_visit_date || '';
+    } else if (targetStage.id === 'C04') {
+      updateFields.action_taken_type = formState.action_taken_type || '';
+      updateFields.action_reference_no = formState.job_card_no || '';
+      updateFields.action_notes = formState.notes || '';
+    } else if (targetStage.id === 'C05') {
+      updateFields.closure_otp = formState.customer_otp_entered || formState.verification_method || '';
+      updateFields.dealer_satisfaction_rating = Number(formState.customer_rating) || 5;
+    } else if (targetStage.id === 'C06') {
+      updateFields.closed_at = nowIso;
+      updateFields.resolved_at = nowIso;
+      updateFields.resolved_by = executedBy;
+    }
+
+    const { data: updatedData, error: updateErr } = await adminClient
+      .from('party_complaints')
+      .update(updateFields)
+      .eq('id', ticketId)
+      .eq('tenant_id', effectiveTenantId)
+      .select()
+      .single();
+
+    if (updateErr) throw updateErr;
+
+    return { success: true, ticket: updatedData };
+  } catch (err) {
+    console.error('advanceComplaintTicketStage error:', err);
     return { success: false, error: err.message };
   }
 }

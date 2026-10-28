@@ -1,0 +1,404 @@
+{
+  "TNT00002": {
+    "All Branches": {
+      "tat_mode": "DYNAMIC",
+      "otp_verification_mandatory": true,
+      "job_card_photo_mandatory": true,
+      "max_photo_size_kb": 100,
+      "allow_external_technician": true,
+      "enable_spares_tracking": true,
+      "categories": [
+        {
+          "id": "MANUFACTURING_DEFECT",
+          "name": "Manufacturing Defect",
+          "department": "QUALITY_ASSURANCE",
+          "department_label": "Plant Quality Assurance (QA)",
+          "sla_hours": 48,
+          "technician_mode": "OPTIONAL",
+          "color": "#ef4444"
+        },
+        {
+          "id": "TRANSIT_DAMAGE",
+          "name": "Transit Damage (Logistics)",
+          "department": "LOGISTICS_DISPATCH",
+          "department_label": "Logistics & Dispatch",
+          "sla_hours": 24,
+          "technician_mode": "NONE",
+          "color": "#f97316"
+        },
+        {
+          "id": "SHORTAGE_PRODUCT_SPAREPART",
+          "name": "Shortage Product / Sparepart",
+          "department": "LOGISTICS_DISPATCH",
+          "department_label": "Logistics & Dispatch (Godown)",
+          "sla_hours": 24,
+          "technician_mode": "NONE",
+          "color": "#eab308"
+        },
+        {
+          "id": "DELIVERY_DELAY",
+          "name": "Delivery Delay",
+          "department": "LOGISTICS_DISPATCH",
+          "department_label": "Logistics Coordination",
+          "sla_hours": 12,
+          "technician_mode": "NONE",
+          "color": "#06b6d4"
+        },
+        {
+          "id": "BILLING_ISSUES",
+          "name": "Billing Issues",
+          "department": "ACCOUNTS_FINANCE",
+          "department_label": "Accounts & Billing",
+          "sla_hours": 24,
+          "technician_mode": "NONE",
+          "color": "#6366f1"
+        },
+        {
+          "id": "ORDER_RELATED_ISSUES",
+          "name": "Order Related Issues",
+          "department": "SALES_DESK",
+          "department_label": "Sales Coordination / Order Desk",
+          "sla_hours": 12,
+          "technician_mode": "NONE",
+          "color": "#8b5cf6"
+        },
+        {
+          "id": "SERVICE_ISSUES",
+          "name": "Service Issues",
+          "department": "SERVICE_ENGINEERING",
+          "department_label": "Field Service Engineering",
+          "sla_hours": 48,
+          "technician_mode": "MANDATORY",
+          "color": "#ec4899"
+        },
+        {
+          "id": "WARRANTY_CLAIM",
+          "name": "Warranty Claim",
+          "department": "SERVICE_ENGINEERING",
+          "department_label": "Field Service & Plant QA",
+          "sla_hours": 72,
+          "technician_mode": "MANDATORY",
+          "color": "#dc2626"
+        }
+      ],
+      "stages": [
+        {
+          "id": "C01",
+          "step_no": 1,
+          "name": "Ticket Logged & Triaged",
+          "short_code": "LOGGED",
+          "department": "CRM / Order Desk",
+          "tat_hours": 4,
+          "color": "#3b82f6",
+          "is_enabled": true,
+          "default_note": "Complaint ticket registered from Dealer or End Customer.",
+          "authorized_roles": ["admin", "crm", "telecaller", "sales_coordinator"],
+          "custom_fields": []
+        },
+        {
+          "id": "C02",
+          "step_no": 2,
+          "name": "Internal Dept RCA & Investigation",
+          "short_code": "RCA_INVESTIGATION",
+          "department": "Assigned Dept HOD",
+          "tat_hours": 12,
+          "color": "#6366f1",
+          "is_enabled": true,
+          "default_note": "Root cause analysis investigated and corrective strategy finalized.",
+          "authorized_roles": ["admin", "crm", "quality_assurance", "logistics_incharge", "accounts_team", "hod_dept_head"],
+          "custom_fields": [
+            {
+              "id": "rca_root_cause",
+              "label": "RCA Root Cause Finding",
+              "type": "text",
+              "placeholder": "e.g. Material fatigue / Transit mishandling / Wiring issue",
+              "required": true
+            },
+            {
+              "id": "action_path",
+              "label": "Action Path",
+              "type": "select",
+              "options": ["Field Technician Visit Required", "Replacement Part Dispatch", "Credit Note Adjustment", "Telephonic Guidance / Closed"],
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "C03",
+          "step_no": 3,
+          "name": "Service Engineer Deputed & Scheduled",
+          "short_code": "TECHNICIAN_DEPUTED",
+          "department": "Service Coordination",
+          "tat_hours": 8,
+          "color": "#8b5cf6",
+          "is_enabled": true,
+          "default_note": "Service engineer deputed, appointment scheduled with partner/customer.",
+          "authorized_roles": ["admin", "crm", "service_engineer", "hod_dept_head"],
+          "custom_fields": [
+            {
+              "id": "scheduled_visit_date",
+              "label": "Planned Visit Date (IST)",
+              "type": "date",
+              "required": true
+            },
+            {
+              "id": "service_tools_spares",
+              "label": "Spares & Tools to Carry",
+              "type": "text",
+              "placeholder": "e.g. Seal Kit #4, Calibration Gauge, Grease gun",
+              "required": false
+            }
+          ]
+        },
+        {
+          "id": "C04",
+          "step_no": 4,
+          "name": "On-Site Execution & Digital Job Card",
+          "short_code": "ON_SITE_EXECUTION",
+          "department": "Field Service Engineering",
+          "tat_hours": 24,
+          "color": "#f59e0b",
+          "is_enabled": true,
+          "default_note": "Technician completed on-site work and generated digital job card.",
+          "authorized_roles": ["admin", "crm", "service_engineer", "quality_assurance"],
+          "custom_fields": [
+            {
+              "id": "job_card_no",
+              "label": "Job Card / Service Slip No",
+              "type": "text",
+              "placeholder": "e.g. JC-2026-0891",
+              "required": true
+            },
+            {
+              "id": "action_taken_type",
+              "label": "Action Taken On-Site",
+              "type": "select",
+              "options": ["Part Replaced Under Warranty", "On-Site Repair & Tuning", "Calibration Done", "Software Reflashed", "Replacement Material Dispatched", "Credit Note Issued", "Customer Guidance Given"],
+              "required": true
+            },
+            {
+              "id": "spares_used",
+              "label": "Spares Consumed (Name & Qty)",
+              "type": "text",
+              "placeholder": "e.g. Bearing 6205 (Qty: 2), Oil Seal 35x52 (Qty: 1)",
+              "required": false
+            }
+          ]
+        },
+        {
+          "id": "C05",
+          "step_no": 5,
+          "name": "Customer OTP Verification & Sign-off",
+          "short_code": "CUSTOMER_VERIFICATION",
+          "department": "Customer & Support",
+          "tat_hours": 4,
+          "color": "#14b8a6",
+          "is_enabled": true,
+          "default_note": "Customer satisfaction verified via 4-digit OTP or signed job slip.",
+          "authorized_roles": ["admin", "crm", "service_engineer", "telecaller"],
+          "custom_fields": [
+            {
+              "id": "verification_method",
+              "label": "Verification Method",
+              "type": "select",
+              "options": ["Customer 4-digit OTP", "Signed Physical Job Sheet Upload", "Telephonic Confirmation by CRM Desk", "WhatsApp Written Confirmation"],
+              "required": true
+            },
+            {
+              "id": "customer_rating",
+              "label": "Customer Satisfaction Rating (1 to 5 Stars)",
+              "type": "select",
+              "options": ["5 - Excellent", "4 - Good", "3 - Average", "2 - Unsatisfactory", "1 - Poor"],
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "C06",
+          "step_no": 6,
+          "name": "Quality Audit & Verified Closure",
+          "short_code": "RESOLVED_CLOSED",
+          "department": "Central QA / Admin",
+          "tat_hours": 4,
+          "color": "#10b981",
+          "is_enabled": true,
+          "default_note": "Final quality audit complete. Ticket resolved and permanently closed.",
+          "authorized_roles": ["admin", "crm", "hod_dept_head"],
+          "custom_fields": [
+            {
+              "id": "closure_audit_remarks",
+              "label": "Closure Audit Summary",
+              "type": "text",
+              "placeholder": "Audit remarks, warranty claim passed/rejected status",
+              "required": false
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "TNT00001": {
+    "All Branches": {
+      "tat_mode": "DYNAMIC",
+      "otp_verification_mandatory": true,
+      "job_card_photo_mandatory": true,
+      "max_photo_size_kb": 100,
+      "allow_external_technician": true,
+      "enable_spares_tracking": true,
+      "categories": [
+        {
+          "id": "MANUFACTURING_DEFECT",
+          "name": "Manufacturing Defect",
+          "department": "QUALITY_ASSURANCE",
+          "department_label": "Plant Quality Assurance (QA)",
+          "sla_hours": 48,
+          "technician_mode": "OPTIONAL",
+          "color": "#ef4444"
+        },
+        {
+          "id": "TRANSIT_DAMAGE",
+          "name": "Transit Damage (Logistics)",
+          "department": "LOGISTICS_DISPATCH",
+          "department_label": "Logistics & Dispatch",
+          "sla_hours": 24,
+          "technician_mode": "NONE",
+          "color": "#f97316"
+        },
+        {
+          "id": "SHORTAGE_PRODUCT_SPAREPART",
+          "name": "Shortage Product / Sparepart",
+          "department": "LOGISTICS_DISPATCH",
+          "department_label": "Logistics & Dispatch (Godown)",
+          "sla_hours": 24,
+          "technician_mode": "NONE",
+          "color": "#eab308"
+        },
+        {
+          "id": "DELIVERY_DELAY",
+          "name": "Delivery Delay",
+          "department": "LOGISTICS_DISPATCH",
+          "department_label": "Logistics Coordination",
+          "sla_hours": 12,
+          "technician_mode": "NONE",
+          "color": "#06b6d4"
+        },
+        {
+          "id": "BILLING_ISSUES",
+          "name": "Billing Issues",
+          "department": "ACCOUNTS_FINANCE",
+          "department_label": "Accounts & Billing",
+          "sla_hours": 24,
+          "technician_mode": "NONE",
+          "color": "#6366f1"
+        },
+        {
+          "id": "ORDER_RELATED_ISSUES",
+          "name": "Order Related Issues",
+          "department": "SALES_DESK",
+          "department_label": "Sales Coordination / Order Desk",
+          "sla_hours": 12,
+          "technician_mode": "NONE",
+          "color": "#8b5cf6"
+        },
+        {
+          "id": "SERVICE_ISSUES",
+          "name": "Service Issues",
+          "department": "SERVICE_ENGINEERING",
+          "department_label": "Field Service Engineering",
+          "sla_hours": 48,
+          "technician_mode": "MANDATORY",
+          "color": "#ec4899"
+        },
+        {
+          "id": "WARRANTY_CLAIM",
+          "name": "Warranty Claim",
+          "department": "SERVICE_ENGINEERING",
+          "department_label": "Field Service & Plant QA",
+          "sla_hours": 72,
+          "technician_mode": "MANDATORY",
+          "color": "#dc2626"
+        }
+      ],
+      "stages": [
+        {
+          "id": "C01",
+          "step_no": 1,
+          "name": "Ticket Logged & Triaged",
+          "short_code": "LOGGED",
+          "department": "CRM / Order Desk",
+          "tat_hours": 4,
+          "color": "#3b82f6",
+          "is_enabled": true,
+          "default_note": "Complaint ticket registered from Dealer or End Customer.",
+          "authorized_roles": ["admin", "crm", "telecaller", "sales_coordinator"],
+          "custom_fields": []
+        },
+        {
+          "id": "C02",
+          "step_no": 2,
+          "name": "Internal Dept RCA & Investigation",
+          "short_code": "RCA_INVESTIGATION",
+          "department": "Assigned Dept HOD",
+          "tat_hours": 12,
+          "color": "#6366f1",
+          "is_enabled": true,
+          "default_note": "Root cause analysis investigated and corrective strategy finalized.",
+          "authorized_roles": ["admin", "crm", "quality_assurance", "logistics_incharge", "accounts_team", "hod_dept_head"],
+          "custom_fields": []
+        },
+        {
+          "id": "C03",
+          "step_no": 3,
+          "name": "Service Engineer Deputed & Scheduled",
+          "short_code": "TECHNICIAN_DEPUTED",
+          "department": "Service Coordination",
+          "tat_hours": 8,
+          "color": "#8b5cf6",
+          "is_enabled": true,
+          "default_note": "Service engineer deputed, appointment scheduled with partner/customer.",
+          "authorized_roles": ["admin", "crm", "service_engineer", "hod_dept_head"],
+          "custom_fields": []
+        },
+        {
+          "id": "C04",
+          "step_no": 4,
+          "name": "On-Site Execution & Digital Job Card",
+          "short_code": "ON_SITE_EXECUTION",
+          "department": "Field Service Engineering",
+          "tat_hours": 24,
+          "color": "#f59e0b",
+          "is_enabled": true,
+          "default_note": "Technician completed on-site work and generated digital job card.",
+          "authorized_roles": ["admin", "crm", "service_engineer", "quality_assurance"],
+          "custom_fields": []
+        },
+        {
+          "id": "C05",
+          "step_no": 5,
+          "name": "Customer OTP Verification & Sign-off",
+          "short_code": "CUSTOMER_VERIFICATION",
+          "department": "Customer & Support",
+          "tat_hours": 4,
+          "color": "#14b8a6",
+          "is_enabled": true,
+          "default_note": "Customer satisfaction verified via 4-digit OTP or signed job slip.",
+          "authorized_roles": ["admin", "crm", "service_engineer", "telecaller"],
+          "custom_fields": []
+        },
+        {
+          "id": "C06",
+          "step_no": 6,
+          "name": "Quality Audit & Verified Closure",
+          "short_code": "RESOLVED_CLOSED",
+          "department": "Central QA / Admin",
+          "tat_hours": 4,
+          "color": "#10b981",
+          "is_enabled": true,
+          "default_note": "Final quality audit complete. Ticket resolved and permanently closed.",
+          "authorized_roles": ["admin", "crm", "hod_dept_head"],
+          "custom_fields": []
+        }
+      ]
+    }
+  }
+}
