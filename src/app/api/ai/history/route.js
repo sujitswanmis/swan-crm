@@ -20,9 +20,9 @@ export async function GET(req) {
       .from('ai_sessions')
       .select('sessions')
       .eq('user_id', userId)
-      .single();
+      .maybeSingle();
 
-    if (error && error.code !== 'PGRST116') { // PGRST116 means no rows found, which is fine for a new user
+    if (error) {
       throw error;
     }
 

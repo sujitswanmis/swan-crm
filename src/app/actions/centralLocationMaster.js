@@ -1031,7 +1031,14 @@ export async function getLocationExplorer(filters = {}, page = 1, limit = 20) {
     adminClient.from('location_blocks').select('*', { count: 'exact', head: true }),
     adminClient.from('location_settlements').select('*', { count: 'exact', head: true }),
     adminClient.from('location_post_offices').select('*', { count: 'exact', head: true }),
-    adminClient.from('location_requests').select('*', { count: 'exact', head: true }).eq('request_status', 'PENDING')
+    (async () => {
+      try {
+        const res = await adminClient.from('location_requests').select('*', { count: 'exact', head: true }).or('request_status.eq.PENDING,status.eq.pending,status.eq.PENDING');
+        return res?.error ? { count: 0 } : res;
+      } catch (_) {
+        return { count: 0 };
+      }
+    })()
   ]);
 
   // Paginated Explorer Table Query with real schema columns

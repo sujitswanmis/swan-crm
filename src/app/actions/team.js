@@ -37,10 +37,11 @@ export async function getTeamMembers(requesterCompany = null, tenantId = null) {
   let tenantCode = '';
   let tenantAdminEmail = '';
   if (tenantId && tenantId !== '00000000-0000-0000-0000-000000000001') {
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId);
     const { data: tenant } = await adminClient
       .from('tenants')
       .select('name, tenant_code, primary_contact_email')
-      .eq('id', tenantId)
+      .eq(isUuid ? 'id' : 'tenant_code', tenantId)
       .maybeSingle();
     if (tenant) {
       tenantName = String(tenant.name || '').toLowerCase().trim();
@@ -226,10 +227,11 @@ export async function registerEmployeeDetails(userId, email, details) {
         .maybeSingle();
 
       if (sub && typeof sub.user_seat_limit === 'number') {
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetTenantId);
         const { data: tenant } = await adminClient
           .from('tenants')
           .select('name, tenant_code')
-          .eq('id', targetTenantId)
+          .eq(isUuid ? 'id' : 'tenant_code', targetTenantId)
           .maybeSingle();
         const tenantName = tenant?.name || '';
 

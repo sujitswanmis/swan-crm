@@ -1374,7 +1374,7 @@ export async function getOrderFollowups(tenantId = DEFAULT_TENANT_ID, scheduledD
   const adminClient = getAdminClient();
   let query = adminClient
     .from('party_order_followups')
-    .select('*, party:party_master(id, party_universal_code, firm_name, party_type, primary_mobile, owner_name, district_name, state_name, billing_route_type)')
+    .select('*, party:party_master(id, party_universal_code, firm_name, primary_mobile, business_nature, external_sap_code)')
     .eq('tenant_id', tenantId);
 
   if (scheduledDate && scheduledDate !== 'ALL') {
@@ -1387,7 +1387,23 @@ export async function getOrderFollowups(tenantId = DEFAULT_TENANT_ID, scheduledD
     console.error('Error fetching order followups:', error);
     return [];
   }
-  return data || [];
+  return (data || []).map(row => {
+    if (row.party && row.party.business_nature) {
+      const meta = parsePartyMeta(row.party.business_nature);
+      return {
+        ...row,
+        party: {
+          ...row.party,
+          party_type: meta.party_type || '',
+          state_name: meta.state_name || meta.territory?.state || '',
+          district_name: meta.district_name || meta.territory?.district || '',
+          owner_name: meta.owner_name || meta.primary_contact?.name || '',
+          billing_route_type: meta.billing_route_type || ''
+        }
+      };
+    }
+    return row;
+  });
 }
 
 export async function saveOrderFollowup(followupData, tenantId = DEFAULT_TENANT_ID) {
@@ -1480,7 +1496,7 @@ export async function getMonthlyFeedbackList(tenantId = DEFAULT_TENANT_ID, month
   try {
     let query = adminClient
       .from('party_monthly_feedback')
-      .select('*, party:party_master(id, party_universal_code, firm_name, primary_mobile, party_type, state_name, district_name)')
+      .select('*, party:party_master(id, party_universal_code, firm_name, primary_mobile, business_nature, external_sap_code)')
       .eq('tenant_id', tenantId);
 
     if (monthStr && monthStr !== 'ALL') {
@@ -1489,7 +1505,21 @@ export async function getMonthlyFeedbackList(tenantId = DEFAULT_TENANT_ID, month
 
     const { data, error } = await query.order('created_at', { ascending: false });
     if (!error && data && data.length > 0) {
-      results = data;
+      results = data.map(row => {
+        if (row.party && row.party.business_nature) {
+          const meta = parsePartyMeta(row.party.business_nature);
+          return {
+            ...row,
+            party: {
+              ...row.party,
+              party_type: meta.party_type || '',
+              state_name: meta.state_name || meta.territory?.state || '',
+              district_name: meta.district_name || meta.territory?.district || ''
+            }
+          };
+        }
+        return row;
+      });
     }
   } catch (_) {}
 
@@ -1604,12 +1634,26 @@ export async function getComplaintsList(tenantId = DEFAULT_TENANT_ID) {
   const adminClient = getAdminClient();
   const { data, error } = await adminClient
     .from('party_complaints')
-    .select('*, party:party_master(id, party_universal_code, firm_name, primary_mobile, party_type)')
+    .select('*, party:party_master(id, party_universal_code, firm_name, primary_mobile, business_nature, external_sap_code)')
     .eq('tenant_id', tenantId)
     .order('created_at', { ascending: false });
 
   if (error) return [];
-  return data || [];
+  return (data || []).map(row => {
+    if (row.party && row.party.business_nature) {
+      const meta = parsePartyMeta(row.party.business_nature);
+      return {
+        ...row,
+        party: {
+          ...row.party,
+          party_type: meta.party_type || '',
+          state_name: meta.state_name || meta.territory?.state || '',
+          district_name: meta.district_name || meta.territory?.district || ''
+        }
+      };
+    }
+    return row;
+  });
 }
 
 export async function createComplaintTicket(complaintData, tenantId = DEFAULT_TENANT_ID) {

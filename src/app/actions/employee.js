@@ -32,10 +32,11 @@ export async function getEmployeesMaster(tenantId = DEFAULT_TENANT_ID, company =
         let tenantCode = '';
         let tenantAdminEmail = '';
         try {
+          const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId);
           const { data: tenant } = await adminClient
             .from('tenants')
             .select('name, tenant_code, primary_contact_email')
-            .eq('id', tenantId)
+            .eq(isUuid ? 'id' : 'tenant_code', tenantId)
             .maybeSingle();
           if (tenant) {
             tenantName = String(tenant.name || '').toLowerCase().trim();
