@@ -2719,7 +2719,7 @@ export default function CRMContainer({
         id: `test_${Date.now()}`,
         type: 'test',
         title: '🔔 Alert Preview: Notifications Working!',
-        subtitle: 'SuPuja Creations CRM',
+        subtitle: 'SPC Workspace',
         details: 'This is a live preview of your chosen popup style and sound alert settings.',
         dueTime: new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' }),
         targetTab: 'leads',
@@ -3990,10 +3990,10 @@ export default function CRMContainer({
     }
   };
 
-  // Sync browser document title for SuPuja Creations & AI Chatbot
+  // Sync browser document title for SPC Workspace & AI Chatbot
   useEffect(() => {
     if (typeof document !== 'undefined') {
-      document.title = activeTab === 'ai' ? 'AI Chatbot | SuPuja Creations' : 'SuPuja Creations';
+      document.title = activeTab === 'ai' ? 'AI Chatbot | SPC Workspace' : 'SPC Workspace';
     }
   }, [activeTab]);
 
@@ -4206,15 +4206,15 @@ export default function CRMContainer({
             }}>
               <img 
                 src="/supuja-logo.png" 
-                alt="SuPuja Creations" 
+                alt="SPC Workspace" 
                 style={{ width: '100%', height: '100%', objectFit: 'contain' }} 
               />
             </div>
             {!isSidebarCollapsed && (
               <div className="sidebar-brand-text" style={{ display: 'flex', flexDirection: 'column', minWidth: 0, lineHeight: 1.15 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                  <span className="sidebar-title" style={{ fontWeight: 800, fontSize: '1.05rem', color: 'var(--text-primary)', letterSpacing: '-0.02em', margin: 0 }}>SuPuja</span>
-                  <span style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--accent-color)', letterSpacing: '-0.01em' }}>Creations</span>
+                  <span className="sidebar-title" style={{ fontWeight: 800, fontSize: '1.05rem', color: 'var(--text-primary)', letterSpacing: '-0.02em', margin: 0 }}>SPC</span>
+                  <span style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--accent-color)', letterSpacing: '-0.01em' }}>Workspace</span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '2px' }}>
                   <span
