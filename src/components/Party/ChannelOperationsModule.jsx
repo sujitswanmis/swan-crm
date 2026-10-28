@@ -66,7 +66,7 @@ const OPERATIONS_TABS = [
     id: 'end_customers',
     label: 'End Customer Master',
     icon: '🚜',
-    title: 'End Customer & Farmer Master Directory',
+    title: 'End Customer Master Directory',
     subtitle: 'Retail machine owners, linked channel dealers, live warranty tracking & complaint history'
   }
 ];

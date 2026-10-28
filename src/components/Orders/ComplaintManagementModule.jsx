@@ -1116,7 +1116,7 @@ export default function ComplaintManagementModule({
                       checked={createForm.complaint_type === 'END_CUSTOMER'}
                       onChange={() => setCreateForm({ ...createForm, complaint_type: 'END_CUSTOMER' })}
                     />
-                    <span>👤 End Customer / Farmer</span>
+                    <span>👤 End Customer</span>
                   </label>
                 </div>
               </div>

@@ -277,7 +277,7 @@ export default function EndCustomerMasterModule({
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
               <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                End Customer &amp; Farmer Master Directory
+                End Customer Master Directory
               </h2>
               <span style={{
                 fontSize: '0.74rem',

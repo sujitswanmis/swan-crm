@@ -473,7 +473,7 @@ export default function RegisterEndCustomerModal({
                 Register New End Customer (Consumer)
               </h3>
               <p style={{ margin: 0, fontSize: '0.74rem', color: 'var(--text-secondary, #94a3b8)' }}>
-                Farmer / Retail machine buyer registration &amp; parent dealer mapping
+                Retail machine buyer registration &amp; parent dealer mapping
               </p>
             </div>
           </div>
@@ -829,7 +829,6 @@ export default function RegisterEndCustomerModal({
                           </div>
                           <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '2px', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                             <span>📍 {[party.city_village || party.city_name, party.district_name, party.state_name].filter(Boolean).join(', ') || 'No territory set'}</span>
-                            {party.primary_mobile && <span>📞 {party.primary_mobile}</span>}
                             {party.party_type && <span style={{ color: '#38bdf8' }}>🏷️ {party.party_type}</span>}
                           </div>
                         </div>
