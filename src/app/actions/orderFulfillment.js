@@ -743,6 +743,12 @@ export async function dispatchPartialLot(orderId, lotData = {}, dispatchedBy = '
 
     if (fetchErr) throw fetchErr;
 
+    // Guard: Child orders ending with -B cannot be split further
+    if (currentOrder.order_number?.endsWith('-B')) {
+      console.warn('dispatchPartialLot: Child order ending with -B cannot be split further:', currentOrder.order_number);
+      return { success: false, error: 'Child order is already a remaining lot and cannot be split further.' };
+    }
+
     const nowISO = new Date().toISOString();
     const currentHistory = Array.isArray(currentOrder?.stage_history) ? currentOrder.stage_history : [];
     
@@ -804,6 +810,15 @@ export async function dispatchPartialLot(orderId, lotData = {}, dispatchedBy = '
           const remainingAmount = remainingItems.reduce((sum, it) => sum + ((it.qty || 0) * (it.rate || 0)), 0) ||
             Math.round((Number(currentOrder.total_amount) || 0) * (Number(lotData.remaining_qty) / (Number(currentOrder.total_ordered_qty) || 1)));
 
+          // Inherit Full Paid status from parent order (e.g. S05 100% advance or full paid status)
+          const isParentFullPaid = currentOrder.order_status === 'FULL_PAID' ||
+            (Array.isArray(currentOrder.stage_history) && currentOrder.stage_history.some(h => 
+              (h.stage_id === 'S05' || h.delivery_status === 'S05_ADVANCE_RECEIVED') && h.custom_fields_data?.is_100_percent_paid
+            ));
+
+          const childOrderStatus = isParentFullPaid ? 'FULL_PAID' : 'IN_PRODUCTION';
+          const paidNotice = isParentFullPaid ? ' | 100% Full Paid in Parent Order (Balance Stages Bypassed)' : '';
+
           await adminClient
             .from('sales_orders')
             .insert([{
@@ -815,18 +830,18 @@ export async function dispatchPartialLot(orderId, lotData = {}, dispatchedBy = '
               demand_flow_type: 'MAKE_TO_STOCK',
               total_ordered_qty: Number(lotData.remaining_qty),
               total_amount: remainingAmount,
-              order_status: 'IN_PRODUCTION',
+              order_status: childOrderStatus,
               delivery_status: 'S06',
               billing_route: currentOrder.billing_route || 'DIRECT_COMPANY_BILLING',
               order_line_items: remainingItems,
-              delivery_notes: `[Linked Lot-B Child Order]: ${lotData.remaining_qty} Units in assembly from parent order ${currentOrder.order_number}`,
+              delivery_notes: `[Linked Lot-B Child Order]: ${lotData.remaining_qty} Units in assembly from parent order ${currentOrder.order_number}${paidNotice}`,
               stage_history: [{
                 stage_id: 'S06',
                 stage_name: 'Check Stock & Production',
                 department: 'Plant / Works',
                 tat_hours: 48,
                 action_by: dispatchedBy,
-                notes: `Generated from Partial Split of parent order ${currentOrder.order_number}. ${lotData.remaining_qty} units pending in assembly.`,
+                notes: `Generated from Partial Split of parent order ${currentOrder.order_number}. ${lotData.remaining_qty} units pending in assembly.${isParentFullPaid ? ' [100% Full Paid: Balance payment stages bypassed]' : ''}`,
                 product_allocations: remainingItems.map(it => ({
                   product: it.product,
                   ordered_qty: it.qty,

@@ -70,15 +70,29 @@ function resolveOrderStage(order, stages = []) {
 }
 
 // Next stage resolver
-function getNextStage(currentStage, stages, order) {
+function getNextStage(currentStage, stages, order, allOrders = []) {
   if (!currentStage || currentStage.id === 'CANCELLED') return null;
   const activeStages = stages.filter(s => s.is_enabled !== false);
   const currentIndex = activeStages.findIndex(s => s.id === currentStage.id);
   if (currentIndex === -1 || currentIndex >= activeStages.length - 1) return null;
 
-  // Check if 100% payment credited: skip S09 & S10
+  // Check if 100% payment credited (or inherited from parent order for Lot-B)
+  const isParentFullPaid = Boolean(
+    order?.order_number?.endsWith('-B') &&
+    Array.isArray(allOrders) &&
+    (() => {
+      const parentNum = order.order_number.replace(/-B$/, '');
+      const parent = allOrders.find(o => o.order_number === parentNum);
+      return parent && (
+        parent.order_status === 'FULL_PAID' || 
+        (Array.isArray(parent.stage_history) && parent.stage_history.some(h => (h.stage_id === 'S05' || h.delivery_status === 'S05_ADVANCE_RECEIVED') && h.custom_fields_data?.is_100_percent_paid))
+      );
+    })()
+  );
+
   const isFullPaid = order.order_status === 'FULL_PAID' || 
-    (Array.isArray(order.stage_history) && order.stage_history.some(h => h.stage_id === 'S05' && h.custom_fields_data?.is_100_percent_paid));
+    isParentFullPaid ||
+    (Array.isArray(order.stage_history) && order.stage_history.some(h => (h.stage_id === 'S05' || h.delivery_status === 'S05_ADVANCE_RECEIVED') && h.custom_fields_data?.is_100_percent_paid));
 
   if (isFullPaid && currentStage.id === 'S08') {
     const s11 = activeStages.find(s => s.id === 'S11');
@@ -614,9 +628,13 @@ export default function OrderDeliveryPipeline({
                 paginatedOrders.map(order => {
                   const p = order.party;
                   const currentStage = resolveOrderStage(order, stages);
-                  const nextStage = getNextStage(currentStage, stages, order);
+                  const nextStage = getNextStage(currentStage, stages, order, orders);
                   const sla = computeOrderSLA(order, currentStage);
                   const items = Array.isArray(order.order_line_items) ? order.order_line_items : [];
+
+                  const isFullPaidOrder = order.order_status === 'FULL_PAID' ||
+                    (Array.isArray(order.stage_history) && order.stage_history.some(h => (h.stage_id === 'S05' || h.delivery_status === 'S05_ADVANCE_RECEIVED') && h.custom_fields_data?.is_100_percent_paid)) ||
+                    Boolean(order.order_number?.endsWith('-B') && orders.some(o => o.order_number === order.order_number.replace(/-B$/, '') && (o.order_status === 'FULL_PAID' || (Array.isArray(o.stage_history) && o.stage_history.some(h => (h.stage_id === 'S05' || h.delivery_status === 'S05_ADVANCE_RECEIVED') && h.custom_fields_data?.is_100_percent_paid)))));
 
                   return (
                     <tr key={order.id} style={{ borderBottom: '1px solid var(--border-light)' }}>
@@ -641,7 +659,7 @@ export default function OrderDeliveryPipeline({
                             </span>
                           </div>
                         ) : null}
-                        {order.order_status === 'FULL_PAID' && (
+                        {isFullPaidOrder && (
                           <div style={{ marginTop: '0.25rem' }}>
                             <span style={{ fontSize: '0.68rem', fontWeight: 800, padding: '0.15rem 0.4rem', borderRadius: '4px', background: 'rgba(16,185,129,0.15)', color: '#10b981' }}>
                               100% ADVANCE
@@ -966,7 +984,10 @@ export default function OrderDeliveryPipeline({
           userName={userName}
           tenantId={tenantId}
           tatMode={pipelineConfig?.tat_mode || 'DYNAMIC'}
-          allowPartialSplit={pipelineConfig?.allow_partial_split_lots !== false}
+          allowPartialSplit={
+            pipelineConfig?.allow_partial_split_lots !== false &&
+            !stageActionState.order?.order_number?.endsWith('-B')
+          }
           autoSkipBalanceOnFullAdvance={pipelineConfig?.auto_skip_balance_on_full_advance !== false}
         />
       )}

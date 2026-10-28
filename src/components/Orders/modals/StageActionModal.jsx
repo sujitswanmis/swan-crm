@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   X, CheckCircle2, Clock, AlertTriangle, ArrowRight, ShieldAlert,
-  FileText, Truck, DollarSign, Layers, Sparkles
+  FileText, Truck, DollarSign, Layers, Sparkles, Info
 } from 'lucide-react';
 import { updateOrderLifecycleStatus, dispatchPartialLot } from '@/app/actions/orderFulfillment';
 
@@ -50,6 +50,9 @@ export default function StageActionModal({
     lr_number: '',
     vehicle_number: ''
   });
+
+  const isChildOrder = Boolean(order?.order_number?.endsWith('-B'));
+  const canSplitLot = allowPartialSplit && !isChildOrder && (targetStage?.id === 'S07' || targetStage?.id === 'S12');
 
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -251,7 +254,7 @@ export default function StageActionModal({
     setErrorMsg('');
 
     try {
-      if (isPartialLot && (targetStage.id === 'S07' || targetStage.id === 'S12')) {
+      if (!isChildOrder && isPartialLot && (targetStage.id === 'S07' || targetStage.id === 'S12')) {
         // Dispatch partial lot
         const lotRes = await dispatchPartialLot(order.id, {
           ...partialLotData,
@@ -604,8 +607,28 @@ export default function StageActionModal({
               </div>
             )}
 
+            {/* Final Lot Info for Child Orders (Disables Re-Splitting) */}
+            {isChildOrder && (targetStage.id === 'S07' || targetStage.id === 'S12') && (
+              <div style={{
+                background: 'rgba(245, 158, 11, 0.08)',
+                border: '1px solid rgba(245, 158, 11, 0.25)',
+                borderRadius: '8px',
+                padding: '0.75rem 1rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.65rem',
+                fontSize: '0.78rem',
+                color: '#b45309'
+              }}>
+                <Info size={16} style={{ flexShrink: 0, color: '#d97706' }} />
+                <div>
+                  <strong>Final Remaining Lot (Lot-B):</strong> All remaining assembly units ({order.total_ordered_qty || 1} Units) will be confirmed &amp; dispatched in full as a single final delivery. Further splitting is disabled on child orders.
+                </div>
+              </div>
+            )}
+
             {/* Partial Split Lot Options (S07 and S12) */}
-            {allowPartialSplit && (targetStage.id === 'S07' || targetStage.id === 'S12') && (
+            {canSplitLot && (
               <div style={{
                 background: 'var(--bg-primary)',
                 border: '1px solid var(--border-light)',

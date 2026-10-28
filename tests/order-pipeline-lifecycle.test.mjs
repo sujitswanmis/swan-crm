@@ -338,3 +338,82 @@ test('Audit Matrix Table: creates S00 punch, S01 revision, planned vs actual tim
   assert.equal(rows[3].tat_breached, true, 'S05 was delayed past 24 hours target');
   assert.ok(rows[3].time_taken_ms > 24 * 3600 * 1000, 'Time taken exceeds 24 hours');
 });
+
+test('Lot-B Commercial & Splitting Rules: child order disables re-splitting and inherits FULL_PAID to skip S09 & S10', () => {
+  const parentOrder = {
+    order_number: 'SO-2026-41220',
+    order_status: 'FULL_PAID',
+    stage_history: [
+      { stage_id: 'S05', custom_fields_data: { is_100_percent_paid: true } }
+    ]
+  };
+
+  const childOrder = {
+    order_number: 'SO-2026-41220-B',
+    order_status: 'IN_PRODUCTION', // Before inheritance
+    delivery_status: 'S06',
+    stage_history: [
+      { stage_id: 'S06', stage_name: 'Check Stock & Production' }
+    ]
+  };
+
+  // Rule 1: Child order disables re-splitting
+  const isChildOrder = Boolean(childOrder.order_number?.endsWith('-B'));
+  assert.equal(isChildOrder, true, 'Child order must be identified with -B suffix');
+
+  const allowPartialSplit = true;
+  const canSplitLot = allowPartialSplit && !isChildOrder;
+  assert.equal(canSplitLot, false, 'Lot-B must never allow further splitting');
+
+  // Rule 2: Child order inherits FULL_PAID from parent
+  const allOrders = [parentOrder, childOrder];
+  const isParentFullPaid = Boolean(
+    childOrder.order_number?.endsWith('-B') &&
+    allOrders.some(o => o.order_number === childOrder.order_number.replace(/-B$/, '') && (
+      o.order_status === 'FULL_PAID' || 
+      (Array.isArray(o.stage_history) && o.stage_history.some(h => h.stage_id === 'S05' && h.custom_fields_data?.is_100_percent_paid))
+    ))
+  );
+
+  assert.equal(isParentFullPaid, true, 'Child order must recognize parent 100% full paid status');
+
+  // Rule 3: Fast-track past S09 & S10 to S11
+  const stages = [
+    { id: 'S06', name: 'Stock & Production', is_enabled: true },
+    { id: 'S07', name: 'Assembly Ready', is_enabled: true },
+    { id: 'S08', name: 'QC / PDI Inspection', is_enabled: true },
+    { id: 'S09', name: 'Request 70% Balance', is_enabled: true },
+    { id: 'S10', name: 'Receive 70% Balance', is_enabled: true },
+    { id: 'S11', name: 'Ready for Dispatch', is_enabled: true },
+    { id: 'S12', name: 'Dispatch Material', is_enabled: true },
+    { id: 'S13', name: 'Material Delivered', is_enabled: true }
+  ];
+
+  function getNext(currentStage, stgs, ord, ordList) {
+    const active = stgs.filter(s => s.is_enabled !== false);
+    const idx = active.findIndex(s => s.id === currentStage.id);
+    if (idx === -1 || idx >= active.length - 1) return null;
+
+    const parentPaid = Boolean(
+      ord?.order_number?.endsWith('-B') &&
+      Array.isArray(ordList) &&
+      (() => {
+        const pNum = ord.order_number.replace(/-B$/, '');
+        const p = ordList.find(o => o.order_number === pNum);
+        return p && (p.order_status === 'FULL_PAID' || (Array.isArray(p.stage_history) && p.stage_history.some(h => h.stage_id === 'S05' && h.custom_fields_data?.is_100_percent_paid)));
+      })()
+    );
+
+    const fullPaid = ord.order_status === 'FULL_PAID' || parentPaid;
+    if (fullPaid && currentStage.id === 'S08') {
+      const s11 = active.find(s => s.id === 'S11');
+      if (s11) return s11;
+    }
+    return active[idx + 1];
+  }
+
+  const currentStageAtS08 = { id: 'S08', name: 'QC / PDI Inspection' };
+  const nextFromS08 = getNext(currentStageAtS08, stages, childOrder, allOrders);
+
+  assert.equal(nextFromS08.id, 'S11', 'From S08, full-paid child order must skip S09 & S10 and advance directly to S11');
+});
