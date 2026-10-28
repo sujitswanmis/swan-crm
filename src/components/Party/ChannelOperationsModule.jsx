@@ -17,6 +17,7 @@ import OrderDeliveryPipeline from '../Orders/OrderDeliveryPipeline';
 import PostDeliveryFeedbackTable from '../Orders/PostDeliveryFeedbackTable';
 import MonthlyHealthCheckModule from '../Orders/MonthlyHealthCheckModule';
 import ComplaintManagementModule from '../Orders/ComplaintManagementModule';
+import EndCustomerMasterModule from '../Orders/EndCustomerMasterModule';
 
 const OPERATIONS_TABS = [
   {
@@ -60,6 +61,13 @@ const OPERATIONS_TABS = [
     icon: '⚠️',
     title: 'Complaint Management & SLA Tracking',
     subtitle: 'Plant QA, Logistics aur Accounts grievances ka resolution & verified closure'
+  },
+  {
+    id: 'end_customers',
+    label: 'End Customer Master',
+    icon: '🚜',
+    title: 'End Customer & Farmer Master Directory',
+    subtitle: 'Retail machine owners, linked channel dealers, live warranty tracking & complaint history'
   }
 ];
 
@@ -386,6 +394,19 @@ export default function ChannelOperationsModule({
         <ComplaintManagementModule
           tenantId={effectiveTenantId}
           parties={parties}
+        />
+      )}
+
+      {activeTab === 'end_customers' && visibleTabs.some(vt => vt.id === 'end_customers') && (
+        <EndCustomerMasterModule
+          tenantId={effectiveTenantId}
+          userCompany={userCompany}
+          userRole={userRole}
+          userName={userName}
+          onNavigateToComplaints={(cust) => {
+            setActiveTab('complaints');
+            if (onSubTabChange) onSubTabChange('complaints');
+          }}
         />
       )}
     </div>

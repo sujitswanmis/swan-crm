@@ -23,6 +23,7 @@ import SearchablePartySelect from '../common/SearchablePartySelect';
 import ComplaintStageActionModal from './modals/ComplaintStageActionModal';
 import ComplaintStageHistoryModal from './modals/ComplaintStageHistoryModal';
 import RegisterEndCustomerModal from './modals/RegisterEndCustomerModal';
+import EndCustomerMasterModule from './EndCustomerMasterModule';
 
 // Master 8 Categories Baseline
 const DEFAULT_CATEGORIES = [
@@ -1036,115 +1037,22 @@ export default function ComplaintManagementModule({
 
       {/* VIEW 3: END CUSTOMERS DIRECTORY */}
       {viewMode === 'customers' && (
-        <div style={{
-          background: 'var(--bg-surface)',
-          borderRadius: '12px',
-          border: '1px solid var(--border-light)',
-          padding: '1.25rem',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '1rem'
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
-            <div>
-              <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                End Customers &amp; Farmers Directory
-              </h3>
-              <p style={{ margin: 0, fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
-                Retail machine owners mapped to parent dealers with active warranty tracking
-              </p>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setShowRegisterCustomerModal(true)}
-              style={{
-                padding: '0.5rem 0.95rem',
-                borderRadius: '8px',
-                background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
-                border: 'none',
-                color: '#fff',
-                fontSize: '0.82rem',
-                fontWeight: 700,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.4rem'
-              }}
-            >
-              <Plus size={14} />
-              + Register End Customer
-            </button>
-          </div>
-
-          {/* Table */}
-          <div style={{ overflowX: 'auto', border: '1px solid var(--border-light)', borderRadius: '8px' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem' }}>
-              <thead>
-                <tr style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
-                  <th style={{ padding: '0.75rem 1rem' }}>Customer ID &amp; Name</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>Contact (Mobile 1 &amp; 2)</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>Location / Village</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>Linked Dealer (Party Master)</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>Machine &amp; Serial #</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>Warranty Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {endCustomers.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
-                      No end customers registered yet. Click "+ Register End Customer" to add one!
-                    </td>
-                  </tr>
-                ) : (
-                  endCustomers.map(cust => (
-                    <tr key={cust.id} style={{ borderBottom: '1px solid var(--border-light)' }}>
-                      <td style={{ padding: '0.75rem 1rem' }}>
-                        <strong style={{ color: 'var(--text-primary)' }}>{cust.full_name}</strong>
-                        <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>{cust.customer_code}</div>
-                      </td>
-
-                      <td style={{ padding: '0.75rem 1rem' }}>
-                        <div><MaskedPhoneDisplay phone={cust.mobile_1} /></div>
-                        {cust.mobile_2 && <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}><MaskedPhoneDisplay phone={cust.mobile_2} /></div>}
-                      </td>
-
-                      <td style={{ padding: '0.75rem 1rem' }}>
-                        <div>{cust.district_name}, {cust.state_name}</div>
-                        <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{cust.landmark || cust.block_area_name || cust.pin_code}</div>
-                      </td>
-
-                      <td style={{ padding: '0.75rem 1rem' }}>
-                        <strong style={{ color: '#fbbf24' }}>{cust.linked_party_name || '-'}</strong>
-                        <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{cust.dealer_city_district}</div>
-                      </td>
-
-                      <td style={{ padding: '0.75rem 1rem' }}>
-                        <div style={{ fontWeight: 600 }}>{cust.product_name || 'Machine Implement'}</div>
-                        <div style={{ fontSize: '0.7rem', color: '#38bdf8' }}>SN: {cust.chassis_serial_number || 'N/A'}</div>
-                      </td>
-
-                      <td style={{ padding: '0.75rem 1rem' }}>
-                        <span style={{
-                          fontSize: '0.72rem',
-                          fontWeight: 700,
-                          padding: '0.15rem 0.45rem',
-                          borderRadius: '10px',
-                          background: `${cust.warranty_info?.color || '#10b981'}20`,
-                          color: cust.warranty_info?.color || '#10b981',
-                          border: `1px solid ${cust.warranty_info?.color || '#10b981'}`
-                        }}>
-                          {cust.warranty_info?.label || 'Active'}
-                        </span>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <EndCustomerMasterModule
+          tenantId={tenantId}
+          userRole={userRole}
+          userName={userName}
+          onNavigateToComplaints={(cust) => {
+            setViewMode('pipeline');
+            setCreateForm(prev => ({
+              ...prev,
+              complaint_type: 'END_CUSTOMER',
+              customer_id: cust.id,
+              customer_name: cust.full_name,
+              customer_phone: cust.mobile_1
+            }));
+            setShowCreateModal(true);
+          }}
+        />
       )}
 
       {/* MODAL 1: Log Complaint Ticket Modal */}

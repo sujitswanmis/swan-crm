@@ -176,7 +176,8 @@ export const MODULES_CONFIG = [
       { id: 's07', label: 'S07 Sales Team Assignment' },
       { id: 's08', label: 'S08 Partner Activation' },
       { id: 'report', label: '📑 Party Master Report' },
-      { id: 'hierarchy_tree', label: '🌳 Channel Hierarchy Tree' }
+      { id: 'hierarchy_tree', label: '🌳 Channel Hierarchy Tree' },
+      { id: 'end_customers', label: '🚜 End Customer Master' }
     ]
   },
   { 
@@ -217,7 +218,8 @@ export const MODULES_CONFIG = [
       { id: 'c03', label: 'C03 - Service Engineer Deputed' },
       { id: 'c04', label: 'C04 - On-Site Job Card' },
       { id: 'c05', label: 'C05 - Customer OTP Verification' },
-      { id: 'c06', label: 'C06 - Quality Audit & Closed' }
+      { id: 'c06', label: 'C06 - Quality Audit & Closed' },
+      { id: 'end_customers', label: '🚜 End Customer Master' }
     ]
   },
   { 

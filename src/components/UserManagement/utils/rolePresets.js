@@ -89,7 +89,8 @@ export const ROLE_PRESETS = [
           s08: { view: true }, report: { view: true }, hierarchy_tree: { view: true },
           order_followup: { view: true }, order_feedback: { view: true },
           monthly_feedback: { view: true }, complaints: { view: true },
-          c01: { view: true }, c02: { view: true }, c03: { view: true }, c04: { view: true }, c05: { view: true }, c06: { view: true }
+          c01: { view: true }, c02: { view: true }, c03: { view: true }, c04: { view: true }, c05: { view: true }, c06: { view: true },
+          end_customers: { view: true }
         }
       },
       orders: { view: true, read: true, write: true, edit: true, export: true },
@@ -102,7 +103,8 @@ export const ROLE_PRESETS = [
           s08: { view: true }, s09: { view: true }, s10: { view: true }, s11: { view: true },
           s12: { view: true }, s13: { view: true }, order_feedback: { view: true },
           monthly_feedback: { view: true }, complaints: { view: true },
-          c01: { view: true }, c02: { view: true }, c03: { view: true }, c04: { view: true }, c05: { view: true }, c06: { view: true }
+          c01: { view: true }, c02: { view: true }, c03: { view: true }, c04: { view: true }, c05: { view: true }, c06: { view: true },
+          end_customers: { view: true }
         }
       },
       location_master: { view: true, read: true, write: true, edit: true, export: true },
@@ -222,7 +224,8 @@ export const ROLE_PRESETS = [
           s08: { view: true }, report: { view: true }, hierarchy_tree: { view: true },
           order_followup: { view: true }, order_feedback: { view: true },
           monthly_feedback: { view: true }, complaints: { view: true },
-          c01: { view: true }, c02: { view: true }, c03: { view: true }, c04: { view: true }, c05: { view: true }, c06: { view: true }
+          c01: { view: true }, c02: { view: true }, c03: { view: true }, c04: { view: true }, c05: { view: true }, c06: { view: true },
+          end_customers: { view: true }
         }
       },
       orders: { view: true, read: true, write: true, edit: true, export: true },
@@ -235,7 +238,8 @@ export const ROLE_PRESETS = [
           s08: { view: true }, s09: { view: true }, s10: { view: true }, s11: { view: true },
           s12: { view: true }, s13: { view: true }, order_feedback: { view: true },
           monthly_feedback: { view: true }, complaints: { view: true },
-          c01: { view: true }, c02: { view: true }, c03: { view: true }, c04: { view: true }, c05: { view: true }, c06: { view: true }
+          c01: { view: true }, c02: { view: true }, c03: { view: true }, c04: { view: true }, c05: { view: true }, c06: { view: true },
+          end_customers: { view: true }
         }
       },
       location_master: { view: true, read: true, write: true, edit: true, export: true },
@@ -320,7 +324,8 @@ export const ROLE_PRESETS = [
           s08: { view: true }, report: { view: true }, hierarchy_tree: { view: true },
           order_followup: { view: true }, order_feedback: { view: true },
           monthly_feedback: { view: true }, complaints: { view: true },
-          c01: { view: true }, c02: { view: true }, c03: { view: true }, c04: { view: true }, c05: { view: true }, c06: { view: true }
+          c01: { view: true }, c02: { view: true }, c03: { view: true }, c04: { view: true }, c05: { view: true }, c06: { view: true },
+          end_customers: { view: true }
         }
       },
       orders: { view: true, read: true, write: true, edit: true, export: true },
@@ -333,7 +338,8 @@ export const ROLE_PRESETS = [
           s08: { view: true }, s09: { view: true }, s10: { view: true }, s11: { view: true },
           s12: { view: true }, s13: { view: true }, order_feedback: { view: true },
           monthly_feedback: { view: true }, complaints: { view: true },
-          c01: { view: true }, c02: { view: true }, c03: { view: true }, c04: { view: true }, c05: { view: true }, c06: { view: true }
+          c01: { view: true }, c02: { view: true }, c03: { view: true }, c04: { view: true }, c05: { view: true }, c06: { view: true },
+          end_customers: { view: true }
         }
       },
       attendance: {
@@ -446,7 +452,8 @@ export const ROLE_PRESETS = [
           s08: { view: true }, s09: { view: true }, s10: { view: true }, s11: { view: true },
           s12: { view: true }, s13: { view: true }, order_feedback: { view: true },
           monthly_feedback: { view: true }, complaints: { view: true },
-          c01: { view: true }, c02: { view: true }, c03: { view: true }, c04: { view: true }, c05: { view: true }, c06: { view: true }
+          c01: { view: true }, c02: { view: true }, c03: { view: true }, c04: { view: true }, c05: { view: true }, c06: { view: true },
+          end_customers: { view: true }
         }
       },
       party: {
@@ -457,7 +464,8 @@ export const ROLE_PRESETS = [
           order_followup: { view: true },
           order_feedback: { view: true },
           monthly_feedback: { view: true },
-          complaints: { view: true }
+          complaints: { view: true },
+          end_customers: { view: true }
         }
       },
       leads: {
@@ -666,7 +674,8 @@ export const ROLE_PRESETS = [
           s08: { view: true }, report: { view: true }, hierarchy_tree: { view: true },
           order_followup: { view: true }, order_feedback: { view: true },
           monthly_feedback: { view: true }, complaints: { view: true },
-          c01: { view: true }, c02: { view: true }, c03: { view: true }, c04: { view: true }, c05: { view: true }, c06: { view: true }
+          c01: { view: true }, c02: { view: true }, c03: { view: true }, c04: { view: true }, c05: { view: true }, c06: { view: true },
+          end_customers: { view: true }
         }
       },
       orders: { view: true, read: true, write: true, edit: true, export: true },
@@ -679,7 +688,8 @@ export const ROLE_PRESETS = [
           s08: { view: true }, s09: { view: true }, s10: { view: true }, s11: { view: true },
           s12: { view: true }, s13: { view: true }, order_feedback: { view: true },
           monthly_feedback: { view: true }, complaints: { view: true },
-          c01: { view: true }, c02: { view: true }, c03: { view: true }, c04: { view: true }, c05: { view: true }, c06: { view: true }
+          c01: { view: true }, c02: { view: true }, c03: { view: true }, c04: { view: true }, c05: { view: true }, c06: { view: true },
+          end_customers: { view: true }
         }
       },
       attendance: {
@@ -849,7 +859,8 @@ export const ROLE_PRESETS = [
           s08: { view: true }, s09: { view: true }, s10: { view: true }, s11: { view: true },
           s12: { view: true }, s13: { view: true }, order_feedback: { view: true },
           monthly_feedback: { view: true }, complaints: { view: true },
-          c01: { view: true }, c02: { view: true }, c03: { view: true }, c04: { view: true }, c05: { view: true }, c06: { view: true }
+          c01: { view: true }, c02: { view: true }, c03: { view: true }, c04: { view: true }, c05: { view: true }, c06: { view: true },
+          end_customers: { view: true }
         }
       }
     }

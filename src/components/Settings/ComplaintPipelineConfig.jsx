@@ -25,8 +25,7 @@ const DEPARTMENTS = [
   { id: 'LOGISTICS_DISPATCH', label: 'Logistics & Dispatch' },
   { id: 'ACCOUNTS_FINANCE', label: 'Accounts & Billing' },
   { id: 'SERVICE_ENGINEERING', label: 'Field Service Engineering' },
-  { id: 'SALES_DESK', label: 'Sales Coordination / Order Desk' },
-  { id: 'CRM_DESK', label: 'CRM / Support Desk' }
+  { id: 'SALES_DESK', label: 'Sales Coordination / Order Desk' }
 ];
 
 const AVAILABLE_ROLES = [
@@ -37,8 +36,18 @@ const AVAILABLE_ROLES = [
   { key: 'logistics_incharge', label: 'Logistics & Dispatch', color: '#ea580c' },
   { key: 'accounts_team', label: 'Accounts & Billing', color: '#4f46e5' },
   { key: 'sales_coordinator', label: 'Sales Coordinator', color: '#7c3aed' },
+  { key: 'sales_manager', label: 'Sales Manager', color: '#0284c7' },
   { key: 'telecaller', label: 'Telecaller / Order Desk', color: '#64748b' },
   { key: 'hod_dept_head', label: 'HOD / Dept Head', color: '#9333ea' }
+];
+
+const FIELD_TYPES = [
+  { value: 'text', label: 'Single-line Text' },
+  { value: 'number', label: 'Number / Amount' },
+  { value: 'date', label: 'Date Picker (IST)' },
+  { value: 'select', label: 'Dropdown / Multiple Choice' },
+  { value: 'checkbox', label: 'Yes/No Checkbox' },
+  { value: 'file', label: 'File / Document Upload' }
 ];
 
 export default function ComplaintPipelineConfig({
@@ -48,6 +57,7 @@ export default function ComplaintPipelineConfig({
 }) {
   const isMaster = isMasterAdmin === true || userRole === 'master_admin';
 
+  // Determine user's company tenant code
   const userTenant = useMemo(() => {
     const comp = (userCompany || '').toLowerCase();
     if (comp.includes('supuja')) {
@@ -59,8 +69,11 @@ export default function ComplaintPipelineConfig({
     return { code: 'TNT00002', name: 'New Swan Group' };
   }, [userCompany]);
 
+  // Only Master Admin can see other tenants. Tenant Admins strictly see their own!
   const availableTenants = useMemo(() => {
-    if (isMaster) return ALL_TENANTS;
+    if (isMaster) {
+      return ALL_TENANTS;
+    }
     return [userTenant];
   }, [isMaster, userTenant]);
 
@@ -68,7 +81,7 @@ export default function ComplaintPipelineConfig({
   const [selectedBranch, setSelectedBranch] = useState('All Branches');
   const [dynamicBranches, setDynamicBranches] = useState([]);
 
-  // Load branches
+  // Load actual registered branches for selected tenant strictly from system records
   useEffect(() => {
     async function loadBranches() {
       try {
@@ -86,14 +99,22 @@ export default function ComplaintPipelineConfig({
     loadBranches();
   }, [selectedTenant, userTenant]);
 
+  // Construct branches list strictly from registered branches (No duplicates)
   const availableBranches = useMemo(() => {
-    const list = [{ code: 'All Branches', label: 'All Branches (Default Baseline)' }];
+    const list = [
+      { code: 'All Branches', label: 'All Branches (Default Baseline)' }
+    ];
+
     (dynamicBranches || []).forEach(db => {
       const branchCode = db.branch_code || db.id;
       const branchName = db.branch_name || db.name || 'Branch';
       const label = `${branchName} [${branchCode}]`;
-      list.push({ code: label, label: label });
+      list.push({
+        code: label,
+        label: label
+      });
     });
+
     return list;
   }, [dynamicBranches]);
 
@@ -101,7 +122,30 @@ export default function ComplaintPipelineConfig({
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
-  const [activeTab, setActiveTab] = useState('stages'); // 'stages' | 'categories' | 'rules'
+  const [teamMembers, setTeamMembers] = useState([]);
+  const [loadingMembers, setLoadingMembers] = useState(false);
+
+  // Load team members for selected tenant
+  useEffect(() => {
+    async function loadTeam() {
+      setLoadingMembers(true);
+      try {
+        const tenantObj = ALL_TENANTS.find(t => t.code === selectedTenant) || userTenant;
+        const members = await getTeamMembers(tenantObj.name, selectedTenant);
+        if (Array.isArray(members)) {
+          setTeamMembers(members);
+        } else {
+          setTeamMembers([]);
+        }
+      } catch (err) {
+        console.warn('Failed to load team members:', err);
+        setTeamMembers([]);
+      } finally {
+        setLoadingMembers(false);
+      }
+    }
+    loadTeam();
+  }, [selectedTenant, userTenant]);
 
   // Master Configuration State
   const [config, setConfig] = useState({
@@ -115,6 +159,19 @@ export default function ComplaintPipelineConfig({
     stages: []
   });
 
+  // Active Stage for Custom Field Editing Modal
+  const [editingStage, setEditingStage] = useState(null);
+  const [newField, setNewField] = useState({
+    id: '',
+    label: '',
+    type: 'text',
+    optionsText: '',
+    default_value: '',
+    placeholder: '',
+    required: false
+  });
+
+  // Fetch pipeline configuration
   const loadConfig = useCallback(async () => {
     setLoading(true);
     setErrorMsg('');
@@ -136,7 +193,7 @@ export default function ComplaintPipelineConfig({
     loadConfig();
   }, [loadConfig]);
 
-  // Stage Property Update Handler
+  // Handle stage property updates
   const handleStageChange = (stageId, field, value) => {
     setConfig(prev => ({
       ...prev,
@@ -149,7 +206,69 @@ export default function ComplaintPipelineConfig({
     }));
   };
 
-  // Category Property Update Handler
+  // Handle stage enable/disable toggle
+  const handleToggleStage = (stageId) => {
+    setConfig(prev => ({
+      ...prev,
+      stages: (prev.stages || []).map(st => {
+        if (st.id === stageId) {
+          return { ...st, is_enabled: st.is_enabled === false ? true : false };
+        }
+        return st;
+      })
+    }));
+  };
+
+  // Add role to stage
+  const handleAddRoleToStage = (stageId, roleKey) => {
+    if (!roleKey) return;
+    setConfig(prev => ({
+      ...prev,
+      stages: (prev.stages || []).map(st => {
+        if (st.id === stageId) {
+          const current = Array.isArray(st.authorized_roles) ? st.authorized_roles : [];
+          if (!current.includes(roleKey)) {
+            return { ...st, authorized_roles: [...current, roleKey] };
+          }
+        }
+        return st;
+      })
+    }));
+  };
+
+  // Remove role from stage
+  const handleRemoveRoleFromStage = (stageId, roleKey) => {
+    setConfig(prev => ({
+      ...prev,
+      stages: (prev.stages || []).map(st => {
+        if (st.id === stageId) {
+          const current = Array.isArray(st.authorized_roles) ? st.authorized_roles : [];
+          return { ...st, authorized_roles: current.filter(r => r !== roleKey) };
+        }
+        return st;
+      })
+    }));
+  };
+
+  // Assign employee incharge to stage
+  const handleAssignEmpToStage = (stageId, empId) => {
+    const emp = teamMembers.find(m => String(m.user_id || m.id) === String(empId));
+    setConfig(prev => ({
+      ...prev,
+      stages: (prev.stages || []).map(st => {
+        if (st.id === stageId) {
+          return {
+            ...st,
+            assigned_emp_id: empId || '',
+            assigned_emp_name: emp ? (emp.emp_name || emp.name || emp.full_name) : ''
+          };
+        }
+        return st;
+      })
+    }));
+  };
+
+  // Handle category property updates
   const handleCategoryChange = (catId, field, value) => {
     setConfig(prev => ({
       ...prev,
@@ -162,28 +281,12 @@ export default function ComplaintPipelineConfig({
     }));
   };
 
-  // Add/Remove Role from Stage
-  const handleToggleRoleInStage = (stageId, roleKey) => {
-    setConfig(prev => ({
-      ...prev,
-      stages: (prev.stages || []).map(st => {
-        if (st.id === stageId) {
-          const current = Array.isArray(st.authorized_roles) ? st.authorized_roles : [];
-          if (current.includes(roleKey)) {
-            return { ...st, authorized_roles: current.filter(r => r !== roleKey) };
-          } else {
-            return { ...st, authorized_roles: [...current, roleKey] };
-          }
-        }
-        return st;
-      })
-    }));
-  };
-
-  const handleSave = async () => {
+  // Save Pipeline Configuration
+  const handleSaveConfig = async () => {
     setSaving(true);
     setErrorMsg('');
     setSaveSuccess(false);
+
     try {
       const res = await saveComplaintPipelineConfig(selectedTenant, selectedBranch, config);
       if (res.success) {
@@ -199,9 +302,12 @@ export default function ComplaintPipelineConfig({
     }
   };
 
+  // Reset to Baseline
   const handleReset = async () => {
-    if (!confirm('Are you sure you want to reset configuration to defaults?')) return;
-    setSaving(true);
+    if (!window.confirm(`Are you sure you want to restore the default complaint pipeline configuration for ${selectedTenant} (${selectedBranch})? Any custom modifications will be reset.`)) {
+      return;
+    }
+    setLoading(true);
     try {
       const res = await resetComplaintPipelineConfig(selectedTenant, selectedBranch);
       if (res.success && res.config) {
@@ -212,15 +318,95 @@ export default function ComplaintPipelineConfig({
     } catch (err) {
       setErrorMsg(err.message);
     } finally {
-      setSaving(false);
+      setLoading(false);
     }
   };
 
+  // Open Custom Field Modal
+  const openFieldModal = (stage) => {
+    setEditingStage(stage);
+    setNewField({
+      id: '',
+      label: '',
+      type: 'text',
+      optionsText: '',
+      default_value: '',
+      placeholder: '',
+      required: false
+    });
+  };
+
+  // Add Custom Field to Stage
+  const handleAddCustomField = () => {
+    if (!editingStage || !newField.label.trim()) {
+      alert('Please enter a Field Label');
+      return;
+    }
+
+    const fieldKey = (newField.id.trim() || newField.label.toLowerCase().replace(/[^a-z0-9_]/g, '_')).slice(0, 32);
+    const existing = editingStage.custom_fields || [];
+    if (existing.some(f => f.id === fieldKey)) {
+      alert(`A field with ID "${fieldKey}" already exists on this stage.`);
+      return;
+    }
+
+    const options = newField.type === 'select'
+      ? newField.optionsText.split(',').map(s => s.trim()).filter(Boolean)
+      : undefined;
+
+    const constructedField = {
+      id: fieldKey,
+      label: newField.label.trim(),
+      type: newField.type,
+      default_value: newField.default_value,
+      placeholder: newField.placeholder,
+      required: newField.required,
+      ...(options ? { options } : {})
+    };
+
+    const updatedStages = (config.stages || []).map(st => {
+      if (st.id === editingStage.id) {
+        const updatedFields = [...(st.custom_fields || []), constructedField];
+        setEditingStage({ ...st, custom_fields: updatedFields });
+        return { ...st, custom_fields: updatedFields };
+      }
+      return st;
+    });
+
+    setConfig(prev => ({ ...prev, stages: updatedStages }));
+    setNewField({
+      id: '',
+      label: '',
+      type: 'text',
+      optionsText: '',
+      default_value: '',
+      placeholder: '',
+      required: false
+    });
+  };
+
+  // Delete Custom Field
+  const handleDeleteCustomField = (fieldId) => {
+    if (!editingStage) return;
+    const updatedFields = (editingStage.custom_fields || []).filter(f => f.id !== fieldId);
+    setEditingStage({ ...editingStage, custom_fields: updatedFields });
+
+    setConfig(prev => ({
+      ...prev,
+      stages: (prev.stages || []).map(st => {
+        if (st.id === editingStage.id) {
+          return { ...st, custom_fields: updatedFields };
+        }
+        return st;
+      })
+    }));
+  };
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', padding: '1rem 0' }}>
-      {/* Top Banner Header */}
+    <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+      {/* Header Banner - Matching Order to Delivery Pipeline Config Style */}
       <div style={{
-        background: 'linear-gradient(135deg, rgba(239,68,68,0.1) 0%, rgba(59,130,246,0.05) 100%)',
+        background: 'var(--bg-surface)',
         border: '1px solid var(--border-light)',
         borderRadius: '12px',
         padding: '1.25rem 1.5rem',
@@ -230,460 +416,1067 @@ export default function ComplaintPipelineConfig({
         flexWrap: 'wrap',
         gap: '1rem'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
-          <div style={{
-            width: '44px',
-            height: '44px',
-            borderRadius: '10px',
-            background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: '#fff',
-            boxShadow: '0 4px 12px rgba(239, 68, 68, 0.3)'
-          }}>
-            <ShieldAlert size={24} />
-          </div>
-          <div>
-            <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-              Complaint Management Config
-            </h2>
-            <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-              Configure 6-stage lifecycle, 8 category SLAs, technician rules, and branch overrides
-            </p>
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+            <div style={{
+              width: '38px',
+              height: '38px',
+              borderRadius: '10px',
+              background: 'rgba(239, 68, 68, 0.15)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#ef4444'
+            }}>
+              <ShieldAlert size={22} />
+            </div>
+            <div>
+              <h2 style={{ fontSize: '1.2rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
+                Complaint Management Pipeline Configuration
+              </h2>
+              <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                Customize 6 lifecycle stages, 8 category SLAs, technician assignment, and digital proof policies per Tenant &amp; Branch.
+              </p>
+            </div>
           </div>
         </div>
 
-        {/* Actions */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
           <button
             type="button"
             onClick={handleReset}
-            disabled={saving || loading}
+            disabled={loading || saving}
             style={{
-              padding: '0.55rem 0.95rem',
-              borderRadius: '8px',
-              background: 'var(--bg-surface)',
+              padding: '0.55rem 1rem',
+              background: 'var(--bg-primary)',
               border: '1px solid var(--border-light)',
+              borderRadius: '8px',
               color: 'var(--text-secondary)',
-              cursor: 'pointer',
               fontSize: '0.82rem',
+              fontWeight: 600,
               display: 'flex',
               alignItems: 'center',
-              gap: '0.4rem'
+              gap: '0.4rem',
+              cursor: 'pointer'
             }}
           >
-            <RefreshCw size={13} />
+            <RefreshCw size={14} />
             Reset Defaults
           </button>
 
           <button
             type="button"
-            onClick={handleSave}
-            disabled={saving || loading}
+            onClick={handleSaveConfig}
+            disabled={loading || saving}
             style={{
               padding: '0.55rem 1.25rem',
-              borderRadius: '8px',
-              background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+              background: saveSuccess ? '#10b981' : '#2563eb',
               border: 'none',
-              color: '#fff',
-              cursor: saving ? 'not-allowed' : 'pointer',
+              borderRadius: '8px',
+              color: '#ffffff',
               fontSize: '0.84rem',
               fontWeight: 700,
               display: 'flex',
               alignItems: 'center',
-              gap: '0.45rem',
-              boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)'
+              gap: '0.5rem',
+              cursor: saving ? 'not-allowed' : 'pointer',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
             }}
           >
-            <Save size={15} />
-            {saving ? 'Saving Changes...' : 'Save Configuration'}
+            {saving ? (
+              <>
+                <RefreshCw size={15} className="animate-spin" />
+                Saving...
+              </>
+            ) : saveSuccess ? (
+              <>
+                <CheckCircle2 size={15} />
+                Saved Successfully!
+              </>
+            ) : (
+              <>
+                <Save size={15} />
+                Save Pipeline Config
+              </>
+            )}
           </button>
         </div>
       </div>
 
-      {/* Tenant & Branch Dual Scoping Selectors */}
+      {/* Scope Selector Bar (Tenant Code & Branch Code) */}
       <div style={{
         background: 'var(--bg-surface)',
         border: '1px solid var(--border-light)',
-        borderRadius: '10px',
-        padding: '0.85rem 1.25rem',
+        borderRadius: '12px',
+        padding: '1rem 1.25rem',
         display: 'flex',
-        alignItems: 'center',
         gap: '1.25rem',
-        flexWrap: 'wrap'
+        flexWrap: 'wrap',
+        alignItems: 'center'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: '1 1 240px' }}>
-          <Building2 size={16} style={{ color: '#3b82f6' }} />
-          <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Company / Tenant:</span>
-          <select
-            value={selectedTenant}
-            onChange={e => setSelectedTenant(e.target.value)}
-            disabled={!isMaster && availableTenants.length <= 1}
-            style={{
+        {/* Tenant Scope */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: '1 1 280px' }}>
+          <Building2 size={16} style={{ color: '#38bdf8' }} />
+          <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
+            Tenant / Company:
+          </span>
+          {isMaster ? (
+            <select
+              value={selectedTenant}
+              onChange={e => {
+                setSelectedTenant(e.target.value);
+                setSelectedBranch('All Branches');
+              }}
+              style={{
+                flex: 1,
+                padding: '0.5rem 0.75rem',
+                background: 'var(--bg-primary)',
+                border: '1px solid var(--border-light)',
+                borderRadius: '8px',
+                color: 'var(--text-primary)',
+                fontSize: '0.84rem',
+                fontWeight: 700
+              }}
+            >
+              {availableTenants.map(t => (
+                <option key={t.code} value={t.code}>
+                  {t.name} [{t.code}]
+                </option>
+              ))}
+            </select>
+          ) : (
+            <div style={{
               flex: 1,
-              padding: '0.45rem 0.65rem',
+              padding: '0.5rem 0.75rem',
               background: 'var(--bg-primary)',
               border: '1px solid var(--border-light)',
-              borderRadius: '6px',
+              borderRadius: '8px',
               color: 'var(--text-primary)',
-              fontSize: '0.82rem',
-              fontWeight: 700
-            }}
-          >
-            {availableTenants.map(t => (
-              <option key={t.code} value={t.code}>{t.name} [{t.code}]</option>
-            ))}
-          </select>
+              fontSize: '0.84rem',
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <span>{userTenant.name} [{userTenant.code}]</span>
+              <span style={{
+                fontSize: '0.72rem',
+                color: '#10b981',
+                fontWeight: 700,
+                background: 'rgba(16,185,129,0.1)',
+                padding: '0.15rem 0.45rem',
+                borderRadius: '4px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.25rem'
+              }}>
+                <Lock size={11} /> Workspace Locked
+              </span>
+            </div>
+          )}
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: '1 1 240px' }}>
-          <Layers size={16} style={{ color: '#10b981' }} />
-          <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Branch Scope:</span>
+        {/* Branch Scope */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: '1 1 340px' }}>
+          <Layers size={16} style={{ color: '#a855f7' }} />
+          <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
+            Branch / Plant Scope:
+          </span>
           <select
             value={selectedBranch}
             onChange={e => setSelectedBranch(e.target.value)}
             style={{
               flex: 1,
-              padding: '0.45rem 0.65rem',
+              padding: '0.5rem 0.75rem',
               background: 'var(--bg-primary)',
               border: '1px solid var(--border-light)',
-              borderRadius: '6px',
+              borderRadius: '8px',
               color: 'var(--text-primary)',
-              fontSize: '0.82rem',
+              fontSize: '0.84rem',
               fontWeight: 700
             }}
           >
             {availableBranches.map(b => (
-              <option key={b.code} value={b.code}>{b.label}</option>
+              <option key={b.code} value={b.code}>
+                {b.label}
+              </option>
             ))}
           </select>
         </div>
       </div>
 
-      {/* Notifications */}
-      {saveSuccess && (
-        <div style={{ padding: '0.75rem 1rem', borderRadius: '8px', background: 'rgba(16, 185, 129, 0.15)', border: '1px solid rgba(16, 185, 129, 0.3)', color: '#10b981', fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <CheckCircle2 size={16} />
-          <span>Complaint Pipeline configuration saved successfully in Indian Standard Time (IST)!</span>
-        </div>
-      )}
-
       {errorMsg && (
-        <div style={{ padding: '0.75rem 1rem', borderRadius: '8px', background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#ef4444', fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+        <div style={{
+          padding: '0.75rem 1rem',
+          background: 'rgba(239, 68, 68, 0.1)',
+          border: '1px solid #ef4444',
+          borderRadius: '8px',
+          color: '#ef4444',
+          fontSize: '0.84rem',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem'
+        }}>
           <AlertCircle size={16} />
-          <span>{errorMsg}</span>
+          {errorMsg}
         </div>
       )}
 
-      {/* Sub Tabs Switcher */}
-      <div style={{ display: 'flex', gap: '0.5rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.5rem' }}>
-        <button
-          type="button"
-          onClick={() => setActiveTab('stages')}
-          style={{
-            padding: '0.5rem 1rem',
-            borderRadius: '6px',
-            background: activeTab === 'stages' ? 'var(--accent-color, #2563eb)' : 'transparent',
-            color: activeTab === 'stages' ? '#fff' : 'var(--text-secondary)',
-            border: 'none',
-            cursor: 'pointer',
-            fontSize: '0.82rem',
-            fontWeight: 700
-          }}
-        >
-          1. 6-Stage Pipeline Master
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('categories')}
-          style={{
-            padding: '0.5rem 1rem',
-            borderRadius: '6px',
-            background: activeTab === 'categories' ? 'var(--accent-color, #2563eb)' : 'transparent',
-            color: activeTab === 'categories' ? '#fff' : 'var(--text-secondary)',
-            border: 'none',
-            cursor: 'pointer',
-            fontSize: '0.82rem',
-            fontWeight: 700
-          }}
-        >
-          2. 8 Categories &amp; SLA Matrix
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('rules')}
-          style={{
-            padding: '0.5rem 1rem',
-            borderRadius: '6px',
-            background: activeTab === 'rules' ? 'var(--accent-color, #2563eb)' : 'transparent',
-            color: activeTab === 'rules' ? '#fff' : 'var(--text-secondary)',
-            border: 'none',
-            cursor: 'pointer',
-            fontSize: '0.82rem',
-            fontWeight: 700
-          }}
-        >
-          3. Field Service &amp; Technician Rules
-        </button>
+      {/* Global Commercial & Field Service Policy Rules Card */}
+      <div style={{
+        background: 'var(--bg-surface)',
+        border: '1px solid var(--border-light)',
+        borderRadius: '12px',
+        padding: '1.25rem',
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+        gap: '1.25rem'
+      }}>
+        {/* TAT Mode */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+          <label style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+            ⏱️ TAT SLA Calculation Mode
+          </label>
+          <select
+            value={config.tat_mode || 'DYNAMIC'}
+            onChange={e => setConfig(prev => ({ ...prev, tat_mode: e.target.value }))}
+            style={{
+              padding: '0.55rem 0.75rem',
+              background: 'var(--bg-primary)',
+              border: '1px solid var(--border-light)',
+              borderRadius: '8px',
+              color: 'var(--text-primary)',
+              fontSize: '0.84rem'
+            }}
+          >
+            <option value="DYNAMIC">Dynamic Handover (Actual Stage Transition Timestamp + Target TAT)</option>
+            <option value="FIXED">Fixed Baseline SLA (Planned Ticket Creation + Master SLA)</option>
+            <option value="DUAL">Dual Mode (Show both Fixed Baseline &amp; Dynamic Handover)</option>
+          </select>
+          <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
+            Controls how expected stage completion deadlines are calculated in Indian Standard Time (IST).
+          </span>
+        </div>
+
+        {/* Field Service & Technician Policies */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          <label style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+            🧑‍🔧 Field Service &amp; Technician Policies
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--text-secondary)', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={!!config.otp_verification_mandatory}
+              onChange={e => setConfig(prev => ({ ...prev, otp_verification_mandatory: e.target.checked }))}
+            />
+            <span>Mandatory Customer 4-Digit OTP in C05 before ticket closure</span>
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--text-secondary)', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={!!config.allow_external_technician}
+              onChange={e => setConfig(prev => ({ ...prev, allow_external_technician: e.target.checked }))}
+            />
+            <span>Allow authorized third-party / local vendor mechanic assignment in C03</span>
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--text-secondary)', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={!!config.enable_spares_tracking}
+              onChange={e => setConfig(prev => ({ ...prev, enable_spares_tracking: e.target.checked }))}
+            />
+            <span>Enable replacement spare parts consumption tracking on Digital Job Card</span>
+          </label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.2rem' }}>
+            <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Max Photo Size:</span>
+            <input
+              type="number"
+              min={50}
+              max={500}
+              value={config.max_photo_size_kb || 100}
+              onChange={e => setConfig(prev => ({ ...prev, max_photo_size_kb: Number(e.target.value) || 100 }))}
+              style={{ width: '65px', padding: '0.25rem 0.4rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '6px', color: 'var(--text-primary)', fontSize: '0.78rem', textAlign: 'center' }}
+            />
+            <span style={{ fontSize: '0.76rem', color: '#10b981', fontWeight: 600 }}>KB (Client-side auto-compressed)</span>
+          </div>
+        </div>
       </div>
 
-      {/* TAB 1: 6 Stages Manager */}
-      {activeTab === 'stages' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-          {(config.stages || []).map((st, idx) => (
-            <div
-              key={st.id}
-              style={{
-                background: 'var(--bg-surface)',
-                border: '1px solid var(--border-light)',
+      {/* 8-Categories & SLA Auto-Routing Section */}
+      <div style={{
+        background: 'var(--bg-surface)',
+        border: '1px solid var(--border-light)',
+        borderRadius: '12px',
+        overflow: 'hidden'
+      }}>
+        <div style={{
+          padding: '1rem 1.25rem',
+          borderBottom: '1px solid var(--border-light)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center'
+        }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: '0.98rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+              8 Complaint Categories &amp; Department Routing Matrix
+            </h3>
+            <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+              Assign default departments, standard SLA turnaround hours, and technician deputation rules.
+            </span>
+          </div>
+          <span style={{
+            fontSize: '0.76rem',
+            padding: '0.25rem 0.6rem',
+            background: 'rgba(239, 68, 68, 0.1)',
+            color: '#ef4444',
+            borderRadius: '6px',
+            fontWeight: 700
+          }}>
+            {(config.categories || []).length} Categories Active
+          </span>
+        </div>
+
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.83rem' }}>
+            <thead>
+              <tr style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
+                <th style={{ padding: '0.75rem 1rem', width: '250px' }}>Category Name</th>
+                <th style={{ padding: '0.75rem 1rem', minWidth: '220px' }}>Default Assigned Department</th>
+                <th style={{ padding: '0.75rem 1rem', width: '120px' }}>SLA (Hours)</th>
+                <th style={{ padding: '0.75rem 1rem', width: '200px' }}>Technician Requirement</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(config.categories || []).map(cat => (
+                <tr key={cat.id} style={{ borderBottom: '1px solid var(--border-light)' }}>
+                  <td style={{ padding: '0.75rem 1rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: cat.color || '#ef4444' }} />
+                      <strong style={{ color: 'var(--text-primary)' }}>{cat.name}</strong>
+                    </div>
+                  </td>
+
+                  <td style={{ padding: '0.75rem 1rem' }}>
+                    <select
+                      value={cat.department}
+                      onChange={e => handleCategoryChange(cat.id, 'department', e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '0.35rem 0.55rem',
+                        background: 'var(--bg-primary)',
+                        border: '1px solid var(--border-light)',
+                        borderRadius: '6px',
+                        color: 'var(--text-primary)',
+                        fontSize: '0.8rem'
+                      }}
+                    >
+                      {DEPARTMENTS.map(d => (
+                        <option key={d.id} value={d.id}>{d.label}</option>
+                      ))}
+                    </select>
+                  </td>
+
+                  <td style={{ padding: '0.75rem 1rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                      <input
+                        type="number"
+                        min="1"
+                        max="720"
+                        value={cat.sla_hours || 24}
+                        onChange={e => handleCategoryChange(cat.id, 'sla_hours', Number(e.target.value) || 24)}
+                        style={{
+                          width: '60px',
+                          padding: '0.35rem 0.4rem',
+                          background: 'var(--bg-primary)',
+                          border: '1px solid var(--border-light)',
+                          borderRadius: '6px',
+                          color: 'var(--text-primary)',
+                          fontSize: '0.82rem',
+                          textAlign: 'center'
+                        }}
+                      />
+                      <span style={{ fontSize: '0.76rem', color: 'var(--text-secondary)' }}>Hrs</span>
+                    </div>
+                  </td>
+
+                  <td style={{ padding: '0.75rem 1rem' }}>
+                    <select
+                      value={cat.technician_mode || 'NONE'}
+                      onChange={e => handleCategoryChange(cat.id, 'technician_mode', e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '0.35rem 0.55rem',
+                        background: 'var(--bg-primary)',
+                        border: '1px solid var(--border-light)',
+                        borderRadius: '6px',
+                        color: 'var(--text-primary)',
+                        fontSize: '0.8rem'
+                      }}
+                    >
+                      <option value="MANDATORY">🧑‍🔧 Mandatory Field Visit</option>
+                      <option value="OPTIONAL">Optional Site Visit</option>
+                      <option value="NONE">None (Internal Dept Action)</option>
+                    </select>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* 6-Stages Configuration List - EXACT SAME TABLE AS OrderPipelineConfig */}
+      <div style={{
+        background: 'var(--bg-surface)',
+        border: '1px solid var(--border-light)',
+        borderRadius: '12px',
+        overflow: 'hidden'
+      }}>
+        <div style={{
+          padding: '1rem 1.25rem',
+          borderBottom: '1px solid var(--border-light)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center'
+        }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: '0.98rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+              6-Stage Master Complaint Lifecycle Flow
+            </h3>
+            <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+              Configure stage names, authorized roles, stage incharge, target TAT hours, and dynamic custom fields.
+            </span>
+          </div>
+          <span style={{
+            fontSize: '0.76rem',
+            padding: '0.25rem 0.6rem',
+            background: 'rgba(56, 189, 248, 0.1)',
+            color: '#0284c7',
+            borderRadius: '6px',
+            fontWeight: 700
+          }}>
+            {(config.stages || []).filter(s => s.is_enabled !== false).length} Active Stages
+          </span>
+        </div>
+
+        {/* 3-Tier Execution Control Banner */}
+        <div style={{
+          margin: '0.85rem 1.25rem',
+          padding: '0.75rem 1rem',
+          background: 'rgba(59, 130, 246, 0.08)',
+          border: '1px solid rgba(59, 130, 246, 0.25)',
+          borderRadius: '8px',
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: '0.75rem',
+          fontSize: '0.8rem',
+          color: 'var(--text-secondary)'
+        }}>
+          <ShieldCheck size={18} style={{ color: '#2563eb', flexShrink: 0, marginTop: '2px' }} />
+          <div>
+            <strong style={{ color: 'var(--text-primary)' }}>3-Tier Stage Execution Control &amp; Permission Matrix Fallback:</strong>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.5rem', marginTop: '0.35rem' }}>
+              <div>
+                <span style={{ color: '#10b981', fontWeight: 700 }}>1. Stage Incharge:</span> If an employee is selected, only they (or Admins) can advance this stage.
+              </div>
+              <div>
+                <span style={{ color: '#38bdf8', fontWeight: 700 }}>2. Authorized Roles:</span> If roles are picked, any staff with those roles can execute.
+              </div>
+              <div>
+                <span style={{ color: '#f59e0b', fontWeight: 700 }}>3. Open Matrix Fallback:</span> If both are blank, access is decided directly by individual user <strong>Permission Matrix (View + Edit)</strong>.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {loading ? (
+          <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+            <RefreshCw size={24} className="animate-spin" style={{ margin: '0 auto 0.5rem auto' }} />
+            Loading complaint pipeline configuration...
+          </div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.83rem' }}>
+              <thead>
+                <tr style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
+                  <th style={{ padding: '0.75rem 0.85rem', width: '70px' }}>Stage</th>
+                  <th style={{ padding: '0.75rem 0.85rem', width: '60px' }}>Active</th>
+                  <th style={{ padding: '0.75rem 0.85rem', minWidth: '150px' }}>Stage Name</th>
+                  <th style={{ padding: '0.75rem 0.85rem', minWidth: '230px' }}>Authorized Roles (Multi-Select)</th>
+                  <th style={{ padding: '0.75rem 0.85rem', minWidth: '200px' }}>Stage Incharge (Assigned Emp)</th>
+                  <th style={{ padding: '0.75rem 0.85rem', width: '105px' }}>Target TAT</th>
+                  <th style={{ padding: '0.75rem 0.85rem', minWidth: '160px' }}>Default Note</th>
+                  <th style={{ padding: '0.75rem 0.85rem', width: '130px', textAlign: 'center' }}>Custom Fields</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(config.stages || []).map((stage) => {
+                  const customFieldsCount = (stage.custom_fields || []).length;
+                  const currentRoles = Array.isArray(stage.authorized_roles) ? stage.authorized_roles : [];
+
+                  return (
+                    <tr
+                      key={stage.id}
+                      style={{
+                        borderBottom: '1px solid var(--border-light)',
+                        opacity: stage.is_enabled === false ? 0.5 : 1,
+                        transition: 'background 0.15s'
+                      }}
+                    >
+                      {/* Stage ID */}
+                      <td style={{ padding: '0.85rem 0.85rem' }}>
+                        <span style={{
+                          display: 'inline-block',
+                          padding: '0.25rem 0.5rem',
+                          borderRadius: '6px',
+                          fontSize: '0.76rem',
+                          fontWeight: 800,
+                          background: `${stage.color || '#3b82f6'}20`,
+                          color: stage.color || '#3b82f6',
+                          border: `1px solid ${stage.color || '#3b82f6'}40`
+                        }}>
+                          {stage.id}
+                        </span>
+                      </td>
+
+                      {/* Active Toggle Switch */}
+                      <td style={{ padding: '0.85rem 0.85rem' }}>
+                        <input
+                          type="checkbox"
+                          checked={stage.is_enabled !== false}
+                          onChange={() => handleToggleStage(stage.id)}
+                          style={{ cursor: 'pointer', width: '16px', height: '16px' }}
+                        />
+                      </td>
+
+                      {/* Stage Name */}
+                      <td style={{ padding: '0.85rem 0.85rem' }}>
+                        <input
+                          type="text"
+                          value={stage.name}
+                          onChange={e => handleStageChange(stage.id, 'name', e.target.value)}
+                          style={{
+                            width: '100%',
+                            padding: '0.4rem 0.6rem',
+                            background: 'var(--bg-primary)',
+                            border: '1px solid var(--border-light)',
+                            borderRadius: '6px',
+                            color: 'var(--text-primary)',
+                            fontSize: '0.83rem',
+                            fontWeight: 700
+                          }}
+                        />
+                      </td>
+
+                      {/* Authorized Roles (Multi-Select Tags) */}
+                      <td style={{ padding: '0.85rem 0.85rem' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', minHeight: '26px', alignItems: 'center' }}>
+                            {currentRoles.length === 0 ? (
+                              <span style={{ fontSize: '0.73rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
+                                🔓 All Roles / Fallback to Matrix
+                              </span>
+                            ) : (
+                              currentRoles.map(rKey => {
+                                const rObj = AVAILABLE_ROLES.find(r => r.key === rKey);
+                                const rLabel = rObj?.label || rKey;
+                                const rColor = rObj?.color || '#3b82f6';
+                                return (
+                                  <span
+                                    key={rKey}
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '0.25rem',
+                                      fontSize: '0.71rem',
+                                      fontWeight: 700,
+                                      padding: '0.15rem 0.4rem',
+                                      borderRadius: '4px',
+                                      background: `${rColor}15`,
+                                      color: rColor,
+                                      border: `1px solid ${rColor}35`
+                                    }}
+                                  >
+                                    {rLabel}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveRoleFromStage(stage.id, rKey)}
+                                      title={`Remove ${rLabel}`}
+                                      style={{
+                                        background: 'transparent',
+                                        border: 'none',
+                                        cursor: 'pointer',
+                                        padding: 0,
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        color: 'inherit'
+                                      }}
+                                    >
+                                      <X size={11} />
+                                    </button>
+                                  </span>
+                                );
+                              })
+                            )}
+                          </div>
+
+                          <select
+                            value=""
+                            onChange={e => {
+                              if (e.target.value) {
+                                handleAddRoleToStage(stage.id, e.target.value);
+                              }
+                            }}
+                            style={{
+                              width: '100%',
+                              padding: '0.3rem 0.5rem',
+                              background: 'var(--bg-primary)',
+                              border: '1px solid var(--border-light)',
+                              borderRadius: '6px',
+                              color: 'var(--text-primary)',
+                              fontSize: '0.75rem'
+                            }}
+                          >
+                            <option value="">➕ Add Authorized Role...</option>
+                            {AVAILABLE_ROLES
+                              .filter(r => !currentRoles.includes(r.key))
+                              .map(r => (
+                                <option key={r.key} value={r.key}>
+                                  {r.label}
+                                </option>
+                              ))}
+                          </select>
+                        </div>
+                      </td>
+
+                      {/* Stage Incharge (Assigned Employee) */}
+                      <td style={{ padding: '0.85rem 0.85rem' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                          <select
+                            value={stage.assigned_emp_id || ''}
+                            onChange={e => handleAssignEmpToStage(stage.id, e.target.value)}
+                            style={{
+                              width: '100%',
+                              padding: '0.35rem 0.5rem',
+                              background: 'var(--bg-primary)',
+                              border: stage.assigned_emp_id ? '1px solid #10b981' : '1px solid var(--border-light)',
+                              borderRadius: '6px',
+                              color: stage.assigned_emp_id ? '#10b981' : 'var(--text-primary)',
+                              fontSize: '0.76rem',
+                              fontWeight: stage.assigned_emp_id ? 700 : 400
+                            }}
+                          >
+                            <option value="">👥 Anyone with Role / Open</option>
+                            {teamMembers.map(emp => {
+                              const empId = emp.user_id || emp.id;
+                              const empName = emp.emp_name || emp.name || emp.full_name || emp.email;
+                              const empRole = emp.role || 'Staff';
+                              return (
+                                <option key={empId} value={empId}>
+                                  👤 {empName} ({empRole})
+                                </option>
+                              );
+                            })}
+                          </select>
+                          {stage.assigned_emp_name && (
+                            <span style={{ fontSize: '0.71rem', color: '#10b981', fontWeight: 600 }}>
+                              ✓ Incharge: {stage.assigned_emp_name}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Target TAT */}
+                      <td style={{ padding: '0.85rem 0.85rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                          <input
+                            type="number"
+                            min="0"
+                            max="720"
+                            value={stage.tat_hours ?? 4}
+                            onChange={e => handleStageChange(stage.id, 'tat_hours', Number(e.target.value) || 0)}
+                            style={{
+                              width: '55px',
+                              padding: '0.35rem 0.4rem',
+                              background: 'var(--bg-primary)',
+                              border: '1px solid var(--border-light)',
+                              borderRadius: '6px',
+                              color: 'var(--text-primary)',
+                              fontSize: '0.82rem',
+                              textAlign: 'center'
+                            }}
+                          />
+                          <span style={{ fontSize: '0.76rem', color: 'var(--text-secondary)' }}>Hrs</span>
+                        </div>
+                      </td>
+
+                      {/* Default Note */}
+                      <td style={{ padding: '0.85rem 0.85rem' }}>
+                        <input
+                          type="text"
+                          value={stage.default_note || ''}
+                          onChange={e => handleStageChange(stage.id, 'default_note', e.target.value)}
+                          placeholder="Standard note text..."
+                          style={{
+                            width: '100%',
+                            padding: '0.35rem 0.5rem',
+                            background: 'var(--bg-primary)',
+                            border: '1px solid var(--border-light)',
+                            borderRadius: '6px',
+                            color: 'var(--text-primary)',
+                            fontSize: '0.78rem'
+                          }}
+                        />
+                      </td>
+
+                      {/* Custom Fields Action */}
+                      <td style={{ padding: '0.85rem 0.85rem', textAlign: 'center' }}>
+                        <button
+                          type="button"
+                          onClick={() => openFieldModal(stage)}
+                          style={{
+                            padding: '0.35rem 0.65rem',
+                            background: customFieldsCount > 0 ? 'rgba(99, 102, 241, 0.15)' : 'var(--bg-primary)',
+                            border: customFieldsCount > 0 ? '1px solid #6366f1' : '1px solid var(--border-light)',
+                            borderRadius: '6px',
+                            color: customFieldsCount > 0 ? '#4f46e5' : 'var(--text-secondary)',
+                            fontSize: '0.78rem',
+                            fontWeight: 700,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.35rem',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <Edit3 size={13} />
+                          {customFieldsCount} Field{customFieldsCount === 1 ? '' : 's'}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Custom Fields Builder Modal - EXACT SAME AS OrderPipelineConfig */}
+      {editingStage && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0,0,0,0.6)',
+          backdropFilter: 'blur(3px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '1rem'
+        }}>
+          <div style={{
+            background: 'var(--bg-surface)',
+            border: '1px solid var(--border-light)',
+            borderRadius: '14px',
+            width: '100%',
+            maxWidth: '640px',
+            maxHeight: '90vh',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3)'
+          }}>
+            {/* Modal Header */}
+            <div style={{
+              padding: '1.25rem 1.5rem',
+              borderBottom: '1px solid var(--border-light)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                  Dynamic Fields: {editingStage.id} — {editingStage.name}
+                </h3>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                  Fields added here will automatically render in the Action Modal of this stage.
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingStage(null)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--text-secondary)',
+                  cursor: 'pointer',
+                  padding: '0.4rem',
+                  display: 'flex'
+                }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div style={{ padding: '1.25rem 1.5rem', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              {/* Existing Fields List */}
+              <div>
+                <label style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.5rem', display: 'block' }}>
+                  Current Configured Fields ({(editingStage.custom_fields || []).length}):
+                </label>
+                {(editingStage.custom_fields || []).length === 0 ? (
+                  <div style={{
+                    padding: '1.25rem',
+                    background: 'var(--bg-primary)',
+                    borderRadius: '8px',
+                    textAlign: 'center',
+                    color: 'var(--text-secondary)',
+                    fontSize: '0.82rem'
+                  }}>
+                    No custom fields configured for this stage yet. Add one below.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    {(editingStage.custom_fields || []).map((field) => (
+                      <div
+                        key={field.id}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '0.65rem 0.85rem',
+                          background: 'var(--bg-primary)',
+                          border: '1px solid var(--border-light)',
+                          borderRadius: '8px',
+                          fontSize: '0.82rem'
+                        }}
+                      >
+                        <div>
+                          <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+                            {field.label} {field.required && <span style={{ color: '#ef4444' }}>*</span>}
+                          </div>
+                          <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
+                            Type: <span style={{ fontWeight: 600, color: '#38bdf8' }}>{field.type}</span> | Key: <code>{field.id}</code>
+                            {field.options && ` | Options: ${field.options.join(', ')}`}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteCustomField(field.id)}
+                          style={{
+                            background: 'rgba(239, 68, 68, 0.1)',
+                            border: '1px solid rgba(239, 68, 68, 0.3)',
+                            borderRadius: '6px',
+                            color: '#ef4444',
+                            padding: '0.35rem 0.5rem',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.25rem',
+                            fontSize: '0.74rem'
+                          }}
+                        >
+                          <Trash2 size={13} />
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Add New Custom Field Box */}
+              <div style={{
+                background: 'var(--bg-primary)',
+                border: '1px dashed var(--border-light)',
                 borderRadius: '10px',
                 padding: '1rem',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '0.75rem'
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-                  <span style={{
-                    fontSize: '0.8rem',
-                    fontWeight: 800,
-                    color: st.color,
-                    background: `${st.color}20`,
-                    padding: '0.2rem 0.5rem',
-                    borderRadius: '6px',
-                    border: `1px solid ${st.color}`
-                  }}>
-                    {st.id}
-                  </span>
-                  <input
-                    type="text"
-                    value={st.name}
-                    onChange={e => handleStageChange(st.id, 'name', e.target.value)}
-                    style={{
-                      fontSize: '0.92rem',
-                      fontWeight: 700,
-                      color: 'var(--text-primary)',
-                      background: 'var(--bg-primary)',
-                      border: '1px solid var(--border-light)',
-                      borderRadius: '6px',
-                      padding: '0.35rem 0.65rem',
-                      minWidth: '220px'
-                    }}
-                  />
-                  <input
-                    type="color"
-                    value={st.color}
-                    onChange={e => handleStageChange(st.id, 'color', e.target.value)}
-                    style={{ width: '32px', height: '32px', borderRadius: '6px', border: 'none', cursor: 'pointer', background: 'transparent' }}
-                  />
+                gap: '0.85rem'
+              }}>
+                <div style={{ fontSize: '0.86rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <Plus size={16} style={{ color: '#2563eb' }} />
+                  Add New Custom Field
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                    <Clock size={14} style={{ color: 'var(--text-secondary)' }} />
-                    <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>Default SLA (Hours):</span>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                  <div>
+                    <label style={{ fontSize: '0.76rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                      Field Label *
+                    </label>
                     <input
-                      type="number"
-                      min={1}
-                      value={st.tat_hours || 4}
-                      onChange={e => handleStageChange(st.id, 'tat_hours', Number(e.target.value))}
-                      style={{ width: '65px', padding: '0.35rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '6px', color: 'var(--text-primary)', fontSize: '0.8rem', textAlign: 'center' }}
+                      type="text"
+                      placeholder="e.g. Defect Component Name"
+                      value={newField.label}
+                      onChange={e => setNewField({ ...newField, label: e.target.value })}
+                      style={{
+                        width: '100%',
+                        padding: '0.45rem 0.6rem',
+                        background: 'var(--bg-surface)',
+                        border: '1px solid var(--border-light)',
+                        borderRadius: '6px',
+                        color: 'var(--text-primary)',
+                        fontSize: '0.82rem',
+                        marginTop: '0.25rem'
+                      }}
                     />
                   </div>
 
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.78rem', color: 'var(--text-primary)', cursor: 'pointer' }}>
+                  <div>
+                    <label style={{ fontSize: '0.76rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                      Field Type
+                    </label>
+                    <select
+                      value={newField.type}
+                      onChange={e => setNewField({ ...newField, type: e.target.value })}
+                      style={{
+                        width: '100%',
+                        padding: '0.45rem 0.6rem',
+                        background: 'var(--bg-surface)',
+                        border: '1px solid var(--border-light)',
+                        borderRadius: '6px',
+                        color: 'var(--text-primary)',
+                        fontSize: '0.82rem',
+                        marginTop: '0.25rem'
+                      }}
+                    >
+                      {FIELD_TYPES.map(ft => (
+                        <option key={ft.value} value={ft.value}>{ft.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {newField.type === 'select' && (
+                  <div>
+                    <label style={{ fontSize: '0.76rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                      Dropdown Options (comma-separated) *
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Option 1, Option 2, Option 3"
+                      value={newField.optionsText}
+                      onChange={e => setNewField({ ...newField, optionsText: e.target.value })}
+                      style={{
+                        width: '100%',
+                        padding: '0.45rem 0.6rem',
+                        background: 'var(--bg-surface)',
+                        border: '1px solid var(--border-light)',
+                        borderRadius: '6px',
+                        color: 'var(--text-primary)',
+                        fontSize: '0.82rem',
+                        marginTop: '0.25rem'
+                      }}
+                    />
+                  </div>
+                )}
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                  <div>
+                    <label style={{ fontSize: '0.76rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                      Placeholder Text
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Enter value"
+                      value={newField.placeholder}
+                      onChange={e => setNewField({ ...newField, placeholder: e.target.value })}
+                      style={{
+                        width: '100%',
+                        padding: '0.45rem 0.6rem',
+                        background: 'var(--bg-surface)',
+                        border: '1px solid var(--border-light)',
+                        borderRadius: '6px',
+                        color: 'var(--text-primary)',
+                        fontSize: '0.82rem',
+                        marginTop: '0.25rem'
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: '0.76rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                      Default Value
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Optional default"
+                      value={newField.default_value}
+                      onChange={e => setNewField({ ...newField, default_value: e.target.value })}
+                      style={{
+                        width: '100%',
+                        padding: '0.45rem 0.6rem',
+                        background: 'var(--bg-surface)',
+                        border: '1px solid var(--border-light)',
+                        borderRadius: '6px',
+                        color: 'var(--text-primary)',
+                        fontSize: '0.82rem',
+                        marginTop: '0.25rem'
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '0.25rem' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', color: 'var(--text-secondary)', cursor: 'pointer' }}>
                     <input
                       type="checkbox"
-                      checked={st.is_enabled !== false}
-                      onChange={e => handleStageChange(st.id, 'is_enabled', e.target.checked)}
+                      checked={newField.required}
+                      onChange={e => setNewField({ ...newField, required: e.target.checked })}
                     />
-                    <span>Active</span>
+                    <span>Mandatory / Required Field</span>
                   </label>
-                </div>
-              </div>
 
-              {/* Roles Selector */}
-              <div>
-                <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.35rem' }}>
-                  Authorized Roles to Advance this Stage:
-                </span>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
-                  {AVAILABLE_ROLES.map(role => {
-                    const isSelected = (st.authorized_roles || []).includes(role.key);
-                    return (
-                      <button
-                        type="button"
-                        key={role.key}
-                        onClick={() => handleToggleRoleInStage(st.id, role.key)}
-                        style={{
-                          fontSize: '0.72rem',
-                          fontWeight: 600,
-                          padding: '0.2rem 0.5rem',
-                          borderRadius: '4px',
-                          border: isSelected ? `1px solid ${role.color}` : '1px solid var(--border-light)',
-                          background: isSelected ? `${role.color}20` : 'var(--bg-primary)',
-                          color: isSelected ? role.color : 'var(--text-secondary)',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        {isSelected ? '✓ ' : '+ '}{role.label}
-                      </button>
-                    );
-                  })}
+                  <button
+                    type="button"
+                    onClick={handleAddCustomField}
+                    style={{
+                      padding: '0.45rem 1rem',
+                      background: '#2563eb',
+                      border: 'none',
+                      borderRadius: '6px',
+                      color: '#ffffff',
+                      fontSize: '0.82rem',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.35rem'
+                    }}
+                  >
+                    <Plus size={14} />
+                    Insert Field
+                  </button>
                 </div>
               </div>
             </div>
-          ))}
-        </div>
-      )}
 
-      {/* TAB 2: 8 Categories Matrix */}
-      {activeTab === 'categories' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-          {(config.categories || []).map(cat => (
-            <div
-              key={cat.id}
-              style={{
-                background: 'var(--bg-surface)',
-                border: '1px solid var(--border-light)',
-                borderRadius: '8px',
-                padding: '0.85rem 1rem',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                flexWrap: 'wrap',
-                gap: '0.75rem'
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flex: '1 1 240px' }}>
-                <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: cat.color || '#ef4444' }} />
-                <div>
-                  <strong style={{ fontSize: '0.86rem', color: 'var(--text-primary)' }}>{cat.name}</strong>
-                  <span style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-secondary)' }}>ID: {cat.id}</span>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-                {/* Department */}
-                <div>
-                  <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '2px' }}>Assigned Dept:</span>
-                  <select
-                    value={cat.department}
-                    onChange={e => handleCategoryChange(cat.id, 'department', e.target.value)}
-                    style={{ padding: '0.35rem 0.5rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '6px', color: 'var(--text-primary)', fontSize: '0.78rem' }}
-                  >
-                    {DEPARTMENTS.map(d => (
-                      <option key={d.id} value={d.id}>{d.label}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* SLA Hours */}
-                <div>
-                  <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '2px' }}>SLA (Hours):</span>
-                  <input
-                    type="number"
-                    min={1}
-                    value={cat.sla_hours || 24}
-                    onChange={e => handleCategoryChange(cat.id, 'sla_hours', Number(e.target.value))}
-                    style={{ width: '65px', padding: '0.35rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '6px', color: 'var(--text-primary)', fontSize: '0.8rem', textAlign: 'center' }}
-                  />
-                </div>
-
-                {/* Technician Mode */}
-                <div>
-                  <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '2px' }}>Technician:</span>
-                  <select
-                    value={cat.technician_mode || 'NONE'}
-                    onChange={e => handleCategoryChange(cat.id, 'technician_mode', e.target.value)}
-                    style={{ padding: '0.35rem 0.5rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '6px', color: 'var(--text-primary)', fontSize: '0.78rem' }}
-                  >
-                    <option value="MANDATORY">🧑‍🔧 Mandatory</option>
-                    <option value="OPTIONAL">Optional Site Visit</option>
-                    <option value="NONE">None (Internal Only)</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* TAB 3: Field Service & Technician Rules */}
-      {activeTab === 'rules' && (
-        <div style={{
-          background: 'var(--bg-surface)',
-          border: '1px solid var(--border-light)',
-          borderRadius: '10px',
-          padding: '1.25rem',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '1.25rem'
-        }}>
-          <div>
-            <h4 style={{ margin: '0 0 0.5rem', fontSize: '0.9rem', color: 'var(--text-primary)', fontWeight: 700 }}>
-              Field Service &amp; Technician Policies
-            </h4>
-            <p style={{ margin: 0, fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
-              Configure validation rules for field technician execution and customer sign-off
-            </p>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
-            <label style={{ display: 'flex', alignItems: 'flex-start', gap: '0.65rem', padding: '0.85rem', background: 'var(--bg-primary)', borderRadius: '8px', border: '1px solid var(--border-light)', cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={config.otp_verification_mandatory !== false}
-                onChange={e => setConfig({ ...config, otp_verification_mandatory: e.target.checked })}
-                style={{ marginTop: '3px' }}
-              />
-              <div>
-                <strong style={{ fontSize: '0.82rem', color: 'var(--text-primary)', display: 'block' }}>Mandatory Customer OTP in C05</strong>
-                <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>Technician cannot advance ticket without entering customer 4-digit OTP or signed sheet</span>
-              </div>
-            </label>
-
-            <label style={{ display: 'flex', alignItems: 'flex-start', gap: '0.65rem', padding: '0.85rem', background: 'var(--bg-primary)', borderRadius: '8px', border: '1px solid var(--border-light)', cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={config.allow_external_technician !== false}
-                onChange={e => setConfig({ ...config, allow_external_technician: e.target.checked })}
-                style={{ marginTop: '3px' }}
-              />
-              <div>
-                <strong style={{ fontSize: '0.82rem', color: 'var(--text-primary)', display: 'block' }}>Allow Third-Party / Local Technicians</strong>
-                <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>Permit assigning local vendor mechanics when Swan in-house engineers are unavailable</span>
-              </div>
-            </label>
-
-            <label style={{ display: 'flex', alignItems: 'flex-start', gap: '0.65rem', padding: '0.85rem', background: 'var(--bg-primary)', borderRadius: '8px', border: '1px solid var(--border-light)', cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={config.enable_spares_tracking !== false}
-                onChange={e => setConfig({ ...config, enable_spares_tracking: e.target.checked })}
-                style={{ marginTop: '3px' }}
-              />
-              <div>
-                <strong style={{ fontSize: '0.82rem', color: 'var(--text-primary)', display: 'block' }}>Spares Consumption Tracking</strong>
-                <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>Record replaced spare parts and quantities consumed on site in Job Card</span>
-              </div>
-            </label>
-
-            <div style={{ padding: '0.85rem', background: 'var(--bg-primary)', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
-              <strong style={{ fontSize: '0.82rem', color: 'var(--text-primary)', display: 'block', marginBottom: '0.35rem' }}>Max Photo / Document Size Limit</strong>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <input
-                  type="number"
-                  min={50}
-                  max={500}
-                  value={config.max_photo_size_kb || 100}
-                  onChange={e => setConfig({ ...config, max_photo_size_kb: Number(e.target.value) })}
-                  style={{ width: '80px', padding: '0.35rem', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '6px', color: 'var(--text-primary)', fontSize: '0.8rem', textAlign: 'center' }}
-                />
-                <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>KB (Strictly compressed on device to save network)</span>
-              </div>
+            {/* Modal Footer */}
+            <div style={{
+              padding: '1rem 1.5rem',
+              borderTop: '1px solid var(--border-light)',
+              display: 'flex',
+              justifyContent: 'flex-end',
+              background: 'var(--bg-surface)'
+            }}>
+              <button
+                type="button"
+                onClick={() => setEditingStage(null)}
+                style={{
+                  padding: '0.5rem 1.25rem',
+                  background: '#2563eb',
+                  border: 'none',
+                  borderRadius: '6px',
+                  color: '#ffffff',
+                  fontSize: '0.84rem',
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                Done
+              </button>
             </div>
           </div>
         </div>

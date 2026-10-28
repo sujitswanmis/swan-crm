@@ -243,7 +243,8 @@ export const PARTY_SUBTAB_TITLES = {
   s08: 'S08 Partner Activation',
   report: 'Party Master Report',
   r03: 'Party Master Report',
-  hierarchy_tree: 'Channel Hierarchy Tree'
+  hierarchy_tree: 'Channel Hierarchy Tree',
+  end_customers: 'End Customer Master'
 };
 
 export const CHANNEL_OPS_SUBTAB_TITLES = {
@@ -252,7 +253,8 @@ export const CHANNEL_OPS_SUBTAB_TITLES = {
   order_pipeline: 'Order to Delivery Pipeline',
   order_feedback: 'Post-Order Feedback',
   monthly_feedback: 'Monthly Health Checks',
-  complaints: 'Complaint Management'
+  complaints: 'Complaint Management',
+  end_customers: 'End Customer Master'
 };
 
 export const MODULE_DISPLAY_NAMES = {
@@ -5254,6 +5256,16 @@ export default function CRMContainer({
                                         🌳 Channel Hierarchy Tree
                                       </button>
                                     )}
+
+                                    {canSeePartySub('end_customers') && (
+                                      <button
+                                        onClick={() => handlePartySubTabChange('end_customers')}
+                                        className="submenu-item"
+                                        data-active={activeTab === 'party' && partySubTab === 'end_customers'}
+                                      >
+                                        🚜 End Customer Master
+                                      </button>
+                                    )}
                                   </>
                                 );
                               })()}
@@ -5321,6 +5333,16 @@ export default function CRMContainer({
                                   data-active={activeTab === 'channel_ops' && channelOpsSubTab === 'complaints'}
                                 >
                                   ⚠️ Complaint Management
+                                </button>
+                              )}
+
+                              {getSubItemPermissions(moduleAccess, userRole, 'channel_ops', 'end_customers').view && (
+                                <button
+                                  onClick={() => handleChannelOpsSubTabChange('end_customers')}
+                                  className="submenu-item"
+                                  data-active={activeTab === 'channel_ops' && channelOpsSubTab === 'end_customers'}
+                                >
+                                  🚜 End Customer Master
                                 </button>
                               )}
                             </div>

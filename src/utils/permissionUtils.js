@@ -109,6 +109,10 @@ export function getSubItemPermissions(moduleAccess, userRole, moduleId, subItemI
       if (moduleId === 'settings' && subItemId === 'complaints_config') {
         return { view: parentPerms.view, add: parentPerms.add, edit: parentPerms.edit, delete: false };
       }
+      // If this is end_customers in channel_ops or party, inherit from parent permissions if not explicitly disabled
+      if ((moduleId === 'channel_ops' || moduleId === 'party') && subItemId === 'end_customers') {
+        return { view: parentPerms.view, add: parentPerms.add, edit: parentPerms.edit, delete: false };
+      }
       // If this is complaint stages (c01..c06) in channel_ops, inherit from complaints if not explicitly disabled
       if (moduleId === 'channel_ops' && /^c\d{2}$/i.test(subItemId)) {
         const compPerm = subItems['complaints'];

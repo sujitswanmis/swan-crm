@@ -37,6 +37,7 @@ import { INDIAN_STATE_DISTRICTS, ALL_INDIAN_STATES } from '@/config/indianStateD
 import StageDataTable from './StageDataTable';
 import StageConfigModal, { B2B_OPERATIONAL_STATUSES } from './StageConfigModal';
 import PartyMasterDashboard from './PartyMasterDashboard';
+import EndCustomerMasterModule from '../Orders/EndCustomerMasterModule';
 import MaskedPhoneDisplay from '../common/MaskedPhoneDisplay';
 import { PRODUCT_GROUPS } from '@/config/productCatalog';
 import useTableColumnResize, { ColumnResizer } from '@/utils/tableColumnResize';
@@ -5203,6 +5204,23 @@ export default function PartyMasterModule({
             )}
           </div>
         </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* TAB: END CUSTOMER MASTER DIRECTORY */}
+      {/* ========================================================= */}
+      {activeTab === 'end_customers' && (
+        <EndCustomerMasterModule
+          tenantId={tenantId}
+          userCompany={userCompany}
+          userRole={userRole}
+          userName={userName}
+          onNavigateToComplaints={(cust) => {
+            if (onNavigateToChannelOps) {
+              onNavigateToChannelOps('complaints');
+            }
+          }}
+        />
       )}
 
       {/* ========================================================= */}
