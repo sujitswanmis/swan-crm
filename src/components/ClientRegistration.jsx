@@ -3580,39 +3580,24 @@ export default function ClientRegistration({
                       <table style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.8rem', textAlign: 'left' }}>
                         <thead style={{ background: 'var(--bg-primary)' }}>
                           <tr>
-                            <th style={{ 
-                              position: 'sticky', 
-                              top: 0,
-                              left: 0, 
-                              zIndex: 35, 
-                              background: 'var(--bg-primary)', 
-                              width: '52px', 
-                              minWidth: '52px', 
-                              maxWidth: '52px', 
-                              boxSizing: 'border-box',
-                              padding: '0.6rem 0.3rem', 
-                              fontWeight: 700, 
-                              textAlign: 'center', 
-                              borderBottom: '2px solid var(--border-light)', 
-                              borderRight: '1px solid var(--border-light)' 
-                            }}>#</th>
-                            <th style={{ 
-                              position: 'sticky', 
-                              top: 0,
-                              left: '52px', 
-                              zIndex: 35, 
-                              background: 'var(--bg-primary)', 
-                              width: '190px', 
-                              minWidth: '190px', 
-                              maxWidth: '190px', 
-                              boxSizing: 'border-box',
-                              padding: '0.6rem 0.5rem', 
-                              fontWeight: 700, 
-                              textAlign: 'center', 
-                              borderBottom: '2px solid var(--border-light)', 
-                              borderRight: '2px solid var(--border-light)', 
-                              boxShadow: '4px 0 6px -2px rgba(0,0,0,0.15)' 
-                            }}>Status</th>
+                            <th 
+                              className="bulk-preview-sticky-col-1"
+                              style={{ 
+                                padding: '0.6rem 0.3rem', 
+                                fontWeight: 700, 
+                                textAlign: 'center', 
+                                borderBottom: '2px solid var(--border-light)', 
+                                borderRight: '1px solid var(--border-light)' 
+                              }}>#</th>
+                            <th 
+                              className="bulk-preview-sticky-col-2"
+                              style={{ 
+                                padding: '0.6rem 0.5rem', 
+                                fontWeight: 700, 
+                                textAlign: 'center', 
+                                borderBottom: '2px solid var(--border-light)', 
+                                borderRight: '2px solid var(--border-light)' 
+                              }}>Status</th>
                             {mappedDisplayFields.map(field => (
                               <th key={field.key} style={{ 
                                 position: 'sticky',
@@ -3641,40 +3626,29 @@ export default function ClientRegistration({
                                   backgroundColor: rowBg
                                 }}
                               >
-                                <td style={{ 
-                                  position: 'sticky', 
-                                  left: 0, 
-                                  zIndex: 25, 
-                                  width: '52px', 
-                                  minWidth: '52px', 
-                                  maxWidth: '52px', 
-                                  boxSizing: 'border-box',
-                                  padding: '0.5rem 0.3rem', 
-                                  textAlign: 'center', 
-                                  color: 'var(--text-secondary)', 
-                                  fontSize: '0.75rem', 
-                                  fontFamily: 'monospace', 
-                                  backgroundColor: rowBg, 
-                                  borderBottom: '1px solid var(--border-light)', 
-                                  borderRight: '1px solid var(--border-light)' 
-                                }}>
+                                <td 
+                                  className="bulk-preview-sticky-col-1"
+                                  style={{ 
+                                    padding: '0.5rem 0.3rem', 
+                                    textAlign: 'center', 
+                                    color: 'var(--text-secondary)', 
+                                    fontSize: '0.75rem', 
+                                    fontFamily: 'monospace', 
+                                    backgroundColor: rowBg, 
+                                    borderBottom: '1px solid var(--border-light)', 
+                                    borderRight: '1px solid var(--border-light)' 
+                                  }}>
                                   {row._rowNum || idx + 1}
                                 </td>
-                                <td style={{ 
-                                  position: 'sticky', 
-                                  left: '52px', 
-                                  zIndex: 25, 
-                                  width: '190px', 
-                                  minWidth: '190px', 
-                                  maxWidth: '190px', 
-                                  boxSizing: 'border-box',
-                                  padding: '0.5rem 0.5rem', 
-                                  textAlign: 'center', 
-                                  backgroundColor: rowBg, 
-                                  borderBottom: '1px solid var(--border-light)', 
-                                  borderRight: '2px solid var(--border-light)', 
-                                  boxShadow: '4px 0 6px -2px rgba(0,0,0,0.15)' 
-                                }}>
+                                <td 
+                                  className="bulk-preview-sticky-col-2"
+                                  style={{ 
+                                    padding: '0.5rem 0.5rem', 
+                                    textAlign: 'center', 
+                                    backgroundColor: rowBg, 
+                                    borderBottom: '1px solid var(--border-light)', 
+                                    borderRight: '2px solid var(--border-light)' 
+                                  }}>
                                   {row._isAlreadyInReport ? (
                                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.2rem' }}>
                                       <span style={{ fontSize: '0.7rem', fontWeight: 800, padding: '0.15rem 0.5rem', borderRadius: '4px', backgroundColor: '#fee2e2', color: '#be123c', border: '1px solid #fecdd3', whiteSpace: 'nowrap' }}>
