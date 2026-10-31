@@ -1289,7 +1289,7 @@ export async function removeQueueItem(queueId, syncedData = null) {
  */
 export const VALID_LEAD_DB_COLUMNS = new Set([
   'id', 'lead_ref_id', 'lead_date', 'name', 'company', 'our_company',
-  'email', 'phone', 'status', 'priority', 'deal_value', 'source',
+  'email', 'phone', 'status', 'client_status', 'priority', 'deal_value', 'source',
   'source_name', 'assigned_to', 'created_by', 'entry_by', 'created_at',
   'follow_up_date', 'business_type', 'business_gst', 'business_contact_1',
   'business_contact_2', 'business_alt_1', 'business_alt_2', 'business_email_1',

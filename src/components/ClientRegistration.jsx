@@ -25,8 +25,9 @@ const IMPORT_FIELDS = [
   { key: 'source_name', label: 'Source Name', standardHeaders: ['Source Name', 'sourcename'] },
   { key: 'entry_by', label: 'Entry By', standardHeaders: ['Entry By', 'entryby', 'Lead Entry By'] },
   { key: 'assigned_to', label: 'Assigned To', standardHeaders: ['Assigned To', 'assignedto', 'assign_to', 'assigned_to', 'agent', 'assigned agent', 'assignee'] },
-  { key: 'status', label: 'Client Status', standardHeaders: ['Client Status', 'clientstatus', 'Lead Status', 'leadstatus', 'status'] },
+  { key: 'client_status', label: 'Client Status', standardHeaders: ['Client Status', 'clientstatus', 'client_status'] },
   { key: 'priority', label: 'Lead Priority Type', standardHeaders: ['Lead Priority Type', 'priority'] },
+  { key: 'status', label: 'Lead Status', standardHeaders: ['Lead Status', 'leadstatus', 'lead_status', 'stage', 'lead stage', 'stage_name', 'status'] },
   { key: 'company', label: 'Business Name', standardHeaders: ['Business Name', 'BusinessName', 'company'] },
   { key: 'business_type', label: 'Business Type', standardHeaders: ['Business Type', 'businesstype'] },
   { key: 'business_gst', label: 'Business GST', standardHeaders: ['Business GST', 'gst', 'gstin', 'gst_no', 'gstno'] },
@@ -92,9 +93,20 @@ const ALL_CONTACT_FIELDS = [
 ];
 const ALL_CONTACT_KEYS = ALL_CONTACT_FIELDS.map(f => f.key);
 
+const DEFAULT_CRM_STAGES = [
+  { name: '01 - New Stage', enabled: true, is_closing: false, substages: ['New Lead', 'Assigned', 'Contact Pending'] },
+  { name: '02 - Contact Stage', enabled: true, is_closing: false, substages: ['Contacted', 'Wrong Number', 'Call not connected', 'No Response', 'ReSchedule'] },
+  { name: '03 - Qualification Stage', enabled: true, is_closing: false, substages: ['Interested', 'Qualified', 'Unqualified', 'Need Identified', 'Budget Confirmed', 'Call not connected', 'No Response', 'ReSchedule'] },
+  { name: '04 - Follow Up Stage', enabled: true, is_closing: false, substages: ['Catalog Shared', 'Follow Up Required', 'Next Follow Up Set', 'Follow Up Done', 'Call not connected', 'No Response', 'ReSchedule'] },
+  { name: '05 - Sales Process Stage', enabled: true, is_closing: false, substages: ['Visit Require Sales Person', 'Before Visit Conference Call Pending', 'Before Visit Conference Call Done', 'Visit Confirmation Date', 'Task Assigned in TrackWick', 'Meeting Pending', 'Meeting Done', 'Negotiation Pending', 'Negotiation Done', 'Client Documentation Pending', 'Client Documentation Done', 'Call not connected', 'No Response', 'ReSchedule'] },
+  { name: '06 - Conversion Stage', enabled: true, is_closing: false, substages: ['Token Amount Pending', 'Token Amount Deposited', 'Client Details Pending', 'Client Details Received', 'Billing 1st Quotation Pending', 'Billing 1st Quotation Sent', 'Quotation Revision Required', 'Quotation Approved by Client', 'Billing 1st Advance Payment Pending', 'Billing 1st Advance Paid', 'Payment Verification Pending', 'Payment Verified', 'Order Confirmed', 'Stock Availability Check', 'Stock Not Available', 'Production Planning Required', 'Delivery Date Confirmed', 'Final Billing 1st Pending', 'Final Billing 1st Done', 'Ready for Dispatch', 'Call not connected', 'No Response', 'ReSchedule'] },
+  { name: '07 - Final Stage', enabled: true, is_closing: true, substages: ['Converted - Out for Delivery', 'Converted - Order Received', 'Converted - Final Feedback From Client', 'Won', 'Lost After Quotation', 'Lost Due to Price Issue', 'Lost Due to Payment Issue', 'Lost Due to Stock Issue', 'Hold - Client Side', 'Hold - Company Side', 'Duplicate Lead', 'Call not connected', 'No Response', 'ReSchedule'] },
+  { name: '08 - Transfer to Party', enabled: true, is_closing: false, substages: ['Pending Confirmation', 'Transferred to Party Master', 'Won - Transferred'] }
+];
+
 const SAMPLE_DATA = [
   [
-    '2026-06-27', 'SuPuja Creations', 'Google Ads', 'Search Campaign', 'admin', 'Nitya Verma', 'Hot', 'LP02: High Priority',
+    '2026-06-27', 'SuPuja Creations', 'Google Ads', 'Search Campaign', 'admin', 'Nitya Verma', 'Hot', 'LP02: High Priority', '1;01>New Stage>New Lead',
     'Apex Retailers Ltd', 'Retailer', '07AAAAA1111A1Z1', '9876543210', '9876543211',
     '', '', 'info@apexretail.com', '', '', '',
     'Rahul Sharma', '9876543210', '', '', '', 'rahul@apexretail.com', '',
@@ -104,7 +116,7 @@ const SAMPLE_DATA = [
     'Wants to source wholesale goods', '1 Lakh - 5 Lakh', 'Immediate', 'Saved Drafts'
   ],
   [
-    '2026-06-26', 'SuPuja Creations', 'Organic', 'Google Search', 'admin', 'Sujit Kumar', 'Warm', 'LP03: Medium Priority',
+    '2026-06-26', 'SuPuja Creations', 'Organic', 'Google Search', 'admin', 'Sujit Kumar', 'Warm', 'LP03: Medium Priority', '3;01>Qualification Stage>Interested',
     'Global Distributors', 'Distributor', '09BBBBB2222B2Z2', '8765432109', '',
     '', '', 'purchase@globaldist.com', '', '', '',
     'Sanjay Verma', '8765432109', '', '', '', 'sanjay@globaldist.com', '',
@@ -114,7 +126,7 @@ const SAMPLE_DATA = [
     'Requires bulk materials supply', '10 Lakh - 25 Lakh', 'Within 15 Days', 'Partial Confirmed'
   ],
   [
-    '2026-06-25', 'SuPuja Creations', 'WhatsApp', 'Inbound Chat', 'user1', '', 'Active', 'LP04: Low Priority',
+    '2026-06-25', 'SuPuja Creations', 'WhatsApp', 'Inbound Chat', 'user1', '', 'Active', 'LP04: Low Priority', '2;01>Contact Stage>Contacted',
     'Tech Solutions', 'Service Provider', '', '7654321098', '',
     '', '', 'contact@techsol.com', '', '', '',
     'Preeti Sen', '7654321098', '', '', '', 'preeti@techsol.com', '',
@@ -490,6 +502,33 @@ export default function ClientRegistration({
   const isSwanWorkspace = !userCompany || SWAN_COMPANIES.includes(String(userCompany).toLowerCase().trim());
   const defaultWorkspaceCompany = (!isSwanWorkspace && userCompany) ? userCompany : '';
 
+  const [tenantStages, setTenantStages] = useState(DEFAULT_CRM_STAGES);
+
+  const tenantLeadStatuses = useMemo(() => {
+    const stages = Array.isArray(tenantStages) && tenantStages.length > 0 ? tenantStages : DEFAULT_CRM_STAGES;
+    const list = [];
+    stages.forEach((stageObj, i) => {
+      if (stageObj && stageObj.enabled !== false && Array.isArray(stageObj.substages)) {
+        const match = String(stageObj.name || '').match(/^(\d+)/);
+        const stageNum = match ? parseInt(match[1], 10) : (i + 1);
+        const cleanStageName = String(stageObj.name || '').replace(/^\d+\s*-\s*/, '').trim();
+        stageObj.substages.forEach((sub, j) => {
+          const subNum = String(j + 1).padStart(2, '0');
+          const cleanSub = sub.includes('>') ? sub.split('>').pop().trim() : String(sub).trim();
+          const prefix = `${stageNum};${subNum}>${cleanStageName}>`;
+          const val = sub.startsWith(prefix) ? sub : `${prefix}${cleanSub}`;
+          list.push(val);
+        });
+      }
+    });
+    return list.length > 0 ? list : [
+      '1;01>New Stage>New Lead',
+      '1;02>New Stage>Assigned',
+      '2;01>Contact Stage>Contacted',
+      '3;01>Qualification Stage>Interested'
+    ];
+  }, [tenantStages]);
+
   const getDynamicSampleData = () => {
     let comp1, comp2, comp3;
     if (isSwanWorkspace) {
@@ -503,9 +542,13 @@ export default function ClientRegistration({
       comp3 = activeTenantComp;
     }
 
+    const st1 = tenantLeadStatuses[0] || '1;01>New Stage>New Lead';
+    const st2 = tenantLeadStatuses.find(s => s.toLowerCase().includes('interested')) || tenantLeadStatuses[1] || '3;01>Qualification Stage>Interested';
+    const st3 = tenantLeadStatuses.find(s => s.toLowerCase().includes('contacted')) || tenantLeadStatuses[2] || '2;01>Contact Stage>Contacted';
+
     return [
       [
-        '2026-06-27', comp1, 'Google Ads', 'Search Campaign', 'admin', 'Nitya Verma', 'Hot', 'LP02: High Priority',
+        '2026-06-27', comp1, 'Google Ads', 'Search Campaign', 'admin', 'Nitya Verma', 'Hot', 'LP02: High Priority', st1,
         'Apex Retailers Ltd', 'Retailer', '07AAAAA1111A1Z1', '9876543210', '9876543211',
         '', '', 'info@apexretail.com', '', '', '',
         'Rahul Sharma', '9876543210', '', '', '', 'rahul@apexretail.com', '',
@@ -515,7 +558,7 @@ export default function ClientRegistration({
         'Wants to source wholesale goods', '1 Lakh - 5 Lakh', 'Immediate', 'Saved Drafts'
       ],
       [
-        '2026-06-26', comp2, 'Organic', 'Google Search', 'admin', 'Sujit Kumar', 'Warm', 'LP03: Medium Priority',
+        '2026-06-26', comp2, 'Organic', 'Google Search', 'admin', 'Sujit Kumar', 'Warm', 'LP03: Medium Priority', st2,
         'Global Distributors', 'Distributor', '09BBBBB2222B2Z2', '8765432109', '',
         '', '', 'purchase@globaldist.com', '', '', '',
         'Sanjay Verma', '8765432109', '', '', '', 'sanjay@globaldist.com', '',
@@ -525,7 +568,7 @@ export default function ClientRegistration({
         'Requires bulk materials supply', '10 Lakh - 25 Lakh', 'Within 15 Days', 'Partial Confirmed'
       ],
       [
-        '2026-06-25', comp3, 'WhatsApp', 'Inbound Chat', 'user1', '', 'Active', 'LP04: Low Priority',
+        '2026-06-25', comp3, 'WhatsApp', 'Inbound Chat', 'user1', '', 'Active', 'LP04: Low Priority', st3,
         'Tech Solutions', 'Service Provider', '', '7654321098', '',
         '', '', 'contact@techsol.com', '', '', '',
         'Preeti Sen', '7654321098', '', '', '', 'preeti@techsol.com', '',
@@ -773,6 +816,7 @@ export default function ClientRegistration({
           const parsed = JSON.parse(saved);
           if (parsed.sources && Array.isArray(parsed.sources)) setSources(parsed.sources);
           if (parsed.clientStatuses && Array.isArray(parsed.clientStatuses)) setClientStatuses(parsed.clientStatuses);
+          if (parsed.stages && Array.isArray(parsed.stages) && parsed.stages.length > 0) setTenantStages(parsed.stages);
           if (parsed.priorities && Array.isArray(parsed.priorities)) setPriorities(parsed.priorities);
           if (parsed.businessTypes && Array.isArray(parsed.businessTypes) && parsed.businessTypes.length > 0) {
             setBusinessTypes(parsed.businessTypes);
@@ -794,6 +838,7 @@ export default function ClientRegistration({
         const cfg = data.config;
         if (cfg.sources && Array.isArray(cfg.sources)) setSources(cfg.sources);
         if (cfg.clientStatuses && Array.isArray(cfg.clientStatuses)) setClientStatuses(cfg.clientStatuses);
+        if (cfg.stages && Array.isArray(cfg.stages) && cfg.stages.length > 0) setTenantStages(cfg.stages);
         if (cfg.priorities && Array.isArray(cfg.priorities)) setPriorities(cfg.priorities);
         if (cfg.businessTypes && Array.isArray(cfg.businessTypes) && cfg.businessTypes.length > 0) {
           setBusinessTypes(cfg.businessTypes);
@@ -1467,6 +1512,12 @@ export default function ClientRegistration({
         listSheet.getCell(`H${idx + 2}`).value = ds;
       });
 
+      // Column I: Lead Statuses (Dynamic Tenant Pipeline Stages)
+      listSheet.getCell('I1').value = 'Lead Status';
+      tenantLeadStatuses.forEach((ls, idx) => {
+        listSheet.getCell(`I${idx + 2}`).value = ls;
+      });
+
       const headers = IMPORT_FIELDS.map(f => f.label);
       sheet.addRow(headers);
       
@@ -1489,7 +1540,6 @@ export default function ClientRegistration({
       }
       if (clientStatuses.length > 0) {
         workbook.definedNames.add(`Lists!$B$2:$B$${clientStatuses.length + 1}`, 'ClientStatuses');
-        workbook.definedNames.add(`Lists!$B$2:$B$${clientStatuses.length + 1}`, 'LeadStatuses');
       }
       if (sources.length > 0) {
         workbook.definedNames.add(`Lists!$C$2:$C$${sources.length + 1}`, 'LeadSources');
@@ -1507,6 +1557,9 @@ export default function ClientRegistration({
         workbook.definedNames.add(`Lists!$G$2:$G$${timelines.length + 1}`, 'TimelineRanges');
       }
       workbook.definedNames.add(`Lists!$H$2:$H$${dataStatuses.length + 1}`, 'DataStatuses');
+      if (tenantLeadStatuses.length > 0) {
+        workbook.definedNames.add(`Lists!$I$2:$I$${tenantLeadStatuses.length + 1}`, 'LeadStatuses');
+      }
 
       // Add Data Validation Dropdowns for rows 2 to 500 across all dropdown columns
       // Our Company Name (Column 2 -> B)
@@ -1555,35 +1608,44 @@ export default function ClientRegistration({
         });
       }
 
-      // Business Type (Column 10 -> J)
+      // Lead Status (Column 9 -> I)
+      if (tenantLeadStatuses.length > 0) {
+        sheet.dataValidations.add('I2:I500', {
+          type: 'list',
+          allowBlank: true,
+          formulae: ['=LeadStatuses']
+        });
+      }
+
+      // Business Type (Column 11 -> K)
       if (businessTypes.length > 0) {
-        sheet.dataValidations.add('J2:J500', {
+        sheet.dataValidations.add('K2:K500', {
           type: 'list',
           allowBlank: true,
           formulae: ['=BusinessTypes']
         });
       }
 
-      // Investment (Column 49 -> AW)
+      // Investment (Column 50 -> AX)
       if (investmentRanges.length > 0) {
-        sheet.dataValidations.add('AW2:AW500', {
+        sheet.dataValidations.add('AX2:AX500', {
           type: 'list',
           allowBlank: true,
           formulae: ['=InvestmentRanges']
         });
       }
 
-      // Buying Timeline (Column 50 -> AX)
+      // Buying Timeline (Column 51 -> AY)
       if (timelines.length > 0) {
-        sheet.dataValidations.add('AX2:AX500', {
+        sheet.dataValidations.add('AY2:AY500', {
           type: 'list',
           allowBlank: true,
           formulae: ['=TimelineRanges']
         });
       }
 
-      // Data Status (Column 51 -> AY)
-      sheet.dataValidations.add('AY2:AY500', {
+      // Data Status (Column 52 -> AZ)
+      sheet.dataValidations.add('AZ2:AZ500', {
         type: 'list',
         allowBlank: true,
         formulae: ['=DataStatuses']
@@ -1832,8 +1894,8 @@ export default function ClientRegistration({
             row.status = 'Partial Confirmed';
           } else {
             row.data_status = 'Verified Data';
-            if (!row.status || row.status === 'None' || row.status === 'DRAFT') {
-              row.status = 'Verified Data';
+            if (!row.status || row.status === 'None' || row.status === 'DRAFT' || row.status === 'Verified Data') {
+              row.status = tenantLeadStatuses[0] || '1;01>New Stage>New Lead';
             }
           }
 
@@ -1910,8 +1972,8 @@ export default function ClientRegistration({
             r.status = 'Partial Confirmed';
           } else {
             r.data_status = 'Verified Data';
-            if (!r.status || r.status === 'None' || r.status === 'DRAFT') {
-              r.status = 'Verified Data';
+            if (!r.status || r.status === 'None' || r.status === 'DRAFT' || r.status === 'Verified Data') {
+              r.status = tenantLeadStatuses[0] || '1;01>New Stage>New Lead';
             }
           }
           return { ...r, _isDuplicate: false };
@@ -1994,6 +2056,8 @@ export default function ClientRegistration({
             copy.status = 'DRAFT';
           } else if (r.data_status === 'Partial Confirmed' || r.status === 'Partial Confirmed') {
             copy.status = 'Partial Confirmed';
+          } else if (!copy.status || copy.status === 'None' || copy.status === 'Verified Data') {
+            copy.status = tenantLeadStatuses[0] || '1;01>New Stage>New Lead';
           }
 
           // Convert empty string for dates, timestamps, or UUIDs to null to prevent Postgres syntax errors
