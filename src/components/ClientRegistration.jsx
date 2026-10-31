@@ -490,6 +490,53 @@ export default function ClientRegistration({
   const isSwanWorkspace = !userCompany || SWAN_COMPANIES.includes(String(userCompany).toLowerCase().trim());
   const defaultWorkspaceCompany = (!isSwanWorkspace && userCompany) ? userCompany : '';
 
+  const getDynamicSampleData = () => {
+    let comp1, comp2, comp3;
+    if (isSwanWorkspace) {
+      comp1 = (userCompany && userCompany.toUpperCase() === 'NSTLP') ? 'NSTLP' : 'NSMLR';
+      comp2 = (userCompany && userCompany.toUpperCase() === 'NSMLR') ? 'NSMLR' : 'NSTLP';
+      comp3 = comp1;
+    } else {
+      const activeTenantComp = userCompany || 'SuPuja Creations';
+      comp1 = activeTenantComp;
+      comp2 = activeTenantComp;
+      comp3 = activeTenantComp;
+    }
+
+    return [
+      [
+        '2026-06-27', comp1, 'Google Ads', 'Search Campaign', 'admin', 'Nitya Verma', 'Hot', 'LP02: High Priority',
+        'Apex Retailers Ltd', 'Retailer', '07AAAAA1111A1Z1', '9876543210', '9876543211',
+        '', '', 'info@apexretail.com', '', '', '',
+        'Rahul Sharma', '9876543210', '', '', '', 'rahul@apexretail.com', '',
+        'Amit Sharma', '9876543212', '', '', '', '', '',
+        '', '', '', '', '', '', '',
+        'Delhi', 'New Delhi', '110001', 'New Delhi', 'Chanakyapuri', 'Delhi', '12, Connaught Place, New Delhi',
+        'Wants to source wholesale goods', '1 Lakh - 5 Lakh', 'Immediate', 'Saved Drafts'
+      ],
+      [
+        '2026-06-26', comp2, 'Organic', 'Google Search', 'admin', 'Sujit Kumar', 'Warm', 'LP03: Medium Priority',
+        'Global Distributors', 'Distributor', '09BBBBB2222B2Z2', '8765432109', '',
+        '', '', 'purchase@globaldist.com', '', '', '',
+        'Sanjay Verma', '8765432109', '', '', '', 'sanjay@globaldist.com', '',
+        '', '', '', '', '', '', '',
+        '', '', '', '', '', '', '',
+        'Uttar Pradesh', 'Noida', '201301', 'Noida', 'Dadri', 'Noida', 'Sector 62, Noida, UP',
+        'Requires bulk materials supply', '10 Lakh - 25 Lakh', 'Within 15 Days', 'Partial Confirmed'
+      ],
+      [
+        '2026-06-25', comp3, 'WhatsApp', 'Inbound Chat', 'user1', '', 'Active', 'LP04: Low Priority',
+        'Tech Solutions', 'Service Provider', '', '7654321098', '',
+        '', '', 'contact@techsol.com', '', '', '',
+        'Preeti Sen', '7654321098', '', '', '', 'preeti@techsol.com', '',
+        '', '', '', '', '', '', '',
+        '', '', '', '', '', '', '',
+        'Haryana', 'Gurugram', '122018', 'Gurugram', 'Gurgaon', 'Gurugram', 'Sohna Road, Gurugram, HR',
+        'Wants IT solutions', 'Below 1 Lakh', 'Immediate', 'Verified Data'
+      ]
+    ];
+  };
+
   // Bulk Importer States
   const [importFile, setImportFile] = useState(null);
   const [csvHeaders, setCsvHeaders] = useState([]);
@@ -1431,7 +1478,8 @@ export default function ClientRegistration({
       sheet.columns.forEach(column => { column.width = 22; });
 
       // Add Sample Data Rows
-      SAMPLE_DATA.forEach(row => {
+      const dynamicSampleRows = getDynamicSampleData();
+      dynamicSampleRows.forEach(row => {
         sheet.addRow(row);
       });
 
@@ -1462,14 +1510,13 @@ export default function ClientRegistration({
 
       // Add Data Validation Dropdowns for rows 2 to 500 across all dropdown columns
       // Our Company Name (Column 2 -> B)
-      const allowedCompanies = userCompany 
-        ? [userCompany, 'SuPuja Creations', 'NSMLR', 'NSTLP']
-        : ['SuPuja Creations', 'NSMLR', 'NSTLP'];
-      const uniqueCompanies = Array.from(new Set(allowedCompanies.filter(Boolean)));
+      const allowedCompanies = isSwanWorkspace 
+        ? ['NSMLR', 'NSTLP']
+        : [userCompany || 'SuPuja Creations'];
       sheet.dataValidations.add('B2:B500', {
         type: 'list',
         allowBlank: true,
-        formulae: [`"${uniqueCompanies.join(',')}"`]
+        formulae: [`"${allowedCompanies.join(',')}"`]
       });
 
       // Lead Source (Column 3 -> C)
@@ -1554,10 +1601,11 @@ export default function ClientRegistration({
     try {
       const { saveAs } = await import('file-saver');
       const headers = IMPORT_FIELDS.map(f => f.label);
+      const dynamicSampleRows = getDynamicSampleData();
       
       const csvRowsList = [
         headers.join(','),
-        ...SAMPLE_DATA.map(row => row.map(val => `"${String(val).replace(/"/g, '""')}"`).join(','))
+        ...dynamicSampleRows.map(row => row.map(val => `"${String(val).replace(/"/g, '""')}"`).join(','))
       ];
       const csvContent = csvRowsList.join('\n') + '\n';
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
