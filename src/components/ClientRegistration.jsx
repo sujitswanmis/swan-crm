@@ -19,7 +19,6 @@ import {
 } from '@/app/actions/clientRegistrationSync';
 
 const IMPORT_FIELDS = [
-  { key: 'data_status', label: 'Data Status (Saved Drafts / Partial Confirmed / Verified Data)', standardHeaders: ['Data Status', 'datastatus', 'data_status', 'record status', 'record_status', 'type', 'data type'] },
   { key: 'lead_date', label: 'Lead Date', standardHeaders: ['Lead Date', 'leaddate', 'date'] },
   { key: 'our_company', label: 'Our Company Name', standardHeaders: ['Our Company Name', 'Our Company', 'companyname'] },
   { key: 'source', label: 'Lead Source', standardHeaders: ['Lead Source', 'source'] },
@@ -69,6 +68,8 @@ const IMPORT_FIELDS = [
   { key: 'address', label: 'Full Address', standardHeaders: ['Full Address', 'Address', 'fulladdress'] },
   { key: 'requirement', label: 'Requirement', standardHeaders: ['Requirement'] },
   { key: 'investment', label: 'Investment', standardHeaders: ['Investment'] },
+  { key: 'buying_timeline', label: 'Buying Timeline', standardHeaders: ['Buying Timeline', 'buying_timeline', 'timeline', 'buying timeline'] },
+  { key: 'data_status', label: 'Data Status', standardHeaders: ['Data Status', 'datastatus', 'data_status', 'record status', 'record_status', 'type', 'data type', 'Data Status (Saved Drafts / Partial Confirmed / Verified Data)'] },
 ];
 
 const ALL_CONTACT_FIELDS = [
@@ -100,7 +101,7 @@ const SAMPLE_DATA = [
     'Amit Sharma', '9876543212', '', '', '', '', '',
     '', '', '', '', '', '', '',
     'Delhi', 'New Delhi', '110001', 'New Delhi', 'Chanakyapuri', 'Delhi', '12, Connaught Place, New Delhi',
-    'Wants to source wholesale goods', '1 Lakh - 5 Lakh', 'Immediate'
+    'Wants to source wholesale goods', '1 Lakh - 5 Lakh', 'Immediate', 'Saved Drafts'
   ],
   [
     '2026-06-26', 'Swan Enterprises', 'Organic', 'Google Search', 'admin', 'Sujit Kumar', '3;01>Qualification Stage>Interested', 'LP03: Medium Priority',
@@ -110,7 +111,7 @@ const SAMPLE_DATA = [
     '', '', '', '', '', '', '',
     '', '', '', '', '', '', '',
     'Uttar Pradesh', 'Noida', '201301', 'Noida', 'Dadri', 'Noida', 'Sector 62, Noida, UP',
-    'Requires bulk materials supply', '10 Lakh - 25 Lakh', 'Within 15 Days'
+    'Requires bulk materials supply', '10 Lakh - 25 Lakh', 'Within 15 Days', 'Partial Confirmed'
   ],
   [
     '2026-06-25', 'Swan Enterprises', 'WhatsApp', 'Inbound Chat', 'user1', '', '2;01>Contact Stage>Contacted', 'LP04: Low Priority',
@@ -120,7 +121,7 @@ const SAMPLE_DATA = [
     '', '', '', '', '', '', '',
     '', '', '', '', '', '', '',
     'Haryana', 'Gurugram', '122018', 'Gurugram', 'Gurgaon', 'Gurugram', 'Sohna Road, Gurugram, HR',
-    'Wants IT solutions', 'Below 1 Lakh', 'Immediate'
+    'Wants IT solutions', 'Below 1 Lakh', 'Immediate', 'Verified Data'
   ]
 ];
 
@@ -1412,6 +1413,13 @@ export default function ClientRegistration({
         listSheet.getCell(`G${idx + 2}`).value = t;
       });
 
+      // Column H: Data Statuses
+      const dataStatuses = ['Saved Drafts', 'Partial Confirmed', 'Verified Data'];
+      listSheet.getCell('H1').value = 'Data Status';
+      dataStatuses.forEach((ds, idx) => {
+        listSheet.getCell(`H${idx + 2}`).value = ds;
+      });
+
       const headers = IMPORT_FIELDS.map(f => f.label);
       sheet.addRow(headers);
       
@@ -1449,6 +1457,7 @@ export default function ClientRegistration({
       if (timelines.length > 0) {
         workbook.definedNames.add(`Lists!$G$2:$G$${timelines.length + 1}`, 'TimelineRanges');
       }
+      workbook.definedNames.add(`Lists!$H$2:$H$${dataStatuses.length + 1}`, 'DataStatuses');
 
       // Add Data Validation Dropdowns for rows 2 to 500 across all dropdown columns
       // Our Company Name (Column 2 -> B)
@@ -1520,6 +1529,13 @@ export default function ClientRegistration({
           formulae: ['=TimelineRanges']
         });
       }
+
+      // Data Status (Column 51 -> AY)
+      sheet.dataValidations.add('AY2:AY500', {
+        type: 'list',
+        allowBlank: true,
+        formulae: ['=DataStatuses']
+      });
 
       const buffer = await workbook.xlsx.writeBuffer();
       saveAs(new Blob([buffer]), 'Client_Registration_Template.xlsx');
