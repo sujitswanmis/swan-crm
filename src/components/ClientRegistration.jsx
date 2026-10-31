@@ -3578,11 +3578,10 @@ export default function ClientRegistration({
                       </div>
                     ) : (
                       <table style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.8rem', textAlign: 'left' }}>
-                        <thead>
+                        <thead style={{ position: 'sticky', top: 0, zIndex: 30, background: 'var(--bg-primary)' }}>
                           <tr>
                             <th style={{ 
                               position: 'sticky', 
-                              top: 0, 
                               left: 0, 
                               zIndex: 35, 
                               background: 'var(--bg-primary)', 
@@ -3598,7 +3597,6 @@ export default function ClientRegistration({
                             }}>#</th>
                             <th style={{ 
                               position: 'sticky', 
-                              top: 0, 
                               left: '52px', 
                               zIndex: 35, 
                               background: 'var(--bg-primary)', 
@@ -3615,15 +3613,12 @@ export default function ClientRegistration({
                             }}>Status</th>
                             {mappedDisplayFields.map(field => (
                               <th key={field.key} style={{ 
-                                position: 'sticky', 
-                                top: 0, 
-                                zIndex: 10, 
-                                background: 'var(--bg-primary)', 
                                 padding: '0.6rem 0.75rem', 
                                 fontWeight: 700, 
                                 whiteSpace: 'nowrap', 
                                 borderBottom: '2px solid var(--border-light)', 
-                                borderRight: '1px solid var(--border-light)' 
+                                borderRight: '1px solid var(--border-light)',
+                                background: 'var(--bg-primary)'
                               }}>
                                 {field.label}
                               </th>
