@@ -595,10 +595,20 @@ export default function ClientRegistration({
   const [potentialMatchesImportData, setPotentialMatchesImportData] = useState([]);
   const [defaultDataStatus, setDefaultDataStatus] = useState('Saved Drafts');
   const [allMappedData, setAllMappedData] = useState([]);
-  const [previewFilterTab, setPreviewFilterTab] = useState('ready'); // 'ready' | 'potentialMatches' | 'alreadyInReport' | 'duplicates' | 'all'
+  const [previewFilterTab, setPreviewFilterTab] = useState('all'); // 'all' | 'clean' | 'potentialMatches' | 'blocked'
   const [previewPage, setPreviewPage] = useState(1);
   const [previewPageSize, setPreviewPageSize] = useState(25);
   const [previewSearch, setPreviewSearch] = useState('');
+
+  // 100% Clean leads (0% similarity match score, completely fresh)
+  const cleanImportData = useMemo(() => {
+    return (filteredImportData || []).filter(r => !r._matchScore || r._matchScore < 50);
+  }, [filteredImportData]);
+
+  // Combined Blocked Duplicates (100% in Report + Other Duplicates)
+  const blockedDuplicatesImportData = useMemo(() => {
+    return [...(alreadyInReportImportData || []), ...(duplicateImportData || [])];
+  }, [alreadyInReportImportData, duplicateImportData]);
 
   // Dynamically extract all mapped columns to display in preview table
   const mappedDisplayFields = useMemo(() => {
@@ -611,12 +621,11 @@ export default function ClientRegistration({
 
   // Active list based on selected filter tab
   const currentPreviewSourceList = useMemo(() => {
-    if (previewFilterTab === 'alreadyInReport') return alreadyInReportImportData;
-    if (previewFilterTab === 'duplicates') return duplicateImportData;
+    if (previewFilterTab === 'clean') return cleanImportData;
     if (previewFilterTab === 'potentialMatches') return potentialMatchesImportData;
-    if (previewFilterTab === 'all') return allMappedData;
-    return filteredImportData; // default 'ready'
-  }, [previewFilterTab, alreadyInReportImportData, duplicateImportData, potentialMatchesImportData, allMappedData, filteredImportData]);
+    if (previewFilterTab === 'blocked') return blockedDuplicatesImportData;
+    return allMappedData; // default 'all'
+  }, [previewFilterTab, cleanImportData, potentialMatchesImportData, blockedDuplicatesImportData, allMappedData]);
 
   // Real-time search across all columns in preview
   const searchedPreviewList = useMemo(() => {
@@ -1730,7 +1739,7 @@ export default function ClientRegistration({
       });
 
       const buffer = await workbook.xlsx.writeBuffer();
-      saveAs(new Blob([buffer]), 'Client_Registration_Template.xlsx');
+      saveAs(new Blob([buffer]), 'Lead_Registration_Template.xlsx');
     } catch (err) {
       console.error("Error generating Excel template:", err);
       alert("Could not generate Excel template: " + err.message);
@@ -1749,7 +1758,7 @@ export default function ClientRegistration({
       ];
       const csvContent = csvRowsList.join('\n') + '\n';
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      saveAs(blob, 'Client_Registration_Template.csv');
+      saveAs(blob, 'Lead_Registration_Template.csv');
     } catch (err) {
       console.error("Error generating CSV template:", err);
       alert("Could not generate CSV template.");
@@ -2127,7 +2136,7 @@ export default function ClientRegistration({
       setFilteredImportData(ready);
       setDuplicateImportData(duplicatesList);
       setAllMappedData(mapped);
-      setPreviewFilterTab('ready');
+      setPreviewFilterTab('all');
       setPreviewPage(1);
       setPreviewSearch('');
       setImporterStep('preview');
@@ -3307,258 +3316,138 @@ export default function ClientRegistration({
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', flex: 1, gap: '1rem', minHeight: 0 }}>
-                  {/* Summary Stats Cards */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '0.75rem' }}>
+                  {/* Summary Stats Cards: Clean 4-Card System (Non-Repeating Interactive Filters) */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.75rem' }}>
+                    {/* Card 1: Total Rows in File */}
                     <div 
                       onClick={() => { setPreviewFilterTab('all'); setPreviewPage(1); }}
                       style={{ 
                         padding: '0.75rem 1rem', 
                         borderRadius: '10px', 
-                        background: previewFilterTab === 'all' ? 'var(--nav-active-bg)' : 'var(--bg-primary)', 
-                        border: `1.5px solid ${previewFilterTab === 'all' ? 'var(--accent-color)' : 'var(--border-light)'}`, 
+                        background: previewFilterTab === 'all' ? 'var(--nav-active-bg, #eff6ff)' : 'var(--bg-primary)', 
+                        border: `2px solid ${previewFilterTab === 'all' ? 'var(--accent-color, #2563eb)' : 'var(--border-light)'}`, 
+                        boxShadow: previewFilterTab === 'all' ? '0 2px 8px rgba(37,99,235,0.18)' : 'none',
                         textAlign: 'center',
                         cursor: 'pointer',
                         transition: 'all 0.15s'
                       }}
                     >
                       <div style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--text-primary)' }}>{allMappedData.length}</div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Total Rows in File</div>
+                      <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600 }}>📋 Total Rows in File</div>
                     </div>
+
+                    {/* Card 2: 100% Clean Leads */}
                     <div 
-                      onClick={() => { setPreviewFilterTab('ready'); setPreviewPage(1); }}
+                      onClick={() => { setPreviewFilterTab('clean'); setPreviewPage(1); }}
                       style={{ 
                         padding: '0.75rem 1rem', 
                         borderRadius: '10px', 
-                        background: previewFilterTab === 'ready' ? '#d1fae5' : '#ecfdf5', 
-                        border: `1.5px solid ${previewFilterTab === 'ready' ? '#059669' : '#a7f3d0'}`, 
+                        background: previewFilterTab === 'clean' ? '#d1fae5' : '#ecfdf5', 
+                        border: `2px solid ${previewFilterTab === 'clean' ? '#059669' : '#a7f3d0'}`, 
+                        boxShadow: previewFilterTab === 'clean' ? '0 2px 8px rgba(5,150,105,0.18)' : 'none',
                         textAlign: 'center',
                         cursor: 'pointer',
                         transition: 'all 0.15s'
                       }}
                     >
-                      <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#047857' }}>{filteredImportData.length}</div>
-                      <div style={{ fontSize: '0.75rem', color: '#065f46', fontWeight: 600 }}>Ready to Import</div>
+                      <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#047857' }}>{cleanImportData.length}</div>
+                      <div style={{ fontSize: '0.78rem', color: '#065f46', fontWeight: 600 }}>🟢 100% Clean Leads</div>
                     </div>
+
+                    {/* Card 3: Potential Matches */}
                     <div 
                       onClick={() => { setPreviewFilterTab('potentialMatches'); setPreviewPage(1); }}
                       style={{ 
                         padding: '0.75rem 1rem', 
                         borderRadius: '10px', 
                         background: previewFilterTab === 'potentialMatches' ? '#ffedd5' : '#fff7ed', 
-                        border: `1.5px solid ${previewFilterTab === 'potentialMatches' ? '#ea580c' : '#fed7aa'}`, 
+                        border: `2px solid ${previewFilterTab === 'potentialMatches' ? '#ea580c' : '#fed7aa'}`, 
+                        boxShadow: previewFilterTab === 'potentialMatches' ? '0 2px 8px rgba(234,88,12,0.18)' : 'none',
                         textAlign: 'center',
                         cursor: 'pointer',
                         transition: 'all 0.15s'
                       }}
                     >
                       <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#c2410c' }}>{potentialMatchesImportData.length}</div>
-                      <div style={{ fontSize: '0.75rem', color: '#9a3412', fontWeight: 600 }}>🔍 Potential Matches (50-99%)</div>
+                      <div style={{ fontSize: '0.78rem', color: '#9a3412', fontWeight: 600 }}>🔍 Potential Matches (50–99%)</div>
                     </div>
+
+                    {/* Card 4: Blocked Duplicates */}
                     <div 
-                      onClick={() => { setPreviewFilterTab('alreadyInReport'); setPreviewPage(1); }}
+                      onClick={() => { setPreviewFilterTab('blocked'); setPreviewPage(1); }}
                       style={{ 
                         padding: '0.75rem 1rem', 
                         borderRadius: '10px', 
-                        background: previewFilterTab === 'alreadyInReport' ? '#fee2e2' : '#fff1f2', 
-                        border: `1.5px solid ${previewFilterTab === 'alreadyInReport' ? '#e11d48' : '#fecdd3'}`, 
+                        background: previewFilterTab === 'blocked' ? '#fee2e2' : '#fff1f2', 
+                        border: `2px solid ${previewFilterTab === 'blocked' ? '#e11d48' : '#fecdd3'}`, 
+                        boxShadow: previewFilterTab === 'blocked' ? '0 2px 8px rgba(225,29,72,0.18)' : 'none',
                         textAlign: 'center',
                         cursor: 'pointer',
                         transition: 'all 0.15s'
                       }}
                     >
-                      <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#be123c' }}>{alreadyInReportImportData.length}</div>
-                      <div style={{ fontSize: '0.75rem', color: '#9f1239', fontWeight: 600 }}>⚠️ In Lead Registered Report</div>
-                    </div>
-                    <div 
-                      onClick={() => { setPreviewFilterTab('duplicates'); setPreviewPage(1); }}
-                      style={{ 
-                        padding: '0.75rem 1rem', 
-                        borderRadius: '10px', 
-                        background: previewFilterTab === 'duplicates' ? '#fed7aa' : '#fffbeb', 
-                        border: `1.5px solid ${previewFilterTab === 'duplicates' ? '#ea580c' : '#fef3c7'}`, 
-                        textAlign: 'center',
-                        cursor: 'pointer',
-                        transition: 'all 0.15s'
-                      }}
-                    >
-                      <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#b45309' }}>{duplicateImportData.length}</div>
-                      <div style={{ fontSize: '0.75rem', color: '#92400e', fontWeight: 600 }}>Other Duplicates</div>
+                      <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#be123c' }}>{blockedDuplicatesImportData.length}</div>
+                      <div style={{ fontSize: '0.78rem', color: '#9f1239', fontWeight: 600 }}>🚨 Blocked Duplicates</div>
                     </div>
                   </div>
 
-                  {/* Instant Warning Banner if already in Report */}
-                  {alreadyInReportImportData.length > 0 && (
-                    <div style={{ padding: '0.65rem 1rem', background: '#fff1f2', border: '1px solid #fecdd3', borderRadius: '8px', color: '#9f1239', fontSize: '0.85rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                        <AlertTriangle size={16} color="#e11d48" />
-                        <span><strong>Instant Alert:</strong> {alreadyInReportImportData.length} client(s) in this file already exist in Lead Registered Report!</span>
-                      </div>
-                      <button 
-                        type="button" 
-                        onClick={() => {
-                          setPreviewFilterTab('alreadyInReport');
-                          setPreviewPage(1);
-                        }}
-                        style={{ padding: '0.25rem 0.65rem', background: '#be123c', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer' }}
-                      >
-                        Inspect Already Registered Leads
-                      </button>
+                  {/* Informational Alert Banners (Clean, Non-Repeating) */}
+                  {blockedDuplicatesImportData.length > 0 && (
+                    <div style={{ padding: '0.6rem 1rem', background: '#fff1f2', border: '1px solid #fecdd3', borderRadius: '8px', color: '#9f1239', fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <AlertTriangle size={16} color="#e11d48" style={{ flexShrink: 0 }} />
+                      <span><strong>Notice:</strong> {blockedDuplicatesImportData.length} client(s) are 100% duplicate or already exist in Lead Registered Report and are safely excluded from import.</span>
                     </div>
                   )}
 
-                  {/* Similarity Notice Banner if potential matches found */}
-                  {potentialMatchesImportData.length > 0 && alreadyInReportImportData.length === 0 && (
-                    <div style={{ padding: '0.65rem 1rem', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '8px', color: '#9a3412', fontSize: '0.85rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                        <Search size={16} color="#ea580c" />
-                        <span><strong>Similarity Notice:</strong> {potentialMatchesImportData.length} row(s) match 50%–99% with existing leads by Brand Name, Location, or Contact Person.</span>
-                      </div>
-                      <button 
-                        type="button" 
-                        onClick={() => {
-                          setPreviewFilterTab('potentialMatches');
-                          setPreviewPage(1);
-                        }}
-                        style={{ padding: '0.25rem 0.65rem', background: '#ea580c', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer' }}
-                      >
-                        Inspect Potential Matches ({potentialMatchesImportData.length})
-                      </button>
+                  {potentialMatchesImportData.length > 0 && (
+                    <div style={{ padding: '0.6rem 1rem', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '8px', color: '#9a3412', fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <Search size={16} color="#ea580c" style={{ flexShrink: 0 }} />
+                      <span><strong>Similarity Notice:</strong> {potentialMatchesImportData.length} row(s) match 50%–99% with existing leads. Click the <strong>Potential Matches</strong> card above to review them before importing.</span>
                     </div>
                   )}
 
-                  {/* Interactive Toolbar: Filter Tabs, Live Search, Rows Per Page */}
+                  {/* Compact Toolbar: Live Search & Rows Per Page */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
-                    {/* Filter Tabs */}
-                    <div style={{ display: 'flex', gap: '0.35rem', background: 'var(--bg-primary)', padding: '0.25rem', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
-                      <button
-                        type="button"
-                        onClick={() => { setPreviewFilterTab('ready'); setPreviewPage(1); }}
+                    <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                      <Search size={14} style={{ position: 'absolute', left: '0.6rem', color: 'var(--text-secondary)' }} />
+                      <input
+                        type="text"
+                        value={previewSearch}
+                        onChange={(e) => { setPreviewSearch(e.target.value); setPreviewPage(1); }}
+                        placeholder="Search in preview..."
                         style={{
-                          padding: '0.35rem 0.75rem',
+                          padding: '0.35rem 0.6rem 0.35rem 1.9rem',
+                          fontSize: '0.8rem',
                           borderRadius: '6px',
-                          border: 'none',
-                          fontSize: '0.78rem',
-                          fontWeight: previewFilterTab === 'ready' ? 700 : 500,
-                          backgroundColor: previewFilterTab === 'ready' ? 'var(--bg-surface)' : 'transparent',
-                          color: previewFilterTab === 'ready' ? '#047857' : 'var(--text-secondary)',
-                          boxShadow: previewFilterTab === 'ready' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-                          cursor: 'pointer'
+                          border: '1px solid var(--border-light)',
+                          background: 'var(--bg-surface)',
+                          color: 'var(--text-primary)',
+                          width: '240px'
                         }}
-                      >
-                        🟢 Ready to Import ({filteredImportData.length})
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => { setPreviewFilterTab('potentialMatches'); setPreviewPage(1); }}
-                        style={{
-                          padding: '0.35rem 0.75rem',
-                          borderRadius: '6px',
-                          border: 'none',
-                          fontSize: '0.78rem',
-                          fontWeight: previewFilterTab === 'potentialMatches' ? 700 : 500,
-                          backgroundColor: previewFilterTab === 'potentialMatches' ? 'var(--bg-surface)' : 'transparent',
-                          color: previewFilterTab === 'potentialMatches' ? '#c2410c' : 'var(--text-secondary)',
-                          boxShadow: previewFilterTab === 'potentialMatches' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        🔍 Potential Matches ({potentialMatchesImportData.length})
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => { setPreviewFilterTab('alreadyInReport'); setPreviewPage(1); }}
-                        style={{
-                          padding: '0.35rem 0.75rem',
-                          borderRadius: '6px',
-                          border: 'none',
-                          fontSize: '0.78rem',
-                          fontWeight: previewFilterTab === 'alreadyInReport' ? 700 : 500,
-                          backgroundColor: previewFilterTab === 'alreadyInReport' ? 'var(--bg-surface)' : 'transparent',
-                          color: previewFilterTab === 'alreadyInReport' ? '#be123c' : 'var(--text-secondary)',
-                          boxShadow: previewFilterTab === 'alreadyInReport' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        🚨 In Registered Report ({alreadyInReportImportData.length})
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => { setPreviewFilterTab('duplicates'); setPreviewPage(1); }}
-                        style={{
-                          padding: '0.35rem 0.75rem',
-                          borderRadius: '6px',
-                          border: 'none',
-                          fontSize: '0.78rem',
-                          fontWeight: previewFilterTab === 'duplicates' ? 700 : 500,
-                          backgroundColor: previewFilterTab === 'duplicates' ? 'var(--bg-surface)' : 'transparent',
-                          color: previewFilterTab === 'duplicates' ? '#b45309' : 'var(--text-secondary)',
-                          boxShadow: previewFilterTab === 'duplicates' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        ⚠️ Other Duplicates ({duplicateImportData.length})
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => { setPreviewFilterTab('all'); setPreviewPage(1); }}
-                        style={{
-                          padding: '0.35rem 0.75rem',
-                          borderRadius: '6px',
-                          border: 'none',
-                          fontSize: '0.78rem',
-                          fontWeight: previewFilterTab === 'all' ? 700 : 500,
-                          backgroundColor: previewFilterTab === 'all' ? 'var(--bg-surface)' : 'transparent',
-                          color: previewFilterTab === 'all' ? 'var(--text-primary)' : 'var(--text-secondary)',
-                          boxShadow: previewFilterTab === 'all' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        📋 All Rows ({allMappedData.length})
-                      </button>
+                      />
                     </div>
 
-                    {/* Search & Rows Per Page */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-                      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                        <Search size={14} style={{ position: 'absolute', left: '0.6rem', color: 'var(--text-secondary)' }} />
-                        <input
-                          type="text"
-                          value={previewSearch}
-                          onChange={(e) => { setPreviewSearch(e.target.value); setPreviewPage(1); }}
-                          placeholder="Search in preview..."
-                          style={{
-                            padding: '0.35rem 0.6rem 0.35rem 1.9rem',
-                            fontSize: '0.8rem',
-                            borderRadius: '6px',
-                            border: '1px solid var(--border-light)',
-                            background: 'var(--bg-surface)',
-                            color: 'var(--text-primary)',
-                            width: '210px'
-                          }}
-                        />
-                      </div>
-
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                        <span>Rows:</span>
-                        <select
-                          value={previewPageSize}
-                          onChange={(e) => { setPreviewPageSize(Number(e.target.value)); setPreviewPage(1); }}
-                          style={{
-                            padding: '0.3rem 0.5rem',
-                            borderRadius: '6px',
-                            border: '1px solid var(--border-light)',
-                            background: 'var(--bg-surface)',
-                            color: 'var(--text-primary)',
-                            fontSize: '0.78rem'
-                          }}
-                        >
-                          <option value={20}>20</option>
-                          <option value={50}>50</option>
-                          <option value={100}>100</option>
-                          <option value={500}>500</option>
-                          <option value={0}>All Rows</option>
-                        </select>
-                      </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                      <span>Rows:</span>
+                      <select
+                        value={previewPageSize}
+                        onChange={(e) => { setPreviewPageSize(Number(e.target.value)); setPreviewPage(1); }}
+                        style={{
+                          padding: '0.3rem 0.5rem',
+                          borderRadius: '6px',
+                          border: '1px solid var(--border-light)',
+                          background: 'var(--bg-surface)',
+                          color: 'var(--text-primary)',
+                          fontSize: '0.78rem'
+                        }}
+                      >
+                        <option value={20}>20</option>
+                        <option value={25}>25</option>
+                        <option value={50}>50</option>
+                        <option value={100}>100</option>
+                        <option value={500}>500</option>
+                        <option value={0}>All Rows</option>
+                      </select>
                     </div>
                   </div>
 
