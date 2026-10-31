@@ -152,13 +152,14 @@ export async function saveClientRegistrationDraft(draftData, userCompany = '', c
 
 /**
  * 2. Get list of all drafts for current tenant/user
+ * Supports Tarika A (personal drafts) and Tarika B (common pool via canViewAll)
  */
-export async function getClientRegistrationDrafts(userCompany = '', currentUser = '') {
+export async function getClientRegistrationDrafts(userCompany = '', currentUser = '', canViewAll = false) {
   try {
     const adminClient = getAdminClient();
     let query = adminClient
       .from('leads')
-      .select('id, company, name, phone, email, state_name, district_name, city_name, created_at, updated_at, entry_by, our_company, requirement, business_gst')
+      .select('id, lead_ref_id, company, name, phone, email, state_name, district_name, city_name, created_at, updated_at, entry_by, created_by, our_company, requirement, business_gst, status, remarks')
       .eq('status', 'DRAFT')
       .order('updated_at', { ascending: false });
 
@@ -166,7 +167,12 @@ export async function getClientRegistrationDrafts(userCompany = '', currentUser 
       query = query.eq('our_company', userCompany);
     }
 
-    const { data, error } = await query.limit(100);
+    if (!canViewAll && currentUser && currentUser.trim() !== '') {
+      const cleanUser = currentUser.trim();
+      query = query.or(`entry_by.ilike.%${cleanUser}%,created_by.ilike.%${cleanUser}%`);
+    }
+
+    const { data, error } = await query.limit(2000);
     if (error) throw error;
 
     return { success: true, drafts: data || [] };
@@ -215,12 +221,15 @@ export async function submitClientRegistrationAndSync(formData, userCompany = ''
       return { success: false, error: 'Business / Company Name is required.' };
     }
 
+    // Dynamic status from form (never hardcoded to fixed converted string)
+    const targetStatus = (formData.status && formData.status !== 'DRAFT') ? formData.status : 'None';
+
     const rawPayload = {
       ...formData,
       company: companyName,
       name: contactName || 'Contact Person',
       phone: primaryPhone || formData.phone,
-      status: '6;01>Converted>Client Registered',
+      status: targetStatus,
       our_company: finalCompany,
       entry_by: currentUser || formData.entry_by || 'User',
       updated_at: new Date().toISOString()

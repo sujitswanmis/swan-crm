@@ -2,6 +2,8 @@
  * Predefined Role Profiles & Permission Templates for SuPuja Workplace
  */
 
+import { INTEGRATION_TABS } from '../../../config/integrationsConfig.js';
+
 export const ROLE_PRESETS = [
   {
     key: 'master_admin',
@@ -23,6 +25,7 @@ export const ROLE_PRESETS = [
       can_manage_column_data: true,
       can_claim_unassigned: true,
       can_bulk_actions: true,
+      can_view_all_drafts: true,
       analytics: { view: true, read: true, write: true, edit: true, export: true },
       new_swan_ai: { view: true, read: true, write: true, edit: true, export: true },
       callcenter: { view: true, read: true, write: true, edit: true, export: true },
@@ -158,6 +161,7 @@ export const ROLE_PRESETS = [
       can_manage_column_data: true,
       can_claim_unassigned: true,
       can_bulk_actions: true,
+      can_view_all_drafts: true,
       analytics: { view: true, read: true, write: true, edit: true, export: true },
       callcenter: { view: true, read: true, write: true, edit: true, export: true },
       attendance: {
@@ -292,6 +296,7 @@ export const ROLE_PRESETS = [
       can_manage_column_data: true,
       can_claim_unassigned: true,
       can_bulk_actions: true,
+      can_view_all_drafts: true,
       analytics: { view: true, read: true, write: true, edit: true, export: true },
       callcenter: { view: true, read: true, write: true, edit: true, export: true },
       registration: { view: true, read: true, write: true, edit: true, export: true },
@@ -387,6 +392,7 @@ export const ROLE_PRESETS = [
       can_manage_column_data: false,
       can_claim_unassigned: true,
       can_bulk_actions: false,
+      can_view_all_drafts: false,
       callcenter: { view: true, read: true, write: true, edit: true, export: false },
       registration: { view: true, read: true, write: true, edit: false, export: false },
       leads: {
@@ -441,6 +447,7 @@ export const ROLE_PRESETS = [
       can_manage_column_data: false,
       can_claim_unassigned: true,
       can_bulk_actions: true,
+      can_view_all_drafts: true,
       callcenter: { view: true, read: true, write: true, edit: true, export: false },
       orders: { view: true, read: true, write: true, edit: true, export: true },
       channel_ops: {
@@ -575,6 +582,7 @@ export const ROLE_PRESETS = [
       can_manage_column_data: false,
       can_claim_unassigned: true,
       can_bulk_actions: true,
+      can_view_all_drafts: true,
       analytics: { view: true, read: true, write: false, edit: false, export: true },
       attendance: {
         view: true, read: true, write: true, edit: true, export: true,
@@ -643,6 +651,7 @@ export const ROLE_PRESETS = [
       can_manage_column_data: true,
       can_claim_unassigned: true,
       can_bulk_actions: true,
+      can_view_all_drafts: true,
       analytics: { view: true, read: true, write: false, edit: false, export: true },
       callcenter: { view: true, read: true, write: true, edit: true, export: true },
       registration: { view: true, read: true, write: true, edit: true, export: true },
@@ -731,6 +740,7 @@ export const ROLE_PRESETS = [
       can_manage_column_data: false,
       can_claim_unassigned: true,
       can_bulk_actions: false,
+      can_view_all_drafts: false,
       callcenter: { view: true, read: true, write: true, edit: true, export: false },
       registration: { view: true, read: true, write: true, edit: false, export: false },
       leads: {
@@ -846,6 +856,7 @@ export const ROLE_PRESETS = [
       can_manage_column_data: false,
       can_claim_unassigned: false,
       can_bulk_actions: false,
+      can_view_all_drafts: false,
       analytics: { view: true, read: true, write: false, edit: false, export: false },
       report: { view: true, read: true, write: false, edit: false, export: false },
       party: { view: true, read: true, write: false, edit: false, export: false },
@@ -866,6 +877,25 @@ export const ROLE_PRESETS = [
     }
   }
 ];
+
+// Register every tab of the single Integrations page, preserving stored permission IDs.
+for (const preset of ROLE_PRESETS) {
+  const manages = ['master_admin', 'admin'].includes(preset.key);
+  preset.presetData.can_manage_integrations = manages;
+  const settings = preset.presetData.settings;
+  preset.presetData.settings = {
+    ...(settings || { view: false, add: false, edit: false, delete: false }),
+    sub_items: {
+      ...(settings?.sub_items || Object.fromEntries([
+        'business', 'products', 'order_pipeline', 'complaints_config', 'crm', 'fields', 'templates',
+        'notifications', 'departments', 'targets', 'sessions', 'data', 'media',
+      ].map(id => [id, { view: settings?.view === true, add: manages, edit: manages, delete: false }]))),
+      ...Object.fromEntries(INTEGRATION_TABS.map(tab => [tab.id, {
+        view: settings?.view === true, add: manages, edit: manages, delete: false,
+      }])),
+    },
+  };
+}
 
 export function getRolePreset(roleKey) {
   return ROLE_PRESETS.find(p => p.key === roleKey) || null;

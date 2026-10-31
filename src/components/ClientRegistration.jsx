@@ -19,6 +19,7 @@ import {
 } from '@/app/actions/clientRegistrationSync';
 
 const IMPORT_FIELDS = [
+  { key: 'data_status', label: 'Data Status (Saved Drafts / Partial Confirmed / Verified Data)', standardHeaders: ['Data Status', 'datastatus', 'data_status', 'record status', 'record_status', 'type', 'data type'] },
   { key: 'lead_date', label: 'Lead Date', standardHeaders: ['Lead Date', 'leaddate', 'date'] },
   { key: 'our_company', label: 'Our Company Name', standardHeaders: ['Our Company Name', 'Our Company', 'companyname'] },
   { key: 'source', label: 'Lead Source', standardHeaders: ['Lead Source', 'source'] },
@@ -462,9 +463,27 @@ function SearchableAssignToDropdown({ value, onChange, teamMembers }) {
   );
 }
 
-export default function ClientRegistration({ onRegistrationSuccess, initialData = null, isEditMode = false, onClose = null, teamMembers: propTeamMembers = null, userCompany = '' }) {
+export default function ClientRegistration({ 
+  onRegistrationSuccess, 
+  initialData = null, 
+  isEditMode = false, 
+  onClose = null, 
+  teamMembers: propTeamMembers = null, 
+  userCompany = '',
+  moduleAccess = null,
+  userRole = '',
+  userName = ''
+}) {
   const supabase = createClient();
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const canViewAllDrafts = useMemo(() => {
+    if (userRole === 'admin' || userRole === 'master_admin') return true;
+    if (moduleAccess?.can_view_all_drafts === true) return true;
+    return false;
+  }, [userRole, moduleAccess]);
+
+  const [currentActor, setCurrentActor] = useState(userName || '');
 
   const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl'];
   const isSwanWorkspace = !userCompany || SWAN_COMPANIES.includes(String(userCompany).toLowerCase().trim());
@@ -481,8 +500,10 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
   const [duplicatesCount, setDuplicatesCount] = useState(0);
   const [filteredImportData, setFilteredImportData] = useState([]);
   const [duplicateImportData, setDuplicateImportData] = useState([]);
+  const [alreadyInReportImportData, setAlreadyInReportImportData] = useState([]);
+  const [defaultDataStatus, setDefaultDataStatus] = useState('Saved Drafts');
   const [allMappedData, setAllMappedData] = useState([]);
-  const [previewFilterTab, setPreviewFilterTab] = useState('ready'); // 'ready' | 'duplicates' | 'all'
+  const [previewFilterTab, setPreviewFilterTab] = useState('ready'); // 'ready' | 'alreadyInReport' | 'duplicates' | 'all'
   const [previewPage, setPreviewPage] = useState(1);
   const [previewPageSize, setPreviewPageSize] = useState(25);
   const [previewSearch, setPreviewSearch] = useState('');
@@ -498,10 +519,11 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
 
   // Active list based on selected filter tab
   const currentPreviewSourceList = useMemo(() => {
+    if (previewFilterTab === 'alreadyInReport') return alreadyInReportImportData;
     if (previewFilterTab === 'duplicates') return duplicateImportData;
     if (previewFilterTab === 'all') return allMappedData;
     return filteredImportData; // default 'ready'
-  }, [previewFilterTab, duplicateImportData, allMappedData, filteredImportData]);
+  }, [previewFilterTab, alreadyInReportImportData, duplicateImportData, allMappedData, filteredImportData]);
 
   // Real-time search across all columns in preview
   const searchedPreviewList = useMemo(() => {
@@ -612,10 +634,34 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
   const [isSavingDraft, setIsSavingDraft] = useState(false);
   const [clientFormFields, setClientFormFields] = useState({});
 
+  // Drafts View Filter & Pagination States
+  const [draftSearch, setDraftSearch] = useState('');
+  const [draftViewFilter, setDraftViewFilter] = useState('all'); // 'all' | 'my'
+  const [draftUserFilter, setDraftUserFilter] = useState('all');
+  const [draftPage, setDraftPage] = useState(1);
+  const [draftPageSize, setDraftPageSize] = useState(25);
+
+  useEffect(() => {
+    async function resolveActor() {
+      if (userName) {
+        setCurrentActor(userName);
+        return;
+      }
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user?.email) {
+          const actor = normalizeEmployeeName(user.email.split('@')[0], teamMembers);
+          setCurrentActor(actor);
+        }
+      } catch {}
+    }
+    resolveActor();
+  }, [userName, teamMembers, supabase]);
+
   const loadDrafts = async () => {
     setIsLoadingDrafts(true);
     try {
-      const res = await getClientRegistrationDrafts(userCompany);
+      const res = await getClientRegistrationDrafts(userCompany, currentActor, canViewAllDrafts);
       if (res && res.success) {
         setDraftsList(res.drafts || []);
       }
@@ -628,7 +674,48 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
 
   useEffect(() => {
     loadDrafts();
-  }, [userCompany]);
+  }, [userCompany, currentActor, canViewAllDrafts]);
+
+  // Filtered drafts based on search and user filter
+  const filteredDraftsList = useMemo(() => {
+    let list = draftsList || [];
+    if (draftViewFilter === 'my' && currentActor) {
+      const cleanActor = currentActor.toLowerCase().trim();
+      list = list.filter(d => {
+        const entry = String(d.entry_by || '').toLowerCase();
+        const created = String(d.created_by || '').toLowerCase();
+        return entry.includes(cleanActor) || created.includes(cleanActor);
+      });
+    }
+    if (draftUserFilter !== 'all') {
+      const cleanUser = draftUserFilter.toLowerCase().trim();
+      list = list.filter(d => {
+        const entry = String(d.entry_by || '').toLowerCase();
+        const created = String(d.created_by || '').toLowerCase();
+        return entry.includes(cleanUser) || created.includes(cleanUser);
+      });
+    }
+    if (draftSearch && draftSearch.trim() !== '') {
+      const term = draftSearch.toLowerCase().trim();
+      list = list.filter(d => {
+        return [
+          d.company, d.name, d.phone, d.email, d.city_name, d.state_name, d.business_gst, d.entry_by
+        ].some(v => v && String(v).toLowerCase().includes(term));
+      });
+    }
+    return list;
+  }, [draftsList, draftViewFilter, draftUserFilter, draftSearch, currentActor]);
+
+  const totalDraftPages = useMemo(() => {
+    if (draftPageSize === 0) return 1;
+    return Math.max(1, Math.ceil(filteredDraftsList.length / draftPageSize));
+  }, [filteredDraftsList.length, draftPageSize]);
+
+  const paginatedDrafts = useMemo(() => {
+    if (draftPageSize === 0) return filteredDraftsList;
+    const start = (draftPage - 1) * draftPageSize;
+    return filteredDraftsList.slice(start, start + draftPageSize);
+  }, [filteredDraftsList, draftPage, draftPageSize]);
 
   useEffect(() => {
     const loadConfig = () => {
@@ -881,6 +968,13 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
 
         if (!error && data && data.length > 0) {
           const match = data[0];
+          // If match is the current editing draft itself, skip duplicate alert
+          if ((currentDraftId && match.id === currentDraftId) || (formData.id && match.id === formData.id)) {
+            setDuplicateInfo(null);
+            setIsCheckingDuplicate(false);
+            return;
+          }
+
           let matchedOn = 'Contact Number';
           let matchVal = enteredNumbers[0]?.val || '';
 
@@ -941,6 +1035,7 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
             company: match.company,
             phone: matchedPhoneDisplay,
             status: match.status,
+            isRegisteredReport: match.status !== 'DRAFT',
             created_by: match.created_by || 'System',
             entry_by: match.entry_by || 'N/A',
             assigned_to: assignedName
@@ -1587,6 +1682,7 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
 
       let ready = [];
       let duplicatesList = [];
+      let alreadyInReportList = [];
 
       if (hasContactMapped) {
         // Query database for duplicates across all 16 contact columns & business_gst
@@ -1596,6 +1692,10 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
           'name',
           'company',
           'business_gst',
+          'status',
+          'entry_by',
+          'created_by',
+          'created_at',
           ...ALL_CONTACT_KEYS
         ].join(', ');
 
@@ -1616,16 +1716,20 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
         }
         
         // Build normalized lookup maps from database
-        const existingPhonesMap = new Map(); // normalized 10-digit -> { lead_ref_id, company, field }
-        const existingGSTMap = new Map();    // uppercase GSTIN -> { lead_ref_id, company }
+        const existingPhonesMap = new Map(); // normalized 10-digit -> { lead_ref_id, company, status, entry_by, isRegisteredReport, field }
+        const existingGSTMap = new Map();    // uppercase GSTIN -> { lead_ref_id, company, status, entry_by, isRegisteredReport }
 
         existingLeads.forEach(l => {
+          const isRegistered = l.status !== 'DRAFT';
           ALL_CONTACT_KEYS.forEach(col => {
             const p10 = normalizePhoneTo10(l[col]);
             if (p10 && p10.length >= 7 && !existingPhonesMap.has(p10)) {
               existingPhonesMap.set(p10, {
                 lead_ref_id: l.lead_ref_id || l.id,
                 company: l.company || l.name || 'Existing Lead',
+                status: l.status || 'Active',
+                entry_by: l.entry_by || l.created_by || 'Staff',
+                isRegisteredReport: isRegistered,
                 field: col
               });
             }
@@ -1635,7 +1739,10 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
             if (!existingGSTMap.has(cleanGST)) {
               existingGSTMap.set(cleanGST, {
                 lead_ref_id: l.lead_ref_id || l.id,
-                company: l.company || l.name || 'Existing Lead'
+                company: l.company || l.name || 'Existing Lead',
+                status: l.status || 'Active',
+                entry_by: l.entry_by || l.created_by || 'Staff',
+                isRegisteredReport: isRegistered
               });
             }
           }
@@ -1646,6 +1753,21 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
         const seenInFileGSTs = new Map();   // uppercase GSTIN -> rowNum
 
         mapped.forEach(row => {
+          // Resolve data_status for each row
+          const rawDataStatus = (row.data_status || defaultDataStatus || 'Saved Drafts').trim();
+          if (/draft/i.test(rawDataStatus)) {
+            row.data_status = 'Saved Drafts';
+            row.status = 'DRAFT';
+          } else if (/partial/i.test(rawDataStatus)) {
+            row.data_status = 'Partial Confirmed';
+            row.status = 'Partial Confirmed';
+          } else {
+            row.data_status = 'Verified Data';
+            if (!row.status || row.status === 'None' || row.status === 'DRAFT') {
+              row.status = 'Verified Data';
+            }
+          }
+
           const rowNumbers = [];
           ALL_CONTACT_KEYS.forEach(col => {
             const val = normalizePhoneTo10(row[col]);
@@ -1689,8 +1811,14 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
 
           if (dbMatch) {
             row._isDuplicate = true;
-            row._dupReason = `${dbMatch.type} (${dbMatch.val}) matches existing lead #${dbMatch.details.lead_ref_id} (${dbMatch.details.company})`;
-            duplicatesList.push(row);
+            if (dbMatch.details.isRegisteredReport) {
+              row._isAlreadyInReport = true;
+              row._dupReason = `⚠️ Already in Lead Registered Report! Matches #${dbMatch.details.lead_ref_id} (${dbMatch.details.company}) - Registered by ${dbMatch.details.entry_by}`;
+              alreadyInReportList.push(row);
+            } else {
+              row._dupReason = `Duplicate with existing Draft #${dbMatch.details.lead_ref_id} (${dbMatch.details.company})`;
+              duplicatesList.push(row);
+            }
           } else if (fileMatch) {
             row._isDuplicate = true;
             row._dupReason = `Duplicate ${fileMatch.type} (${fileMatch.val}) matches Row #${fileMatch.rowNum} in this file`;
@@ -1703,10 +1831,26 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
           }
         });
       } else {
-        ready = mapped.map(r => ({ ...r, _isDuplicate: false }));
+        ready = mapped.map(r => {
+          const rawDataStatus = (r.data_status || defaultDataStatus || 'Saved Drafts').trim();
+          if (/draft/i.test(rawDataStatus)) {
+            r.data_status = 'Saved Drafts';
+            r.status = 'DRAFT';
+          } else if (/partial/i.test(rawDataStatus)) {
+            r.data_status = 'Partial Confirmed';
+            r.status = 'Partial Confirmed';
+          } else {
+            r.data_status = 'Verified Data';
+            if (!r.status || r.status === 'None' || r.status === 'DRAFT') {
+              r.status = 'Verified Data';
+            }
+          }
+          return { ...r, _isDuplicate: false };
+        });
       }
 
       setDuplicatesCount(duplicatesList.length);
+      setAlreadyInReportImportData(alreadyInReportList);
       setFilteredImportData(ready);
       setDuplicateImportData(duplicatesList);
       setAllMappedData(mapped);
@@ -1733,6 +1877,17 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
       const { data: { user } } = await supabase.auth.getUser();
       const actor = normalizeEmployeeName(user?.email?.split('@')[0] || 'Admin', teamMembers);
 
+      const draftsToInsert = [];
+      const registeredToInsert = [];
+
+      filteredImportData.forEach(r => {
+        if (r.data_status === 'Saved Drafts' || r.status === 'DRAFT') {
+          draftsToInsert.push(r);
+        } else {
+          registeredToInsert.push(r);
+        }
+      });
+
       // 1. Fetch current lead count once to generate incremental lead_ref_ids cleanly beforehand
       const { count } = await supabase.from('leads').select('*', { count: 'exact', head: true });
       let currentSeq = count || 0;
@@ -1748,6 +1903,7 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
           delete copy._rowNum;
           delete copy._isDuplicate;
           delete copy._dupReason;
+          delete copy._isAlreadyInReport;
 
           currentSeq++;
           const d = new Date();
@@ -1764,6 +1920,12 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
 
           if (!copy.entry_by) copy.entry_by = actor;
           if (!copy.created_by) copy.created_by = actor;
+
+          if (r.data_status === 'Saved Drafts' || r.status === 'DRAFT') {
+            copy.status = 'DRAFT';
+          } else if (r.data_status === 'Partial Confirmed' || r.status === 'Partial Confirmed') {
+            copy.status = 'Partial Confirmed';
+          }
 
           // Convert empty string for dates, timestamps, or UUIDs to null to prevent Postgres syntax errors
           Object.keys(copy).forEach(k => {
@@ -1796,7 +1958,7 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
         try {
           const notes = allInsertedLeads.map(l => ({
             lead_id: l.id,
-            note_text: 'Client Registered via Bulk Import' + (l.assigned_to ? ` (Assigned to ${normalizeEmployeeName(l.assigned_to, teamMembers)})` : ''),
+            note_text: (l.status === 'DRAFT' ? 'Client Draft Saved via Bulk Upload' : 'Client Registered via Bulk Import') + (l.assigned_to ? ` (Assigned to ${normalizeEmployeeName(l.assigned_to, teamMembers)})` : ''),
             created_by: actor
           }));
           for (let j = 0; j < notes.length; j += 200) {
@@ -1807,9 +1969,18 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
         }
       }
 
-      alert(`Successfully uploaded ${filteredImportData.length} new clients!\n${duplicatesCount > 0 ? `(${duplicatesCount} duplicates were safely skipped)` : ''}`);
       setShowImporter(false);
-      if (onRegistrationSuccess) onRegistrationSuccess(allInsertedLeads);
+
+      if (registeredToInsert.length > 0 && onRegistrationSuccess) {
+        onRegistrationSuccess(allInsertedLeads);
+        alert(`✅ Bulk Upload Complete!\n• ${registeredToInsert.length} clients registered in Lead Registered Report\n• ${draftsToInsert.length} saved as Drafts in New Lead Registration`);
+      } else {
+        // Only drafts uploaded -> stay in New Lead Registration -> Saved Drafts
+        setActiveView('drafts');
+        loadDrafts();
+        alert(`✅ Successfully uploaded ${draftsToInsert.length} incomplete records as Drafts!\nThey are now ready in "Saved Drafts" tab for data entry completion.`);
+      }
+
       if (allInsertedLeads.length > 0) {
         window.dispatchEvent(new CustomEvent('crm_leads_imported', { detail: allInsertedLeads }));
       }
@@ -1949,54 +2120,118 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
         {/* Drafts View */}
         {activeView === 'drafts' && !isEditMode ? (
           <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
               <div>
                 <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   <FileText size={20} color="var(--accent-color)" /> Saved Registration Drafts
                 </h3>
                 <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                  Incomplete/adhoore client forms saved for later completion. You can resume or delete them at any time.
+                  Incomplete/adhoore client forms saved for data entry completion. Resume any draft to verify and register to report.
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setCurrentDraftId(null);
-                  setActiveView('form');
-                }}
-                style={{
-                  padding: '0.5rem 1rem',
-                  background: 'var(--accent-color)',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '6px',
-                  fontWeight: 600,
-                  fontSize: '0.85rem',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.4rem'
-                }}
-              >
-                <UserPlus size={15} /> Start New Client Form
-              </button>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                {/* Search Bar */}
+                <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                  <Search size={14} style={{ position: 'absolute', left: '0.6rem', color: 'var(--text-secondary)' }} />
+                  <input
+                    type="text"
+                    value={draftSearch}
+                    onChange={(e) => { setDraftSearch(e.target.value); setDraftPage(1); }}
+                    placeholder="Search drafts by Name, Phone, City, GST..."
+                    style={{
+                      padding: '0.45rem 0.6rem 0.45rem 1.9rem',
+                      fontSize: '0.85rem',
+                      borderRadius: '6px',
+                      border: '1px solid var(--border-light)',
+                      background: 'var(--bg-surface)',
+                      color: 'var(--text-primary)',
+                      width: '240px'
+                    }}
+                  />
+                </div>
+
+                {/* Tarika A vs Tarika B Scope Toggle (for authorized users with can_view_all_drafts power) */}
+                {canViewAllDrafts && (
+                  <div style={{ display: 'flex', gap: '0.2rem', background: 'var(--bg-primary)', padding: '0.2rem', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
+                    <button
+                      type="button"
+                      onClick={() => { setDraftViewFilter('all'); setDraftPage(1); }}
+                      style={{
+                        padding: '0.35rem 0.7rem',
+                        borderRadius: '6px',
+                        border: 'none',
+                        fontSize: '0.8rem',
+                        fontWeight: draftViewFilter === 'all' ? 700 : 500,
+                        backgroundColor: draftViewFilter === 'all' ? 'var(--bg-surface)' : 'transparent',
+                        color: draftViewFilter === 'all' ? 'var(--accent-color)' : 'var(--text-secondary)',
+                        boxShadow: draftViewFilter === 'all' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      📋 All Drafts ({draftsList.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setDraftViewFilter('my'); setDraftPage(1); }}
+                      style={{
+                        padding: '0.35rem 0.7rem',
+                        borderRadius: '6px',
+                        border: 'none',
+                        fontSize: '0.8rem',
+                        fontWeight: draftViewFilter === 'my' ? 700 : 500,
+                        backgroundColor: draftViewFilter === 'my' ? 'var(--bg-surface)' : 'transparent',
+                        color: draftViewFilter === 'my' ? 'var(--accent-color)' : 'var(--text-secondary)',
+                        boxShadow: draftViewFilter === 'my' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      👤 My Drafts ({draftsList.filter(d => (d.entry_by || d.created_by || '').toLowerCase().includes((currentActor || '').toLowerCase())).length})
+                    </button>
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCurrentDraftId(null);
+                    setActiveView('form');
+                  }}
+                  style={{
+                    padding: '0.5rem 1rem',
+                    background: 'var(--accent-color)',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '6px',
+                    fontWeight: 600,
+                    fontSize: '0.85rem',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.4rem'
+                  }}
+                >
+                  <UserPlus size={15} /> Start New Client Form
+                </button>
+              </div>
             </div>
 
             {isLoadingDrafts ? (
               <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
                 Loading saved drafts...
               </div>
-            ) : draftsList.length === 0 ? (
+            ) : filteredDraftsList.length === 0 ? (
               <div style={{ padding: '3rem 1.5rem', textAlign: 'center', background: 'var(--bg-primary)', borderRadius: '10px', border: '1px dashed var(--border-light)' }}>
                 <Clock size={36} color="var(--text-secondary)" style={{ margin: '0 auto 0.75rem auto', opacity: 0.6 }} />
-                <h4 style={{ margin: 0, color: 'var(--text-primary)', fontSize: '1rem' }}>No Saved Drafts</h4>
+                <h4 style={{ margin: 0, color: 'var(--text-primary)', fontSize: '1rem' }}>No Matching Saved Drafts</h4>
                 <p style={{ margin: '0.5rem 0 1.25rem 0', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
-                  Aapka koi saved draft nahi hai. Jab aap form bharte waqt &quot;Save as Draft&quot; dabayenge, tab wo yahan save ho jayega.
+                  {draftSearch ? 'Aapki search query se koi draft match nahi hua.' : 'Aapka koi saved draft nahi hai. Jab aap form bharte waqt "Save as Draft" ya CSV se adhoora data upload karenge, tab wo yahan aayega.'}
                 </p>
                 <button
                   type="button"
                   onClick={() => {
                     setCurrentDraftId(null);
+                    setDraftSearch('');
                     setActiveView('form');
                   }}
                   style={{
@@ -2014,92 +2249,184 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
                 </button>
               </div>
             ) : (
-              <div style={{ overflowX: 'auto', border: '1px solid var(--border-light)', borderRadius: '8px' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.88rem' }}>
-                  <thead>
-                    <tr style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
-                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Business / Client Name</th>
-                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Contact Person &amp; Phone</th>
-                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>City / State</th>
-                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Last Saved</th>
-                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Saved By</th>
-                      <th style={{ padding: '0.75rem 1rem', fontWeight: 600, textAlign: 'center' }}>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {draftsList.map(draft => (
-                      <tr key={draft.id} style={{ borderBottom: '1px solid var(--border-light)', background: 'var(--bg-surface)' }}>
-                        <td style={{ padding: '0.75rem 1rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                          {draft.company || draft.name || 'Unnamed Client'}
-                          {draft.business_gst && (
-                            <span style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 400 }}>
-                              GST: {draft.business_gst}
-                            </span>
-                          )}
-                        </td>
-                        <td style={{ padding: '0.75rem 1rem', color: 'var(--text-primary)' }}>
-                          <div>{draft.name || '-'}</div>
-                          <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{draft.phone || '-'}</div>
-                        </td>
-                        <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>
-                          {[draft.city_name, draft.state_name].filter(Boolean).join(', ') || '-'}
-                        </td>
-                        <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)', fontSize: '0.82rem' }}>
-                          {draft.updated_at || draft.created_at ? (
-                            new Date(draft.updated_at || draft.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'short', timeStyle: 'short' })
-                          ) : '-'}
-                        </td>
-                        <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)', fontSize: '0.82rem' }}>
-                          {draft.entry_by || draft.created_by || '-'}
-                        </td>
-                        <td style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>
-                          <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
-                            <button
-                              type="button"
-                              onClick={() => handleResumeDraft(draft)}
-                              style={{
-                                padding: '0.35rem 0.75rem',
-                                background: 'var(--accent-color)',
-                                color: '#fff',
-                                border: 'none',
-                                borderRadius: '5px',
-                                fontSize: '0.8rem',
-                                fontWeight: 600,
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '0.3rem'
-                              }}
-                              title="Resume & Complete Registration"
-                            >
-                              <Edit3 size={13} /> Resume
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteDraft(draft.id)}
-                              style={{
-                                padding: '0.35rem 0.65rem',
-                                background: '#fee2e2',
-                                color: '#b91c1c',
-                                border: '1px solid #fca5a5',
-                                borderRadius: '5px',
-                                fontSize: '0.8rem',
-                                fontWeight: 600,
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '0.3rem'
-                              }}
-                              title="Delete Draft"
-                            >
-                              <Trash2 size={13} /> Delete
-                            </button>
-                          </div>
-                        </td>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                <div style={{ overflowX: 'auto', border: '1px solid var(--border-light)', borderRadius: '8px' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.88rem' }}>
+                    <thead>
+                      <tr style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
+                        <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Business / Client Name</th>
+                        <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Contact Person &amp; Phone</th>
+                        <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>City / State</th>
+                        <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Missing Information</th>
+                        <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Last Saved</th>
+                        <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Saved By</th>
+                        <th style={{ padding: '0.75rem 1rem', fontWeight: 600, textAlign: 'center' }}>Actions</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {paginatedDrafts.map(draft => {
+                        const missing = [];
+                        if (!draft.business_gst) missing.push('GST');
+                        if (!draft.phone) missing.push('Phone');
+                        if (!draft.city_name && !draft.state_name) missing.push('Address');
+                        if (!draft.email) missing.push('Email');
+
+                        return (
+                          <tr key={draft.id} style={{ borderBottom: '1px solid var(--border-light)', background: 'var(--bg-surface)' }}>
+                            <td style={{ padding: '0.75rem 1rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                <span>{draft.company || draft.name || 'Unnamed Client'}</span>
+                                {draft.lead_ref_id && (
+                                  <span style={{ fontSize: '0.7rem', padding: '0.1rem 0.35rem', borderRadius: '3px', background: 'var(--bg-primary)', color: 'var(--text-secondary)', fontFamily: 'monospace' }}>
+                                    #{draft.lead_ref_id}
+                                  </span>
+                                )}
+                              </div>
+                              {draft.business_gst && (
+                                <span style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 400, marginTop: '2px' }}>
+                                  GST: {draft.business_gst}
+                                </span>
+                              )}
+                            </td>
+                            <td style={{ padding: '0.75rem 1rem', color: 'var(--text-primary)' }}>
+                              <div>{draft.name || '-'}</div>
+                              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{draft.phone || '-'}</div>
+                            </td>
+                            <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>
+                              {[draft.city_name, draft.state_name].filter(Boolean).join(', ') || '-'}
+                            </td>
+                            <td style={{ padding: '0.75rem 1rem' }}>
+                              {missing.length > 0 ? (
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+                                  {missing.map(m => (
+                                    <span key={m} style={{ fontSize: '0.7rem', padding: '0.1rem 0.4rem', borderRadius: '4px', background: '#fef3c7', color: '#92400e', fontWeight: 600, border: '1px solid #fde68a' }}>
+                                      {m}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span style={{ fontSize: '0.75rem', color: '#059669', fontWeight: 600 }}>All Core Info Filled</span>
+                              )}
+                            </td>
+                            <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)', fontSize: '0.82rem' }}>
+                              {draft.updated_at || draft.created_at ? (
+                                new Date(draft.updated_at || draft.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'short', timeStyle: 'short' })
+                              ) : '-'}
+                            </td>
+                            <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)', fontSize: '0.82rem' }}>
+                              {draft.entry_by || draft.created_by || '-'}
+                            </td>
+                            <td style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>
+                              <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
+                                <button
+                                  type="button"
+                                  onClick={() => handleResumeDraft(draft)}
+                                  style={{
+                                    padding: '0.35rem 0.75rem',
+                                    background: 'var(--accent-color)',
+                                    color: '#fff',
+                                    border: 'none',
+                                    borderRadius: '5px',
+                                    fontSize: '0.8rem',
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.3rem'
+                                  }}
+                                  title="Resume & Complete Registration"
+                                >
+                                  <Edit3 size={13} /> Complete &amp; Register
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteDraft(draft.id)}
+                                  style={{
+                                    padding: '0.35rem 0.65rem',
+                                    background: '#fee2e2',
+                                    color: '#b91c1c',
+                                    border: '1px solid #fca5a5',
+                                    borderRadius: '5px',
+                                    fontSize: '0.8rem',
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.3rem'
+                                  }}
+                                  title="Delete Draft"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Standard Unified Pagination Bar */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.6rem 0.5rem', flexWrap: 'wrap', gap: '0.75rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                  <div>
+                    Showing <strong>{filteredDraftsList.length === 0 ? 0 : (draftPage - 1) * draftPageSize + 1}</strong> to <strong>{Math.min(draftPage * draftPageSize, filteredDraftsList.length)}</strong> of <strong>{filteredDraftsList.length}</strong> drafts
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <span>Rows:</span>
+                      <select
+                        value={draftPageSize}
+                        onChange={(e) => { setDraftPageSize(Number(e.target.value)); setDraftPage(1); }}
+                        style={{ padding: '0.25rem 0.5rem', borderRadius: '6px', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', fontSize: '0.82rem' }}
+                      >
+                        <option value={10}>10</option>
+                        <option value={25}>25</option>
+                        <option value={50}>50</option>
+                        <option value={100}>100</option>
+                      </select>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <button
+                        type="button"
+                        disabled={draftPage <= 1}
+                        onClick={() => setDraftPage(1)}
+                        style={{ padding: '0.25rem 0.5rem', borderRadius: '4px', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', cursor: draftPage <= 1 ? 'not-allowed' : 'pointer', opacity: draftPage <= 1 ? 0.4 : 1 }}
+                      >
+                        «
+                      </button>
+                      <button
+                        type="button"
+                        disabled={draftPage <= 1}
+                        onClick={() => setDraftPage(p => Math.max(1, p - 1))}
+                        style={{ padding: '0.25rem 0.5rem', borderRadius: '4px', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', cursor: draftPage <= 1 ? 'not-allowed' : 'pointer', opacity: draftPage <= 1 ? 0.4 : 1 }}
+                      >
+                        ‹
+                      </button>
+                      <span style={{ fontWeight: 600, padding: '0 0.35rem' }}>
+                        Page {draftPage} of {totalDraftPages}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={draftPage >= totalDraftPages}
+                        onClick={() => setDraftPage(p => Math.min(totalDraftPages, p + 1))}
+                        style={{ padding: '0.25rem 0.5rem', borderRadius: '4px', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', cursor: draftPage >= totalDraftPages ? 'not-allowed' : 'pointer', opacity: draftPage >= totalDraftPages ? 0.4 : 1 }}
+                      >
+                        ›
+                      </button>
+                      <button
+                        type="button"
+                        disabled={draftPage >= totalDraftPages}
+                        onClick={() => setDraftPage(totalDraftPages)}
+                        style={{ padding: '0.25rem 0.5rem', borderRadius: '4px', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', cursor: draftPage >= totalDraftPages ? 'not-allowed' : 'pointer', opacity: draftPage >= totalDraftPages ? 0.4 : 1 }}
+                      >
+                        »
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -2157,8 +2484,8 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
             {/* Real-Time Duplicate Alert Banner */}
         {duplicateInfo && (
           <div style={{
-            backgroundColor: 'rgba(239, 68, 68, 0.08)',
-            border: '1.5px solid rgba(239, 68, 68, 0.35)',
+            backgroundColor: duplicateInfo.isRegisteredReport ? '#fff1f2' : 'rgba(239, 68, 68, 0.08)',
+            border: `1.5px solid ${duplicateInfo.isRegisteredReport ? '#fecdd3' : 'rgba(239, 68, 68, 0.35)'}`,
             borderRadius: '10px',
             padding: '1rem 1.25rem',
             marginBottom: '1.5rem',
@@ -2166,18 +2493,18 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
             alignItems: 'flex-start',
             gap: '0.85rem'
           }}>
-            <AlertTriangle size={22} color="#ef4444" style={{ flexShrink: 0, marginTop: '2px' }} />
+            <AlertTriangle size={22} color={duplicateInfo.isRegisteredReport ? '#be123c' : '#ef4444'} style={{ flexShrink: 0, marginTop: '2px' }} />
             <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 700, fontSize: '0.92rem', color: '#b91c1c', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                <span>⚠️ Duplicate Client Found in Database!</span>
+              <div style={{ fontWeight: 800, fontSize: '0.94rem', color: duplicateInfo.isRegisteredReport ? '#9f1239' : '#b91c1c', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <span>{duplicateInfo.isRegisteredReport ? '🚨 ALREADY REGISTERED IN LEAD REGISTERED REPORT!' : '⚠️ Duplicate Client Found in Database!'}</span>
                 {duplicateInfo.lead_ref_id && (
-                  <span style={{ fontSize: '0.75rem', padding: '0.1rem 0.45rem', borderRadius: '4px', backgroundColor: '#fee2e2', color: '#991b1b', fontFamily: 'monospace' }}>
+                  <span style={{ fontSize: '0.78rem', padding: '0.12rem 0.5rem', borderRadius: '4px', backgroundColor: duplicateInfo.isRegisteredReport ? '#fee2e2' : '#fee2e2', color: duplicateInfo.isRegisteredReport ? '#9f1239' : '#991b1b', fontFamily: 'monospace', fontWeight: 700 }}>
                     #{duplicateInfo.lead_ref_id}
                   </span>
                 )}
               </div>
-              <div style={{ fontSize: '0.84rem', color: 'var(--text-primary)', marginTop: '0.35rem', lineHeight: '1.4' }}>
-                A client with matching <strong>{duplicateInfo.matchedOn}</strong> (<code>{duplicateInfo.matchVal}</code>) already exists as <strong>{duplicateInfo.company || duplicateInfo.name || 'Unnamed Client'}</strong> {duplicateInfo.name && duplicateInfo.company && `(${duplicateInfo.name})`} with Status: <strong>{duplicateInfo.status || 'New'}</strong>.
+              <div style={{ fontSize: '0.86rem', color: 'var(--text-primary)', marginTop: '0.35rem', lineHeight: '1.4' }}>
+                A client with matching <strong>{duplicateInfo.matchedOn}</strong> (<code>{duplicateInfo.matchVal}</code>) {duplicateInfo.isRegisteredReport ? 'is ALREADY actively registered in Lead Registered Report as' : 'already exists as'} <strong>{duplicateInfo.company || duplicateInfo.name || 'Unnamed Client'}</strong> {duplicateInfo.name && duplicateInfo.company && `(${duplicateInfo.name})`} with Status: <strong style={{ color: duplicateInfo.isRegisteredReport ? '#be123c' : 'inherit' }}>{duplicateInfo.status || 'Active'}</strong>.
               </div>
 
               {/* Ownership & Assignment Meta Badges */}
@@ -2650,6 +2977,27 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
             <div style={{ flex: 1, overflowY: 'auto', padding: '1.25rem', display: 'flex', flexDirection: 'column' }}>
               {importerStep === 'mapping' ? (
                 <div>
+                  {/* Default Data Status Selector (for files without Data Status column) */}
+                  <div style={{ padding: '0.85rem 1rem', background: 'var(--bg-primary)', border: '1.5px solid var(--border-light)', borderRadius: '10px', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                        🎯 Default Data Status <span style={{ fontSize: '0.75rem', fontWeight: 500, color: 'var(--text-secondary)' }}>(When &quot;Data Status&quot; column is not in CSV)</span>
+                      </div>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
+                        Decides where records will go: <strong>Saved Drafts</strong> (New Lead Registration queue) or <strong>Report</strong> (Registered)
+                      </div>
+                    </div>
+                    <select
+                      value={defaultDataStatus}
+                      onChange={(e) => setDefaultDataStatus(e.target.value)}
+                      style={{ padding: '0.5rem 0.85rem', borderRadius: '6px', border: '1.5px solid var(--accent-color)', fontWeight: 600, fontSize: '0.85rem', background: 'var(--bg-surface)', color: 'var(--text-primary)', cursor: 'pointer' }}
+                    >
+                      <option value="Saved Drafts">📁 Saved Drafts (New Lead Registration Queue)</option>
+                      <option value="Partial Confirmed">⏳ Partial Confirmed (Lead Registered Report)</option>
+                      <option value="Verified Data">✅ Verified Data (Lead Registered Report)</option>
+                    </select>
+                  </div>
+
                   <p style={{ margin: '0 0 1rem 0', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
                     Select which column from your CSV/Excel file corresponds to each client registration field. If a field matches automatically, we've preselected it for you.
                   </p>
@@ -2681,7 +3029,7 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', flex: 1, gap: '1rem', minHeight: 0 }}>
                   {/* Summary Stats Cards */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '0.75rem' }}>
                     <div 
                       onClick={() => { setPreviewFilterTab('all'); setPreviewPage(1); }}
                       style={{ 
@@ -2695,7 +3043,7 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
                       }}
                     >
                       <div style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--text-primary)' }}>{allMappedData.length}</div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Total Rows Found</div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Total Rows in File</div>
                     </div>
                     <div 
                       onClick={() => { setPreviewFilterTab('ready'); setPreviewPage(1); }}
@@ -2713,6 +3061,21 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
                       <div style={{ fontSize: '0.75rem', color: '#065f46', fontWeight: 600 }}>Ready to Import</div>
                     </div>
                     <div 
+                      onClick={() => { setPreviewFilterTab('alreadyInReport'); setPreviewPage(1); }}
+                      style={{ 
+                        padding: '0.75rem 1rem', 
+                        borderRadius: '10px', 
+                        background: previewFilterTab === 'alreadyInReport' ? '#fee2e2' : '#fff1f2', 
+                        border: `1.5px solid ${previewFilterTab === 'alreadyInReport' ? '#e11d48' : '#fecdd3'}`, 
+                        textAlign: 'center',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s'
+                      }}
+                    >
+                      <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#be123c' }}>{alreadyInReportImportData.length}</div>
+                      <div style={{ fontSize: '0.75rem', color: '#9f1239', fontWeight: 600 }}>⚠️ In Lead Registered Report</div>
+                    </div>
+                    <div 
                       onClick={() => { setPreviewFilterTab('duplicates'); setPreviewPage(1); }}
                       style={{ 
                         padding: '0.75rem 1rem', 
@@ -2725,9 +3088,29 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
                       }}
                     >
                       <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#b45309' }}>{duplicateImportData.length}</div>
-                      <div style={{ fontSize: '0.75rem', color: '#92400e', fontWeight: 600 }}>Duplicates (Safely Skipped)</div>
+                      <div style={{ fontSize: '0.75rem', color: '#92400e', fontWeight: 600 }}>Other Duplicates</div>
                     </div>
                   </div>
+
+                  {/* Instant Warning Banner if already in Report */}
+                  {alreadyInReportImportData.length > 0 && (
+                    <div style={{ padding: '0.65rem 1rem', background: '#fff1f2', border: '1px solid #fecdd3', borderRadius: '8px', color: '#9f1239', fontSize: '0.85rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                        <AlertTriangle size={16} color="#e11d48" />
+                        <span><strong>Instant Alert:</strong> {alreadyInReportImportData.length} client(s) in this file already exist in Lead Registered Report!</span>
+                      </div>
+                      <button 
+                        type="button" 
+                        onClick={() => {
+                          setPreviewFilterTab('alreadyInReport');
+                          setPreviewPage(1);
+                        }}
+                        style={{ padding: '0.25rem 0.65rem', background: '#be123c', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer' }}
+                      >
+                        Inspect Already Registered Leads
+                      </button>
+                    </div>
+                  )}
 
                   {/* Interactive Toolbar: Filter Tabs, Live Search, Rows Per Page */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
@@ -2752,6 +3135,23 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
                       </button>
                       <button
                         type="button"
+                        onClick={() => { setPreviewFilterTab('alreadyInReport'); setPreviewPage(1); }}
+                        style={{
+                          padding: '0.35rem 0.75rem',
+                          borderRadius: '6px',
+                          border: 'none',
+                          fontSize: '0.78rem',
+                          fontWeight: previewFilterTab === 'alreadyInReport' ? 700 : 500,
+                          backgroundColor: previewFilterTab === 'alreadyInReport' ? 'var(--bg-surface)' : 'transparent',
+                          color: previewFilterTab === 'alreadyInReport' ? '#be123c' : 'var(--text-secondary)',
+                          boxShadow: previewFilterTab === 'alreadyInReport' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        🚨 In Registered Report ({alreadyInReportImportData.length})
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => { setPreviewFilterTab('duplicates'); setPreviewPage(1); }}
                         style={{
                           padding: '0.35rem 0.75rem',
@@ -2765,7 +3165,7 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
                           cursor: 'pointer'
                         }}
                       >
-                        ⚠️ Duplicates ({duplicateImportData.length})
+                        ⚠️ Other Duplicates ({duplicateImportData.length})
                       </button>
                       <button
                         type="button"
@@ -2873,19 +3273,35 @@ export default function ClientRegistration({ onRegistrationSuccess, initialData 
                                   {row._rowNum || idx + 1}
                                 </td>
                                 <td style={{ padding: '0.5rem 0.75rem', textAlign: 'center', borderRight: '1px solid var(--border-light)', whiteSpace: 'nowrap' }}>
-                                  {isDup ? (
+                                  {row._isAlreadyInReport ? (
                                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.15rem' }}>
-                                      <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '0.12rem 0.45rem', borderRadius: '4px', backgroundColor: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca' }}>
+                                      <span style={{ fontSize: '0.7rem', fontWeight: 800, padding: '0.12rem 0.45rem', borderRadius: '4px', backgroundColor: '#fee2e2', color: '#be123c', border: '1px solid #fecdd3' }}>
+                                        🚨 In Registered Report
+                                      </span>
+                                      {row._dupReason && (
+                                        <span style={{ fontSize: '0.65rem', color: '#9f1239', fontWeight: 600, maxWidth: '220px', whiteSpace: 'normal', lineHeight: 1.15 }}>
+                                          {row._dupReason}
+                                        </span>
+                                      )}
+                                    </div>
+                                  ) : isDup ? (
+                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.15rem' }}>
+                                      <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '0.12rem 0.45rem', borderRadius: '4px', backgroundColor: '#fef3c7', color: '#92400e', border: '1px solid #fde68a' }}>
                                         ⚠️ Duplicate
                                       </span>
                                       {row._dupReason && (
-                                        <span style={{ fontSize: '0.65rem', color: '#b91c1c', fontWeight: 500 }}>{row._dupReason}</span>
+                                        <span style={{ fontSize: '0.65rem', color: '#b45309', fontWeight: 500, maxWidth: '200px', whiteSpace: 'normal', lineHeight: 1.15 }}>{row._dupReason}</span>
                                       )}
                                     </div>
                                   ) : (
-                                    <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '0.12rem 0.45rem', borderRadius: '4px', backgroundColor: '#d1fae5', color: '#065f46', border: '1px solid #a7f3d0' }}>
-                                      🟢 Ready
-                                    </span>
+                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.15rem' }}>
+                                      <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '0.12rem 0.45rem', borderRadius: '4px', backgroundColor: '#d1fae5', color: '#065f46', border: '1px solid #a7f3d0' }}>
+                                        🟢 Ready
+                                      </span>
+                                      <span style={{ fontSize: '0.65rem', fontWeight: 600, color: row.data_status === 'Saved Drafts' ? 'var(--text-secondary)' : '#059669' }}>
+                                        {row.data_status || 'Saved Drafts'}
+                                      </span>
+                                    </div>
                                   )}
                                 </td>
                                 {mappedDisplayFields.map(field => {

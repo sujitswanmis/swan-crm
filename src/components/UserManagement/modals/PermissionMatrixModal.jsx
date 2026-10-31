@@ -15,8 +15,11 @@ import {
 } from 'lucide-react';
 import { MODULES_CONFIG } from '@/config/modulesConfig';
 import { ROLE_PRESETS } from '../utils/rolePresets';
+import { INTEGRATION_PAGE_IDS } from '@/config/integrationsConfig';
+import { getSubItemPermissions } from '@/utils/permissionUtils';
 
 const OPERATIONAL_POWERS = [
+  { key: 'can_manage_integrations', label: '🔌 Manage Integrations & API Credentials', desc: 'Allows managing API keys, external connections and Meta lead sync within authorized tenant and branch scope' },
   { key: 'can_import_data', label: '📥 Import Leads Power', desc: 'Allows uploading and bulk importing CSV lead files into CRM' },
   { key: 'can_export_data', label: '📤 Export / Download Data Power', desc: 'Allows downloading CSV reports and exporting lead data' },
   { key: 'can_assign_leads', label: '👥 Lead Assignment Power', desc: 'Allows assigning and reallocating leads to team members' },
@@ -27,7 +30,8 @@ const OPERATIONAL_POWERS = [
   { key: 'can_self_reset_password', label: '🔑 Self Password Reset', desc: 'Allows self password reset via Email OTP on login screen' },
   { key: 'can_access_audit_logs', label: '📜 View Activity Audit Logs', desc: 'Allows viewing security audit logs and event history in Settings' },
   { key: 'can_manage_settings', label: '⚙️ Edit CRM Pipeline Config', desc: 'Allows modifying stages, sources, and system preferences' },
-  { key: 'can_manage_column_data', label: '🛠️ Column Data Manager & Bulk Edit Power', desc: 'Allows bulk updating column values and find-and-replace across lead reports' }
+  { key: 'can_manage_column_data', label: '🛠️ Column Data Manager & Bulk Edit Power', desc: 'Allows bulk updating column values and find-and-replace across lead reports' },
+  { key: 'can_view_all_drafts', label: '📋 View All Team Drafts (Common Pool Access)', desc: 'Allows viewing, searching, and completing adhoora/incomplete draft registrations created by any user in New Lead Registration' }
 ];
 
 const TABLE_COLUMNS = [
@@ -207,6 +211,10 @@ export default function PermissionMatrixModal({
   const getSubItemPerms = (moduleId, subId) => {
     const parentPerms = getModulePerms(moduleId);
     if (!parentPerms.view) return { view: false, add: false, edit: false, delete: false };
+    // Keep tab checkboxes aligned with the same fallback used by the integration server.
+    if (moduleId === 'settings' && INTEGRATION_PAGE_IDS.includes(subId)) {
+      return getSubItemPermissions(accessForm, '', moduleId, subId);
+    }
     const m = accessForm[moduleId] || {};
     const subs = m.sub_items || {};
 
@@ -1005,6 +1013,8 @@ export default function PermissionMatrixModal({
                           const locked = module.roleAssignable === false || module.masterAdminOnly === true;
                           // Real functional sub-items only
                           const children = module.subItems || [];
+                          const groups = module.subItemGroups || [];
+                          const pageCount = children.filter(child => !child.pageId).length + groups.length;
                           const hasSubs = children.length > 0;
                           const expanded = isExpanded(module.id, children);
                           const isSpecialManager = module.id === 'leads' || module.id === 'recruiter';
@@ -1063,7 +1073,7 @@ export default function PermissionMatrixModal({
                                             fontWeight: 600
                                           }}
                                         >
-                                          {children.length} Tabs
+                                          {groups.length ? `${pageCount} Pages` : `${children.length} Tabs`}
                                         </span>
                                       )}
                                       {locked && (
@@ -1192,22 +1202,25 @@ export default function PermissionMatrixModal({
                                   {children.map(sub => {
                                     const subPerms = getSubItemPerms(module.id, sub.id);
                                     const isSubViewOnly = sub.id === 'lead_dashboard' || sub.id === 'hourly_work' || module.viewOnly;
+                                    const group = groups.find(item => item.id === sub.pageId);
+                                    const firstInGroup = group?.subItems[0]?.id === sub.id;
 
                                     return (
+                                      <React.Fragment key={sub.id}>
+                                      {firstInGroup && <tr><td colSpan={COLUMN_COUNT} style={{padding:'0.65rem 0.8rem 0.65rem 2.8rem',fontWeight:700,borderBottom:'1px solid var(--border-light)',background:'var(--bg-primary)'}}>{group.label}<span style={{marginLeft:8,fontSize:'0.75rem',fontWeight:500,color:'var(--text-secondary)'}}>{group.subItems.length} Tabs</span></td></tr>}
                                       <tr
-                                        key={sub.id}
                                         style={{
                                           background: subPerms.view ? 'var(--bg-surface)' : 'var(--bg-primary)'
                                         }}
                                       >
                                         <td
                                           style={{
-                                            padding: '0.45rem 0.8rem 0.45rem 2.8rem',
+                                            padding: group ? '0.45rem 0.8rem 0.45rem 4rem' : '0.45rem 0.8rem 0.45rem 2.8rem',
                                             borderBottom: '1px solid var(--border-light)',
                                             color: subPerms.view ? 'var(--text-primary)' : 'var(--text-secondary)'
                                           }}
                                         >
-                                          ↳ {sub.label}
+                                          ↳ {group ? sub.tabLabel : sub.label}
                                         </td>
                                         <td style={{ textAlign: 'center', borderBottom: '1px solid var(--border-light)' }}>
                                           <input
@@ -1258,6 +1271,7 @@ export default function PermissionMatrixModal({
                                           )}
                                         </td>
                                       </tr>
+                                      </React.Fragment>
                                     );
                                   })}
                                 </>

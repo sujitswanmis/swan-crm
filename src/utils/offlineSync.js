@@ -447,6 +447,7 @@ const fastSnapshotKey = (userId, stage) => `${userId ? `supuja_fast_leads_snapsh
 
 // Keep the preview predicate identical to the table's stage filter.
 export function matchesLeadPreviewStage(lead, stage) {
+  if (lead?.status === 'DRAFT') return false;
   if (!normalizePreviewStage(stage)) return true;
   const prefix = stage.split(' - ')[0].replace(/^0/, '') + ';';
   const status = lead.status || '';

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import dynamic from 'next/dynamic';
+import { INTEGRATION_PAGE, INTEGRATION_PAGE_IDS } from '@/config/integrationsConfig';
 import pkg from '../../package.json';
 import LeadTable from '@/components/LeadTable';
 import GlobalSoftphoneWidget from './CallCenter/GlobalSoftphoneWidget';
@@ -28,7 +29,7 @@ import UserNotificationPreferencesModal from '@/components/common/UserNotificati
 import { getTransferredLeads } from '@/app/actions/partyHandoff';
 
 import { MODULES_CONFIG } from '@/config/modulesConfig';
-import { getSubItemPermissions, getModulePermissions } from '@/utils/permissionUtils';
+import { getSubItemPermissions, getModulePermissions, canViewIntegrations } from '@/utils/permissionUtils';
 import { sameLeadList } from '@/utils/sameLeadList';
 import { getReportingTeam, getLeadAssignees, isLeadInAssignmentScope, getLeadStageKey, getLeadStageAccess } from '@/utils/reportingHierarchy';
 import { isCompleteLeadCache, matchesLeadCacheContext, mergeLeadCacheForDisplay } from '@/utils/leadCachePolicy';
@@ -102,7 +103,8 @@ const SETTINGS_MODULE_ITEMS = [
   { id: 'targets', label: 'Targets & Performance', icon: Target },
   { id: 'sessions', label: 'Session & Break Rules', icon: Monitor },
   { id: 'data', label: 'Data Management', icon: Database },
-  { id: 'media', label: 'File & Media Settings', icon: FileType }
+  { id: 'media', label: 'File & Media Settings', icon: FileType },
+  { ...INTEGRATION_PAGE, icon: Network }
 ];
 
 // Helper to map DB status to Team Management Stage format
@@ -735,6 +737,7 @@ export default function CRMContainer({
     let queryTab = (searchParams?.get('setting') || searchParams?.get('tab') || searchParams?.get('subtab') || initialSearchParams?.setting || initialSearchParams?.tab || initialSearchParams?.subtab || '').toLowerCase();
     if (cleanPath && cleanPath.startsWith('settings/')) {
       const sub = cleanPath.split('/')[1];
+      if (INTEGRATION_PAGE_IDS.includes(sub)) return INTEGRATION_PAGE.id;
       if (['products', 'product-list', 'products-list'].includes(sub)) return 'products';
       if (['crm-config', 'crm_config'].includes(sub)) return 'crm';
       if (['custom-fields', 'custom_fields'].includes(sub)) return 'fields';
@@ -750,6 +753,7 @@ export default function CRMContainer({
       }
     }
     if (queryTab) {
+      if (INTEGRATION_PAGE_IDS.includes(queryTab)) return INTEGRATION_PAGE.id;
       if (['products', 'product-list', 'products-list'].includes(queryTab)) return 'products';
       if (['crm-config', 'crm_config'].includes(queryTab)) return 'crm';
       if (['custom-fields', 'custom_fields'].includes(queryTab)) return 'fields';
@@ -838,7 +842,7 @@ export default function CRMContainer({
         if (cleanSub === 'crm-config' || cleanSub === 'crm_config') cleanSub = 'crm';
         if (cleanSub === 'custom-fields' || cleanSub === 'custom_fields') cleanSub = 'fields';
         if (cleanSub === 'business-profile' || cleanSub === 'branches') cleanSub = 'business';
-        if (cleanSub) setCurrentSettingSubTab(cleanSub);
+        if (cleanSub) setCurrentSettingSubTab(INTEGRATION_PAGE_IDS.includes(cleanSub) ? INTEGRATION_PAGE.id : cleanSub);
       }
       const attTab = search.get('tab') || search.get('subtab');
       if (attTab && (path === 'attendance' || (path && path.startsWith('attendance/')))) {
@@ -1290,7 +1294,7 @@ export default function CRMContainer({
   useEffect(() => {
     const handleSubTabChange = (e) => {
       if (e.detail) {
-        setCurrentSettingSubTab(e.detail);
+        setCurrentSettingSubTab(INTEGRATION_PAGE_IDS.includes(e.detail) ? INTEGRATION_PAGE.id : e.detail);
       }
     };
     const handleOpenBilling = () => {
@@ -2809,7 +2813,7 @@ export default function CRMContainer({
       if (cleanSub === 'custom-fields' || cleanSub === 'custom_fields') cleanSub = 'fields';
       if (cleanSub === 'business-profile' || cleanSub === 'branches') cleanSub = 'business';
       tab = 'settings';
-      setCurrentSettingSubTab(cleanSub);
+      setCurrentSettingSubTab(INTEGRATION_PAGE_IDS.includes(cleanSub) ? INTEGRATION_PAGE.id : cleanSub);
     } else if (tab === 'location-master' || tab === 'location_territory') {
       tab = 'location_master';
     } else if (tab === 'aiadmin' || (tab && tab.startsWith('aiadmin/'))) {
@@ -2953,7 +2957,7 @@ export default function CRMContainer({
         if (cleanSub === 'custom-fields' || cleanSub === 'custom_fields') cleanSub = 'fields';
         if (cleanSub === 'business-profile' || cleanSub === 'branches') cleanSub = 'business';
         tab = 'settings';
-        setCurrentSettingSubTab(cleanSub);
+        setCurrentSettingSubTab(INTEGRATION_PAGE_IDS.includes(cleanSub) ? INTEGRATION_PAGE.id : cleanSub);
       } else if (tab === 'location-master' || tab === 'location_territory') {
         tab = 'location_master';
       } else if (tab === 'aiadmin' || (tab && tab.startsWith('aiadmin/'))) {
@@ -3306,6 +3310,7 @@ export default function CRMContainer({
 
   const handleSettingSubTabChange = (subTabId) => {
     let cleanSub = subTabId;
+    if (INTEGRATION_PAGE_IDS.includes(cleanSub)) cleanSub = INTEGRATION_PAGE.id;
     if (cleanSub === 'products' || cleanSub === 'product-list' || cleanSub === 'products-list') cleanSub = 'products';
     if (cleanSub === 'order_pipeline' || cleanSub === 'order-pipeline' || cleanSub === 'order-config' || cleanSub === 'order_config') cleanSub = 'order_pipeline';
     if (cleanSub === 'crm-config' || cleanSub === 'crm_config') cleanSub = 'crm';
@@ -5632,6 +5637,7 @@ export default function CRMContainer({
                 <div className="category-modules-inner">
                   {SETTINGS_MODULE_ITEMS.filter(item => {
                     if (userRole === 'admin' || userRole === 'Admin') return true;
+                    if (item.id === INTEGRATION_PAGE.id) return canViewIntegrations(moduleAccess, userRole);
                     return getSubItemPermissions(moduleAccess, userRole, 'settings', item.id)?.view !== false;
                   }).map(item => {
                     const IconComponent = item.icon;
@@ -7460,6 +7466,9 @@ export default function CRMContainer({
                     canWrite={canWrite} 
                     teamMembers={teamMembers}
                     userCompany={userCompany}
+                    moduleAccess={moduleAccess}
+                    userRole={userRole}
+                    userName={userName}
                   />
                 </ErrorBoundary>
               </KeepAliveTab>
