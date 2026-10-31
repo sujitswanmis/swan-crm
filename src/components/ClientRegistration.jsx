@@ -1997,12 +1997,10 @@ export default function ClientRegistration({
           if (/draft/i.test(rawDataStatus)) {
             row.data_status = 'Saved Drafts';
             row.status = 'DRAFT';
-          } else if (/partial/i.test(rawDataStatus)) {
-            row.data_status = 'Partial Confirmed';
-            row.status = 'Partial Confirmed';
           } else {
-            row.data_status = 'Verified Data';
-            if (!row.status || row.status === 'None' || row.status === 'DRAFT' || row.status === 'Verified Data') {
+            row.data_status = /partial/i.test(rawDataStatus) ? 'Partial Confirmed' : 'Verified Data';
+            // PRESERVE user's real Lead Status from Excel if provided; only default if empty/None
+            if (!row.status || row.status === 'None' || row.status === 'DRAFT' || row.status === 'Partial Confirmed' || row.status === 'Verified Data') {
               row.status = tenantLeadStatuses[0] || '1;01>New Stage>New Lead';
             }
           }
@@ -2116,12 +2114,9 @@ export default function ClientRegistration({
           if (/draft/i.test(rawDataStatus)) {
             r.data_status = 'Saved Drafts';
             r.status = 'DRAFT';
-          } else if (/partial/i.test(rawDataStatus)) {
-            r.data_status = 'Partial Confirmed';
-            r.status = 'Partial Confirmed';
           } else {
-            r.data_status = 'Verified Data';
-            if (!r.status || r.status === 'None' || r.status === 'DRAFT' || r.status === 'Verified Data') {
+            r.data_status = /partial/i.test(rawDataStatus) ? 'Partial Confirmed' : 'Verified Data';
+            if (!r.status || r.status === 'None' || r.status === 'DRAFT' || r.status === 'Partial Confirmed' || r.status === 'Verified Data') {
               r.status = tenantLeadStatuses[0] || '1;01>New Stage>New Lead';
             }
           }
@@ -2209,10 +2204,11 @@ export default function ClientRegistration({
 
           if (r.data_status === 'Saved Drafts' || r.status === 'DRAFT') {
             copy.status = 'DRAFT';
-          } else if (r.data_status === 'Partial Confirmed' || r.status === 'Partial Confirmed') {
-            copy.status = 'Partial Confirmed';
-          } else if (!copy.status || copy.status === 'None' || copy.status === 'Verified Data') {
-            copy.status = tenantLeadStatuses[0] || '1;01>New Stage>New Lead';
+          } else {
+            // Preserve user's real Lead Status from Excel; only default if empty/None/DRAFT
+            if (!copy.status || copy.status === 'None' || copy.status === 'DRAFT' || copy.status === 'Verified Data' || copy.status === 'Partial Confirmed') {
+              copy.status = tenantLeadStatuses[0] || '1;01>New Stage>New Lead';
+            }
           }
 
           // Convert empty string for dates, timestamps, or UUIDs to null to prevent Postgres syntax errors
