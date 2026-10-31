@@ -159,7 +159,7 @@ export async function getClientRegistrationDrafts(userCompany = '', currentUser 
     const adminClient = getAdminClient();
     let query = adminClient
       .from('leads')
-      .select('id, lead_ref_id, company, name, phone, email, state_name, district_name, city_name, created_at, updated_at, entry_by, created_by, our_company, requirement, business_gst, status, remarks')
+      .select('id, lead_ref_id, company, name, phone, email, state_name, district_name, city_name, created_at, updated_at, entry_by, created_by, our_company, requirement, business_gst, status')
       .eq('status', 'DRAFT')
       .order('updated_at', { ascending: false });
 

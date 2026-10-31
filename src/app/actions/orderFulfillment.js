@@ -359,7 +359,7 @@ export async function saveOrderFollowupAndRecur(followupData, tenantId = DEFAULT
         .select('*')
         .eq('tenant_id', effectiveTenantId)
         .eq('party_id', followupData.party_id)
-        .single();
+        .maybeSingle();
 
       nextDue = calculateNextDueDate(currentSchedule || { frequency_type: 'MONTHLY' }, todayStr);
     }
@@ -1105,7 +1105,26 @@ export async function getMonthlyHealthCheckQueue(tenantId = DEFAULT_TENANT_ID, p
 
     const auditMap = new Map();
     if (Array.isArray(audits)) {
-      audits.forEach(a => auditMap.set(a.party_id, a));
+      audits.forEach(a => {
+        let meta = {};
+        if (a.market_sentiment && typeof a.market_sentiment === 'string' && a.market_sentiment.trim().startsWith('{')) {
+          try {
+            meta = JSON.parse(a.market_sentiment);
+          } catch (e) {}
+        }
+        const enrichedAudit = {
+          ...a,
+          rating_order: meta.rating_order || a.rating_order_delivery || 5,
+          rating_delivery: meta.rating_delivery || a.rating_order_delivery || 5,
+          rating_product_quality: a.rating_product_quality || 5,
+          rating_account_billing: a.rating_account_billing || 5,
+          rating_services: meta.rating_services || a.rating_sales_support || 5,
+          rating_sales_person: meta.rating_sales_person || a.rating_sales_support || 5,
+          rating_overall: a.rating_overall || 5,
+          is_overall_manual: !!meta.is_overall_manual
+        };
+        auditMap.set(a.party_id, enrichedAudit);
+      });
     }
 
     // 3. Fetch latest orders to compute inactivity days
@@ -1156,17 +1175,38 @@ export async function saveMonthlyHealthCheckAudit(auditData, tenantId = DEFAULT_
   const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
   const period = auditData.evaluation_period || new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit' }).format(new Date());
 
+  const orderRating = Math.max(1, Math.min(5, Number(auditData.rating_order) || Number(auditData.rating_order_delivery) || 5));
+  const deliveryRating = Math.max(1, Math.min(5, Number(auditData.rating_delivery) || Number(auditData.rating_order_delivery) || 5));
+  const qualityRating = Math.max(1, Math.min(5, Number(auditData.rating_product_quality) || 5));
+  const billingRating = Math.max(1, Math.min(5, Number(auditData.rating_account_billing) || 5));
+  const servicesRating = Math.max(1, Math.min(5, Number(auditData.rating_services) || Number(auditData.rating_sales_support) || 5));
+  const salesPersonRating = Math.max(1, Math.min(5, Number(auditData.rating_sales_person) || Number(auditData.rating_sales_support) || 5));
+  const overallRating = Math.max(1, Math.min(5, Number(auditData.rating_overall) || Math.round((orderRating + deliveryRating + qualityRating + billingRating + servicesRating + salesPersonRating) / 6)));
+
+  const sentimentMeta = {
+    rating_order: orderRating,
+    rating_delivery: deliveryRating,
+    rating_product_quality: qualityRating,
+    rating_account_billing: billingRating,
+    rating_services: servicesRating,
+    rating_sales_person: salesPersonRating,
+    rating_overall: overallRating,
+    is_overall_manual: !!auditData.is_overall_manual,
+    updated_at: new Date().toISOString()
+  };
+
   const payload = {
     tenant_id: effectiveTenantId,
     party_id: auditData.party_id,
     evaluation_period: period,
     days_inactive: Number(auditData.days_inactive) || 0,
     is_dormant_risk: !!auditData.is_dormant_risk,
-    rating_order_delivery: Number(auditData.rating_order_delivery) || 5,
-    rating_product_quality: Number(auditData.rating_product_quality) || 5,
-    rating_sales_support: Number(auditData.rating_sales_support) || 5,
-    rating_account_billing: Number(auditData.rating_account_billing) || 5,
-    rating_overall: Number(auditData.rating_overall) || 5,
+    market_sentiment: JSON.stringify(sentimentMeta),
+    rating_order_delivery: Math.round((orderRating + deliveryRating) / 2),
+    rating_product_quality: qualityRating,
+    rating_sales_support: Math.round((servicesRating + salesPersonRating) / 2),
+    rating_account_billing: billingRating,
+    rating_overall: overallRating,
     next_month_demand_plan: auditData.next_month_demand_plan || '',
     competitor_schemes: auditData.competitor_schemes || '',
     dealer_suggestions: auditData.dealer_suggestions || '',
@@ -1174,11 +1214,34 @@ export async function saveMonthlyHealthCheckAudit(auditData, tenantId = DEFAULT_
   };
 
   try {
-    const { data, error } = await adminClient
+    // Check if an audit already exists for this party and period to update or insert cleanly
+    const { data: existing } = await adminClient
       .from('party_monthly_feedback')
-      .insert([payload])
-      .select()
-      .single();
+      .select('id')
+      .eq('tenant_id', effectiveTenantId)
+      .eq('party_id', auditData.party_id)
+      .eq('evaluation_period', period)
+      .maybeSingle();
+
+    let data, error;
+    if (existing?.id) {
+      const res = await adminClient
+        .from('party_monthly_feedback')
+        .update(payload)
+        .eq('id', existing.id)
+        .select()
+        .single();
+      data = res.data;
+      error = res.error;
+    } else {
+      const res = await adminClient
+        .from('party_monthly_feedback')
+        .insert([payload])
+        .select()
+        .single();
+      data = res.data;
+      error = res.error;
+    }
 
     if (error) throw error;
     return { success: true, audit: data };

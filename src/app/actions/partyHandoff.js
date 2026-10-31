@@ -17,6 +17,12 @@ function parsePartyMeta(businessNature) {
 
 const DEFAULT_TENANT_ID = '00000000-0000-0000-0000-000000000001';
 
+const sanitizeUuid = (val) => {
+  if (!val || typeof val !== 'string') return null;
+  const trimmed = val.trim();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed) ? trimmed : null;
+};
+
 const getAdminClient = () => {
   return createSupabaseClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -197,7 +203,7 @@ export async function sendLeadToParty(leadId, userId, tenantId = null) {
       .update({
         target_party_id: party.id,
         transfer_type: transferType,
-        transferred_by: userId || null,
+        transferred_by: sanitizeUuid(userId),
         transferred_at: new Date().toISOString()
       })
       .eq('id', handoffId);
@@ -210,7 +216,7 @@ export async function sendLeadToParty(leadId, userId, tenantId = null) {
         target_party_id: party.id,
         transfer_type: transferType,
         handoff_status: 'PENDING_VERIFICATION',
-        transferred_by: userId || null
+        transferred_by: sanitizeUuid(userId)
       }])
       .select()
       .single();
@@ -480,7 +486,7 @@ export async function confirmLeadTransfer(handoffId, partyId, userId) {
         .from('lead_party_handoffs')
         .update({
           handoff_status: 'APPROVED',
-          transferred_by: userId || null
+          transferred_by: sanitizeUuid(userId)
         })
         .eq('id', handoffId);
     } catch (e) {

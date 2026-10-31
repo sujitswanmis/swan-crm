@@ -21,13 +21,19 @@ export async function POST(req) {
       );
 
       // 1. Log Missed Call Session in call_sessions
-      await adminClient.from('call_sessions').insert([{
+      const missedPayload = {
         call_direction: 'inbound',
         customer_number: fromNumber,
         provider_call_id: parentCallUuid,
+        customer_call_uuid: parentCallUuid,
         status: 'missed',
+        hangup_cause: dialStatus || 'missed',
         remarks: `Incoming call missed (WebRTC & Mobile un-answered. Status: ${dialStatus})`
-      }]);
+      };
+      const { error: insertErr } = await adminClient.from('call_sessions').insert([missedPayload]);
+      if (insertErr) {
+        console.warn('[Missed Call Webhook] Insert notice:', insertErr.message);
+      }
 
       console.log(`[Missed Call Webhook] Logged missed call for caller ${fromNumber}`);
     }
