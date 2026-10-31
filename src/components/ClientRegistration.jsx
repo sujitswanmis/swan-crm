@@ -3577,19 +3577,20 @@ export default function ClientRegistration({
                         No records match your selected filter or search query.
                       </div>
                     ) : (
-                      <MobileTableView id="ClientRegistration-1"><table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.8rem', textAlign: 'left', minWidth: `${Math.max(800, mappedDisplayFields.length * 150 + 230)}px` }}>
+                      <table style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.8rem', textAlign: 'left' }}>
                         <thead>
                           <tr>
                             <th style={{ 
                               position: 'sticky', 
                               top: 0, 
                               left: 0, 
-                              zIndex: 15, 
+                              zIndex: 35, 
                               background: 'var(--bg-primary)', 
-                              width: '50px', 
-                              minWidth: '50px', 
-                              maxWidth: '50px', 
-                              padding: '0.6rem 0.75rem', 
+                              width: '52px', 
+                              minWidth: '52px', 
+                              maxWidth: '52px', 
+                              boxSizing: 'border-box',
+                              padding: '0.6rem 0.3rem', 
                               fontWeight: 700, 
                               textAlign: 'center', 
                               borderBottom: '2px solid var(--border-light)', 
@@ -3598,24 +3599,25 @@ export default function ClientRegistration({
                             <th style={{ 
                               position: 'sticky', 
                               top: 0, 
-                              left: '50px', 
-                              zIndex: 15, 
+                              left: '52px', 
+                              zIndex: 35, 
                               background: 'var(--bg-primary)', 
-                              width: '180px', 
-                              minWidth: '180px', 
-                              maxWidth: '220px', 
-                              padding: '0.6rem 0.75rem', 
+                              width: '190px', 
+                              minWidth: '190px', 
+                              maxWidth: '190px', 
+                              boxSizing: 'border-box',
+                              padding: '0.6rem 0.5rem', 
                               fontWeight: 700, 
                               textAlign: 'center', 
                               borderBottom: '2px solid var(--border-light)', 
                               borderRight: '2px solid var(--border-light)', 
-                              boxShadow: '3px 0 6px -2px rgba(0,0,0,0.12)' 
+                              boxShadow: '4px 0 6px -2px rgba(0,0,0,0.15)' 
                             }}>Status</th>
                             {mappedDisplayFields.map(field => (
                               <th key={field.key} style={{ 
                                 position: 'sticky', 
                                 top: 0, 
-                                zIndex: 5, 
+                                zIndex: 10, 
                                 background: 'var(--bg-primary)', 
                                 padding: '0.6rem 0.75rem', 
                                 fontWeight: 700, 
@@ -3642,11 +3644,12 @@ export default function ClientRegistration({
                                 <td style={{ 
                                   position: 'sticky', 
                                   left: 0, 
-                                  zIndex: 7, 
-                                  width: '50px', 
-                                  minWidth: '50px', 
-                                  maxWidth: '50px', 
-                                  padding: '0.5rem 0.75rem', 
+                                  zIndex: 25, 
+                                  width: '52px', 
+                                  minWidth: '52px', 
+                                  maxWidth: '52px', 
+                                  boxSizing: 'border-box',
+                                  padding: '0.5rem 0.3rem', 
                                   textAlign: 'center', 
                                   color: 'var(--text-secondary)', 
                                   fontSize: '0.75rem', 
@@ -3659,17 +3662,18 @@ export default function ClientRegistration({
                                 </td>
                                 <td style={{ 
                                   position: 'sticky', 
-                                  left: '50px', 
-                                  zIndex: 7, 
-                                  width: '180px', 
-                                  minWidth: '180px', 
-                                  maxWidth: '220px', 
-                                  padding: '0.5rem 0.75rem', 
+                                  left: '52px', 
+                                  zIndex: 25, 
+                                  width: '190px', 
+                                  minWidth: '190px', 
+                                  maxWidth: '190px', 
+                                  boxSizing: 'border-box',
+                                  padding: '0.5rem 0.5rem', 
                                   textAlign: 'center', 
                                   backgroundColor: rowBg, 
                                   borderBottom: '1px solid var(--border-light)', 
                                   borderRight: '2px solid var(--border-light)', 
-                                  boxShadow: '3px 0 6px -2px rgba(0,0,0,0.12)' 
+                                  boxShadow: '4px 0 6px -2px rgba(0,0,0,0.15)' 
                                 }}>
                                   {row._isAlreadyInReport ? (
                                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.2rem' }}>
@@ -3740,7 +3744,7 @@ export default function ClientRegistration({
                             );
                           })}
                         </tbody>
-                      </table></MobileTableView>
+                      </table>
                     )}
                   </div>
 

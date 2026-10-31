@@ -308,30 +308,24 @@ export function stringSimilarity(s1, s2) {
 }
 
 /**
- * Strips common corporate suffixes and industry trade noise for clean brand name comparison.
+ * Strips universal legal entity types and punctuation for clean business name normalization.
+ * Does NOT hardcode domain-specific words so it operates purely tenant-agnostic across Fashion, Auto, Pharma, etc.
  */
 export function cleanCorporateName(name) {
   if (!name || typeof name !== 'string') return '';
-  let str = name
+  return name
     .toLowerCase()
     .replace(/[^\w\s]/g, ' ')
     .replace(/\b(m\/s|ms|shri|sri|shree|mr|mrs)\b/gi, ' ')
     .replace(/\b(pvt|private|ltd|limited|llp|llc|inc|corp|corporation|co|company|group)\b/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-
-  // Strip common trade / dealership / equipment industry noise words to extract core brand
-  const stripped = str
-    .replace(/\b(tractors|tractor|motors|motor|automobiles|automobile|automotive|auto|autos|agritech|agrotech|agrico|agri|agro|krishi|kendra|sewa|service|services|garage|machinery|equipment|equipments|spares|dealers|dealer|dealership|traders|trader|trading|agency|agencies|distributors|distributor|sales|works|workshop|store|stores|center|centre|industries|industry|enterprises|enterprise|solutions)\b/gi, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  return stripped.length >= 2 ? stripped : str;
 }
 
 /**
  * Calculates a comprehensive similarity match score (0 to 100) between an incoming row and an existing database lead.
- * Requires core brand similarity (>= 65%) so competitor dealerships sharing trade suffixes in the same district don't false-match.
+ * Compares Primary Brand Tokens (first 1-2 distinctive words) so that unrelated businesses that share generic words (like "Automobile", "Creations", "Pharma")
+ * in the same district are NOT falsely flagged as duplicates.
  */
 export function calculateLeadSimilarityScore(incoming, existing) {
   if (!incoming || !existing) return { score: 0, reason: '', matchedField: '' };
@@ -342,18 +336,30 @@ export function calculateLeadSimilarityScore(incoming, existing) {
   const cleanInComp = cleanCorporateName(rawInComp);
   const cleanExComp = cleanCorporateName(rawExComp);
 
-  let brandScore = 0;
-  if (cleanInComp && cleanExComp) {
-    if (cleanInComp === cleanExComp) {
-      brandScore = 1.0;
-    } else {
-      const rawSim = stringSimilarity(cleanInComp, cleanExComp);
-      const inTokens = cleanInComp.split(' ').sort().join(' ');
-      const exTokens = cleanExComp.split(' ').sort().join(' ');
-      const tokenSim = stringSimilarity(inTokens, exTokens);
-      brandScore = Math.max(rawSim, tokenSim);
-    }
-  }
+  if (!cleanInComp || !cleanExComp) return { score: 0, reason: '', matchedField: '' };
+
+  const inTokens = cleanInComp.split(' ').filter(Boolean);
+  const exTokens = cleanExComp.split(' ').filter(Boolean);
+
+  // Exact full name match after legal suffix removal
+  const isExactFullName = cleanInComp === cleanExComp;
+
+  // Primary brand token (leading word) comparison
+  const brand1 = inTokens[0] || '';
+  const brand2 = exTokens[0] || '';
+  const brand1Sim = stringSimilarity(brand1, brand2);
+
+  // Two-word brand prefix comparison (e.g. "Guru Nanak", "R K", "New Swan")
+  const brand2Tokens1 = inTokens.slice(0, 2).join(' ');
+  const brand2Tokens2 = exTokens.slice(0, 2).join(' ');
+  const brand2Sim = (inTokens.length >= 2 && exTokens.length >= 2) ? stringSimilarity(brand2Tokens1, brand2Tokens2) : 0;
+
+  const primaryBrandSim = isExactFullName ? 1.0 : Math.max(brand1Sim, brand2Sim);
+
+  // Overall string and token overlap
+  const fullSim = stringSimilarity(cleanInComp, cleanExComp);
+  const commonTokens = inTokens.filter(t => exTokens.includes(t)).length;
+  const tokenOverlap = (2 * commonTokens) / (inTokens.length + exTokens.length);
 
   // 2. Location comparison (State, District, City)
   let locScore = 0;
@@ -382,58 +388,69 @@ export function calculateLeadSimilarityScore(incoming, existing) {
     else personScore = stringSimilarity(inName, exName);
   }
 
-  // Calculate Weighted Score
+  // CORE TENANT-AGNOSTIC RULE:
+  // If the primary brand name does not match (< 0.70) and full name is not exact,
+  // do NOT match just because of a shared suffix or same district!
+  if (!isExactFullName && primaryBrandSim < 0.70) {
+    // Only exception: Owner contact person matches strongly in same location
+    if (personScore >= 0.85 && locScore >= 0.70) {
+      const total = Math.round((personScore * 0.50 + locScore * 0.40) * 100);
+      return {
+        score: Math.min(95, total),
+        compScore: Math.round(primaryBrandSim * 100),
+        locScore: Math.round(locScore * 100),
+        personScore: Math.round(personScore * 100),
+        reason: `Contact Person ${Math.round(personScore * 100)}% match in same location`
+      };
+    }
+    return { score: 0, reason: '', compScore: 0, locScore: 0, personScore: 0 };
+  }
+
+  // Calculate Weighted Score for Brand Matches
   let totalScore = 0;
   let reasons = [];
 
-  // Core Brand Rule: If brand does not match (< 0.65), do NOT flag as potential duplicate based on common word or location
-  if (brandScore >= 0.65) {
-    if (brandScore === 1.0) {
-      // 100% Brand match!
-      if (distMatches) {
-        totalScore = 0.95;
-        reasons.push(`Exact Brand Name (${cleanInComp.toUpperCase()}) in Same District (${incoming.district_name || incoming.district})`);
-      } else if (stateMatches) {
-        totalScore = 0.88;
-        reasons.push(`Exact Brand Name (${cleanInComp.toUpperCase()}) in Same State (${incoming.state_name || incoming.state})`);
-      } else {
-        totalScore = 0.82;
-        reasons.push(`Exact Brand Name (${cleanInComp.toUpperCase()})`);
-      }
-      if (personScore >= 0.75) {
-        totalScore = Math.min(0.99, totalScore + 0.05);
-        reasons.push(`Contact Person match (${Math.round(personScore * 100)}%)`);
-      }
-    } else if (brandScore >= 0.85) {
-      // Very close brand match (e.g. Har San vs Harsan)
-      if (distMatches) {
-        totalScore = 0.90;
-        reasons.push(`Brand Name ${Math.round(brandScore * 100)}% match in Same District (${incoming.district_name || incoming.district})`);
-      } else if (stateMatches) {
-        totalScore = 0.82;
-        reasons.push(`Brand Name ${Math.round(brandScore * 100)}% match in Same State (${incoming.state_name || incoming.state})`);
-      } else {
-        totalScore = 0.75;
-        reasons.push(`Brand Name ${Math.round(brandScore * 100)}% similar`);
-      }
+  if (isExactFullName) {
+    if (distMatches) {
+      totalScore = 0.95;
+      reasons.push(`Exact Business Name in Same District (${incoming.district_name || incoming.district})`);
+    } else if (stateMatches) {
+      totalScore = 0.88;
+      reasons.push(`Exact Business Name in Same State (${incoming.state_name || incoming.state})`);
     } else {
-      // Partial brand match (65% to 84%) - only flag if location or person also matches
-      if (distMatches || stateMatches || personScore >= 0.70) {
-        totalScore = (brandScore * 0.55) + (locScore * 0.30) + (personScore * 0.15);
-        reasons.push(`Brand Name ${Math.round(brandScore * 100)}% similar`);
-        if (distMatches) reasons.push(`Same District (${incoming.district_name || incoming.district})`);
-        else if (stateMatches) reasons.push(`Same State (${incoming.state_name || incoming.state})`);
-      }
+      totalScore = 0.82;
+      reasons.push(`Exact Business Name (${cleanInComp.toUpperCase()})`);
     }
-  } else if (personScore >= 0.85 && locScore >= 0.70) {
-    totalScore = (personScore * 0.50) + (locScore * 0.40) + (brandScore * 0.10);
-    reasons.push(`Contact Person ${Math.round(personScore * 100)}% match in same location`);
+    if (personScore >= 0.75) {
+      totalScore = Math.min(0.99, totalScore + 0.05);
+      reasons.push(`Contact Person match (${Math.round(personScore * 100)}%)`);
+    }
+  } else if (primaryBrandSim >= 0.85) {
+    if (distMatches) {
+      totalScore = 0.90;
+      reasons.push(`Brand Name ${Math.round(primaryBrandSim * 100)}% match in Same District (${incoming.district_name || incoming.district})`);
+    } else if (stateMatches) {
+      totalScore = 0.82;
+      reasons.push(`Brand Name ${Math.round(primaryBrandSim * 100)}% match in Same State (${incoming.state_name || incoming.state})`);
+    } else {
+      totalScore = 0.75;
+      reasons.push(`Brand Name ${Math.round(primaryBrandSim * 100)}% similar`);
+    }
+  } else {
+    // Partial brand similarity (0.70 to 0.84)
+    if (distMatches || stateMatches || personScore >= 0.70) {
+      const compComponent = Math.max(primaryBrandSim, tokenOverlap, fullSim);
+      totalScore = (compComponent * 0.55) + (locScore * 0.30) + (personScore * 0.15);
+      reasons.push(`Brand Name ${Math.round(primaryBrandSim * 100)}% similar`);
+      if (distMatches) reasons.push(`Same District (${incoming.district_name || incoming.district})`);
+      else if (stateMatches) reasons.push(`Same State (${incoming.state_name || incoming.state})`);
+    }
   }
 
   const finalScorePercent = Math.min(99, Math.round(totalScore * 100));
   return {
     score: finalScorePercent,
-    compScore: Math.round(brandScore * 100),
+    compScore: Math.round(primaryBrandSim * 100),
     locScore: Math.round(locScore * 100),
     personScore: Math.round(personScore * 100),
     reason: reasons.join(' • ')
