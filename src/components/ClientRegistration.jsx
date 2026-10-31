@@ -7,8 +7,8 @@ import { ChevronDown, ChevronUp, Save, Briefcase, MapPin, User, FileText, CheckC
 import Papa from 'papaparse';
 import { getTeamMembers } from '@/app/actions/team';
 import { logAuditAction } from '@/app/actions/audit';
-import { getStatesCentral, getDistrictsCentral } from '@/app/actions/centralLocationMaster';
-import { INDIAN_STATES, getDistrictsForState } from '@/constants/indianLocations';
+import { getStatesCentral, getDistrictsCentral, getLocationMasterHierarchyCentral } from '@/app/actions/centralLocationMaster';
+import { INDIAN_STATES, INDIAN_DISTRICTS_MAP, getDistrictsForState } from '@/constants/indianLocations';
 import { normalizeLeadRecord, normalizeEmployeeName, normalizePhoneTo10, resolveTeamMemberId } from '@/utils/dataSanitizer';
 import { enqueueOfflineAction, canPerformOfflineAction, sanitizeLeadPayloadForDb, upsertLeadsLocally, showSyncToast } from '@/utils/offlineSync';
 import { 
@@ -1455,6 +1455,19 @@ export default function ClientRegistration({
       const investmentRanges = ['Below 1 Lakh', '1 Lakh - 5 Lakh', '5 Lakh - 10 Lakh', '10 Lakh - 25 Lakh', '25 Lakh - 50 Lakh', 'Above 50 Lakh'];
       const timelines = ['Immediate', 'Within 7 Days', 'Within 15 Days', 'Within 30 Days', 'Within 60 Days', 'After 60 Days', 'Not Decided'];
 
+      // Fetch fresh Location Master States & Districts from DB
+      let locStates = INDIAN_STATES;
+      let locDistMap = INDIAN_DISTRICTS_MAP;
+      try {
+        const locRes = await getLocationMasterHierarchyCentral();
+        if (locRes && locRes.states && locRes.states.length > 0) {
+          locStates = locRes.states;
+          locDistMap = locRes.stateDistrictMap;
+        }
+      } catch (locErr) {
+        console.warn("Location master fetch notice, falling back to static locations:", locErr);
+      }
+
       const workbook = new ExcelJS.Workbook();
       const sheet = workbook.addWorksheet('Client Registration');
 
@@ -1518,6 +1531,12 @@ export default function ClientRegistration({
         listSheet.getCell(`I${idx + 2}`).value = ls;
       });
 
+      // Column J: States (Location Master)
+      listSheet.getCell('J1').value = 'State';
+      locStates.forEach((st, idx) => {
+        listSheet.getCell(`J${idx + 2}`).value = st;
+      });
+
       const headers = IMPORT_FIELDS.map(f => f.label);
       sheet.addRow(headers);
       
@@ -1560,6 +1579,38 @@ export default function ClientRegistration({
       if (tenantLeadStatuses.length > 0) {
         workbook.definedNames.add(`Lists!$I$2:$I$${tenantLeadStatuses.length + 1}`, 'LeadStatuses');
       }
+      if (locStates.length > 0) {
+        workbook.definedNames.add(`Lists!$J$2:$J$${locStates.length + 1}`, 'IndianStates');
+      }
+
+      // Hidden Worksheet: DistrictLists for Dependent District Dropdowns based on Selected State
+      const distSheet = workbook.addWorksheet('DistrictLists');
+      distSheet.state = 'hidden';
+
+      const getExcelColLetter = (col) => {
+        let letter = '';
+        while (col > 0) {
+          const mod = (col - 1) % 26;
+          letter = String.fromCharCode(65 + mod) + letter;
+          col = Math.floor((col - mod) / 26);
+        }
+        return letter;
+      };
+
+      let distColIdx = 1;
+      locStates.forEach(state => {
+        const safeName = String(state).trim().replace(/\s+/g, '_');
+        const districts = locDistMap[state] || [];
+        const colLetter = getExcelColLetter(distColIdx);
+        distSheet.getCell(`${colLetter}1`).value = safeName;
+        districts.forEach((d, dIdx) => {
+          distSheet.getCell(`${colLetter}${dIdx + 2}`).value = d;
+        });
+        if (districts.length > 0) {
+          workbook.definedNames.add(`DistrictLists!$${colLetter}$2:$${colLetter}$${districts.length + 1}`, safeName);
+        }
+        distColIdx++;
+      });
 
       // Add Data Validation Dropdowns for rows 2 to 500 across all dropdown columns
       // Our Company Name (Column 2 -> B)
@@ -1578,6 +1629,15 @@ export default function ClientRegistration({
           type: 'list',
           allowBlank: true,
           formulae: ['=LeadSources']
+        });
+      }
+
+      // Entry By (Column 5 -> E)
+      if (activeMemberNames.length > 0) {
+        sheet.dataValidations.add('E2:E500', {
+          type: 'list',
+          allowBlank: true,
+          formulae: ['=AssignedToEmployees']
         });
       }
 
@@ -1625,6 +1685,22 @@ export default function ClientRegistration({
           formulae: ['=BusinessTypes']
         });
       }
+
+      // State (Column 42 -> AP)
+      if (locStates.length > 0) {
+        sheet.dataValidations.add('AP2:AP500', {
+          type: 'list',
+          allowBlank: true,
+          formulae: ['=IndianStates']
+        });
+      }
+
+      // District (Column 43 -> AQ, Dependent Dropdown dynamically resolved by State in AP)
+      sheet.dataValidations.add('AQ2:AQ500', {
+        type: 'list',
+        allowBlank: true,
+        formulae: ['=INDIRECT(SUBSTITUTE(AP2," ","_"))']
+      });
 
       // Investment (Column 50 -> AX)
       if (investmentRanges.length > 0) {

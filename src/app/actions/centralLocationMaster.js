@@ -339,6 +339,55 @@ const STATE_DISTRICTS_MAP = {
   "Ladakh": ["Kargil", "Leh"]
 };
 
+/**
+ * Returns all active States and their linked Districts in a clean hierarchy from Location Master
+ * Used for dynamic dependent dropdowns in bulk upload templates and filters
+ */
+export async function getLocationMasterHierarchyCentral() {
+  try {
+    const adminClient = getAdminClient();
+    const { data: states, error: sErr } = await adminClient
+      .from('location_states')
+      .select('id, name')
+      .order('name', { ascending: true });
+
+    const { data: dists, error: dErr } = await adminClient
+      .from('location_districts')
+      .select('id, state_id, name')
+      .order('name', { ascending: true });
+
+    if (sErr || !states || states.length === 0) {
+      return { states: [], stateDistrictMap: {} };
+    }
+
+    const stateDistrictMap = {};
+    const stateIdToName = {};
+    states.forEach(s => {
+      const cleanName = String(s.name || '').trim();
+      stateIdToName[s.id] = cleanName;
+      stateDistrictMap[cleanName] = [];
+    });
+
+    dists?.forEach(d => {
+      const sName = stateIdToName[d.state_id];
+      if (sName && stateDistrictMap[sName]) {
+        const dName = String(d.name || '').trim();
+        if (dName && !stateDistrictMap[sName].includes(dName)) {
+          stateDistrictMap[sName].push(dName);
+        }
+      }
+    });
+
+    return {
+      states: states.map(s => String(s.name || '').trim()),
+      stateDistrictMap
+    };
+  } catch (err) {
+    console.warn('Error fetching location master hierarchy:', err);
+    return { states: [], stateDistrictMap: {} };
+  }
+}
+
 export async function deleteStateCentral(id) {
   const adminClient = getAdminClient();
   const { error } = await adminClient
