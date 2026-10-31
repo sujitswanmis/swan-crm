@@ -299,12 +299,103 @@ function levenshteinDistance(s1, s2) {
 }
 
 // Calculate similarity ratio between 0 and 1
-function stringSimilarity(s1, s2) {
+export function stringSimilarity(s1, s2) {
   if (!s1 || !s2) return 0;
   const maxLen = Math.max(s1.length, s2.length);
   if (maxLen === 0) return 1.0;
   const dist = levenshteinDistance(s1, s2);
   return 1.0 - dist / maxLen;
+}
+
+/**
+ * Strips common corporate suffixes and punctuation for clean business name comparison.
+ */
+export function cleanCorporateName(name) {
+  if (!name || typeof name !== 'string') return '';
+  return name
+    .toLowerCase()
+    .replace(/[^\w\s]/g, ' ')
+    .replace(/\b(pvt|private|ltd|limited|llp|llc|inc|corp|corporation|co|company|enterprises|enterprise|industries|industry|solutions|works|workshop|traders|trading|dealers|agency|store)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Calculates a comprehensive similarity match score (0 to 100) between an incoming row and an existing database lead.
+ * Weighs Business Name (45%), Location / State & District & City (30%), and Contact Person Name (25%).
+ */
+export function calculateLeadSimilarityScore(incoming, existing) {
+  if (!incoming || !existing) return { score: 0, reason: '', matchedField: '' };
+
+  // 1. Company / Business Name comparison
+  const rawInComp = String(incoming.company || incoming.business_name || '').trim();
+  const rawExComp = String(existing.company || existing.business_name || '').trim();
+  const cleanInComp = cleanCorporateName(rawInComp);
+  const cleanExComp = cleanCorporateName(rawExComp);
+
+  let compScore = 0;
+  if (cleanInComp && cleanExComp) {
+    if (cleanInComp === cleanExComp) {
+      compScore = 1.0;
+    } else {
+      const rawSim = stringSimilarity(cleanInComp, cleanExComp);
+      const inTokens = cleanInComp.split(' ').sort().join(' ');
+      const exTokens = cleanExComp.split(' ').sort().join(' ');
+      const tokenSim = stringSimilarity(inTokens, exTokens);
+      compScore = Math.max(rawSim, tokenSim);
+    }
+  }
+
+  // 2. Location comparison (State, District, City)
+  let locScore = 0;
+  const inState = String(incoming.state_name || incoming.state || '').trim().toLowerCase();
+  const exState = String(existing.state_name || existing.state || '').trim().toLowerCase();
+  const inDist = String(incoming.district_name || incoming.district || '').trim().toLowerCase();
+  const exDist = String(existing.district_name || existing.district || '').trim().toLowerCase();
+  const inCity = String(incoming.city_name || incoming.city || '').trim().toLowerCase();
+  const exCity = String(existing.city_name || existing.city || '').trim().toLowerCase();
+
+  const stateMatches = inState && exState && inState === exState;
+  const distMatches = inDist && exDist && inDist === exDist;
+  const cityMatches = inCity && exCity && inCity === exCity;
+
+  if (stateMatches && distMatches && cityMatches) locScore = 1.0;
+  else if (stateMatches && distMatches) locScore = 0.85;
+  else if (distMatches) locScore = 0.70;
+  else if (stateMatches) locScore = 0.35;
+
+  // 3. Contact Person Name comparison
+  let personScore = 0;
+  const inName = String(incoming.name || incoming.cp1_name || '').trim().toLowerCase();
+  const exName = String(existing.name || existing.cp1_name || '').trim().toLowerCase();
+  if (inName && exName) {
+    if (inName === exName) personScore = 1.0;
+    else personScore = stringSimilarity(inName, exName);
+  }
+
+  // Calculate Weighted Score
+  let totalScore = 0;
+  let reasons = [];
+
+  if (compScore >= 0.50) {
+    totalScore = (compScore * 0.50) + (locScore * 0.30) + (personScore * 0.20);
+    reasons.push(`Business Name ${Math.round(compScore * 100)}% similar`);
+    if (distMatches) reasons.push(`Same District (${incoming.district_name || incoming.district})`);
+    else if (stateMatches) reasons.push(`Same State (${incoming.state_name || incoming.state})`);
+    if (personScore >= 0.75) reasons.push(`Contact Person ${Math.round(personScore * 100)}% match`);
+  } else if (personScore >= 0.85 && locScore >= 0.70) {
+    totalScore = (personScore * 0.45) + (locScore * 0.40) + (compScore * 0.15);
+    reasons.push(`Contact Person ${Math.round(personScore * 100)}% match in same location`);
+  }
+
+  const finalScorePercent = Math.min(99, Math.round(totalScore * 100));
+  return {
+    score: finalScorePercent,
+    compScore: Math.round(compScore * 100),
+    locScore: Math.round(locScore * 100),
+    personScore: Math.round(personScore * 100),
+    reason: reasons.join(' • ')
+  };
 }
 
 // Converts a string to Title Case ("south delhi" -> "South Delhi", "PUNJAB" -> "Punjab")

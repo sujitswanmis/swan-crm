@@ -9,7 +9,7 @@ import { getTeamMembers } from '@/app/actions/team';
 import { logAuditAction } from '@/app/actions/audit';
 import { getStatesCentral, getDistrictsCentral, getLocationMasterHierarchyCentral } from '@/app/actions/centralLocationMaster';
 import { INDIAN_STATES, INDIAN_DISTRICTS_MAP, getDistrictsForState } from '@/constants/indianLocations';
-import { normalizeLeadRecord, normalizeEmployeeName, normalizePhoneTo10, resolveTeamMemberId } from '@/utils/dataSanitizer';
+import { normalizeLeadRecord, normalizeEmployeeName, normalizePhoneTo10, resolveTeamMemberId, calculateLeadSimilarityScore, cleanCorporateName } from '@/utils/dataSanitizer';
 import { enqueueOfflineAction, canPerformOfflineAction, sanitizeLeadPayloadForDb, upsertLeadsLocally, showSyncToast } from '@/utils/offlineSync';
 import { 
   saveClientRegistrationDraft, 
@@ -592,9 +592,10 @@ export default function ClientRegistration({
   const [filteredImportData, setFilteredImportData] = useState([]);
   const [duplicateImportData, setDuplicateImportData] = useState([]);
   const [alreadyInReportImportData, setAlreadyInReportImportData] = useState([]);
+  const [potentialMatchesImportData, setPotentialMatchesImportData] = useState([]);
   const [defaultDataStatus, setDefaultDataStatus] = useState('Saved Drafts');
   const [allMappedData, setAllMappedData] = useState([]);
-  const [previewFilterTab, setPreviewFilterTab] = useState('ready'); // 'ready' | 'alreadyInReport' | 'duplicates' | 'all'
+  const [previewFilterTab, setPreviewFilterTab] = useState('ready'); // 'ready' | 'potentialMatches' | 'alreadyInReport' | 'duplicates' | 'all'
   const [previewPage, setPreviewPage] = useState(1);
   const [previewPageSize, setPreviewPageSize] = useState(25);
   const [previewSearch, setPreviewSearch] = useState('');
@@ -612,9 +613,10 @@ export default function ClientRegistration({
   const currentPreviewSourceList = useMemo(() => {
     if (previewFilterTab === 'alreadyInReport') return alreadyInReportImportData;
     if (previewFilterTab === 'duplicates') return duplicateImportData;
+    if (previewFilterTab === 'potentialMatches') return potentialMatchesImportData;
     if (previewFilterTab === 'all') return allMappedData;
     return filteredImportData; // default 'ready'
-  }, [previewFilterTab, alreadyInReportImportData, duplicateImportData, allMappedData, filteredImportData]);
+  }, [previewFilterTab, alreadyInReportImportData, duplicateImportData, potentialMatchesImportData, allMappedData, filteredImportData]);
 
   // Real-time search across all columns in preview
   const searchedPreviewList = useMemo(() => {
@@ -1890,6 +1892,7 @@ export default function ClientRegistration({
       let ready = [];
       let duplicatesList = [];
       let alreadyInReportList = [];
+      let potentialMatchesList = [];
 
       if (hasContactMapped) {
         // Query database for duplicates across all 16 contact columns & business_gst
@@ -1903,6 +1906,9 @@ export default function ClientRegistration({
           'entry_by',
           'created_by',
           'created_at',
+          'state_name',
+          'district_name',
+          'city_name',
           ...ALL_CONTACT_KEYS
         ].join(', ');
 
@@ -1925,6 +1931,8 @@ export default function ClientRegistration({
         // Build normalized lookup maps from database
         const existingPhonesMap = new Map(); // normalized 10-digit -> { lead_ref_id, company, status, entry_by, isRegisteredReport, field }
         const existingGSTMap = new Map();    // uppercase GSTIN -> { lead_ref_id, company, status, entry_by, isRegisteredReport }
+        const locationCandidatesMap = new Map(); // "state_district" -> array of lead objects
+        const companyPrefixMap = new Map();     // "first3Letters" -> array of lead objects
 
         existingLeads.forEach(l => {
           const isRegistered = l.status !== 'DRAFT';
@@ -1952,6 +1960,21 @@ export default function ClientRegistration({
                 isRegisteredReport: isRegistered
               });
             }
+          }
+
+          const s = String(l.state_name || '').toLowerCase().trim();
+          const d = String(l.district_name || '').toLowerCase().trim();
+          if (s || d) {
+            const locKey = `${s}_${d}`;
+            if (!locationCandidatesMap.has(locKey)) locationCandidatesMap.set(locKey, []);
+            locationCandidatesMap.get(locKey).push(l);
+          }
+
+          const cleanComp = cleanCorporateName(l.company);
+          if (cleanComp && cleanComp.length >= 3) {
+            const pfx = cleanComp.substring(0, 3);
+            if (!companyPrefixMap.has(pfx)) companyPrefixMap.set(pfx, []);
+            companyPrefixMap.get(pfx).push(l);
           }
         });
 
@@ -2018,6 +2041,7 @@ export default function ClientRegistration({
 
           if (dbMatch) {
             row._isDuplicate = true;
+            row._matchScore = 100;
             if (dbMatch.details.isRegisteredReport) {
               row._isAlreadyInReport = true;
               row._dupReason = `⚠️ Already in Lead Registered Report! Matches #${dbMatch.details.lead_ref_id} (${dbMatch.details.company}) - Registered by ${dbMatch.details.entry_by}`;
@@ -2028,10 +2052,50 @@ export default function ClientRegistration({
             }
           } else if (fileMatch) {
             row._isDuplicate = true;
+            row._matchScore = 100;
             row._dupReason = `Duplicate ${fileMatch.type} (${fileMatch.val}) matches Row #${fileMatch.rowNum} in this file`;
             duplicatesList.push(row);
           } else {
             row._isDuplicate = false;
+
+            // Fuzzy Similarity Search against candidate leads
+            let bestSim = { score: 0, reason: '' };
+            let bestCandidate = null;
+
+            const rowState = String(row.state_name || row.state || '').toLowerCase().trim();
+            const rowDist = String(row.district_name || row.district || '').toLowerCase().trim();
+            const locKey = `${rowState}_${rowDist}`;
+            const cleanRowComp = cleanCorporateName(row.company);
+            const pfx = cleanRowComp && cleanRowComp.length >= 3 ? cleanRowComp.substring(0, 3) : '';
+
+            const candidateSet = new Set();
+            if (locationCandidatesMap.has(locKey)) {
+              locationCandidatesMap.get(locKey).forEach(c => candidateSet.add(c));
+            }
+            if (pfx && companyPrefixMap.has(pfx)) {
+              companyPrefixMap.get(pfx).forEach(c => candidateSet.add(c));
+            }
+
+            for (const cand of candidateSet) {
+              const sim = calculateLeadSimilarityScore(row, cand);
+              if (sim.score > bestSim.score) {
+                bestSim = sim;
+                bestCandidate = cand;
+                if (sim.score >= 95) break;
+              }
+            }
+
+            row._matchScore = bestSim.score;
+            if (bestSim.score >= 40 && bestCandidate) {
+              row._isPotentialMatch = true;
+              row._matchedRecord = bestCandidate;
+              row._matchReason = `${bestSim.score}% Similarity: ${bestSim.reason} with #${bestCandidate.lead_ref_id || bestCandidate.id} (${bestCandidate.company || bestCandidate.name})`;
+              potentialMatchesList.push(row);
+            } else {
+              row._isPotentialMatch = false;
+              row._matchScore = 0;
+            }
+
             ready.push(row);
             rowNumbers.forEach(item => seenInFilePhones.set(item.val, row._rowNum));
             if (rowGST && rowGST.length >= 8) seenInFileGSTs.set(rowGST, row._rowNum);
@@ -2052,12 +2116,14 @@ export default function ClientRegistration({
               r.status = tenantLeadStatuses[0] || '1;01>New Stage>New Lead';
             }
           }
+          r._matchScore = 0;
           return { ...r, _isDuplicate: false };
         });
       }
 
       setDuplicatesCount(duplicatesList.length);
       setAlreadyInReportImportData(alreadyInReportList);
+      setPotentialMatchesImportData(potentialMatchesList);
       setFilteredImportData(ready);
       setDuplicateImportData(duplicatesList);
       setAllMappedData(mapped);
@@ -2111,6 +2177,10 @@ export default function ClientRegistration({
           delete copy._isDuplicate;
           delete copy._dupReason;
           delete copy._isAlreadyInReport;
+          delete copy._matchScore;
+          delete copy._isPotentialMatch;
+          delete copy._matchedRecord;
+          delete copy._matchReason;
 
           currentSeq++;
           const d = new Date();
@@ -3270,6 +3340,21 @@ export default function ClientRegistration({
                       <div style={{ fontSize: '0.75rem', color: '#065f46', fontWeight: 600 }}>Ready to Import</div>
                     </div>
                     <div 
+                      onClick={() => { setPreviewFilterTab('potentialMatches'); setPreviewPage(1); }}
+                      style={{ 
+                        padding: '0.75rem 1rem', 
+                        borderRadius: '10px', 
+                        background: previewFilterTab === 'potentialMatches' ? '#ffedd5' : '#fff7ed', 
+                        border: `1.5px solid ${previewFilterTab === 'potentialMatches' ? '#ea580c' : '#fed7aa'}`, 
+                        textAlign: 'center',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s'
+                      }}
+                    >
+                      <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#c2410c' }}>{potentialMatchesImportData.length}</div>
+                      <div style={{ fontSize: '0.75rem', color: '#9a3412', fontWeight: 600 }}>🔍 Potential Matches (40-99%)</div>
+                    </div>
+                    <div 
                       onClick={() => { setPreviewFilterTab('alreadyInReport'); setPreviewPage(1); }}
                       style={{ 
                         padding: '0.75rem 1rem', 
@@ -3321,6 +3406,26 @@ export default function ClientRegistration({
                     </div>
                   )}
 
+                  {/* Similarity Notice Banner if potential matches found */}
+                  {potentialMatchesImportData.length > 0 && alreadyInReportImportData.length === 0 && (
+                    <div style={{ padding: '0.65rem 1rem', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '8px', color: '#9a3412', fontSize: '0.85rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                        <Search size={16} color="#ea580c" />
+                        <span><strong>Similarity Notice:</strong> {potentialMatchesImportData.length} row(s) match 40%–99% with existing leads by Business Name, Location, or Contact Person.</span>
+                      </div>
+                      <button 
+                        type="button" 
+                        onClick={() => {
+                          setPreviewFilterTab('potentialMatches');
+                          setPreviewPage(1);
+                        }}
+                        style={{ padding: '0.25rem 0.65rem', background: '#ea580c', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer' }}
+                      >
+                        Inspect Potential Matches ({potentialMatchesImportData.length})
+                      </button>
+                    </div>
+                  )}
+
                   {/* Interactive Toolbar: Filter Tabs, Live Search, Rows Per Page */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
                     {/* Filter Tabs */}
@@ -3341,6 +3446,23 @@ export default function ClientRegistration({
                         }}
                       >
                         🟢 Ready to Import ({filteredImportData.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setPreviewFilterTab('potentialMatches'); setPreviewPage(1); }}
+                        style={{
+                          padding: '0.35rem 0.75rem',
+                          borderRadius: '6px',
+                          border: 'none',
+                          fontSize: '0.78rem',
+                          fontWeight: previewFilterTab === 'potentialMatches' ? 700 : 500,
+                          backgroundColor: previewFilterTab === 'potentialMatches' ? 'var(--bg-surface)' : 'transparent',
+                          color: previewFilterTab === 'potentialMatches' ? '#c2410c' : 'var(--text-secondary)',
+                          boxShadow: previewFilterTab === 'potentialMatches' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        🔍 Potential Matches ({potentialMatchesImportData.length})
                       </button>
                       <button
                         type="button"
@@ -3459,7 +3581,7 @@ export default function ClientRegistration({
                         <thead style={{ position: 'sticky', top: 0, zIndex: 5, background: 'var(--bg-primary)', borderBottom: '2px solid var(--border-light)' }}>
                           <tr>
                             <th style={{ padding: '0.6rem 0.75rem', fontWeight: 700, width: '50px', textAlign: 'center', borderRight: '1px solid var(--border-light)' }}>#</th>
-                            <th style={{ padding: '0.6rem 0.75rem', fontWeight: 700, width: '110px', textAlign: 'center', borderRight: '1px solid var(--border-light)' }}>Status</th>
+                            <th style={{ padding: '0.6rem 0.75rem', fontWeight: 700, minWidth: '150px', textAlign: 'center', borderRight: '1px solid var(--border-light)' }}>Status</th>
                             {mappedDisplayFields.map(field => (
                               <th key={field.key} style={{ padding: '0.6rem 0.75rem', fontWeight: 700, whiteSpace: 'nowrap', borderRight: '1px solid var(--border-light)' }}>
                                 {field.label}
@@ -3481,31 +3603,53 @@ export default function ClientRegistration({
                                 <td style={{ padding: '0.5rem 0.75rem', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.75rem', borderRight: '1px solid var(--border-light)', fontFamily: 'monospace' }}>
                                   {row._rowNum || idx + 1}
                                 </td>
-                                <td style={{ padding: '0.5rem 0.75rem', textAlign: 'center', borderRight: '1px solid var(--border-light)', whiteSpace: 'nowrap' }}>
+                                <td style={{ padding: '0.5rem 0.75rem', textAlign: 'center', borderRight: '1px solid var(--border-light)', minWidth: '150px' }}>
                                   {row._isAlreadyInReport ? (
-                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.15rem' }}>
-                                      <span style={{ fontSize: '0.7rem', fontWeight: 800, padding: '0.12rem 0.45rem', borderRadius: '4px', backgroundColor: '#fee2e2', color: '#be123c', border: '1px solid #fecdd3' }}>
-                                        🚨 In Registered Report
+                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.2rem' }}>
+                                      <span style={{ fontSize: '0.7rem', fontWeight: 800, padding: '0.15rem 0.5rem', borderRadius: '4px', backgroundColor: '#fee2e2', color: '#be123c', border: '1px solid #fecdd3', whiteSpace: 'nowrap' }}>
+                                        🚨 100% In Report
                                       </span>
                                       {row._dupReason && (
-                                        <span style={{ fontSize: '0.65rem', color: '#9f1239', fontWeight: 600, maxWidth: '220px', whiteSpace: 'normal', lineHeight: 1.15 }}>
+                                        <span style={{ fontSize: '0.65rem', color: '#9f1239', fontWeight: 600, maxWidth: '240px', lineHeight: 1.2 }}>
                                           {row._dupReason}
                                         </span>
                                       )}
                                     </div>
                                   ) : isDup ? (
-                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.15rem' }}>
-                                      <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '0.12rem 0.45rem', borderRadius: '4px', backgroundColor: '#fef3c7', color: '#92400e', border: '1px solid #fde68a' }}>
-                                        ⚠️ Duplicate
+                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.2rem' }}>
+                                      <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '0.15rem 0.5rem', borderRadius: '4px', backgroundColor: '#fef3c7', color: '#92400e', border: '1px solid #fde68a', whiteSpace: 'nowrap' }}>
+                                        ⚠️ 100% Duplicate
                                       </span>
                                       {row._dupReason && (
-                                        <span style={{ fontSize: '0.65rem', color: '#b45309', fontWeight: 500, maxWidth: '200px', whiteSpace: 'normal', lineHeight: 1.15 }}>{row._dupReason}</span>
+                                        <span style={{ fontSize: '0.65rem', color: '#b45309', fontWeight: 500, maxWidth: '240px', lineHeight: 1.2 }}>
+                                          {row._dupReason}
+                                        </span>
+                                      )}
+                                    </div>
+                                  ) : (row._matchScore && row._matchScore >= 40) ? (
+                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.2rem' }}>
+                                      <span style={{ 
+                                        fontSize: '0.7rem', 
+                                        fontWeight: 800, 
+                                        padding: '0.15rem 0.5rem', 
+                                        borderRadius: '4px', 
+                                        backgroundColor: row._matchScore >= 75 ? '#ffedd5' : '#fef9c3', 
+                                        color: row._matchScore >= 75 ? '#c2410c' : '#854d0e', 
+                                        border: `1px solid ${row._matchScore >= 75 ? '#fed7aa' : '#fef08a'}`,
+                                        whiteSpace: 'nowrap'
+                                      }}>
+                                        {row._matchScore >= 75 ? '🟠' : '🟡'} {row._matchScore}% Match
+                                      </span>
+                                      {row._matchReason && (
+                                        <span style={{ fontSize: '0.65rem', color: row._matchScore >= 75 ? '#9a3412' : '#713f12', fontWeight: 500, maxWidth: '240px', lineHeight: 1.2 }}>
+                                          {row._matchReason}
+                                        </span>
                                       )}
                                     </div>
                                   ) : (
-                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.15rem' }}>
-                                      <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '0.12rem 0.45rem', borderRadius: '4px', backgroundColor: '#d1fae5', color: '#065f46', border: '1px solid #a7f3d0' }}>
-                                        🟢 Ready
+                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.2rem' }}>
+                                      <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '0.15rem 0.5rem', borderRadius: '4px', backgroundColor: '#d1fae5', color: '#065f46', border: '1px solid #a7f3d0', whiteSpace: 'nowrap' }}>
+                                        🟢 0% Clean
                                       </span>
                                       <span style={{ fontSize: '0.65rem', fontWeight: 600, color: row.data_status === 'Saved Drafts' ? 'var(--text-secondary)' : '#059669' }}>
                                         {row.data_status || 'Saved Drafts'}
