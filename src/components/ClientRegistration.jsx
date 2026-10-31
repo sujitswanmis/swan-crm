@@ -25,7 +25,7 @@ const IMPORT_FIELDS = [
   { key: 'source_name', label: 'Source Name', standardHeaders: ['Source Name', 'sourcename'] },
   { key: 'entry_by', label: 'Entry By', standardHeaders: ['Entry By', 'entryby', 'Lead Entry By'] },
   { key: 'assigned_to', label: 'Assigned To', standardHeaders: ['Assigned To', 'assignedto', 'assign_to', 'assigned_to', 'agent', 'assigned agent', 'assignee'] },
-  { key: 'status', label: 'Lead Status', standardHeaders: ['Lead Status', 'leadstatus', 'Client Status', 'clientstatus', 'status'] },
+  { key: 'status', label: 'Client Status', standardHeaders: ['Client Status', 'clientstatus', 'Lead Status', 'leadstatus', 'status'] },
   { key: 'priority', label: 'Lead Priority Type', standardHeaders: ['Lead Priority Type', 'priority'] },
   { key: 'company', label: 'Business Name', standardHeaders: ['Business Name', 'BusinessName', 'company'] },
   { key: 'business_type', label: 'Business Type', standardHeaders: ['Business Type', 'businesstype'] },
@@ -94,7 +94,7 @@ const ALL_CONTACT_KEYS = ALL_CONTACT_FIELDS.map(f => f.key);
 
 const SAMPLE_DATA = [
   [
-    '2026-06-27', 'Swan Enterprises', 'Google Ads', 'Search Campaign', 'admin', 'Nitya Verma', '1;01>New Stage>New Lead', 'LP02: High Priority',
+    '2026-06-27', 'SuPuja Creations', 'Google Ads', 'Search Campaign', 'admin', 'Nitya Verma', 'Hot', 'LP02: High Priority',
     'Apex Retailers Ltd', 'Retailer', '07AAAAA1111A1Z1', '9876543210', '9876543211',
     '', '', 'info@apexretail.com', '', '', '',
     'Rahul Sharma', '9876543210', '', '', '', 'rahul@apexretail.com', '',
@@ -104,7 +104,7 @@ const SAMPLE_DATA = [
     'Wants to source wholesale goods', '1 Lakh - 5 Lakh', 'Immediate', 'Saved Drafts'
   ],
   [
-    '2026-06-26', 'Swan Enterprises', 'Organic', 'Google Search', 'admin', 'Sujit Kumar', '3;01>Qualification Stage>Interested', 'LP03: Medium Priority',
+    '2026-06-26', 'SuPuja Creations', 'Organic', 'Google Search', 'admin', 'Sujit Kumar', 'Warm', 'LP03: Medium Priority',
     'Global Distributors', 'Distributor', '09BBBBB2222B2Z2', '8765432109', '',
     '', '', 'purchase@globaldist.com', '', '', '',
     'Sanjay Verma', '8765432109', '', '', '', 'sanjay@globaldist.com', '',
@@ -114,7 +114,7 @@ const SAMPLE_DATA = [
     'Requires bulk materials supply', '10 Lakh - 25 Lakh', 'Within 15 Days', 'Partial Confirmed'
   ],
   [
-    '2026-06-25', 'Swan Enterprises', 'WhatsApp', 'Inbound Chat', 'user1', '', '2;01>Contact Stage>Contacted', 'LP04: Low Priority',
+    '2026-06-25', 'SuPuja Creations', 'WhatsApp', 'Inbound Chat', 'user1', '', 'Active', 'LP04: Low Priority',
     'Tech Solutions', 'Service Provider', '', '7654321098', '',
     '', '', 'contact@techsol.com', '', '', '',
     'Preeti Sen', '7654321098', '', '', '', 'preeti@techsol.com', '',
@@ -1377,8 +1377,8 @@ export default function ClientRegistration({
         listSheet.getCell(`A${idx + 2}`).value = name;
       });
 
-      // Column B: Lead Statuses
-      listSheet.getCell('B1').value = 'Lead Status';
+      // Column B: Client Statuses
+      listSheet.getCell('B1').value = 'Client Status';
       clientStatuses.forEach((st, idx) => {
         listSheet.getCell(`B${idx + 2}`).value = st;
       });
@@ -1440,6 +1440,7 @@ export default function ClientRegistration({
         workbook.definedNames.add(`Lists!$A$2:$A$${activeMemberNames.length + 1}`, 'AssignedToEmployees');
       }
       if (clientStatuses.length > 0) {
+        workbook.definedNames.add(`Lists!$B$2:$B$${clientStatuses.length + 1}`, 'ClientStatuses');
         workbook.definedNames.add(`Lists!$B$2:$B$${clientStatuses.length + 1}`, 'LeadStatuses');
       }
       if (sources.length > 0) {
@@ -1461,10 +1462,14 @@ export default function ClientRegistration({
 
       // Add Data Validation Dropdowns for rows 2 to 500 across all dropdown columns
       // Our Company Name (Column 2 -> B)
+      const allowedCompanies = userCompany 
+        ? [userCompany, 'SuPuja Creations', 'NSMLR', 'NSTLP']
+        : ['SuPuja Creations', 'NSMLR', 'NSTLP'];
+      const uniqueCompanies = Array.from(new Set(allowedCompanies.filter(Boolean)));
       sheet.dataValidations.add('B2:B500', {
         type: 'list',
         allowBlank: true,
-        formulae: ['"NSMLR,NSTL"']
+        formulae: [`"${uniqueCompanies.join(',')}"`]
       });
 
       // Lead Source (Column 3 -> C)
@@ -1485,12 +1490,12 @@ export default function ClientRegistration({
         });
       }
 
-      // Lead Status (Column 7 -> G)
+      // Client Status (Column 7 -> G)
       if (clientStatuses.length > 0) {
         sheet.dataValidations.add('G2:G500', {
           type: 'list',
           allowBlank: true,
-          formulae: ['=LeadStatuses']
+          formulae: ['=ClientStatuses']
         });
       }
 
