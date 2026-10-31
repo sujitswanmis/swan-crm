@@ -308,41 +308,50 @@ export function stringSimilarity(s1, s2) {
 }
 
 /**
- * Strips common corporate suffixes and punctuation for clean business name comparison.
+ * Strips common corporate suffixes and industry trade noise for clean brand name comparison.
  */
 export function cleanCorporateName(name) {
   if (!name || typeof name !== 'string') return '';
-  return name
+  let str = name
     .toLowerCase()
     .replace(/[^\w\s]/g, ' ')
-    .replace(/\b(pvt|private|ltd|limited|llp|llc|inc|corp|corporation|co|company|enterprises|enterprise|industries|industry|solutions|works|workshop|traders|trading|dealers|agency|store)\b/gi, ' ')
+    .replace(/\b(m\/s|ms|shri|sri|shree|mr|mrs)\b/gi, ' ')
+    .replace(/\b(pvt|private|ltd|limited|llp|llc|inc|corp|corporation|co|company|group)\b/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+
+  // Strip common trade / dealership / equipment industry noise words to extract core brand
+  const stripped = str
+    .replace(/\b(tractors|tractor|motors|motor|automobiles|automobile|automotive|auto|autos|agritech|agrotech|agrico|agri|agro|krishi|kendra|sewa|service|services|garage|machinery|equipment|equipments|spares|dealers|dealer|dealership|traders|trader|trading|agency|agencies|distributors|distributor|sales|works|workshop|store|stores|center|centre|industries|industry|enterprises|enterprise|solutions)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return stripped.length >= 2 ? stripped : str;
 }
 
 /**
  * Calculates a comprehensive similarity match score (0 to 100) between an incoming row and an existing database lead.
- * Weighs Business Name (45%), Location / State & District & City (30%), and Contact Person Name (25%).
+ * Requires core brand similarity (>= 65%) so competitor dealerships sharing trade suffixes in the same district don't false-match.
  */
 export function calculateLeadSimilarityScore(incoming, existing) {
   if (!incoming || !existing) return { score: 0, reason: '', matchedField: '' };
 
-  // 1. Company / Business Name comparison
+  // 1. Company / Brand Name comparison
   const rawInComp = String(incoming.company || incoming.business_name || '').trim();
   const rawExComp = String(existing.company || existing.business_name || '').trim();
   const cleanInComp = cleanCorporateName(rawInComp);
   const cleanExComp = cleanCorporateName(rawExComp);
 
-  let compScore = 0;
+  let brandScore = 0;
   if (cleanInComp && cleanExComp) {
     if (cleanInComp === cleanExComp) {
-      compScore = 1.0;
+      brandScore = 1.0;
     } else {
       const rawSim = stringSimilarity(cleanInComp, cleanExComp);
       const inTokens = cleanInComp.split(' ').sort().join(' ');
       const exTokens = cleanExComp.split(' ').sort().join(' ');
       const tokenSim = stringSimilarity(inTokens, exTokens);
-      compScore = Math.max(rawSim, tokenSim);
+      brandScore = Math.max(rawSim, tokenSim);
     }
   }
 
@@ -377,21 +386,54 @@ export function calculateLeadSimilarityScore(incoming, existing) {
   let totalScore = 0;
   let reasons = [];
 
-  if (compScore >= 0.50) {
-    totalScore = (compScore * 0.50) + (locScore * 0.30) + (personScore * 0.20);
-    reasons.push(`Business Name ${Math.round(compScore * 100)}% similar`);
-    if (distMatches) reasons.push(`Same District (${incoming.district_name || incoming.district})`);
-    else if (stateMatches) reasons.push(`Same State (${incoming.state_name || incoming.state})`);
-    if (personScore >= 0.75) reasons.push(`Contact Person ${Math.round(personScore * 100)}% match`);
+  // Core Brand Rule: If brand does not match (< 0.65), do NOT flag as potential duplicate based on common word or location
+  if (brandScore >= 0.65) {
+    if (brandScore === 1.0) {
+      // 100% Brand match!
+      if (distMatches) {
+        totalScore = 0.95;
+        reasons.push(`Exact Brand Name (${cleanInComp.toUpperCase()}) in Same District (${incoming.district_name || incoming.district})`);
+      } else if (stateMatches) {
+        totalScore = 0.88;
+        reasons.push(`Exact Brand Name (${cleanInComp.toUpperCase()}) in Same State (${incoming.state_name || incoming.state})`);
+      } else {
+        totalScore = 0.82;
+        reasons.push(`Exact Brand Name (${cleanInComp.toUpperCase()})`);
+      }
+      if (personScore >= 0.75) {
+        totalScore = Math.min(0.99, totalScore + 0.05);
+        reasons.push(`Contact Person match (${Math.round(personScore * 100)}%)`);
+      }
+    } else if (brandScore >= 0.85) {
+      // Very close brand match (e.g. Har San vs Harsan)
+      if (distMatches) {
+        totalScore = 0.90;
+        reasons.push(`Brand Name ${Math.round(brandScore * 100)}% match in Same District (${incoming.district_name || incoming.district})`);
+      } else if (stateMatches) {
+        totalScore = 0.82;
+        reasons.push(`Brand Name ${Math.round(brandScore * 100)}% match in Same State (${incoming.state_name || incoming.state})`);
+      } else {
+        totalScore = 0.75;
+        reasons.push(`Brand Name ${Math.round(brandScore * 100)}% similar`);
+      }
+    } else {
+      // Partial brand match (65% to 84%) - only flag if location or person also matches
+      if (distMatches || stateMatches || personScore >= 0.70) {
+        totalScore = (brandScore * 0.55) + (locScore * 0.30) + (personScore * 0.15);
+        reasons.push(`Brand Name ${Math.round(brandScore * 100)}% similar`);
+        if (distMatches) reasons.push(`Same District (${incoming.district_name || incoming.district})`);
+        else if (stateMatches) reasons.push(`Same State (${incoming.state_name || incoming.state})`);
+      }
+    }
   } else if (personScore >= 0.85 && locScore >= 0.70) {
-    totalScore = (personScore * 0.45) + (locScore * 0.40) + (compScore * 0.15);
+    totalScore = (personScore * 0.50) + (locScore * 0.40) + (brandScore * 0.10);
     reasons.push(`Contact Person ${Math.round(personScore * 100)}% match in same location`);
   }
 
   const finalScorePercent = Math.min(99, Math.round(totalScore * 100));
   return {
     score: finalScorePercent,
-    compScore: Math.round(compScore * 100),
+    compScore: Math.round(brandScore * 100),
     locScore: Math.round(locScore * 100),
     personScore: Math.round(personScore * 100),
     reason: reasons.join(' • ')

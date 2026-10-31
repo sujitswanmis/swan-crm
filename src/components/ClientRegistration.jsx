@@ -1971,8 +1971,8 @@ export default function ClientRegistration({
           }
 
           const cleanComp = cleanCorporateName(l.company);
-          if (cleanComp && cleanComp.length >= 3) {
-            const pfx = cleanComp.substring(0, 3);
+          if (cleanComp && cleanComp.length >= 2) {
+            const pfx = cleanComp.substring(0, Math.min(3, cleanComp.length));
             if (!companyPrefixMap.has(pfx)) companyPrefixMap.set(pfx, []);
             companyPrefixMap.get(pfx).push(l);
           }
@@ -2066,7 +2066,7 @@ export default function ClientRegistration({
             const rowDist = String(row.district_name || row.district || '').toLowerCase().trim();
             const locKey = `${rowState}_${rowDist}`;
             const cleanRowComp = cleanCorporateName(row.company);
-            const pfx = cleanRowComp && cleanRowComp.length >= 3 ? cleanRowComp.substring(0, 3) : '';
+            const pfx = cleanRowComp && cleanRowComp.length >= 2 ? cleanRowComp.substring(0, Math.min(3, cleanRowComp.length)) : '';
 
             const candidateSet = new Set();
             if (locationCandidatesMap.has(locKey)) {
@@ -2086,7 +2086,7 @@ export default function ClientRegistration({
             }
 
             row._matchScore = bestSim.score;
-            if (bestSim.score >= 40 && bestCandidate) {
+            if (bestSim.score >= 50 && bestCandidate) {
               row._isPotentialMatch = true;
               row._matchedRecord = bestCandidate;
               row._matchReason = `${bestSim.score}% Similarity: ${bestSim.reason} with #${bestCandidate.lead_ref_id || bestCandidate.id} (${bestCandidate.company || bestCandidate.name})`;
@@ -3352,7 +3352,7 @@ export default function ClientRegistration({
                       }}
                     >
                       <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#c2410c' }}>{potentialMatchesImportData.length}</div>
-                      <div style={{ fontSize: '0.75rem', color: '#9a3412', fontWeight: 600 }}>🔍 Potential Matches (40-99%)</div>
+                      <div style={{ fontSize: '0.75rem', color: '#9a3412', fontWeight: 600 }}>🔍 Potential Matches (50-99%)</div>
                     </div>
                     <div 
                       onClick={() => { setPreviewFilterTab('alreadyInReport'); setPreviewPage(1); }}
@@ -3411,7 +3411,7 @@ export default function ClientRegistration({
                     <div style={{ padding: '0.65rem 1rem', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '8px', color: '#9a3412', fontSize: '0.85rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                         <Search size={16} color="#ea580c" />
-                        <span><strong>Similarity Notice:</strong> {potentialMatchesImportData.length} row(s) match 40%–99% with existing leads by Business Name, Location, or Contact Person.</span>
+                        <span><strong>Similarity Notice:</strong> {potentialMatchesImportData.length} row(s) match 50%–99% with existing leads by Brand Name, Location, or Contact Person.</span>
                       </div>
                       <button 
                         type="button" 
@@ -3577,13 +3577,52 @@ export default function ClientRegistration({
                         No records match your selected filter or search query.
                       </div>
                     ) : (
-                      <MobileTableView id="ClientRegistration-1"><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem', textAlign: 'left', minWidth: `${Math.max(800, mappedDisplayFields.length * 150 + 180)}px` }}>
-                        <thead style={{ position: 'sticky', top: 0, zIndex: 5, background: 'var(--bg-primary)', borderBottom: '2px solid var(--border-light)' }}>
+                      <MobileTableView id="ClientRegistration-1"><table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.8rem', textAlign: 'left', minWidth: `${Math.max(800, mappedDisplayFields.length * 150 + 230)}px` }}>
+                        <thead>
                           <tr>
-                            <th style={{ padding: '0.6rem 0.75rem', fontWeight: 700, width: '50px', textAlign: 'center', borderRight: '1px solid var(--border-light)' }}>#</th>
-                            <th style={{ padding: '0.6rem 0.75rem', fontWeight: 700, minWidth: '150px', textAlign: 'center', borderRight: '1px solid var(--border-light)' }}>Status</th>
+                            <th style={{ 
+                              position: 'sticky', 
+                              top: 0, 
+                              left: 0, 
+                              zIndex: 15, 
+                              background: 'var(--bg-primary)', 
+                              width: '50px', 
+                              minWidth: '50px', 
+                              maxWidth: '50px', 
+                              padding: '0.6rem 0.75rem', 
+                              fontWeight: 700, 
+                              textAlign: 'center', 
+                              borderBottom: '2px solid var(--border-light)', 
+                              borderRight: '1px solid var(--border-light)' 
+                            }}>#</th>
+                            <th style={{ 
+                              position: 'sticky', 
+                              top: 0, 
+                              left: '50px', 
+                              zIndex: 15, 
+                              background: 'var(--bg-primary)', 
+                              width: '180px', 
+                              minWidth: '180px', 
+                              maxWidth: '220px', 
+                              padding: '0.6rem 0.75rem', 
+                              fontWeight: 700, 
+                              textAlign: 'center', 
+                              borderBottom: '2px solid var(--border-light)', 
+                              borderRight: '2px solid var(--border-light)', 
+                              boxShadow: '3px 0 6px -2px rgba(0,0,0,0.12)' 
+                            }}>Status</th>
                             {mappedDisplayFields.map(field => (
-                              <th key={field.key} style={{ padding: '0.6rem 0.75rem', fontWeight: 700, whiteSpace: 'nowrap', borderRight: '1px solid var(--border-light)' }}>
+                              <th key={field.key} style={{ 
+                                position: 'sticky', 
+                                top: 0, 
+                                zIndex: 5, 
+                                background: 'var(--bg-primary)', 
+                                padding: '0.6rem 0.75rem', 
+                                fontWeight: 700, 
+                                whiteSpace: 'nowrap', 
+                                borderBottom: '2px solid var(--border-light)', 
+                                borderRight: '1px solid var(--border-light)' 
+                              }}>
                                 {field.label}
                               </th>
                             ))}
@@ -3592,18 +3631,46 @@ export default function ClientRegistration({
                         <tbody>
                           {paginatedPreviewRows.map((row, idx) => {
                             const isDup = row._isDuplicate;
+                            const rowBg = isDup ? '#fff1f2' : (row._matchScore >= 75 ? '#fff7ed' : (idx % 2 === 0 ? 'var(--bg-surface)' : 'var(--bg-primary)'));
                             return (
                               <tr 
                                 key={idx} 
                                 style={{ 
-                                  borderBottom: '1px solid var(--border-light)',
-                                  backgroundColor: isDup ? 'rgba(239, 68, 68, 0.04)' : (idx % 2 === 0 ? 'var(--bg-surface)' : 'var(--bg-primary)')
+                                  backgroundColor: rowBg
                                 }}
                               >
-                                <td style={{ padding: '0.5rem 0.75rem', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.75rem', borderRight: '1px solid var(--border-light)', fontFamily: 'monospace' }}>
+                                <td style={{ 
+                                  position: 'sticky', 
+                                  left: 0, 
+                                  zIndex: 7, 
+                                  width: '50px', 
+                                  minWidth: '50px', 
+                                  maxWidth: '50px', 
+                                  padding: '0.5rem 0.75rem', 
+                                  textAlign: 'center', 
+                                  color: 'var(--text-secondary)', 
+                                  fontSize: '0.75rem', 
+                                  fontFamily: 'monospace', 
+                                  backgroundColor: rowBg, 
+                                  borderBottom: '1px solid var(--border-light)', 
+                                  borderRight: '1px solid var(--border-light)' 
+                                }}>
                                   {row._rowNum || idx + 1}
                                 </td>
-                                <td style={{ padding: '0.5rem 0.75rem', textAlign: 'center', borderRight: '1px solid var(--border-light)', minWidth: '150px' }}>
+                                <td style={{ 
+                                  position: 'sticky', 
+                                  left: '50px', 
+                                  zIndex: 7, 
+                                  width: '180px', 
+                                  minWidth: '180px', 
+                                  maxWidth: '220px', 
+                                  padding: '0.5rem 0.75rem', 
+                                  textAlign: 'center', 
+                                  backgroundColor: rowBg, 
+                                  borderBottom: '1px solid var(--border-light)', 
+                                  borderRight: '2px solid var(--border-light)', 
+                                  boxShadow: '3px 0 6px -2px rgba(0,0,0,0.12)' 
+                                }}>
                                   {row._isAlreadyInReport ? (
                                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.2rem' }}>
                                       <span style={{ fontSize: '0.7rem', fontWeight: 800, padding: '0.15rem 0.5rem', borderRadius: '4px', backgroundColor: '#fee2e2', color: '#be123c', border: '1px solid #fecdd3', whiteSpace: 'nowrap' }}>
@@ -3626,7 +3693,7 @@ export default function ClientRegistration({
                                         </span>
                                       )}
                                     </div>
-                                  ) : (row._matchScore && row._matchScore >= 40) ? (
+                                  ) : (row._matchScore && row._matchScore >= 50) ? (
                                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.2rem' }}>
                                       <span style={{ 
                                         fontSize: '0.7rem', 
@@ -3664,7 +3731,7 @@ export default function ClientRegistration({
                                     if (member) cellVal = member.emp_name || member.email;
                                   }
                                   return (
-                                    <td key={field.key} style={{ padding: '0.5rem 0.75rem', borderRight: '1px solid var(--border-light)', whiteSpace: 'nowrap', maxWidth: '240px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                    <td key={field.key} style={{ padding: '0.5rem 0.75rem', borderBottom: '1px solid var(--border-light)', borderRight: '1px solid var(--border-light)', whiteSpace: 'nowrap', maxWidth: '240px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                       {cellVal ? String(cellVal) : <span style={{ color: 'var(--text-secondary)', opacity: 0.5 }}>-</span>}
                                     </td>
                                   );
