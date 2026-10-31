@@ -593,7 +593,7 @@ export default function ClientRegistration({
   const [duplicateImportData, setDuplicateImportData] = useState([]);
   const [alreadyInReportImportData, setAlreadyInReportImportData] = useState([]);
   const [potentialMatchesImportData, setPotentialMatchesImportData] = useState([]);
-  const [defaultDataStatus, setDefaultDataStatus] = useState('Saved Drafts');
+  const [defaultDataStatus, setDefaultDataStatus] = useState('Verified Data');
   const [allMappedData, setAllMappedData] = useState([]);
   const [previewFilterTab, setPreviewFilterTab] = useState('all'); // 'all' | 'clean' | 'potentialMatches' | 'blocked'
   const [previewPage, setPreviewPage] = useState(1);
@@ -1993,16 +1993,18 @@ export default function ClientRegistration({
 
         mapped.forEach(row => {
           // Resolve data_status for each row
-          const rawDataStatus = (row.data_status || defaultDataStatus || 'Saved Drafts').trim();
+          const rawDataStatus = (row.data_status || defaultDataStatus || 'Verified Data').trim();
           if (/draft/i.test(rawDataStatus)) {
             row.data_status = 'Saved Drafts';
-            row.status = 'DRAFT';
+          } else if (/partial/i.test(rawDataStatus)) {
+            row.data_status = 'Partial Confirmed';
           } else {
-            row.data_status = /partial/i.test(rawDataStatus) ? 'Partial Confirmed' : 'Verified Data';
-            // PRESERVE user's real Lead Status from Excel if provided; only default if empty/None
-            if (!row.status || row.status === 'None' || row.status === 'DRAFT' || row.status === 'Partial Confirmed' || row.status === 'Verified Data') {
-              row.status = tenantLeadStatuses[0] || '1;01>New Stage>New Lead';
-            }
+            row.data_status = 'Verified Data';
+          }
+
+          // PRESERVE user's real Lead Status from Excel if provided; only default if empty/None/DRAFT
+          if (!row.status || row.status === 'None' || row.status === 'DRAFT' || row.status === 'Partial Confirmed' || row.status === 'Verified Data') {
+            row.status = tenantLeadStatuses[0] || '1;01>New Stage>New Lead';
           }
 
           const rowNumbers = [];
@@ -2110,15 +2112,16 @@ export default function ClientRegistration({
         });
       } else {
         ready = mapped.map(r => {
-          const rawDataStatus = (r.data_status || defaultDataStatus || 'Saved Drafts').trim();
+          const rawDataStatus = (r.data_status || defaultDataStatus || 'Verified Data').trim();
           if (/draft/i.test(rawDataStatus)) {
             r.data_status = 'Saved Drafts';
-            r.status = 'DRAFT';
+          } else if (/partial/i.test(rawDataStatus)) {
+            r.data_status = 'Partial Confirmed';
           } else {
-            r.data_status = /partial/i.test(rawDataStatus) ? 'Partial Confirmed' : 'Verified Data';
-            if (!r.status || r.status === 'None' || r.status === 'DRAFT' || r.status === 'Partial Confirmed' || r.status === 'Verified Data') {
-              r.status = tenantLeadStatuses[0] || '1;01>New Stage>New Lead';
-            }
+            r.data_status = 'Verified Data';
+          }
+          if (!r.status || r.status === 'None' || r.status === 'DRAFT' || r.status === 'Partial Confirmed' || r.status === 'Verified Data') {
+            r.status = tenantLeadStatuses[0] || '1;01>New Stage>New Lead';
           }
           r._matchScore = 0;
           return { ...r, _isDuplicate: false };
@@ -2202,7 +2205,7 @@ export default function ClientRegistration({
           if (!copy.entry_by) copy.entry_by = actor;
           if (!copy.created_by) copy.created_by = actor;
 
-          if (r.data_status === 'Saved Drafts' || r.status === 'DRAFT') {
+          if (r.data_status === 'Saved Drafts') {
             copy.status = 'DRAFT';
           } else {
             // Preserve user's real Lead Status from Excel; only default if empty/None/DRAFT
@@ -3276,9 +3279,9 @@ export default function ClientRegistration({
                       onChange={(e) => setDefaultDataStatus(e.target.value)}
                       style={{ padding: '0.5rem 0.85rem', borderRadius: '6px', border: '1.5px solid var(--accent-color)', fontWeight: 600, fontSize: '0.85rem', background: 'var(--bg-surface)', color: 'var(--text-primary)', cursor: 'pointer' }}
                     >
-                      <option value="Saved Drafts">📁 Saved Drafts (New Lead Registration Queue)</option>
-                      <option value="Partial Confirmed">⏳ Partial Confirmed (Lead Registered Report)</option>
                       <option value="Verified Data">✅ Verified Data (Lead Registered Report)</option>
+                      <option value="Partial Confirmed">⏳ Partial Confirmed (Lead Registered Report)</option>
+                      <option value="Saved Drafts">📁 Saved Drafts (New Lead Registration Queue)</option>
                     </select>
                   </div>
 
