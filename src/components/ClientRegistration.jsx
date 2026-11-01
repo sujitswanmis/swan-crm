@@ -901,7 +901,13 @@ export default function ClientRegistration({
 
   const handleSaveDraft = async () => {
     if (!formData.company && !formData.name && !formData.phone) {
-      alert('Kripya kam se kam Business Name, Contact Name ya Mobile Number bharein taaki draft save kiya ja sake.');
+      setUploadModal({
+        type: 'error',
+        title: 'Draft Information Required',
+        message: 'Kripya kam se kam Business Name, Contact Name ya Mobile Number bharein taaki draft save kiya ja sake.',
+        primaryBtnText: 'OK',
+        onPrimaryClick: () => setUploadModal(null)
+      });
       return;
     }
     setIsSavingDraft(true);
@@ -915,13 +921,31 @@ export default function ClientRegistration({
       const res = await saveClientRegistrationDraft(draftPayload, userCompany, actor);
       if (res && res.success) {
         if (res.draft?.id) setCurrentDraftId(res.draft.id);
-        alert('✅ Draft safely saved! Aap is adhoore form ko kabhi bhi "Saved Drafts" tab se resume kar sakte hain.');
+        setUploadModal({
+          type: 'success',
+          title: 'Draft Safely Saved!',
+          message: 'Aap is adhoore form ko kabhi bhi "Saved Drafts" tab se resume karke complete ya register kar sakte hain.',
+          primaryBtnText: 'OK',
+          onPrimaryClick: () => setUploadModal(null)
+        });
         loadDrafts();
       } else {
-        alert('Failed to save draft: ' + (res?.error || 'Unknown error'));
+        setUploadModal({
+          type: 'error',
+          title: 'Failed to Save Draft',
+          message: res?.error || 'Unknown error occurred while saving draft.',
+          primaryBtnText: 'Close',
+          onPrimaryClick: () => setUploadModal(null)
+        });
       }
     } catch (e) {
-      alert('Error saving draft: ' + e.message);
+      setUploadModal({
+        type: 'error',
+        title: 'Error Saving Draft',
+        message: e.message || 'An error occurred while saving draft.',
+        primaryBtnText: 'Close',
+        onPrimaryClick: () => setUploadModal(null)
+      });
     } finally {
       setIsSavingDraft(false);
     }
