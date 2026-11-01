@@ -25,12 +25,12 @@ function normalizePhone(phone) {
  */
 const VALID_LEAD_COLUMNS = new Set([
   'id', 'lead_ref_id', 'lead_date', 'name', 'company', 'our_company',
-  'email', 'phone', 'status', 'priority', 'deal_value', 'source',
+  'email', 'phone', 'status', 'client_status', 'priority', 'deal_value', 'source',
   'source_name', 'assigned_to', 'created_by', 'entry_by', 'created_at',
   'follow_up_date', 'business_type', 'business_gst', 'business_contact_1',
   'business_contact_2', 'business_alt_1', 'business_alt_2', 'business_email_1',
   'business_email_2', 'business_alt_email_1', 'business_alt_email_2',
-  'cp1_name', 'cp1_mobile_2', 'cp1_alt_1', 'cp1_alt_2', 'cp1_email_2',
+  'cp1_name', 'cp1_mobile_1', 'cp1_mobile_2', 'cp1_alt_1', 'cp1_alt_2', 'cp1_email_2',
   'cp2_name', 'cp2_mobile_1', 'cp2_mobile_2', 'cp2_alt_1', 'cp2_alt_2',
   'cp2_email_1', 'cp2_email_2', 'cp3_name', 'cp3_mobile_1', 'cp3_mobile_2',
   'cp3_alt_1', 'cp3_alt_2', 'cp3_email_1', 'cp3_email_2', 'state_name',
@@ -72,10 +72,10 @@ export async function saveClientRegistrationDraft(draftData, userCompany = '', c
       ...draftData,
       company: companyName || 'Draft Company',
       name: contactName || 'Draft Contact',
-      phone: phone || draftData.phone || null,
+      phone: phone || draftData.phone || draftData.business_contact_1 || null,
       status: 'DRAFT',
       entry_by: currentUser || draftData.entry_by || 'User',
-      our_company: userCompany || draftData.our_company || 'New Swan Group',
+      our_company: draftData.our_company || userCompany || 'NSMLR',
       updated_at: new Date().toISOString()
     };
 
@@ -166,7 +166,7 @@ export async function getClientRegistrationDrafts(userCompany = '', currentUser 
     while (true) {
       let query = adminClient
         .from('leads')
-        .select('id, lead_ref_id, company, name, phone, email, state_name, district_name, city_name, created_at, updated_at, entry_by, created_by, our_company, requirement, business_gst, status')
+        .select('*')
         .eq('status', 'DRAFT')
         .order('updated_at', { ascending: false });
 

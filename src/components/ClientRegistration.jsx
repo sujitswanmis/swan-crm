@@ -924,9 +924,14 @@ export default function ClientRegistration({
         setUploadModal({
           type: 'success',
           title: 'Draft Safely Saved!',
-          message: 'Aap is adhoore form ko kabhi bhi "Saved Drafts" tab se resume karke complete ya register kar sakte hain.',
-          primaryBtnText: 'OK',
-          onPrimaryClick: () => setUploadModal(null)
+          message: 'Draft update ho gaya hai. Aap is adhoore form ko kabhi bhi "Saved Drafts" tab se resume karke complete ya register kar sakte hain.',
+          primaryBtnText: 'View Saved Drafts',
+          onPrimaryClick: () => {
+            setUploadModal(null);
+            setCurrentDraftId(null);
+            setActiveView('drafts');
+            loadDrafts();
+          }
         });
         loadDrafts();
       } else {
@@ -2849,35 +2854,63 @@ export default function ClientRegistration({
                 <div style={{ fontSize: '0.88rem', color: '#0369a1', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   <span>📝 Resuming Saved Draft (ID: #{currentDraftId})</span>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCurrentDraftId(null);
-                    setFormData(prev => ({
-                      ...prev,
-                      source_name: '', entry_by: currentActor || userName || '', assigned_to: currentActor || userName || '', business_type: '', business_gst: '', company: '', priority: '', our_company: defaultWorkspaceCompany,
-                      business_contact_1: '', business_contact_2: '', business_alt_1: '', business_alt_2: '',
-                      business_email_1: '', business_email_2: '', business_alt_email_1: '', business_alt_email_2: '',
-                      name: '', phone: '', cp1_mobile_2: '', cp1_alt_1: '', cp1_alt_2: '', email: '', cp1_email_2: '',
-                      cp2_name: '', cp2_mobile_1: '', cp2_mobile_2: '', cp2_alt_1: '', cp2_alt_2: '', cp2_email_1: '', cp2_email_2: '',
-                      cp3_name: '', cp3_mobile_1: '', cp3_mobile_2: '', cp3_alt_1: '', cp3_alt_2: '', cp3_email_1: '', cp3_email_2: '',
-                      state_name: '', district_name: '', pin_code: '', city_name: '', tehsil_name: '', block_name: '', address: '',
-                      requirement: '', investment: '', buying_timeline: ''
-                    }));
-                  }}
-                  style={{
-                    padding: '0.3rem 0.65rem',
-                    background: '#ffffff',
-                    border: '1px solid #7dd3fc',
-                    borderRadius: '4px',
-                    fontSize: '0.8rem',
-                    color: '#0369a1',
-                    cursor: 'pointer',
-                    fontWeight: 600
-                  }}
-                >
-                  Cancel Draft &amp; Start Fresh
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCurrentDraftId(null);
+                      setActiveView('drafts');
+                      loadDrafts();
+                    }}
+                    style={{
+                      padding: '0.35rem 0.8rem',
+                      background: 'var(--accent-color, #2563eb)',
+                      border: 'none',
+                      borderRadius: '5px',
+                      fontSize: '0.8rem',
+                      color: '#ffffff',
+                      cursor: 'pointer',
+                      fontWeight: 600,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.3rem',
+                      boxShadow: '0 1px 2px rgba(0,0,0,0.1)'
+                    }}
+                    title="Return to Saved Drafts list"
+                  >
+                    ⬅ Back to Saved Drafts
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCurrentDraftId(null);
+                      setFormData(prev => ({
+                        ...prev,
+                        source_name: '', entry_by: currentActor || userName || '', assigned_to: currentActor || userName || '', business_type: '', business_gst: '', company: '', priority: '', our_company: defaultWorkspaceCompany,
+                        business_contact_1: '', business_contact_2: '', business_alt_1: '', business_alt_2: '',
+                        business_email_1: '', business_email_2: '', business_alt_email_1: '', business_alt_email_2: '',
+                        name: '', phone: '', cp1_mobile_2: '', cp1_alt_1: '', cp1_alt_2: '', email: '', cp1_email_2: '',
+                        cp2_name: '', cp2_mobile_1: '', cp2_mobile_2: '', cp2_alt_1: '', cp2_alt_2: '', cp2_email_1: '', cp2_email_2: '',
+                        cp3_name: '', cp3_mobile_1: '', cp3_mobile_2: '', cp3_alt_1: '', cp3_alt_2: '', cp3_email_1: '', cp3_email_2: '',
+                        state_name: '', district_name: '', pin_code: '', city_name: '', tehsil_name: '', block_name: '', address: '',
+                        requirement: '', investment: '', buying_timeline: ''
+                      }));
+                    }}
+                    style={{
+                      padding: '0.35rem 0.65rem',
+                      background: '#ffffff',
+                      border: '1px solid #7dd3fc',
+                      borderRadius: '5px',
+                      fontSize: '0.8rem',
+                      color: '#0369a1',
+                      cursor: 'pointer',
+                      fontWeight: 600
+                    }}
+                    title="Clear form to start a fresh lead"
+                  >
+                    Start Fresh Form
+                  </button>
+                </div>
               </div>
             )}
 
