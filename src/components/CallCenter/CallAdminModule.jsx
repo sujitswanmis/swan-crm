@@ -1618,6 +1618,23 @@ function TabCallLogs({ scope = '', userCompany = '', tenantId = null }) {
     setShowSpeedModal(true);
   };
 
+  // Dynamic Date Range Suffix for Meaningful Filenames
+  const getDateRangeSuffix = () => {
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+    if (datePreset === 'all') return `All_Time_as_of_${today}`;
+    let s = customStartDate;
+    let e = customEndDate;
+    if (!s || !e) {
+      const range = computeDateRange(datePreset, customStartDate, customEndDate);
+      s = range.startDate;
+      e = range.endDate;
+    }
+    if (s && e) {
+      return s === e ? s : `${s}_to_${e}`;
+    }
+    return today;
+  };
+
   const startBulkRecordingsZip = () => {
     const selectedList = Array.from(selectedCallsMap.values()).filter(c => c.recording_url);
     let concurrency = 10;
@@ -1641,12 +1658,15 @@ function TabCallLogs({ scope = '', userCompany = '', tenantId = null }) {
       speedLabel = `${concurrency}x Custom`;
     }
 
+    const dateRangeSuffix = getDateRangeSuffix();
+
     setShowSpeedModal(false);
     window.dispatchEvent(new CustomEvent('start-recordings-zip-download', {
       detail: {
         calls: selectedList,
         concurrency,
-        speedLabel
+        speedLabel,
+        dateRangeSuffix
       }
     }));
   };
@@ -1717,7 +1737,8 @@ function TabCallLogs({ scope = '', userCompany = '', tenantId = null }) {
         headerRow.height = 24;
 
         const buffer = await workbook.xlsx.writeBuffer();
-        saveAs(new Blob([buffer]), `Call_Logs_DB_Records_${nowStr}.xlsx`);
+        const dateSuffix = getDateRangeSuffix();
+        saveAs(new Blob([buffer]), `Call_Logs_DB_Records_${dateSuffix}.xlsx`);
       } else {
         const worksheet = workbook.addWorksheet('Plivo CDR Records');
         worksheet.columns = [
@@ -1755,7 +1776,8 @@ function TabCallLogs({ scope = '', userCompany = '', tenantId = null }) {
         headerRow.height = 24;
 
         const buffer = await workbook.xlsx.writeBuffer();
-        saveAs(new Blob([buffer]), `Call_Logs_Plivo_CDR_${nowStr}.xlsx`);
+        const dateSuffix = getDateRangeSuffix();
+        saveAs(new Blob([buffer]), `Call_Logs_Plivo_CDR_${dateSuffix}.xlsx`);
       }
     } catch (err) {
       console.error("Export Excel failed:", err);

@@ -27,7 +27,7 @@ export default function GlobalRecordingDownloader() {
 
   useEffect(() => {
     const handleStart = async (event) => {
-      const { calls = [], concurrency = 10, speedLabel = '10x Faster' } = event.detail || {};
+      const { calls = [], concurrency = 10, speedLabel = '10x Faster', dateRangeSuffix = '' } = event.detail || {};
       const validCalls = calls.filter(c => c.recording_url);
       if (validCalls.length === 0) return;
 
@@ -47,6 +47,8 @@ export default function GlobalRecordingDownloader() {
         active: true,
         concurrency: effectiveConcurrency,
         speedLabel,
+        dateRangeSuffix,
+        dateRangeLabel: dateRangeSuffix ? dateRangeSuffix.replace(/_/g, ' ') : '',
         current: 0,
         total: validCalls.length,
         eta: 'Calculating ETA...',
@@ -134,8 +136,9 @@ export default function GlobalRecordingDownloader() {
           streamFiles: true
         });
 
-        const nowStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
-        saveAs(zipBlob, `Call_Recordings_${nowStr}.zip`);
+        const defaultSuffix = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+        const finalSuffix = dateRangeSuffix || defaultSuffix;
+        saveAs(zipBlob, `Call_Recordings_${finalSuffix}.zip`);
 
         setDownloadState(prev => prev ? { ...prev, phase: 'completed', current: validCalls.length } : null);
         window.dispatchEvent(new CustomEvent('recordings-zip-download-finished', { detail: { success: true } }));
@@ -263,7 +266,9 @@ export default function GlobalRecordingDownloader() {
             <CheckCircle size={24} color="#10b981" />
             <div>
               <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>ZIP Saved Successfully!</div>
-              <div style={{ fontSize: '0.78rem', color: '#64748b' }}>{downloadState.total} audio files downloaded & packed.</div>
+              <div style={{ fontSize: '0.78rem', color: '#64748b' }}>
+                {downloadState.total} recordings ({downloadState.dateRangeLabel || 'Call Recordings'}) packed.
+              </div>
             </div>
           </div>
         ) : downloadState.phase === 'error' ? (
@@ -285,6 +290,16 @@ export default function GlobalRecordingDownloader() {
                 {downloadState.phase === 'compressing' ? 'Packing ZIP...' : `${downloadState.current} / ${downloadState.total} (${percent}%)`}
               </span>
             </div>
+
+            {/* Date Range Period Badge */}
+            {downloadState.dateRangeLabel && (
+              <div style={{ fontSize: '0.74rem', color: '#64748b', fontWeight: 600, marginBottom: '0.45rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <span>📅 Period:</span>
+                <span style={{ color: '#0f172a', background: '#f1f5f9', padding: '1px 6px', borderRadius: '4px' }}>
+                  {downloadState.dateRangeLabel}
+                </span>
+              </div>
+            )}
 
             {/* ETA Countdown Timer Badge */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.6rem', fontSize: '0.78rem' }}>
