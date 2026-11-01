@@ -3540,11 +3540,13 @@ export default function ClientRegistration({
                                 <td 
                                   className="bulk-preview-sticky-col-2"
                                   style={{ 
-                                    padding: '0.5rem 0.5rem', 
-                                    textAlign: 'center', 
+                                    padding: '0.4rem 0.5rem', 
+                                    textAlign: 'left', 
                                     backgroundColor: rowBg, 
                                     borderBottom: '1px solid var(--border-light)', 
-                                    borderRight: '2px solid var(--border-light)' 
+                                    borderRight: '2px solid var(--border-light)',
+                                    boxSizing: 'border-box',
+                                    overflow: 'hidden'
                                   }}>
                                   {row._isAlreadyInReport ? (
                                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.2rem' }}>
@@ -3552,7 +3554,7 @@ export default function ClientRegistration({
                                         🚨 100% In Report
                                       </span>
                                       {row._dupReason && (
-                                        <span style={{ fontSize: '0.65rem', color: '#9f1239', fontWeight: 600, maxWidth: '240px', lineHeight: 1.2 }}>
+                                        <span style={{ fontSize: '0.65rem', color: '#9f1239', fontWeight: 600, maxWidth: '100%', lineHeight: 1.2 }}>
                                           {row._dupReason}
                                         </span>
                                       )}
@@ -3563,15 +3565,15 @@ export default function ClientRegistration({
                                         ⚠️ 100% Duplicate
                                       </span>
                                       {row._dupReason && (
-                                        <span style={{ fontSize: '0.65rem', color: '#b45309', fontWeight: 500, maxWidth: '240px', lineHeight: 1.2 }}>
+                                        <span style={{ fontSize: '0.65rem', color: '#b45309', fontWeight: 500, maxWidth: '100%', lineHeight: 1.2 }}>
                                           {row._dupReason}
                                         </span>
                                       )}
                                     </div>
                                   ) : (row._matchScore && row._matchScore >= 50) ? (
-                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: '0.3rem', minWidth: '220px', maxWidth: '300px', padding: '0.15rem 0' }}>
+                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: '0.25rem', width: '100%', maxWidth: '100%', boxSizing: 'border-box', overflow: 'hidden' }}>
                                       {/* 1. Header Pill: Match Badge + Location Tag */}
-                                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.35rem', flexWrap: 'wrap' }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.3rem', width: '100%', boxSizing: 'border-box' }}>
                                         <span style={{ 
                                           fontSize: '0.72rem', 
                                           fontWeight: 800, 
@@ -3584,6 +3586,7 @@ export default function ClientRegistration({
                                           alignItems: 'center',
                                           gap: '0.3rem',
                                           whiteSpace: 'nowrap',
+                                          flexShrink: 0,
                                           boxShadow: '0 1px 2px rgba(0,0,0,0.04)'
                                         }}>
                                           {row._matchScore >= 95 ? '🔴' : (row._matchScore >= 80 ? '🟠' : '🟡')} {row._matchScore}% Match
@@ -3598,8 +3601,11 @@ export default function ClientRegistration({
                                             background: 'var(--bg-primary, #f1f5f9)',
                                             color: 'var(--text-secondary, #475569)',
                                             border: '1px solid var(--border-light, #cbd5e1)',
-                                            whiteSpace: 'nowrap'
-                                          }}>
+                                            whiteSpace: 'nowrap',
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis',
+                                            maxWidth: '120px'
+                                          }} title={row.district_name || row.district || row.state_name || row.state}>
                                             📍 {row.district_name || row.district || row.state_name || row.state}
                                           </span>
                                         )}
@@ -3615,7 +3621,9 @@ export default function ClientRegistration({
                                             color: row._matchScore >= 95 ? '#9f1239' : (row._matchScore >= 80 ? '#9a3412' : '#713f12'),
                                             fontWeight: 600,
                                             lineHeight: 1.25,
-                                            paddingLeft: '0.1rem'
+                                            width: '100%',
+                                            wordBreak: 'break-word',
+                                            overflowWrap: 'break-word'
                                           }}>
                                             ⚡ {cleanReason}
                                           </div>
@@ -3625,17 +3633,20 @@ export default function ClientRegistration({
                                       {/* 3. Existing Matched Lead Mini-Card Box */}
                                       {row._matchedRecord && (
                                         <div style={{
+                                          width: '100%',
+                                          boxSizing: 'border-box',
                                           backgroundColor: 'rgba(255, 255, 255, 0.75)',
                                           border: `1px dashed ${row._matchScore >= 95 ? '#fca5a5' : (row._matchScore >= 80 ? '#fdba74' : '#fde047')}`,
                                           borderRadius: '6px',
-                                          padding: '0.3rem 0.5rem',
+                                          padding: '0.25rem 0.45rem',
                                           display: 'flex',
                                           flexDirection: 'column',
-                                          gap: '0.15rem',
-                                          boxShadow: '0 1px 2px rgba(0,0,0,0.02)'
+                                          gap: '0.12rem',
+                                          boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
+                                          overflow: 'hidden'
                                         }}>
-                                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.4rem' }}>
-                                            <span style={{ fontSize: '0.58rem', color: 'var(--text-secondary, #64748b)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.3px' }}>
+                                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.3rem', width: '100%' }}>
+                                            <span style={{ fontSize: '0.58rem', color: 'var(--text-secondary, #64748b)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.3px', flexShrink: 0 }}>
                                               Existing Lead
                                             </span>
                                             <span style={{
@@ -3646,7 +3657,8 @@ export default function ClientRegistration({
                                               background: '#eff6ff',
                                               padding: '0.05rem 0.35rem',
                                               borderRadius: '3px',
-                                              border: '1px solid #bfdbfe'
+                                              border: '1px solid #bfdbfe',
+                                              flexShrink: 0
                                             }}>
                                               #{row._matchedRecord.lead_ref_id || row._matchedRecord.id}
                                             </span>
@@ -3657,7 +3669,9 @@ export default function ClientRegistration({
                                             color: 'var(--text-primary, #1e293b)',
                                             whiteSpace: 'nowrap',
                                             overflow: 'hidden',
-                                            textOverflow: 'ellipsis'
+                                            textOverflow: 'ellipsis',
+                                            width: '100%',
+                                            boxSizing: 'border-box'
                                           }} title={row._matchedRecord.company || row._matchedRecord.name}>
                                             🏢 {row._matchedRecord.company || row._matchedRecord.name}
                                           </div>
