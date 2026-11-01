@@ -2099,6 +2099,14 @@ export default function ClientRegistration({
               row._isPotentialMatch = true;
               row._matchedRecord = bestCandidate;
               row._matchReason = `${bestSim.score}% Similarity: ${bestSim.reason} with #${bestCandidate.lead_ref_id || bestCandidate.id} (${bestCandidate.company || bestCandidate.name})`;
+              row._simDetails = {
+                score: bestSim.score,
+                reason: bestSim.reason,
+                primaryReason: bestSim.primaryReason || bestSim.reason,
+                locationReason: bestSim.locationReason || '',
+                candRef: bestCandidate.lead_ref_id || bestCandidate.id,
+                candName: bestCandidate.company || bestCandidate.name
+              };
               potentialMatchesList.push(row);
             } else {
               row._isPotentialMatch = false;
@@ -2188,6 +2196,7 @@ export default function ClientRegistration({
           delete copy._isPotentialMatch;
           delete copy._matchedRecord;
           delete copy._matchReason;
+          delete copy._simDetails;
 
           currentSeq++;
           const d = new Date();
@@ -3560,23 +3569,99 @@ export default function ClientRegistration({
                                       )}
                                     </div>
                                   ) : (row._matchScore && row._matchScore >= 50) ? (
-                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.2rem' }}>
-                                      <span style={{ 
-                                        fontSize: '0.7rem', 
-                                        fontWeight: 800, 
-                                        padding: '0.15rem 0.5rem', 
-                                        borderRadius: '4px', 
-                                        backgroundColor: row._matchScore >= 75 ? '#ffedd5' : '#fef9c3', 
-                                        color: row._matchScore >= 75 ? '#c2410c' : '#854d0e', 
-                                        border: `1px solid ${row._matchScore >= 75 ? '#fed7aa' : '#fef08a'}`,
-                                        whiteSpace: 'nowrap'
-                                      }}>
-                                        {row._matchScore >= 75 ? '🟠' : '🟡'} {row._matchScore}% Match
-                                      </span>
-                                      {row._matchReason && (
-                                        <span style={{ fontSize: '0.65rem', color: row._matchScore >= 75 ? '#9a3412' : '#713f12', fontWeight: 500, maxWidth: '240px', lineHeight: 1.2 }}>
-                                          {row._matchReason}
+                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: '0.3rem', minWidth: '220px', maxWidth: '300px', padding: '0.15rem 0' }}>
+                                      {/* 1. Header Pill: Match Badge + Location Tag */}
+                                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.35rem', flexWrap: 'wrap' }}>
+                                        <span style={{ 
+                                          fontSize: '0.72rem', 
+                                          fontWeight: 800, 
+                                          padding: '0.18rem 0.55rem', 
+                                          borderRadius: '6px', 
+                                          backgroundColor: row._matchScore >= 95 ? '#fee2e2' : (row._matchScore >= 80 ? '#ffedd5' : '#fef9c3'), 
+                                          color: row._matchScore >= 95 ? '#be123c' : (row._matchScore >= 80 ? '#c2410c' : '#854d0e'), 
+                                          border: `1px solid ${row._matchScore >= 95 ? '#fecdd3' : (row._matchScore >= 80 ? '#fed7aa' : '#fef08a')}`,
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: '0.3rem',
+                                          whiteSpace: 'nowrap',
+                                          boxShadow: '0 1px 2px rgba(0,0,0,0.04)'
+                                        }}>
+                                          {row._matchScore >= 95 ? '🔴' : (row._matchScore >= 80 ? '🟠' : '🟡')} {row._matchScore}% Match
                                         </span>
+
+                                        {(row.district_name || row.district || row.state_name || row.state) && (
+                                          <span style={{
+                                            fontSize: '0.62rem',
+                                            fontWeight: 700,
+                                            padding: '0.15rem 0.4rem',
+                                            borderRadius: '4px',
+                                            background: 'var(--bg-primary, #f1f5f9)',
+                                            color: 'var(--text-secondary, #475569)',
+                                            border: '1px solid var(--border-light, #cbd5e1)',
+                                            whiteSpace: 'nowrap'
+                                          }}>
+                                            📍 {row.district_name || row.district || row.state_name || row.state}
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      {/* 2. Clean Structured Reason */}
+                                      {(() => {
+                                        const cleanReason = row._simDetails?.reason || (row._matchReason ? row._matchReason.replace(/^\d+%\s*Similarity:\s*/i, '').replace(/\s*with\s*#\d+.*$/i, '') : '');
+                                        if (!cleanReason) return null;
+                                        return (
+                                          <div style={{
+                                            fontSize: '0.66rem',
+                                            color: row._matchScore >= 95 ? '#9f1239' : (row._matchScore >= 80 ? '#9a3412' : '#713f12'),
+                                            fontWeight: 600,
+                                            lineHeight: 1.25,
+                                            paddingLeft: '0.1rem'
+                                          }}>
+                                            ⚡ {cleanReason}
+                                          </div>
+                                        );
+                                      })()}
+
+                                      {/* 3. Existing Matched Lead Mini-Card Box */}
+                                      {row._matchedRecord && (
+                                        <div style={{
+                                          backgroundColor: 'rgba(255, 255, 255, 0.75)',
+                                          border: `1px dashed ${row._matchScore >= 95 ? '#fca5a5' : (row._matchScore >= 80 ? '#fdba74' : '#fde047')}`,
+                                          borderRadius: '6px',
+                                          padding: '0.3rem 0.5rem',
+                                          display: 'flex',
+                                          flexDirection: 'column',
+                                          gap: '0.15rem',
+                                          boxShadow: '0 1px 2px rgba(0,0,0,0.02)'
+                                        }}>
+                                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.4rem' }}>
+                                            <span style={{ fontSize: '0.58rem', color: 'var(--text-secondary, #64748b)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.3px' }}>
+                                              Existing Lead
+                                            </span>
+                                            <span style={{
+                                              fontSize: '0.62rem',
+                                              fontWeight: 800,
+                                              fontFamily: 'monospace',
+                                              color: 'var(--accent-color, #2563eb)',
+                                              background: '#eff6ff',
+                                              padding: '0.05rem 0.35rem',
+                                              borderRadius: '3px',
+                                              border: '1px solid #bfdbfe'
+                                            }}>
+                                              #{row._matchedRecord.lead_ref_id || row._matchedRecord.id}
+                                            </span>
+                                          </div>
+                                          <div style={{
+                                            fontSize: '0.72rem',
+                                            fontWeight: 700,
+                                            color: 'var(--text-primary, #1e293b)',
+                                            whiteSpace: 'nowrap',
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis'
+                                          }} title={row._matchedRecord.company || row._matchedRecord.name}>
+                                            🏢 {row._matchedRecord.company || row._matchedRecord.name}
+                                          </div>
+                                        </div>
                                       )}
                                     </div>
                                   ) : (

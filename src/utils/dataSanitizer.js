@@ -308,10 +308,10 @@ export function stringSimilarity(s1, s2) {
 }
 
 // Common Business and Legal Prefixes, Titles & Honorifics (e.g. M/s, Shree, New, etc.)
-const BUSINESS_PREFIX_REGEX = /^(shri|sri|shree|sree|mr|mrs|miss|dr|er|the|new|old|late|pandit|sardar|thakur|chaudhary|choudhary|babu|seth|lala|punjab|haryana|rajasthan|delhi|bihar|gujarat|maharashtra|bengal|karnataka|kerala|tamil|india|national|all\s+india|hindustan|bharat)\b/gi;
+const BUSINESS_PREFIX_REGEX = /^(shri|sri|shree|sree|mr|mrs|miss|dr|er|the|new|old|late|pandit|sardar|thakur|chaudhary|choudhary|babu|seth|lala|maa|mata|baba|om|jai|sai|sant|swami|bhagwan|punjab|haryana|rajasthan|delhi|bihar|gujarat|maharashtra|bengal|karnataka|kerala|tamil|india|national|all\s+india|hindustan|bharat)\b/gi;
 
 // Common Corporate Entity, Trade Designations & Industry Suffixes
-const BUSINESS_SUFFIX_REGEX = /\b(pvt|private|ltd|limited|llp|llc|inc|corp|corporation|co|company|group|enterprises|enterprise|traders|trader|trading|treders|agencies|agency|store|stores|motors|motor|automobiles|automobile|auto|service|services|tractors|tractor|engineering|works|industries|industry|solutions|distributors|distributor|sales|supply|supplies|point|hub|center|centre|house|bhandar|ghar|kendra|depot|agro|agri|agriculture|implements|harvester)\b/gi;
+const BUSINESS_SUFFIX_REGEX = /\b(pvt|private|ltd|limited|llp|llc|inc|corp|corporation|co|company|group|enterprises|enterprise|traders|trader|trading|treders|agencies|agency|store|stores|motors|motor|automobiles|automobile|automotives|automotive|auto|service|services|tractors|tractor|trailers|trailer|engineering|engineers|engineer|works|industries|industry|solutions|distributors|distributor|sales|supply|supplies|point|hub|center|centre|house|bhandar|ghar|kendra|depot|agro|agri|agriculture|implements|harvester|machinery|farm|farming)\b/gi;
 
 /**
  * Strips universal legal entity types, trade suffixes, honorifics and punctuation for clean business name normalization.
@@ -379,8 +379,15 @@ export function calculateLeadSimilarityScore(incoming, existing) {
   const brand2Tokens2 = exTokens.slice(0, 2).join(' ');
   const brand2Sim = (inTokens.length >= 2 && exTokens.length >= 2) ? stringSimilarity(brand2Tokens1, brand2Tokens2) : 0;
 
-  // Check if one distinctive name is fully contained in the other (e.g. "Barnala" in "Barnala Swaraj", or "Shiv" in "Shiv Kubota")
-  const isSubset = cleanInComp.includes(cleanExComp) || cleanExComp.includes(cleanInComp);
+  // Whole-word subset check (prevents substring bugs like "farm machinery" matching "m m" or "ghanshyam" matching "shyam")
+  const isWholeWordSubset = (tokensShort, tokensLong) => {
+    if (tokensShort.length === 0 || tokensLong.length === 0) return false;
+    const hasDistinctiveToken = tokensShort.some(t => t.length >= 4);
+    if (!hasDistinctiveToken) return false;
+    return tokensShort.every(t => tokensLong.includes(t));
+  };
+
+  const isSubset = isWholeWordSubset(inTokens, exTokens) || isWholeWordSubset(exTokens, inTokens);
   const fullSim = stringSimilarity(cleanInComp, cleanExComp);
 
   const primaryBrandSim = isExactCleanName ? 1.0 : (isSubset ? Math.max(0.90, brand1Sim) : Math.max(brand1Sim, brand2Sim, fullSim));
@@ -494,7 +501,9 @@ export function calculateLeadSimilarityScore(incoming, existing) {
     compScore: Math.round(primaryBrandSim * 100),
     locScore: Math.round(locScore * 100),
     personScore: Math.round(personScore * 100),
-    reason: reasons.join(' • ')
+    reason: reasons.join(' • '),
+    primaryReason: reasons[0] || '',
+    locationReason: distMatches ? (incoming.district_name || incoming.district || '') : (stateMatches ? (incoming.state_name || incoming.state || '') : '')
   };
 }
 
