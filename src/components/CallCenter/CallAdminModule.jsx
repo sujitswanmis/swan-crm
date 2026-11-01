@@ -1540,6 +1540,20 @@ function TabCallLogs({ scope = '', userCompany = '', tenantId = null }) {
   // Zipping & Excel Export states
   const [zippingProgress, setZippingProgress] = useState(null);
   const [exportingExcel, setExportingExcel] = useState(false);
+  const [showSpeedModal, setShowSpeedModal] = useState(false);
+  const [selectedSpeed, setSelectedSpeed] = useState('10');
+  const [customSpeed, setCustomSpeed] = useState('15');
+
+  useEffect(() => {
+    const onProgress = (e) => setZippingProgress(e.detail);
+    const onFinished = () => setZippingProgress(null);
+    window.addEventListener('recordings-zip-download-progress', onProgress);
+    window.addEventListener('recordings-zip-download-finished', onFinished);
+    return () => {
+      window.removeEventListener('recordings-zip-download-progress', onProgress);
+      window.removeEventListener('recordings-zip-download-finished', onFinished);
+    };
+  }, []);
 
   useEffect(() => {
     if (!audio) return;
@@ -1638,56 +1652,47 @@ function TabCallLogs({ scope = '', userCompany = '', tenantId = null }) {
     });
   };
 
-  // Bulk ZIP Download
-  const downloadBulkRecordingsZip = async () => {
-    const selectedList = Array.from(selectedCallsMap.values()).filter(c => c.recording_url);
-    if (selectedList.length === 0) {
+  // Bulk ZIP Download via Global Background Manager
+  const openDownloadSpeedModal = () => {
+    const count = Array.from(selectedCallsMap.values()).filter(c => c.recording_url).length;
+    if (count === 0) {
       alert("No call recordings selected for download. Please select calls that have a recording URL.");
       return;
     }
+    setShowSpeedModal(true);
+  };
 
-    setZippingProgress({ current: 0, total: selectedList.length });
-    try {
-      const JSZip = (await import('jszip')).default;
-      const { saveAs } = await import('file-saver');
-      const zip = new JSZip();
-      const folder = zip.folder("call_recordings");
+  const startBulkRecordingsZip = () => {
+    const selectedList = Array.from(selectedCallsMap.values()).filter(c => c.recording_url);
+    let concurrency = 10;
+    let speedLabel = '10x Faster';
 
-      let downloadedCount = 0;
-      for (let i = 0; i < selectedList.length; i++) {
-        const c = selectedList[i];
-        setZippingProgress({ current: i + 1, total: selectedList.length });
-        try {
-          const resp = await fetch(c.recording_url);
-          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-          const blob = await resp.blob();
-
-          const timeStr = c.created_at ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date(c.created_at)) : 'rec';
-          const agentName = (c.call_agents?.display_name || 'agent').replace(/[^a-zA-Z0-9_-]/g, '_');
-          const customerNum = (c.customer_number || 'customer').replace(/[^0-9+]/g, '');
-          const filename = `${timeStr}_${agentName}_${customerNum}_${c.id || i + 1}.mp3`;
-
-          folder.file(filename, blob);
-          downloadedCount++;
-        } catch (err) {
-          console.warn(`Failed to download recording for call ${c.id}:`, err);
-        }
-      }
-
-      if (downloadedCount === 0) {
-        alert("Failed to download selected recordings. They may be blocked by network or CORS.");
-        return;
-      }
-
-      const zipBlob = await zip.generateAsync({ type: 'blob' });
-      const nowStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
-      saveAs(zipBlob, `Call_Recordings_${nowStr}.zip`);
-    } catch (err) {
-      console.error("ZIP creation failed:", err);
-      alert("Failed to create ZIP file: " + err.message);
-    } finally {
-      setZippingProgress(null);
+    if (selectedSpeed === '1') {
+      concurrency = 1;
+      speedLabel = '1x Single File';
+    } else if (selectedSpeed === '5') {
+      concurrency = 5;
+      speedLabel = '5x Faster';
+    } else if (selectedSpeed === '10') {
+      concurrency = 10;
+      speedLabel = '10x Recommended';
+    } else if (selectedSpeed === '25') {
+      concurrency = 25;
+      speedLabel = '25x Ultra Fast';
+    } else if (selectedSpeed === 'custom') {
+      const parsed = parseInt(customSpeed, 10);
+      concurrency = Math.max(1, Math.min(50, isNaN(parsed) ? 10 : parsed));
+      speedLabel = `${concurrency}x Custom`;
     }
+
+    setShowSpeedModal(false);
+    window.dispatchEvent(new CustomEvent('start-recordings-zip-download', {
+      detail: {
+        calls: selectedList,
+        concurrency,
+        speedLabel
+      }
+    }));
   };
 
   // Excel Export for DB Records & Plivo CDR
@@ -1932,7 +1937,7 @@ function TabCallLogs({ scope = '', userCompany = '', tenantId = null }) {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
             <button
-              onClick={downloadBulkRecordingsZip}
+              onClick={openDownloadSpeedModal}
               disabled={zippingProgress !== null}
               style={{
                 display: 'flex',
@@ -1949,7 +1954,7 @@ function TabCallLogs({ scope = '', userCompany = '', tenantId = null }) {
                 boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
               }}
             >
-              <Download size={13} /> {zippingProgress ? `Zipping (${zippingProgress.current}/${zippingProgress.total})...` : `Download Recordings ZIP (${Array.from(selectedCallsMap.values()).filter(c => c.recording_url).length})`}
+              <Download size={13} /> {zippingProgress ? `Zipping in background (${zippingProgress.current}/${zippingProgress.total})...` : `Download Recordings ZIP (${Array.from(selectedCallsMap.values()).filter(c => c.recording_url).length})`}
             </button>
             <button
               onClick={exportToExcel}
@@ -2148,6 +2153,160 @@ function TabCallLogs({ scope = '', userCompany = '', tenantId = null }) {
 
         <CallCenterPagination total={total} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} disabled={loading} />
       </div>
+
+      {/* Parallel Download Speed Selector Modal */}
+      {showSpeedModal && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 99999,
+          background: 'rgba(15, 23, 42, 0.65)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '1rem'
+        }}>
+          <div style={{
+            background: 'white',
+            borderRadius: '16px',
+            width: '520px',
+            maxWidth: '100%',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
+            border: '1px solid #e2e8f0',
+            overflow: 'hidden'
+          }}>
+            {/* Header */}
+            <div style={{
+              padding: '1rem 1.25rem',
+              borderBottom: '1px solid #e2e8f0',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              background: '#f8fafc'
+            }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#1e293b' }}>
+                  Select Download Speed (Parallel Streams)
+                </h3>
+                <p style={{ margin: '0.2rem 0 0', fontSize: '0.78rem', color: '#64748b' }}>
+                  Selected: <strong>{Array.from(selectedCallsMap.values()).filter(c => c.recording_url).length} recordings</strong> with audio
+                </p>
+              </div>
+              <button
+                onClick={() => setShowSpeedModal(false)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', fontSize: '1.2rem', padding: '4px' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Options Body */}
+            <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.7rem' }}>
+              {[
+                { id: '1', label: 'Single File (1x Slow Speed 1Mbps)' },
+                { id: '5', label: '5 Files Parallel (5x Faster Mobile Data Speed 5Mbps)' },
+                { id: '10', label: '10 Files Parallel (Recommended - 10x Faster 10Mbps)' },
+                { id: '25', label: '25+ Files Parallel (Ultra Fast - 25Mbps)' },
+                { id: 'custom', label: 'Custom Speed (Aap khud number daal sakte hain, jaise 6, 10, 15)' }
+              ].map(opt => (
+                <label
+                  key={opt.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.75rem',
+                    padding: '0.75rem 1rem',
+                    borderRadius: '10px',
+                    border: `1.5px solid ${selectedSpeed === opt.id ? '#2563eb' : '#e2e8f0'}`,
+                    background: selectedSpeed === opt.id ? '#eff6ff' : '#ffffff',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="downloadSpeed"
+                    value={opt.id}
+                    checked={selectedSpeed === opt.id}
+                    onChange={() => setSelectedSpeed(opt.id)}
+                    style={{ cursor: 'pointer', width: '16px', height: '16px', accentColor: '#2563eb' }}
+                  />
+                  <span style={{ fontSize: '0.85rem', fontWeight: selectedSpeed === opt.id ? 700 : 500, color: selectedSpeed === opt.id ? '#1e3a8a' : '#334155' }}>
+                    {opt.label}
+                  </span>
+                </label>
+              ))}
+
+              {selectedSpeed === 'custom' && (
+                <div style={{ paddingLeft: '2.2rem', marginTop: '-0.2rem' }}>
+                  <input
+                    type="number"
+                    min="1"
+                    max="50"
+                    value={customSpeed}
+                    onChange={e => setCustomSpeed(e.target.value)}
+                    placeholder="Streams count (e.g. 15)"
+                    style={{
+                      width: '180px',
+                      padding: '0.45rem 0.75rem',
+                      borderRadius: '6px',
+                      border: '1px solid #cbd5e1',
+                      fontSize: '0.85rem'
+                    }}
+                  />
+                  <span style={{ fontSize: '0.75rem', color: '#64748b', marginLeft: '0.5rem' }}>Max 50 streams</span>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div style={{
+              padding: '0.85rem 1.25rem',
+              borderTop: '1px solid #e2e8f0',
+              display: 'flex',
+              justifyContent: 'flex-end',
+              gap: '0.75rem',
+              background: '#f8fafc'
+            }}>
+              <button
+                onClick={() => setShowSpeedModal(false)}
+                style={{
+                  padding: '0.5rem 1rem',
+                  borderRadius: '6px',
+                  border: '1px solid #cbd5e1',
+                  background: 'white',
+                  color: '#475569',
+                  cursor: 'pointer',
+                  fontWeight: 600,
+                  fontSize: '0.85rem'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={startBulkRecordingsZip}
+                style={{
+                  padding: '0.5rem 1.25rem',
+                  borderRadius: '6px',
+                  border: 'none',
+                  background: '#059669',
+                  color: 'white',
+                  cursor: 'pointer',
+                  fontWeight: 700,
+                  fontSize: '0.85rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  boxShadow: '0 2px 4px rgba(5, 150, 105, 0.3)'
+                }}
+              >
+                🚀 Start Fast Download
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -6,6 +6,7 @@ import { INTEGRATION_PAGE, INTEGRATION_PAGE_IDS } from '@/config/integrationsCon
 import pkg from '../../package.json';
 import LeadTable from '@/components/LeadTable';
 import GlobalSoftphoneWidget from './CallCenter/GlobalSoftphoneWidget';
+import GlobalRecordingDownloader from './CallCenter/GlobalRecordingDownloader';
 import { isFeatureEntitled } from '@/utils/saasEntitlements';
 import SubscriptionExpiryBanner from './SaaS/SubscriptionExpiryBanner';
 import SubscriptionExpiredModal from './SaaS/SubscriptionExpiredModal';
@@ -7858,6 +7859,7 @@ export default function CRMContainer({
         </div>
       </main>
       {isCallingEntitled && <GlobalSoftphoneWidget userId={userId} />}
+      <GlobalRecordingDownloader />
       {userId && <ErrorBoundary key={`broadcast-${userId}`} fallback={null}><BroadcastNotificationReceiver key={userId} userId={userId} /></ErrorBoundary>}
 
       {/* Intelligent Global Spotlight Command Palette */}
