@@ -1502,6 +1502,7 @@ function TabEndpoints({ scope = '', initialEndpoints = [], userCompany = '', ten
 function TabCallLogs({ scope = '', userCompany = '', tenantId = null }) {
   const [calls, setCalls] = useState([]);
   const [total, setTotal] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [source, setSource] = useState('db');
   const [search, setSearch] = useState('');
@@ -1579,13 +1580,13 @@ function TabCallLogs({ scope = '', userCompany = '', tenantId = null }) {
     try {
       const data = await fetchPageData(`/api/plivo/admin/call-logs?${q}`);
       if (request !== logsRequest.current) return;
-      setCalls(data.calls || []); setTotal(data.total || 0); writeViewCache(scope, cacheKey, data);
+      setCalls(data.calls || []); setTotal(data.total || 0); setHasMore(Boolean(data.hasMore)); writeViewCache(scope, cacheKey, data);
       const last = Math.max(0, Math.ceil((data.total || 0) / pSize) - 1);
       if (pg > last) setPage(last);
     } catch (error) {
       if (request !== logsRequest.current) return;
       setLogsError(error.message);
-      if ([401, 403].includes(error.status)) { setCalls([]); setTotal(0); clearViewCache(scope, cacheKey); }
+      if ([401, 403].includes(error.status)) { setCalls([]); setTotal(0); setHasMore(false); clearViewCache(scope, cacheKey); }
     } finally { if (request === logsRequest.current) setLoading(false); }
   }, [userCompany, tenantId, scope]);
 
@@ -1901,7 +1902,7 @@ function TabCallLogs({ scope = '', userCompany = '', tenantId = null }) {
 
         {/* Total Records Badge */}
         <span style={{ color:'#64748b', fontSize:'0.82rem', background:'#f1f5f9', padding:'0.4rem 0.75rem', borderRadius:'6px' }}>
-          Total: <strong style={{ color:'#0f172a' }}>{total}</strong>
+          Total: <strong style={{ color:'#0f172a' }}>{source === 'plivo' && hasMore ? `${Math.max(calls.length, total - 1)}+` : total}</strong>
         </span>
       </div>
 
