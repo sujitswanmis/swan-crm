@@ -17,6 +17,7 @@ import {
   deleteClientRegistrationDraft, 
   submitClientRegistrationAndSync 
 } from '@/app/actions/clientRegistrationSync';
+import { getTenantBranches } from '@/app/actions/tenantBranches';
 
 const IMPORT_FIELDS = [
   { key: 'lead_date', label: 'Lead Date', standardHeaders: ['Lead Date', 'leaddate', 'date'] },
@@ -485,11 +486,29 @@ export default function ClientRegistration({
   userCompany = '',
   moduleAccess = null,
   userRole = '',
-  userName = ''
+  userName = '',
+  adminCompanyFilter = 'All'
 }) {
   const supabase = createClient();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploadModal, setUploadModal] = useState(null);
+  const [availableBranches, setAvailableBranches] = useState([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    async function fetchBranches() {
+      try {
+        const res = await getTenantBranches(userCompany || 'New Swan Group');
+        if (isMounted && res && res.success && Array.isArray(res.branches)) {
+          setAvailableBranches(res.branches);
+        }
+      } catch (e) {
+        console.warn('Error fetching tenant branches:', e);
+      }
+    }
+    fetchBranches();
+    return () => { isMounted = false; };
+  }, [userCompany]);
 
   const canViewAllDrafts = useMemo(() => {
     if (userRole === 'admin' || userRole === 'master_admin') return true;
@@ -764,7 +783,10 @@ export default function ClientRegistration({
   const loadDrafts = async () => {
     setIsLoadingDrafts(true);
     try {
-      const res = await getClientRegistrationDrafts(userCompany, currentActor, canViewAllDrafts);
+      const effectiveFilter = adminCompanyFilter && adminCompanyFilter.toLowerCase() !== 'all' 
+        ? adminCompanyFilter 
+        : (userCompany || 'New Swan Group');
+      const res = await getClientRegistrationDrafts(effectiveFilter, currentActor, canViewAllDrafts);
       if (res && res.success) {
         setDraftsList(res.drafts || []);
       }
@@ -777,7 +799,7 @@ export default function ClientRegistration({
 
   useEffect(() => {
     loadDrafts();
-  }, [userCompany, currentActor, canViewAllDrafts]);
+  }, [userCompany, adminCompanyFilter, currentActor, canViewAllDrafts]);
 
   // Filtered drafts based on search and user filter
   const filteredDraftsList = useMemo(() => {
@@ -894,9 +916,13 @@ export default function ClientRegistration({
 
   const handleResumeDraft = (draft) => {
     setCurrentDraftId(draft.id);
+    const resolvedComp = (draft.our_company && draft.our_company !== 'All') 
+      ? draft.our_company 
+      : (isSwanWorkspace ? 'NSMLR' : (userCompany || ''));
     setFormData(prev => ({
       ...prev,
       ...draft,
+      our_company: resolvedComp,
       id: draft.id
     }));
     setActiveView('form');
@@ -1626,9 +1652,9 @@ export default function ClientRegistration({
 
       // Add Data Validation Dropdowns for rows 2 to 500 across all dropdown columns
       // Our Company Name (Column 2 -> B)
-      const allowedCompanies = isSwanWorkspace 
-        ? ['NSMLR', 'NSTLP']
-        : [userCompany || 'SuPuja Creations'];
+      const allowedCompanies = availableBranches.length > 0
+        ? Array.from(new Set(availableBranches.map(br => (br.legacy_code && ['NSMLR', 'NSTLP'].includes(br.legacy_code)) ? br.legacy_code : (br.branch_name || br.company))))
+        : (isSwanWorkspace ? ['NSMLR', 'NSTLP'] : [userCompany || 'SuPuja Creations']);
       sheet.dataValidations.add('B2:B500', {
         type: 'list',
         allowBlank: true,
@@ -2867,15 +2893,38 @@ export default function ClientRegistration({
                     <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
                       {clientFormFields?.our_company?.label || 'Our Company Name'} <span style={{color: 'red'}}>*</span>
                     </label>
-                    <select name="our_company" value={formData.our_company === 'NSTL' ? 'NSTLP' : formData.our_company} onChange={handleChange} required style={{ padding: '0.6rem 0.8rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}>
-                      {isSwanWorkspace ? (
-                        <>
-                          <option value="">Select Company</option>
-                          <option value="NSMLR">NSMLR</option>
-                          <option value="NSTLP">NSTLP</option>
-                        </>
+                    <select 
+                      name="our_company" 
+                      value={formData.our_company === 'NSTL' ? 'NSTLP' : (formData.our_company || '')} 
+                      onChange={handleChange} 
+                      required 
+                      style={{ padding: '0.6rem 0.8rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}
+                    >
+                      <option value="">-- Select Company / Branch --</option>
+                      {availableBranches.length > 0 ? (
+                        availableBranches.map(br => {
+                          const optVal = br.legacy_code && ['NSMLR', 'NSTLP', 'NSTL'].includes(br.legacy_code) 
+                            ? (br.legacy_code === 'NSTL' ? 'NSTLP' : br.legacy_code)
+                            : (br.legacy_code === 'NEW_SWAN_GROUP' ? 'New Swan Group' : (br.branch_name || br.company));
+                          const codeBadge = br.branch_code ? ` (${br.branch_code})` : '';
+                          const typeBadge = br.location_type ? ` - ${br.location_type}` : '';
+                          const optLabel = `${br.branch_name}${codeBadge}${typeBadge}`;
+                          return (
+                            <option key={br.id || br.branch_code} value={optVal}>
+                              {optLabel}
+                            </option>
+                          );
+                        })
                       ) : (
-                        <option value={userCompany || 'Client Workspace'}>{userCompany || 'Client Workspace'}</option>
+                        isSwanWorkspace ? (
+                          <>
+                            <option value="NSMLR">NSMLR (TNT00002-B0002) - Manufacturing Unit</option>
+                            <option value="NSTLP">NSTLP (TNT00002-B0003) - Plant 2</option>
+                            <option value="New Swan Group">New Swan Group (TNT00002-B0001) - Headquarters</option>
+                          </>
+                        ) : (
+                          <option value={userCompany || 'Client Workspace'}>{userCompany || 'Client Workspace'}</option>
+                        )
                       )}
                     </select>
                   </div>

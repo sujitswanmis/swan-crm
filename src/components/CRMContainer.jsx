@@ -7484,7 +7484,8 @@ export default function CRMContainer({
                     }} 
                     canWrite={canWrite} 
                     teamMembers={teamMembers}
-                    userCompany={adminCompanyFilter && adminCompanyFilter.toLowerCase() !== 'all' ? adminCompanyFilter : (isSwanWorkspace ? 'All' : userCompany)}
+                    userCompany={userCompany}
+                    adminCompanyFilter={adminCompanyFilter}
                     moduleAccess={moduleAccess}
                     userRole={userRole}
                     userName={userName}
