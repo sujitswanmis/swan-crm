@@ -17,6 +17,7 @@ import { addCallAgentAdmin, updateCallAgentAdmin, saveCallAgentCallerIdAdmin, se
 import { PremiumProgressLoader } from '../PremiumProgressLoader';
 import { filterVisibleSubTabs, getSubItemPermissions } from '@/utils/permissionUtils';
 import { useTableColumnResize, ColumnResizer } from '@/utils/tableColumnResize';
+import DateRangePicker, { computeDateRange } from '@/components/common/DateRangePicker';
 
 const CALL_ADMIN_DB_DEFAULT_COL_WIDTHS = {
   time: 170,
@@ -208,69 +209,24 @@ const fmtDur  = (s) => {
   return `${m}:${String(sec).padStart(2,'0')}`;
 };
 
-// Strict IST Date Boundaries Calculator for API Filters
+// Strict IST Date Boundaries Calculator for API Filters (Compatible with DateRangePicker)
 const getISTDateRange = (preset, customStart, customEnd) => {
   if (preset === 'all') return { startDate: '', endDate: '' };
 
-  const now = new Date();
-  const istOffsetMs = 5.5 * 60 * 60 * 1000;
-  const istNow = new Date(now.getTime() + istOffsetMs);
-  const istYear = istNow.getUTCFullYear();
-  const istMonth = istNow.getUTCMonth();
-  const istDay = istNow.getUTCDate();
+  let s = customStart;
+  let e = customEnd;
 
-  const formatIST = (y, m, d, hh = 0, mm = 0, ss = 0) => {
-    const pad = (n) => String(n).padStart(2, '0');
-    return `${y}-${pad(m + 1)}-${pad(d)}T${pad(hh)}:${pad(mm)}:${pad(ss)}+05:30`;
-  };
-
-  if (preset === 'today') {
-    return {
-      startDate: formatIST(istYear, istMonth, istDay, 0, 0, 0),
-      endDate: formatIST(istYear, istMonth, istDay, 23, 59, 59)
-    };
+  if (!s || !e) {
+    const range = computeDateRange(preset, customStart, customEnd);
+    s = range.startDate;
+    e = range.endDate;
   }
 
-  if (preset === 'yesterday') {
-    const yest = new Date(Date.UTC(istYear, istMonth, istDay - 1));
-    const yY = yest.getUTCFullYear();
-    const yM = yest.getUTCMonth();
-    const yD = yest.getUTCDate();
+  if (s && e) {
     return {
-      startDate: formatIST(yY, yM, yD, 0, 0, 0),
-      endDate: formatIST(yY, yM, yD, 23, 59, 59)
+      startDate: `${s}T00:00:00+05:30`,
+      endDate: `${e}T23:59:59+05:30`
     };
-  }
-
-  if (preset === 'last_7_days') {
-    const start7 = new Date(Date.UTC(istYear, istMonth, istDay - 6));
-    return {
-      startDate: formatIST(start7.getUTCFullYear(), start7.getUTCMonth(), start7.getUTCDate(), 0, 0, 0),
-      endDate: formatIST(istYear, istMonth, istDay, 23, 59, 59)
-    };
-  }
-
-  if (preset === 'this_month') {
-    return {
-      startDate: formatIST(istYear, istMonth, 1, 0, 0, 0),
-      endDate: formatIST(istYear, istMonth, istDay, 23, 59, 59)
-    };
-  }
-
-  if (preset === 'last_month') {
-    const firstOfLastMonth = new Date(Date.UTC(istYear, istMonth - 1, 1));
-    const lastOfLastMonth = new Date(Date.UTC(istYear, istMonth, 0));
-    return {
-      startDate: formatIST(firstOfLastMonth.getUTCFullYear(), firstOfLastMonth.getUTCMonth(), 1, 0, 0, 0),
-      endDate: formatIST(lastOfLastMonth.getUTCFullYear(), lastOfLastMonth.getUTCMonth(), lastOfLastMonth.getUTCDate(), 23, 59, 59)
-    };
-  }
-
-  if (preset === 'custom') {
-    let s = '', e = '';
-    if (customStart) s = `${customStart}T00:00:00+05:30`;
-    if (customEnd) e = `${customEnd}T23:59:59+05:30`;
-    return { startDate: s, endDate: e };
   }
 
   return { startDate: '', endDate: '' };
@@ -1834,54 +1790,20 @@ function TabCallLogs({ scope = '', userCompany = '', tenantId = null }) {
           />
         </div>
 
-        {/* Quick Date Presets (Strict IST) */}
-        <div style={{ display:'flex', alignItems:'center', gap:'0.4rem', flexWrap:'wrap' }}>
-          <div style={{ display:'flex', alignItems:'center', gap:'0.35rem', background:'#f8fafc', padding:'0.35rem 0.6rem', borderRadius:'8px', border:'1px solid #cbd5e1' }}>
-            <Calendar size={14} color="#64748b" />
-            <select
-              value={datePreset}
-              onChange={(e) => {
-                setDatePreset(e.target.value);
-                setPage(0);
-              }}
-              style={{
-                border: 'none',
-                background: 'transparent',
-                fontSize: '0.82rem',
-                fontWeight: 600,
-                color: '#1e293b',
-                cursor: 'pointer',
-                outline: 'none'
-              }}
-            >
-              <option value="all">📅 All Time</option>
-              <option value="today">⚡ Today (IST)</option>
-              <option value="yesterday">⏪ Yesterday (IST)</option>
-              <option value="last_7_days">📆 Last 7 Days (IST)</option>
-              <option value="this_month">🗓️ This Month (IST)</option>
-              <option value="last_month">⏮️ Last Month (IST)</option>
-              <option value="custom">🛠️ Custom Range</option>
-            </select>
-          </div>
-
-          {datePreset === 'custom' && (
-            <div style={{ display:'flex', alignItems:'center', gap:'0.3rem' }}>
-              <input
-                type="date"
-                value={customStartDate}
-                onChange={(e) => { setCustomStartDate(e.target.value); setPage(0); }}
-                style={{ padding:'0.35rem 0.5rem', borderRadius:'6px', border:'1px solid #cbd5e1', fontSize:'0.8rem', background:'white' }}
-              />
-              <span style={{ fontSize:'0.8rem', color:'#94a3b8' }}>to</span>
-              <input
-                type="date"
-                value={customEndDate}
-                onChange={(e) => { setCustomEndDate(e.target.value); setPage(0); }}
-                style={{ padding:'0.35rem 0.5rem', borderRadius:'6px', border:'1px solid #cbd5e1', fontSize:'0.8rem', background:'white' }}
-              />
-            </div>
-          )}
-        </div>
+        {/* Unified Standard DateRangePicker (Strict IST) */}
+        <DateRangePicker
+          preset={datePreset}
+          startDate={customStartDate}
+          endDate={customEndDate}
+          allowAllTime={true}
+          title="Filter Call Logs by Date (IST)"
+          onChange={({ preset, startDate, endDate }) => {
+            setDatePreset(preset);
+            setCustomStartDate(startDate);
+            setCustomEndDate(endDate);
+            setPage(0);
+          }}
+        />
 
         {/* Excel Export Button */}
         <button 
