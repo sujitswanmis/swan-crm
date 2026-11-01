@@ -1538,19 +1538,19 @@ function TabCallLogs({ scope = '', userCompany = '', tenantId = null }) {
   const [selectedCallsMap, setSelectedCallsMap] = useState(new Map());
 
   // Zipping & Excel Export states
-  const [zippingProgress, setZippingProgress] = useState(null);
+  const [isZipping, setIsZipping] = useState(false);
   const [exportingExcel, setExportingExcel] = useState(false);
   const [showSpeedModal, setShowSpeedModal] = useState(false);
   const [selectedSpeed, setSelectedSpeed] = useState('10');
   const [customSpeed, setCustomSpeed] = useState('15');
 
   useEffect(() => {
-    const onProgress = (e) => setZippingProgress(e.detail);
-    const onFinished = () => setZippingProgress(null);
-    window.addEventListener('recordings-zip-download-progress', onProgress);
+    const onStarted = () => setIsZipping(true);
+    const onFinished = () => setIsZipping(false);
+    window.addEventListener('start-recordings-zip-download', onStarted);
     window.addEventListener('recordings-zip-download-finished', onFinished);
     return () => {
-      window.removeEventListener('recordings-zip-download-progress', onProgress);
+      window.removeEventListener('start-recordings-zip-download', onStarted);
       window.removeEventListener('recordings-zip-download-finished', onFinished);
     };
   }, []);
@@ -1938,23 +1938,23 @@ function TabCallLogs({ scope = '', userCompany = '', tenantId = null }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
             <button
               onClick={openDownloadSpeedModal}
-              disabled={zippingProgress !== null}
+              disabled={isZipping}
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: '0.4rem',
                 padding: '0.4rem 0.85rem',
-                background: '#059669',
+                background: isZipping ? '#64748b' : '#059669',
                 color: 'white',
                 border: 'none',
                 borderRadius: '6px',
-                cursor: 'pointer',
+                cursor: isZipping ? 'not-allowed' : 'pointer',
                 fontWeight: 600,
                 fontSize: '0.82rem',
                 boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
               }}
             >
-              <Download size={13} /> {zippingProgress ? `Zipping in background (${zippingProgress.current}/${zippingProgress.total})...` : `Download Recordings ZIP (${Array.from(selectedCallsMap.values()).filter(c => c.recording_url).length})`}
+              <Download size={13} /> {isZipping ? '⏳ Zipping in Background (See Widget)...' : `Download Recordings ZIP (${Array.from(selectedCallsMap.values()).filter(c => c.recording_url).length})`}
             </button>
             <button
               onClick={exportToExcel}

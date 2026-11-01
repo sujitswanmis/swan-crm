@@ -1,10 +1,28 @@
 'use client';
 import React, { useState, useEffect, useRef } from 'react';
-import { Download, CheckCircle, XCircle, Minus, Maximize2, Loader2, Play, Pause, AlertCircle } from 'lucide-react';
+import { Download, CheckCircle, XCircle, Minus, Maximize2, Loader2, AlertCircle, Clock } from 'lucide-react';
+
+function formatEta(seconds) {
+  if (seconds <= 0) return 'Almost done...';
+  if (seconds < 60) return `~${seconds}s left`;
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `~${mins}m ${secs}s left`;
+}
+
+function computeEta(completed, total, startTime) {
+  if (completed < 2) return 'Calculating ETA...';
+  const elapsedMs = Date.now() - startTime;
+  if (elapsedMs < 600) return 'Calculating ETA...';
+  const rate = completed / (elapsedMs / 1000);
+  if (rate <= 0) return 'Calculating ETA...';
+  const remaining = total - completed;
+  const secondsLeft = Math.round(remaining / rate);
+  return formatEta(secondsLeft);
+}
 
 export default function GlobalRecordingDownloader() {
-  const [downloadState, setDownloadState] = useState(null); 
-  // downloadState: { active: boolean, calls: [], concurrency: number, speedLabel: string, current: number, total: number, phase: 'downloading'|'compressing'|'completed'|'error', errorMsg: '', isMinimized: boolean }
+  const [downloadState, setDownloadState] = useState(null);
   const cancelRequestedRef = useRef(false);
 
   useEffect(() => {
@@ -14,14 +32,25 @@ export default function GlobalRecordingDownloader() {
       if (validCalls.length === 0) return;
 
       cancelRequestedRef.current = false;
+
+      // Smart browser-safe concurrency mapping (prevents host socket choking)
+      let effectiveConcurrency = 8;
+      if (concurrency <= 1) effectiveConcurrency = 1;
+      else if (concurrency <= 5) effectiveConcurrency = 5;
+      else if (concurrency <= 10) effectiveConcurrency = 8;
+      else if (concurrency <= 25) effectiveConcurrency = 12;
+      else effectiveConcurrency = Math.min(15, concurrency);
+
+      const startTime = Date.now();
+
       setDownloadState({
         active: true,
-        calls: validCalls,
-        concurrency: Math.max(1, concurrency),
+        concurrency: effectiveConcurrency,
         speedLabel,
         current: 0,
         total: validCalls.length,
-        phase: 'downloading',
+        eta: 'Calculating ETA...',
+        phase: 'downloading', // 'downloading' | 'compressing' | 'completed' | 'error'
         errorMsg: '',
         isMinimized: false
       });
@@ -35,8 +64,9 @@ export default function GlobalRecordingDownloader() {
         let completed = 0;
         let downloadedCount = 0;
         let currentIndex = 0;
+        let lastUiUpdate = 0;
 
-        // Concurrent Worker Pool
+        // Concurrent Worker with Event-Loop Yielding
         const worker = async () => {
           while (currentIndex < validCalls.length) {
             if (cancelRequestedRef.current) break;
@@ -60,17 +90,22 @@ export default function GlobalRecordingDownloader() {
             }
 
             completed++;
-            if (!cancelRequestedRef.current) {
-              setDownloadState(prev => prev ? { ...prev, current: completed } : null);
-              window.dispatchEvent(new CustomEvent('recordings-zip-download-progress', {
-                detail: { current: completed, total: validCalls.length }
-              }));
+
+            // Throttled UI state update (every 150ms) to eliminate React re-render lag
+            const now = performance.now();
+            if (now - lastUiUpdate > 150 || completed === validCalls.length) {
+              lastUiUpdate = now;
+              const eta = computeEta(completed, validCalls.length, startTime);
+              setDownloadState(prev => prev ? { ...prev, current: completed, eta } : null);
             }
+
+            // Cooperative yield to keep browser UI, clicks, and page transitions at 60 FPS
+            await new Promise(resolve => setTimeout(resolve, 15));
           }
         };
 
         const workers = [];
-        const poolSize = Math.min(concurrency, validCalls.length);
+        const poolSize = Math.min(effectiveConcurrency, validCalls.length);
         for (let w = 0; w < poolSize; w++) {
           workers.push(worker());
         }
@@ -87,14 +122,22 @@ export default function GlobalRecordingDownloader() {
           throw new Error("Could not download any audio files. Please check network or CORS access.");
         }
 
-        // Compressing Phase
-        setDownloadState(prev => prev ? { ...prev, phase: 'compressing' } : null);
+        // Compressing Phase: Use compression: 'STORE' for ultra-fast, zero-CPU packaging of already-compressed MP3s
+        setDownloadState(prev => prev ? { ...prev, phase: 'compressing', eta: 'Packing archive (~1-2s)...' } : null);
 
-        const zipBlob = await zip.generateAsync({ type: 'blob' });
+        // Yield to allow UI to render "Compiling ZIP" state
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        const zipBlob = await zip.generateAsync({
+          type: 'blob',
+          compression: 'STORE',
+          streamFiles: true
+        });
+
         const nowStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
         saveAs(zipBlob, `Call_Recordings_${nowStr}.zip`);
 
-        setDownloadState(prev => prev ? { ...prev, phase: 'completed' } : null);
+        setDownloadState(prev => prev ? { ...prev, phase: 'completed', current: validCalls.length } : null);
         window.dispatchEvent(new CustomEvent('recordings-zip-download-finished', { detail: { success: true } }));
 
         // Auto dismiss after 6 seconds on success
@@ -140,7 +183,7 @@ export default function GlobalRecordingDownloader() {
           zIndex: 99999,
           background: 'linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%)',
           color: 'white',
-          padding: '0.6rem 1rem',
+          padding: '0.6rem 1.1rem',
           borderRadius: '50px',
           boxShadow: '0 10px 25px rgba(37, 99, 235, 0.4)',
           display: 'flex',
@@ -155,7 +198,7 @@ export default function GlobalRecordingDownloader() {
         title="Click to expand recordings downloader"
       >
         <Loader2 size={16} className="animate-spin" />
-        <span>Zipping: {downloadState.current}/{downloadState.total} ({percent}%)</span>
+        <span>{downloadState.current}/{downloadState.total} ({percent}%) • {downloadState.phase === 'compressing' ? 'Packing...' : downloadState.eta}</span>
         <Maximize2 size={14} style={{ opacity: 0.8, marginLeft: '0.2rem' }} />
       </div>
     );
@@ -168,7 +211,7 @@ export default function GlobalRecordingDownloader() {
       bottom: '24px',
       right: '24px',
       zIndex: 99999,
-      width: '380px',
+      width: '390px',
       maxWidth: 'calc(100vw - 48px)',
       background: 'white',
       borderRadius: '16px',
@@ -190,7 +233,7 @@ export default function GlobalRecordingDownloader() {
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 700, fontSize: '0.9rem' }}>
           <Download size={18} />
           <span>
-            {downloadState.phase === 'completed' ? 'Download Complete!' : (downloadState.phase === 'compressing' ? 'Compiling ZIP...' : 'Downloading Recordings')}
+            {downloadState.phase === 'completed' ? 'Download Complete!' : (downloadState.phase === 'compressing' ? 'Compiling ZIP Archive...' : 'Downloading Recordings')}
           </span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
@@ -234,12 +277,23 @@ export default function GlobalRecordingDownloader() {
         ) : (
           <div>
             {/* Speed & Progress text */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.45rem' }}>
               <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#2563eb', background: '#eff6ff', padding: '0.2rem 0.55rem', borderRadius: '6px' }}>
-                ⚡ {downloadState.speedLabel} ({downloadState.concurrency} Parallel)
+                ⚡ {downloadState.speedLabel} ({downloadState.concurrency} Streams)
               </span>
               <span style={{ fontSize: '0.88rem', fontWeight: 800, color: '#1e293b' }}>
                 {downloadState.phase === 'compressing' ? 'Packing ZIP...' : `${downloadState.current} / ${downloadState.total} (${percent}%)`}
+              </span>
+            </div>
+
+            {/* ETA Countdown Timer Badge */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.6rem', fontSize: '0.78rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontWeight: 600, color: '#0369a1', background: '#f0f9ff', padding: '0.2rem 0.6rem', borderRadius: '5px' }}>
+                <Clock size={13} color="#0284c7" />
+                <span>{downloadState.phase === 'compressing' ? 'Almost ready (~1-2s)' : downloadState.eta}</span>
+              </div>
+              <span style={{ fontSize: '0.74rem', color: '#64748b' }}>
+                {downloadState.phase === 'compressing' ? 'Finalizing ZIP' : `${Math.max(0, downloadState.total - downloadState.current)} remaining`}
               </span>
             </div>
 
@@ -258,7 +312,7 @@ export default function GlobalRecordingDownloader() {
 
             {/* Background Notice */}
             <div style={{ fontSize: '0.76rem', color: '#64748b', lineHeight: 1.4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span>🚀 Downloading in background. You can navigate to other pages freely.</span>
+              <span>🚀 Running in background. You can navigate freely.</span>
               <button
                 onClick={handleCancel}
                 style={{
