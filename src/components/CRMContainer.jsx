@@ -15,7 +15,7 @@ import { createClient } from '@/utils/supabase/client';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { getTeamMembers } from '@/app/actions/team';
 import { logAuditAction } from '@/app/actions/audit';
-import { uploadUserAvatar, removeUserAvatar } from '@/app/actions/userProfile';
+import { getProfilePhoto, uploadUserAvatar, removeUserAvatar } from '@/app/actions/userProfile';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import WorkspaceSkeleton from './WorkspaceSkeleton';
 import SidebarSubmenu from './SidebarSubmenu';
@@ -96,8 +96,6 @@ const SETTINGS_MODULE_ITEMS = [
   { id: 'order_pipeline', label: 'Order to Delivery Config', icon: Truck },
   { id: 'complaints_config', label: 'Complaint Management Config', icon: AlertTriangle },
   { id: 'crm', label: 'CRM & Lead Config', icon: Settings2 },
-  { id: 'fields', label: 'Custom Fields', icon: FormInput },
-  { id: 'templates', label: 'Message & WhatsApp Templates', icon: MessageSquare },
   { id: 'notifications', label: 'Notifications & Alerts', icon: Bell },
   { id: 'departments', label: 'Manage Departments', icon: Layers },
   { id: 'targets', label: 'Targets & Performance', icon: Target },
@@ -705,9 +703,9 @@ export default function CRMContainer({
       if (sub === 'health' || sub === 'logs') return 'status';
       if (sub === 'offline-rule') return 'offline_rule';
       if (sub === 'public-users') return 'public_users';
-      if (['messages', 'status', 'automation', 'navigation', 'offline_rule', 'public_users', 'notifications'].includes(sub)) return sub;
+      if (['messages', 'status', 'automation', 'tenant_integrations', 'navigation', 'offline_rule', 'public_users', 'notifications'].includes(sub)) return sub;
     }
-    if (queryTab && ['messages', 'admin_messages', 'status', 'health', 'automation', 'navigation', 'offline_rule', 'offline-rule', 'public_users', 'public-users', 'notifications'].includes(queryTab)) {
+    if (queryTab && ['messages', 'admin_messages', 'status', 'health', 'automation', 'tenant_integrations', 'navigation', 'offline_rule', 'offline-rule', 'public_users', 'public-users', 'notifications'].includes(queryTab)) {
       if (queryTab === 'admin_messages' || queryTab === 'admin-messages') return 'messages';
       if (queryTab === 'health') return 'status';
       if (queryTab === 'offline-rule') return 'offline_rule';
@@ -740,15 +738,14 @@ export default function CRMContainer({
       if (INTEGRATION_PAGE_IDS.includes(sub)) return INTEGRATION_PAGE.id;
       if (['products', 'product-list', 'products-list'].includes(sub)) return 'products';
       if (['crm-config', 'crm_config'].includes(sub)) return 'crm';
-      if (['custom-fields', 'custom_fields'].includes(sub)) return 'fields';
+      if (['custom-fields', 'custom_fields', 'message-templates', 'whatsapp-templates'].includes(sub)) return 'business';
       if (['business-profile', 'branches'].includes(sub)) return 'business';
-      if (['message-templates', 'whatsapp-templates'].includes(sub)) return 'templates';
       if (['alerts', 'notification'].includes(sub)) return 'notifications';
       if (['manage-departments', 'dept'].includes(sub)) return 'departments';
       if (['performance', 'target'].includes(sub)) return 'targets';
       if (['data-management'].includes(sub)) return 'data';
       if (['file-media', 'files'].includes(sub)) return 'media';
-      if (['business', 'products', 'crm', 'fields', 'templates', 'notifications', 'departments', 'targets', 'data', 'media'].includes(sub)) {
+      if (['business', 'products', 'crm', 'notifications', 'departments', 'targets', 'data', 'media'].includes(sub)) {
         return sub;
       }
     }
@@ -756,15 +753,14 @@ export default function CRMContainer({
       if (INTEGRATION_PAGE_IDS.includes(queryTab)) return INTEGRATION_PAGE.id;
       if (['products', 'product-list', 'products-list'].includes(queryTab)) return 'products';
       if (['crm-config', 'crm_config'].includes(queryTab)) return 'crm';
-      if (['custom-fields', 'custom_fields'].includes(queryTab)) return 'fields';
+      if (['custom-fields', 'custom_fields', 'message-templates', 'whatsapp-templates'].includes(queryTab)) return 'business';
       if (['business-profile', 'branches'].includes(queryTab)) return 'business';
-      if (['message-templates', 'whatsapp-templates'].includes(queryTab)) return 'templates';
       if (['alerts', 'notification'].includes(queryTab)) return 'notifications';
       if (['manage-departments', 'dept'].includes(queryTab)) return 'departments';
       if (['performance', 'target'].includes(queryTab)) return 'targets';
       if (['data-management'].includes(queryTab)) return 'data';
       if (['file-media', 'files'].includes(queryTab)) return 'media';
-      if (['business', 'products', 'crm', 'fields', 'templates', 'notifications', 'departments', 'targets', 'data', 'media'].includes(queryTab)) {
+      if (['business', 'products', 'crm', 'notifications', 'departments', 'targets', 'data', 'media'].includes(queryTab)) {
         return queryTab;
       }
     }
@@ -840,7 +836,7 @@ export default function CRMContainer({
         let cleanSub = (sub || 'business').toLowerCase();
         if (cleanSub === 'products' || cleanSub === 'product-list' || cleanSub === 'products-list') cleanSub = 'products';
         if (cleanSub === 'crm-config' || cleanSub === 'crm_config') cleanSub = 'crm';
-        if (cleanSub === 'custom-fields' || cleanSub === 'custom_fields') cleanSub = 'fields';
+        if (cleanSub === 'custom-fields' || cleanSub === 'custom_fields' || cleanSub === 'message-templates' || cleanSub === 'whatsapp-templates') cleanSub = 'business';
         if (cleanSub === 'business-profile' || cleanSub === 'branches') cleanSub = 'business';
         if (cleanSub) setCurrentSettingSubTab(INTEGRATION_PAGE_IDS.includes(cleanSub) ? INTEGRATION_PAGE.id : cleanSub);
       }
@@ -1350,10 +1346,60 @@ export default function CRMContainer({
   const notificationMenuRef = useRef(null);
   const profileMenuRef = useRef(null);
   const avatarInputRef = useRef(null);
-  const [userAvatar, setUserAvatar] = useState(initialAvatar || null);
+  const photoIdentity = `${effectiveTenantId || ''}:${userId || ''}`;
+  const [profilePhoto, setProfilePhoto] = useState(null);
+  const userAvatar = profilePhoto?.identity === photoIdentity ? profilePhoto.avatarUrl : null;
+  const canChangePhoto = Boolean(profilePhoto?.identity === photoIdentity && profilePhoto.canChange && !isImpersonating && canWrite);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const photoRequestRef = useRef(0);
+  const photoMutationRef = useRef(false);
+  const photoRefreshRef = useRef(0);
 
-  // Load and apply theme & avatar
+  const applyProfilePhoto = useCallback(result => {
+    setProfilePhoto({ ...result, identity: photoIdentity });
+    // Only successful, server-scoped snapshots are persisted. Legacy global/user-only
+    // keys are never read: old admin-preview cache entries may belong to someone else.
+    if (result.success && result.cacheKey) {
+      try { localStorage.setItem(result.cacheKey, JSON.stringify({ avatarUrl: result.avatarUrl })); } catch { /* Optional browser cache. */ }
+    }
+  }, [photoIdentity]);
+
+  const refreshProfilePhoto = useCallback(async (force = false) => {
+    if (!userId || photoMutationRef.current || (!force && Date.now() - photoRefreshRef.current < 5000)) return;
+    const request = ++photoRequestRef.current;
+    photoRefreshRef.current = Date.now();
+    try {
+      const result = await getProfilePhoto({ userId });
+      if (request === photoRequestRef.current) applyProfilePhoto(result);
+    } catch {
+      if (request === photoRequestRef.current) applyProfilePhoto({ success: false, avatarUrl: null, canChange: false });
+    }
+  }, [userId, applyProfilePhoto]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void refreshProfilePhoto(true); }, 0);
+    const onFocus = () => { void refreshProfilePhoto(); };
+    const onVisible = () => { if (document.visibilityState === 'visible') onFocus(); };
+    const onPolicy = () => { void refreshProfilePhoto(true); };
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('crm-profile-photo-policy-updated', onPolicy);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.clearTimeout(timer);
+      photoRequestRef.current += 1;
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('crm-profile-photo-policy-updated', onPolicy);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [refreshProfilePhoto]);
+
+  useEffect(() => {
+    if (!showProfileMenu) return;
+    const timer = window.setTimeout(() => { void refreshProfilePhoto(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [showProfileMenu, refreshProfilePhoto]);
+
+  // Theme behaviour is independent of profile-photo loading.
   useEffect(() => {
     try {
       const savedTheme = localStorage.getItem('crm-theme') || initialTheme || 'default';
@@ -1362,33 +1408,6 @@ export default function CRMContainer({
       }
     } catch (e) {}
     
-    if (initialAvatar) {
-      setUserAvatar(initialAvatar);
-      if (userId) {
-        localStorage.setItem(`crm_user_avatar_${userId}`, initialAvatar);
-      }
-      localStorage.setItem('crm_user_avatar', initialAvatar);
-    } else {
-      const userKey = userId ? `crm_user_avatar_${userId}` : 'crm_user_avatar';
-      const savedAvatar = localStorage.getItem(userKey) || localStorage.getItem('crm_user_avatar');
-      if (savedAvatar) setUserAvatar(savedAvatar);
-    }
-
-    // Sync latest avatar from Supabase Auth only if not already provided via server props
-    if (!initialAvatar) {
-      const userKey = userId ? `crm_user_avatar_${userId}` : 'crm_user_avatar';
-      const savedAvatar = typeof window !== 'undefined' ? (localStorage.getItem(userKey) || localStorage.getItem('crm_user_avatar')) : null;
-      if (!savedAvatar) {
-        supabase.auth.getUser().then(({ data }) => {
-          const liveAvatar = data?.user?.user_metadata?.avatar_url;
-          if (liveAvatar) {
-            setUserAvatar(liveAvatar);
-            if (userId) localStorage.setItem(`crm_user_avatar_${userId}`, liveAvatar);
-            localStorage.setItem('crm_user_avatar', liveAvatar);
-          }
-        }).catch(() => {});
-      }
-    }
   }, [initialAvatar, userId]);
 
   useEffect(() => {
@@ -1464,6 +1483,7 @@ export default function CRMContainer({
   };
 
   const handleAvatarUpload = async (e) => {
+    if (!canChangePhoto || photoMutationRef.current) return;
     const file = e.target.files?.[0];
     if (!file) return;
     
@@ -1479,7 +1499,9 @@ export default function CRMContainer({
     }
 
     setIsUploadingAvatar(true);
-    const prevAvatar = userAvatar;
+    photoMutationRef.current = true;
+    const request = ++photoRequestRef.current;
+    const previousPhoto = profilePhoto;
     
     try {
       // 1. Fast client-side compression for instant 15KB payload
@@ -1489,37 +1511,29 @@ export default function CRMContainer({
         throw new Error("Failed to process image file");
       }
 
-      // 2. Instant Local State & Preview
-      setUserAvatar(base64Data);
-      const userKey = userId ? `crm_user_avatar_${userId}` : 'crm_user_avatar';
-      localStorage.setItem(userKey, base64Data);
-      localStorage.setItem('crm_user_avatar', base64Data);
-
-      // 3. Upload to Supabase Storage and save public URL across all devices
-      let targetUserId = userId;
-      if (!targetUserId) {
-        const { data: { user } } = await supabase.auth.getUser();
-        targetUserId = user?.id;
-      }
+      if (request !== photoRequestRef.current) return;
+      // Preview is transient; browser cache is written only after server confirmation.
+      setProfilePhoto({ ...previousPhoto, avatarUrl: base64Data });
 
       const formData = new FormData();
       formData.append('base64', base64Data);
-      if (targetUserId) formData.append('userId', targetUserId);
+      formData.append('userId', userId);
+      formData.append('tenantCode', previousPhoto.tenantCode);
+      formData.append('branchCode', previousPhoto.branchCode);
 
       const res = await uploadUserAvatar(formData);
-      if (res?.success && res?.avatarUrl) {
-        setUserAvatar(res.avatarUrl);
-        if (targetUserId) {
-          localStorage.setItem(`crm_user_avatar_${targetUserId}`, res.avatarUrl);
-        }
-        localStorage.setItem('crm_user_avatar', res.avatarUrl);
-      }
+      if (!res?.success) throw new Error(res?.error || 'Photo upload failed. Please try again.');
+      if (request === photoRequestRef.current) applyProfilePhoto(res);
     } catch (err) {
       console.error('Photo upload exception:', err);
-      if (!userAvatar) setUserAvatar(prevAvatar);
-      alert('Photo upload failed. Please try again.');
+      if (request === photoRequestRef.current) {
+        setProfilePhoto(previousPhoto);
+        alert(err.message || 'Photo upload failed. Please try again.');
+      }
     } finally {
       setIsUploadingAvatar(false);
+      photoMutationRef.current = false;
+      void refreshProfilePhoto(true);
       if (avatarInputRef.current) {
         avatarInputRef.current.value = '';
       }
@@ -1527,25 +1541,22 @@ export default function CRMContainer({
   };
 
   const handleRemoveAvatar = async () => {
+    if (!canChangePhoto || photoMutationRef.current) return;
     if (!confirm("Are you sure you want to remove your profile photo?")) return;
     setIsUploadingAvatar(true);
+    photoMutationRef.current = true;
+    const request = ++photoRequestRef.current;
     try {
-      let targetUserId = userId;
-      if (!targetUserId) {
-        const { data: { user } } = await supabase.auth.getUser();
-        targetUserId = user?.id;
-      }
-      if (targetUserId) {
-        await removeUserAvatar(targetUserId);
-        localStorage.removeItem(`crm_user_avatar_${targetUserId}`);
-      }
-      localStorage.removeItem('crm_user_avatar');
-      setUserAvatar(null);
+      const result = await removeUserAvatar(userId, { tenantCode: profilePhoto.tenantCode, branchCode: profilePhoto.branchCode });
+      if (!result?.success) throw new Error(result?.error || 'Failed to remove photo.');
+      if (request === photoRequestRef.current) applyProfilePhoto(result);
     } catch (err) {
       console.error('Remove avatar error:', err);
-      alert('Failed to remove photo.');
+      if (request === photoRequestRef.current) alert(err.message || 'Failed to remove photo.');
     } finally {
       setIsUploadingAvatar(false);
+      photoMutationRef.current = false;
+      void refreshProfilePhoto(true);
     }
   };
 
@@ -1602,7 +1613,7 @@ export default function CRMContainer({
     };
   }, []);
 
-  // Fetch user email & metadata avatar only if missing from server props
+  // Fetch user email only if missing from server props. Avatar identity is resolved separately.
   useEffect(() => {
     async function fetchUser() {
       if (initialUserEmail) return;
@@ -1610,11 +1621,6 @@ export default function CRMContainer({
         const { data: { user } } = await supabase.auth.getUser();
         if (!isImpersonating && !initialUserEmail && user?.email) {
           setUserEmail(user.email);
-        }
-        if (!isImpersonating && user?.user_metadata?.avatar_url) {
-          setUserAvatar(user.user_metadata.avatar_url);
-          localStorage.setItem(`crm_user_avatar_${user.id}`, user.user_metadata.avatar_url);
-          localStorage.setItem('crm_user_avatar', user.user_metadata.avatar_url);
         }
       } catch (err) {
         console.warn('Error fetching auth user in CRMContainer:', err);
@@ -2810,7 +2816,7 @@ export default function CRMContainer({
       let cleanSub = (sub || 'business').toLowerCase();
       if (cleanSub === 'products' || cleanSub === 'product-list' || cleanSub === 'products-list') cleanSub = 'products';
       if (cleanSub === 'crm-config' || cleanSub === 'crm_config') cleanSub = 'crm';
-      if (cleanSub === 'custom-fields' || cleanSub === 'custom_fields') cleanSub = 'fields';
+      if (cleanSub === 'custom-fields' || cleanSub === 'custom_fields' || cleanSub === 'message-templates' || cleanSub === 'whatsapp-templates') cleanSub = 'business';
       if (cleanSub === 'business-profile' || cleanSub === 'branches') cleanSub = 'business';
       tab = 'settings';
       setCurrentSettingSubTab(INTEGRATION_PAGE_IDS.includes(cleanSub) ? INTEGRATION_PAGE.id : cleanSub);
@@ -2954,7 +2960,7 @@ export default function CRMContainer({
         let cleanSub = (sub || 'business').toLowerCase();
         if (cleanSub === 'products' || cleanSub === 'product-list' || cleanSub === 'products-list') cleanSub = 'products';
         if (cleanSub === 'crm-config' || cleanSub === 'crm_config') cleanSub = 'crm';
-        if (cleanSub === 'custom-fields' || cleanSub === 'custom_fields') cleanSub = 'fields';
+        if (cleanSub === 'custom-fields' || cleanSub === 'custom_fields' || cleanSub === 'message-templates' || cleanSub === 'whatsapp-templates') cleanSub = 'business';
         if (cleanSub === 'business-profile' || cleanSub === 'branches') cleanSub = 'business';
         tab = 'settings';
         setCurrentSettingSubTab(INTEGRATION_PAGE_IDS.includes(cleanSub) ? INTEGRATION_PAGE.id : cleanSub);
@@ -3314,7 +3320,7 @@ export default function CRMContainer({
     if (cleanSub === 'products' || cleanSub === 'product-list' || cleanSub === 'products-list') cleanSub = 'products';
     if (cleanSub === 'order_pipeline' || cleanSub === 'order-pipeline' || cleanSub === 'order-config' || cleanSub === 'order_config') cleanSub = 'order_pipeline';
     if (cleanSub === 'crm-config' || cleanSub === 'crm_config') cleanSub = 'crm';
-    if (cleanSub === 'custom-fields' || cleanSub === 'custom_fields') cleanSub = 'fields';
+    if (cleanSub === 'custom-fields' || cleanSub === 'custom_fields' || cleanSub === 'message-templates' || cleanSub === 'whatsapp-templates') cleanSub = 'business';
     if (cleanSub === 'business-profile' || cleanSub === 'branches') cleanSub = 'business';
     if (cleanSub === 'sessions' || cleanSub === 'active-sessions' || cleanSub === 'breaks' || cleanSub === 'work-session') cleanSub = 'sessions';
 
@@ -4432,6 +4438,7 @@ export default function CRMContainer({
                   >
                     ⚡ Automation & Webhook API
                   </button>
+                  <button onClick={() => handleConfigMasterSubTabChange('tenant_integrations')} className="submenu-item" data-active={activeTab === 'config_master' && configMasterSubTab === 'tenant_integrations'}>🔌 Tenant API & Integrations</button>
                   <button
                     onClick={() => handleConfigMasterSubTabChange('navigation')}
                     className="submenu-item"
@@ -5816,6 +5823,7 @@ export default function CRMContainer({
                     configMasterSubTab === 'messages' ? '⚙️ Config Master — Platform Messaging & OTPs' :
                     configMasterSubTab === 'status' ? '⚙️ Config Master — System Health & Server Logs' :
                     configMasterSubTab === 'automation' ? '⚙️ Config Master — Automation & Webhook API' :
+                    configMasterSubTab === 'tenant_integrations' ? '⚙️ Config Master — Tenant API & Integrations' :
                     configMasterSubTab === 'navigation' ? '⚙️ Config Master — Page Navigation Rules' :
                     configMasterSubTab === 'offline_rule' ? '⚙️ Config Master — Offline Rules & Sync Policy' :
                     '⚙️ Config Master — Public User Management'
@@ -7087,7 +7095,7 @@ export default function CRMContainer({
                       </div>
 
                       {/* Camera Button */}
-                      <button
+                      {canChangePhoto && <button
                         type="button"
                         disabled={isUploadingAvatar}
                         onClick={() => avatarInputRef.current?.click()}
@@ -7111,12 +7119,13 @@ export default function CRMContainer({
                         title="Upload Photo"
                       >
                         {isUploadingAvatar ? <Loader2 size={12} className="animate-spin" /> : <Camera size={13} />}
-                      </button>
+                      </button>}
                       <input 
                         type="file" 
                         ref={avatarInputRef} 
                         onChange={handleAvatarUpload} 
                         accept="image/*" 
+                        disabled={!canChangePhoto || isUploadingAvatar}
                         style={{ display: 'none' }} 
                       />
                     </div>
@@ -7124,7 +7133,16 @@ export default function CRMContainer({
                     <div style={{ fontWeight: 700, fontSize: '0.98rem', color: 'var(--text-primary)', marginBottom: '0.15rem' }}>{userName || 'User Profile'}</div>
                     <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', wordBreak: 'break-all' }}>{userEmail || 'employee@supujacreations.com'}</div>
                     
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.6rem' }}>
+                    {!canChangePhoto && <p role="status" style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: '0.6rem 0 0' }}>
+                      {isImpersonating ? 'Photo changes are disabled in View As.' : profilePhoto?.identity === photoIdentity && profilePhoto.shared
+                        ? 'Your administrator manages this shared profile photo.'
+                        : profilePhoto?.identity === photoIdentity && !profilePhoto.ready
+                          ? 'Profile photos are temporarily unavailable. Please contact your administrator.'
+                          : profilePhoto?.identity === photoIdentity && profilePhoto.ready
+                            ? 'Photo changes are unavailable for this account.'
+                          : 'Loading profile photo settings…'}
+                    </p>}
+                    {canChangePhoto && <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.6rem' }}>
                       <button
                         type="button"
                         disabled={isUploadingAvatar}
@@ -7147,7 +7165,7 @@ export default function CRMContainer({
                         {isUploadingAvatar ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />} 
                         {isUploadingAvatar ? 'Uploading...' : (userAvatar ? 'Change Photo' : 'Upload Photo')}
                       </button>
-                      {userAvatar && (
+                      {profilePhoto.personalAvatarUrl && (
                         <button
                           type="button"
                           disabled={isUploadingAvatar}
@@ -7170,7 +7188,7 @@ export default function CRMContainer({
                           <Trash2 size={12} /> Remove
                         </button>
                       )}
-                    </div>
+                    </div>}
                   </div>
 
                   {/* Profile Details */}
@@ -7349,6 +7367,7 @@ export default function CRMContainer({
                         userRole={userRole}
                         userId={userId}
                         userName={userName}
+                        userCompany={userCompany || (adminCompanyFilter !== 'all' ? adminCompanyFilter : '')}
                         moduleAccess={moduleAccess}
                         globalRolePermissions={globalRolePermissions}
                         pendingLeadToOpen={pendingLeadToOpen}
@@ -7465,7 +7484,7 @@ export default function CRMContainer({
                     }} 
                     canWrite={canWrite} 
                     teamMembers={teamMembers}
-                    userCompany={userCompany}
+                    userCompany={adminCompanyFilter && adminCompanyFilter.toLowerCase() !== 'all' ? adminCompanyFilter : (isSwanWorkspace ? 'All' : userCompany)}
                     moduleAccess={moduleAccess}
                     userRole={userRole}
                     userName={userName}

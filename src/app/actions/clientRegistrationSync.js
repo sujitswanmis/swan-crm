@@ -150,6 +150,8 @@ export async function saveClientRegistrationDraft(draftData, userCompany = '', c
   }
 }
 
+const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl'];
+
 /**
  * 2. Get list of all drafts for current tenant/user
  * Supports Tarika A (personal drafts) and Tarika B (common pool via canViewAll)
@@ -157,25 +159,44 @@ export async function saveClientRegistrationDraft(draftData, userCompany = '', c
 export async function getClientRegistrationDrafts(userCompany = '', currentUser = '', canViewAll = false) {
   try {
     const adminClient = getAdminClient();
-    let query = adminClient
-      .from('leads')
-      .select('id, lead_ref_id, company, name, phone, email, state_name, district_name, city_name, created_at, updated_at, entry_by, created_by, our_company, requirement, business_gst, status')
-      .eq('status', 'DRAFT')
-      .order('updated_at', { ascending: false });
+    let allDrafts = [];
+    let page = 0;
+    const pageSize = 1000;
 
-    if (userCompany && userCompany !== 'All') {
-      query = query.eq('our_company', userCompany);
+    while (true) {
+      let query = adminClient
+        .from('leads')
+        .select('id, lead_ref_id, company, name, phone, email, state_name, district_name, city_name, created_at, updated_at, entry_by, created_by, our_company, requirement, business_gst, status')
+        .eq('status', 'DRAFT')
+        .order('updated_at', { ascending: false });
+
+      if (userCompany && userCompany !== 'All') {
+        const compLower = String(userCompany).toLowerCase().trim();
+        if (compLower === 'new swan group') {
+          query = query.in('our_company', ['NSMLR', 'NSTLP', 'NSTL', 'New Swan Group', 'Swan Agro', 'NSE-1', 'NSE-2', 'NSE-6', 'NSCPL', 'NSACPL', '']);
+        } else if (compLower === 'nstl' || compLower === 'nstlp') {
+          query = query.in('our_company', ['NSTL', 'NSTLP']);
+        } else {
+          query = query.eq('our_company', userCompany);
+        }
+      }
+
+      if (!canViewAll && currentUser && currentUser.trim() !== '') {
+        const cleanUser = currentUser.trim();
+        query = query.or(`entry_by.ilike.%${cleanUser}%,created_by.ilike.%${cleanUser}%`);
+      }
+
+      const { data, error } = await query.range(page * pageSize, (page + 1) * pageSize - 1);
+      if (error) throw error;
+      if (!data || data.length === 0) break;
+
+      allDrafts.push(...data);
+      if (data.length < pageSize) break;
+      page++;
+      if (page >= 10) break; // safety boundary up to 10k drafts
     }
 
-    if (!canViewAll && currentUser && currentUser.trim() !== '') {
-      const cleanUser = currentUser.trim();
-      query = query.or(`entry_by.ilike.%${cleanUser}%,created_by.ilike.%${cleanUser}%`);
-    }
-
-    const { data, error } = await query.limit(2000);
-    if (error) throw error;
-
-    return { success: true, drafts: data || [] };
+    return { success: true, drafts: allDrafts };
   } catch (err) {
     console.error('getClientRegistrationDrafts error:', err);
     return { success: true, drafts: [] };

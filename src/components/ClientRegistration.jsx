@@ -3,7 +3,7 @@
 import MobileTableView from '@/components/common/MobileTableView';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createClient } from '@/utils/supabase/client';
-import { ChevronDown, ChevronUp, Save, Briefcase, MapPin, User, FileText, CheckCircle2, Upload, Download, X, AlertTriangle, Search, ChevronLeft, ChevronRight, Filter, UserPlus, Edit3, Trash2, Clock } from 'lucide-react';
+import { ChevronDown, ChevronUp, Save, Briefcase, MapPin, User, FileText, CheckCircle2, Upload, Download, X, AlertTriangle, AlertCircle, Search, ChevronLeft, ChevronRight, Filter, UserPlus, Edit3, Trash2, Clock } from 'lucide-react';
 import Papa from 'papaparse';
 import { getTeamMembers } from '@/app/actions/team';
 import { logAuditAction } from '@/app/actions/audit';
@@ -489,6 +489,7 @@ export default function ClientRegistration({
 }) {
   const supabase = createClient();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [uploadModal, setUploadModal] = useState(null);
 
   const canViewAllDrafts = useMemo(() => {
     if (userRole === 'admin' || userRole === 'master_admin') return true;
@@ -2268,13 +2269,35 @@ export default function ClientRegistration({
       setShowImporter(false);
 
       if (registeredToInsert.length > 0 && onRegistrationSuccess) {
-        onRegistrationSuccess(allInsertedLeads);
-        alert(`✅ Bulk Upload Complete!\n• ${registeredToInsert.length} clients registered in Lead Registered Report\n• ${draftsToInsert.length} saved as Drafts in New Lead Registration`);
+        setUploadModal({
+          type: 'success',
+          title: 'Bulk Upload Complete!',
+          draftsCount: draftsToInsert.length,
+          registeredCount: registeredToInsert.length,
+          message: 'Clients registered successfully in Lead Registered Report and Drafts stored in Saved Drafts.',
+          primaryBtnText: 'View Registered Report',
+          onPrimaryClick: () => {
+            setUploadModal(null);
+            onRegistrationSuccess(allInsertedLeads);
+          }
+        });
       } else {
         // Only drafts uploaded -> stay in New Lead Registration -> Saved Drafts
         setActiveView('drafts');
         loadDrafts();
-        alert(`✅ Successfully uploaded ${draftsToInsert.length} incomplete records as Drafts!\nThey are now ready in "Saved Drafts" tab for data entry completion.`);
+        setUploadModal({
+          type: 'success',
+          title: 'Bulk Upload Successful!',
+          draftsCount: draftsToInsert.length,
+          registeredCount: 0,
+          message: 'Incomplete records saved as Drafts. They are now ready in "Saved Drafts" tab for data entry completion.',
+          primaryBtnText: `View Saved Drafts (${draftsToInsert.length.toLocaleString()})`,
+          onPrimaryClick: () => {
+            setUploadModal(null);
+            setActiveView('drafts');
+            loadDrafts();
+          }
+        });
       }
 
       if (allInsertedLeads.length > 0) {
@@ -2282,7 +2305,15 @@ export default function ClientRegistration({
       }
     } catch (err) {
       console.error(err);
-      alert('Error uploading file: ' + err.message);
+      setUploadModal({
+        type: 'error',
+        title: 'Upload Failed',
+        draftsCount: 0,
+        registeredCount: 0,
+        message: err.message || 'Error uploading file',
+        primaryBtnText: 'Close',
+        onPrimaryClick: () => setUploadModal(null)
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -3809,6 +3840,186 @@ export default function ClientRegistration({
                 </>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Centered In-App Notification / Success Modal */}
+      {uploadModal && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.72)',
+            backdropFilter: 'blur(5px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 999999,
+            padding: '1.25rem',
+            animation: 'fadeIn 0.15s ease-out'
+          }}
+          onClick={() => {
+            if (uploadModal.onPrimaryClick) uploadModal.onPrimaryClick();
+            else setUploadModal(null);
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: 'var(--bg-surface, #ffffff)',
+              borderRadius: '16px',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(0, 0, 0, 0.08)',
+              maxWidth: '460px',
+              width: '100%',
+              padding: '2rem 1.75rem',
+              textAlign: 'center',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '1rem',
+              position: 'relative'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Close Button */}
+            <button
+              onClick={() => {
+                if (uploadModal.onPrimaryClick) uploadModal.onPrimaryClick();
+                else setUploadModal(null);
+              }}
+              style={{
+                position: 'absolute',
+                top: '1rem',
+                right: '1rem',
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                color: 'var(--text-secondary, #64748b)',
+                padding: '0.35rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: '6px'
+              }}
+              title="Close"
+            >
+              <X size={18} />
+            </button>
+
+            {/* Icon */}
+            {uploadModal.type === 'error' ? (
+              <div
+                style={{
+                  width: '64px',
+                  height: '64px',
+                  borderRadius: '50%',
+                  backgroundColor: '#fee2e2',
+                  color: '#dc2626',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: '0 0 0 8px rgba(239, 68, 68, 0.12)',
+                  marginBottom: '0.25rem'
+                }}
+              >
+                <AlertCircle size={36} strokeWidth={2.3} />
+              </div>
+            ) : (
+              <div
+                style={{
+                  width: '64px',
+                  height: '64px',
+                  borderRadius: '50%',
+                  backgroundColor: '#dcfce7',
+                  color: '#16a34a',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: '0 0 0 8px rgba(34, 197, 94, 0.15)',
+                  marginBottom: '0.25rem'
+                }}
+              >
+                <CheckCircle2 size={36} strokeWidth={2.4} />
+              </div>
+            )}
+
+            {/* Title */}
+            <h3
+              style={{
+                margin: 0,
+                fontSize: '1.35rem',
+                fontWeight: 700,
+                color: 'var(--text-primary, #0f172a)'
+              }}
+            >
+              {uploadModal.title}
+            </h3>
+
+            {/* Details Box */}
+            <div
+              style={{
+                width: '100%',
+                backgroundColor: 'var(--bg-subtle, #f8fafc)',
+                border: '1px solid var(--border-light, #e2e8f0)',
+                borderRadius: '10px',
+                padding: '0.9rem 1rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.5rem',
+                textAlign: 'left'
+              }}
+            >
+              {uploadModal.draftsCount > 0 && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.9rem' }}>
+                  <span style={{ color: 'var(--text-secondary, #64748b)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    📋 Saved as Drafts:
+                  </span>
+                  <strong style={{ color: '#d97706', fontSize: '1rem', fontWeight: 700 }}>
+                    {uploadModal.draftsCount.toLocaleString()} rows
+                  </strong>
+                </div>
+              )}
+              {uploadModal.registeredCount > 0 && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.9rem' }}>
+                  <span style={{ color: 'var(--text-secondary, #64748b)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    ✅ Registered in Report:
+                  </span>
+                  <strong style={{ color: '#16a34a', fontSize: '1rem', fontWeight: 700 }}>
+                    {uploadModal.registeredCount.toLocaleString()} rows
+                  </strong>
+                </div>
+              )}
+              <div style={{ fontSize: '0.84rem', color: 'var(--text-secondary, #64748b)', marginTop: '0.2rem', lineHeight: 1.5 }}>
+                {uploadModal.message}
+              </div>
+            </div>
+
+            {/* Action Button */}
+            <button
+              onClick={() => {
+                if (uploadModal.onPrimaryClick) uploadModal.onPrimaryClick();
+                else setUploadModal(null);
+              }}
+              style={{
+                width: '100%',
+                padding: '0.85rem 1.25rem',
+                borderRadius: '8px',
+                border: 'none',
+                backgroundColor: uploadModal.type === 'error' ? '#ef4444' : '#2563eb',
+                color: '#ffffff',
+                fontSize: '0.95rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.5rem',
+                boxShadow: uploadModal.type === 'error' ? '0 4px 12px rgba(239, 68, 68, 0.25)' : '0 4px 12px rgba(37, 99, 235, 0.25)',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              {uploadModal.primaryBtnText || 'OK'}
+            </button>
           </div>
         </div>
       )}
