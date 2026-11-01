@@ -3601,7 +3601,7 @@ export default function ClientRegistration({
                                 textAlign: 'center', 
                                 borderBottom: '2px solid var(--border-light)', 
                                 borderRight: '2px solid var(--border-light)' 
-                              }}>Status</th>
+                              }}>Duplication Status %</th>
                             {mappedDisplayFields.map(field => (
                               <th key={field.key} style={{ 
                                 position: 'sticky',

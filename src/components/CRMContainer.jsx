@@ -2534,7 +2534,8 @@ export default function CRMContainer({
       return; // setLeads was already updated in handleLeadsChange! Avoid 45k-row diff & bounce
     }
     
-    let preFilteredLeads = rawLeads;
+    // Exclude unconfirmed/incomplete drafts from operational CRM leads
+    let preFilteredLeads = (rawLeads || []).filter(l => l && l.status !== 'DRAFT');
     
     // 1. Apply Company Filter & Multi-Tenant Workspace Boundary
     if (!isSwanWorkspace && userCompany && userCompany.trim() !== '') {

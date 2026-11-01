@@ -1193,7 +1193,8 @@ export default function LeadTable({
   moduleAccess = {}, 
   globalRolePermissions,
   pendingLeadToOpen = null,
-  onLeadOpened = null
+  onLeadOpened = null,
+  userCompany = ''
 }) {
   // Authenticated Supabase client — used for realtime, CSV import, etc.
   const supabase = useMemo(() => createClient(), []);
@@ -1800,7 +1801,8 @@ export default function LeadTable({
       return [];
     }
 
-    let result = data;
+    // Exclude incomplete drafts from operational lead table (All Leads & pipeline stages)
+    let result = (data || []).filter(lead => lead && lead.status !== 'DRAFT');
     if (stageFilter && stageFilter !== 'all') {
       result = result.filter(lead => matchesLeadPreviewStage(lead, stageFilter));
     }
@@ -3502,7 +3504,23 @@ export default function LeadTable({
         </div>
       </div>
 
-      {isModalOpen && <LeadFormModal isOpen={true} onClose={() => setIsModalOpen(false)} />}
+      {isModalOpen && (
+        <LeadFormModal 
+          isOpen={true} 
+          onClose={() => setIsModalOpen(false)}
+          userName={userName}
+          userId={userId}
+          userCompany={userCompany}
+          teamMembers={teamMembers}
+          onLeadAdded={(newLead) => {
+            if (newLead) {
+              const processed = processLeads([newLead], teamMembers)[0] || newLead;
+              setData(curr => [processed, ...(curr || [])]);
+              if (onLeadsChange) onLeadsChange(processed);
+            }
+          }}
+        />
+      )}
       
       {/* Client Registration Full Form Edit Modal */}
       {selectedLead && profileMode === 'edit' && (
