@@ -520,7 +520,13 @@ export default function ClientRegistration({
 
   const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl'];
   const isSwanWorkspace = !userCompany || SWAN_COMPANIES.includes(String(userCompany).toLowerCase().trim());
-  const defaultWorkspaceCompany = (!isSwanWorkspace && userCompany) ? userCompany : '';
+  const defaultWorkspaceCompany = (() => {
+    if (isSwanWorkspace) {
+      if (userCompany && userCompany.toUpperCase() === 'NSTLP') return 'NSTLP';
+      return 'NSMLR';
+    }
+    return userCompany || 'SuPuja Creations';
+  })();
 
   const [tenantStages, setTenantStages] = useState(DEFAULT_CRM_STAGES);
 
@@ -765,20 +771,27 @@ export default function ClientRegistration({
 
   useEffect(() => {
     async function resolveActor() {
-      if (userName) {
-        setCurrentActor(userName);
-        return;
+      let resolved = userName || '';
+      if (!resolved) {
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user?.email) {
+            resolved = normalizeEmployeeName(user.email.split('@')[0], teamMembers);
+          }
+        } catch {}
       }
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user?.email) {
-          const actor = normalizeEmployeeName(user.email.split('@')[0], teamMembers);
-          setCurrentActor(actor);
-        }
-      } catch {}
+      if (resolved) {
+        setCurrentActor(resolved);
+        setFormData(prev => ({
+          ...prev,
+          entry_by: prev.entry_by || resolved,
+          assigned_to: prev.assigned_to || (resolveTeamMemberId(resolved, teamMembers) || resolved),
+          our_company: prev.our_company || defaultWorkspaceCompany
+        }));
+      }
     }
     resolveActor();
-  }, [userName, teamMembers, supabase]);
+  }, [userName, teamMembers, supabase, defaultWorkspaceCompany]);
 
   const loadDrafts = async () => {
     setIsLoadingDrafts(true);
@@ -941,12 +954,12 @@ export default function ClientRegistration({
 
   const [formData, setFormData] = useState({
     // Lead Info
-    assigned_to: '',
+    assigned_to: userName || '',
     our_company: defaultWorkspaceCompany,
-    lead_date: new Date().toISOString().split('T')[0],
+    lead_date: new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date()),
     source: '',
     source_name: '',
-    entry_by: '',
+    entry_by: userName || '',
     status: 'None',
     priority: '',
     
@@ -1441,7 +1454,7 @@ export default function ClientRegistration({
         // Reset form (keeping defaults)
         setFormData(prev => ({
           ...prev,
-          source_name: '', entry_by: '', business_type: '', business_gst: '', company: '', priority: '', our_company: defaultWorkspaceCompany,
+          source_name: '', entry_by: currentActor || userName || '', assigned_to: currentActor || userName || '', business_type: '', business_gst: '', company: '', priority: '', our_company: defaultWorkspaceCompany,
           business_contact_1: '', business_contact_2: '', business_alt_1: '', business_alt_2: '',
           business_email_1: '', business_email_2: '', business_alt_email_1: '', business_alt_email_2: '',
           name: '', phone: '', cp1_mobile_2: '', cp1_alt_1: '', cp1_alt_2: '', email: '', cp1_email_2: '',
@@ -2808,7 +2821,7 @@ export default function ClientRegistration({
                     setCurrentDraftId(null);
                     setFormData(prev => ({
                       ...prev,
-                      source_name: '', entry_by: '', business_type: '', business_gst: '', company: '', priority: '', our_company: defaultWorkspaceCompany,
+                      source_name: '', entry_by: currentActor || userName || '', assigned_to: currentActor || userName || '', business_type: '', business_gst: '', company: '', priority: '', our_company: defaultWorkspaceCompany,
                       business_contact_1: '', business_contact_2: '', business_alt_1: '', business_alt_2: '',
                       business_email_1: '', business_email_2: '', business_alt_email_1: '', business_alt_email_2: '',
                       name: '', phone: '', cp1_mobile_2: '', cp1_alt_1: '', cp1_alt_2: '', email: '', cp1_email_2: '',
@@ -2895,34 +2908,46 @@ export default function ClientRegistration({
                     </label>
                     <select 
                       name="our_company" 
-                      value={formData.our_company === 'NSTL' ? 'NSTLP' : (formData.our_company || '')} 
+                      value={formData.our_company === 'NSTL' ? 'NSTLP' : (formData.our_company || defaultWorkspaceCompany)} 
                       onChange={handleChange} 
                       required 
                       style={{ padding: '0.6rem 0.8rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}
                     >
                       <option value="">-- Select Company / Branch --</option>
                       {availableBranches.length > 0 ? (
-                        availableBranches.map(br => {
-                          const cleanName = br.legacy_code === 'NEW_SWAN_GROUP' || br.branch_name?.toLowerCase().includes('new swan group')
-                            ? 'New Swan Group'
-                            : (br.legacy_code && ['NSMLR', 'NSTLP', 'NSTL'].includes(br.legacy_code)
-                                ? (br.legacy_code === 'NSTL' ? 'NSTLP' : br.legacy_code)
-                                : (br.branch_name?.toLowerCase().includes('supuja') ? 'SuPuja Creations' : (br.branch_name || br.company)));
-                          const optVal = cleanName;
-                          const isAdminUser = userRole === 'admin' || userRole === 'Admin' || userRole === 'master_admin';
-                          const optLabel = isAdminUser && br.branch_code ? `${cleanName} (${br.branch_code})` : cleanName;
-                          return (
-                            <option key={br.id || br.branch_code} value={optVal}>
-                              {optLabel}
-                            </option>
-                          );
-                        })
+                        availableBranches
+                          .filter(br => {
+                            if (isSwanWorkspace) {
+                              const isHq = br.legacy_code === 'NEW_SWAN_GROUP' || br.location_type === 'Headquarters';
+                              return !isHq;
+                            }
+                            return true;
+                          })
+                          .sort((a, b) => {
+                            const nameA = String(a.legacy_code || a.branch_name || '');
+                            const nameB = String(b.legacy_code || b.branch_name || '');
+                            if (nameA.includes('NSMLR')) return -1;
+                            if (nameB.includes('NSMLR')) return 1;
+                            return nameA.localeCompare(nameB);
+                          })
+                          .map(br => {
+                            const cleanName = (br.legacy_code && ['NSMLR', 'NSTLP', 'NSTL'].includes(br.legacy_code))
+                              ? (br.legacy_code === 'NSTL' ? 'NSTLP' : br.legacy_code)
+                              : (br.branch_name?.toLowerCase().includes('supuja') ? 'SuPuja Creations' : (br.branch_name || br.company));
+                            const optVal = cleanName;
+                            const isAdminUser = userRole === 'admin' || userRole === 'Admin' || userRole === 'master_admin';
+                            const optLabel = isAdminUser && br.branch_code ? `${cleanName} (${br.branch_code})` : cleanName;
+                            return (
+                              <option key={br.id || br.branch_code} value={optVal}>
+                                {optLabel}
+                              </option>
+                            );
+                          })
                       ) : (
                         isSwanWorkspace ? (
                           <>
                             <option value="NSMLR">NSMLR{(userRole === 'admin' || userRole === 'Admin' || userRole === 'master_admin') ? ' (TNT00002-B0002)' : ''}</option>
                             <option value="NSTLP">NSTLP{(userRole === 'admin' || userRole === 'Admin' || userRole === 'master_admin') ? ' (TNT00002-B0003)' : ''}</option>
-                            <option value="New Swan Group">New Swan Group{(userRole === 'admin' || userRole === 'Admin' || userRole === 'master_admin') ? ' (TNT00002-B0001)' : ''}</option>
                           </>
                         ) : (
                           <option value={userCompany || 'Client Workspace'}>{userCompany || 'Client Workspace'}</option>

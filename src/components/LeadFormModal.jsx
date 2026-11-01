@@ -1,13 +1,302 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { INDIAN_STATES, getDistrictsForState } from '@/constants/indianLocations';
 
-export default function LeadFormModal({ isOpen, onClose }) {
+// 🔍 Searchable & Selectable Assignee Dropdown
+function SearchableAssignToDropdown({ value, onChange, teamMembers, disabled }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const dropdownRef = useRef(null);
+
+  const activeMembers = useMemo(() => {
+    const list = (teamMembers || []).filter(m => {
+      if (!m.emp_name) return false;
+      if (value && (m.user_id === value || m.id === value)) return true;
+      const status = String(m.emp_status || m.status || 'Active').toLowerCase().trim();
+      if (['inactive', 'terminated', 'resigned', 'trash', 'draft'].includes(status)) return false;
+      if (m.is_approved === false) return false;
+      if (m.role === 'customer') return false;
+      return true;
+    });
+    return [...list].sort((a, b) => {
+      const nameA = (a.emp_name || a.email || '').toLowerCase();
+      const nameB = (b.emp_name || b.email || '').toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
+  }, [teamMembers, value]);
+
+  const selectedMember = useMemo(() => {
+    if (!value) return null;
+    return activeMembers.find(m => (m.user_id === value || m.id === value));
+  }, [value, activeMembers]);
+
+  const selectedDisplayLabel = useMemo(() => {
+    if (!value) return 'Unassigned (Open Lead Pool)';
+    if (selectedMember) {
+      return `${selectedMember.emp_name}${selectedMember.emp_department ? ` (${selectedMember.emp_department})` : ''}`;
+    }
+    return value;
+  }, [value, selectedMember]);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setIsOpen(false);
+        setSearch('');
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const filteredMembers = useMemo(() => {
+    if (!search.trim()) return activeMembers;
+    const term = search.toLowerCase().trim();
+    return activeMembers.filter(m =>
+      (m.emp_name && m.emp_name.toLowerCase().includes(term)) ||
+      (m.email && m.email.toLowerCase().includes(term)) ||
+      (m.emp_department && m.emp_department.toLowerCase().includes(term))
+    );
+  }, [search, activeMembers]);
+
+  return (
+    <div ref={dropdownRef} style={{ position: 'relative', width: '100%' }}>
+      <div 
+        onClick={() => {
+          if (!disabled) setIsOpen(!isOpen);
+        }}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '0.55rem 0.85rem',
+          borderRadius: '7px',
+          border: '1.5px solid var(--border-light, #e2e8f0)',
+          backgroundColor: disabled ? 'var(--bg-secondary, #f8fafc)' : 'var(--bg-surface, #ffffff)',
+          color: value ? 'var(--text-primary, #1e293b)' : 'var(--text-secondary, #64748b)',
+          fontSize: '0.85rem',
+          cursor: disabled ? 'not-allowed' : 'pointer',
+          boxSizing: 'border-box',
+          minHeight: '38px',
+          transition: 'border-color 0.15s ease'
+        }}
+      >
+        <span style={{ 
+          overflow: 'hidden', 
+          textOverflow: 'ellipsis', 
+          whiteSpace: 'nowrap',
+          fontWeight: value ? 600 : 400
+        }}>
+          {selectedDisplayLabel}
+        </span>
+        <span style={{ color: 'var(--text-secondary, #64748b)', fontSize: '0.75rem', marginLeft: '0.5rem' }}>
+          {isOpen ? '▲' : '▼'}
+        </span>
+      </div>
+
+      {isOpen && (
+        <div 
+          style={{
+            position: 'absolute',
+            top: 'calc(100% + 4px)',
+            left: 0,
+            right: 0,
+            backgroundColor: 'var(--bg-surface, #ffffff)',
+            borderRadius: '8px',
+            border: '1.5px solid var(--border-light, #e2e8f0)',
+            boxShadow: '0 12px 28px -4px rgba(0,0,0,0.2), 0 0 0 1px rgba(0,0,0,0.05)',
+            zIndex: 9999,
+            maxHeight: '260px',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+            animation: 'modalSlideIn 0.12s ease-out'
+          }}
+        >
+          {/* Search Input inside Dropdown */}
+          <div style={{ padding: '0.5rem', borderBottom: '1px solid var(--border-light, #e2e8f0)', backgroundColor: 'var(--bg-secondary, #f8fafc)' }}>
+            <input
+              type="text"
+              autoFocus
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="🔍 Search agent by name or dept..."
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                width: '100%',
+                padding: '0.45rem 0.65rem',
+                borderRadius: '6px',
+                border: '1px solid var(--border-light, #cbd5e1)',
+                backgroundColor: 'var(--bg-surface, #ffffff)',
+                color: 'var(--text-primary, #0f172a)',
+                fontSize: '0.82rem',
+                outline: 'none',
+                boxSizing: 'border-box'
+              }}
+            />
+          </div>
+
+          <div style={{ overflowY: 'auto', flex: 1, maxHeight: '200px' }}>
+            {/* Unassigned / Open Pool Option */}
+            <div
+              onClick={() => {
+                onChange('');
+                setIsOpen(false);
+                setSearch('');
+              }}
+              style={{
+                padding: '0.55rem 0.85rem',
+                fontSize: '0.82rem',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                backgroundColor: !value ? 'rgba(37, 99, 235, 0.08)' : 'transparent',
+                color: !value ? 'var(--accent-color, #2563eb)' : 'var(--text-secondary, #64748b)',
+                fontWeight: !value ? 600 : 400,
+                borderBottom: '1px solid var(--border-light, #f1f5f9)'
+              }}
+            >
+              <span>⚪ Unassigned (Open Lead Pool)</span>
+              {!value && <span>✓</span>}
+            </div>
+
+            {/* Filtered Members List */}
+            {filteredMembers.length === 0 ? (
+              <div style={{ padding: '0.75rem', fontSize: '0.8rem', color: 'var(--text-secondary)', textAlign: 'center' }}>
+                No matching team members found
+              </div>
+            ) : (
+              filteredMembers.map(m => {
+                const id = m.user_id || m.id;
+                const isSelected = value === id;
+                return (
+                  <div
+                    key={id}
+                    onClick={() => {
+                      onChange(id);
+                      setIsOpen(false);
+                      setSearch('');
+                    }}
+                    style={{
+                      padding: '0.55rem 0.85rem',
+                      fontSize: '0.82rem',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '0.5rem',
+                      backgroundColor: isSelected ? 'rgba(37, 99, 235, 0.08)' : 'transparent',
+                      color: isSelected ? 'var(--accent-color, #2563eb)' : 'var(--text-primary, #0f172a)',
+                      fontWeight: isSelected ? 600 : 400,
+                      transition: 'background-color 0.1s ease'
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isSelected) e.currentTarget.style.backgroundColor = 'var(--bg-secondary, #f8fafc)';
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isSelected) e.currentTarget.style.backgroundColor = 'transparent';
+                    }}
+                  >
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      <span>{m.emp_name || m.email}</span>
+                      {m.emp_department && (
+                        <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary, #64748b)' }}>
+                          {m.emp_department}
+                        </span>
+                      )}
+                    </div>
+                    {isSelected && <span style={{ color: 'var(--accent-color, #2563eb)' }}>✓</span>}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function LeadFormModal({ 
+  isOpen, 
+  onClose,
+  userName = '',
+  userId = '',
+  userCompany = '',
+  teamMembers = [],
+  onLeadAdded = null
+}) {
   const supabase = useMemo(() => createClient(), []);
 
-  const [sources, setSources] = useState(['Website', 'Facebook', 'Google Ads', 'IndiaMART', 'TradeIndia', 'WhatsApp', 'Phone Call', 'Field Visit', 'Dealer Reference', 'Customer Reference', 'Exhibition', 'Other']);
+  // Determine current active workspace company
+  const activeCompany = useMemo(() => {
+    if (userCompany && userCompany.trim() !== '' && userCompany.toLowerCase() !== 'all') {
+      return userCompany;
+    }
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('crm_user_company');
+        if (stored && stored.toLowerCase() !== 'all') return stored;
+      } catch (e) {}
+    }
+    return 'NSMLR';
+  }, [userCompany]);
+
+  const activeUserName = useMemo(() => {
+    if (userName && userName.trim() !== '') return userName;
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('crm_user_name');
+        if (stored) return stored;
+      } catch (e) {}
+    }
+    return 'Staff';
+  }, [userName]);
+
+  // Determine default assignee ID for logged-in user
+  const defaultAssigneeId = useMemo(() => {
+    if (!teamMembers || teamMembers.length === 0) return '';
+    // 1. Match by userId
+    if (userId) {
+      const match = teamMembers.find(m => (m.user_id === userId || m.id === userId));
+      if (match) return match.user_id || match.id;
+    }
+    // 2. Match by userName
+    if (activeUserName && activeUserName.trim() !== '') {
+      const match = teamMembers.find(m => 
+        (m.emp_name && m.emp_name.toLowerCase().trim() === activeUserName.toLowerCase().trim()) ||
+        (m.email && m.email.toLowerCase().trim() === activeUserName.toLowerCase().trim())
+      );
+      if (match) return match.user_id || match.id;
+    }
+    // 3. Match from localStorage
+    if (typeof window !== 'undefined') {
+      try {
+        const storedUid = localStorage.getItem('crm_user_id');
+        const storedName = localStorage.getItem('crm_user_name');
+        if (storedUid) {
+          const match = teamMembers.find(m => (m.user_id === storedUid || m.id === storedUid));
+          if (match) return match.user_id || match.id;
+        }
+        if (storedName) {
+          const match = teamMembers.find(m => 
+            (m.emp_name && m.emp_name.toLowerCase().trim() === storedName.toLowerCase().trim())
+          );
+          if (match) return match.user_id || match.id;
+        }
+      } catch (e) {}
+    }
+    return '';
+  }, [teamMembers, userId, activeUserName]);
+
+  const [sources, setSources] = useState([
+    'Website', 'Facebook', 'Google Ads', 'IndiaMART', 'TradeIndia', 
+    'WhatsApp', 'Phone Call', 'Field Visit', 'Dealer Reference', 
+    'Customer Reference', 'Exhibition', 'Other'
+  ]);
   const [priorities, setPriorities] = useState([
     'LP00: None', 'LP01: Immediate', 'LP02: High', 'LP03: Medium', 
     'LP04: Low', 'LP05: Cold', 'LP06: Disqualified', 'LP07: Irrelevant', 
@@ -40,24 +329,61 @@ export default function LeadFormModal({ isOpen, onClose }) {
     window.addEventListener('crm_config_updated', loadConfig);
     return () => window.removeEventListener('crm_config_updated', loadConfig);
   }, [isOpen]);
+
   const [formData, setFormData] = useState({
+    // Organization & Scope
+    our_company: 'NSMLR',
+    assigned_to: '',
+    
+    // Lead Source & Priority
     source: '',
     source_name: '',
-    priority: '',
-    business_type: '',
+    priority: 'LP03: Medium',
+    status: '1;01>New Stage>New Lead',
+    
+    // Business Details
     company: '',
+    business_type: '',
     business_contact_1: '',
     business_email_1: '',
+    
+    // Contact Person Details
     name: '',
     phone: '',
     email: '',
+    
+    // Location Details
     state_name: '',
     district_name: '',
     city_name: '',
     pin_code: '',
-    status: '1;01>New Stage>New Lead'
+    
+    // Metadata
+    entry_by: '',
+    created_by: '',
+    lead_date: ''
   });
+
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [successLead, setSuccessLead] = useState(null); // When set, renders the success popup with Lead ID!
+  const [copied, setCopied] = useState(false);
+
+  // Sync initial state when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      const todayIST = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+      setFormData(prev => ({
+        ...prev,
+        our_company: activeCompany || 'NSMLR',
+        assigned_to: defaultAssigneeId || '',
+        entry_by: activeUserName,
+        created_by: activeUserName,
+        lead_date: todayIST
+      }));
+      setSuccessLead(null);
+      setCopied(false);
+    }
+  }, [isOpen, activeCompany, activeUserName, defaultAssigneeId]);
 
   const districtsList = useMemo(() => {
     if (!formData.state_name) return [];
@@ -71,199 +397,750 @@ export default function LeadFormModal({ isOpen, onClose }) {
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
+  const handleResetForm = () => {
+    const todayIST = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+    setFormData({
+      our_company: activeCompany || 'NSMLR',
+      assigned_to: defaultAssigneeId || '',
+      source: '',
+      source_name: '',
+      priority: 'LP03: Medium',
+      status: '1;01>New Stage>New Lead',
+      company: '',
+      business_type: '',
+      business_contact_1: '',
+      business_email_1: '',
+      name: '',
+      phone: '',
+      email: '',
+      state_name: '',
+      district_name: '',
+      city_name: '',
+      pin_code: '',
+      entry_by: activeUserName,
+      created_by: activeUserName,
+      lead_date: todayIST
+    });
+    setSuccessLead(null);
+    setCopied(false);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!formData.name?.trim() && !formData.company?.trim()) {
+      alert('Please enter at least Contact Person Name or Business Name.');
+      return;
+    }
     setIsSubmitting(true);
     
-    const { data, error } = await supabase
-      .from('leads')
-      .insert([formData])
-      .select();
+    try {
+      const todayIST = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+      const nowIso = new Date().toISOString();
       
-    setIsSubmitting(false);
-    
-    if (error) {
-      alert('Error adding lead: ' + error.message);
-    } else {
-      if (data && data.length > 0) {
-        const { count } = await supabase.from('leads').select('*', { count: 'exact', head: true });
-        const d = new Date(data[0].created_at || new Date());
-        const dateStr = d.toISOString().split('T')[0].replace(/-/g, '');
-        const seq = String(count).padStart(7, '0');
-        const newFormattedId = dateStr + seq;
-        await supabase.from('leads').update({ lead_ref_id: newFormattedId }).eq('id', data[0].id);
+      const payload = {
+        ...formData,
+        name: formData.name?.trim() || formData.company?.trim() || 'New Lead',
+        company: formData.company?.trim() || '',
+        phone: formData.phone?.trim() || '',
+        email: formData.email?.trim() || '',
+        our_company: formData.our_company || activeCompany || 'NSMLR',
+        entry_by: activeUserName,
+        created_by: activeUserName,
+        assigned_to: formData.assigned_to ? formData.assigned_to : null,
+        lead_date: formData.lead_date || todayIST,
+        created_at: nowIso,
+        updated_at: nowIso
+      };
+
+      const { data, error } = await supabase
+        .from('leads')
+        .insert([payload])
+        .select();
+        
+      if (error) {
+        throw error;
       }
-      setFormData({
-        source: '', source_name: '', priority: '', business_type: '', company: '', 
-        business_contact_1: '', business_email_1: '', name: '', phone: '', email: '',
-        state_name: '', district_name: '', city_name: '', pin_code: '',
-        status: '1;01>New Stage>New Lead'
-      });
-      onClose();
+      
+      let savedLead = data && data[0] ? data[0] : null;
+      
+      if (savedLead) {
+        // Generate stable formatted lead_ref_id
+        if (!savedLead.lead_ref_id) {
+          try {
+            const { count } = await supabase.from('leads').select('*', { count: 'exact', head: true });
+            const dateStr = todayIST.replace(/-/g, '');
+            const seq = String(count || 1).padStart(7, '0');
+            const newFormattedId = dateStr + seq;
+            const { data: updatedData } = await supabase
+              .from('leads')
+              .update({ lead_ref_id: newFormattedId })
+              .eq('id', savedLead.id)
+              .select();
+            if (updatedData && updatedData[0]) {
+              savedLead = updatedData[0];
+            } else {
+              savedLead.lead_ref_id = newFormattedId;
+            }
+          } catch (refErr) {
+            console.warn('Ref ID generation note:', refErr);
+          }
+        }
+        
+        // Log initial registration note
+        try {
+          await supabase.from('lead_notes').insert([{
+            lead_id: savedLead.id,
+            note_text: `Lead registered via Instant Lead Registration by ${activeUserName}` + (savedLead.assigned_to ? ` (Assigned to ${savedLead.assigned_to})` : ''),
+            created_by: activeUserName
+          }]);
+        } catch (noteErr) {
+          console.warn('Could not insert initial lead note:', noteErr);
+        }
+
+        // Inform parent table so user sees lead immediately at the top
+        if (onLeadAdded) {
+          onLeadAdded(savedLead);
+        }
+
+        // 🌟 Show Success Popup with Lead ID!
+        setSuccessLead(savedLead);
+      }
+
+      setIsSubmitting(false);
+    } catch (err) {
+      setIsSubmitting(false);
+      alert('Error registering lead: ' + (err.message || 'Unknown error'));
     }
   };
 
+  const getAssigneeLabel = (assignedId) => {
+    if (!assignedId) return 'Unassigned (Open Lead Pool)';
+    const m = (teamMembers || []).find(tm => tm.user_id === assignedId || tm.id === assignedId);
+    return m ? `${m.emp_name}${m.emp_department ? ` (${m.emp_department})` : ''}` : assignedId;
+  };
+
+  const inputStyle = {
+    width: '100%',
+    boxSizing: 'border-box',
+    minWidth: 0,
+    padding: '0.625rem 0.85rem',
+    borderRadius: '7px',
+    border: '1.5px solid var(--border-light, #e2e8f0)',
+    backgroundColor: 'var(--bg-surface, #ffffff)',
+    color: 'var(--text-primary, #1e293b)',
+    fontSize: '0.85rem',
+    outline: 'none',
+    transition: 'border-color 0.15s ease, box-shadow 0.15s ease'
+  };
+
+  const labelStyle = {
+    fontSize: '0.8rem',
+    fontWeight: 600,
+    color: 'var(--text-secondary, #64748b)',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.35rem',
+    marginBottom: '0.3rem'
+  };
+
+  const sectionHeadingStyle = {
+    fontSize: '0.75rem',
+    fontWeight: 700,
+    textTransform: 'uppercase',
+    letterSpacing: '0.06em',
+    color: 'var(--accent-color, #2563eb)',
+    paddingBottom: '0.4rem',
+    borderBottom: '1px solid var(--border-light, #e2e8f0)',
+    marginTop: '0.5rem',
+    marginBottom: '0.75rem',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.4rem'
+  };
+
   return (
-    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-      <div className="card" style={{ width: '100%', maxWidth: '500px', padding: '2rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '1rem' }}>
-          <h3 style={{ fontSize: '1.25rem', fontWeight: 600, color: 'var(--text-primary)' }}>Instant Client Registration</h3>
-          <button onClick={onClose} style={{ background: 'transparent', border: 'none', fontSize: '1.5rem', cursor: 'pointer', color: 'var(--text-secondary)' }}>&times;</button>
-        </div>
-        
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', maxHeight: '70vh', overflowY: 'auto', paddingRight: '0.5rem' }}>
-          
-          {/* Source & Priority */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              <label style={{ fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-secondary)' }}>Lead Source</label>
-              <select name="source" value={formData.source} onChange={handleChange} style={{ padding: '0.75rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}>
-                <option value="">Select Lead Source</option>
-                {sources.map(src => (
-                  <option key={src} value={src}>{src}</option>
-                ))}
-              </select>
+    <div 
+      style={{ 
+        position: 'fixed', 
+        inset: 0, 
+        backgroundColor: 'rgba(15, 23, 42, 0.65)', 
+        backdropFilter: 'blur(4px)',
+        WebkitBackdropFilter: 'blur(4px)',
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center', 
+        zIndex: 1050,
+        padding: '1rem',
+        boxSizing: 'border-box'
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !isSubmitting && !successLead) onClose();
+      }}
+    >
+      <div 
+        className="card" 
+        style={{ 
+          width: '100%', 
+          maxWidth: successLead ? '520px' : '740px', 
+          maxHeight: '90vh',
+          backgroundColor: 'var(--bg-surface, #ffffff)',
+          borderRadius: '14px',
+          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px var(--border-light, #e2e8f0)',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+          animation: 'modalSlideIn 0.18s ease-out',
+          transition: 'max-width 0.2s ease'
+        }}
+      >
+        {/* ================= SUCCESS VIEW POPUP (Lead ID Display) ================= */}
+        {successLead ? (
+          <div style={{ padding: '2rem 1.75rem', textAlign: 'center' }}>
+            <div style={{
+              width: '64px',
+              height: '64px',
+              borderRadius: '50%',
+              backgroundColor: '#dcfce7',
+              color: '#16a34a',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '2rem',
+              margin: '0 auto 1rem auto',
+              boxShadow: '0 8px 16px -4px rgba(22, 163, 74, 0.2)'
+            }}>
+              ✓
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              <label style={{ fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-secondary)' }}>Source Name</label>
-              <input type="text" name="source_name" value={formData.source_name} onChange={handleChange} style={{ padding: '0.75rem', borderRadius: '6px', border: '1px solid var(--border-light)' }} />
-            </div>
-          </div>
 
-          {/* Business Details */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              <label style={{ fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-secondary)' }}>Business Type</label>
-              <select name="business_type" value={formData.business_type} onChange={handleChange} style={{ padding: '0.75rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}>
-                <option value="">Select Business Type</option>
-                <option value="Dealer">Dealer</option>
-                <option value="Distributor">Distributor</option>
-                <option value="Retailer">Retailer</option>
-                <option value="Farmer">Farmer</option>
-                <option value="Trader">Trader</option>
-                <option value="Manufacturer">Manufacturer</option>
-                <option value="Service Provider">Service Provider</option>
-                <option value="Other">Other</option>
-              </select>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              <label style={{ fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-secondary)' }}>Business Name</label>
-              <input type="text" name="company" value={formData.company} onChange={handleChange} style={{ padding: '0.75rem', borderRadius: '6px', border: '1px solid var(--border-light)' }} />
-            </div>
-          </div>
-          
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              <label style={{ fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-secondary)' }}>Business Contact Number</label>
-              <input type="tel" name="business_contact_1" value={formData.business_contact_1} onChange={handleChange} style={{ padding: '0.75rem', borderRadius: '6px', border: '1px solid var(--border-light)' }} />
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              <label style={{ fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-secondary)' }}>Business Mail ID</label>
-              <input type="email" name="business_email_1" value={formData.business_email_1} onChange={handleChange} style={{ padding: '0.75rem', borderRadius: '6px', border: '1px solid var(--border-light)' }} />
-            </div>
-          </div>
+            <h3 style={{ fontSize: '1.3rem', fontWeight: 700, margin: '0 0 0.35rem 0', color: 'var(--text-primary, #0f172a)' }}>
+              Lead Registered Successfully!
+            </h3>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary, #64748b)', margin: '0 0 1.25rem 0' }}>
+              The lead has been recorded and placed at the top of your CRM pipeline.
+            </p>
 
-          {/* Contact Person Details */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              <label style={{ fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-secondary)' }}>Contact Person Name</label>
-              <input type="text" name="name" value={formData.name} onChange={handleChange} required style={{ padding: '0.75rem', borderRadius: '6px', border: '1px solid var(--border-light)' }} />
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              <label style={{ fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-secondary)' }}>Contact Person Mobile Number</label>
-              <input type="tel" name="phone" value={formData.phone} onChange={handleChange} style={{ padding: '0.75rem', borderRadius: '6px', border: '1px solid var(--border-light)' }} />
-            </div>
-          </div>
+            {/* Generated Lead ID Card with 1-Click Copy */}
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(37, 99, 235, 0.08), rgba(59, 130, 246, 0.03))',
+              border: '1.5px solid rgba(37, 99, 235, 0.25)',
+              borderRadius: '10px',
+              padding: '0.9rem 1.1rem',
+              margin: '0 auto 1.25rem auto',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '0.75rem',
+              textAlign: 'left'
+            }}>
+              <div>
+                <div style={{ fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--accent-color, #2563eb)' }}>
+                  Generated Lead ID
+                </div>
+                <div style={{ fontSize: '1.35rem', fontWeight: 800, fontFamily: 'monospace', color: 'var(--text-primary, #0f172a)', letterSpacing: '0.04em' }}>
+                  #{successLead.lead_ref_id || successLead.id}
+                </div>
+              </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            <label style={{ fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-secondary)' }}>Contact Person ID (Email)</label>
-            <input type="email" name="email" value={formData.email} onChange={handleChange} style={{ padding: '0.75rem', borderRadius: '6px', border: '1px solid var(--border-light)' }} />
-          </div>
-
-          {/* Location Details: State & District */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              <label style={{ fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-secondary)' }}>State Name</label>
-              <select 
-                name="state_name" 
-                value={formData.state_name || ''} 
-                onChange={(e) => {
-                  const newSt = e.target.value;
-                  setFormData(prev => ({ ...prev, state_name: newSt, district_name: '' }));
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard?.writeText(String(successLead.lead_ref_id || successLead.id));
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 2000);
                 }}
-                style={{ padding: '0.75rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}
+                style={{
+                  padding: '0.45rem 0.8rem',
+                  borderRadius: '7px',
+                  border: '1px solid var(--border-light, #cbd5e1)',
+                  backgroundColor: copied ? '#dcfce7' : 'var(--bg-surface, #ffffff)',
+                  color: copied ? '#16a34a' : 'var(--text-primary, #0f172a)',
+                  fontSize: '0.82rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  transition: 'all 0.15s ease'
+                }}
+                title="Copy Lead ID to clipboard"
               >
-                <option value="">Select State / UT ({INDIAN_STATES.length})</option>
-                {INDIAN_STATES.map(st => (
-                  <option key={st} value={st}>{st}</option>
-                ))}
-              </select>
+                {copied ? '✓ Copied' : '📋 Copy ID'}
+              </button>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              <label style={{ fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-secondary)' }}>District Name</label>
-              <select 
-                name="district_name" 
-                value={formData.district_name || ''} 
-                onChange={handleChange} 
-                disabled={!formData.state_name}
-                style={{ padding: '0.75rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: !formData.state_name ? 'var(--bg-secondary)' : 'var(--bg-surface)' }}
+
+            {/* Summary Grid */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: '0.65rem',
+              padding: '0.9rem',
+              backgroundColor: 'var(--bg-secondary, #f8fafc)',
+              borderRadius: '8px',
+              border: '1px solid var(--border-light, #e2e8f0)',
+              textAlign: 'left',
+              fontSize: '0.82rem',
+              marginBottom: '1.5rem'
+            }}>
+              <div>
+                <span style={{ color: 'var(--text-secondary, #64748b)', fontSize: '0.72rem', display: 'block' }}>Contact Person</span>
+                <strong style={{ color: 'var(--text-primary, #0f172a)' }}>{successLead.name || '—'}</strong>
+              </div>
+
+              <div>
+                <span style={{ color: 'var(--text-secondary, #64748b)', fontSize: '0.72rem', display: 'block' }}>Business Name</span>
+                <strong style={{ color: 'var(--text-primary, #0f172a)' }}>{successLead.company || '—'}</strong>
+              </div>
+
+              <div>
+                <span style={{ color: 'var(--text-secondary, #64748b)', fontSize: '0.72rem', display: 'block' }}>Assigned Agent</span>
+                <strong style={{ color: 'var(--accent-color, #2563eb)' }}>
+                  {getAssigneeLabel(successLead.assigned_to)}
+                </strong>
+              </div>
+
+              <div>
+                <span style={{ color: 'var(--text-secondary, #64748b)', fontSize: '0.72rem', display: 'block' }}>Lead Status</span>
+                <strong style={{ color: 'var(--text-primary, #0f172a)' }}>
+                  {successLead.status?.includes('>') ? successLead.status.split('>').pop() : successLead.status}
+                </strong>
+              </div>
+            </div>
+
+            {/* Success Actions */}
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '0.75rem' }}>
+              <button
+                type="button"
+                onClick={handleResetForm}
+                style={{
+                  padding: '0.625rem 1.25rem',
+                  borderRadius: '8px',
+                  border: '1.5px solid var(--border-light, #e2e8f0)',
+                  backgroundColor: 'var(--bg-surface, #ffffff)',
+                  color: 'var(--text-primary, #0f172a)',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
               >
-                <option value="">
-                  {formData.state_name 
-                    ? (districtsList.length > 0 ? `Select District (${districtsList.length})` : 'Select District...') 
-                    : 'Select State First'}
-                </option>
-                {districtsList.map(dt => (
-                  <option key={dt} value={dt}>{dt}</option>
-                ))}
-              </select>
-            </div>
-          </div>
+                + Add Another Lead
+              </button>
 
-          {/* Status & Priority */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              <label style={{ fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-secondary)' }}>Lead Status</label>
-                <select name="status" value={formData.status} onChange={handleChange} style={{ padding: '0.75rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}>
-                  {stages.map((stageObj, i) => {
-                    const stageNum = i + 1;
-                    const cleanStageName = stageObj.name.replace(/^\d+\s*-\s*/, '');
-                    return (
-                      <React.Fragment key={`stage-${i}`}>
-                        <option disabled style={{ fontWeight: 'bold', color: '#000' }}>{stageObj.name}</option>
-                        {stageObj.substages.map((sub, j) => {
-                          const subNum = String(j + 1).padStart(2, '0');
-                          const prefix = `${stageNum};${subNum}>${cleanStageName}>`;
-                          // if user already prefixed it, keep it, else prefix it
-                          const val = sub.startsWith(prefix) ? sub : `${prefix}${sub.includes('>') ? sub.split('>').pop() : sub}`;
-                          return <option key={val} value={val}>{val}</option>;
-                        })}
-                      </React.Fragment>
-                    );
-                  })}
-                </select>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              <label style={{ fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-secondary)' }}>Lead Priority Type</label>
-              <select name="priority" value={formData.priority} onChange={handleChange} style={{ padding: '0.75rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}>
-                <option value="">Select Priority</option>
-                {priorities.map(p => (
-                  <option key={p} value={p}>{p}</option>
-                ))}
-              </select>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={onClose}
+                style={{
+                  padding: '0.625rem 1.6rem',
+                  borderRadius: '8px',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                Done / View Table
+              </button>
             </div>
           </div>
+        ) : (
+          /* ================= MAIN REGISTRATION FORM ================= */
+          <>
+            {/* Header */}
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              alignItems: 'center', 
+              padding: '1.1rem 1.6rem',
+              borderBottom: '1px solid var(--border-light, #e2e8f0)',
+              backgroundColor: 'var(--bg-surface, #ffffff)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                <div style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '9px',
+                  backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: 'var(--accent-color, #2563eb)',
+                  fontSize: '1.15rem'
+                }}>
+                  ⚡
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '1.15rem', fontWeight: 700, margin: 0, color: 'var(--text-primary, #0f172a)' }}>
+                    Instant Lead Registration
+                  </h3>
+                  <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary, #64748b)', margin: '0.15rem 0 0 0' }}>
+                    Capture and register a new lead directly into your CRM workspace
+                  </p>
+                </div>
+              </div>
+              <button 
+                type="button"
+                onClick={onClose} 
+                disabled={isSubmitting}
+                style={{ 
+                  background: 'transparent', 
+                  border: 'none', 
+                  fontSize: '1.4rem', 
+                  cursor: isSubmitting ? 'not-allowed' : 'pointer', 
+                  color: 'var(--text-secondary, #64748b)',
+                  width: '32px',
+                  height: '32px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: '6px',
+                  transition: 'background-color 0.15s ease'
+                }}
+                title="Close"
+              >
+                &times;
+              </button>
+            </div>
+            
+            {/* Scrollable Form Body */}
+            <form 
+              onSubmit={handleSubmit} 
+              style={{ 
+                display: 'flex', 
+                flexDirection: 'column', 
+                flex: 1, 
+                minHeight: 0,
+                overflowY: 'auto',
+                overflowX: 'hidden',
+                padding: '1.25rem 1.6rem',
+                gap: '1rem',
+                boxSizing: 'border-box'
+              }}
+            >
+              {/* Section 1: Scope & Assignment */}
+              <div>
+                <div style={sectionHeadingStyle}>
+                  🏢 <span>Scope & Assignment</span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '0.85rem' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <label style={labelStyle}>Our Company / Branch</label>
+                    <select 
+                      name="our_company" 
+                      value={formData.our_company} 
+                      onChange={handleChange} 
+                      style={inputStyle}
+                    >
+                      <option value="NSMLR">NSMLR</option>
+                      <option value="NSTLP">NSTLP</option>
+                      {activeCompany && !['NSMLR', 'NSTLP'].includes(activeCompany) && (
+                        <option value={activeCompany}>{activeCompany}</option>
+                      )}
+                    </select>
+                  </div>
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '1rem' }}>
-            <button type="button" onClick={onClose} style={{ padding: '0.75rem 1.5rem', border: '1px solid var(--border-light)', borderRadius: '6px', background: 'var(--bg-surface)', cursor: 'pointer', fontWeight: 500 }}>
-              Cancel
-            </button>
-            <button type="submit" className="btn-primary" disabled={isSubmitting} style={{ padding: '0.75rem 1.5rem' }}>
-              {isSubmitting ? 'Saving...' : 'Register Lead'}
-            </button>
-          </div>
-        </form>
+                  {/* 🔍 Searchable Assign To Dropdown with Logged-in User Default */}
+                  <div style={{ minWidth: 0 }}>
+                    <label style={labelStyle}>
+                      Assign To (Agent)
+                      {defaultAssigneeId && formData.assigned_to === defaultAssigneeId && (
+                        <span style={{ 
+                          fontSize: '0.7rem', 
+                          padding: '0.1rem 0.4rem', 
+                          borderRadius: '4px', 
+                          backgroundColor: 'rgba(37, 99, 235, 0.1)', 
+                          color: 'var(--accent-color, #2563eb)',
+                          marginLeft: 'auto',
+                          fontWeight: 600
+                        }}>
+                          Default: You
+                        </span>
+                      )}
+                    </label>
+                    <SearchableAssignToDropdown
+                      value={formData.assigned_to}
+                      onChange={(newVal) => setFormData(prev => ({ ...prev, assigned_to: newVal }))}
+                      teamMembers={teamMembers}
+                      disabled={isSubmitting}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 2: Lead Source & Pipeline Status */}
+              <div>
+                <div style={sectionHeadingStyle}>
+                  📌 <span>Lead Source & Status</span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '0.85rem' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <label style={labelStyle}>Lead Source</label>
+                    <select name="source" value={formData.source} onChange={handleChange} style={inputStyle}>
+                      <option value="">Select Lead Source</option>
+                      {sources.map(src => (
+                        <option key={src} value={src}>{src}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div style={{ minWidth: 0 }}>
+                    <label style={labelStyle}>Source Name</label>
+                    <input 
+                      type="text" 
+                      name="source_name" 
+                      value={formData.source_name} 
+                      onChange={handleChange} 
+                      placeholder="e.g. Website, Campaign, Referral" 
+                      style={inputStyle} 
+                    />
+                  </div>
+
+                  <div style={{ minWidth: 0 }}>
+                    <label style={labelStyle}>Lead Status</label>
+                    <select name="status" value={formData.status} onChange={handleChange} style={inputStyle}>
+                      {stages.map((stageObj, i) => {
+                        const stageNum = i + 1;
+                        const cleanStageName = stageObj.name.replace(/^\d+\s*-\s*/, '');
+                        return (
+                          <React.Fragment key={`stage-${i}`}>
+                            <option disabled style={{ fontWeight: 'bold', color: '#64748b', background: 'var(--bg-secondary, #f1f5f9)' }}>
+                              {stageObj.name}
+                            </option>
+                            {stageObj.substages.map((sub, j) => {
+                              const subNum = String(j + 1).padStart(2, '0');
+                              const prefix = `${stageNum};${subNum}>${cleanStageName}>`;
+                              const val = sub.startsWith(prefix) ? sub : `${prefix}${sub.includes('>') ? sub.split('>').pop() : sub}`;
+                              return <option key={val} value={val}>&nbsp;&nbsp;{sub.includes('>') ? sub.split('>').pop() : sub}</option>;
+                            })}
+                          </React.Fragment>
+                        );
+                      })}
+                    </select>
+                  </div>
+
+                  <div style={{ minWidth: 0 }}>
+                    <label style={labelStyle}>Lead Priority Type</label>
+                    <select name="priority" value={formData.priority} onChange={handleChange} style={inputStyle}>
+                      <option value="">Select Priority</option>
+                      {priorities.map(p => (
+                        <option key={p} value={p}>{p}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 3: Contact Person Details */}
+              <div>
+                <div style={sectionHeadingStyle}>
+                  👤 <span>Contact Person Information</span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '0.85rem' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <label style={labelStyle}>
+                      Contact Person Name <span style={{ color: '#ef4444' }}>*</span>
+                    </label>
+                    <input 
+                      type="text" 
+                      name="name" 
+                      value={formData.name} 
+                      onChange={handleChange} 
+                      placeholder="Full name of contact person" 
+                      required 
+                      style={inputStyle} 
+                    />
+                  </div>
+
+                  <div style={{ minWidth: 0 }}>
+                    <label style={labelStyle}>Contact Mobile Number</label>
+                    <input 
+                      type="tel" 
+                      name="phone" 
+                      value={formData.phone} 
+                      onChange={handleChange} 
+                      placeholder="10-digit mobile number" 
+                      style={inputStyle} 
+                    />
+                  </div>
+
+                  <div style={{ minWidth: 0, gridColumn: '1 / -1' }}>
+                    <label style={labelStyle}>Contact Email Address</label>
+                    <input 
+                      type="email" 
+                      name="email" 
+                      value={formData.email} 
+                      onChange={handleChange} 
+                      placeholder="contact@company.com" 
+                      style={inputStyle} 
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 4: Business / Client Organization */}
+              <div>
+                <div style={sectionHeadingStyle}>
+                  💼 <span>Business / Organization Details</span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '0.85rem' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <label style={labelStyle}>Business Name</label>
+                    <input 
+                      type="text" 
+                      name="company" 
+                      value={formData.company} 
+                      onChange={handleChange} 
+                      placeholder="Company / Firm / Trading name" 
+                      style={inputStyle} 
+                    />
+                  </div>
+
+                  <div style={{ minWidth: 0 }}>
+                    <label style={labelStyle}>Business Type</label>
+                    <select name="business_type" value={formData.business_type} onChange={handleChange} style={inputStyle}>
+                      <option value="">Select Business Type</option>
+                      <option value="Dealer">Dealer</option>
+                      <option value="Distributor">Distributor</option>
+                      <option value="Retailer">Retailer</option>
+                      <option value="Farmer">Farmer</option>
+                      <option value="Trader">Trader</option>
+                      <option value="Manufacturer">Manufacturer</option>
+                      <option value="Service Provider">Service Provider</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </div>
+
+                  <div style={{ minWidth: 0 }}>
+                    <label style={labelStyle}>Business Contact Number</label>
+                    <input 
+                      type="tel" 
+                      name="business_contact_1" 
+                      value={formData.business_contact_1} 
+                      onChange={handleChange} 
+                      placeholder="Office / landline / business phone" 
+                      style={inputStyle} 
+                    />
+                  </div>
+
+                  <div style={{ minWidth: 0 }}>
+                    <label style={labelStyle}>Business Email ID</label>
+                    <input 
+                      type="email" 
+                      name="business_email_1" 
+                      value={formData.business_email_1} 
+                      onChange={handleChange} 
+                      placeholder="business@domain.com" 
+                      style={inputStyle} 
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 5: Location Details */}
+              <div>
+                <div style={sectionHeadingStyle}>
+                  📍 <span>Location Details</span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '0.85rem' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <label style={labelStyle}>State / UT</label>
+                    <select 
+                      name="state_name" 
+                      value={formData.state_name || ''} 
+                      onChange={(e) => {
+                        const newSt = e.target.value;
+                        setFormData(prev => ({ ...prev, state_name: newSt, district_name: '' }));
+                      }}
+                      style={inputStyle}
+                    >
+                      <option value="">Select State / UT ({INDIAN_STATES.length})</option>
+                      {INDIAN_STATES.map(st => (
+                        <option key={st} value={st}>{st}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div style={{ minWidth: 0 }}>
+                    <label style={labelStyle}>District Name</label>
+                    <select 
+                      name="district_name" 
+                      value={formData.district_name || ''} 
+                      onChange={handleChange} 
+                      disabled={!formData.state_name}
+                      style={{
+                        ...inputStyle,
+                        backgroundColor: !formData.state_name ? 'var(--bg-secondary, #f8fafc)' : 'var(--bg-surface, #ffffff)',
+                        cursor: !formData.state_name ? 'not-allowed' : 'default'
+                      }}
+                    >
+                      <option value="">
+                        {formData.state_name 
+                          ? (districtsList.length > 0 ? `Select District (${districtsList.length})` : 'Select District...') 
+                          : 'Select State First'}
+                      </option>
+                      {districtsList.map(dt => (
+                        <option key={dt} value={dt}>{dt}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer inside form */}
+              <div style={{ 
+                display: 'flex', 
+                justifyContent: 'flex-end', 
+                alignItems: 'center', 
+                gap: '0.85rem', 
+                marginTop: '0.75rem', 
+                paddingTop: '1rem',
+                borderTop: '1px solid var(--border-light, #e2e8f0)'
+              }}>
+                <button 
+                  type="button" 
+                  onClick={onClose} 
+                  disabled={isSubmitting}
+                  style={{ 
+                    padding: '0.625rem 1.25rem', 
+                    border: '1.5px solid var(--border-light, #e2e8f0)', 
+                    borderRadius: '8px', 
+                    background: 'var(--bg-surface, #ffffff)', 
+                    color: 'var(--text-secondary, #475569)',
+                    cursor: isSubmitting ? 'not-allowed' : 'pointer', 
+                    fontWeight: 600,
+                    fontSize: '0.85rem'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  className="btn-primary" 
+                  disabled={isSubmitting} 
+                  style={{ 
+                    padding: '0.625rem 1.5rem',
+                    borderRadius: '8px',
+                    fontWeight: 600,
+                    fontSize: '0.85rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    cursor: isSubmitting ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  {isSubmitting ? (
+                    <>
+                      <span style={{ display: 'inline-block', width: '12px', height: '12px', border: '2px solid #ffffff', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.6s linear infinite' }}></span>
+                      Registering Lead...
+                    </>
+                  ) : (
+                    'Register Lead'
+                  )}
+                </button>
+              </div>
+            </form>
+          </>
+        )}
       </div>
     </div>
   );
 }
+
