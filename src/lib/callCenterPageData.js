@@ -59,11 +59,17 @@ export const employeeLabel = (agent, users) => {
 };
 
 export function pageParameters(params) {
-  const limit = Math.min(100, Math.max(1, Number.parseInt(params.get('limit') || '25', 10) || 25));
-  const offset = Math.max(0, Math.min(10000000, Number.parseInt(params.get('offset') || '0', 10) || 0));
+  const rawLimit = params.get('limit');
+  const isAll = String(rawLimit || '').toLowerCase() === 'all';
+  const limit = isAll
+    ? 10000
+    : Math.min(1000, Math.max(1, Number.parseInt(rawLimit || '25', 10) || 25));
+  const offset = isAll
+    ? 0
+    : Math.max(0, Math.min(10000000, Number.parseInt(params.get('offset') || '0', 10) || 0));
   // Keep PostgREST filter syntax out of user search text.
   const search = String(params.get('search') || '').replace(/[,().%_*\\]/g, ' ').trim().slice(0, 120);
-  return { limit, offset, search };
+  return { limit, offset, search, isAll };
 }
 
 export async function readPageCalls(context, params, agents, users = []) {

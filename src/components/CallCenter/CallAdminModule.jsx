@@ -1571,7 +1571,10 @@ function TabCallLogs({ scope = '', userCompany = '', tenantId = null }) {
   const fetchLogs = useCallback(async (src, pg, pSize, preset, cStart, cEnd, term = '') => {
     const request = ++logsRequest.current;
     const { startDate, endDate } = getISTDateRange(preset, cStart, cEnd);
-    const q = new URLSearchParams({ source: src, limit: String(pSize), offset: String(pg * pSize), company: userCompany,
+    const isAll = String(pSize).toLowerCase() === 'all';
+    const limitParam = isAll ? 'all' : String(pSize);
+    const offsetParam = isAll ? '0' : String(pg * (Number(pSize) || 25));
+    const q = new URLSearchParams({ source: src, limit: limitParam, offset: offsetParam, company: userCompany,
       tenant_id: tenantId || '', start_date: startDate, end_date: endDate, search: src === 'db' ? term : '', viewer: scope });
     const cacheKey = `logs:${q}`;
     const cached = readViewCache(scope, cacheKey);
@@ -1581,7 +1584,8 @@ function TabCallLogs({ scope = '', userCompany = '', tenantId = null }) {
       const data = await fetchPageData(`/api/plivo/admin/call-logs?${q}`);
       if (request !== logsRequest.current) return;
       setCalls(data.calls || []); setTotal(data.total || 0); setHasMore(Boolean(data.hasMore)); writeViewCache(scope, cacheKey, data);
-      const last = Math.max(0, Math.ceil((data.total || 0) / pSize) - 1);
+      const effectiveSize = isAll ? Math.max(1, data.total || 0) : (Number(pSize) || 25);
+      const last = Math.max(0, Math.ceil((data.total || 0) / effectiveSize) - 1);
       if (pg > last) setPage(last);
     } catch (error) {
       if (request !== logsRequest.current) return;

@@ -20,7 +20,7 @@ export async function GET(req) {
     const config = await getWorkspaceTelephonyConfig(context.company, context.tenantId);
     // Preserve the existing restriction on raw provider CDR access.
     if (!config.isSwan) return NextResponse.json({ calls: [], total: 0 }, { headers: privateHeaders });
-    const { limit, offset } = pageParameters(params);
+    const { limit, offset, isAll } = pageParameters(params);
 
     const startUtc = toPlivoUtcTimestamp(params.get('start_date'));
     const endUtc = toPlivoUtcTimestamp(params.get('end_date'));
@@ -28,9 +28,9 @@ export async function GET(req) {
     const authHeader = `Basic ${Buffer.from(`${config.authId}:${config.authToken}`).toString('base64')}`;
 
     // Plivo caps each request to maximum 20 records.
-    // Paginate in chunks of up to 20 to fulfill the requested page size (e.g. 25, 50, 100).
+    // Paginate in chunks of up to 20 to fulfill the requested page size (e.g. 25, 50, 100, or up to 500 for 'All').
     const maxChunk = 20;
-    let remaining = limit;
+    let remaining = isAll ? 500 : limit;
     let currentOffset = offset;
     let allCalls = [];
     let hasMore = false;
