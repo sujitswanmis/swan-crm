@@ -2903,12 +2903,14 @@ export default function ClientRegistration({
                       <option value="">-- Select Company / Branch --</option>
                       {availableBranches.length > 0 ? (
                         availableBranches.map(br => {
-                          const optVal = br.legacy_code && ['NSMLR', 'NSTLP', 'NSTL'].includes(br.legacy_code) 
-                            ? (br.legacy_code === 'NSTL' ? 'NSTLP' : br.legacy_code)
-                            : (br.legacy_code === 'NEW_SWAN_GROUP' ? 'New Swan Group' : (br.branch_name || br.company));
-                          const codeBadge = br.branch_code ? ` (${br.branch_code})` : '';
-                          const typeBadge = br.location_type ? ` - ${br.location_type}` : '';
-                          const optLabel = `${br.branch_name}${codeBadge}${typeBadge}`;
+                          const cleanName = br.legacy_code === 'NEW_SWAN_GROUP' || br.branch_name?.toLowerCase().includes('new swan group')
+                            ? 'New Swan Group'
+                            : (br.legacy_code && ['NSMLR', 'NSTLP', 'NSTL'].includes(br.legacy_code)
+                                ? (br.legacy_code === 'NSTL' ? 'NSTLP' : br.legacy_code)
+                                : (br.branch_name?.toLowerCase().includes('supuja') ? 'SuPuja Creations' : (br.branch_name || br.company)));
+                          const optVal = cleanName;
+                          const isAdminUser = userRole === 'admin' || userRole === 'Admin' || userRole === 'master_admin';
+                          const optLabel = isAdminUser && br.branch_code ? `${cleanName} (${br.branch_code})` : cleanName;
                           return (
                             <option key={br.id || br.branch_code} value={optVal}>
                               {optLabel}
@@ -2918,9 +2920,9 @@ export default function ClientRegistration({
                       ) : (
                         isSwanWorkspace ? (
                           <>
-                            <option value="NSMLR">NSMLR (TNT00002-B0002) - Manufacturing Unit</option>
-                            <option value="NSTLP">NSTLP (TNT00002-B0003) - Plant 2</option>
-                            <option value="New Swan Group">New Swan Group (TNT00002-B0001) - Headquarters</option>
+                            <option value="NSMLR">NSMLR{(userRole === 'admin' || userRole === 'Admin' || userRole === 'master_admin') ? ' (TNT00002-B0002)' : ''}</option>
+                            <option value="NSTLP">NSTLP{(userRole === 'admin' || userRole === 'Admin' || userRole === 'master_admin') ? ' (TNT00002-B0003)' : ''}</option>
+                            <option value="New Swan Group">New Swan Group{(userRole === 'admin' || userRole === 'Admin' || userRole === 'master_admin') ? ' (TNT00002-B0001)' : ''}</option>
                           </>
                         ) : (
                           <option value={userCompany || 'Client Workspace'}>{userCompany || 'Client Workspace'}</option>
