@@ -1104,20 +1104,30 @@ export default function ClientRegistration({
           ...ALL_CONTACT_KEYS
         ].join(', ');
 
-        const { data, error } = await supabase
+        const selfId = currentDraftId || formData.id;
+        let dupQuery = supabase
           .from('leads')
           .select(selectQuery)
-          .or(filters.join(','))
-          .limit(1);
+          .or(filters.join(','));
+
+        // Exclude the current editing draft/record so it never masks real duplicates
+        if (selfId) {
+          dupQuery = dupQuery.neq('id', selfId);
+        }
+
+        const { data, error } = await dupQuery.limit(10);
 
         if (!error && data && data.length > 0) {
-          const match = data[0];
-          // If match is the current editing draft itself, skip duplicate alert
-          if ((currentDraftId && match.id === currentDraftId) || (formData.id && match.id === formData.id)) {
+          const validMatches = data.filter(m => !selfId || m.id !== selfId);
+          if (validMatches.length === 0) {
             setDuplicateInfo(null);
             setIsCheckingDuplicate(false);
             return;
           }
+
+          // Prioritize registered leads over other drafts for prominent warning
+          const registeredMatch = validMatches.find(m => m.status !== 'DRAFT');
+          const match = registeredMatch || validMatches[0];
 
           let matchedOn = 'Contact Number';
           let matchVal = enteredNumbers[0]?.val || '';
@@ -1200,7 +1210,7 @@ export default function ClientRegistration({
     formData.business_contact_1, formData.business_contact_2, formData.business_alt_1, formData.business_alt_2,
     formData.cp2_mobile_1, formData.cp2_mobile_2, formData.cp2_alt_1, formData.cp2_alt_2,
     formData.cp3_mobile_1, formData.cp3_mobile_2, formData.cp3_alt_1, formData.cp3_alt_2,
-    formData.business_gst, isEditMode, supabase, teamMembers
+    formData.business_gst, isEditMode, supabase, teamMembers, currentDraftId, formData.id
   ]);
 
   const toggleSection = (section) => {
@@ -1217,7 +1227,7 @@ export default function ClientRegistration({
     // Guard against submitting duplicates without confirmation
     if (!isEditMode && duplicateInfo) {
       const proceed = window.confirm(
-        `⚠️ Duplicate Client Alert!\n\nA client with matching ${duplicateInfo.matchedOn} (${duplicateInfo.matchVal}) is already registered:\n\n• Company: ${duplicateInfo.company || 'N/A'}\n• Name: ${duplicateInfo.name || 'N/A'}\n• Lead ID: #${duplicateInfo.lead_ref_id || duplicateInfo.id}\n• Status: ${duplicateInfo.status || 'New'}\n• Created By: ${duplicateInfo.created_by}\n• Entry By: ${duplicateInfo.entry_by}\n• Assigned To: ${duplicateInfo.assigned_to}\n\nDo you still want to register this duplicate client?`
+        `⚠️ Duplicate Lead Alert!\n\nA lead with matching ${duplicateInfo.matchedOn} (${duplicateInfo.matchVal}) is already registered:\n\n• Company: ${duplicateInfo.company || 'N/A'}\n• Name: ${duplicateInfo.name || 'N/A'}\n• Lead ID: #${duplicateInfo.lead_ref_id || duplicateInfo.id}\n• Status: ${duplicateInfo.status || 'New'}\n• Created By: ${duplicateInfo.created_by}\n• Entry By: ${duplicateInfo.entry_by}\n• Assigned To: ${duplicateInfo.assigned_to}\n\nDo you still want to register this duplicate lead?`
       );
       if (!proceed) {
         return;
@@ -2611,7 +2621,7 @@ export default function ClientRegistration({
                     cursor: 'pointer'
                   }}
                 >
-                  Fill Client Registration Form
+                  Fill Lead Registration Form
                 </button>
               </div>
             ) : (
@@ -2620,7 +2630,7 @@ export default function ClientRegistration({
                   <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.88rem' }}>
                     <thead>
                       <tr style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
-                        <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Business / Client Name</th>
+                        <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Business / Lead Name</th>
                         <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Contact Person &amp; Phone</th>
                         <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>City / State</th>
                         <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Missing Information</th>
@@ -2862,7 +2872,7 @@ export default function ClientRegistration({
             <AlertTriangle size={22} color={duplicateInfo.isRegisteredReport ? '#be123c' : '#ef4444'} style={{ flexShrink: 0, marginTop: '2px' }} />
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 800, fontSize: '0.94rem', color: duplicateInfo.isRegisteredReport ? '#9f1239' : '#b91c1c', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                <span>{duplicateInfo.isRegisteredReport ? '🚨 ALREADY REGISTERED IN LEAD REGISTERED REPORT!' : '⚠️ Duplicate Client Found in Database!'}</span>
+                <span>{duplicateInfo.isRegisteredReport ? '🚨 ALREADY REGISTERED IN LEAD REGISTERED REPORT!' : '⚠️ Duplicate Lead Found in Database!'}</span>
                 {duplicateInfo.lead_ref_id && (
                   <span style={{ fontSize: '0.78rem', padding: '0.12rem 0.5rem', borderRadius: '4px', backgroundColor: duplicateInfo.isRegisteredReport ? '#fee2e2' : '#fee2e2', color: duplicateInfo.isRegisteredReport ? '#9f1239' : '#991b1b', fontFamily: 'monospace', fontWeight: 700 }}>
                     #{duplicateInfo.lead_ref_id}
@@ -2870,7 +2880,7 @@ export default function ClientRegistration({
                 )}
               </div>
               <div style={{ fontSize: '0.86rem', color: 'var(--text-primary)', marginTop: '0.35rem', lineHeight: '1.4' }}>
-                A client with matching <strong>{duplicateInfo.matchedOn}</strong> (<code>{duplicateInfo.matchVal}</code>) {duplicateInfo.isRegisteredReport ? 'is ALREADY actively registered in Lead Registered Report as' : 'already exists as'} <strong>{duplicateInfo.company || duplicateInfo.name || 'Unnamed Client'}</strong> {duplicateInfo.name && duplicateInfo.company && `(${duplicateInfo.name})`} with Status: <strong style={{ color: duplicateInfo.isRegisteredReport ? '#be123c' : 'inherit' }}>{duplicateInfo.status || 'Active'}</strong>.
+                A lead with matching <strong>{duplicateInfo.matchedOn}</strong> (<code>{duplicateInfo.matchVal}</code>) {duplicateInfo.isRegisteredReport ? 'is ALREADY actively registered in Lead Registered Report as' : 'already exists as'} <strong>{duplicateInfo.company || duplicateInfo.name || 'Unnamed Lead'}</strong> {duplicateInfo.name && duplicateInfo.company && `(${duplicateInfo.name})`} with Status: <strong style={{ color: duplicateInfo.isRegisteredReport ? '#be123c' : 'inherit' }}>{duplicateInfo.status || 'Active'}</strong>.
               </div>
 
               {/* Ownership & Assignment Meta Badges */}
