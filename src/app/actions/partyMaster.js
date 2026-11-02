@@ -1083,10 +1083,22 @@ export async function saveTeamAssignments(partyId, assignments, tenantId = DEFAU
     await adminClient.from('party_team_assignments').delete().eq('party_id', partyId);
 
     if (assignments && assignments.length > 0) {
+      // Validate employee_ids against employees table to avoid legacy foreign key constraint violations
+      const empIds = assignments.map(a => a.employee_id).filter(Boolean);
+      let validEmpIdSet = new Set();
+      if (empIds.length > 0) {
+        try {
+          const { data: validEmps } = await adminClient.from('employees').select('id').in('id', empIds);
+          if (validEmps) validEmps.forEach(e => validEmpIdSet.add(e.id));
+        } catch (e) {
+          // ignore lookup error
+        }
+      }
+
       const records = assignments.map(a => ({
         tenant_id: tenantId,
         party_id: partyId,
-        employee_id: a.employee_id,
+        employee_id: (a.employee_id && validEmpIdSet.has(a.employee_id)) ? a.employee_id : null,
         employee_name: a.employee_name,
         role_in_party: a.role_in_party,
         assignment_type: a.assignment_type || 'Primary',
