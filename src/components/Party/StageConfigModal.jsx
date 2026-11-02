@@ -25,7 +25,8 @@ export const ALL_CLIENT_TEAM_ROLES = [
   { id: 'Sales Executive', label: 'Sales Executive (TSE / Field Rep)' },
   { id: 'Telecaller', label: 'Telecaller (Order Taking & Followup)' },
   { id: 'Sales Coordinator', label: 'Sales Coordinator (Backend Desk)' },
-  { id: 'CRM', label: 'CRM (Relationship Manager)' }
+  { id: 'CRM', label: 'CRM (Relationship Manager)' },
+  { id: 'Service Person', label: 'Service Person (Service & Technical Support)' }
 ];
 
 export const B2B_OPERATIONAL_STATUSES = [
@@ -881,7 +882,7 @@ export default function StageConfigModal({
     s04: 'Sub-Dealer Registration (Level 3 Retail Counter)',
     s05: 'Commercial Security Details & Billing Route',
     s06: 'Product Authorization & Territory Allocation',
-    s07: 'Sales Team Assignment (7 Dedicated Roles)',
+    s07: 'Sales & Service Team Assignment (8 Dedicated Roles)',
     s08: 'Partner Activation & Final Status Desk'
   };
 
@@ -2527,7 +2528,7 @@ export default function StageConfigModal({
               {activeTab === 's07' && (
                 <form onSubmit={handleS06TeamSubmit}>
                   <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '1.25rem' }}>
-                    Assign dedicated personnel for all 7 organizational roles. Type or pick multiple persons as chips.
+                    Assign dedicated personnel for all 8 organizational roles. Type or pick multiple persons as chips.
                   </p>
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(310px, 1fr))', gap: '1rem', fontSize: '0.86rem' }}>
@@ -2559,7 +2560,7 @@ export default function StageConfigModal({
                   <StageActionButtons
                     onClose={onClose}
                     onSave={(e, mode) => handleS06TeamSubmit(e, mode)}
-                    stageLabel="S07 Sales Team"
+                    stageLabel="S07 Sales & Service Team"
                     cancelBtnStyle={cancelBtnStyle}
                     submitBtnStyle={submitBtnStyle}
                     customColor={currentTheme.gradient}
@@ -2604,7 +2605,7 @@ export default function StageConfigModal({
                         <CheckCircle2 size={16} color="#16a34a" /> S06 Product Authorizations &amp; Territory
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-primary, #0f172a)' }}>
-                        <CheckCircle2 size={16} color="#16a34a" /> S07 Sales Team (7 Dedicated Roles)
+                        <CheckCircle2 size={16} color="#16a34a" /> S07 Sales &amp; Service Team (8 Dedicated Roles)
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-primary, #0f172a)' }}>
                         <ShieldCheck size={16} color="#0891b2" /> Indian Standard Time (IST) Audit Logging

@@ -83,12 +83,12 @@ const STAGE_CONFIGS = {
     badge: 'STAGE S07',
     badgeColor: '#a78bfa',
     badgeBg: 'rgba(167,139,250,0.15)',
-    title: 'S07 Sales Team Assignment Pipeline (7 Dedicated Roles)',
-    desc: 'Assign dedicated company personnel across 7 roles (NSM, RSM, ASM, Telecaller, Order Booking, CRM).',
+    title: 'S07 Sales & Service Team Assignment Pipeline (8 Dedicated Roles)',
+    desc: 'Assign dedicated company personnel across 8 roles (NSM, RSM, ASM, Sales Executive, Telecaller, Sales Coordinator, CRM, Service Person).',
     filterTiers: null,
     isEligible: (app) => Boolean(app.s06),
     checkApproval: (app) => app.s07,
-    col5Title: 'Assigned Sales Staff & Roles'
+    col5Title: 'Assigned Sales & Service Personnel'
   },
   s08: {
     badge: 'STAGE S08',
@@ -558,17 +558,46 @@ export default function StageDataTable({
     }
 
     if (stageId === 's07') {
-      const staffCount = party.team_assignments?.length || 0;
-      const roles = (party.team_assignments || []).map(a => a.role_in_party).filter(Boolean);
-      const uniqueRoles = [...new Set(roles)];
+      const assignments = party.team_assignments || [];
+      const staffCount = assignments.length;
       return (
         <div>
-          <div style={{ fontWeight: 700, color: staffCount > 0 ? '#a78bfa' : '#fbbf24' }}>
-            👥 {staffCount > 0 ? `${staffCount} Staff Assigned` : '⚠️ Staff Pending'}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.2rem' }}>
+            <span style={{
+              fontSize: '0.74rem',
+              fontWeight: 800,
+              padding: '0.15rem 0.5rem',
+              borderRadius: '4px',
+              background: staffCount > 0 ? 'rgba(167, 139, 250, 0.18)' : 'rgba(245, 158, 11, 0.18)',
+              color: staffCount > 0 ? '#a78bfa' : '#fbbf24',
+              border: `1px solid ${staffCount > 0 ? 'rgba(167, 139, 250, 0.35)' : 'rgba(245, 158, 11, 0.35)'}`
+            }}>
+              👥 {staffCount > 0 ? `${staffCount} Personnel Assigned` : '⚠️ Personnel Pending'}
+            </span>
           </div>
-          <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
-            {uniqueRoles.length > 0 ? uniqueRoles.slice(0, 3).join(', ') + (uniqueRoles.length > 3 ? '...' : '') : 'No role mapping'}
-          </div>
+          {staffCount > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', marginTop: '0.25rem' }}>
+              {assignments.slice(0, 3).map((a, i) => (
+                <div key={i} style={{ fontSize: '0.74rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                  <span style={{ fontWeight: 700, color: '#a78bfa', fontSize: '0.68rem', background: 'rgba(167,139,250,0.12)', padding: '0.05rem 0.35rem', borderRadius: '3px' }}>
+                    {a.role_in_party}:
+                  </span>
+                  <span style={{ color: 'var(--text-secondary, #64748b)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '180px' }} title={a.employee_name}>
+                    {a.employee_name}
+                  </span>
+                </div>
+              ))}
+              {assignments.length > 3 && (
+                <div style={{ fontSize: '0.68rem', color: '#94a3b8', fontStyle: 'italic' }}>
+                  +{assignments.length - 3} more assigned
+                </div>
+              )}
+            </div>
+          ) : (
+            <div style={{ fontSize: '0.72rem', color: '#94a3b8', fontStyle: 'italic' }}>
+              Click S07 to assign team
+            </div>
+          )}
         </div>
       );
     }

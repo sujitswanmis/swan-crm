@@ -62,7 +62,8 @@ const ALL_CLIENT_TEAM_ROLES = [
   { id: 'Sales Executive', label: 'Sales Executive (TSE / Field Rep)' },
   { id: 'Telecaller', label: 'Telecaller (Order Taking & Followup)' },
   { id: 'Sales Coordinator', label: 'Sales Coordinator (Backend Desk)' },
-  { id: 'CRM', label: 'CRM (Relationship Manager)' }
+  { id: 'CRM', label: 'CRM (Relationship Manager)' },
+  { id: 'Service Person', label: 'Service Person (Service & Technical Support)' }
 ];
 
 /**
@@ -423,7 +424,7 @@ export default function PartyMasterModule({
     territory_type: 'Exclusive'
   });
 
-  // S06 Team Assignments (All 7 Roles Supported with Multi-Employee Chips)
+  // S07 Team Assignments (All 8 Roles Supported with Multi-Employee Chips)
   const [s06TeamMap, setS06TeamMap] = useState({
     NSM: [],
     RSM: [],
@@ -431,7 +432,8 @@ export default function PartyMasterModule({
     'Sales Executive': [],
     Telecaller: [],
     'Sales Coordinator': [],
-    CRM: []
+    CRM: [],
+    'Service Person': []
   });
 
   const [activationErrors, setActivationErrors] = useState([]);
@@ -1691,16 +1693,36 @@ export default function PartyMasterModule({
     }
     if (party.team_assignments && party.team_assignments.length > 0) {
       const newTeamMap = {
-        NSM: [], RSM: [], ASM: [],
-        ORDER_BOOKING: [], POST_ORDER: [],
-        MONTHLY_RELATIONSHIP: [], COMPLAINT_OFFICER: []
+        NSM: [],
+        RSM: [],
+        ASM: [],
+        'Sales Executive': [],
+        Telecaller: [],
+        'Sales Coordinator': [],
+        CRM: [],
+        'Service Person': []
       };
       party.team_assignments.forEach(a => {
-        if (newTeamMap[a.role_in_party]) {
-          newTeamMap[a.role_in_party].push(a.employee_name);
+        const roleKey = a.role_in_party;
+        if (!newTeamMap[roleKey]) {
+          newTeamMap[roleKey] = [];
+        }
+        if (a.employee_name && !newTeamMap[roleKey].includes(a.employee_name)) {
+          newTeamMap[roleKey].push(a.employee_name);
         }
       });
-      setS06TeamMap(prev => ({ ...prev, ...newTeamMap }));
+      setS06TeamMap(newTeamMap);
+    } else {
+      setS06TeamMap({
+        NSM: [],
+        RSM: [],
+        ASM: [],
+        'Sales Executive': [],
+        Telecaller: [],
+        'Sales Coordinator': [],
+        CRM: [],
+        'Service Person': []
+      });
     }
 
     if (party.territory_allocations && party.territory_allocations.length > 0) {
@@ -2693,7 +2715,7 @@ export default function PartyMasterModule({
                       },
                       { id: 's05', label: 'S05', title: 'Commercial & Security Terms', done: app.s05 },
                       { id: 's06', label: 'S06', title: 'Product & Territory Allocation', done: app.s06 },
-                      { id: 's07', label: 'S07', title: 'Sales Team Assignment', done: app.s07 },
+                      { id: 's07', label: 'S07', title: 'Sales & Service Team Assignment', done: app.s07 },
                       { id: 's08', label: 'S08', title: 'Final Partner Activation', done: app.s08 }
                     ];
 
@@ -5746,10 +5768,10 @@ export default function PartyMasterModule({
 
             </div>
 
-            {/* 7. DEDICATED SWAN SALES & SUPPORT TEAM (ALL 7 ROLES) */}
+            {/* 7. DEDICATED SWAN SALES & SERVICE TEAM (ALL 8 ROLES) */}
             <div style={{ background: '#131e36', padding: '1.25rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.08)' }}>
               <div style={{ fontSize: '0.86rem', fontWeight: 800, color: '#a78bfa', marginBottom: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                <Users size={16} /> Dedicated Swan Company Personnel (7 Assigned Roles)
+                <Users size={16} /> Dedicated Swan Company Personnel (8 Assigned Roles)
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.75rem' }}>
                 {ALL_CLIENT_TEAM_ROLES.map(role => {

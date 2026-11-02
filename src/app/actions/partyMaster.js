@@ -1114,7 +1114,7 @@ export async function saveTeamAssignments(partyId, assignments, tenantId = DEFAU
     status: actionType,
     emp_name: empName,
     timestamp: istTime,
-    step_name: 'Sales Team Assignment'
+    step_name: 'Sales & Service Team Assignment'
   };
 
   await updatePartyMeta(adminClient, partyId, {
