@@ -403,6 +403,7 @@ export async function performCheckOutWithOutput(payload) {
       order_pipeline_stage = null,
       complaint_ticket_stage = null,
       outcome_status = 'COMPLETED',
+      work_outcome = 'WORK_DONE',
       order_value = 0,
       payment_collected = 0,
       payment_mode = null,
@@ -468,7 +469,7 @@ export async function performCheckOutWithOutput(payload) {
       return { success: false, error: subError.message };
     }
 
-    // 2. Mark field_task as completed if linked
+    // 2. Update field_task status (Completed or Rescheduled for incomplete work)
     let complaintTicketId = null;
     if (taskId) {
       const { data: existingTask } = await supabase
@@ -481,16 +482,30 @@ export async function performCheckOutWithOutput(payload) {
         complaintTicketId = existingTask.form_details.ticket_id;
       }
 
-      await supabase
-        .from('field_tasks')
-        .update({
-          status: 'COMPLETED',
-          updated_at: checkOutTime
-        })
-        .eq('id', taskId);
+      if (work_outcome === 'WORK_INCOMPLETE') {
+        // Task remains active for the next scheduled visit
+        await supabase
+          .from('field_tasks')
+          .update({
+            status: 'SCHEDULED',
+            scheduled_start_time: next_followup_at || checkOutTime,
+            updated_at: checkOutTime,
+            notes: `Previous visit completed on ${checkOutTime}. Follow-up scheduled: ${discussion_notes || ''}`
+          })
+          .eq('id', taskId);
+      } else {
+        await supabase
+          .from('field_tasks')
+          .update({
+            status: 'COMPLETED',
+            actual_end_time: checkOutTime,
+            updated_at: checkOutTime
+          })
+          .eq('id', taskId);
+      }
     }
 
-    // 2.1 Auto-Advance Complaint Ticket to C04 if linked
+    // 2.1 Sequential Complaint Ticket Progression (C04 Job Card -> C05 Sign-off)
     if (complaintTicketId) {
       try {
         const { data: ticket } = await supabase
@@ -500,36 +515,91 @@ export async function performCheckOutWithOutput(payload) {
           .single();
 
         if (ticket) {
-          const historyEntry = {
-            stage_id: 'C04',
-            stage_name: 'On-Site Execution & Digital Job Card',
-            stage_color: '#06b6d4',
-            executed_at: checkOutTime,
-            executed_by: 'Field Service Engineer',
-            notes: discussion_notes || 'On-site execution completed by field service engineer.',
-            metadata: {
-              job_card_no: cheque_utr_no || `JC-${Math.floor(1000 + Math.random() * 9000)}`,
-              photos: photo_watermark_urls,
-              customer_signature_url,
-              duration_minutes: durationMinutes,
-              check_in_time,
-              check_out_time: checkOutTime
-            }
-          };
-
-          const updatedHistory = Array.isArray(ticket.stage_history) ? [...ticket.stage_history, historyEntry] : [historyEntry];
-
-          await supabase
-            .from('party_complaints')
-            .update({
+          if (work_outcome === 'WORK_INCOMPLETE') {
+            // Incomplete on-site visit: stays at C04 (In Progress), scheduled for next visit
+            const historyEntry = {
               stage_id: 'C04',
-              ticket_status: 'ACTION_TAKEN',
-              action_taken_type: 'On-Site Visit & Job Card Completed',
-              action_notes: discussion_notes || 'On-site execution completed.',
-              stage_history: updatedHistory,
-              updated_at: checkOutTime
-            })
-            .eq('id', complaintTicketId);
+              stage_name: 'On-Site Execution & Digital Job Card',
+              stage_color: '#f59e0b',
+              executed_at: checkOutTime,
+              executed_by: 'Field Service Engineer',
+              notes: `[Work Incomplete / Follow-up Needed] ${discussion_notes || 'Visit executed, follow-up required.'}. Next visit scheduled: ${next_followup_at || 'Pending'}`,
+              metadata: {
+                work_status: 'INCOMPLETE',
+                next_followup_at,
+                job_card_no: cheque_utr_no || `JC-${Math.floor(1000 + Math.random() * 9000)}`,
+                photos: photo_watermark_urls,
+                customer_signature_url,
+                duration_minutes: durationMinutes,
+                check_in_time,
+                check_out_time: checkOutTime
+              }
+            };
+
+            const updatedHistory = Array.isArray(ticket.stage_history) ? [...ticket.stage_history, historyEntry] : [historyEntry];
+
+            await supabase
+              .from('party_complaints')
+              .update({
+                stage_id: 'C04',
+                ticket_status: 'IN_PROGRESS',
+                action_taken_type: 'On-Site Visit Done (Incomplete - Follow-up Scheduled)',
+                action_notes: discussion_notes || 'On-site visit executed, work incomplete.',
+                scheduled_visit_date: next_followup_at,
+                stage_history: updatedHistory,
+                updated_at: checkOutTime
+              })
+              .eq('id', complaintTicketId);
+          } else {
+            // Work Completed! Advance C04 (Job Card) and C05 (Customer Sign-off captured)
+            const c04Entry = {
+              stage_id: 'C04',
+              stage_name: 'On-Site Execution & Digital Job Card',
+              stage_color: '#06b6d4',
+              executed_at: checkOutTime,
+              executed_by: 'Field Service Engineer',
+              notes: discussion_notes || 'On-site execution completed successfully by field service engineer.',
+              metadata: {
+                work_status: 'COMPLETED',
+                job_card_no: cheque_utr_no || `JC-${Math.floor(1000 + Math.random() * 9000)}`,
+                photos: photo_watermark_urls,
+                duration_minutes: durationMinutes,
+                check_in_time,
+                check_out_time: checkOutTime
+              }
+            };
+
+            const c05Entry = {
+              stage_id: 'C05',
+              stage_name: 'Customer OTP Verification & Sign-off',
+              stage_color: '#10b981',
+              executed_at: checkOutTime,
+              executed_by: 'Customer / Field Engineer',
+              notes: 'Customer digital signature captured on-site upon work completion.',
+              metadata: {
+                customer_signature_url,
+                verified_at: checkOutTime
+              }
+            };
+
+            const updatedHistory = Array.isArray(ticket.stage_history)
+              ? [...ticket.stage_history, c04Entry, c05Entry]
+              : [c04Entry, c05Entry];
+
+            await supabase
+              .from('party_complaints')
+              .update({
+                stage_id: 'C05', // Advanced to C05! Ready for Service Manager / QA to do C06 Closure.
+                ticket_status: 'ACTION_TAKEN',
+                action_taken_type: 'On-Site Visit & Job Card Completed (Sign-off captured)',
+                action_reference_no: cheque_utr_no || `JC-${Math.floor(1000 + Math.random() * 9000)}`,
+                action_notes: discussion_notes || 'On-site execution completed.',
+                closure_otp: customer_signature_url ? 'DIGITAL_SIGNATURE_VERIFIED' : 'ON_SITE_VERIFIED',
+                stage_history: updatedHistory,
+                updated_at: checkOutTime
+              })
+              .eq('id', complaintTicketId);
+          }
         }
       } catch (compErr) {
         console.error('Failed to auto-update complaint ticket on checkout:', compErr);

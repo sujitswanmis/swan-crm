@@ -798,11 +798,11 @@
       "userId": "07fa35d3-f50a-4e41-ae15-b2692e393ea0",
       "email": "admin@newswangroup.com",
       "empName": "New Swan Admin",
-      "activeSeconds": 2385,
-      "idleSeconds": 16098,
+      "activeSeconds": 4064,
+      "idleSeconds": 29076,
       "firstSeen": "2026-11-02T18:30:35.799174+00:00",
-      "lastSeen": "2026-11-03T09:21:20.933Z",
-      "status": "away",
+      "lastSeen": "2026-11-03T13:27:57.515Z",
+      "status": "working",
       "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36"
     }
   }

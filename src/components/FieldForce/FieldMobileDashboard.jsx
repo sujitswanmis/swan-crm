@@ -129,7 +129,8 @@ export default function FieldMobileDashboard({
   // Output form inputs
   const [leadStage, setLeadStage] = useState('2;01>Contact Stage>Contacted');
   const [orderDeliveryStage, setOrderDeliveryStage] = useState('S01 - Order Confirmation');
-  const [complaintStage, setComplaintStage] = useState('C01 - Ticket Logged & Triaged');
+  const [complaintStage, setComplaintStage] = useState('C04 - On-Site Execution & Digital Job Card');
+  const [workOutcome, setWorkOutcome] = useState('WORK_DONE'); // 'WORK_DONE' or 'WORK_INCOMPLETE'
   const [outcomeStatus, setOutcomeStatus] = useState('FOLLOWUP_REQUIRED');
   const [orderValue, setOrderValue] = useState('');
   const [paymentCollected, setPaymentCollected] = useState('');
@@ -202,6 +203,7 @@ export default function FieldMobileDashboard({
           if (session.leadStage) setLeadStage(session.leadStage);
           if (session.orderDeliveryStage) setOrderDeliveryStage(session.orderDeliveryStage);
           if (session.complaintStage) setComplaintStage(session.complaintStage);
+          if (session.workOutcome) setWorkOutcome(session.workOutcome);
 
           const diffMs = new Date() - new Date(session.activeCheckInTime);
           setElapsedMinutes(Math.max(1, Math.floor(diffMs / 60000)));
@@ -228,6 +230,13 @@ export default function FieldMobileDashboard({
           setSelectedTask({ id: task.id });
           setActiveTab('ACTIVE_VISIT');
 
+          const isComplaintTask = task.task_type && task.task_type.includes('Complaint');
+          const resolvedPipeline = task.lead_id ? 'LEAD_DATA' : (isComplaintTask ? 'COMPLAINT_SERVICE' : 'ORDER_DELIVERY');
+          setActivePipeline(resolvedPipeline);
+          if (isComplaintTask) {
+            setComplaintStage('C04 - On-Site Execution & Digital Job Card');
+          }
+
           const diffMs = new Date() - new Date(startTime);
           setElapsedMinutes(Math.max(1, Math.floor(diffMs / 60000)));
 
@@ -242,7 +251,9 @@ export default function FieldMobileDashboard({
               partyLat: task.party_lat,
               partyLng: task.party_lng,
               connectivityMode: 'PHYSICAL_VISIT',
-              activePipeline: task.lead_id ? 'LEAD_DATA' : 'ORDER_DELIVERY',
+              activePipeline: resolvedPipeline,
+              complaintStage: 'C04 - On-Site Execution & Digital Job Card',
+              workOutcome: 'WORK_DONE',
               company
             }));
             window.dispatchEvent(new Event('field_visit_state_changed'));
@@ -471,6 +482,8 @@ export default function FieldMobileDashboard({
       setActivePipeline('ORDER_DELIVERY');
     } else if (task.task_type && task.task_type.includes('Complaint')) {
       setActivePipeline('COMPLAINT_SERVICE');
+      setComplaintStage('C04 - On-Site Execution & Digital Job Card');
+      setWorkOutcome('WORK_DONE');
     } else {
       setActivePipeline('LEAD_DATA');
     }
@@ -545,6 +558,7 @@ export default function FieldMobileDashboard({
             leadStage,
             orderDeliveryStage,
             complaintStage,
+            workOutcome,
             company
           }));
           window.dispatchEvent(new Event('field_visit_state_changed'));
@@ -580,6 +594,7 @@ export default function FieldMobileDashboard({
           leadStage,
           orderDeliveryStage,
           complaintStage,
+          workOutcome,
           company
         }));
         window.dispatchEvent(new Event('field_visit_state_changed'));
@@ -698,13 +713,21 @@ export default function FieldMobileDashboard({
 
   // 10. Complete Check-Out & Save Report
   const handleCompleteCheckOut = async () => {
+    // Sequential Pipeline Guard for Complaint Management
+    if (activePipeline === 'COMPLAINT_SERVICE' && workOutcome === 'WORK_INCOMPLETE') {
+      if (!nextFollowup) {
+        alert('⚠️ Mandatory Schedule Required:\n\nKaam adhoora hone par "Next Follow-up Date & Time" select karna anivarya hai taaki agla visit schedule ho sake.');
+        return;
+      }
+    }
+
     // Auto-derive outcome status directly from selected pipeline stage
     const derivedOutcome = activePipeline === 'LEAD_DATA'
       ? (leadStage ? leadStage.split('>').pop().trim() : 'COMPLETED')
       : activePipeline === 'ORDER_DELIVERY'
         ? (orderDeliveryStage ? orderDeliveryStage.split('-').pop().trim() : 'COMPLETED')
         : activePipeline === 'COMPLAINT_SERVICE'
-          ? (complaintStage ? complaintStage.split('-').pop().trim() : 'COMPLETED')
+          ? (workOutcome === 'WORK_INCOMPLETE' ? 'WORK_INCOMPLETE' : 'WORK_DONE')
           : (outcomeStatus || 'COMPLETED');
 
     const payload = {
@@ -728,7 +751,10 @@ export default function FieldMobileDashboard({
       pipeline_type: activePipeline,
       lead_stage_updated: activePipeline === 'LEAD_DATA' ? leadStage : null,
       order_pipeline_stage: activePipeline === 'ORDER_DELIVERY' ? orderDeliveryStage : null,
-      complaint_ticket_stage: activePipeline === 'COMPLAINT_SERVICE' ? complaintStage : null,
+      complaint_ticket_stage: activePipeline === 'COMPLAINT_SERVICE'
+        ? (workOutcome === 'WORK_INCOMPLETE' ? 'C04 - On-Site Execution & Digital Job Card' : 'C05 - Customer OTP Verification & Sign-off')
+        : null,
+      work_outcome: activePipeline === 'COMPLAINT_SERVICE' ? workOutcome : 'WORK_DONE',
       form_id: activePipeline === 'CUSTOM_FORM' ? selectedFormId : null,
       outcome_status: derivedOutcome,
       order_value: Number(orderValue || 0),
@@ -774,6 +800,7 @@ export default function FieldMobileDashboard({
     setOrderValue('');
     setPaymentCollected('');
     setNextFollowup('');
+    setWorkOutcome('WORK_DONE');
     try {
       localStorage.removeItem('field_active_visit');
       window.dispatchEvent(new Event('field_visit_state_changed'));
@@ -2125,30 +2152,82 @@ export default function FieldMobileDashboard({
               </div>
             )}
 
-            {/* COMPLAINT & SERVICE PIPELINE (C01 - C06) */}
+            {/* COMPLAINT & SERVICE PIPELINE: Strict Sequential On-Site Pipeline Card */}
             {activePipeline === 'COMPLAINT_SERVICE' && (
-              <div style={{ marginTop: 12 }}>
-                <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>
-                  Update Complaint & Service Stage to:
+              <div style={{ marginTop: 14, background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: 10, padding: 14 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <span style={{ fontSize: 11, fontWeight: 800, color: '#0369a1', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <span>⚙️</span> Sequential Complaint Pipeline
+                  </span>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: '#0284c7', background: '#e0f2fe', padding: '3px 8px', borderRadius: 6, border: '1px solid #bae6fd' }}>
+                    Active Stage: C04
+                  </span>
+                </div>
+
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', marginBottom: 3 }}>
+                  C04 - On-Site Execution &amp; Digital Job Card
+                </div>
+                <div style={{ fontSize: 11, color: '#64748b', marginBottom: 12, lineHeight: 1.4 }}>
+                  Technician on-site execution in progress. Kaam poora hone par Customer Sign-off (C05) capture hoga aur Office QA review karke C06 me ticket close karega.
+                </div>
+
+                {/* Work Status Toggle (Kaam hua ya nahi) */}
+                <label style={{ fontSize: 12, fontWeight: 700, color: '#1e293b', display: 'block', marginBottom: 6 }}>
+                  Work Outcome Status (काम की स्थिति) *
                 </label>
-                <select
-                  value={complaintStage}
-                  onChange={(e) => setComplaintStage(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '9px 12px',
-                    borderRadius: 8,
-                    border: '1px solid #cbd5e1',
-                    fontSize: 13,
-                    color: '#0f172a',
-                    fontWeight: 600,
-                    background: '#ffffff'
-                  }}
-                >
-                  {COMPLAINT_SERVICE_STAGES.map(s => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </select>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <button
+                    type="button"
+                    onClick={() => setWorkOutcome('WORK_DONE')}
+                    style={{
+                      padding: '10px 8px',
+                      borderRadius: 8,
+                      border: workOutcome === 'WORK_DONE' ? '2px solid #16a34a' : '1px solid #cbd5e1',
+                      background: workOutcome === 'WORK_DONE' ? '#f0fdf4' : '#ffffff',
+                      color: workOutcome === 'WORK_DONE' ? '#15803d' : '#475569',
+                      fontWeight: 700,
+                      fontSize: 12,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: 2,
+                      boxShadow: workOutcome === 'WORK_DONE' ? '0 2px 8px rgba(22,163,74,0.15)' : 'none'
+                    }}
+                  >
+                    <span>✅ Work Completed</span>
+                    <span style={{ fontSize: 10, fontWeight: 500, color: workOutcome === 'WORK_DONE' ? '#166534' : '#64748b' }}>काम पूरा हो गया</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setWorkOutcome('WORK_INCOMPLETE')}
+                    style={{
+                      padding: '10px 8px',
+                      borderRadius: 8,
+                      border: workOutcome === 'WORK_INCOMPLETE' ? '2px solid #ea580c' : '1px solid #cbd5e1',
+                      background: workOutcome === 'WORK_INCOMPLETE' ? '#fff7ed' : '#ffffff',
+                      color: workOutcome === 'WORK_INCOMPLETE' ? '#c2410c' : '#475569',
+                      fontWeight: 700,
+                      fontSize: 12,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: 2,
+                      boxShadow: workOutcome === 'WORK_INCOMPLETE' ? '0 2px 8px rgba(234,88,12,0.15)' : 'none'
+                    }}
+                  >
+                    <span>⏳ Work Incomplete</span>
+                    <span style={{ fontSize: 10, fontWeight: 500, color: workOutcome === 'WORK_INCOMPLETE' ? '#9a3412' : '#64748b' }}>काम अधूरा / फॉलो-अप</span>
+                  </button>
+                </div>
+
+                {workOutcome === 'WORK_INCOMPLETE' && (
+                  <div style={{ marginTop: 10, padding: 8, background: '#fffbeb', borderRadius: 6, border: '1px solid #fef3c7', fontSize: 11, color: '#92400e', lineHeight: 1.4 }}>
+                    ⚠️ <strong>Follow-up Visit Rule:</strong> Kaam adhoora hone par ticket C04 (In Progress) me hi rahegi aur next visit date par aapke <strong>"📅 My Assigned Tasks"</strong> me bani rahegi.
+                  </div>
+                )}
               </div>
             )}
 
@@ -2186,8 +2265,8 @@ export default function FieldMobileDashboard({
             {/* NEXT FOLLOW-UP SCHEDULE (DATE & TIME) */}
             <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px dashed #cbd5e1' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                <label style={{ fontSize: 12, fontWeight: 700, color: '#1e293b', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span>📅</span> Next Follow-up Date & Time (Optional)
+                <label style={{ fontSize: 12, fontWeight: 700, color: (activePipeline === 'COMPLAINT_SERVICE' && workOutcome === 'WORK_INCOMPLETE') ? '#b91c1c' : '#1e293b', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span>📅</span> Next Follow-up Date &amp; Time {(activePipeline === 'COMPLAINT_SERVICE' && workOutcome === 'WORK_INCOMPLETE') ? <span style={{ color: '#ef4444', fontWeight: 800 }}>* (Mandatory for Incomplete Work)</span> : <span style={{ color: '#64748b', fontWeight: 500 }}>(Optional)</span>}
                 </label>
                 {nextFollowup && (
                   <button
@@ -2389,9 +2468,15 @@ export default function FieldMobileDashboard({
                 Clear Signature
               </button>
             </div>
-            <div style={{ fontSize: 11, color: '#64748b', marginBottom: 8 }}>
-              Ask customer to sign with finger directly on screen:
-            </div>
+            {activePipeline === 'COMPLAINT_SERVICE' && workOutcome === 'WORK_INCOMPLETE' ? (
+              <div style={{ fontSize: 11, color: '#9a3412', marginBottom: 8, background: '#fff7ed', padding: '6px 10px', borderRadius: 6, border: '1px solid #fed7aa', lineHeight: 1.4 }}>
+                ℹ️ <strong>Sign-off Note:</strong> Kaam adhoora hone ke kaaran Customer Verification / Sign-off (C05) agle complete visit par capture hoga. (Aaj signature optional hai).
+              </div>
+            ) : (
+              <div style={{ fontSize: 11, color: '#64748b', marginBottom: 8 }}>
+                Ask customer to sign with finger directly on screen {activePipeline === 'COMPLAINT_SERVICE' ? '(C05 Sign-off)' : ''}:
+              </div>
+            )}
 
             <canvas
               ref={signatureCanvasRef}
