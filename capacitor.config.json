@@ -1,0 +1,18 @@
+{
+  "appId": "com.supujacreations.workspace",
+  "appName": "SuPuja Workspace",
+  "webDir": "public",
+  "server": {
+    "url": "https://app.supujacreations.com",
+    "cleartext": false,
+    "allowNavigation": [
+      "app.supujacreations.com",
+      "*.supujacreations.com",
+      "*.supabase.co"
+    ]
+  },
+  "android": {
+    "allowMixedContent": true,
+    "webContentsDebuggingEnabled": true
+  }
+}

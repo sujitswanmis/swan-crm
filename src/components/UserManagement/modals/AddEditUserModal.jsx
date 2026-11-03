@@ -74,6 +74,9 @@ export default function AddEditUserModal({
         emp_alt_mobile: user.emp_alt_mobile || (user.module_access?.emp_alt_mobile) || '',
         email: user.email || '',
         password: '',
+        tracking_policy: user.tracking_policy || 'PUNCH_ONLY',
+        vehicle_type: user.vehicle_type || 'BIKE',
+        conveyance_rate_per_km: user.conveyance_rate_per_km !== undefined ? user.conveyance_rate_per_km : 4.50,
         ...getReportingFields(user),
         can_self_reset_password: user.can_self_reset_password === true || (user.module_access?.can_self_reset_password === true)
       });
@@ -96,6 +99,9 @@ export default function AddEditUserModal({
         emp_alt_mobile: '',
         email: '',
         password: '',
+        tracking_policy: 'PUNCH_ONLY',
+        vehicle_type: 'BIKE',
+        conveyance_rate_per_km: 4.50,
         primary_reporting_person: '',
         secondary_reporting_person: '',
         hod_person: '',
@@ -812,6 +818,102 @@ export default function AddEditUserModal({
                         }}
                       />
                     </div>
+                  </div>
+
+                  {/* Attendance & Field Tracking Policy */}
+                  <div style={{ padding: '0.85rem', background: 'var(--bg-canvas, #f8fafc)', borderRadius: '10px', border: '1px solid var(--border-light)', marginTop: '0.5rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
+                      <label style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                        📍 Attendance & Field GPS Policy
+                      </label>
+                      <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#2563eb', background: '#eff6ff', padding: '2px 8px', borderRadius: '4px' }}>
+                        Quota Managed
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.5rem', marginBottom: '0.6rem' }}>
+                      <label style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.4rem',
+                        padding: '0.5rem 0.65rem',
+                        borderRadius: '6px',
+                        border: `1.5px solid ${formData.tracking_policy === 'PUNCH_ONLY' ? '#2563eb' : 'var(--border-light)'}`,
+                        background: formData.tracking_policy === 'PUNCH_ONLY' ? '#eff6ff' : 'var(--bg-surface)',
+                        cursor: 'pointer',
+                        fontSize: '0.78rem',
+                        fontWeight: 600
+                      }}>
+                        <input
+                          type="radio"
+                          name="tracking_policy"
+                          value="PUNCH_ONLY"
+                          checked={formData.tracking_policy === 'PUNCH_ONLY'}
+                          onChange={() => handleChange('tracking_policy', 'PUNCH_ONLY')}
+                        />
+                        <span>📍 Punch GPS Only (Office/Plant)</span>
+                      </label>
+
+                      <label style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.4rem',
+                        padding: '0.5rem 0.65rem',
+                        borderRadius: '6px',
+                        border: `1.5px solid ${formData.tracking_policy === 'LIVE_TRACKING' ? '#16a34a' : 'var(--border-light)'}`,
+                        background: formData.tracking_policy === 'LIVE_TRACKING' ? '#f0fdf4' : 'var(--bg-surface)',
+                        cursor: 'pointer',
+                        fontSize: '0.78rem',
+                        fontWeight: 600
+                      }}>
+                        <input
+                          type="radio"
+                          name="tracking_policy"
+                          value="LIVE_TRACKING"
+                          checked={formData.tracking_policy === 'LIVE_TRACKING'}
+                          onChange={() => handleChange('tracking_policy', 'LIVE_TRACKING')}
+                        />
+                        <span>🚗 Live Tracking (Field Force)</span>
+                      </label>
+                    </div>
+
+                    {formData.tracking_policy === 'LIVE_TRACKING' && (
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem', marginTop: '0.4rem', paddingTop: '0.4rem', borderTop: '1px dashed var(--border-light)' }}>
+                        <div>
+                          <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 600, marginBottom: '0.2rem', color: 'var(--text-secondary)' }}>
+                            Vehicle Type
+                          </label>
+                          <select
+                            value={formData.vehicle_type || 'BIKE'}
+                            onChange={e => {
+                              const v = e.target.value;
+                              handleChange('vehicle_type', v);
+                              if (v === 'BIKE') handleChange('conveyance_rate_per_km', 4.50);
+                              else if (v === 'CAR') handleChange('conveyance_rate_per_km', 9.00);
+                              else handleChange('conveyance_rate_per_km', 2.50);
+                            }}
+                            style={{ width: '100%', padding: '0.4rem 0.6rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.8rem' }}
+                          >
+                            <option value="BIKE">Bike / Two Wheeler (₹4.50/KM)</option>
+                            <option value="CAR">Car / Four Wheeler (₹9.00/KM)</option>
+                            <option value="PUBLIC_TRANSPORT">Public Transport (₹2.50/KM)</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 600, marginBottom: '0.2rem', color: 'var(--text-secondary)' }}>
+                            Conveyance Rate (₹ / KM)
+                          </label>
+                          <input
+                            type="number"
+                            step="0.25"
+                            value={formData.conveyance_rate_per_km || 4.50}
+                            onChange={e => handleChange('conveyance_rate_per_km', Number(e.target.value))}
+                            style={{ width: '100%', padding: '0.4rem 0.6rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.8rem', boxSizing: 'border-box' }}
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

@@ -5,15 +5,34 @@ import {
   Users, Search, Plus, RefreshCw, Filter, ShieldCheck, AlertCircle,
   Clock, Download, Eye, Phone, MapPin, Building2, Package, FileText,
   ExternalLink, Calendar, CheckCircle2, AlertTriangle, X, Wrench,
-  ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Copy, Check
+  ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Copy, Check, ChevronDown, Upload
 } from 'lucide-react';
-import { getEndCustomers } from '@/app/actions/endCustomers';
+import { getEndCustomers, getEndCustomerTransferContext } from '@/app/actions/endCustomers';
 import { getPartyList } from '@/app/actions/partyMaster';
 import { getComplaintsTickets } from '@/app/actions/orderFulfillment';
 import { getStatesCentral } from '@/app/actions/centralLocationMaster';
 import RegisterEndCustomerModal from './modals/RegisterEndCustomerModal';
 import useTableColumnResize, { ColumnResizer } from '@/utils/tableColumnResize';
 import MaskedPhoneDisplay from '@/components/common/MaskedPhoneDisplay';
+import ImportEndCustomersModal from './modals/ImportEndCustomersModal';
+import { downloadEndCustomerFile, exportEndCustomerRows } from '@/utils/endCustomerTransfer';
+
+function TransferDropdown({ label, icon: Icon, disabled, items }) {
+  return <details name="end-customer-transfer" style={{ position: 'relative' }}
+    onKeyDown={event => { if (event.key === 'Escape') event.currentTarget.open = false; }}
+    onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false; }}>
+    <summary aria-disabled={disabled} onClick={event => { if (disabled) event.preventDefault(); }}
+      style={{ listStyle: 'none', display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.55rem 0.85rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: 8, color: 'var(--text-secondary)', fontSize: '0.82rem', fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.55 : 1 }}>
+      <Icon size={14} />{label}<ChevronDown size={14} />
+    </summary>
+    <div style={{ position: 'absolute', top: 'calc(100% + 5px)', right: 0, minWidth: 235, zIndex: 40, background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: 8, padding: '0.3rem', boxShadow: '0 8px 24px rgba(0,0,0,0.15)' }}>
+      {items.map(item => <button key={item.label} type="button" disabled={disabled} onClick={event => {
+        event.currentTarget.closest('details').open = false;
+        item.onClick();
+      }} style={{ display: 'block', width: '100%', padding: '0.65rem', border: 0, borderRadius: 5, background: 'var(--bg-surface)', color: 'var(--text-primary)', textAlign: 'left', fontSize: '0.82rem', cursor: 'pointer' }}>{item.label}</button>)}
+    </div>
+  </details>;
+}
 
 const DEFAULT_COL_WIDTHS = {
   select: 45,
@@ -69,6 +88,9 @@ export default function EndCustomerMasterModule({
   const [showRegisterModal, setShowRegisterModal] = useState(false);
   const [viewingCustomer, setViewingCustomer] = useState(null);
   const [copiedId, setCopiedId] = useState(null);
+  const [importFormat, setImportFormat] = useState(null);
+  const [transferBusy, setTransferBusy] = useState(false);
+  const [transferError, setTransferError] = useState('');
 
   // Column Resizing hook
   const { colWidths, resizingCol, handleResizeStart, resetWidth } = useTableColumnResize(
@@ -196,55 +218,21 @@ export default function EndCustomerMasterModule({
     );
   }, [tickets]);
 
-  // Export CSV
-  const handleExportCSV = () => {
-    if (filteredCustomers.length === 0) return;
-    const headers = [
-      'Customer Code',
-      'Full Name',
-      'Mobile 1',
-      'Mobile 2',
-      'State',
-      'District',
-      'Full Address',
-      'Linked Dealer',
-      'Dealer Code',
-      'Product Model',
-      'Chassis Serial No',
-      'Purchase Date',
-      'Invoice No',
-      'Warranty Status',
-      'Warranty Expiry Date',
-      'Total Complaints'
-    ];
-
-    const rows = filteredCustomers.map(c => [
-      `"${c.customer_code || ''}"`,
-      `"${c.full_name || ''}"`,
-      `"${c.mobile_1 || ''}"`,
-      `"${c.mobile_2 || ''}"`,
-      `"${c.state_name || ''}"`,
-      `"${c.district_name || ''}"`,
-      `"${(c.full_address || '').replace(/"/g, '""')}"`,
-      `"${c.linked_party_name || ''}"`,
-      `"${c.linked_party_code || ''}"`,
-      `"${c.product_name || ''}"`,
-      `"${c.chassis_serial_number || ''}"`,
-      `"${c.purchase_date || ''}"`,
-      `"${c.purchase_invoice_no || ''}"`,
-      `"${c.warranty_info?.status || ''}"`,
-      `"${c.warranty_info?.expiry_date || ''}"`,
-      getCustomerComplaints(c).length
-    ]);
-
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `End_Customers_${tenantId}_${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const handleDownload = async (format, template = false) => {
+    if (transferBusy || (!template && !filteredCustomers.length)) return;
+    setTransferBusy(true);
+    setTransferError('');
+    try {
+      const context = await getEndCustomerTransferContext(tenantId);
+      if (!context.success) throw new Error(context.error);
+      const exportRows = template ? [] : exportEndCustomerRows(filteredCustomers, customer => getCustomerComplaints(customer).length)
+        .map((row, index) => ({ ...row, product_sku: row.product_sku || context.products.find(product => product.id === filteredCustomers[index].product_id)?.sku || '' }));
+      await downloadEndCustomerFile(format, exportRows, { ...context, template });
+    } catch (err) {
+      setTransferError(err.message || 'File could not be downloaded. Please retry.');
+    } finally {
+      setTransferBusy(false);
+    }
   };
 
   return (
@@ -319,27 +307,16 @@ export default function EndCustomerMasterModule({
             Refresh
           </button>
 
-          <button
-            type="button"
-            onClick={handleExportCSV}
-            disabled={filteredCustomers.length === 0}
-            style={{
-              padding: '0.55rem 0.85rem',
-              background: 'var(--bg-primary)',
-              border: '1px solid var(--border-light)',
-              borderRadius: '8px',
-              color: 'var(--text-secondary)',
-              fontSize: '0.82rem',
-              fontWeight: 600,
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.4rem',
-              cursor: filteredCustomers.length === 0 ? 'not-allowed' : 'pointer'
-            }}
-          >
-            <Download size={14} />
-            Export CSV
-          </button>
+          <TransferDropdown label={transferBusy ? 'Preparing…' : 'Export'} icon={Download} disabled={transferBusy || !filteredCustomers.length} items={[
+            { label: 'Export CSV (.csv)', onClick: () => handleDownload('csv') },
+            { label: 'Export Excel (.xlsx)', onClick: () => handleDownload('xlsx') }
+          ]} />
+          <TransferDropdown label="Import" icon={Upload} disabled={transferBusy} items={[
+            { label: 'Import CSV (.csv)', onClick: () => { setTransferError(''); setImportFormat('csv'); } },
+            { label: 'Import Excel (.xlsx)', onClick: () => { setTransferError(''); setImportFormat('xlsx'); } },
+            { label: 'Download CSV Template', onClick: () => handleDownload('csv', true) },
+            { label: 'Download Excel Template', onClick: () => handleDownload('xlsx', true) }
+          ]} />
 
           <button
             type="button"
@@ -364,6 +341,9 @@ export default function EndCustomerMasterModule({
           </button>
         </div>
       </div>
+
+      {transferBusy && <p role="status" style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '0.82rem' }}>Preparing download…</p>}
+      {transferError && <p role="alert" style={{ margin: 0, color: '#ef4444', fontSize: '0.82rem' }}>{transferError}</p>}
 
       {/* Search & Filter Toolbar */}
       <div style={{
@@ -1275,6 +1255,8 @@ export default function EndCustomerMasterModule({
       )}
 
       {/* Register End Customer Modal */}
+      {importFormat && <ImportEndCustomersModal key={`${tenantId}:${importFormat}`} format={importFormat} tenantId={tenantId} customers={customers}
+        onClose={() => setImportFormat(null)} onImported={loadData} />}
       <RegisterEndCustomerModal
         isOpen={showRegisterModal}
         onClose={() => setShowRegisterModal(false)}

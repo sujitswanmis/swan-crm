@@ -28,9 +28,19 @@ export async function getTeamMembers(requesterCompany = null, tenantId = null) {
     return [];
   }
 
-  const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl'];
+  const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl', 'tnt00002'];
   const reqLower = String(requesterCompany || '').toLowerCase().trim();
-  const isSwanRequester = !requesterCompany || SWAN_COMPANIES.includes(reqLower);
+
+  // Handle Standard Tenant Codes passed as requesterCompany
+  if (reqLower === 'tnt00002') {
+    tenantId = '00000000-0000-0000-0000-000000000001';
+  } else if (reqLower === 'tnt00001') {
+    tenantId = '0a37b8e8-1c28-4e19-8891-951fc3f8f8af';
+  } else if (reqLower === 'tnt00003') {
+    tenantId = '922d3e72-6588-457f-a562-4f1bdbf10d98';
+  }
+
+  const isSwanRequester = !requesterCompany || SWAN_COMPANIES.includes(reqLower) || reqLower === 'tnt00002' || tenantId === '00000000-0000-0000-0000-000000000001';
 
   // If non-default tenantId is provided, resolve tenant details from database
   let tenantName = '';
@@ -73,7 +83,8 @@ export async function getTeamMembers(requesterCompany = null, tenantId = null) {
     return SWAN_COMPANIES.includes(userComp) || !userComp;
   });
 
-  return scopedData.map(u => ({
+  const finalData = (scopedData.length > 0 ? scopedData : (data || []));
+  return finalData.map(u => ({
     ...u,
     emp_status: u.emp_status || (u.module_access && u.module_access.emp_status) || 'Active',
     emp_sub_department: u.emp_sub_department || (u.module_access && u.module_access.emp_sub_department) || '',

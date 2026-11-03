@@ -1524,6 +1524,61 @@ export async function advanceComplaintTicketStage(ticketId, stagePayload, tenant
 
     if (updateErr) throw updateErr;
 
+    // Automatically create a Field Task for the Deputed Service Engineer (C03)
+    if (targetStage.id === 'C03' && formState.technician_id) {
+      try {
+        let partyName = currentTicket.customer_name || 'Customer';
+        let partyPhone = currentTicket.customer_phone || '';
+        let partyAddress = '';
+
+        if (currentTicket.party_id) {
+          const { data: pmData } = await adminClient
+            .from('party_master')
+            .select('firm_name, legal_name, primary_mobile')
+            .eq('id', currentTicket.party_id)
+            .maybeSingle();
+          if (pmData) {
+            partyName = pmData.firm_name || pmData.legal_name || partyName;
+            partyPhone = pmData.primary_mobile || partyPhone;
+          }
+        }
+
+        const taskCode = `TSK-${Math.floor(10000 + Math.random() * 90000)}`;
+        const scheduledTime = formState.scheduled_visit_date
+          ? `${formState.scheduled_visit_date}T10:00:00.000+05:30`
+          : nowIso;
+
+        await adminClient
+          .from('field_tasks')
+          .insert({
+            task_code: taskCode,
+            tenant_id: effectiveTenantId,
+            company: currentTicket.company || 'TNT00002',
+            task_type: `Complaint & Service (${currentTicket.ticket_number})`,
+            party_name: partyName,
+            party_phone: partyPhone,
+            party_address: partyAddress,
+            customer_id: currentTicket.customer_id || null,
+            lead_id: null,
+            assigned_by_user_id: stagePayload.executedById || null,
+            assigned_to_user_id: formState.technician_id,
+            priority: currentTicket.priority || 'HIGH',
+            scheduled_start_time: scheduledTime,
+            status: 'SCHEDULED',
+            form_details: {
+              ticket_id: ticketId,
+              ticket_number: currentTicket.ticket_number,
+              spares_to_carry: formState.spares_to_carry || '',
+              issue_description: currentTicket.issue_description || '',
+              category: currentTicket.category || '',
+              visit_time_slot: formState.visit_time_slot || ''
+            }
+          });
+      } catch (taskErr) {
+        console.error('Auto-create field task for complaint C03 error:', taskErr);
+      }
+    }
+
     return { success: true, ticket: updatedData };
   } catch (err) {
     console.error('advanceComplaintTicketStage error:', err);

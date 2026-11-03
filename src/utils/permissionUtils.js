@@ -3,12 +3,18 @@
  * Enforces 4-Column (View, Add, Edit, Delete) and Sub-Tab Permissions across CRM.
  */
 
+import { INTEGRATION_PAGE, INTEGRATION_PAGE_IDS, INTEGRATION_TABS } from '../config/integrationsConfig.js';
+
 export function checkIsAdminRole(userRole) {
   const rLower = String(userRole || '').trim().toLowerCase();
   return rLower === 'admin' || rLower === 'superadmin' || rLower === 'masteradmin' || rLower === 'super_admin' || rLower === 'master_admin';
 }
 
 export function getModulePermissions(moduleAccess, userRole, moduleId) {
+  if(moduleId==='config_master') {
+    const master=['masteradmin','master_admin'].includes(String(userRole || '').trim().toLowerCase()) || moduleAccess?.is_master_admin===true || String(moduleAccess?._userEmail || '').trim().toLowerCase()==='supujacreations@gmail.com';
+    return {view:master,add:master,edit:master,delete:false,is_manager:master};
+  }
   const isAdmin = checkIsAdminRole(userRole);
   if (isAdmin) {
     return { view: true, add: true, edit: true, delete: true, is_manager: true };
@@ -44,6 +50,10 @@ export function getModulePermissions(moduleAccess, userRole, moduleId) {
 }
 
 export function getSubItemPermissions(moduleAccess, userRole, moduleId, subItemId) {
+  if(moduleId==='config_master') {
+    const parent=getModulePermissions(moduleAccess,userRole,moduleId);
+    return {view:parent.view,add:parent.add,edit:parent.edit,delete:false};
+  }
   const isAdmin = checkIsAdminRole(userRole);
   if (isAdmin) {
     return { view: true, add: true, edit: true, delete: true };
@@ -93,6 +103,14 @@ export function getSubItemPermissions(moduleAccess, userRole, moduleId, subItemI
         const myAttView = subItems['my_attendance'] ? (subItems['my_attendance'].view !== false) : true;
         return { view: myAttView, add: parentPerms.add, edit: parentPerms.edit, delete: false };
       }
+      // If this is live_tracking in attendance, inherit from team_report or parent attendance
+      if (moduleId === 'attendance' && subItemId === 'live_tracking') {
+        return { view: parentPerms.view, add: parentPerms.add, edit: parentPerms.edit, delete: false };
+      }
+      // If this is field_force sub-items, inherit from parent field_force view
+      if (moduleId === 'field_force') {
+        return { view: parentPerms.view, add: parentPerms.add, edit: parentPerms.edit, delete: false };
+      }
       // If this is dashboard or holidays in checklist, inherit from parent checklist view if not explicitly disabled
       if (moduleId === 'checklist' && (subItemId === 'dashboard' || subItemId === 'holidays')) {
         return { view: parentPerms.view, add: parentPerms.add, edit: parentPerms.edit, delete: false };
@@ -100,6 +118,10 @@ export function getSubItemPermissions(moduleAccess, userRole, moduleId, subItemI
       // If this is email_config tabs, inherit from parent email_config view if not explicitly disabled
       if (moduleId === 'email_config') {
         return { view: parentPerms.view, add: parentPerms.add, edit: parentPerms.edit, delete: false };
+      }
+      // Legacy Settings users inherit tab visibility, never credential-management power.
+      if (moduleId === 'settings' && INTEGRATION_PAGE_IDS.includes(subItemId)) {
+        return { view: parentPerms.view, add: false, edit: false, delete: false };
       }
       // If this is order_pipeline in settings, inherit from parent settings view if not explicitly disabled
       if (moduleId === 'settings' && subItemId === 'order_pipeline') {
@@ -215,7 +237,14 @@ export function filterVisibleSubTabs(moduleAccess, userRole, moduleId, tabsList 
   if (isAdmin) return tabsList;
 
   return tabsList.filter(tab => {
+    if (moduleId === 'settings' && tab.id === INTEGRATION_PAGE.id && tab.subItems?.length) {
+      return canViewIntegrations(moduleAccess, userRole);
+    }
     const perms = getSubItemPermissions(moduleAccess, userRole, moduleId, tab.id);
     return perms.view === true;
   });
+}
+
+export function canViewIntegrations(moduleAccess, userRole) {
+  return INTEGRATION_TABS.some(tab => getSubItemPermissions(moduleAccess, userRole, 'settings', tab.id).view);
 }

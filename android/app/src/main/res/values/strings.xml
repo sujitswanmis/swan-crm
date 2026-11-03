@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">SuPuja Workspace</string>
+    <string name="title_activity_main">SuPuja Workspace</string>
+    <string name="package_name">com.supujacreations.workspace</string>
+    <string name="custom_url_scheme">com.supujacreations.workspace</string>
+</resources>

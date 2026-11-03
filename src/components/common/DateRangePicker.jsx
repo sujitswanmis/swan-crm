@@ -89,7 +89,9 @@ export default function DateRangePicker({
   allowAllTime = false,
   variant = 'default', // 'default' | 'glass' | 'compact'
   title = 'Select Date Range',
-  style = {}
+  style = {},
+  presetOptions = null,
+  rangeResolver = computeDateRange
 }) {
   const [showDropdown, setShowDropdown] = useState(false);
   const [showModal, setShowModal] = useState(false);
@@ -116,11 +118,11 @@ export default function DateRangePicker({
   // Sync temp dates when modal opens
   useEffect(() => {
     if (showModal) {
-      const current = computeDateRange(preset, startDate, endDate);
-      setTempStart(current.startDate || computeDateRange('today').startDate);
-      setTempEnd(current.endDate || computeDateRange('today').endDate);
+      const current = rangeResolver(preset, startDate, endDate);
+      setTempStart(current.startDate || rangeResolver('today').startDate);
+      setTempEnd(current.endDate || rangeResolver('today').endDate);
     }
-  }, [showModal, preset, startDate, endDate]);
+  }, [showModal, preset, startDate, endDate, rangeResolver]);
 
   const handleSelectPreset = (pId) => {
     if (pId === 'custom') {
@@ -129,7 +131,7 @@ export default function DateRangePicker({
       return;
     }
 
-    const range = computeDateRange(pId);
+    const range = rangeResolver(pId);
     if (onChange) {
       onChange({
         preset: pId,
@@ -164,8 +166,8 @@ export default function DateRangePicker({
   // Button Display Label
   const getButtonLabel = () => {
     if (preset === 'all') return 'All Time';
-    if (preset === 'today') return `Today (${startDate || computeDateRange('today').startDate})`;
-    if (preset === 'yesterday') return `Yesterday (${startDate || computeDateRange('yesterday').startDate})`;
+    if (preset === 'today') return `Today (${startDate || rangeResolver('today').startDate})`;
+    if (preset === 'yesterday') return `Yesterday (${startDate || rangeResolver('yesterday').startDate})`;
     if (preset === 'this_week') return `This Week (${startDate} → ${endDate})`;
     if (preset === 'last_week') return `Last Week (${startDate} → ${endDate})`;
     if (preset === 'this_month') return `This Month (${startDate} → ${endDate})`;
@@ -173,6 +175,8 @@ export default function DateRangePicker({
     if (preset === 'custom' || (!preset && startDate && endDate)) {
       return startDate === endDate ? startDate : `${startDate} → ${endDate}`;
     }
+    const extraPreset = presetOptions?.find(option => option.id === preset);
+    if (extraPreset) return `${extraPreset.label} (${startDate} → ${endDate})`;
     return 'Select Date Range';
   };
 
@@ -210,7 +214,14 @@ export default function DateRangePicker({
     ...style
   };
 
-  const presetList = [
+  // Opt-in options keep module-specific date logic out of existing callers.
+  const presetList = presetOptions ? presetOptions
+    .filter(option => option.id !== 'custom' && (allowAllTime || option.id !== 'all'))
+    .map(option => {
+      const range = rangeResolver(option.id);
+      return { ...option, sub: option.sub ?? (option.id === 'all' ? 'Complete history'
+        : range.startDate === range.endDate ? range.startDate : `${range.startDate} → ${range.endDate}`) };
+    }) : [
     ...(allowAllTime ? [{ id: 'all', label: 'All Time', sub: 'Complete history' }] : []),
     { id: 'today', label: 'Today', sub: computeDateRange('today').startDate },
     { id: 'yesterday', label: 'Yesterday', sub: computeDateRange('yesterday').startDate },
@@ -247,6 +258,7 @@ export default function DateRangePicker({
           border: '1px solid #e2e8f0',
           width: '260px',
           overflow: 'hidden',
+          ...(presetOptions ? { maxHeight: 'min(50vh, 440px)', overflowY: 'auto' } : {}),
           padding: '0.4rem',
           animation: 'fadeIn 0.15s ease-out'
         }}>

@@ -4,10 +4,12 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   Upload, Building2, MapPin, FileText, Save, Plus, Search,
   Edit3, Trash2, Phone, Mail, User, ShieldCheck, CheckCircle2,
-  AlertCircle, X, Compass, Globe, Briefcase, Factory, Warehouse, Building
+  AlertCircle, X, Compass, Globe, Briefcase, Factory, Warehouse, Building, Lock
 } from 'lucide-react';
 import { logAuditAction } from '@/app/actions/audit';
 import { getTenantBranches, saveTenantBranch, deleteTenantBranch } from '@/app/actions/tenantBranches';
+import ProfilePhotoPolicy from './ProfilePhotoPolicy';
+import ErrorBoundary from '@/components/ErrorBoundary';
 
 const LOCATION_TYPES = [
   { id: 'Headquarters', label: 'Headquarters / Main Office', icon: Building },
@@ -73,6 +75,7 @@ export default function BusinessProfile({ userCompany = '' }) {
   const [branchFormData, setBranchFormData] = useState({
     branchName: '',
     branchCode: '',
+    customCode: '',
     locationType: 'Branch Office',
     address: '',
     city: '',
@@ -112,6 +115,7 @@ export default function BusinessProfile({ userCompany = '' }) {
     setBranchFormData({
       branchName: '',
       branchCode: '',
+      customCode: '',
       locationType: 'Branch Office',
       address: '',
       city: '',
@@ -132,7 +136,8 @@ export default function BusinessProfile({ userCompany = '' }) {
     setEditingBranch(br);
     setBranchFormData({
       branchName: br.branch_name || '',
-      branchCode: br.branch_code || '',
+      branchCode: br.branch_code || br.id || '',
+      customCode: br.custom_code || br.legacy_code || '',
       locationType: br.location_type || 'Branch Office',
       address: br.address || '',
       city: br.city || '',
@@ -165,6 +170,8 @@ export default function BusinessProfile({ userCompany = '' }) {
         company: effectiveCompany,
         branchName: branchFormData.branchName,
         branchCode: branchFormData.branchCode,
+        customCode: branchFormData.customCode,
+        legacyCode: branchFormData.customCode,
         locationType: branchFormData.locationType,
         address: branchFormData.address,
         city: branchFormData.city,
@@ -210,6 +217,8 @@ export default function BusinessProfile({ userCompany = '' }) {
       const matchesSearch = !branchSearch ||
         (b.branch_name && b.branch_name.toLowerCase().includes(branchSearch.toLowerCase())) ||
         (b.branch_code && b.branch_code.toLowerCase().includes(branchSearch.toLowerCase())) ||
+        (b.custom_code && b.custom_code.toLowerCase().includes(branchSearch.toLowerCase())) ||
+        (b.legacy_code && b.legacy_code.toLowerCase().includes(branchSearch.toLowerCase())) ||
         (b.city && b.city.toLowerCase().includes(branchSearch.toLowerCase())) ||
         (b.incharge_name && b.incharge_name.toLowerCase().includes(branchSearch.toLowerCase()));
 
@@ -305,6 +314,10 @@ export default function BusinessProfile({ userCompany = '' }) {
               {saveMessage}
             </div>
           )}
+
+          <ErrorBoundary fallback={<p role="status">Profile photo settings are temporarily unavailable.</p>}>
+            <ProfilePhotoPolicy />
+          </ErrorBoundary>
 
           {/* Logo Upload Section */}
           <div style={{ background: 'var(--bg-primary)', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--border-light)' }}>
@@ -535,13 +548,43 @@ export default function BusinessProfile({ userCompany = '' }) {
                               {br.branch_name}
                             </h4>
                           </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '0.25rem' }}>
-                            <span style={{ fontSize: '0.74rem', color: '#64748b', fontWeight: 600 }}>
-                              Branch ID:
-                            </span>
-                            <span style={{ fontSize: '0.74rem', background: '#e0e7ff', color: '#3730a3', padding: '1px 6px', borderRadius: '4px', fontWeight: 700, fontFamily: 'monospace', letterSpacing: '0.5px', border: '1px solid #c7d2fe' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.35rem', flexWrap: 'wrap' }}>
+                            <span
+                              style={{
+                                fontSize: '0.72rem',
+                                background: '#f1f5f9',
+                                color: '#334155',
+                                padding: '1px 6px',
+                                borderRadius: '4px',
+                                fontWeight: 700,
+                                fontFamily: 'monospace',
+                                border: '1px solid #cbd5e1',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '3px'
+                              }}
+                              title="SaaS System Branch UID (Protected)"
+                            >
+                              <Lock size={10} color="#64748b" />
                               {br.branch_code || br.id}
                             </span>
+                            {(br.custom_code || br.legacy_code) && (
+                              <span
+                                style={{
+                                  fontSize: '0.72rem',
+                                  background: '#ecfdf5',
+                                  color: '#047857',
+                                  padding: '1px 6px',
+                                  borderRadius: '4px',
+                                  fontWeight: 700,
+                                  fontFamily: 'monospace',
+                                  border: '1px solid #a7f3d0'
+                                }}
+                                title="Tenant Custom Branch Code"
+                              >
+                                Code: {br.custom_code || br.legacy_code}
+                              </span>
+                            )}
                           </div>
                         </div>
 
@@ -678,8 +721,66 @@ export default function BusinessProfile({ userCompany = '' }) {
               </div>
             )}
 
+            {/* Top SaaS Level Managed Identifiers Banner (Locked / Read-Only) */}
+            <div style={{
+              background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)',
+              border: '1px solid #cbd5e1',
+              borderRadius: '8px',
+              padding: '0.85rem 1rem',
+              marginBottom: '1rem',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.5rem'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <ShieldCheck size={16} color="#4f46e5" />
+                  <span style={{ fontSize: '0.74rem', fontWeight: 800, color: '#1e293b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    SaaS Level Managed Identifiers
+                  </span>
+                </div>
+                <span style={{
+                  fontSize: '0.68rem',
+                  background: '#ecfdf5',
+                  color: '#065f46',
+                  border: '1px solid #a7f3d0',
+                  padding: '2px 8px',
+                  borderRadius: '12px',
+                  fontWeight: 700,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}>
+                  <Lock size={10} /> 🔒 Locked / System Managed
+                </span>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.65rem', marginTop: '0.2rem' }}>
+                <div style={{ background: '#fff', padding: '0.45rem 0.65rem', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                  <span style={{ fontSize: '0.66rem', color: '#64748b', display: 'block', fontWeight: 600 }}>Tenant Code</span>
+                  <span style={{ fontSize: '0.85rem', fontFamily: 'monospace', fontWeight: 800, color: '#0f172a' }}>
+                    {editingBranch?.tenant_code || (branches[0]?.tenant_code || 'TNT00002')}
+                  </span>
+                </div>
+
+                <div style={{ background: '#fff', padding: '0.45rem 0.65rem', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                  <span style={{ fontSize: '0.66rem', color: '#64748b', display: 'block', fontWeight: 600 }}>System Branch UID</span>
+                  <span style={{ fontSize: '0.85rem', fontFamily: 'monospace', fontWeight: 800, color: '#4338ca' }}>
+                    {editingBranch?.branch_code || editingBranch?.id || '(Auto-assigned on save)'}
+                  </span>
+                </div>
+
+                <div style={{ background: '#fff', padding: '0.45rem 0.65rem', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                  <span style={{ fontSize: '0.66rem', color: '#64748b', display: 'block', fontWeight: 600 }}>Tenant Company</span>
+                  <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#334155', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>
+                    {effectiveCompany}
+                  </span>
+                </div>
+              </div>
+            </div>
+
             <form onSubmit={handleSaveBranch} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '0.75rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: '0.75rem' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: '#334155', marginBottom: '0.35rem' }}>
                     Branch / Location Name *
@@ -695,16 +796,19 @@ export default function BusinessProfile({ userCompany = '' }) {
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: '#334155', marginBottom: '0.35rem' }}>
-                    Branch Code
+                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: '#334155', marginBottom: '0.35rem' }} title="Tenant internal custom branch code (e.g. NSMLR, NSTLP, HQ-01)">
+                    Branch Code <span style={{ fontWeight: 400, color: '#64748b', fontSize: '0.72rem' }}>(Custom / Alias)</span>
                   </label>
                   <input
                     type="text"
-                    value={branchFormData.branchCode}
-                    onChange={(e) => setBranchFormData({ ...branchFormData, branchCode: e.target.value })}
-                    placeholder="e.g. BR-MUM-01"
-                    style={{ width: '100%', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem', textTransform: 'uppercase' }}
+                    value={branchFormData.customCode}
+                    onChange={(e) => setBranchFormData({ ...branchFormData, customCode: e.target.value.toUpperCase() })}
+                    placeholder="e.g. NSMLR, HQ-01"
+                    style={{ width: '100%', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem', textTransform: 'uppercase', fontWeight: 600 }}
                   />
+                  <span style={{ fontSize: '0.68rem', color: '#64748b', display: 'block', marginTop: '2px' }}>
+                    Tenant apne anusar code set kar sakta hai
+                  </span>
                 </div>
               </div>
 

@@ -220,7 +220,11 @@ export async function getTenantBranches(companyOrTenantId = 'Default') {
     dbBranches.forEach(b => mergedMap.set(b.id || b.branch_code, b));
     localBranches.forEach(b => mergedMap.set(b.id || b.branch_code, b));
 
-    const finalBranches = Array.from(mergedMap.values());
+    const finalBranches = Array.from(mergedMap.values()).map(b => ({
+      ...b,
+      custom_code: b.custom_code || b.legacy_code || null,
+      legacy_code: b.legacy_code || b.custom_code || null
+    }));
 
     // If completely empty, generate a standardized default "Headquarters" branch
     if (finalBranches.length === 0) {
@@ -232,6 +236,8 @@ export async function getTenantBranches(companyOrTenantId = 'Default') {
         tenant_id: resolvedTenantId,
         tenant_code: tenantCode,
         branch_code: defaultHQCode,
+        custom_code: 'HQ',
+        legacy_code: 'HQ',
         branch_name: `${key} (Headquarters)`,
         location_type: 'Headquarters',
         address: 'Main Office Complex',
@@ -292,7 +298,11 @@ export async function getAllTenantBranches() {
 
     return {
       success: true,
-      branches: Array.from(mergedMap.values())
+      branches: Array.from(mergedMap.values()).map(b => ({
+        ...b,
+        custom_code: b.custom_code || b.legacy_code || null,
+        legacy_code: b.legacy_code || b.custom_code || null
+      }))
     };
   } catch (err) {
     console.error('getAllTenantBranches error:', err);
@@ -309,6 +319,8 @@ export async function saveTenantBranch({
   tenantId = null,
   branchName,
   branchCode,
+  customCode = '',
+  legacyCode = '',
   locationType = 'Branch Office',
   address = '',
   city = '',
@@ -367,15 +379,15 @@ export async function saveTenantBranch({
       // Auto-assign new sequential branch ID and Code: [TENANT_CODE]-B[0001..9999]
       const nextCode = getNextBranchCodeInternal(resolvedTenantCode, existingList);
       branchId = nextCode;
-      if (!cleanCode) {
-        cleanCode = nextCode;
-      }
+      cleanCode = nextCode;
     } else {
-      if (!cleanCode) {
-        cleanCode = branchId.startsWith('TNT') ? branchId : getNextBranchCodeInternal(resolvedTenantCode, existingList);
+      // Lock and preserve the SaaS branch_code
+      if (!cleanCode || !cleanCode.startsWith(`${resolvedTenantCode}-B`)) {
+        cleanCode = branchId.startsWith(`${resolvedTenantCode}-B`) ? branchId : (cleanCode || branchId);
       }
     }
 
+    const cleanCustomCode = String(customCode || legacyCode || '').trim().toUpperCase();
     const nowIso = new Date().toISOString();
 
     const branchRecord = {
@@ -384,6 +396,8 @@ export async function saveTenantBranch({
       tenant_id: resolvedTenantId,
       tenant_code: resolvedTenantCode,
       branch_code: cleanCode,
+      custom_code: cleanCustomCode || null,
+      legacy_code: cleanCustomCode || null,
       branch_name: branchName.trim(),
       location_type: locationType || 'Branch Office',
       address: (address || '').trim(),
@@ -419,7 +433,13 @@ export async function saveTenantBranch({
 
     const existingIdx = freshLocalMap[companyKey].findIndex(b => b.id === branchId || b.branch_code === cleanCode);
     if (existingIdx >= 0) {
-      freshLocalMap[companyKey][existingIdx] = { ...freshLocalMap[companyKey][existingIdx], ...branchRecord };
+      const existingBranch = freshLocalMap[companyKey][existingIdx];
+      branchRecord.created_at = existingBranch.created_at || nowIso;
+      if (!branchRecord.custom_code && existingBranch.legacy_code) {
+        branchRecord.custom_code = existingBranch.legacy_code;
+        branchRecord.legacy_code = existingBranch.legacy_code;
+      }
+      freshLocalMap[companyKey][existingIdx] = { ...existingBranch, ...branchRecord };
     } else {
       freshLocalMap[companyKey].push(branchRecord);
     }

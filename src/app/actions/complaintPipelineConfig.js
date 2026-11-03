@@ -33,7 +33,19 @@ export async function getComplaintPipelineConfig(tenantId = 'TNT00002', branchNa
     const tenantConfig = allConfigs[tenantCode] || allConfigs['TNT00002'] || {};
     const defaultBranchConfig = tenantConfig['All Branches'] || Object.values(tenantConfig)[0] || null;
 
-    if (effectiveBranch === 'All Branches' || !tenantConfig[effectiveBranch]) {
+    let branchConfig = tenantConfig[effectiveBranch];
+    if (!branchConfig && effectiveBranch !== 'All Branches') {
+      const match = effectiveBranch.match(/\[([A-Z0-9-]+)\]/);
+      if (match) {
+        const uid = match[1];
+        const foundKey = Object.keys(tenantConfig).find(k => k.includes(`[${uid}]`));
+        if (foundKey) {
+          branchConfig = tenantConfig[foundKey];
+        }
+      }
+    }
+
+    if (effectiveBranch === 'All Branches' || !branchConfig) {
       return {
         success: true,
         tenantCode,
@@ -43,7 +55,6 @@ export async function getComplaintPipelineConfig(tenantId = 'TNT00002', branchNa
     }
 
     // Branch specific override merged with All Branches default
-    const branchConfig = tenantConfig[effectiveBranch];
     const mergedStages = (defaultBranchConfig?.stages || []).map(defStage => {
       const branchStage = (branchConfig.stages || []).find(s => s.id === defStage.id);
       return branchStage ? { ...defStage, ...branchStage } : defStage;

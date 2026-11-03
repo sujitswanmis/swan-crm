@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   X, CheckCircle2, AlertTriangle, ArrowRight, UserCheck, Wrench,
   Shield, Calendar, FileText, Camera, Upload, Star, Clock
 } from 'lucide-react';
+import SearchableEmployeeSelect from '@/components/common/SearchableEmployeeSelect';
 
 export default function ComplaintStageActionModal({
   isOpen,
@@ -33,7 +34,7 @@ export default function ComplaintStageActionModal({
     technician_name: '',
     technician_phone: '',
     vendor_firm_name: '',
-    scheduled_visit_date: new Date().toISOString().split('T')[0],
+    scheduled_visit_date: new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date()),
     visit_time_slot: '11:00 AM - 02:00 PM',
     spares_to_carry: '',
 
@@ -54,18 +55,45 @@ export default function ComplaintStageActionModal({
     warranty_claim_status: 'SETTLED_PASSED'
   });
 
+  const serviceEngineers = useMemo(() => {
+    const members = new Map();
+    for (const member of Array.isArray(teamMembers) ? teamMembers : []) {
+      if (!member) continue;
+      const name = String(member.emp_name || member.name || '').trim();
+      const email = String(member.email || member.emp_official_mail_id || member.work_email || '').trim();
+      const id = String(member.user_id || member.id || email || '');
+      const status = String(member.emp_status || member.status || member.module_access?.emp_status || 'Active').toLowerCase().replace(/[\s_-]/g, '');
+      if (!id || !name || String(member.role || '').toLowerCase().trim() === 'customer' || member.is_approved === false ||
+        member.is_active === false || ['inactive', 'terminated', 'resigned', 'trash', 'draft', 'disabled', 'suspended', 'deactivated'].includes(status)) continue;
+      const code = String(member.emp_id || member.emp_code || '').trim();
+      members.set(id, {
+        ...member, id, name, email,
+        emp_code: /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(code) ? '' : code,
+        department: member.department || member.emp_department || '',
+        designation: member.designation || member.emp_designation || '',
+        phone: String(member.emp_mobile || member.mobile_1 || member.phone || member.mobile || '')
+      });
+    }
+    return [...members.values()];
+  }, [teamMembers]);
+  const selectedEngineer = serviceEngineers.find(member => member.id === formState.technician_id);
+
   if (!isOpen || !ticket || !targetStage) return null;
 
-  const handleSelectInHouseTech = (empId) => {
-    const emp = teamMembers.find(m => String(m.user_id || m.id) === String(empId));
-    if (emp) {
-      setFormState(prev => ({
-        ...prev,
-        technician_id: empId,
-        technician_name: emp.emp_name || emp.name,
-        technician_phone: emp.mobile_1 || emp.phone || emp.mobile || ''
-      }));
-    }
+  const handleSelectInHouseTech = (employee) => {
+    const emp = serviceEngineers.find(member => member.id === employee?.id);
+    setFormState(prev => ({
+      ...prev,
+      technician_id: emp?.id || '',
+      technician_name: emp?.name || '',
+      technician_phone: emp?.phone || ''
+    }));
+    setErrorMsg('');
+  };
+
+  const handleTechnicianTypeChange = (type) => {
+    setFormState(prev => ({ ...prev, technician_type: type, technician_id: '', technician_name: '', technician_phone: '', vendor_firm_name: '' }));
+    setErrorMsg('');
   };
 
   const handleSubmit = async (e) => {
@@ -74,7 +102,7 @@ export default function ComplaintStageActionModal({
 
     // Specific Stage Validations
     if (targetStage.id === 'C03') {
-      if (formState.technician_type === 'IN_HOUSE' && !formState.technician_name) {
+      if (formState.technician_type === 'IN_HOUSE' && !selectedEngineer) {
         setErrorMsg('Please select a Service Engineer from the team list.');
         return;
       }
@@ -104,7 +132,9 @@ export default function ComplaintStageActionModal({
         await onSuccess({
           ticketId: ticket.id,
           targetStage,
-          formState,
+          formState: targetStage.id === 'C03' && formState.technician_type === 'IN_HOUSE'
+            ? { ...formState, technician_id: selectedEngineer.id, technician_name: selectedEngineer.name, technician_phone: selectedEngineer.phone }
+            : formState,
           executedBy: userName,
           executedById: userId
         });
@@ -250,7 +280,7 @@ export default function ComplaintStageActionModal({
                     type="radio"
                     name="tech_type"
                     checked={formState.technician_type === 'IN_HOUSE'}
-                    onChange={() => setFormState({ ...formState, technician_type: 'IN_HOUSE' })}
+                    onChange={() => handleTechnicianTypeChange('IN_HOUSE')}
                   />
                   <span>In-House Service Engineer</span>
                 </label>
@@ -259,7 +289,7 @@ export default function ComplaintStageActionModal({
                     type="radio"
                     name="tech_type"
                     checked={formState.technician_type === 'EXTERNAL_VENDOR'}
-                    onChange={() => setFormState({ ...formState, technician_type: 'EXTERNAL_VENDOR' })}
+                    onChange={() => handleTechnicianTypeChange('EXTERNAL_VENDOR')}
                   />
                   <span>Authorized Third-Party / Local Vendor</span>
                 </label>
@@ -267,21 +297,35 @@ export default function ComplaintStageActionModal({
 
               {formState.technician_type === 'IN_HOUSE' ? (
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
-                    Select Service Engineer (from Team Master) <span style={{ color: '#ef4444' }}>*</span>
-                  </label>
-                  <select
-                    value={formState.technician_id}
-                    onChange={e => handleSelectInHouseTech(e.target.value)}
-                    style={{ width: '100%', padding: '0.5rem 0.65rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '6px', color: 'var(--text-primary)', fontSize: '0.82rem' }}
-                  >
-                    <option value="">-- Choose Active Service Engineer --</option>
-                    {teamMembers.map(m => (
-                      <option key={m.id || m.user_id} value={m.id || m.user_id}>
-                        {m.emp_name || m.name} ({m.role || 'Service Team'}) - {m.mobile_1 || m.phone || ''}
-                      </option>
-                    ))}
-                  </select>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', marginBottom: '0.35rem' }}>
+                    <label style={{ fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                      Select Service Engineer (from Team Master) <span style={{ color: '#ef4444' }}>*</span>
+                    </label>
+                    {selectedEngineer && (
+                      <span role="status" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', color: '#10b981', fontSize: '0.74rem', fontWeight: 700 }}>
+                        <CheckCircle2 size={13} /> Engineer Selected
+                      </span>
+                    )}
+                  </div>
+                  <SearchableEmployeeSelect
+                    employees={serviceEngineers}
+                    selectedEmail={selectedEngineer?.id || ''}
+                    onSelect={handleSelectInHouseTech}
+                    placeholder="Search and select an active Service Engineer..."
+                    disabled={submitting}
+                    required
+                  />
+                  {selectedEngineer ? (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', marginTop: '0.35rem' }}>
+                      <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>{selectedEngineer.emp_code}</span>
+                      <button type="button" disabled={submitting} onClick={() => handleSelectInHouseTech(null)} aria-label="Change Service Engineer"
+                        style={{ background: 'none', border: 'none', color: 'var(--accent-color, #2563eb)', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700 }}>
+                        Change
+                      </button>
+                    </div>
+                  ) : serviceEngineers.length === 0 ? (
+                    <p role="status" style={{ margin: '0.35rem 0 0', fontSize: '0.74rem', color: 'var(--text-secondary)' }}>No active team members available. Check Team Master.</p>
+                  ) : null}
                 </div>
               ) : (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem' }}>

@@ -9,7 +9,8 @@ import {
   Sliders,
   Settings2,
   WifiOff,
-  Users
+  Users,
+  Network
 } from 'lucide-react';
 import AdminMessageConfig from '../AdminMessageConfig/AdminMessageConfig';
 import SystemStatusHealth from '../Settings/SystemStatusHealth';
@@ -18,13 +19,17 @@ import PageNavigationConfig from '../Settings/PageNavigationConfig';
 import OfflineRuleModule from '../Offline/OfflineRuleModule';
 import PublicUserManagement from '../PublicUserManagement';
 import dynamic from 'next/dynamic';
+import ErrorBoundary from '../ErrorBoundary';
+import {CONFIG_MASTER_PAGES} from '@/config/integrationsConfig';
 const BroadcastNotificationPanel = dynamic(() => import('./BroadcastNotificationPanel'));
+const IntegrationAccessConfig = dynamic(() => import('./IntegrationAccessConfig'));
 
 const CONFIG_TABS = [
   { id: 'notifications', label: 'User Notifications', icon: Users, description: 'Workspace, headquarters and branch announcements with delivery and read reports' },
   { id: 'messages', label: 'Platform Messaging & OTPs', icon: ShieldCheck, description: 'Central OTP templates, SMTP authentication & global DLT/WABA gateways' },
   { id: 'status', label: 'System Health & Server Logs', icon: Activity, description: 'Database performance, telephony metrics, system uptime & latency logs' },
   { id: 'automation', label: 'Automation & Webhook API', icon: Workflow, description: 'Platform API keys, external CRM webhooks & scheduled triggers' },
+  {...CONFIG_MASTER_PAGES.find(page=>page.id==='tenant_integrations'),icon:Network,description:'Master Admin activation of company and branch API, webhook and Meta access'},
   { id: 'navigation', label: 'Page Navigation Rules', icon: Compass, description: 'Table column sizing defaults, page jumps & pagination rules' },
   { id: 'offline_rule', label: 'Offline Rules & Sync Policy', icon: WifiOff, description: 'Network disconnect policies, offline queue retention & local caching rules' },
   { id: 'public_users', label: 'Public User Management', icon: Users, description: 'External candidate applicants, job portal registrations & public user controls' }
@@ -164,6 +169,7 @@ export default function ConfigMasterPanel({
           />
         )}
         {activeTab === 'automation' && <AutomationAPI />}
+        {activeTab === 'tenant_integrations' && <ErrorBoundary fallback={<p>Tenant integration controls could not be displayed. Refresh to retry.</p>}><IntegrationAccessConfig /></ErrorBoundary>}
         {activeTab === 'navigation' && <PageNavigationConfig />}
         {activeTab === 'offline_rule' && <OfflineRuleModule userRole={userRole} />}
         {activeTab === 'public_users' && <PublicUserManagement />}

@@ -11,7 +11,7 @@ import { isFeatureEntitled } from '@/utils/saasEntitlements';
 import SubscriptionExpiryBanner from './SaaS/SubscriptionExpiryBanner';
 import SubscriptionExpiredModal from './SaaS/SubscriptionExpiredModal';
 import AddonPurchaseModal from './SaaS/AddonPurchaseModal';
-import { Database, LayoutDashboard, Users, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, MessageSquare, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen, Building2, MapPin, ShieldCheck, Camera, User, Upload, Loader2, Trash2, Calendar, Clock, AlertTriangle, AlertCircle, X, ExternalLink, CheckSquare, WifiOff, Sparkles, Volume2, CheckCircle2, Play, Settings2, FormInput, Workflow, Monitor, Target, FileType, Compass, Layers, Network, Activity, Crown, GitMerge, Sliders, Send, Mail, Zap, Package, Truck } from 'lucide-react';
+import { Database, LayoutDashboard, Users, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, MessageSquare, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen, Building2, MapPin, ShieldCheck, Camera, User, Upload, Loader2, Trash2, Calendar, Clock, AlertTriangle, AlertCircle, X, ExternalLink, CheckSquare, WifiOff, Sparkles, Volume2, CheckCircle2, Play, Settings2, FormInput, Workflow, Monitor, Target, FileType, Compass, Layers, Network, Activity, Crown, GitMerge, Sliders, Send, Mail, Zap, Package, Truck, Navigation as NavigationIcon } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { getTeamMembers } from '@/app/actions/team';
@@ -64,6 +64,10 @@ const DelegationTaskModule = dynamic(() => import('./Delegation/DelegationTaskMo
 const OfflineRuleModule = dynamic(() => import('./Offline/OfflineRuleModule'), { loading: () => <WorkspaceSkeleton variant="settings" /> });
 const SuperAdminSaasPanel = dynamic(() => import('./SaaS/SuperAdminSaasPanel'), { loading: () => <WorkspaceSkeleton variant="settings" /> });
 const ConfigMasterPanel = dynamic(() => import('./MasterAdmin/ConfigMasterPanel'), { loading: () => <WorkspaceSkeleton variant="settings" /> });
+const FieldMobileDashboard = dynamic(() => import('./FieldForce/FieldMobileDashboard'), { loading: () => <WorkspaceSkeleton variant="form" /> });
+const FieldTaskManager = dynamic(() => import('./FieldForce/FieldTaskManager'), { loading: () => <WorkspaceSkeleton variant="table" /> });
+const AdminFormStudio = dynamic(() => import('./FieldForce/AdminFormStudio'), { loading: () => <WorkspaceSkeleton variant="table" /> });
+const LiveFieldTrackingMap = dynamic(() => import('./Attendance/LiveFieldTrackingMap'), { loading: () => <WorkspaceSkeleton variant="analytics" /> });
 const BroadcastNotificationReceiver = dynamic(() => import('./common/BroadcastNotificationReceiver'), { ssr: false });
 
 markLeadStartupTiming('crm-module-ready');
@@ -591,6 +595,12 @@ export default function CRMContainer({
   const [checklistSubTab, setChecklistSubTab] = useState('dashboard');
   const [delegationMenuExpanded, setDelegationMenuExpanded] = useState(false);
   const [delegationSubTab, setDelegationSubTab] = useState('dashboard');
+  const [fieldForceMenuExpanded, setFieldForceMenuExpanded] = useState(false);
+  const [fieldForceSubTab, setFieldForceSubTab] = useState('mobile_dashboard');
+  const handleFieldForceSubTabChange = (tab) => {
+    setFieldForceSubTab(tab);
+    setActiveTab('field_force');
+  };
   const [workflowMenuExpanded, setWorkflowMenuExpanded] = useState(false);
   const [workflowSubTab, setWorkflowSubTab] = useState(() => {
     const raw = (initialRoute || pathname || '');
@@ -913,6 +923,38 @@ export default function CRMContainer({
   const [isSyncing, setIsSyncing] = useState(false);
   const [impersonationInfo, setImpersonationInfo] = useState(null);
   const [adminRestoreToken, setAdminRestoreToken] = useState(null);
+
+  // Live Field Visit Session Persistence & Global Indicator
+  const [activeFieldVisit, setActiveFieldVisit] = useState(null);
+  const [activeFieldVisitMins, setActiveFieldVisitMins] = useState(1);
+
+  useEffect(() => {
+    const checkFieldVisit = () => {
+      try {
+        const stored = localStorage.getItem('field_active_visit');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed && parsed.activeCheckInTime) {
+            setActiveFieldVisit(parsed);
+            const diffMs = new Date() - new Date(parsed.activeCheckInTime);
+            setActiveFieldVisitMins(Math.max(1, Math.floor(diffMs / 60000)));
+            return;
+          }
+        }
+        setActiveFieldVisit(null);
+      } catch (_) {
+        setActiveFieldVisit(null);
+      }
+    };
+
+    checkFieldVisit();
+    const interval = setInterval(checkFieldVisit, 10000);
+    window.addEventListener('field_visit_state_changed', checkFieldVisit);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('field_visit_state_changed', checkFieldVisit);
+    };
+  }, []);
 
   // Online / Offline Detection & Dynamic Rule Synchronization
   const [isOnline, setIsOnline] = useState(true);
@@ -2894,6 +2936,13 @@ export default function CRMContainer({
       }
       tab = 'delegation';
       setDelegationMenuExpanded(true);
+    } else if (tab === 'field_force' || tab === 'field-force' || (tab && (tab.startsWith('field_force/') || tab.startsWith('field-force/')))) {
+      let sub = tab.includes('/') ? tab.split('/')[1] : (params.get('tab') || params.get('subtab'));
+      if (sub) {
+        setFieldForceSubTab(sub.toLowerCase());
+      }
+      tab = 'field_force';
+      setFieldForceMenuExpanded(true);
     } else if (tab === 'workflow' || tab === 'workplace' || (tab && (tab.startsWith('workflow/') || tab.startsWith('workplace/')))) {
       let sub = tab.startsWith('workflow/') ? tab.split('/')[1] : tab.startsWith('workplace/') ? tab.split('/')[1] : (params.get('tab') || params.get('subtab'));
       if (sub && ['active', 'tracker', 'trash'].includes(sub.toLowerCase())) {
@@ -4693,6 +4742,15 @@ export default function CRMContainer({
                       🌴 Company Leave Policy
                     </button>
                   )}
+                  {getSubItemPermissions(moduleAccess, userRole, 'attendance', 'live_tracking').view && (
+                    <button
+                      onClick={() => handleAttendanceSubTabChange('live_tracking')}
+                      className="submenu-item"
+                      data-active={activeTab === 'attendance' && attendanceSubTab === 'live_tracking'}
+                    >
+                      🛰️ Live GPS & Playback
+                    </button>
+                  )}
                   {getSubItemPermissions(moduleAccess, userRole, 'attendance', 'geofencing').view && (
                     <button
                       onClick={() => handleAttendanceSubTabChange('geofencing')}
@@ -4845,6 +4903,74 @@ export default function CRMContainer({
                       data-active={activeTab === 'delegation' && delegationSubTab === 'all'}
                     >
                       👥 Team Task Board
+                    </button>
+                  )}
+                </div>
+              </div>
+            </SidebarSubmenu>
+          )}
+
+          {/* Field Force Management (Mobile App, Tasks, Custom Forms, Radar) */}
+          {((userRole === 'admin' || userRole === 'Admin') || isTabPermitted('field_force', moduleAccess, userRole)) && (
+            <SidebarSubmenu collapsed={isSidebarCollapsed}>
+              <button 
+                onClick={() => {
+                  if (isSidebarCollapsed) {
+                    setIsSidebarCollapsed(false);
+                    setFieldForceMenuExpanded(true);
+                  } else {
+                    setFieldForceMenuExpanded(!fieldForceMenuExpanded);
+                  }
+                  handleTabChange('field_force');
+                }}
+                className="nav-item" 
+                data-active={activeTab === 'field_force'}
+                title={isSidebarCollapsed ? "Field Force Management" : undefined}
+                style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
+              >
+                <span className="nav-chevron" style={{ marginRight: '-0.25rem' }}>
+                  {fieldForceMenuExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                </span>
+                <NavigationIcon size={20} style={{ flexShrink: 0 }} />
+                <span>Field Force & Forms</span>
+              </button>
+              
+              <div className={`submenu-list ${fieldForceMenuExpanded ? 'expanded' : ''}`}>
+                <div className="submenu-inner">
+                  {getSubItemPermissions(moduleAccess, userRole, 'field_force', 'mobile_dashboard').view && (
+                    <button
+                      onClick={() => handleFieldForceSubTabChange('mobile_dashboard')}
+                      className="submenu-item"
+                      data-active={activeTab === 'field_force' && (fieldForceSubTab === 'mobile_dashboard' || !fieldForceSubTab)}
+                    >
+                      📱 Field Executive App
+                    </button>
+                  )}
+                  {getSubItemPermissions(moduleAccess, userRole, 'field_force', 'task_manager').view && (
+                    <button
+                      onClick={() => handleFieldForceSubTabChange('task_manager')}
+                      className="submenu-item"
+                      data-active={activeTab === 'field_force' && fieldForceSubTab === 'task_manager'}
+                    >
+                      📋 Field Tasks Manager
+                    </button>
+                  )}
+                  {getSubItemPermissions(moduleAccess, userRole, 'field_force', 'form_studio').view && (
+                    <button
+                      onClick={() => handleFieldForceSubTabChange('form_studio')}
+                      className="submenu-item"
+                      data-active={activeTab === 'field_force' && fieldForceSubTab === 'form_studio'}
+                    >
+                      🎨 Custom Form Studio
+                    </button>
+                  )}
+                  {getSubItemPermissions(moduleAccess, userRole, 'field_force', 'live_radar').view && (
+                    <button
+                      onClick={() => handleFieldForceSubTabChange('live_radar')}
+                      className="submenu-item"
+                      data-active={activeTab === 'field_force' && fieldForceSubTab === 'live_radar'}
+                    >
+                      🛰️ Live GPS & Playback
                     </button>
                   )}
                 </div>
@@ -5785,6 +5911,7 @@ export default function CRMContainer({
                   {activeTab === 'attendance' && 'Smart Attendance & Regularization'}
                   {activeTab === 'checklist' && 'Smart Checklist Management'}
                   {activeTab === 'delegation' && 'Employee-to-Employee Task Delegation'}
+                  {activeTab === 'field_force' && 'Field Force & Dynamic Form Studio'}
                   {activeTab === 'registration' && 'Lead Registration'}
                   {activeTab === 'report' && 'Lead Registered Report'}
                   {activeTab === 'aiadmin' && 'AI Admin'}
@@ -5794,8 +5921,8 @@ export default function CRMContainer({
                   {activeTab === 'aicallcenter' && 'AI Call Center'}
                   {activeTab === 'team' && 'Team Management'}
                   {activeTab === 'user_management_new' && 'User Management'}
-                  {activeTab === 'client_registration' && 'Client Registration'}
-                  {activeTab === 'client_report' && 'Client Report'}
+                  {activeTab === 'client_registration' && 'Lead Registration'}
+                  {activeTab === 'client_report' && 'Lead Registered Report'}
                   {activeTab === 'workplace' && (
                     workflowSubTab === 'tracker'
                       ? 'Workflow Builder • Live Working Tracker'
@@ -7267,6 +7394,49 @@ export default function CRMContainer({
           </div>
         </header>
 
+        {/* Global Floating Field Visit in Progress Banner */}
+        {activeFieldVisit && activeTab !== 'field_force' && (
+          <div style={{
+            background: 'linear-gradient(90deg, #1e3a8a 0%, #2563eb 100%)',
+            color: '#ffffff',
+            padding: '8px 20px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            fontSize: '0.825rem',
+            boxShadow: '0 2px 6px rgba(37,99,235,0.25)',
+            zIndex: 45,
+            flexShrink: 0
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: '1rem' }}>⏱️</span>
+              <span>
+                <strong>Field Visit in Progress:</strong> {activeFieldVisit.partyName} (<strong>{activeFieldVisitMins} mins</strong> elapsed) • {activeFieldVisit.connectivityMode?.replace('_', ' ')}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                handleTabChange('field_force');
+                setFieldForceSubTab('mobile_dashboard');
+              }}
+              style={{
+                backgroundColor: '#ffffff',
+                color: '#1d4ed8',
+                border: 'none',
+                padding: '4px 14px',
+                borderRadius: '6px',
+                fontWeight: 700,
+                fontSize: '0.78rem',
+                cursor: 'pointer',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.15)'
+              }}
+            >
+              Return to Active Visit →
+            </button>
+          </div>
+        )}
+
         {/* Page Content */}
         <div 
           className="page-content" 
@@ -7468,6 +7638,44 @@ export default function CRMContainer({
                     tenantId={effectiveTenantId}
                     isMasterAdmin={isMasterAdmin}
                   />
+                </ErrorBoundary>
+              </KeepAliveTab>
+
+              {/* Field Force Management (Mobile App, Tasks, Custom Forms, Radar) */}
+              <KeepAliveTab 
+                isActive={activeTab === 'field_force'} 
+                isVisited={isTabPermitted('field_force', moduleAccess, userRole) && visitedTabs.has('field_force')}
+              >
+                <ErrorBoundary>
+                  {fieldForceSubTab === 'mobile_dashboard' && (
+                    <FieldMobileDashboard 
+                      currentUserId={userId} 
+                      userName={userName} 
+                      userEmail={userEmail}
+                      company={userCompany || 'TNT00001'} 
+                      onNavigateToAttendance={() => {
+                        setActiveTab('attendance');
+                        setAttendanceSubTab('my_attendance');
+                      }}
+                    />
+                  )}
+                  {fieldForceSubTab === 'task_manager' && (
+                    <FieldTaskManager 
+                      currentUserId={userId} 
+                      company={userCompany || 'TNT00001'} 
+                    />
+                  )}
+                  {fieldForceSubTab === 'form_studio' && (
+                    <AdminFormStudio 
+                      company={userCompany || 'TNT00001'} 
+                    />
+                  )}
+                  {fieldForceSubTab === 'live_radar' && (
+                    <LiveFieldTrackingMap 
+                      company={userCompany || 'TNT00001'} 
+                      currentUserRole={userRole} 
+                    />
+                  )}
                 </ErrorBoundary>
               </KeepAliveTab>
 

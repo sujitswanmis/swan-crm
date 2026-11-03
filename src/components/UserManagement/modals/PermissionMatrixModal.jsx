@@ -104,7 +104,7 @@ export default function PermissionMatrixModal({
 
   // Only role-assignable modules for staff accounts
   const assignableModules = useMemo(() => {
-    return MODULES_CONFIG.filter(m => m.roleAssignable !== false && m.masterAdminOnly !== true && m.category !== 'Master Admin');
+    return MODULES_CONFIG.filter(m => m.id === 'config_master' || (m.roleAssignable !== false && m.masterAdminOnly !== true && m.category !== 'Master Admin'));
   }, []);
 
   // Filter modules based on search
@@ -1201,7 +1201,7 @@ export default function PermissionMatrixModal({
 
                                   {children.map(sub => {
                                     const subPerms = getSubItemPerms(module.id, sub.id);
-                                    const isSubViewOnly = sub.id === 'lead_dashboard' || sub.id === 'hourly_work' || module.viewOnly;
+                                    const isSubViewOnly = sub.id === 'lead_dashboard' || sub.id === 'hourly_work' || module.viewOnly || locked;
                                     const group = groups.find(item => item.id === sub.pageId);
                                     const firstInGroup = group?.subItems[0]?.id === sub.id;
 
@@ -1226,7 +1226,7 @@ export default function PermissionMatrixModal({
                                           <input
                                             type="checkbox"
                                             checked={subPerms.view}
-                                            disabled={!mPerms.view}
+                                            disabled={locked||!mPerms.view}
                                             onChange={() => handleToggleSubItemPerm(module.id, sub.id, 'view')}
                                             style={{ width: '1rem', height: '1rem', accentColor: '#0284c7', cursor: !mPerms.view ? 'not-allowed' : 'pointer' }}
                                           />

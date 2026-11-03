@@ -367,6 +367,8 @@ export default function LeadFormModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successLead, setSuccessLead] = useState(null); // When set, renders the success popup with Lead ID!
   const [copied, setCopied] = useState(false);
+  const [duplicateInfo, setDuplicateInfo] = useState(null);
+  const [isCheckingDuplicate, setIsCheckingDuplicate] = useState(false);
 
   // Sync initial state when modal opens
   useEffect(() => {
@@ -382,8 +384,83 @@ export default function LeadFormModal({
       }));
       setSuccessLead(null);
       setCopied(false);
+      setDuplicateInfo(null);
+      setIsCheckingDuplicate(false);
     }
   }, [isOpen, activeCompany, activeUserName, defaultAssigneeId]);
+
+  // Real-time phone duplication check across Contact & Business phone numbers
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const phone1 = (formData.phone || '').trim();
+    const phone2 = (formData.business_contact_1 || '').trim();
+
+    const normalizePhone = (num) => {
+      if (!num) return '';
+      const digits = String(num).replace(/\D/g, '');
+      return digits.length >= 10 ? digits.slice(-10) : digits;
+    };
+
+    const norm1 = normalizePhone(phone1);
+    const norm2 = normalizePhone(phone2);
+
+    const enteredNumbers = [];
+    if (norm1 && norm1.length >= 10) enteredNumbers.push({ label: 'Contact Mobile Number', val: phone1, normVal: norm1 });
+    if (norm2 && norm2.length >= 10 && norm2 !== norm1) enteredNumbers.push({ label: 'Business Contact Number', val: phone2, normVal: norm2 });
+
+    if (enteredNumbers.length === 0) {
+      setDuplicateInfo(null);
+      setIsCheckingDuplicate(false);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        setIsCheckingDuplicate(true);
+        const filters = [];
+        const contactColumns = ['phone', 'business_contact_1', 'business_contact_2', 'cp1_mobile_2', 'cp2_mobile_1'];
+
+        enteredNumbers.forEach(({ val, normVal }) => {
+          contactColumns.forEach(col => {
+            filters.push(`${col}.eq.${normVal}`);
+            if (val && val !== normVal) {
+              filters.push(`${col}.eq.${val}`);
+            }
+          });
+        });
+
+        const { data, error } = await supabase
+          .from('leads')
+          .select('id, lead_ref_id, name, company, phone, business_contact_1, status, created_at, created_by, entry_by, assigned_to')
+          .or(filters.join(','))
+          .limit(1);
+
+        if (!error && data && data.length > 0) {
+          const match = data[0];
+          setDuplicateInfo({
+            id: match.id,
+            lead_ref_id: match.lead_ref_id || match.id,
+            name: match.name,
+            company: match.company,
+            status: match.status,
+            created_by: match.created_by || match.entry_by || 'Staff',
+            entry_by: match.entry_by || 'Staff',
+            assigned_to: match.assigned_to,
+            matchedNumber: enteredNumbers[0]?.val || ''
+          });
+        } else {
+          setDuplicateInfo(null);
+        }
+        setIsCheckingDuplicate(false);
+      } catch (err) {
+        console.warn('Duplicate check note:', err);
+        setIsCheckingDuplicate(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [isOpen, formData.phone, formData.business_contact_1, supabase]);
 
   const districtsList = useMemo(() => {
     if (!formData.state_name) return [];
@@ -423,6 +500,8 @@ export default function LeadFormModal({
     });
     setSuccessLead(null);
     setCopied(false);
+    setDuplicateInfo(null);
+    setIsCheckingDuplicate(false);
   };
 
   const handleSubmit = async (e) => {
@@ -431,6 +510,24 @@ export default function LeadFormModal({
       alert('Please enter at least Contact Person Name or Business Name.');
       return;
     }
+
+    // Duplicate Lead Warning Confirmation Guard
+    if (duplicateInfo) {
+      const proceed = window.confirm(
+        `⚠️ Duplicate Lead Alert!\n\nA lead with matching phone number (${duplicateInfo.matchedNumber}) is already registered in CRM:\n\n` +
+        `  • Lead ID: #${duplicateInfo.lead_ref_id}\n` +
+        `  • Business Name: ${duplicateInfo.company || 'N/A'}\n` +
+        `  • Contact Person: ${duplicateInfo.name || 'N/A'}\n` +
+        `  • Current Status: ${duplicateInfo.status || 'Active'}\n` +
+        `  • Assigned Agent: ${getAssigneeLabel(duplicateInfo.assigned_to)}\n` +
+        `  • Created By: ${duplicateInfo.created_by}\n\n` +
+        `Do you still want to register this duplicate lead?`
+      );
+      if (!proceed) {
+        return;
+      }
+    }
+
     setIsSubmitting(true);
     
     try {
@@ -572,9 +669,6 @@ export default function LeadFormModal({
         zIndex: 1050,
         padding: '1rem',
         boxSizing: 'border-box'
-      }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget && !isSubmitting && !successLead) onClose();
       }}
     >
       <div 
@@ -815,6 +909,58 @@ export default function LeadFormModal({
                 boxSizing: 'border-box'
               }}
             >
+              {/* ⚠️ Real-time Duplicate Lead Warning Alert Banner */}
+              {duplicateInfo && (
+                <div style={{
+                  padding: '0.85rem 1.1rem',
+                  borderRadius: '10px',
+                  backgroundColor: '#fff1f2',
+                  border: '1.5px solid #fecdd3',
+                  display: 'flex',
+                  gap: '0.85rem',
+                  alignItems: 'flex-start',
+                  animation: 'modalSlideIn 0.2s ease-out'
+                }}>
+                  <div style={{ fontSize: '1.35rem', lineHeight: 1 }}>⚠️</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', flexWrap: 'wrap' }}>
+                      <span style={{ fontWeight: 700, color: '#9f1239', fontSize: '0.88rem' }}>
+                        Duplicate Lead Alert!
+                      </span>
+                      <span style={{ 
+                        fontSize: '0.78rem', 
+                        padding: '0.15rem 0.55rem', 
+                        borderRadius: '5px', 
+                        backgroundColor: '#fee2e2', 
+                        color: '#991b1b', 
+                        fontFamily: 'monospace', 
+                        fontWeight: 700 
+                      }}>
+                        #{duplicateInfo.lead_ref_id}
+                      </span>
+                    </div>
+                    <p style={{ margin: '0.35rem 0 0.5rem 0', fontSize: '0.82rem', color: '#881337', lineHeight: 1.4 }}>
+                      A lead with mobile number <code>{duplicateInfo.matchedNumber}</code> is already registered as <strong>{duplicateInfo.company || duplicateInfo.name || 'Unnamed Lead'}</strong> with Status: <strong>{duplicateInfo.status?.split('>')?.pop() || duplicateInfo.status || 'Active'}</strong>.
+                    </p>
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', fontSize: '0.76rem' }}>
+                      <span style={{ padding: '0.2rem 0.5rem', borderRadius: '5px', backgroundColor: '#ffffff', border: '1px solid #fecdd3', color: '#9f1239' }}>
+                        👤 <strong>Created By:</strong> {duplicateInfo.created_by}
+                      </span>
+                      <span style={{ padding: '0.2rem 0.5rem', borderRadius: '5px', backgroundColor: '#ffffff', border: '1px solid #fecdd3', color: '#9f1239' }}>
+                        🎯 <strong>Assigned To:</strong> {getAssigneeLabel(duplicateInfo.assigned_to)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {isCheckingDuplicate && !duplicateInfo && (
+                <div style={{ fontSize: '0.78rem', color: 'var(--accent-color, #2563eb)', display: 'flex', alignItems: 'center', gap: '0.4rem', paddingLeft: '0.2rem' }}>
+                  <span style={{ display: 'inline-block', width: '10px', height: '10px', border: '2px solid var(--accent-color, #2563eb)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.6s linear infinite' }}></span>
+                  Checking for duplicate mobile numbers in database...
+                </div>
+              )}
+
               {/* Section 1: Scope & Assignment */}
               <div>
                 <div style={sectionHeadingStyle}>
@@ -950,14 +1096,25 @@ export default function LeadFormModal({
                   </div>
 
                   <div style={{ minWidth: 0 }}>
-                    <label style={labelStyle}>Contact Mobile Number</label>
+                    <label style={labelStyle}>
+                      <span>Contact Mobile Number</span>
+                      {duplicateInfo && (
+                        <span style={{ color: '#e11d48', fontSize: '0.72rem', marginLeft: 'auto', fontWeight: 600 }}>
+                          ⚠️ Duplicate Found
+                        </span>
+                      )}
+                    </label>
                     <input 
                       type="tel" 
                       name="phone" 
                       value={formData.phone} 
                       onChange={handleChange} 
                       placeholder="10-digit mobile number" 
-                      style={inputStyle} 
+                      style={{
+                        ...inputStyle,
+                        borderColor: duplicateInfo ? '#f43f5e' : 'var(--border-light, #e2e8f0)',
+                        backgroundColor: duplicateInfo ? '#fff1f2' : 'var(--bg-surface, #ffffff)'
+                      }} 
                     />
                   </div>
 
@@ -1009,14 +1166,25 @@ export default function LeadFormModal({
                   </div>
 
                   <div style={{ minWidth: 0 }}>
-                    <label style={labelStyle}>Business Contact Number</label>
+                    <label style={labelStyle}>
+                      <span>Business Contact Number</span>
+                      {duplicateInfo && (
+                        <span style={{ color: '#e11d48', fontSize: '0.72rem', marginLeft: 'auto', fontWeight: 600 }}>
+                          ⚠️ Duplicate Found
+                        </span>
+                      )}
+                    </label>
                     <input 
                       type="tel" 
                       name="business_contact_1" 
                       value={formData.business_contact_1} 
                       onChange={handleChange} 
                       placeholder="Office / landline / business phone" 
-                      style={inputStyle} 
+                      style={{
+                        ...inputStyle,
+                        borderColor: duplicateInfo ? '#f43f5e' : 'var(--border-light, #e2e8f0)',
+                        backgroundColor: duplicateInfo ? '#fff1f2' : 'var(--bg-surface, #ffffff)'
+                      }} 
                     />
                   </div>
 

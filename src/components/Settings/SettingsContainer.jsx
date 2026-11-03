@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { Building2, Settings2, FormInput, Bell, Database, Target, FileType, MessageSquare, Monitor, Package, Truck, AlertTriangle } from 'lucide-react';
+import React, { useState, useEffect, startTransition } from 'react';
+import dynamic from 'next/dynamic';
+import { INTEGRATION_PAGE, INTEGRATION_PAGE_IDS } from '@/config/integrationsConfig';
+import ErrorBoundary from '@/components/ErrorBoundary';
+import { Building2, Settings2, Bell, Database, Target, FileType, Monitor, Package, Truck, AlertTriangle } from 'lucide-react';
 
 // Subcomponents
 import BusinessProfile from './BusinessProfile';
 import CRMConfig from './CRMConfig';
-import CustomFields from './CustomFields';
-import WorkspaceMessageTemplates from './WorkspaceMessageTemplates';
 import NotificationsConfig from './NotificationsConfig';
 import DataManagement from './DataManagement';
 import TargetPerformance from './TargetPerformance';
@@ -17,20 +18,23 @@ import OrderPipelineConfig from './OrderPipelineConfig';
 import ComplaintPipelineConfig from './ComplaintPipelineConfig';
 import { filterVisibleSubTabs } from '@/utils/permissionUtils';
 
+const IntegrationsContainer = dynamic(() => import('./Integrations/IntegrationsContainer'), {
+  loading: () => <div style={{ padding: '2rem' }}>Loading integrations…</div>,
+});
+
 const SETTINGS_TABS = [
   { id: 'business', label: 'Business Profile & Branches', icon: <Building2 size={18} /> },
   { id: 'products', label: 'Product List & Branches', icon: <Package size={18} /> },
   { id: 'order_pipeline', label: 'Order to Delivery Config', icon: <Truck size={18} /> },
   { id: 'complaints_config', label: 'Complaint Management Config', icon: <AlertTriangle size={18} /> },
   { id: 'crm', label: 'CRM & Lead Config', icon: <Settings2 size={18} /> },
-  { id: 'fields', label: 'Custom Fields', icon: <FormInput size={18} /> },
-  { id: 'templates', label: 'Message & WhatsApp Templates', icon: <MessageSquare size={18} /> },
   { id: 'notifications', label: 'Notifications & Alerts', icon: <Bell size={18} /> },
   { id: 'departments', label: 'Manage Departments', icon: <Building2 size={18} /> },
   { id: 'targets', label: 'Targets & Performance', icon: <Target size={18} /> },
   { id: 'sessions', label: 'Work & Session Rules', icon: <Monitor size={18} /> },
   { id: 'data', label: 'Data Management', icon: <Database size={18} /> },
-  { id: 'media', label: 'File & Media Settings', icon: <FileType size={18} /> }
+  { id: 'media', label: 'File & Media Settings', icon: <FileType size={18} /> },
+  INTEGRATION_PAGE
 ];
 
 export default function SettingsContainer({ 
@@ -38,8 +42,7 @@ export default function SettingsContainer({
   userRole = '', 
   userCompany = '',
   isMasterAdmin = false,
-  currentSubTab = 'business',
-  onSubTabChange = null
+  currentSubTab = 'business'
 }) {
   const visibleTabs = filterVisibleSubTabs(moduleAccess, userRole, 'settings', SETTINGS_TABS);
   
@@ -49,13 +52,12 @@ export default function SettingsContainer({
       const search = new URLSearchParams(window.location.search);
       if (path.startsWith('settings/')) {
         const sub = path.split('/')[1];
+        if (INTEGRATION_PAGE_IDS.includes(sub)) return INTEGRATION_PAGE.id;
         if (['products', 'product-list', 'products-list'].includes(sub)) return 'products';
         if (['order-pipeline', 'order_pipeline', 'order-config', 'order_config'].includes(sub)) return 'order_pipeline';
         if (['complaints', 'complaint-config', 'complaint_config', 'complaints_config', 'complaint-pipeline'].includes(sub)) return 'complaints_config';
         if (['crm-config', 'crm_config'].includes(sub)) return 'crm';
-        if (['custom-fields', 'custom_fields'].includes(sub)) return 'fields';
         if (['business-profile', 'branches'].includes(sub)) return 'business';
-        if (['message-templates', 'whatsapp-templates'].includes(sub)) return 'templates';
         if (['alerts', 'notification'].includes(sub)) return 'notifications';
         if (['manage-departments', 'dept'].includes(sub)) return 'departments';
         if (['performance', 'target'].includes(sub)) return 'targets';
@@ -65,17 +67,18 @@ export default function SettingsContainer({
         if (sub) return sub;
       }
       const param = search.get('setting') || search.get('subtab') || search.get('tab');
-      if (param) return param;
+      if (param) return INTEGRATION_PAGE_IDS.includes(param) ? INTEGRATION_PAGE.id : param;
     }
-    return currentSubTab || 'business';
+    return INTEGRATION_PAGE_IDS.includes(currentSubTab) ? INTEGRATION_PAGE.id : currentSubTab || 'business';
   };
 
   const [activeTab, setActiveTab] = useState(resolveCurrentTab);
 
   // Sync when currentSubTab prop changes from parent CRMContainer
   useEffect(() => {
-    if (currentSubTab && visibleTabs.some(t => t.id === currentSubTab)) {
-      setActiveTab(currentSubTab);
+    const target = INTEGRATION_PAGE_IDS.includes(currentSubTab) ? INTEGRATION_PAGE.id : currentSubTab;
+    if (target && visibleTabs.some(t => t.id === target)) {
+      startTransition(() => setActiveTab(target));
     }
   }, [currentSubTab, visibleTabs]);
 
@@ -98,23 +101,14 @@ export default function SettingsContainer({
   // Listen for external setting subtab changes (e.g. from main sidebar or custom events)
   useEffect(() => {
     const handleSubTabEvent = (e) => {
-      if (e.detail && visibleTabs.some(t => t.id === e.detail)) {
-        setActiveTab(e.detail);
+      const target = INTEGRATION_PAGE_IDS.includes(e.detail) ? INTEGRATION_PAGE.id : e.detail;
+      if (target && visibleTabs.some(t => t.id === target)) {
+        setActiveTab(target);
       }
     };
     window.addEventListener('setting_subtab_change', handleSubTabEvent);
     return () => window.removeEventListener('setting_subtab_change', handleSubTabEvent);
   }, [visibleTabs]);
-
-  const handleTabChange = (tabId) => {
-    setActiveTab(tabId);
-    if (onSubTabChange) {
-      onSubTabChange(tabId);
-    } else {
-      window.history.pushState(null, '', `/settings/${tabId}`);
-      window.dispatchEvent(new CustomEvent('setting_subtab_change', { detail: tabId }));
-    }
-  };
 
   if (visibleTabs.length === 0) {
     return (
@@ -134,14 +128,17 @@ export default function SettingsContainer({
         {activeTab === 'order_pipeline' && <OrderPipelineConfig userCompany={userCompany} isMasterAdmin={isMasterAdmin} userRole={userRole} />}
         {activeTab === 'complaints_config' && <ComplaintPipelineConfig userCompany={userCompany} isMasterAdmin={isMasterAdmin} userRole={userRole} />}
         {activeTab === 'crm' && <CRMConfig userCompany={userCompany} />}
-        {activeTab === 'fields' && <CustomFields />}
-        {activeTab === 'templates' && <WorkspaceMessageTemplates userCompany={userCompany} />}
         {activeTab === 'notifications' && <NotificationsConfig />}
         {activeTab === 'departments' && <ManageDepartments />}
         {activeTab === 'targets' && <TargetPerformance />}
         {activeTab === 'sessions' && <ActiveSessionsConfig userCompany={userCompany} />}
         {activeTab === 'data' && <DataManagement />}
         {activeTab === 'media' && <FileMedia />}
+        {activeTab === INTEGRATION_PAGE.id && visibleTabs.some(tab => tab.id === activeTab) && (
+          <ErrorBoundary fallback={<div style={{ padding: '2rem' }}>Integrations could not be displayed. Other CRM pages remain available.</div>}>
+            <IntegrationsContainer moduleAccess={moduleAccess} userRole={userRole} />
+          </ErrorBoundary>
+        )}
       </div>
     </div>
   );

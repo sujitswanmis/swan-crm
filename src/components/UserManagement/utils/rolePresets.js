@@ -2,7 +2,7 @@
  * Predefined Role Profiles & Permission Templates for SuPuja Workplace
  */
 
-import { INTEGRATION_TABS } from '../../../config/integrationsConfig.js';
+import { INTEGRATION_TABS, CONFIG_MASTER_PAGES } from '../../../config/integrationsConfig.js';
 
 export const ROLE_PRESETS = [
   {
@@ -36,12 +36,21 @@ export const ROLE_PRESETS = [
           monthly_logs: { view: true },
           regularization: { view: true },
           my_leaves: { view: true },
-          my_leaves: { view: true },
           hod_approvals: { view: true },
           team_report: { view: true },
+          live_tracking: { view: true },
           shift_rules: { view: true },
           leave_policy: { view: true },
           geofencing: { view: true }
+        }
+      },
+      field_force: {
+        view: true, read: true, write: true, edit: true, export: true,
+        sub_items: {
+          mobile_dashboard: { view: true },
+          task_manager: { view: true },
+          form_studio: { view: true },
+          live_radar: { view: true }
         }
       },
       checklist: {
@@ -171,12 +180,21 @@ export const ROLE_PRESETS = [
           monthly_logs: { view: true },
           regularization: { view: true },
           my_leaves: { view: true },
-          my_leaves: { view: true },
           hod_approvals: { view: true },
           team_report: { view: true },
+          live_tracking: { view: true },
           shift_rules: { view: true },
           leave_policy: { view: true },
           geofencing: { view: true }
+        }
+      },
+      field_force: {
+        view: true, read: true, write: true, edit: true, export: true,
+        sub_items: {
+          mobile_dashboard: { view: true },
+          task_manager: { view: true },
+          form_studio: { view: true },
+          live_radar: { view: true }
         }
       },
       checklist: {
@@ -591,12 +609,21 @@ export const ROLE_PRESETS = [
           monthly_logs: { view: true },
           regularization: { view: true },
           my_leaves: { view: true },
-          my_leaves: { view: true },
           hod_approvals: { view: true },
           team_report: { view: true },
+          live_tracking: { view: true },
           shift_rules: { view: true },
           leave_policy: { view: true },
           geofencing: { view: true }
+        }
+      },
+      field_force: {
+        view: true, read: true, write: true, edit: true, export: true,
+        sub_items: {
+          mobile_dashboard: { view: true },
+          task_manager: { view: true },
+          form_studio: { view: true },
+          live_radar: { view: true }
         }
       },
       checklist: {
@@ -880,6 +907,8 @@ export const ROLE_PRESETS = [
 
 // Register every tab of the single Integrations page, preserving stored permission IDs.
 for (const preset of ROLE_PRESETS) {
+  const master=preset.key==='master_admin';
+  preset.presetData.config_master={view:master,add:master,edit:master,delete:false,sub_items:Object.fromEntries(CONFIG_MASTER_PAGES.map(page=>[page.id,{view:master,add:master,edit:master,delete:false}]))};
   const manages = ['master_admin', 'admin'].includes(preset.key);
   preset.presetData.can_manage_integrations = manages;
   const settings = preset.presetData.settings;
@@ -887,7 +916,7 @@ for (const preset of ROLE_PRESETS) {
     ...(settings || { view: false, add: false, edit: false, delete: false }),
     sub_items: {
       ...(settings?.sub_items || Object.fromEntries([
-        'business', 'products', 'order_pipeline', 'complaints_config', 'crm', 'fields', 'templates',
+        'business', 'products', 'order_pipeline', 'complaints_config', 'crm',
         'notifications', 'departments', 'targets', 'sessions', 'data', 'media',
       ].map(id => [id, { view: settings?.view === true, add: manages, edit: manages, delete: false }]))),
       ...Object.fromEntries(INTEGRATION_TABS.map(tab => [tab.id, {

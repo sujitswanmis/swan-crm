@@ -3,13 +3,14 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { logAuditAction } from '@/app/actions/audit';
-import { getLeadCallHistory } from '@/app/actions/team';
+import { getLeadCallHistory, getTeamMembers } from '@/app/actions/team';
 import { enqueueOfflineAction, canPerformOfflineAction, sanitizeLeadPayloadForDb, showSyncToast } from '@/utils/offlineSync';
 import { normalizeLeadRecord, normalizeEmployeeName } from '@/utils/dataSanitizer';
-import { X, Send, Play, Pause, Phone, Volume2, RotateCw, Mic, MicOff, Check, Loader2, ChevronLeft, ChevronRight, Building2 } from 'lucide-react';
+import { X, Send, Play, Pause, Phone, Volume2, RotateCw, Mic, MicOff, Check, Loader2, ChevronLeft, ChevronRight, ChevronDown, Building2, Navigation, MapPin, AlertTriangle, ShieldCheck, CheckCircle2, Image as ImageIcon, Calendar, Search } from 'lucide-react';
 import { triggerWhatsappAutomationForStage } from '@/app/actions/whatsapp';
 import { triggerEmailAutomationForStage } from '@/app/actions/emailConfig';
 import { sendLeadToParty } from '@/app/actions/partyHandoff';
+import { getFieldHistoryForLead, createFieldTask } from '@/app/actions/fieldTasks';
 import MaskedPhoneDisplay from '@/components/common/MaskedPhoneDisplay';
 
 // Standard 7 CRM Stages Fallback Definition
@@ -416,6 +417,7 @@ export default function LeadProfilePanel({
   userName,
   userRole,
   userId,
+  company = 'TNT00001',
   teamMembers = [],
   stages: propStages,
   onNextLead,
@@ -435,8 +437,39 @@ export default function LeadProfilePanel({
 
   const [notes, setNotes] = useState([]);
   const [callLogs, setCallLogs] = useState([]);
+  const [fieldVisits, setFieldVisits] = useState([]);
+  const [showFieldAssignModal, setShowFieldAssignModal] = useState(false);
+  const [selectedFieldExecutive, setSelectedFieldExecutive] = useState('');
+  const [fieldVisitDate, setFieldVisitDate] = useState('');
+  const [fieldVisitPurpose, setFieldVisitPurpose] = useState('Lead Data Pipeline');
+  const [isSchedulingField, setIsSchedulingField] = useState(false);
+  const [previewPhotoUrl, setPreviewPhotoUrl] = useState(null);
   const [isLoadingCalls, setIsLoadingCalls] = useState(false);
   const [historyFilter, setHistoryFilter] = useState('all');
+  const [internalTeamMembers, setInternalTeamMembers] = useState([]);
+  const [fieldExecSearch, setFieldExecSearch] = useState('');
+  const [isFieldDropdownOpen, setIsFieldDropdownOpen] = useState(false);
+  const [fieldTaskSuccessModal, setFieldTaskSuccessModal] = useState(null);
+  const [fieldAssignError, setFieldAssignError] = useState('');
+
+  useEffect(() => {
+    const comp = company || lead?.company || 'TNT00002';
+    if (showFieldAssignModal && (!teamMembers || teamMembers.length === 0)) {
+      getTeamMembers(comp).then(res => {
+        if (res && res.length > 0) setInternalTeamMembers(res);
+      }).catch(err => console.error(err));
+    }
+  }, [showFieldAssignModal, teamMembers, company, lead?.company]);
+
+  const effectiveTeamMembers = (teamMembers && teamMembers.length > 0) ? teamMembers : internalTeamMembers;
+
+  useEffect(() => {
+    if (lead?.id) {
+      getFieldHistoryForLead(lead.id).then(res => {
+        setFieldVisits(res || []);
+      }).catch(() => {});
+    }
+  }, [lead?.id]);
   const [newNote, setNewNote] = useState('');
   const [followUpDate, setFollowUpDate] = useState('');
   const [isEditing, setIsEditing] = useState(false);
@@ -1306,13 +1339,23 @@ export default function LeadProfilePanel({
       });
     });
 
+    (fieldVisits || []).forEach(v => {
+      list.push({
+        id: `field_visit_${v.id}`,
+        type: 'field_visit',
+        createdAt: v.created_at || v.check_in_time,
+        data: v
+      });
+    });
+
     // Sort descending (latest on top)
     list.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
 
     if (historyFilter === 'calls') return list.filter(item => item.type === 'call');
     if (historyFilter === 'notes') return list.filter(item => item.type === 'note');
+    if (historyFilter === 'field_visits') return list.filter(item => item.type === 'field_visit');
     return list;
-  }, [notes, callLogs, historyFilter]);
+  }, [notes, callLogs, fieldVisits, historyFilter]);
 
   const handleAddNote = async (e) => {
     e.preventDefault();
@@ -1759,6 +1802,27 @@ export default function LeadProfilePanel({
 
             {/* Right Action Buttons */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <button
+                type="button"
+                onClick={() => setShowFieldAssignModal(true)}
+                style={{
+                  padding: '0.3rem 0.65rem',
+                  border: '1px solid #3b82f6',
+                  background: '#eff6ff',
+                  color: '#1d4ed8',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '0.76rem',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.3rem'
+                }}
+                title="Assign Field Force Visit"
+              >
+                🚗 Field Visit
+              </button>
+
               {mode !== 'history' && !isEditing && (
                 <button 
                   onClick={() => setIsEditing(true)} 
@@ -1782,6 +1846,467 @@ export default function LeadProfilePanel({
               </button>
             </div>
           </div>
+
+          {/* Field Assignment Mini Modal */}
+          {showFieldAssignModal && (
+            <div style={{
+              position: 'fixed',
+              inset: 0,
+              backgroundColor: 'rgba(0,0,0,0.5)',
+              zIndex: 10001,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 16
+            }}>
+              <div style={{
+                background: '#ffffff',
+                borderRadius: 12,
+                width: 'min(440px, 94vw)',
+                padding: 20,
+                boxShadow: '0 20px 40px rgba(0,0,0,0.25)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 12
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#0f172a' }}>
+                    Assign Field Visit Task
+                  </h3>
+                  <button onClick={() => setShowFieldAssignModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+                    <X size={18} />
+                  </button>
+                </div>
+
+                <div style={{ fontSize: 12, color: '#64748b' }}>
+                  Assign field executive to visit <strong>{currentLead.company || currentLead.name}</strong> on site.
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <div style={{ position: 'relative' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <label style={{ fontSize: 12, fontWeight: 700, color: '#1e293b' }}>
+                        Select Field Executive *
+                      </label>
+                      <span style={{ fontSize: 11, color: '#64748b' }}>
+                        {(effectiveTeamMembers || []).length} Executives
+                      </span>
+                    </div>
+
+                    {(() => {
+                      const selectedMember = (effectiveTeamMembers || []).find(m => (m.user_id || m.id) === selectedFieldExecutive);
+                      const filtered = (effectiveTeamMembers || []).filter(m => {
+                        if (!fieldExecSearch.trim()) return true;
+                        const q = fieldExecSearch.toLowerCase();
+                        const name = String(m.emp_name || m.name || m.email || '').toLowerCase();
+                        const role = String(m.role || '').toLowerCase();
+                        const comp = String(m.company || '').toLowerCase();
+                        return name.includes(q) || role.includes(q) || comp.includes(q);
+                      });
+
+                      return (
+                        <div style={{ position: 'relative' }}>
+                          {/* Dropdown Trigger Box */}
+                          <div
+                            onClick={() => setIsFieldDropdownOpen(prev => !prev)}
+                            style={{
+                              width: '100%',
+                              padding: '9px 12px',
+                              borderRadius: 6,
+                              border: isFieldDropdownOpen ? '1.5px solid #2563eb' : '1px solid #cbd5e1',
+                              fontSize: 13,
+                              background: '#ffffff',
+                              color: selectedMember ? '#0f172a' : '#64748b',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              boxSizing: 'border-box',
+                              boxShadow: isFieldDropdownOpen ? '0 0 0 2px rgba(37,99,235,0.1)' : 'none'
+                            }}
+                          >
+                            <span style={{ fontWeight: selectedMember ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {selectedMember
+                                ? `${selectedMember.emp_name || selectedMember.name} (${selectedMember.role || 'Executive'}${selectedMember.company ? ` • ${selectedMember.company}` : ''})`
+                                : '-- Choose Field Executive --'}
+                            </span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                              {selectedMember && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedFieldExecutive('');
+                                    setFieldExecSearch('');
+                                  }}
+                                  style={{
+                                    background: '#fee2e2',
+                                    border: 'none',
+                                    color: '#dc2626',
+                                    fontSize: 11,
+                                    fontWeight: 700,
+                                    borderRadius: 4,
+                                    padding: '2px 6px',
+                                    cursor: 'pointer'
+                                  }}
+                                  title="Clear selection"
+                                >
+                                  ✕ Clear
+                                </button>
+                              )}
+                              <ChevronDown size={15} color="#64748b" style={{ transform: isFieldDropdownOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s ease' }} />
+                            </div>
+                          </div>
+
+                          {/* Floating Popover Dropdown */}
+                          {isFieldDropdownOpen && (
+                            <>
+                              {/* Invisible backdrop to close on outside click */}
+                              <div
+                                onClick={() => setIsFieldDropdownOpen(false)}
+                                style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 90 }}
+                              />
+
+                              <div style={{
+                                position: 'absolute',
+                                top: '100%',
+                                left: 0,
+                                right: 0,
+                                zIndex: 100,
+                                background: '#ffffff',
+                                border: '1px solid #cbd5e1',
+                                borderRadius: 8,
+                                boxShadow: '0 10px 25px -5px rgba(0,0,0,0.15), 0 8px 10px -6px rgba(0,0,0,0.1)',
+                                marginTop: 4,
+                                padding: 8
+                              }}>
+                                {/* Search input inside dropdown */}
+                                <div style={{ position: 'relative', marginBottom: 6 }}>
+                                  <Search size={14} color="#94a3b8" style={{ position: 'absolute', left: 10, top: 10 }} />
+                                  <input
+                                    type="text"
+                                    autoFocus
+                                    value={fieldExecSearch}
+                                    onChange={(e) => setFieldExecSearch(e.target.value)}
+                                    placeholder="🔍 Search executive by name, ID or role..."
+                                    style={{
+                                      width: '100%',
+                                      padding: '8px 10px 8px 30px',
+                                      borderRadius: 6,
+                                      border: '1.5px solid #cbd5e1',
+                                      fontSize: 12,
+                                      background: '#f8fafc',
+                                      color: '#0f172a',
+                                      boxSizing: 'border-box',
+                                      outline: 'none'
+                                    }}
+                                  />
+                                </div>
+
+                                {/* Filtered Executives List */}
+                                <div style={{ maxHeight: 180, overflowY: 'auto' }}>
+                                  {filtered.length === 0 ? (
+                                    <div style={{ padding: '14px', textAlign: 'center', fontSize: 12, color: '#64748b' }}>
+                                      {effectiveTeamMembers.length === 0
+                                        ? 'Loading team members...'
+                                        : `No executive found matching "${fieldExecSearch}"`}
+                                    </div>
+                                  ) : (
+                                    filtered.map(m => {
+                                      const id = m.user_id || m.id;
+                                      const name = m.emp_name || m.name || m.email || id;
+                                      const role = m.role || 'Executive';
+                                      const isCurrentSelected = id === selectedFieldExecutive;
+                                      return (
+                                        <div
+                                          key={id}
+                                          onClick={() => {
+                                            setSelectedFieldExecutive(id);
+                                            setIsFieldDropdownOpen(false);
+                                            setFieldExecSearch('');
+                                          }}
+                                          style={{
+                                            padding: '8px 10px',
+                                            borderRadius: 6,
+                                            cursor: 'pointer',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'space-between',
+                                            background: isCurrentSelected ? '#eff6ff' : 'transparent',
+                                            marginBottom: 2
+                                          }}
+                                          onMouseEnter={(e) => { if (!isCurrentSelected) e.currentTarget.style.background = '#f8fafc'; }}
+                                          onMouseLeave={(e) => { if (!isCurrentSelected) e.currentTarget.style.background = 'transparent'; }}
+                                        >
+                                          <div>
+                                            <div style={{ fontSize: 13, fontWeight: isCurrentSelected ? 700 : 600, color: isCurrentSelected ? '#1d4ed8' : '#0f172a' }}>
+                                              {name}
+                                            </div>
+                                            <div style={{ fontSize: 11, color: '#64748b' }}>
+                                              {role} {m.company ? `• ${m.company}` : ''}
+                                            </div>
+                                          </div>
+                                          {isCurrentSelected && (
+                                            <span style={{ fontSize: 11, fontWeight: 700, color: '#2563eb' }}>✓ Selected</span>
+                                          )}
+                                        </div>
+                                      );
+                                    })
+                                  )}
+                                </div>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>
+                      Visit Purpose / Task Type *
+                    </label>
+                    <select
+                      value={fieldVisitPurpose}
+                      onChange={(e) => setFieldVisitPurpose(e.target.value)}
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13, background: '#ffffff', color: '#0f172a' }}
+                    >
+                      <option value="Lead Data Pipeline">Lead Data Pipeline (S01 - S08)</option>
+                      <option value="Order Taking">Order Taking & Delivery</option>
+                      <option value="Material Checking">Material Checking & Receiving</option>
+                      <option value="Product Demonstration">Product Demonstration / Visit</option>
+                      <option value="Payment Collection">Payment Collection</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>
+                      Scheduled Visit Date & Time (IST)
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={fieldVisitDate}
+                      onChange={(e) => setFieldVisitDate(e.target.value)}
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13, boxSizing: 'border-box', background: '#ffffff', color: '#0f172a' }}
+                    />
+                  </div>
+                </div>
+
+                {fieldAssignError && (
+                  <div style={{ padding: '8px 12px', background: '#fee2e2', border: '1px solid #fecaca', borderRadius: 6, color: '#dc2626', fontSize: 12, fontWeight: 600 }}>
+                    ⚠️ {fieldAssignError}
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowFieldAssignModal(false);
+                      setFieldAssignError('');
+                    }}
+                    style={{ padding: '8px 14px', borderRadius: 6, border: '1px solid #cbd5e1', background: '#fff', fontSize: 12, cursor: 'pointer' }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isSchedulingField}
+                    onClick={async () => {
+                      if (!selectedFieldExecutive) {
+                        setFieldAssignError('Please select a Field Executive first.');
+                        return;
+                      }
+                      setFieldAssignError('');
+                      setIsSchedulingField(true);
+                      try {
+                        const res = await createFieldTask({
+                          company: company || lead.tenant_id || 'TNT00001',
+                          lead_id: lead.id,
+                          party_name: lead.company || lead.name || 'Lead Party',
+                          party_phone: lead.phone || '',
+                          party_address: lead.address || '',
+                          assigned_by_user_id: userId,
+                          assigned_to_user_id: selectedFieldExecutive,
+                          task_type: fieldVisitPurpose,
+                          scheduled_start_time: fieldVisitDate ? new Date(fieldVisitDate).toISOString() : new Date().toISOString()
+                        });
+                        if (res.success) {
+                          const assignedMember = (effectiveTeamMembers || []).find(m => (m.user_id || m.id) === selectedFieldExecutive);
+                          setFieldTaskSuccessModal({
+                            leadName: lead.company || lead.name || 'Lead Party',
+                            executiveName: assignedMember?.emp_name || assignedMember?.name || 'Field Executive',
+                            role: assignedMember?.role || 'Executive',
+                            taskType: fieldVisitPurpose,
+                            scheduledTime: fieldVisitDate
+                              ? new Date(fieldVisitDate).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' })
+                              : 'Immediate / Today'
+                          });
+                          setShowFieldAssignModal(false);
+                          setSelectedFieldExecutive('');
+                          setFieldVisitDate('');
+                          getFieldHistoryForLead(lead.id).then(d => setFieldVisits(d || []));
+                        } else {
+                          setFieldAssignError(`Error: ${res.error}`);
+                        }
+                      } catch (err) {
+                        setFieldAssignError(err?.message || 'Failed to assign field task');
+                      } finally {
+                        setIsSchedulingField(false);
+                      }
+                    }}
+                    style={{ padding: '8px 14px', borderRadius: 6, border: 'none', background: '#2563eb', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+                  >
+                    {isSchedulingField ? 'Assigning...' : 'Assign Field Task'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Centered Success Popup Modal */}
+          {fieldTaskSuccessModal && (
+            <div style={{
+              position: 'fixed',
+              inset: 0,
+              backgroundColor: 'rgba(15, 23, 42, 0.65)',
+              backdropFilter: 'blur(3px)',
+              zIndex: 10002,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 16
+            }}>
+              <div style={{
+                background: '#ffffff',
+                borderRadius: 16,
+                width: 'min(420px, 92vw)',
+                padding: '28px 24px 24px',
+                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)',
+                textAlign: 'center',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 14
+              }}>
+                {/* Large Green Check Icon */}
+                <div style={{
+                  width: 64,
+                  height: 64,
+                  borderRadius: '50%',
+                  background: '#dcfce7',
+                  color: '#16a34a',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: '0 0 0 8px #f0fdf4'
+                }}>
+                  <CheckCircle2 size={36} color="#16a34a" />
+                </div>
+
+                <div>
+                  <h3 style={{ margin: '0 0 6px', fontSize: 18, fontWeight: 800, color: '#0f172a' }}>
+                    Field Visit Task Assigned!
+                  </h3>
+                  <p style={{ margin: 0, fontSize: 13, color: '#64748b', lineHeight: 1.5 }}>
+                    Task has been assigned and dispatched to executive's mobile app.
+                  </p>
+                </div>
+
+                {/* Details Card */}
+                <div style={{
+                  width: '100%',
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: 10,
+                  padding: 14,
+                  textAlign: 'left',
+                  fontSize: 12,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 8,
+                  boxSizing: 'border-box'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #f1f5f9', paddingBottom: 6 }}>
+                    <span style={{ color: '#64748b', fontWeight: 600 }}>Client / Party:</span>
+                    <strong style={{ color: '#0f172a' }}>{fieldTaskSuccessModal.leadName}</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #f1f5f9', paddingBottom: 6 }}>
+                    <span style={{ color: '#64748b', fontWeight: 600 }}>Assigned To:</span>
+                    <strong style={{ color: '#2563eb' }}>{fieldTaskSuccessModal.executiveName} ({fieldTaskSuccessModal.role})</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #f1f5f9', paddingBottom: 6 }}>
+                    <span style={{ color: '#64748b', fontWeight: 600 }}>Task Purpose:</span>
+                    <span style={{ color: '#0f172a', fontWeight: 600 }}>{fieldTaskSuccessModal.taskType}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: '#64748b', fontWeight: 600 }}>Schedule:</span>
+                    <span style={{ color: '#16a34a', fontWeight: 700 }}>📅 {fieldTaskSuccessModal.scheduledTime}</span>
+                  </div>
+                </div>
+
+                {/* Big Done Button in Center */}
+                <button
+                  type="button"
+                  onClick={() => setFieldTaskSuccessModal(null)}
+                  style={{
+                    width: '100%',
+                    padding: '11px',
+                    borderRadius: 8,
+                    background: '#2563eb',
+                    color: '#ffffff',
+                    border: 'none',
+                    fontSize: 14,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 12px rgba(37,99,235,0.3)',
+                    marginTop: 4
+                  }}
+                >
+                  OK, Great!
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Photo Zoom Modal */}
+          {previewPhotoUrl && (
+            <div
+              onClick={() => setPreviewPhotoUrl(null)}
+              style={{
+                position: 'fixed',
+                inset: 0,
+                backgroundColor: 'rgba(0,0,0,0.85)',
+                zIndex: 10002,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 20
+              }}
+            >
+              <div style={{ position: 'relative', maxWidth: '90vw', maxHeight: '90vh' }}>
+                <img src={previewPhotoUrl} alt="Watermark Zoom" style={{ maxWidth: '100%', maxHeight: '90vh', borderRadius: 8, boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }} />
+                <button
+                  onClick={() => setPreviewPhotoUrl(null)}
+                  style={{
+                    position: 'absolute',
+                    top: -12,
+                    right: -12,
+                    background: '#ffffff',
+                    color: '#000',
+                    border: 'none',
+                    borderRadius: '50%',
+                    width: 28,
+                    height: 28,
+                    fontWeight: 700,
+                    cursor: 'pointer'
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Modal 2-Column Responsive Body */}
           <div className="lead-modal-body" style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
@@ -2441,7 +2966,7 @@ export default function LeadProfilePanel({
                       color: historyFilter === 'all' ? '#ffffff' : 'var(--text-secondary)'
                     }}
                   >
-                    All ({notes.length + callLogs.length})
+                    All ({notes.length + callLogs.length + fieldVisits.length})
                   </button>
                   <button
                     type="button"
@@ -2474,6 +2999,22 @@ export default function LeadProfilePanel({
                     }}
                   >
                     📝 Notes ({notes.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setHistoryFilter('field_visits')}
+                    style={{
+                      padding: '3px 8px',
+                      fontSize: '0.72rem',
+                      fontWeight: 600,
+                      borderRadius: '4px',
+                      border: 'none',
+                      cursor: 'pointer',
+                      backgroundColor: historyFilter === 'field_visits' ? '#2563eb' : 'transparent',
+                      color: historyFilter === 'field_visits' ? '#ffffff' : 'var(--text-secondary)'
+                    }}
+                  >
+                    🚗 Field Visits ({fieldVisits.length})
                   </button>
                 </div>
               </div>
@@ -2559,6 +3100,86 @@ export default function LeadProfilePanel({
 
                         {/* IST Timestamp */}
                         <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', display: 'flex', justifyContent: 'flex-end', marginTop: '0.2rem' }}>
+                          <span>📅 {formatIST(item.createdAt)}</span>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  if (item.type === 'field_visit') {
+                    const v = item.data;
+                    const isFlagged = v.is_geofence_flagged;
+                    return (
+                      <div
+                        key={item.id}
+                        style={{
+                          padding: '0.85rem 1rem',
+                          backgroundColor: isFlagged ? '#fef2f2' : '#f0fdf4',
+                          borderRadius: '8px',
+                          border: `1px solid ${isFlagged ? '#fecaca' : '#bbf7d0'}`,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '0.45rem'
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.4rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <span style={{
+                              fontSize: '0.72rem',
+                              fontWeight: 700,
+                              padding: '2px 8px',
+                              borderRadius: '9999px',
+                              backgroundColor: isFlagged ? '#dc2626' : '#16a34a',
+                              color: '#ffffff'
+                            }}>
+                              {isFlagged ? '🚨 GEOFENCE FLAGGED' : '🟢 FIELD VISIT'}
+                            </span>
+                            <span style={{ fontWeight: 600, fontSize: '0.88rem' }}>
+                              Mode: {v.connectivity_mode?.replace('_', ' ')}
+                            </span>
+                          </div>
+                          <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                            ⏱️ Duration: {v.duration_minutes || 0} mins
+                          </span>
+                        </div>
+
+                        {isFlagged && (
+                          <div style={{ fontSize: '0.75rem', color: '#b91c1c', fontWeight: 600, background: '#fee2e2', padding: '4px 8px', borderRadius: '4px' }}>
+                            {v.geofence_flag_reason || `Checked in ${v.distance_from_party_meters}m away (>200m limit)`}
+                          </div>
+                        )}
+
+                        {v.discussion_notes && (
+                          <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', whiteSpace: 'pre-wrap' }}>
+                            📝 <b>Notes:</b> {v.discussion_notes}
+                          </div>
+                        )}
+
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                          {v.outcome_status && <span>Status: <b>{v.outcome_status}</b></span>}
+                          {v.order_value > 0 && <span>Order: <b>₹{v.order_value}</b></span>}
+                          {v.payment_collected > 0 && <span>Payment: <b>₹{v.payment_collected}</b> ({v.payment_mode})</span>}
+                        </div>
+
+                        {/* Photos & Signature Preview */}
+                        {v.photo_watermark_urls && v.photo_watermark_urls.length > 0 && (
+                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '4px' }}>
+                            <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>📷 Photos:</span>
+                            {v.photo_watermark_urls.map((url, i) => (
+                              <img
+                                key={i}
+                                src={url}
+                                alt="Watermarked visit"
+                                onClick={() => setPreviewPhotoUrl(url)}
+                                style={{ width: '40px', height: '40px', borderRadius: '4px', objectFit: 'cover', cursor: 'pointer', border: '1px solid #cbd5e1' }}
+                                title="Click to view full photo"
+                              />
+                            ))}
+                          </div>
+                        )}
+
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between', marginTop: '0.2rem' }}>
+                          <span>📍 GPS: {v.check_in_lat ? `${Number(v.check_in_lat).toFixed(4)}°N, ${Number(v.check_in_lng).toFixed(4)}°E` : 'N/A'}</span>
                           <span>📅 {formatIST(item.createdAt)}</span>
                         </div>
                       </div>

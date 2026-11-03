@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import {
   X, User, Phone, MapPin, Building2, Package, ShieldCheck,
   Upload, CheckCircle2, AlertCircle, FileText, Image as ImageIcon,
@@ -14,6 +14,7 @@ import { getPartyList } from '@/app/actions/partyMaster';
 import SearchableProductSelect from '@/components/common/SearchableProductSelect';
 import { createEndCustomer } from '@/app/actions/endCustomers';
 import { calculateWarrantyStatus } from '@/utils/warrantyUtils';
+import { END_CUSTOMER_COMPANIES, endCustomerDealerCompany, filterEndCustomerDealers, partyCode } from '@/utils/endCustomerTransfer';
 
 /**
  * Client-side file compressor to guarantee file size is strictly <= 100 KB
@@ -87,6 +88,7 @@ export default function RegisterEndCustomerModal({
 }) {
   const [formData, setFormData] = useState({
     // 1. Basic Identity & Contact
+    our_company: '',
     full_name: '',
     mobile_1: '',
     mobile_2: '',
@@ -123,6 +125,7 @@ export default function RegisterEndCustomerModal({
   });
 
   const [dealerSearch, setDealerSearch] = useState('');
+  const dealerInputRef = useRef(null);
   const [showDealerDropdown, setShowDealerDropdown] = useState(false);
   const [liveParties, setLiveParties] = useState(parties || []);
   const [dealerDisplayLimit, setDealerDisplayLimit] = useState(100);
@@ -256,7 +259,7 @@ export default function RegisterEndCustomerModal({
 
   // Live filtered dealers across ALL channel partners (No hardcoded 50 cap!)
   const allMatchingDealers = useMemo(() => {
-    const source = (liveParties && liveParties.length > 0) ? liveParties : (parties || []);
+    const source = filterEndCustomerDealers((liveParties && liveParties.length > 0) ? liveParties : parties, formData.our_company);
     if (!dealerSearch || !dealerSearch.trim()) return source;
     const q = dealerSearch.toLowerCase().trim();
     return source.filter(p => {
@@ -274,7 +277,7 @@ export default function RegisterEndCustomerModal({
       const mobile = (p.primary_mobile || p.biz_contact_no_1 || '').toLowerCase();
       return name.includes(q) || code.includes(q) || city.includes(q) || state.includes(q) || mobile.includes(q);
     });
-  }, [liveParties, parties, dealerSearch]);
+  }, [liveParties, parties, dealerSearch, formData.our_company]);
 
   // If total matching dealers <= 300, show ALL matching dealers directly so scrolling never gets stuck!
   // Otherwise, display in smooth batches with infinite scroll + "Load all" option.
@@ -315,8 +318,16 @@ export default function RegisterEndCustomerModal({
     }));
   };
 
+  const handleCompanyChange = (company) => {
+    setFormData(prev => ({ ...prev, our_company: company, linked_party_id: '', linked_party_code: '', linked_party_name: '', dealer_city_district: '' }));
+    setDealerSearch('');
+    setShowDealerDropdown(false);
+    setDealerDisplayLimit(100);
+  };
+
   const handleSelectDealer = (party) => {
-    const code = party.party_universal_code || party.external_sap_code || party.id;
+    if (!formData.our_company || endCustomerDealerCompany(party) !== formData.our_company) return;
+    const code = partyCode(party);
     const name = party.firm_name || party.legal_name || 'Dealer';
     const location = [party.city_name, party.district_name].filter(Boolean).join(', ');
 
@@ -327,8 +338,21 @@ export default function RegisterEndCustomerModal({
       linked_party_name: name,
       dealer_city_district: location
     }));
-    setDealerSearch(`${name} [${code}]`);
+    setDealerSearch(code ? `${name} [${code}]` : name);
     setShowDealerDropdown(false);
+  };
+
+  const handleChangeDealer = () => {
+    setFormData(prev => ({
+      ...prev,
+      linked_party_id: '',
+      linked_party_code: '',
+      linked_party_name: '',
+      dealer_city_district: ''
+    }));
+    setDealerSearch('');
+    setShowDealerDropdown(true);
+    dealerInputRef.current?.focus();
   };
 
   const handleSelectProduct = (prod) => {
@@ -394,6 +418,10 @@ export default function RegisterEndCustomerModal({
     e.preventDefault();
     setErrorMsg('');
 
+    if (!END_CUSTOMER_COMPANIES.includes(formData.our_company)) {
+      setErrorMsg('Please select Company Name (NSMLR or NSTLP).');
+      return;
+    }
     if (!formData.full_name.trim()) {
       setErrorMsg('Customer Full Name is required.');
       return;
@@ -519,6 +547,16 @@ export default function RegisterEndCustomerModal({
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.75rem' }}>
+              <div style={{ gridColumn: '1 / -1', maxWidth: '350px', width: '100%' }}>
+                <label htmlFor="end-customer-company" style={{ display: 'block', fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
+                  Company Name <span style={{ color: '#ef4444' }}>*</span>
+                </label>
+                <select id="end-customer-company" required value={formData.our_company} onChange={e => handleCompanyChange(e.target.value)}
+                  style={{ width: '100%', padding: '0.5rem 0.65rem', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '6px', color: 'var(--text-primary)', fontSize: '0.82rem' }}>
+                  <option value="">Select Company</option>
+                  {END_CUSTOMER_COMPANIES.map(company => <option key={company} value={company}>{company}</option>)}
+                </select>
+              </div>
               <div>
                 <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
                   Customer Full Name <span style={{ color: '#ef4444' }}>*</span>
@@ -711,22 +749,43 @@ export default function RegisterEndCustomerModal({
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.75rem' }}>
               {/* Linked Dealer Search */}
               <div style={{ position: 'relative', gridColumn: '1 / -1' }}>
-                <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
+                <label htmlFor="linked-dealer-input" style={{ display: 'block', fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
                   Linked Dealer / Distributor (Party Master search)
                 </label>
-                <input
-                  type="text"
-                  placeholder="Type to search Dealer firm name, code, or city..."
-                  value={dealerSearch}
-                  onChange={e => {
-                    setDealerSearch(e.target.value);
-                    setShowDealerDropdown(true);
-                  }}
-                  onFocus={() => setShowDealerDropdown(true)}
-                  style={{ width: '100%', padding: '0.5rem 0.65rem', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '6px', color: 'var(--text-primary)', fontSize: '0.82rem' }}
-                />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <input
+                    id="linked-dealer-input"
+                    ref={dealerInputRef}
+                    type="text"
+                    disabled={!formData.our_company}
+                    placeholder={formData.our_company ? 'Type to search Dealer firm name, code, or city...' : 'Select Company Name first'}
+                    value={dealerSearch}
+                    readOnly={Boolean(formData.linked_party_id)}
+                    onChange={e => {
+                      if (formData.linked_party_id) return;
+                      setDealerSearch(e.target.value);
+                      setShowDealerDropdown(true);
+                    }}
+                    onFocus={() => {
+                      if (formData.our_company && !formData.linked_party_id) setShowDealerDropdown(true);
+                    }}
+                    style={{ width: '100%', minWidth: 0, flex: 1, padding: '0.5rem 0.65rem', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '6px', color: 'var(--text-primary)', fontSize: '0.82rem' }}
+                  />
+                  {formData.linked_party_id && (
+                    <button
+                      type="button"
+                      onClick={handleChangeDealer}
+                      aria-label="Change dealer"
+                      title="Clear selected dealer and search again"
+                      style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flexShrink: 0, padding: '0.5rem 0.65rem', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '6px', color: 'var(--text-primary)', fontSize: '0.82rem', cursor: 'pointer' }}
+                    >
+                      <X size={14} aria-hidden="true" />
+                      Change
+                    </button>
+                  )}
+                </div>
 
-                {showDealerDropdown && (
+                {showDealerDropdown && formData.our_company && !formData.linked_party_id && (
                   <div
                     onScroll={handleDealerDropdownScroll}
                     style={{
@@ -824,7 +883,7 @@ export default function RegisterEndCustomerModal({
                               color: '#ea580c',
                               fontFamily: 'monospace'
                             }}>
-                              {party.party_universal_code || party.external_sap_code || party.id?.slice(0, 8)}
+                              {partyCode(party) || 'Code unavailable'}
                             </span>
                           </div>
                           <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '2px', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>

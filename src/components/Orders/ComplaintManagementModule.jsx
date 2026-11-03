@@ -4,9 +4,11 @@ import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   AlertTriangle, Shield, CheckCircle2, Clock, Search, Filter,
   RefreshCw, Plus, ArrowRight, CheckSquare, Phone, User, ExternalLink,
-  LayoutGrid, List, Users, Wrench, ShieldAlert, Sparkles, Building2, MapPin, Eye, FileText
+  LayoutGrid, List, Users, Wrench, ShieldAlert, Sparkles, Building2, MapPin, Eye, FileText, X,
+  ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight
 } from 'lucide-react';
 import { useTableColumnResize, ColumnResizer } from '@/utils/tableColumnResize';
+import { COMPLAINT_DATE_PRESETS, COMPLAINT_STATUSES, filterComplaintTickets, getComplaintDateRange, getComplaintISTDay, getComplaintStatus, isComplaintSlaBreached } from '@/utils/complaintFilters';
 import {
   getComplaintsTickets,
   createComplaintTicketDirect,
@@ -18,7 +20,7 @@ import { getComplaintPipelineConfig } from '@/app/actions/complaintPipelineConfi
 import { getEndCustomers } from '@/app/actions/endCustomers';
 import { getTeamMembers } from '@/app/actions/team';
 import MaskedPhoneDisplay from '../common/MaskedPhoneDisplay';
-import StandardTablePagination from '../common/StandardTablePagination';
+import DateRangePicker from '../common/DateRangePicker';
 import SearchablePartySelect from '../common/SearchablePartySelect';
 import ComplaintStageActionModal from './modals/ComplaintStageActionModal';
 import ComplaintStageHistoryModal from './modals/ComplaintStageHistoryModal';
@@ -54,6 +56,12 @@ const DEFAULT_STAGES = [
   { id: 'C06', step_no: 6, name: 'Quality Audit & Closed', short_code: 'CLOSED', color: '#10b981', is_enabled: true }
 ];
 
+const COMPLAINT_PICKER_OPTIONS = COMPLAINT_DATE_PRESETS.map(([id, label]) => ({ id, label }));
+function resolveComplaintPickerRange(preset, startDate = '', endDate = '') {
+  return { ...getComplaintDateRange(preset, startDate, endDate),
+    label: COMPLAINT_PICKER_OPTIONS.find(option => option.id === preset)?.label || 'Custom Date Range' };
+}
+
 function formatIST(isoDate) {
   if (!isoDate) return '-';
   try {
@@ -78,13 +86,17 @@ export default function ComplaintManagementModule({
   userId = '',
   userRole = ''
 }) {
-  const [viewMode, setViewMode] = useState('pipeline'); // 'pipeline' | 'table' | 'customers'
+  const [viewMode, setViewMode] = useState('table'); // 'table' | 'pipeline' | 'customers'
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [stageFilter, setStageFilter] = useState('ALL');
   const [deptFilter, setDeptFilter] = useState('ALL');
   const [categoryFilter, setCategoryFilter] = useState('ALL');
+  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [datePreset, setDatePreset] = useState('all');
+  const [customStartDate, setCustomStartDate] = useState('');
+  const [customEndDate, setCustomEndDate] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
 
@@ -120,11 +132,25 @@ export default function ComplaintManagementModule({
     source_target: 240,
     category_dept: 220,
     stage_sla: 200,
-    issue: 260,
     technician: 180,
-    actions: 140
+    actions: 260
   };
-  const { columnWidths, startResize, resetWidths } = useTableColumnResize('complaints_table_v2', defaultCols);
+  const minCols = { ticket_id: 110, source_target: 150, category_dept: 140, stage_sla: 160, technician: 110, actions: 250 };
+  const { columnWidths, handleResizeStart, resetColWidth, resizingCol } = useTableColumnResize('complaints_table_v2', defaultCols, minCols);
+  const tableWidths = Object.fromEntries(Object.keys(defaultCols).map(key => [key, Math.max(minCols[key], Number(columnWidths[key]) || defaultCols[key])]));
+  const tableWidth = Object.values(tableWidths).reduce((sum, width) => sum + width, 0);
+  const updateFilter = (setter, value) => { setter(value); setCurrentPage(1); };
+  const todayIST = getComplaintISTDay(new Date());
+  const dateRange = useMemo(() => getComplaintDateRange(datePreset, customStartDate, customEndDate, `${todayIST}T00:00:00+05:30`), [datePreset, customStartDate, customEndDate, todayIST]);
+  const handleDateRangeChange = ({ preset, startDate = '', endDate = '' }) => {
+    setCustomStartDate(startDate);
+    setCustomEndDate(endDate);
+    updateFilter(setDatePreset, preset);
+  };
+  const clearFilters = () => {
+    setSearchTerm(''); setStageFilter('ALL'); setDeptFilter('ALL'); setCategoryFilter('ALL');
+    setStatusFilter('ALL'); setDatePreset('all'); setCustomStartDate(''); setCustomEndDate(''); setCurrentPage(1);
+  };
 
   // Load Pipeline Config
   const loadConfig = useCallback(async () => {
@@ -187,14 +213,15 @@ export default function ComplaintManagementModule({
   }, [loadTickets]);
 
   // Resolve Stage Helper
-  const resolveTicketStage = (ticket) => {
+  const resolveTicketStage = useCallback((ticket) => {
+    if (getComplaintStatus(ticket) === 'COMPLETED') return stages.find(s => s.id === 'C06') || stages[stages.length - 1] || DEFAULT_STAGES[5];
     const rawStage = ticket.stage_id;
     const direct = stages.find(s => s.id === rawStage);
     if (direct) return direct;
     if (ticket.ticket_status === 'RESOLVED_CLOSED') return stages[stages.length - 1] || DEFAULT_STAGES[5];
     if (ticket.ticket_status === 'ACTION_TAKEN') return stages[3] || DEFAULT_STAGES[3];
     return stages[0] || DEFAULT_STAGES[0];
-  };
+  }, [stages]);
 
   // Get Next Stage Helper
   const getNextStage = (currentStageId) => {
@@ -207,6 +234,7 @@ export default function ComplaintManagementModule({
 
   // Open Stage Action Modal
   const handleOpenAdvanceStage = (ticket, targetStage) => {
+    if (getComplaintStatus(ticket) !== 'PENDING' || !targetStage) return;
     setStageActionModal({
       isOpen: true,
       ticket,
@@ -263,66 +291,63 @@ export default function ComplaintManagementModule({
     }
   };
 
-  // Filtered tickets
-  const filteredTickets = useMemo(() => {
-    return tickets.filter(t => {
+  // Apply the same date/status/category/search scope to both views and their counters.
+  const scopedTickets = useMemo(() => filterComplaintTickets(tickets, {
+    status: statusFilter, category: categoryFilter, search: searchTerm, range: dateRange
+  }), [tickets, statusFilter, categoryFilter, searchTerm, dateRange]);
+  const filteredTickets = useMemo(() => scopedTickets.filter(t => {
       const st = resolveTicketStage(t);
-
-      if (stageFilter === 'BREACHED') {
-        if (!t.isSlaBreached) return false;
-      } else if (stageFilter !== 'ALL' && st.id !== stageFilter) {
-        return false;
-      }
-
-      if (categoryFilter !== 'ALL' && t.category !== categoryFilter) {
-        return false;
-      }
-
-      if (!searchTerm) return true;
-      const term = searchTerm.toLowerCase().trim();
-      const num = (t.ticket_number || '').toLowerCase();
-      const party = (t.party?.firm_name || '').toLowerCase();
-      const cust = (t.customer_name || '').toLowerCase();
-      const desc = (t.issue_description || '').toLowerCase();
-      const tech = (t.technician_name || '').toLowerCase();
-
-      return num.includes(term) || party.includes(term) || cust.includes(term) || desc.includes(term) || tech.includes(term);
-    });
-  }, [tickets, stageFilter, categoryFilter, searchTerm, stages]);
-
-  // Reset page on filter changes
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchTerm, stageFilter, categoryFilter, pageSize]);
+      return stageFilter === 'BREACHED' ? isComplaintSlaBreached(t) : stageFilter === 'ALL' || st.id === stageFilter;
+  }), [scopedTickets, stageFilter, resolveTicketStage]);
+  const totalPages = Math.max(1, Math.ceil(filteredTickets.length / pageSize));
+  const displayPage = Math.min(currentPage, totalPages);
 
   const paginatedTickets = useMemo(() => {
-    if (pageSize === 100000) return filteredTickets;
-    const start = (currentPage - 1) * pageSize;
+    const start = (displayPage - 1) * pageSize;
     return filteredTickets.slice(start, start + pageSize);
-  }, [filteredTickets, currentPage, pageSize]);
+  }, [filteredTickets, displayPage, pageSize]);
 
   // Stage counts for visual progress strip
   const stageCounts = useMemo(() => {
-    const map = { ALL: tickets.length, BREACHED: 0 };
+    const map = { ALL: scopedTickets.length, BREACHED: 0 };
     stages.forEach(s => { map[s.id] = 0; });
 
-    tickets.forEach(t => {
+    scopedTickets.forEach(t => {
       const st = resolveTicketStage(t);
-      if (t.isSlaBreached) map.BREACHED++;
+      if (isComplaintSlaBreached(t)) map.BREACHED++;
       if (map[st.id] !== undefined) map[st.id]++;
     });
     return map;
-  }, [tickets, stages]);
+  }, [scopedTickets, stages, resolveTicketStage]);
 
   // KPI Ribbon stats
   const kpis = useMemo(() => {
-    const total = tickets.length;
-    const open = tickets.filter(t => t.stage_id !== 'C06' && t.ticket_status !== 'RESOLVED_CLOSED').length;
-    const underService = tickets.filter(t => t.stage_id === 'C03' || t.stage_id === 'C04').length;
-    const closed = tickets.filter(t => t.stage_id === 'C06' || t.ticket_status === 'RESOLVED_CLOSED').length;
-    const breached = tickets.filter(t => t.isSlaBreached).length;
+    const total = scopedTickets.length;
+    const open = scopedTickets.filter(t => getComplaintStatus(t) === 'PENDING').length;
+    const underService = scopedTickets.filter(t => getComplaintStatus(t) === 'PENDING' && ['C03', 'C04'].includes(resolveTicketStage(t).id)).length;
+    const closed = scopedTickets.filter(t => getComplaintStatus(t) === 'COMPLETED').length;
+    const breached = scopedTickets.filter(isComplaintSlaBreached).length;
     return { total, open, underService, closed, breached };
-  }, [tickets]);
+  }, [scopedTickets, resolveTicketStage]);
+
+  const renderStatus = (ticket) => {
+    const status = COMPLAINT_STATUSES[getComplaintStatus(ticket)];
+    return <span style={{ display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap', fontSize: '0.72rem', fontWeight: 700, padding: '0.18rem 0.45rem', borderRadius: '5px', background: `${status.color}18`, color: status.color }}>{status.label}</span>;
+  };
+  const renderActions = (ticket, nextStage) => (
+    <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'nowrap', gap: '0.4rem', whiteSpace: 'nowrap' }}>
+      {nextStage && getComplaintStatus(ticket) === 'PENDING' && (
+        <button type="button" onClick={() => handleOpenAdvanceStage(ticket, nextStage)} title={`Advance to ${nextStage.id}: ${nextStage.name}`} aria-label={`Advance ${ticket.ticket_number} to ${nextStage.id}`}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', flexShrink: 0, whiteSpace: 'nowrap', minHeight: '32px', padding: '0.35rem 0.6rem', borderRadius: '6px', background: `${nextStage.color}20`, border: `1px solid ${nextStage.color}`, color: nextStage.color, cursor: 'pointer', fontSize: '0.72rem', fontWeight: 700 }}>
+          Advance {nextStage.id}<ArrowRight size={13} />
+        </button>
+      )}
+      <button type="button" onClick={() => setStageHistoryModal({ isOpen: true, ticket })} title="View History" aria-label={`View history for ${ticket.ticket_number}`}
+        style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, width: '32px', height: '32px', padding: 0, background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '6px', color: 'var(--text-secondary)', cursor: 'pointer' }}>
+        <Clock size={16} />
+      </button>
+    </div>
+  );
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
@@ -386,7 +411,7 @@ export default function ComplaintManagementModule({
       }}>
         {/* All Tab */}
         <div
-          onClick={() => setStageFilter('ALL')}
+          onClick={() => updateFilter(setStageFilter, 'ALL')}
           style={{
             padding: '0.45rem 0.85rem',
             borderRadius: '8px',
@@ -422,7 +447,7 @@ export default function ComplaintManagementModule({
           return (
             <div
               key={st.id}
-              onClick={() => setStageFilter(isSelected ? 'ALL' : st.id)}
+              onClick={() => updateFilter(setStageFilter, isSelected ? 'ALL' : st.id)}
               style={{
                 padding: '0.45rem 0.75rem',
                 borderRadius: '8px',
@@ -469,7 +494,7 @@ export default function ComplaintManagementModule({
 
         {/* Breached Tab */}
         <div
-          onClick={() => setStageFilter(stageFilter === 'BREACHED' ? 'ALL' : 'BREACHED')}
+          onClick={() => updateFilter(setStageFilter, stageFilter === 'BREACHED' ? 'ALL' : 'BREACHED')}
           style={{
             padding: '0.45rem 0.75rem',
             borderRadius: '8px',
@@ -509,6 +534,27 @@ export default function ComplaintManagementModule({
         flexWrap: 'wrap',
         gap: '0.75rem'
       }}>
+        <div style={{ width: '100%', display: 'flex', alignItems: 'flex-end', flexWrap: 'wrap', gap: '0.75rem' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+            <span>Quick Date Presets</span>
+            <DateRangePicker preset={datePreset} startDate={dateRange.startDate} endDate={dateRange.endDate}
+              onChange={handleDateRangeChange} allowAllTime title="Filter Complaints by Date (IST)"
+              presetOptions={COMPLAINT_PICKER_OPTIONS} rangeResolver={resolveComplaintPickerRange} />
+          </div>
+          <label htmlFor="complaint-status-filter" style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+            Complaint Status
+            <select id="complaint-status-filter" value={statusFilter} onChange={e => updateFilter(setStatusFilter, e.target.value)}
+              style={{ padding: '0.5rem 0.65rem', minWidth: '160px', background: 'var(--bg-primary)', color: 'var(--text-primary)', border: '1px solid var(--border-light)', borderRadius: '7px' }}>
+              <option value="ALL">All Statuses</option>
+              {Object.entries(COMPLAINT_STATUSES).map(([id, status]) => <option key={id} value={id}>{status.label}</option>)}
+            </select>
+          </label>
+          <button type="button" onClick={clearFilters} style={{ padding: '0.5rem 0.65rem', borderRadius: '7px', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.78rem' }}>Reset Filters</button>
+          <span style={{ paddingBottom: '0.5rem', fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+            Ticket created date (IST): {dateRange.startDate ? `${dateRange.startDate} → ${dateRange.endDate}` : 'All Time'}
+          </span>
+        </div>
+        {dateRange.error && <div role="alert" style={{ width: '100%', color: '#dc2626', fontSize: '0.78rem' }}>{dateRange.error}</div>}
         {/* Search */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flex: '1 1 280px', maxWidth: '380px' }}>
           <div style={{ position: 'relative', width: '100%' }}>
@@ -516,7 +562,7 @@ export default function ComplaintManagementModule({
             <input
               type="text"
               value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
+              onChange={e => updateFilter(setSearchTerm, e.target.value)}
               placeholder="Search Ticket #, Customer, Dealer, Technician..."
               style={{
                 width: '100%',
@@ -535,8 +581,9 @@ export default function ComplaintManagementModule({
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
           {/* Category Filter (8 Categories) */}
           <select
+            aria-label="Complaint category"
             value={categoryFilter}
-            onChange={e => setCategoryFilter(e.target.value)}
+            onChange={e => updateFilter(setCategoryFilter, e.target.value)}
             style={{
               padding: '0.5rem 0.75rem',
               background: 'var(--bg-primary)',
@@ -556,27 +603,7 @@ export default function ComplaintManagementModule({
           <div style={{ display: 'flex', background: 'var(--bg-primary)', borderRadius: '8px', border: '1px solid var(--border-light)', padding: '2px' }}>
             <button
               type="button"
-              onClick={() => setViewMode('pipeline')}
-              style={{
-                padding: '0.4rem 0.65rem',
-                borderRadius: '6px',
-                background: viewMode === 'pipeline' ? 'var(--accent-color, #2563eb)' : 'transparent',
-                color: viewMode === 'pipeline' ? '#fff' : 'var(--text-secondary)',
-                border: 'none',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.35rem',
-                fontSize: '0.78rem',
-                fontWeight: 700
-              }}
-            >
-              <LayoutGrid size={13} />
-              Pipeline
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('table')}
+              onClick={() => updateFilter(setViewMode, 'table')}
               style={{
                 padding: '0.4rem 0.65rem',
                 borderRadius: '6px',
@@ -596,7 +623,27 @@ export default function ComplaintManagementModule({
             </button>
             <button
               type="button"
-              onClick={() => setViewMode('customers')}
+              onClick={() => updateFilter(setViewMode, 'pipeline')}
+              style={{
+                padding: '0.4rem 0.65rem',
+                borderRadius: '6px',
+                background: viewMode === 'pipeline' ? 'var(--accent-color, #2563eb)' : 'transparent',
+                color: viewMode === 'pipeline' ? '#fff' : 'var(--text-secondary)',
+                border: 'none',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                fontSize: '0.78rem',
+                fontWeight: 700
+              }}
+            >
+              <LayoutGrid size={13} />
+              Pipeline
+            </button>
+            <button
+              type="button"
+              onClick={() => updateFilter(setViewMode, 'customers')}
               style={{
                 padding: '0.4rem 0.65rem',
                 borderRadius: '6px',
@@ -734,13 +781,13 @@ export default function ComplaintManagementModule({
                           key={ticket.id}
                           style={{
                             background: 'var(--bg-primary)',
-                            border: ticket.isSlaBreached ? '1px solid rgba(239,68,68,0.5)' : '1px solid var(--border-light)',
+                            border: isComplaintSlaBreached(ticket) ? '1px solid rgba(239,68,68,0.5)' : '1px solid var(--border-light)',
                             borderRadius: '8px',
                             padding: '0.75rem',
                             display: 'flex',
                             flexDirection: 'column',
                             gap: '0.45rem',
-                            boxShadow: ticket.isSlaBreached ? '0 0 10px rgba(239,68,68,0.2)' : 'none',
+                            boxShadow: isComplaintSlaBreached(ticket) ? '0 0 10px rgba(239,68,68,0.2)' : 'none',
                             transition: 'all 0.15s ease'
                           }}
                         >
@@ -750,7 +797,7 @@ export default function ComplaintManagementModule({
                               #{ticket.ticket_number}
                             </span>
 
-                            {ticket.isSlaBreached ? (
+                            {getComplaintStatus(ticket) !== 'PENDING' ? renderStatus(ticket) : isComplaintSlaBreached(ticket) ? (
                               <span style={{ fontSize: '0.68rem', fontWeight: 800, background: 'rgba(239,68,68,0.2)', color: '#ef4444', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>
                                 Breached
                               </span>
@@ -762,6 +809,7 @@ export default function ComplaintManagementModule({
                           </div>
 
                           {/* Target Person / Party */}
+                          {getComplaintStatus(ticket) === 'PENDING' && <div>{renderStatus(ticket)}</div>}
                           <div>
                             <div style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-primary)' }}>
                               {ticket.customer_name ? (
@@ -813,48 +861,7 @@ export default function ComplaintManagementModule({
                           )}
 
                           {/* Card Action Footer */}
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '0.4rem', borderTop: '1px solid var(--border-light)' }}>
-                            <button
-                              type="button"
-                              onClick={() => setStageHistoryModal({ isOpen: true, ticket })}
-                              title="View Stage History"
-                              style={{
-                                background: 'none',
-                                border: 'none',
-                                color: 'var(--text-secondary)',
-                                cursor: 'pointer',
-                                fontSize: '0.7rem',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '0.2rem'
-                              }}
-                            >
-                              <Clock size={12} />
-                              History
-                            </button>
-
-                            {nextSt && (
-                              <button
-                                type="button"
-                                onClick={() => handleOpenAdvanceStage(ticket, nextSt)}
-                                style={{
-                                  padding: '0.3rem 0.6rem',
-                                  borderRadius: '6px',
-                                  background: `${nextSt.color}25`,
-                                  border: `1px solid ${nextSt.color}`,
-                                  color: nextSt.color,
-                                  cursor: 'pointer',
-                                  fontSize: '0.72rem',
-                                  fontWeight: 700,
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '0.25rem'
-                                }}
-                              >
-                                <span>Advance ➔</span>
-                              </button>
-                            )}
-                          </div>
+                          {renderActions(ticket, nextSt)}
                         </div>
                       );
                     })
@@ -877,32 +884,33 @@ export default function ComplaintManagementModule({
           flexDirection: 'column'
         }}>
           <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 310px)', minHeight: '380px', width: '100%' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.84rem' }}>
-              <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)' }}>
+            <table style={{ width: tableWidth, minWidth: '100%', tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.84rem' }}>
+              <colgroup>{Object.entries(tableWidths).map(([key, width]) => <col key={key} style={{ width }} />)}</colgroup>
+              <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                 <tr style={{ background: 'var(--bg-surface)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
-                  <th style={{ width: `${columnWidths.ticket_id}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
+                  <th style={{ width: `${tableWidths.ticket_id}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                     Ticket # &amp; Priority
-                    <ColumnResizer onMouseDown={e => startResize('ticket_id', e)} onDoubleClick={() => resetWidths()} />
+                    <ColumnResizer columnKey="ticket_id" onResizeStart={handleResizeStart} onReset={resetColWidth} isResizing={resizingCol === 'ticket_id'} />
                   </th>
-                  <th style={{ width: `${columnWidths.source_target}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
+                  <th style={{ width: `${tableWidths.source_target}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                     Raised By / Customer / Dealer
-                    <ColumnResizer onMouseDown={e => startResize('source_target', e)} onDoubleClick={() => resetWidths()} />
+                    <ColumnResizer columnKey="source_target" onResizeStart={handleResizeStart} onReset={resetColWidth} isResizing={resizingCol === 'source_target'} />
                   </th>
-                  <th style={{ width: `${columnWidths.category_dept}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
+                  <th style={{ width: `${tableWidths.category_dept}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                     Category &amp; Department
-                    <ColumnResizer onMouseDown={e => startResize('category_dept', e)} onDoubleClick={() => resetWidths()} />
+                    <ColumnResizer columnKey="category_dept" onResizeStart={handleResizeStart} onReset={resetColWidth} isResizing={resizingCol === 'category_dept'} />
                   </th>
-                  <th style={{ width: `${columnWidths.stage_sla}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
+                  <th style={{ width: `${tableWidths.stage_sla}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                     Current Stage &amp; SLA Status
-                    <ColumnResizer onMouseDown={e => startResize('stage_sla', e)} onDoubleClick={() => resetWidths()} />
+                    <ColumnResizer columnKey="stage_sla" onResizeStart={handleResizeStart} onReset={resetColWidth} isResizing={resizingCol === 'stage_sla'} />
                   </th>
-                  <th style={{ width: `${columnWidths.technician}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
+                  <th style={{ width: `${tableWidths.technician}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                     Assigned Technician
-                    <ColumnResizer onMouseDown={e => startResize('technician', e)} onDoubleClick={() => resetWidths()} />
+                    <ColumnResizer columnKey="technician" onResizeStart={handleResizeStart} onReset={resetColWidth} isResizing={resizingCol === 'technician'} />
                   </th>
-                  <th style={{ width: `${columnWidths.actions}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
+                  <th style={{ width: `${tableWidths.actions}px`, padding: '0.85rem 1rem', position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                     Actions
-                    <ColumnResizer onMouseDown={e => startResize('actions', e)} onDoubleClick={() => resetWidths()} />
+                    <ColumnResizer columnKey="actions" onResizeStart={handleResizeStart} onReset={resetColWidth} isResizing={resizingCol === 'actions'} />
                   </th>
                 </tr>
               </thead>
@@ -951,6 +959,7 @@ export default function ComplaintManagementModule({
                         </td>
 
                         <td style={{ padding: '0.85rem 1rem' }}>
+                          <div style={{ marginBottom: '0.35rem' }}>{renderStatus(ticket)}</div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                             <span style={{ fontSize: '0.72rem', fontWeight: 800, color: st.color, background: `${st.color}20`, padding: '0.1rem 0.35rem', borderRadius: '4px' }}>
                               {st.id}
@@ -959,13 +968,13 @@ export default function ComplaintManagementModule({
                               {st.name}
                             </span>
                           </div>
-                          <div style={{ fontSize: '0.7rem', marginTop: '2px' }}>
-                            {ticket.isSlaBreached ? (
+                          {getComplaintStatus(ticket) === 'PENDING' && <div style={{ fontSize: '0.7rem', marginTop: '2px' }}>
+                            {isComplaintSlaBreached(ticket) ? (
                               <span style={{ color: '#ef4444', fontWeight: 700 }}>⚠️ SLA Breached</span>
                             ) : (
                               <span style={{ color: '#10b981' }}>✓ On Time</span>
                             )}
-                          </div>
+                          </div>}
                         </td>
 
                         <td style={{ padding: '0.85rem 1rem' }}>
@@ -979,42 +988,8 @@ export default function ComplaintManagementModule({
                           )}
                         </td>
 
-                        <td style={{ padding: '0.85rem 1rem' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                            {nextSt && (
-                              <button
-                                type="button"
-                                onClick={() => handleOpenAdvanceStage(ticket, nextSt)}
-                                style={{
-                                  padding: '0.35rem 0.65rem',
-                                  borderRadius: '6px',
-                                  background: `${nextSt.color}25`,
-                                  border: `1px solid ${nextSt.color}`,
-                                  color: nextSt.color,
-                                  cursor: 'pointer',
-                                  fontSize: '0.72rem',
-                                  fontWeight: 700
-                                }}
-                              >
-                                Advance ➔
-                              </button>
-                            )}
-                            <button
-                              type="button"
-                              onClick={() => setStageHistoryModal({ isOpen: true, ticket })}
-                              title="View History"
-                              style={{
-                                background: 'none',
-                                border: '1px solid var(--border-light)',
-                                borderRadius: '6px',
-                                padding: '0.3rem',
-                                color: 'var(--text-secondary)',
-                                cursor: 'pointer'
-                              }}
-                            >
-                              <Clock size={14} />
-                            </button>
-                          </div>
+                        <td style={{ padding: '0.85rem 1rem', minWidth: tableWidths.actions }}>
+                          {renderActions(ticket, nextSt)}
                         </td>
                       </tr>
                     );
@@ -1024,14 +999,22 @@ export default function ComplaintManagementModule({
             </table>
           </div>
 
-          {/* Unified Standard Table Pagination */}
-          <StandardTablePagination
-            currentPage={currentPage}
-            pageSize={pageSize}
-            totalItems={filteredTickets.length}
-            onPageChange={setCurrentPage}
-            onPageSizeChange={setPageSize}
-          />
+          {/* Complaint pagination uses the standard record range and first/previous/next/last controls. */}
+          <div aria-label="Complaint pagination" style={{ padding: '0.75rem 1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', borderTop: '1px solid var(--border-light)', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+            <span>Showing <strong>{filteredTickets.length ? (displayPage - 1) * pageSize + 1 : 0}</strong> to <strong>{Math.min(displayPage * pageSize, filteredTickets.length)}</strong> of <strong>{filteredTickets.length}</strong> records</span>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>Rows per page
+              <select aria-label="Complaint rows per page" value={pageSize} onChange={e => updateFilter(setPageSize, Number(e.target.value))} style={{ padding: '0.35rem', border: '1px solid var(--border-light)', borderRadius: '5px', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
+                {[10, 25, 50, 100].map(size => <option key={size} value={size}>{size}</option>)}
+              </select>
+            </label>
+            <nav aria-label="Complaint page navigation" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <button type="button" aria-label="First complaint page" title="First Page" disabled={displayPage === 1} onClick={() => setCurrentPage(1)} style={{ padding: '0.3rem', display: 'flex', border: '1px solid var(--border-light)', borderRadius: '5px', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}><ChevronsLeft size={16} /></button>
+              <button type="button" aria-label="Previous complaint page" title="Previous Page" disabled={displayPage === 1} onClick={() => setCurrentPage(displayPage - 1)} style={{ padding: '0.3rem', display: 'flex', border: '1px solid var(--border-light)', borderRadius: '5px', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}><ChevronLeft size={16} /></button>
+              <span aria-live="polite">Page {displayPage} of {totalPages}</span>
+              <button type="button" aria-label="Next complaint page" title="Next Page" disabled={displayPage === totalPages} onClick={() => setCurrentPage(displayPage + 1)} style={{ padding: '0.3rem', display: 'flex', border: '1px solid var(--border-light)', borderRadius: '5px', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}><ChevronRight size={16} /></button>
+              <button type="button" aria-label="Last complaint page" title="Last Page" disabled={displayPage === totalPages} onClick={() => setCurrentPage(totalPages)} style={{ padding: '0.3rem', display: 'flex', border: '1px solid var(--border-light)', borderRadius: '5px', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}><ChevronsRight size={16} /></button>
+            </nav>
+          </div>
         </div>
       )}
 
@@ -1124,13 +1107,12 @@ export default function ComplaintManagementModule({
               {/* Channel Partner Select */}
               {createForm.complaint_type === 'CHANNEL_PARTNER' ? (
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
-                    Select Channel Partner <span style={{ color: '#ef4444' }}>*</span>
-                  </label>
                   <SearchablePartySelect
                     parties={parties}
-                    value={createForm.party_id}
-                    onChange={val => setCreateForm({ ...createForm, party_id: val })}
+                    selectedId={createForm.party_id}
+                    onChange={val => setCreateForm(prev => ({ ...prev, party_id: val }))}
+                    label="Select Channel Partner"
+                    required
                     placeholder="Search Distributor or Dealer..."
                   />
                 </div>

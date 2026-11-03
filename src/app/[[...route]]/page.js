@@ -143,7 +143,9 @@ export default async function Home({ params, searchParams }) {
 
   // 3. Leads are now fetched on the client side for instant page load
   let allLeads = [];
-  const userAvatar = user?.user_metadata?.avatar_url || null;
+  // Scoped photo/policy resolves after mount; it must never delay the operational workspace
+  // or display the administrator's auth avatar while previewing another employee.
+  const userAvatar = null;
 
   return (
     <main>

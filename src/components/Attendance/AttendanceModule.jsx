@@ -50,6 +50,7 @@ import { getCurrentGPSLocation, calculateDistanceMeters } from '@/utils/geoAtten
 import { enqueueOfflineAction, canPerformOfflineAction } from '@/utils/offlineSync';
 import { useTableColumnResize, ColumnResizer } from '@/utils/tableColumnResize';
 import { filterVisibleSubTabs, getSubItemPermissions } from '@/utils/permissionUtils';
+import LiveFieldTrackingMap from './LiveFieldTrackingMap';
 
 const ALL_ATTENDANCE_TABS = [
   { id: 'my_attendance', label: 'Daily Punch Station' },
@@ -58,6 +59,7 @@ const ALL_ATTENDANCE_TABS = [
   { id: 'my_leaves', label: 'My Leaves' },
   { id: 'hod_approvals', label: 'HOD Approvals' },
   { id: 'team_report', label: 'Team Attendance Report' },
+  { id: 'live_tracking', label: '🛰️ Live Field Tracking & Radar' },
   { id: 'shift_rules', label: 'Shift Rules' },
   { id: 'leave_policy', label: 'Company Leave Policy' },
   { id: 'geofencing', label: 'Office Geofencing Policy' }
@@ -3096,6 +3098,30 @@ export default function AttendanceModule({
               }}
             >
               <Award size={15} /> Company Leave Policy
+            </button>
+          )}
+
+          {/* Tab: Live Field Tracking & Radar */}
+          {visibleTabs.some(t => t.id === 'live_tracking') && (
+            <button
+              type="button"
+              onClick={() => handleTabSelect('live_tracking')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                padding: '0.45rem 0.85rem',
+                borderRadius: '8px',
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: '0.84rem',
+                fontWeight: activeTab === 'live_tracking' ? 600 : 500,
+                backgroundColor: activeTab === 'live_tracking' ? 'var(--accent-color)' : 'transparent',
+                color: activeTab === 'live_tracking' ? '#ffffff' : 'var(--text-secondary)',
+                transition: 'all 0.2s'
+              }}
+            >
+              <Navigation size={15} /> 🛰️ Live Field Tracking & Radar
             </button>
           )}
 
@@ -7801,6 +7827,19 @@ export default function AttendanceModule({
                 </div>
               </div>
 
+        </div>
+      )}
+
+      {/* ========================================================================================= */}
+      {/* TAB: LIVE FIELD TRACKING & 360° RADAR */}
+      {/* ========================================================================================= */}
+      {activeTab === 'live_tracking' && visibleTabs.some(t => t.id === 'live_tracking') && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          <LiveFieldTrackingMap
+            company={selectedShiftPolicyCompany || initialCompany || 'TNT00001'}
+            branchCode={selectedShiftPolicyBranch !== 'All Branches' ? selectedShiftPolicyBranch : null}
+            currentUserRole={userRole}
+          />
         </div>
       )}
 

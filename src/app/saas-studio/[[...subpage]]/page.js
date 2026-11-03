@@ -124,7 +124,8 @@ export default async function SaasStudioPage({ params, searchParams }) {
   const userName = effectiveRoleData?.emp_name || effectiveRoleData?.email?.split('@')[0] || 'User';
   const effectiveUserId = effectiveRoleData?.user_id || user.id;
   const effectiveUserEmail = effectiveRoleData?.email || effectiveRoleData?.emp_official_mail_id || user.email;
-  const userAvatar = user?.user_metadata?.avatar_url || null;
+  // Resolve the verified tenant/branch photo after mount without blocking the workspace.
+  const userAvatar = null;
 
   // Format initial route: e.g. "saas-studio" or "saas-studio/pricing" or "saas-studio/tenants"
   const subpageStr = Array.isArray(subpage) ? subpage.join('/') : (subpage || '');

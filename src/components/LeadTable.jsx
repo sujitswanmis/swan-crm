@@ -419,6 +419,67 @@ const LeadAssigneeCell = React.memo(({ info }) => {
   );
 });
 
+const FieldPersonAssignCell = React.memo(({ info }) => {
+  const lead = info.row.original;
+  const fieldPerson = lead.field_person_name || lead.field_person || null;
+  const visitMode = lead.field_connectivity_mode || lead.connectivity_mode || null;
+  const isFlagged = Boolean(lead.is_geofence_flagged);
+
+  const onOpenHistory = () => {
+    info.table.options.meta?.onOpenProfile(lead, 'history');
+  };
+
+  if (!fieldPerson && !visitMode) {
+    return (
+      <button
+        type="button"
+        onClick={onOpenHistory}
+        style={{
+          background: 'none',
+          border: '1px dashed var(--border-light, #cbd5e1)',
+          borderRadius: '4px',
+          padding: '2px 8px',
+          fontSize: '0.74rem',
+          color: 'var(--text-secondary, #64748b)',
+          cursor: 'pointer'
+        }}
+        title="Assign Field Person in Update History"
+      >
+        + Assign Field
+      </button>
+    );
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'flex-start' }}>
+      <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+        {fieldPerson || 'Field Person'}
+      </span>
+      {isFlagged ? (
+        <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '1px 5px', borderRadius: '4px', background: '#fee2e2', color: '#dc2626' }}>
+          🚨 Fake / Flagged
+        </span>
+      ) : visitMode === 'PHYSICAL_VISIT' || visitMode === 'Physical' ? (
+        <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '1px 5px', borderRadius: '4px', background: '#dcfce7', color: '#166534' }}>
+          🟢 Physical Visit
+        </span>
+      ) : visitMode === 'TELEPHONIC_CALL' || visitMode === 'Telephonic' ? (
+        <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '1px 5px', borderRadius: '4px', background: '#eff6ff', color: '#1d4ed8' }}>
+          🔵 Telephonic
+        </span>
+      ) : visitMode === 'WHATSAPP_CHAT' || visitMode === 'WhatsApp' ? (
+        <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '1px 5px', borderRadius: '4px', background: '#ecfdf5', color: '#047857' }}>
+          💬 WhatsApp
+        </span>
+      ) : (
+        <span style={{ fontSize: '0.68rem', fontWeight: 600, padding: '1px 5px', borderRadius: '4px', background: '#fef3c7', color: '#b45309' }}>
+          ⏳ Scheduled
+        </span>
+      )}
+    </div>
+  );
+});
+
 const LeadStatusCell = React.memo(({ info }) => {
   const status = info.getValue() || 'New';
   const lead = info.row.original;
@@ -756,7 +817,7 @@ const columns = [
     cell: info => {
       const lead = info.row.original;
       return (
-        <button onClick={() => info.table.options.meta?.onOpenProfile(lead, 'edit')} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--accent-color)' }} title="Edit Client Registration Form">
+        <button onClick={() => info.table.options.meta?.onOpenProfile(lead, 'edit')} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--accent-color)' }} title="Edit Lead Registration Form">
           <Edit2 size={16} />
         </button>
       );
@@ -793,6 +854,14 @@ const columns = [
     minSize: 180,
     maxSize: 450,
     cell: info => <LeadAssigneeCell info={info} />
+  },
+  {
+    id: 'field_person_assign',
+    header: 'Field Person Assign',
+    size: 170,
+    minSize: 130,
+    maxSize: 320,
+    cell: info => <FieldPersonAssignCell info={info} />
   },
   { accessorKey: 'business_type', header: 'Business Type', size: 140, minSize: 80, maxSize: 300 },
   { accessorKey: 'company', header: 'Business Name', size: 210, minSize: 100, maxSize: 500 },
@@ -2390,6 +2459,7 @@ export default function LeadTable({
             userRole={userRole}
             userId={userId}
             userName={userName}
+            company={userCompany || 'TNT00001'}
             stages={stages}
             onLeadUpdate={(updatedLead) => {
               const processed = processLeads([updatedLead], teamMembers)[0] || updatedLead;
@@ -2792,7 +2862,7 @@ export default function LeadTable({
                           gap: '0.25rem',
                           flexShrink: 0
                         }}
-                        title="Edit Client Registration"
+                        title="Edit Lead Registration"
                       >
                         ✏️ Edit
                       </button>
@@ -3647,6 +3717,10 @@ export default function LeadTable({
           isOpen={true} 
           onClose={() => setSelectedLead(null)} 
           mode="history"
+          teamMembers={teamMembers}
+          userRole={userRole}
+          userId={userId}
+          company={userCompany}
           userName={userName}
           stages={stages}
           onLeadUpdate={(updatedRawLead) => {

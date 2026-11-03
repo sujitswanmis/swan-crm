@@ -1,5 +1,6 @@
 import React from 'react';
-import { UserPlus, FileText, Users, Building2, CheckCircle, Archive, Globe, Bot, Shield, PhoneCall, Phone, MessageCircle, Settings2, PieChart, ShieldCheck, Clock, CheckSquare, WifiOff, GitMerge } from 'lucide-react';
+import { INTEGRATION_PAGE, INTEGRATION_PAGES, CONFIG_MASTER_PAGES } from './integrationsConfig';
+import { UserPlus, FileText, Users, Building2, CheckCircle, Archive, Globe, Bot, Shield, PhoneCall, Phone, MessageCircle, Settings2, PieChart, ShieldCheck, Clock, CheckSquare, WifiOff, GitMerge, Navigation } from 'lucide-react';
 
 export const MODULES_CONFIG = [
   // General / Dashboards
@@ -90,9 +91,24 @@ export const MODULES_CONFIG = [
       { id: 'my_leaves', label: 'My Leaves' },
       { id: 'hod_approvals', label: 'HOD Approvals' },
       { id: 'team_report', label: 'Team Attendance Report' },
+      { id: 'live_tracking', label: 'Live Field Tracking & Radar' },
       { id: 'shift_rules', label: 'Shift Rules' },
       { id: 'leave_policy', label: 'Company Leave Policy' },
       { id: 'geofencing', label: 'Office Geofencing Policy' }
+    ]
+  },
+  {
+    id: 'field_force',
+    path: 'field_force',
+    label: 'Field Force & Form Studio',
+    category: 'General',
+    icon: <Navigation size={20} />,
+    subItemsType: 'tabs',
+    subItems: [
+      { id: 'mobile_dashboard', label: '📱 Field Executive App' },
+      { id: 'task_manager', label: '📋 Field Tasks Manager' },
+      { id: 'form_studio', label: '🎨 Custom Form Studio' },
+      { id: 'live_radar', label: '🛰️ Live GPS & Playback' }
     ]
   },
   {
@@ -372,8 +388,13 @@ export const MODULES_CONFIG = [
     ],
     roleDisplayNote: 'All tabs use Email Configuration access.'
   },
+  {
+    id: 'config_master', path: 'config-master', label: 'Config Master', category: 'Master Admin',
+    icon: <ShieldCheck size={20} />, roleAssignable:false, masterAdminOnly:true,
+    roleRestrictionLabel:'Master Admin only', subItemsType:'tabs', subItems:CONFIG_MASTER_PAGES
+  },
   { 
-    id: 'admin_message_config', 
+    id: 'admin_message_config',
     path: 'admin_message_config', 
     label: 'Admin Message Config', 
     category: 'Master Admin', 
@@ -405,20 +426,20 @@ export const MODULES_CONFIG = [
     category: 'Settings', 
     icon: <Settings2 size={20} />,
     subItemsType: 'tabs',
+    subItemGroups: [INTEGRATION_PAGE],
     subItems: [
       { id: 'business', label: 'Business Profile & Branches' },
       { id: 'products', label: 'Product List & Branches' },
       { id: 'order_pipeline', label: 'Order to Delivery Config' },
       { id: 'complaints_config', label: 'Complaint Management Config' },
       { id: 'crm', label: 'CRM & Lead Config' },
-      { id: 'fields', label: 'Custom Fields' },
-      { id: 'templates', label: 'Message & WhatsApp Templates' },
       { id: 'notifications', label: 'Notifications & Alerts' },
       { id: 'departments', label: 'Manage Departments' },
       { id: 'targets', label: 'Targets & Performance' },
       { id: 'sessions', label: 'Work & Session Rules' },
       { id: 'data', label: 'Data Management' },
-      { id: 'media', label: 'File & Media Settings' }
+      { id: 'media', label: 'File & Media Settings' },
+      ...INTEGRATION_PAGES
     ]
   }
 ];
