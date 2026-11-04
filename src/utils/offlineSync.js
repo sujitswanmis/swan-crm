@@ -1397,6 +1397,14 @@ export async function syncPendingQueue(supabaseClient, onProgress = null) {
               insertError = null;
               break;
             }
+
+            // If duplicate pkey (23505), strip id and retry with fresh UUID
+            if (error.code === '23505' && cleanPayload.id) {
+              delete cleanPayload.id;
+              insertError = error;
+              continue;
+            }
+
             const match = error.message && error.message.match(/Could not find the '([^']+)' column/i);
             if (match && match[1] && cleanPayload[match[1]] !== undefined) {
               delete cleanPayload[match[1]];

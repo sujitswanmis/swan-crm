@@ -79,14 +79,19 @@ export async function getTenantMessageTemplates(companyOrTenantId = 'Default') {
 
     let dbData = null;
     try {
-      const { data, error } = await admin
-        .from('tenant_message_templates')
-        .select('*')
-        .or(`company.ilike.${key},tenant_id.eq.${key}`)
-        .maybeSingle();
+      if (admin) {
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(key);
+        let query = admin.from('tenant_message_templates').select('*');
+        if (isUuid) {
+          query = query.or(`company.ilike.${key},tenant_id.eq.${key}`);
+        } else {
+          query = query.ilike('company', key);
+        }
+        const { data, error } = await query.maybeSingle();
 
-      if (!error && data) {
-        dbData = data;
+        if (!error && data) {
+          dbData = data;
+        }
       }
     } catch (_) {}
 
@@ -141,7 +146,18 @@ export async function saveTenantMessageTemplates({
     // 1. Try upserting to Supabase
     try {
       const admin = getAdminClient();
-      await admin.from('tenant_message_templates').upsert(payload, { onConflict: 'company' });
+      if (admin) {
+        const { error: upsertErr } = await admin.from('tenant_message_templates').upsert(payload, { onConflict: 'company' });
+        if (upsertErr) {
+          // Graceful fallback if ON CONFLICT or unique index issue occurs
+          const { data: existing } = await admin.from('tenant_message_templates').select('id').ilike('company', key).maybeSingle();
+          if (existing?.id) {
+            await admin.from('tenant_message_templates').update(payload).eq('id', existing.id);
+          } else {
+            await admin.from('tenant_message_templates').insert([payload]);
+          }
+        }
+      }
     } catch (_) {}
 
     // 2. Save to local fallback file

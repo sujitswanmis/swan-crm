@@ -49,6 +49,11 @@ function sanitizeLeadPayload(input, isUpdate = false) {
   if (isUpdate) {
     delete clean.id;
     delete clean.created_at;
+  } else {
+    // When inserting a new record, do not enforce empty or blank id
+    if (!clean.id) {
+      delete clean.id;
+    }
   }
   return clean;
 }
@@ -129,6 +134,13 @@ export async function saveClientRegistrationDraft(draftData, userCompany = '', c
           insertedData = data;
           insertError = null;
           break;
+        }
+
+        // If duplicate pkey (23505), strip id and retry with Postgres gen_random_uuid()
+        if (error.code === '23505' && cleanPayload.id) {
+          delete cleanPayload.id;
+          insertError = error;
+          continue;
         }
 
         const match = error.message && error.message.match(/Could not find the '([^']+)' column/i);
@@ -274,11 +286,22 @@ export async function submitClientRegistrationAndSync(formData, userCompany = ''
     } else {
       rawPayload.created_at = new Date().toISOString();
       const cleanPayload = sanitizeLeadPayload(rawPayload, false);
-      const { data, error } = await adminClient
+      let { data, error } = await adminClient
         .from('leads')
         .insert([cleanPayload])
         .select()
         .single();
+
+      if (error && error.code === '23505' && cleanPayload.id) {
+        delete cleanPayload.id;
+        const retry = await adminClient
+          .from('leads')
+          .insert([cleanPayload])
+          .select()
+          .single();
+        data = retry.data;
+        error = retry.error;
+      }
 
       if (error) throw error;
       savedLeadId = data.id;

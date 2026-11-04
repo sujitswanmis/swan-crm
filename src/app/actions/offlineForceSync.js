@@ -77,6 +77,12 @@ export async function forceSyncOfflineItem(item) {
             break;
           }
 
+          // If duplicate pkey (23505), strip id and retry with fresh UUID
+          if (error.code === '23505' && payload.id) {
+            delete payload.id;
+            continue;
+          }
+
           // Check if error mentions a missing column
           const match = error.message.match(/Could not find the '([^']+)' column/i);
           if (match && match[1] && payload[match[1]] !== undefined) {

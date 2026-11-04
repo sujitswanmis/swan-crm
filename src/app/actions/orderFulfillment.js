@@ -592,8 +592,27 @@ export async function updateOrderLifecycleStatus(orderId, updateData, tenantId =
         .select()
         .single();
 
-      if (error) throw error;
-      resultData = data;
+      if (error) {
+        if (error.code === '23514' && payload.order_status === 'FULL_PAID') {
+          const { data: retryData, error: retryErr } = await adminClient
+            .from('sales_orders')
+            .update({
+              ...payload,
+              order_status: 'CONFIRMED',
+              stage_history: updatedHistory
+            })
+            .eq('id', orderId)
+            .eq('tenant_id', effectiveTenantId)
+            .select()
+            .single();
+          if (retryErr) throw retryErr;
+          resultData = retryData;
+        } else {
+          throw error;
+        }
+      } else {
+        resultData = data;
+      }
     } catch (dbErr) {
       // If stage_history column does not exist, store safely inside order_line_items envelope or notes
       const lineItems = Array.isArray(currentOrder?.order_line_items) ? currentOrder.order_line_items : [];
@@ -874,41 +893,56 @@ export async function dispatchPartialLot(orderId, lotData = {}, dispatchedBy = '
           const childOrderStatus = isParentFullPaid ? 'FULL_PAID' : 'IN_PRODUCTION';
           const paidNotice = isParentFullPaid ? ' | 100% Full Paid in Parent Order (Balance Stages Bypassed)' : '';
 
-          await adminClient
+          const childOrderPayload = {
+            tenant_id: effectiveTenantId,
+            order_number: childOrderNo,
+            party_id: currentOrder.party_id,
+            dealer_party_id: currentOrder.dealer_party_id || null,
+            distributor_party_id: currentOrder.distributor_party_id || null,
+            demand_flow_type: 'MAKE_TO_STOCK',
+            total_ordered_qty: Number(lotData.remaining_qty),
+            total_amount: remainingAmount,
+            order_status: childOrderStatus,
+            delivery_status: 'S06',
+            billing_route: currentOrder.billing_route || 'DIRECT_COMPANY_BILLING',
+            order_line_items: remainingItems,
+            delivery_notes: `[Linked Lot-B Child Order]: ${lotData.remaining_qty} Units in assembly from parent order ${currentOrder.order_number}${paidNotice}`,
+            stage_history: [{
+              stage_id: 'S06',
+              stage_name: 'Check Stock & Production',
+              department: 'Plant / Works',
+              tat_hours: 48,
+              action_by: dispatchedBy,
+              notes: `Generated from Partial Split of parent order ${currentOrder.order_number}. ${lotData.remaining_qty} units pending in assembly.${isParentFullPaid ? ' [100% Full Paid: Balance payment stages bypassed]' : ''}`,
+              product_allocations: remainingItems.map(it => ({
+                product: it.product,
+                ordered_qty: it.qty,
+                ready_qty: 0,
+                remaining_qty: it.qty
+              })),
+              created_at: nowISO,
+              actual_timestamp: nowISO,
+              tat_breached: false
+            }],
+            created_at: nowISO
+          };
+
+          const { error: insErr } = await adminClient
             .from('sales_orders')
-            .insert([{
-              tenant_id: effectiveTenantId,
-              order_number: childOrderNo,
-              party_id: currentOrder.party_id,
-              dealer_party_id: currentOrder.dealer_party_id || null,
-              distributor_party_id: currentOrder.distributor_party_id || null,
-              demand_flow_type: 'MAKE_TO_STOCK',
-              total_ordered_qty: Number(lotData.remaining_qty),
-              total_amount: remainingAmount,
-              order_status: childOrderStatus,
-              delivery_status: 'S06',
-              billing_route: currentOrder.billing_route || 'DIRECT_COMPANY_BILLING',
-              order_line_items: remainingItems,
-              delivery_notes: `[Linked Lot-B Child Order]: ${lotData.remaining_qty} Units in assembly from parent order ${currentOrder.order_number}${paidNotice}`,
-              stage_history: [{
-                stage_id: 'S06',
-                stage_name: 'Check Stock & Production',
-                department: 'Plant / Works',
-                tat_hours: 48,
-                action_by: dispatchedBy,
-                notes: `Generated from Partial Split of parent order ${currentOrder.order_number}. ${lotData.remaining_qty} units pending in assembly.${isParentFullPaid ? ' [100% Full Paid: Balance payment stages bypassed]' : ''}`,
-                product_allocations: remainingItems.map(it => ({
-                  product: it.product,
-                  ordered_qty: it.qty,
-                  ready_qty: 0,
-                  remaining_qty: it.qty
-                })),
-                created_at: nowISO,
-                actual_timestamp: nowISO,
-                tat_breached: false
-              }],
-              created_at: nowISO
-            }]);
+            .insert([childOrderPayload]);
+
+          if (insErr) {
+            if (insErr.code === '23514' && childOrderStatus === 'FULL_PAID') {
+              await adminClient
+                .from('sales_orders')
+                .insert([{
+                  ...childOrderPayload,
+                  order_status: 'IN_PRODUCTION'
+                }]);
+            } else {
+              throw insErr;
+            }
+          }
           createdChildOrderNo = childOrderNo;
         } else {
           createdChildOrderNo = existingChild.order_number;

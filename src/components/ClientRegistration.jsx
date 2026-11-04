@@ -1392,6 +1392,13 @@ export default function ClientRegistration({
                 insertError = null;
                 break;
               }
+              // If duplicate pkey (23505), strip id and retry with Postgres auto-generated UUID
+              if (error.code === '23505' && cleanPayload.id) {
+                console.warn('Duplicate lead id detected, stripping id and retrying insert with fresh UUID...');
+                delete cleanPayload.id;
+                insertError = error;
+                continue;
+              }
               const match = error.message && error.message.match(/Could not find the '([^']+)' column/i);
               if (match && match[1] && cleanPayload[match[1]] !== undefined) {
                 console.warn(`Removing invalid column '${match[1]}' and retrying insert...`);
