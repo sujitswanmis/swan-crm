@@ -845,13 +845,34 @@ export async function updatePartyStep(partyId, stepName, stepData, tenantId = DE
   // 4. Update commercial terms
   if (stepName === 'S04_Commercial' || stepData.credit_limit !== undefined || stepData.credit_days !== undefined) {
     try {
-      await adminClient
+      const commPayload = {
+        party_id: partyId,
+        credit_limit: stepData.credit_limit || 0,
+        credit_days: stepData.credit_days || 30
+      };
+      const { error: commErr } = await adminClient
         .from('party_commercial_terms')
-        .upsert([{
-          party_id: partyId,
-          credit_limit: stepData.credit_limit || 0,
-          credit_days: stepData.credit_days || 30
-        }], { onConflict: 'party_id' });
+        .upsert([commPayload], { onConflict: 'party_id' });
+
+      if (commErr) {
+        // Fallback: check if row exists for party_id, then update or insert
+        const { data: existingTerms } = await adminClient
+          .from('party_commercial_terms')
+          .select('id')
+          .eq('party_id', partyId)
+          .maybeSingle();
+
+        if (existingTerms?.id) {
+          await adminClient
+            .from('party_commercial_terms')
+            .update(commPayload)
+            .eq('id', existingTerms.id);
+        } else {
+          await adminClient
+            .from('party_commercial_terms')
+            .insert([commPayload]);
+        }
+      }
     } catch (e) {
       console.warn('Could not upsert commercial terms:', e.message);
     }
