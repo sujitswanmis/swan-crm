@@ -103,12 +103,19 @@ export function getSubItemPermissions(moduleAccess, userRole, moduleId, subItemI
         const myAttView = subItems['my_attendance'] ? (subItems['my_attendance'].view !== false) : true;
         return { view: myAttView, add: parentPerms.add, edit: parentPerms.edit, delete: false };
       }
-      // If this is live_tracking in attendance, inherit from team_report or parent attendance
+      // If this is live_tracking in attendance, STRICT DEFAULT-DENY for regular employees!
+      // Only Master Admin, Admin, or attendance manager (is_manager) should have access.
       if (moduleId === 'attendance' && subItemId === 'live_tracking') {
-        return { view: parentPerms.view, add: parentPerms.add, edit: parentPerms.edit, delete: false };
+        const isPrivileged = isAdmin || parentPerms.is_manager === true;
+        return { view: isPrivileged, add: isPrivileged, edit: isPrivileged, delete: false };
       }
-      // If this is field_force sub-items, inherit from parent field_force view
+      // If this is field_force sub-items:
+      // Form Studio & Live Radar are STRICTLY supervisory / admin-only tools.
       if (moduleId === 'field_force') {
+        if (subItemId === 'form_studio' || subItemId === 'live_radar') {
+          const isPrivileged = isAdmin || parentPerms.is_manager === true;
+          return { view: isPrivileged, add: isPrivileged, edit: isPrivileged, delete: false };
+        }
         return { view: parentPerms.view, add: parentPerms.add, edit: parentPerms.edit, delete: false };
       }
       // If this is dashboard or holidays in checklist, inherit from parent checklist view if not explicitly disabled
@@ -186,6 +193,18 @@ export function getSubItemPermissions(moduleAccess, userRole, moduleId, subItemI
     const isBasicEmployeeTab = ['my_attendance', 'my_leaves', 'monthly_logs', 'regularization'].includes(subItemId);
     if (!isHodOrManager && !isBasicEmployeeTab) {
       return { view: false, add: false, edit: false, delete: false };
+    }
+    // live_tracking is privileged supervisory radar: restricted to Admin or explicit attendance manager
+    if (subItemId === 'live_tracking' && !isAdmin && parentPerms.is_manager !== true) {
+      return { view: false, add: false, edit: false, delete: false };
+    }
+  }
+
+  if (moduleId === 'field_force') {
+    if (!isAdmin && parentPerms.is_manager !== true) {
+      if (subItemId === 'form_studio' || subItemId === 'live_radar') {
+        return { view: false, add: false, edit: false, delete: false };
+      }
     }
   }
 

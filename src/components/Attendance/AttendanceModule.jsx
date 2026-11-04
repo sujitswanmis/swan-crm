@@ -894,74 +894,34 @@ export default function AttendanceModule({
     } catch {}
   };
 
-  // Human Female Voice Announcement (Neural Human Voice 'Nova' with Fast Female Browser Fallback)
-  const speakHumanFemaleAnnouncement = async (text, hindiUtteranceText) => {
+  // Fast, Non-blocking Biometric Human Female Voice Announcement (Native Web Speech API - 0% Server Load)
+  const speakHumanFemaleAnnouncement = (text, customVoiceMessage) => {
     if (!voiceEnabled || typeof window === 'undefined') return;
 
-    const speechMessage = hindiUtteranceText || text;
+    const speechMessage = customVoiceMessage || text;
+    if (!speechMessage) return;
+
     setPlayingVoice(true);
 
-    // 1. First Priority: Lifelike Studio Human Female Voice (OpenAI 'nova')
-    try {
-      if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-      }
-
-      const res = await fetch('/api/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: speechMessage, voice: 'nova' })
-      });
-
-      if (res.ok) {
-        const blob = await res.blob();
-        const audioUrl = URL.createObjectURL(blob);
-        let audio = audioPlayerRef.current;
-        if (!audio) {
-          audio = new Audio();
-          audioPlayerRef.current = audio;
-        }
-        audio.src = audioUrl;
-        audio.onended = () => {
-          setPlayingVoice(false);
-          URL.revokeObjectURL(audioUrl);
-        };
-        audio.onerror = () => {
-          setPlayingVoice(false);
-          URL.revokeObjectURL(audioUrl);
-        };
-        const p = audio.play();
-        if (p !== undefined) {
-          await p;
-        }
-        return;
-      }
-    } catch (e) {
-      console.warn('API Female TTS fallback to local speech:', e);
-    }
-
-    // 2. Fast Female Voice Fallback
     try {
       if ('speechSynthesis' in window) {
         window.speechSynthesis.cancel();
         const utterance = new SpeechSynthesisUtterance(speechMessage);
-        utterance.rate = 0.95;
-        utterance.pitch = 1.1; // Sweet pleasant female pitch
-        utterance.lang = 'hi-IN';
+        utterance.rate = 1.05; // Crisp, biometric cadence
+        utterance.pitch = 1.05; // Pleasant natural female pitch
+        utterance.lang = 'en-US';
 
         utterance.onend = () => setPlayingVoice(false);
         utterance.onerror = () => setPlayingVoice(false);
 
         const voices = window.speechSynthesis.getVoices() || [];
         const femaleVoice = voices.find(v => 
-          (v.lang === 'hi-IN' || v.lang === 'hi_IN') && 
-          (v.name.toLowerCase().includes('swara') || v.name.toLowerCase().includes('kalpana') || v.name.toLowerCase().includes('heera') || v.name.toLowerCase().includes('female'))
+          (v.lang.startsWith('en') || v.lang.includes('IN')) && 
+          (v.name.toLowerCase().includes('natural') || v.name.toLowerCase().includes('online') || v.name.toLowerCase().includes('zira') || v.name.toLowerCase().includes('samantha') || v.name.toLowerCase().includes('victoria') || v.name.toLowerCase().includes('female') || v.name.toLowerCase().includes('aria'))
         ) || voices.find(v => 
-          v.lang === 'hi-IN' || v.lang === 'hi_IN' || v.name.toLowerCase().includes('hindi')
+          v.lang.includes('en-IN') || v.lang.includes('en_IN')
         ) || voices.find(v => 
-          v.lang.includes('en-IN') && (v.name.toLowerCase().includes('neerja') || v.name.toLowerCase().includes('female'))
-        ) || voices.find(v => 
-          v.name.toLowerCase().includes('zira') || v.name.toLowerCase().includes('female')
+          v.lang.startsWith('en')
         ) || voices[0];
 
         if (femaleVoice) {
@@ -974,7 +934,7 @@ export default function AttendanceModule({
       }
     } catch (err) {
       setPlayingVoice(false);
-      console.warn('Female voice error:', err);
+      console.warn('Voice announcement error:', err);
     }
   };
 
@@ -2001,10 +1961,10 @@ export default function AttendanceModule({
       if (punchInFlightRef.current === scope) punchInFlightRef.current = false;
       if (isCurrent()) {
         setPunchingIn(false);
-        if (accepted) speakHumanFemaleAnnouncement(
-          `Welcome ${userName}. Your punch in time is ${formatTimeIST(accepted.in_time)}. Shift: ${activePunchShift.shift_name || 'Regular Shift'}. ${evaluation.ruleTitle}`,
-          evaluation.voiceMessageHindi
-        );
+        if (accepted) {
+          const voiceMsg = evaluation.voiceMessageEnglish || `Punch In successful. Welcome, ${userName || 'User'}!`;
+          speakHumanFemaleAnnouncement(voiceMsg);
+        }
         if (navigator.onLine) fetchTodayAttendance();
       }
     }
@@ -2078,7 +2038,10 @@ export default function AttendanceModule({
       if (punchInFlightRef.current === scope) punchInFlightRef.current = false;
       if (isCurrent()) {
         setPunchingOut(false);
-        if (accepted) speakHumanFemaleAnnouncement(`Thank you ${userName}. ${evaluation.ruleTitle}`, evaluation.voiceMessageHindi);
+        if (accepted) {
+          const voiceMsg = evaluation.voiceMessageEnglish || `Punch Out successful. Thank you, ${userName || 'User'}!`;
+          speakHumanFemaleAnnouncement(voiceMsg);
+        }
         if (navigator.onLine) fetchTodayAttendance();
       }
     }
@@ -2291,7 +2254,7 @@ export default function AttendanceModule({
         tenantId: effectiveTenantId
       });
       if (res.success) {
-        speakHumanFemaleAnnouncement(`Approved regularization for ${request.emp_name}`, `${request.emp_name} जी का अटेंडेंस अप्रूव कर दिया गया है।`);
+        speakHumanFemaleAnnouncement(`Approved regularization for ${request.emp_name}`);
         fetchHodRequests();
         fetchHistory();
         fetchTodayAttendance();
@@ -2328,7 +2291,7 @@ export default function AttendanceModule({
           tenantId: effectiveTenantId
         });
         if (res.success) {
-          speakHumanFemaleAnnouncement(`Batch approved ${res.approvedCount} requests`, `कुल ${res.approvedCount} रेगुलराइजेशन रिक्वेस्ट्स एक साथ अप्रूव कर दी गई हैं।`);
+          speakHumanFemaleAnnouncement(`Batch approved ${res.approvedCount} requests`);
           setBulkActionModal(null);
           setBulkRemarks('');
           setSelectedHodRequests(new Set());
@@ -3220,7 +3183,7 @@ export default function AttendanceModule({
                     setVoiceEnabled(next);
                     if (next) {
                       playInstantChime('in');
-                      speakHumanFemaleAnnouncement('Voice announcements enabled', `नमस्ते ${userName} जी! वॉइस अनाउंसमेंट चालू है।`);
+                      speakHumanFemaleAnnouncement(`Voice announcements enabled. Welcome, ${userName || 'User'}!`);
                     }
                   }}
                   style={{
@@ -3249,10 +3212,7 @@ export default function AttendanceModule({
                     disabled={playingVoice}
                     onClick={() => {
                       playInstantChime('in');
-                      speakHumanFemaleAnnouncement(
-                        `Welcome ${userName}. Your punch in time is 09:30 AM. Have a great day!`,
-                        `नमस्ते ${userName} जी! आपका पंच इन समय 9:30 दर्ज हो गया है। आपका दिन शुभ और मंगलमय हो!`
-                      );
+                      speakHumanFemaleAnnouncement(`Punch In successful. Welcome, ${userName || 'User'}!`);
                     }}
                     style={{
                       display: 'flex',

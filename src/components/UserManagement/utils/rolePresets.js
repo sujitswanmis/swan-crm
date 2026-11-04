@@ -611,19 +611,19 @@ export const ROLE_PRESETS = [
           my_leaves: { view: true },
           hod_approvals: { view: true },
           team_report: { view: true },
-          live_tracking: { view: true },
+          live_tracking: { view: false },
           shift_rules: { view: true },
           leave_policy: { view: true },
           geofencing: { view: true }
         }
       },
       field_force: {
-        view: true, read: true, write: true, edit: true, export: true,
+        view: false, read: false, write: false, edit: false, export: false,
         sub_items: {
-          mobile_dashboard: { view: true },
-          task_manager: { view: true },
-          form_studio: { view: true },
-          live_radar: { view: true }
+          mobile_dashboard: { view: false },
+          task_manager: { view: false },
+          form_studio: { view: false },
+          live_radar: { view: false }
         }
       },
       checklist: {

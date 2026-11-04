@@ -114,13 +114,36 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
      - The module and its complete `subItems` array MUST be registered with exact matching `id` and descriptive `label`.
      - Sub-tab counts displayed in UI badges MUST 100% match the actual rendered tabs in the component.
      - Never leave `subItems` undefined or mismatched with actual component tabs.
-  2. **Defensive Backward-Compatibility (`src/utils/permissionUtils.js`)**:
-     - Whenever a new sub-tab or stage is introduced, a defensive fallback MUST be added in `getSubItemPermissions` so existing active users who already possess the parent module's access seamlessly inherit access to the new sub-item without getting locked out.
+  2. **Defensive Backward-Compatibility & Scoped Access (`src/utils/permissionUtils.js`)**:
+     - **Default-Deny for Sensitive & Supervisory Features**: New modules, pages, or sub-tabs that involve administrative control, employee tracking (Live GPS, Playback, Radar), geofencing, shift configurations, field force management, or sensitive analytics MUST NEVER automatically be inherited by regular employees (Telecallers, Executives, etc.). They must be strictly restricted to Admins and Managers (`is_manager: true`) by default.
+     - Operational stages (e.g. a newly introduced lead pipeline sub-stage) may inherit parent operational access where appropriate.
   3. **Role Presets Synchronization (`src/components/UserManagement/utils/rolePresets.js`)**:
-     - All affected predefined role templates (Master Admin, Admin, Manager, HOD, Executive, Telecaller) MUST be immediately updated to include the new sub-item in their `sub_items` payload.
+     - All affected predefined role templates (Master Admin, Admin, Manager, HOD, Executive, Telecaller) MUST be immediately updated. Ensure regular employee templates have sensitive sub-items set to `view: false` by default.
   4. **CRM Container Permitted Registry (`src/components/CRMContainer.jsx`)**:
      - Ensure `isTabPermitted`, `salesTabs`/`purchaseTabs`, and the sidebar navigation renderers recognize the new page or stage with correct category mapping.
 - **Strict Verification Before Turn Completion**: Before marking any task involving a new page/tab complete, the AI MUST verify that the new item appears in the Role & Permission Matrix and that no discrepancy exists between sidebar tabs and permission checkboxes.
+
+# Mandatory LocalDB & Delta Sync Architecture Rule for All New Modules (Instant 0ms Load & Zero Egress Policy)
+- **Universal Application to All New Features & Data Grids**: Whenever any AI assistant or developer creates or adds a new module, page, tabular view, or entity management section in the CRM (e.g. Orders, Inventory, WMS, Recruitment, Reports, Masters):
+  1. **Instant 0ms Client-Side Hydration (LocalDB / IndexedDB)**:
+     - The module MUST NOT start with a blank screen or blocking server spinner.
+     - It MUST implement client-side local caching (`IndexedDB` object store in `src/utils/offlineSync.js` or dedicated workspace cache, alongside fast web-storage snapshot).
+     - On initial mount (`useEffect` / `useLayoutEffect`), data MUST hydrate immediately from LocalDB in **0ms**, allowing employees to view and interact instantly without waiting for network responses.
+  2. **High-Efficiency Delta Sync (Differential Fetching)**:
+     - Repeated full-table downloads are strictly prohibited for growing or frequently updated datasets.
+     - The module MUST query only modified rows using `.gt('updated_at', lastSyncTimestamp)` or `.gt('created_at', lastSyncTimestamp)`.
+     - Changes must be cleanly merged into the in-memory state and persisted to LocalDB via selective upserting (`upsert...Locally`).
+  3. **Offline Store-and-Forward Queue Integration (`sync_queue`)**:
+     - All user write actions (create, edit, delete, status toggle, submit) MUST gracefully handle offline state.
+     - When disconnected, actions MUST safely enqueue to `sync_queue` in IndexedDB via `enqueueOfflineAction` with a Zero Data Loss guarantee.
+     - When connectivity restores, actions MUST automatically flush via `flushOfflineSyncQueue`.
+  4. **Multi-Tab & Cross-Device Sync Events**:
+     - The module MUST listen to background sync events (e.g. `crm_trigger_delta_sync` or periodic timers) so multiple browser tabs stay synchronized automatically without page refresh.
+
+# Strict Default-Deny (Zero Default Regular User Access) Rule for New Pages, Sub-Tabs & Modules
+- **Default Deny for Regular Employees**: Under NO circumstances should any newly created Module, Page, Sub-Page, Sub-Tab, or Feature be granted default `view: true` access to regular employee roles (`telecaller`, `sales_executive`, `hr_recruiter`, `read_only_viewer`, etc.).
+- **Admin-Only Initial Access**: All newly introduced modules and supervisory/tracking pages MUST be configured as **Admin-Only** (`master_admin` and `admin`) by default.
+- **Explicit Opt-In via Permission Matrix**: Regular employees may ONLY receive access if and when an Admin explicitly checks their permission checkbox in the Role & Permission Matrix. Never hardcode automatic inheritance that exposes internal tracking, supervisor tools, or unassigned modules to normal staff.
 
 
 

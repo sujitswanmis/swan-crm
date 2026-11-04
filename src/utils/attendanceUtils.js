@@ -366,6 +366,7 @@ export const evaluateMorningInPunch = (
         ? `On Time (Within ${b.graceMins}-Minute Morning Grace Period: ${formatSecondsToTime(b.startSec)} - ${formatSecondsToTime(b.graceEndSec, true)})` 
         : `On Time (${b.shiftName})`,
       voiceMessageHindi: `नमस्ते ${userName} जी! आपका पंच इन समय ${timeFormatted} दर्ज हो गया है। आप समय पर हैं। आपका दिन शुभ और मंगलमय हो!`,
+      voiceMessageEnglish: userName ? `Punch In successful. Welcome, ${userName}!` : 'Punch In successful. Welcome!',
       ruleTitle: isGrace ? `On Time (${b.graceMins}m Grace)` : 'On Time'
     };
   }
@@ -379,6 +380,7 @@ export const evaluateMorningInPunch = (
         is_grace_applied: false,
         remarks: `${b.sl1Name} Applied (Morning arrival between ${formatSecondsToTime(b.graceEndSec + 1)} - ${formatSecondsToTime(b.sl1EndSec)})`,
         voiceMessageHindi: `नमस्ते ${userName} जी! आपका पंच इन समय ${timeFormatted} दर्ज हो गया है। आपका ${b.sl1Mins} मिनट का शॉर्ट लीव अप्लाई हुआ है। आपका दिन शुभ हो!`,
+        voiceMessageEnglish: 'Punch In recorded. Short leave applied.',
         ruleTitle: `${b.sl1Name} Applied`
       };
     } else if (monthlyUsage.used_2_hr < b.sl2Quota) {
@@ -388,6 +390,7 @@ export const evaluateMorningInPunch = (
         is_grace_applied: false,
         remarks: `${b.sl2Name} Applied (${b.sl1Name} quota exhausted, morning arrival ${formatSecondsToTime(b.graceEndSec + 1)} - ${formatSecondsToTime(b.sl1EndSec)})`,
         voiceMessageHindi: `नमस्ते ${userName} जी! आपका पंच इन समय ${timeFormatted} दर्ज हो गया है। शॉर्ट लीव समाप्त होने पर 2 घंटे का शॉर्ट लीव अप्लाई हुआ है। आपका दिन शुभ हो!`,
+        voiceMessageEnglish: 'Punch In recorded. Short leave applied.',
         ruleTitle: `${b.sl2Name} Applied`
       };
     } else {
@@ -397,6 +400,7 @@ export const evaluateMorningInPunch = (
         is_grace_applied: false,
         remarks: `Half Day Marked: Late arrival (${formatSecondsToTime(b.graceEndSec + 1)} - ${formatSecondsToTime(b.sl1EndSec)}) and Monthly Short Leaves Exhausted`,
         voiceMessageHindi: `नमस्ते ${userName} जी! आपका पंच इन समय ${timeFormatted} दर्ज हो गया है। शॉर्ट लीव समाप्त होने के कारण हाफ डे मार्क हुआ है।`,
+        voiceMessageEnglish: 'Punch In recorded. Half day marked.',
         ruleTitle: 'Half Day (Short Leaves Exhausted)'
       };
     }
@@ -411,6 +415,7 @@ export const evaluateMorningInPunch = (
         is_grace_applied: false,
         remarks: `${b.sl2Name} Applied (Morning arrival between ${formatSecondsToTime(b.sl1EndSec + 1)} - ${formatSecondsToTime(b.sl2EndSec)})`,
         voiceMessageHindi: `नमस्ते ${userName} जी! आपका पंच इन समय ${timeFormatted} दर्ज हो गया है। आपका ${b.sl2Name} अप्लाई हुआ है। आपका दिन शुभ हो!`,
+        voiceMessageEnglish: 'Punch In recorded. Short leave applied.',
         ruleTitle: `${b.sl2Name} Applied`
       };
     } else {
@@ -420,6 +425,7 @@ export const evaluateMorningInPunch = (
         is_grace_applied: false,
         remarks: `Half Day Marked: Late arrival between ${formatSecondsToTime(b.sl1EndSec + 1)} - ${formatSecondsToTime(b.sl2EndSec)} and Short Leaves Exhausted`,
         voiceMessageHindi: `नमस्ते ${userName} जी! आपका पंच इन समय ${timeFormatted} दर्ज हो गया है। शॉर्ट लीव कोटा समाप्त होने के कारण हाफ डे मार्क हुआ है।`,
+        voiceMessageEnglish: 'Punch In recorded. Half day marked.',
         ruleTitle: `Half Day (${b.sl2Name} Exhausted)`
       };
     }
@@ -433,6 +439,7 @@ export const evaluateMorningInPunch = (
     is_grace_applied: false,
     remarks: `Half Day Marked: Late arrival after ${cutoffTime} (Beyond permissible Short Leave window)`,
     voiceMessageHindi: `नमस्ते ${userName} जी! आपका पंच इन समय ${timeFormatted} दर्ज हो गया है। ${cutoffTime} के बाद आने के कारण हाफ डे मार्क हुआ है।`,
+    voiceMessageEnglish: 'Punch In recorded. Half day marked.',
     ruleTitle: `Half Day (After ${cutoffTime})`
   };
 };
@@ -476,6 +483,7 @@ export const evaluateEveningOutPunch = (
       total_working_minutes: totalMins,
       remarks: `Absent Marked: Total working time (${durationFormatted}) is less than ${minHoursFormatted} on Mon-Sat (< ${b.minAbsentMins} mins)`,
       voiceMessageHindi: `नमस्ते ${userName} जी! आपका पंच आउट समय ${timeFormatted} दर्ज हो गया है। आज आपने कुल ${hindiDuration} काम किया है, जो कि ${minHoursFormatted} से कम है, इसलिए आज एब्सेंट मार्क हुआ है।`,
+      voiceMessageEnglish: 'Punch Out recorded. Absent marked.',
       ruleTitle: `Absent (< ${minHoursFormatted} on Mon-Sat)`
     };
   }
@@ -489,6 +497,7 @@ export const evaluateEveningOutPunch = (
       total_working_minutes: totalMins,
       remarks: currentRecord?.remarks ? `${currentRecord.remarks} | Shift Completed on Time` : 'Shift Completed on Time',
       voiceMessageHindi: `नमस्ते ${userName} जी! आपका पंच आउट समय ${timeFormatted} दर्ज हो गया है। आज आपने कुल ${hindiDuration} काम किया। धन्यवाद और शुभ संध्या!`,
+      voiceMessageEnglish: userName ? `Punch Out successful. Thank you, ${userName}!` : 'Punch Out successful. Thank you!',
       ruleTitle: 'Shift Completed'
     };
   }
@@ -504,6 +513,7 @@ export const evaluateEveningOutPunch = (
         total_working_minutes: totalMins,
         remarks: `${currentRecord.remarks || ''} | Early departure (Short Leave already consumed in Morning - Max 1/day)`.trim(),
         voiceMessageHindi: `नमस्ते ${userName} जी! आपका पंच आउट समय ${timeFormatted} दर्ज हो गया है। आज आपने कुल ${hindiDuration} काम किया। शुभ संध्या!`,
+        voiceMessageEnglish: 'Punch Out recorded. Half day marked.',
         ruleTitle: 'Early Out (Morning SL Used)'
       };
     }
@@ -515,6 +525,7 @@ export const evaluateEveningOutPunch = (
         total_working_minutes: totalMins,
         remarks: `${b.sl1Name} Applied (Evening departure between ${formatSecondsToTime(b.eveningSl1StartSec)} - ${formatSecondsToTime(b.endSec)})`,
         voiceMessageHindi: `नमस्ते ${userName} जी! आपका पंच आउट समय ${timeFormatted} दर्ज हो गया है। आपका ${b.sl1Name} अप्लाई हुआ है। कुल काम ${hindiDuration}। शुभ संध्या!`,
+        voiceMessageEnglish: 'Punch Out recorded. Short leave applied.',
         ruleTitle: `${b.sl1Name} Applied`
       };
     } else if (monthlyUsage.used_2_hr < b.sl2Quota) {
@@ -524,6 +535,7 @@ export const evaluateEveningOutPunch = (
         total_working_minutes: totalMins,
         remarks: `${b.sl2Name} Applied (${b.sl1Name} quota exhausted, evening departure ${formatSecondsToTime(b.eveningSl1StartSec)} - ${formatSecondsToTime(b.endSec)})`,
         voiceMessageHindi: `नमस्ते ${userName} जी! आपका पंच आउट समय ${timeFormatted} दर्ज हो गया है। आपका 2 घंटे का शॉर्ट लीव अप्लाई हुआ है। कुल काम ${hindiDuration}। शुभ संध्या!`,
+        voiceMessageEnglish: 'Punch Out recorded. Short leave applied.',
         ruleTitle: `${b.sl2Name} Applied`
       };
     } else {
@@ -533,6 +545,7 @@ export const evaluateEveningOutPunch = (
         total_working_minutes: totalMins,
         remarks: `Half Day Marked: Early departure (${formatSecondsToTime(b.eveningSl1StartSec)} - ${formatSecondsToTime(b.endSec)}) and Short Leaves Exhausted`,
         voiceMessageHindi: `नमस्ते ${userName} जी! आपका पंच आउट समय ${timeFormatted} दर्ज हो गया है। शॉर्ट लीव समाप्त होने के कारण हाफ डे मार्क हुआ है। शुभ संध्या!`,
+        voiceMessageEnglish: 'Punch Out recorded. Half day marked.',
         ruleTitle: 'Half Day (Short Leaves Exhausted)'
       };
     }
@@ -547,6 +560,7 @@ export const evaluateEveningOutPunch = (
         total_working_minutes: totalMins,
         remarks: `${currentRecord.remarks || ''} | Half Day: Early departure before ${formatSecondsToTime(b.eveningSl1StartSec)} and Short Leave already used in morning`.trim(),
         voiceMessageHindi: `नमस्ते ${userName} जी! आपका पंच आउट समय ${timeFormatted} दर्ज हो गया है। सुबह शॉर्ट लीव लेने के कारण शाम को हाफ डे मार्क हुआ है।`,
+        voiceMessageEnglish: 'Punch Out recorded. Half day marked.',
         ruleTitle: 'Half Day (Multiple SL Not Allowed)'
       };
     }
@@ -558,6 +572,7 @@ export const evaluateEveningOutPunch = (
         total_working_minutes: totalMins,
         remarks: `${b.sl2Name} Applied (Evening departure between ${formatSecondsToTime(b.eveningSl2StartSec)} - ${formatSecondsToTime(b.endSec)})`,
         voiceMessageHindi: `नमस्ते ${userName} जी! आपका पंच आउट समय ${timeFormatted} दर्ज हो गया है। आपका 2 घंटे का शॉर्ट लीव अप्लाई हुआ है। कुल काम ${hindiDuration}। शुभ संध्या!`,
+        voiceMessageEnglish: 'Punch Out recorded. Short leave applied.',
         ruleTitle: `${b.sl2Name} Applied`
       };
     } else {
@@ -567,6 +582,7 @@ export const evaluateEveningOutPunch = (
         total_working_minutes: totalMins,
         remarks: `Half Day Marked: Early departure between ${formatSecondsToTime(b.eveningSl2StartSec)} - ${formatSecondsToTime(b.eveningSl1StartSec)} and Short Leaves Exhausted`,
         voiceMessageHindi: `नमस्ते ${userName} जी! आपका पंच आउट समय ${timeFormatted} दर्ज हो गया है। 2 घंटे का शॉर्ट लीव समाप्त होने के कारण हाफ डे मार्क हुआ है।`,
+        voiceMessageEnglish: 'Punch Out recorded. Half day marked.',
         ruleTitle: `Half Day (${b.sl2Name} Exhausted)`
       };
     }
@@ -580,6 +596,7 @@ export const evaluateEveningOutPunch = (
     total_working_minutes: totalMins,
     remarks: `Half Day Marked: Early departure before ${earlyCutoff} (Exceeds permissible Short Leave limit)`,
     voiceMessageHindi: `नमस्ते ${userName} जी! आपका पंच आउट समय ${timeFormatted} दर्ज हो गया है। ${earlyCutoff} से पहले निकलने के कारण हाफ डे मार्क हुआ है।`,
+    voiceMessageEnglish: 'Punch Out recorded. Half day marked.',
     ruleTitle: `Half Day (Left before ${earlyCutoff})`
   };
 };
