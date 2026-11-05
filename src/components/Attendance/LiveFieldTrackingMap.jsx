@@ -5,7 +5,8 @@ import {
   MapPin, Play, Pause, RotateCcw, FastForward, Navigation, Battery,
   BatteryCharging, Smartphone, Clock, Calendar, Search, Filter,
   Download, CheckCircle, XCircle, AlertTriangle, User, ChevronRight,
-  TrendingUp, Award, Layers, ShieldCheck, RefreshCw, Eye, ChevronDown, Check, X
+  TrendingUp, Award, Layers, ShieldCheck, RefreshCw, Eye, ChevronDown, Check, X,
+  Wifi, WifiOff, Satellite
 } from 'lucide-react';
 import {
   getEmployee360Route,
@@ -1290,40 +1291,112 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
               )}
             </div>
 
-            {/* Header Device & Stats Bar (Aapke Screenshot 1 Jaisa) */}
-            {routeData && (
-              <div style={{ padding: 14, background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
-                  <div style={{ background: '#ffffff', padding: '8px 10px', borderRadius: 8, border: '1px solid #e2e8f0' }}>
-                    <div style={{ fontSize: 10, color: '#64748b', fontWeight: 600 }}>TOTAL DISTANCE</div>
-                    <div style={{ fontSize: 16, fontWeight: 800, color: '#2563eb' }}>{routeData.totalKm} km</div>
+            {/* Header Device & Stats Bar */}
+            {routeData && (() => {
+              const lp = routeData.lastPing;
+
+              // --- Battery ---
+              const battPct = lp?.battery_pct != null ? lp.battery_pct : null;
+              const isCharging = Boolean(lp?.is_charging);
+              const battColor = battPct == null ? '#64748b' : battPct <= 15 ? '#dc2626' : battPct <= 30 ? '#d97706' : '#16a34a';
+              const battLabel = battPct != null ? `${battPct}%` : 'N/A';
+
+              // --- Mobile Data / Network ---
+              // is_offline_synced = true means that ping was recorded offline & synced later
+              // If the last ping itself is offline-synced, data was off at that moment
+              const isLastPingOfflineSync = Boolean(lp?.is_offline_synced);
+              // Also infer from time gap: if last ping > 10 mins ago and not today's fresh ping, data may be off
+              const lastPingMs = lp?.recorded_at ? new Date(lp.recorded_at).getTime() : null;
+              const nowMs = Date.now();
+              const gapMins = lastPingMs ? Math.floor((nowMs - lastPingMs) / 60000) : null;
+              const isMobileDataOff = isLastPingOfflineSync || (gapMins != null && gapMins > 10);
+
+              // --- GPS Status ---
+              // GPS considered "off" if last ping gap > 10 minutes from now
+              const isGpsOff = gapMins != null && gapMins > 10;
+              const gpsOffSinceLabel = isGpsOff && lp?.recorded_at
+                ? (() => {
+                    const t = new Date(lp.recorded_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
+                    const hrs = Math.floor(gapMins / 60);
+                    const mins = gapMins % 60;
+                    const ago = hrs > 0 ? `${hrs}h ${mins}m ago` : `${mins}m ago`;
+                    return `Off since ${t} (${ago})`;
+                  })()
+                : null;
+
+              return (
+                <div style={{ padding: 14, background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                  {/* Row 1: Distance + Visits */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginBottom: 8 }}>
+                    <div style={{ background: '#ffffff', padding: '8px 10px', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+                      <div style={{ fontSize: 10, color: '#64748b', fontWeight: 600 }}>TOTAL DISTANCE</div>
+                      <div style={{ fontSize: 16, fontWeight: 800, color: '#2563eb' }}>{routeData.totalKm} km</div>
+                    </div>
+                    <div style={{ background: '#ffffff', padding: '8px 10px', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+                      <div style={{ fontSize: 10, color: '#64748b', fontWeight: 600 }}>CLIENT VISITS</div>
+                      <div style={{ fontSize: 16, fontWeight: 800, color: '#16a34a' }}>{routeData.visitsCount} Completed</div>
+                    </div>
                   </div>
 
-                  <div style={{ background: '#ffffff', padding: '8px 10px', borderRadius: 8, border: '1px solid #e2e8f0' }}>
-                    <div style={{ fontSize: 10, color: '#64748b', fontWeight: 600 }}>CLIENT VISITS</div>
-                    <div style={{ fontSize: 16, fontWeight: 800, color: '#16a34a' }}>{routeData.visitsCount} Completed</div>
+                  {/* Row 2: Battery + Last Ping */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginBottom: 8 }}>
+                    {/* Battery — fixed accuracy (was using truthy check, 0% would show 85%) */}
+                    <div style={{ background: '#ffffff', padding: '8px 10px', borderRadius: 8, border: `1px solid ${battColor}33` }}>
+                      <div style={{ fontSize: 10, color: '#64748b', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+                        {isCharging ? <BatteryCharging size={12} color="#16a34a" /> : <Battery size={12} color={battColor} />}
+                        {isCharging ? 'BATTERY (⚡ CHARGING)' : 'BATTERY'}
+                      </div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: battColor }}>
+                        {battLabel}
+                        {isCharging && <span style={{ fontSize: 10, color: '#16a34a', marginLeft: 4, fontWeight: 600 }}>Charging</span>}
+                      </div>
+                    </div>
+
+                    {/* Last Ping */}
+                    <div style={{ background: '#ffffff', padding: '8px 10px', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+                      <div style={{ fontSize: 10, color: '#64748b', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <Clock size={12} /> LAST PING
+                      </div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>
+                        {lp?.recorded_at ? new Date(lp.recorded_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }) : 'Active'}
+                      </div>
+                    </div>
                   </div>
 
-                  <div style={{ background: '#ffffff', padding: '8px 10px', borderRadius: 8, border: '1px solid #e2e8f0' }}>
-                    <div style={{ fontSize: 10, color: '#64748b', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <Battery size={12} /> BATTERY
+                  {/* Row 3: Mobile Data + GPS Status */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+                    {/* Mobile Data ON/OFF */}
+                    <div style={{ background: isMobileDataOff ? '#fff7ed' : '#f0fdf4', padding: '8px 10px', borderRadius: 8, border: `1px solid ${isMobileDataOff ? '#fed7aa' : '#bbf7d0'}` }}>
+                      <div style={{ fontSize: 10, color: '#64748b', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+                        {isMobileDataOff ? <WifiOff size={12} color="#ea580c" /> : <Wifi size={12} color="#16a34a" />}
+                        MOBILE DATA
+                      </div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: isMobileDataOff ? '#ea580c' : '#16a34a', display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <span style={{ width: 7, height: 7, borderRadius: '50%', background: isMobileDataOff ? '#ea580c' : '#16a34a', display: 'inline-block', flexShrink: 0 }} />
+                        {isMobileDataOff ? 'Offline / No Data' : 'Online'}
+                      </div>
                     </div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>
-                      {routeData.lastPing?.battery_pct ? `${routeData.lastPing.battery_pct}%` : '85%'}
-                    </div>
-                  </div>
 
-                  <div style={{ background: '#ffffff', padding: '8px 10px', borderRadius: 8, border: '1px solid #e2e8f0' }}>
-                    <div style={{ fontSize: 10, color: '#64748b', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <Clock size={12} /> LAST PING
-                    </div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>
-                      {routeData.lastPing?.recorded_at ? new Date(routeData.lastPing.recorded_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : 'Active'}
+                    {/* GPS Status */}
+                    <div style={{ background: isGpsOff ? '#fff7ed' : '#f0fdf4', padding: '8px 10px', borderRadius: 8, border: `1px solid ${isGpsOff ? '#fed7aa' : '#bbf7d0'}` }}>
+                      <div style={{ fontSize: 10, color: '#64748b', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <Satellite size={12} color={isGpsOff ? '#ea580c' : '#16a34a'} /> GPS STATUS
+                      </div>
+                      {isGpsOff ? (
+                        <div style={{ fontSize: 10, fontWeight: 700, color: '#ea580c', lineHeight: 1.3 }}>
+                          🔴 {gpsOffSinceLabel || 'Signal Lost'}
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: 12, fontWeight: 700, color: '#16a34a', display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#16a34a', display: 'inline-block', flexShrink: 0 }} />
+                          Active
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* Chronological Stoppage & Visit Timeline */}
             <div style={{ padding: 14, flex: 1 }}>
