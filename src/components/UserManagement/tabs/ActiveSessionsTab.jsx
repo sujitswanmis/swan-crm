@@ -15,14 +15,17 @@ import { forceLogoutSession } from '@/app/actions/audit';
 import useTableColumnResize, { ColumnResizer } from '@/utils/tableColumnResize';
 
 const DEFAULT_ACTIVE_SESSIONS_COL_WIDTHS = {
-  user_employee: 250,
-  dept_role: 160,
-  first_login: 150,
-  last_seen: 150,
-  active_time: 140,
-  live_status: 160,
-  device_ip: 170,
-  session_action: 130
+  user_employee: 240,
+  branch_plant: 115,
+  dept_role: 150,
+  first_login: 125,
+  last_seen: 125,
+  shift_span: 125,
+  active_time: 125,
+  breaks_taken: 125,
+  live_status: 145,
+  device_ip: 160,
+  session_action: 115
 };
 
 function getTodayDateStr() {
@@ -134,7 +137,7 @@ export default function ActiveSessionsTab({ currentUserCompany = '', tenantId = 
     handleTouchStart: handleSessionTouchStart,
     handleDoubleClickReset: handleSessionReset,
     getTableTotalWidth: getSessionTotalWidth
-  } = useTableColumnResize(DEFAULT_ACTIVE_SESSIONS_COL_WIDTHS, 'active_sessions_tab_col_widths');
+  } = useTableColumnResize(DEFAULT_ACTIVE_SESSIONS_COL_WIDTHS, 'active_sessions_tab_col_widths_v2');
 
   // Fetch current user email
   useEffect(() => {
@@ -719,7 +722,7 @@ export default function ActiveSessionsTab({ currentUserCompany = '', tenantId = 
         backgroundColor: 'var(--bg-surface)'
       }}>
         <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 340px)', minHeight: '380px' }}>
-          <MobileTableView id="active_sessions_tab_view" view={tableView} hideToggle={true}><table style={{ width: `${getSessionTotalWidth()}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem' }}>
+          <MobileTableView id="active_sessions_tab_view" view={tableView} hideToggle={true}><table style={{ width: '100%', minWidth: `${getSessionTotalWidth()}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem' }}>
             <thead>
               <tr style={{
                 position: 'sticky',
@@ -737,21 +740,33 @@ export default function ActiveSessionsTab({ currentUserCompany = '', tenantId = 
                   <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Employee / User</div>
                   <ColumnResizer columnKey="user_employee" isResizing={isSessionResizing('user_employee')} onMouseDown={(e) => handleSessionResizeStart('user_employee', e)} onTouchStart={(e) => handleSessionTouchStart('user_employee', e)} onDoubleClick={() => handleSessionReset('user_employee')} />
                 </th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 10, padding: '0.8rem 1rem', width: `${sessionColWidths.branch_plant}px`, backgroundColor: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Branch / Plant</div>
+                  <ColumnResizer columnKey="branch_plant" isResizing={isSessionResizing('branch_plant')} onMouseDown={(e) => handleSessionResizeStart('branch_plant', e)} onTouchStart={(e) => handleSessionTouchStart('branch_plant', e)} onDoubleClick={() => handleSessionReset('branch_plant')} />
+                </th>
                 <th style={{ position: 'sticky', top: 0, zIndex: 10, padding: '0.8rem 1rem', width: `${sessionColWidths.dept_role}px`, backgroundColor: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Department & Role</div>
                   <ColumnResizer columnKey="dept_role" isResizing={isSessionResizing('dept_role')} onMouseDown={(e) => handleSessionResizeStart('dept_role', e)} onTouchStart={(e) => handleSessionTouchStart('dept_role', e)} onDoubleClick={() => handleSessionReset('dept_role')} />
                 </th>
                 <th style={{ position: 'sticky', top: 0, zIndex: 10, padding: '0.8rem 1rem', width: `${sessionColWidths.first_login}px`, backgroundColor: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>First Login (In-Time)</div>
+                  <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>First Check-in</div>
                   <ColumnResizer columnKey="first_login" isResizing={isSessionResizing('first_login')} onMouseDown={(e) => handleSessionResizeStart('first_login', e)} onTouchStart={(e) => handleSessionTouchStart('first_login', e)} onDoubleClick={() => handleSessionReset('first_login')} />
                 </th>
                 <th style={{ position: 'sticky', top: 0, zIndex: 10, padding: '0.8rem 1rem', width: `${sessionColWidths.last_seen}px`, backgroundColor: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Last Seen (Out-Time)</div>
+                  <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Last Seen (Out)</div>
                   <ColumnResizer columnKey="last_seen" isResizing={isSessionResizing('last_seen')} onMouseDown={(e) => handleSessionResizeStart('last_seen', e)} onTouchStart={(e) => handleSessionTouchStart('last_seen', e)} onDoubleClick={() => handleSessionReset('last_seen')} />
+                </th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 10, padding: '0.8rem 1rem', width: `${sessionColWidths.shift_span}px`, backgroundColor: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Total Shift Span</div>
+                  <ColumnResizer columnKey="shift_span" isResizing={isSessionResizing('shift_span')} onMouseDown={(e) => handleSessionResizeStart('shift_span', e)} onTouchStart={(e) => handleSessionTouchStart('shift_span', e)} onDoubleClick={() => handleSessionReset('shift_span')} />
                 </th>
                 <th style={{ position: 'sticky', top: 0, zIndex: 10, padding: '0.8rem 1rem', width: `${sessionColWidths.active_time}px`, backgroundColor: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Active Work Time</div>
                   <ColumnResizer columnKey="active_time" isResizing={isSessionResizing('active_time')} onMouseDown={(e) => handleSessionResizeStart('active_time', e)} onTouchStart={(e) => handleSessionTouchStart('active_time', e)} onDoubleClick={() => handleSessionReset('active_time')} />
+                </th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 10, padding: '0.8rem 1rem', width: `${sessionColWidths.breaks_taken}px`, backgroundColor: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Breaks Taken</div>
+                  <ColumnResizer columnKey="breaks_taken" isResizing={isSessionResizing('breaks_taken')} onMouseDown={(e) => handleSessionResizeStart('breaks_taken', e)} onTouchStart={(e) => handleSessionTouchStart('breaks_taken', e)} onDoubleClick={() => handleSessionReset('breaks_taken')} />
                 </th>
                 <th style={{ position: 'sticky', top: 0, zIndex: 10, padding: '0.8rem 1rem', width: `${sessionColWidths.live_status}px`, textAlign: 'center', backgroundColor: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Live Status</div>
@@ -770,7 +785,7 @@ export default function ActiveSessionsTab({ currentUserCompany = '', tenantId = 
             <tbody>
               {paginatedEmployees.length === 0 ? (
                 <tr>
-                  <td colSpan={8} style={{ padding: '3.5rem 1rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                  <td colSpan={11} style={{ padding: '3.5rem 1rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
                       <Monitor size={36} style={{ opacity: 0.35 }} />
                       <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>
@@ -870,6 +885,22 @@ export default function ActiveSessionsTab({ currentUserCompany = '', tenantId = 
                         </div>
                       </td>
 
+                      {/* Branch / Plant */}
+                      <td style={{ padding: '0.75rem 1rem', verticalAlign: 'top' }}>
+                        <span style={{
+                          fontSize: '0.74rem',
+                          fontWeight: 700,
+                          padding: '0.2rem 0.55rem',
+                          borderRadius: '6px',
+                          backgroundColor: '#f1f5f9',
+                          color: '#334155',
+                          border: '1px solid #cbd5e1',
+                          display: 'inline-block'
+                        }}>
+                          {emp.company || 'NSMLR'}
+                        </span>
+                      </td>
+
                       {/* Department & Role */}
                       <td style={{ padding: '0.75rem 1rem', verticalAlign: 'top' }}>
                         <div style={{ fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }}>
@@ -914,6 +945,18 @@ export default function ActiveSessionsTab({ currentUserCompany = '', tenantId = 
                         )}
                       </td>
 
+                      {/* Total Shift Span */}
+                      <td style={{ padding: '0.75rem 1rem' }}>
+                        {emp.hasActivityToday ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'monospace', fontSize: '0.85rem' }}>
+                            <Clock size={13} style={{ color: 'var(--text-secondary)' }} />
+                            <span>{emp.shiftSpanFormatted || emp.totalDurationFormatted || '--'}</span>
+                          </div>
+                        ) : (
+                          <span style={{ color: '#94a3b8', fontSize: '0.78rem' }}>--:--</span>
+                        )}
+                      </td>
+
                       {/* Active Work Time */}
                       <td style={{ padding: '0.75rem 1rem' }}>
                         {emp.hasActivityToday ? (
@@ -921,12 +964,29 @@ export default function ActiveSessionsTab({ currentUserCompany = '', tenantId = 
                             <div style={{ fontWeight: 800, fontFamily: 'monospace', color: emp.isTargetMet ? '#16a34a' : 'var(--text-primary)', fontSize: '0.9rem' }}>
                               {emp.activeDurationFormatted}
                             </div>
-                            <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '0.1rem' }}>
-                              Span: {emp.shiftSpanFormatted || emp.totalDurationFormatted}
+                            <div style={{ fontSize: '0.7rem', color: emp.isTargetMet ? '#16a34a' : 'var(--text-secondary)', marginTop: '0.1rem' }}>
+                              {emp.isTargetMet ? '✓ 9h Target Met' : 'Active working'}
                             </div>
                           </div>
                         ) : (
                           <span style={{ color: '#94a3b8', fontSize: '0.78rem' }}>0h 00m</span>
+                        )}
+                      </td>
+
+                      {/* Breaks Taken */}
+                      <td style={{ padding: '0.75rem 1rem' }}>
+                        {emp.breaks && emp.breaks.length > 0 ? (
+                          <div>
+                            <div style={{ fontWeight: 600, color: '#d97706', fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                              <Coffee size={13} />
+                              <span>{emp.breaks.length} {emp.breaks.length === 1 ? 'Break' : 'Breaks'}</span>
+                            </div>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '0.1rem' }}>
+                              {emp.breakDurationFormatted || `${emp.breaks.reduce((acc, b) => acc + (b.durationMins || 0), 0)}m total`}
+                            </div>
+                          </div>
+                        ) : (
+                          <span style={{ color: '#94a3b8', fontSize: '0.78rem' }}>0 breaks</span>
                         )}
                       </td>
 

@@ -10,20 +10,53 @@ import { formatISTDateTime } from '../utils/userManagementUtils';
 import { useTableColumnResize, ColumnResizer } from '@/utils/tableColumnResize';
 
 const DEFAULT_AUDIT_LOGS_COL_WIDTHS = {
-  user: 220,
-  action: 160,
-  target: 320,
-  source: 150,
-  timestamp: 190
+  user: 210,
+  module: 140,
+  action: 150,
+  target: 330,
+  status: 100,
+  ip_address: 140,
+  platform: 120,
+  timestamp: 180
 };
 
 const MIN_AUDIT_LOGS_COL_WIDTHS = {
-  user: 140,
-  action: 110,
-  target: 180,
-  source: 100,
-  timestamp: 140
+  user: 150,
+  module: 110,
+  action: 120,
+  target: 200,
+  status: 80,
+  ip_address: 110,
+  platform: 100,
+  timestamp: 150
 };
+
+function getAuditLogModule(log) {
+  const act = String(log.action || '').toLowerCase();
+  const tgt = String(log.target || '').toLowerCase();
+  if (act.includes('lead') || act.includes('stage') || act.includes('note') || tgt.includes('lead') || tgt.includes('pipeline')) {
+    return { name: 'Leads & CRM', color: '#2563eb', bg: '#eff6ff', border: '#bfdbfe' };
+  }
+  if (act.includes('punch') || act.includes('attendance') || tgt.includes('punch') || tgt.includes('attendance')) {
+    return { name: 'Attendance', color: '#059669', bg: '#ecfdf5', border: '#a7f3d0' };
+  }
+  if (act.includes('login') || act.includes('logout') || act.includes('session') || tgt.includes('session')) {
+    return { name: 'Session & Auth', color: '#7c3aed', bg: '#f5f3ff', border: '#ddd6fe' };
+  }
+  if (act.includes('role') || act.includes('permission') || act.includes('password') || act.includes('user') || act.includes('team')) {
+    return { name: 'User & Access', color: '#ea580c', bg: '#fff7ed', border: '#fed7aa' };
+  }
+  if (act.includes('call') || act.includes('dial') || tgt.includes('call')) {
+    return { name: 'Call Center', color: '#0284c7', bg: '#f0f9ff', border: '#bae6fd' };
+  }
+  if (act.includes('checklist') || tgt.includes('checklist')) {
+    return { name: 'Smart Checklist', color: '#0891b2', bg: '#ecfeff', border: '#a5f3fc' };
+  }
+  if (act.includes('delegat') || tgt.includes('delegat')) {
+    return { name: 'Task Delegation', color: '#4f46e5', bg: '#eef2ff', border: '#c7d2fe' };
+  }
+  return { name: 'System / Audit', color: '#475569', bg: '#f8fafc', border: '#e2e8f0' };
+}
 
 export default function AuditLogsTab({ currentUserCompany = '', tenantId = null }) {
   const [logs, setLogs] = useState([]);
@@ -57,7 +90,7 @@ export default function AuditLogsTab({ currentUserCompany = '', tenantId = null 
     resetColWidth,
     getTotalTableWidth
   } = useTableColumnResize(
-    'audit_logs_tab_col_widths',
+    'audit_logs_tab_col_widths_v2',
     DEFAULT_AUDIT_LOGS_COL_WIDTHS,
     MIN_AUDIT_LOGS_COL_WIDTHS
   );
@@ -239,7 +272,7 @@ export default function AuditLogsTab({ currentUserCompany = '', tenantId = null 
         backgroundColor: 'var(--bg-surface)'
       }}>
         <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 320px)', minHeight: '380px' }}>
-          <MobileTableView id="audit_logs_tab_view" view={tableView} hideToggle={true}><table style={{ width: `${getTotalTableWidth()}px`, borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem', tableLayout: 'fixed' }}>
+          <MobileTableView id="audit_logs_tab_view" view={tableView} hideToggle={true}><table style={{ width: '100%', minWidth: `${getTotalTableWidth()}px`, borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem', tableLayout: 'fixed' }}>
             <thead>
               <tr style={{
                 position: 'sticky',
@@ -259,6 +292,12 @@ export default function AuditLogsTab({ currentUserCompany = '', tenantId = null 
                   </div>
                   <ColumnResizer colKey="user" isResizing={resizingCol === 'user'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
                 </th>
+                <th style={{ width: `${colWidths.module}px`, padding: '0.75rem 1rem', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                    <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Module</span>
+                  </div>
+                  <ColumnResizer colKey="module" isResizing={resizingCol === 'module'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
+                </th>
                 <th style={{ width: `${colWidths.action}px`, padding: '0.75rem 1rem', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)', boxSizing: 'border-box', verticalAlign: 'middle' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
                     <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Action</span>
@@ -271,11 +310,23 @@ export default function AuditLogsTab({ currentUserCompany = '', tenantId = null 
                   </div>
                   <ColumnResizer colKey="target" isResizing={resizingCol === 'target'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
                 </th>
-                <th style={{ width: `${colWidths.source}px`, padding: '0.75rem 1rem', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)', boxSizing: 'border-box', verticalAlign: 'middle' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
-                    <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>IP / Source</span>
+                <th style={{ width: `${colWidths.status}px`, padding: '0.75rem 1rem', position: 'sticky', top: 0, zIndex: 10, textAlign: 'center', backgroundColor: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', paddingRight: '8px' }}>
+                    <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Status</span>
                   </div>
-                  <ColumnResizer colKey="source" isResizing={resizingCol === 'source'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
+                  <ColumnResizer colKey="status" isResizing={resizingCol === 'status'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
+                </th>
+                <th style={{ width: `${colWidths.ip_address}px`, padding: '0.75rem 1rem', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                    <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>IP Address</span>
+                  </div>
+                  <ColumnResizer colKey="ip_address" isResizing={resizingCol === 'ip_address'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
+                </th>
+                <th style={{ width: `${colWidths.platform}px`, padding: '0.75rem 1rem', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                    <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Platform</span>
+                  </div>
+                  <ColumnResizer colKey="platform" isResizing={resizingCol === 'platform'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
                 </th>
                 <th style={{ width: `${colWidths.timestamp}px`, padding: '0.75rem 1rem', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)', boxSizing: 'border-box', verticalAlign: 'middle' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
@@ -288,7 +339,7 @@ export default function AuditLogsTab({ currentUserCompany = '', tenantId = null 
             <tbody>
               {logs.length === 0 ? (
                 <tr>
-                  <td colSpan={5} style={{ padding: '3rem 1rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                  <td colSpan={8} style={{ padding: '3rem 1rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
                       <Clock size={36} style={{ opacity: 0.35 }} />
                       <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>{loadError ? 'Audit data unavailable' : 'No audit events found'}</span>
@@ -296,59 +347,119 @@ export default function AuditLogsTab({ currentUserCompany = '', tenantId = null 
                   </td>
                 </tr>
               ) : (
-                logs.map((log, idx) => (
-                  <tr
-                    key={log.id || idx}
-                    style={{
-                      borderBottom: '1px solid var(--border-light)',
-                      backgroundColor: idx % 2 === 0 ? 'var(--bg-surface)' : 'var(--bg-primary, rgba(0,0,0,0.01))'
-                    }}
-                  >
-                    <td style={{ width: `${colWidths.user}px`, padding: '0.75rem 1rem', boxSizing: 'border-box', verticalAlign: 'top' }}>
-                      <div style={{ fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }} title={log.emp_name || 'System User'}>
-                        {log.emp_name || 'System User'}
-                      </div>
-                      <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', whiteSpace: 'normal', wordBreak: 'break-all', lineHeight: 1.3, marginTop: '0.15rem' }} title={log.email || 'system@internal'}>
-                        {log.email || 'system@internal'}
-                      </div>
-                    </td>
-
-                    <td style={{ width: `${colWidths.action}px`, padding: '0.75rem 1rem', boxSizing: 'border-box', verticalAlign: 'top' }}>
-                      <span style={{
-                        fontSize: '0.72rem',
-                        fontWeight: 700,
-                        padding: '0.2rem 0.55rem',
-                        borderRadius: '6px',
-                        backgroundColor: '#f1f5f9',
-                        color: '#334155',
-                        border: '1px solid #cbd5e1',
-                        display: 'inline-block',
-                        whiteSpace: 'normal',
-                        wordBreak: 'break-word',
-                        lineHeight: 1.25
-                      }}>
-                        {log.action || 'Action'}
-                      </span>
-                    </td>
-
-                    <td style={{ width: `${colWidths.target}px`, padding: '0.75rem 1rem', color: 'var(--text-primary)', lineHeight: 1.35, boxSizing: 'border-box', verticalAlign: 'top' }}>
-                      <div style={{ fontWeight: 500, whiteSpace: 'normal', wordBreak: 'break-word' }} title={log.target || 'N/A'}>{log.target || 'N/A'}</div>
-                      {log.details && typeof log.details === 'string' && log.details !== log.target && (
-                        <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: '0.25rem', whiteSpace: 'normal', wordBreak: 'break-word' }} title={log.details}>
-                          {log.details}
+                logs.map((log, idx) => {
+                  const mod = getAuditLogModule(log);
+                  const resolvedIp = (!log.ip_address && !log.ip) || log.ip_address === 'Web App' || log.ip === 'Web App' || log.ip_address === 'Logged via Web App' || log.ip === 'Logged via Web App' ? '127.0.0.1 (Local)' : (log.ip_address || log.ip);
+                  return (
+                    <tr
+                      key={log.id || idx}
+                      style={{
+                        borderBottom: '1px solid var(--border-light)',
+                        backgroundColor: idx % 2 === 0 ? 'var(--bg-surface)' : 'var(--bg-primary, rgba(0,0,0,0.01))'
+                      }}
+                    >
+                      {/* User / Performer */}
+                      <td style={{ width: `${colWidths.user}px`, padding: '0.75rem 1rem', boxSizing: 'border-box', verticalAlign: 'top' }}>
+                        <div style={{ fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }} title={log.emp_name || 'System User'}>
+                          {log.emp_name || 'System User'}
                         </div>
-                      )}
-                    </td>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', whiteSpace: 'normal', wordBreak: 'break-all', lineHeight: 1.3, marginTop: '0.15rem' }} title={log.email || 'system@internal'}>
+                          {log.email || 'system@internal'}
+                        </div>
+                      </td>
 
-                    <td style={{ width: `${colWidths.source}px`, padding: '0.75rem 1rem', fontSize: '0.78rem', color: 'var(--text-secondary)', boxSizing: 'border-box', whiteSpace: 'normal', wordBreak: 'break-all', verticalAlign: 'top' }} title={(!log.ip_address && !log.ip) || log.ip_address === 'Web App' || log.ip === 'Web App' || log.ip_address === 'Logged via Web App' || log.ip === 'Logged via Web App' ? '127.0.0.1 (Local)' : (log.ip_address || log.ip)}>
-                      {(!log.ip_address && !log.ip) || log.ip_address === 'Web App' || log.ip === 'Web App' || log.ip_address === 'Logged via Web App' || log.ip === 'Logged via Web App' ? '127.0.0.1 (Local)' : (log.ip_address || log.ip)}
-                    </td>
+                      {/* Module */}
+                      <td style={{ width: `${colWidths.module}px`, padding: '0.75rem 1rem', boxSizing: 'border-box', verticalAlign: 'top' }}>
+                        <span style={{
+                          fontSize: '0.72rem',
+                          fontWeight: 700,
+                          padding: '0.2rem 0.55rem',
+                          borderRadius: '6px',
+                          backgroundColor: mod.bg,
+                          color: mod.color,
+                          border: `1px solid ${mod.border}`,
+                          display: 'inline-block',
+                          whiteSpace: 'nowrap'
+                        }}>
+                          {mod.name}
+                        </span>
+                      </td>
 
-                    <td style={{ width: `${colWidths.timestamp}px`, padding: '0.75rem 1rem', fontSize: '0.78rem', color: 'var(--text-secondary)', boxSizing: 'border-box', whiteSpace: 'normal', wordBreak: 'break-word', verticalAlign: 'top' }}>
-                      {formatISTDateTime(log.created_at || log.timestamp)}
-                    </td>
-                  </tr>
-                ))
+                      {/* Action */}
+                      <td style={{ width: `${colWidths.action}px`, padding: '0.75rem 1rem', boxSizing: 'border-box', verticalAlign: 'top' }}>
+                        <span style={{
+                          fontSize: '0.72rem',
+                          fontWeight: 700,
+                          padding: '0.2rem 0.55rem',
+                          borderRadius: '6px',
+                          backgroundColor: '#f1f5f9',
+                          color: '#334155',
+                          border: '1px solid #cbd5e1',
+                          display: 'inline-block',
+                          whiteSpace: 'normal',
+                          wordBreak: 'break-word',
+                          lineHeight: 1.25
+                        }}>
+                          {log.action || 'Action'}
+                        </span>
+                      </td>
+
+                      {/* Target & Details */}
+                      <td style={{ width: `${colWidths.target}px`, padding: '0.75rem 1rem', color: 'var(--text-primary)', lineHeight: 1.35, boxSizing: 'border-box', verticalAlign: 'top' }}>
+                        <div style={{ fontWeight: 500, whiteSpace: 'normal', wordBreak: 'break-word' }} title={log.target || 'N/A'}>{log.target || 'N/A'}</div>
+                        {log.details && typeof log.details === 'string' && log.details !== log.target && (
+                          <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: '0.25rem', whiteSpace: 'normal', wordBreak: 'break-word' }} title={log.details}>
+                            {log.details}
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Status */}
+                      <td style={{ width: `${colWidths.status}px`, padding: '0.75rem 1rem', textAlign: 'center', boxSizing: 'border-box', verticalAlign: 'top' }}>
+                        <span style={{
+                          fontSize: '0.7rem',
+                          fontWeight: 700,
+                          padding: '0.2rem 0.5rem',
+                          borderRadius: '10px',
+                          backgroundColor: '#ecfdf5',
+                          color: '#059669',
+                          border: '1px solid #a7f3d0',
+                          display: 'inline-block'
+                        }}>
+                          Recorded
+                        </span>
+                      </td>
+
+                      {/* IP Address */}
+                      <td style={{ width: `${colWidths.ip_address}px`, padding: '0.75rem 1rem', fontSize: '0.78rem', color: 'var(--text-secondary)', boxSizing: 'border-box', whiteSpace: 'normal', wordBreak: 'break-all', verticalAlign: 'top' }} title={resolvedIp}>
+                        {resolvedIp}
+                      </td>
+
+                      {/* Platform */}
+                      <td style={{ width: `${colWidths.platform}px`, padding: '0.75rem 1rem', fontSize: '0.78rem', color: 'var(--text-primary)', boxSizing: 'border-box', verticalAlign: 'top' }}>
+                        <span style={{
+                          fontSize: '0.72rem',
+                          fontWeight: 600,
+                          padding: '0.15rem 0.45rem',
+                          borderRadius: '6px',
+                          backgroundColor: '#f8fafc',
+                          color: '#475569',
+                          border: '1px solid #e2e8f0',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.3rem'
+                        }}>
+                          Web App
+                        </span>
+                      </td>
+
+                      {/* Timestamp (IST) */}
+                      <td style={{ width: `${colWidths.timestamp}px`, padding: '0.75rem 1rem', fontSize: '0.78rem', color: 'var(--text-secondary)', boxSizing: 'border-box', whiteSpace: 'normal', wordBreak: 'break-word', verticalAlign: 'top' }}>
+                        {formatISTDateTime(log.created_at || log.timestamp)}
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table></MobileTableView>

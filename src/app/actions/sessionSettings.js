@@ -777,36 +777,44 @@ export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, 
 
       const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl', 'tnt00002'];
       const reqLower = String(requesterCompany || '').toLowerCase().trim();
-      let effectiveTenantId = tenantId;
-      if (reqLower === 'tnt00002') effectiveTenantId = '00000000-0000-0000-0000-000000000001';
-      else if (reqLower === 'tnt00001') effectiveTenantId = '0a37b8e8-1c28-4e19-8891-951fc3f8f8af';
-      else if (reqLower === 'tnt00003') effectiveTenantId = '922d3e72-6588-457f-a562-4f1bdbf10d98';
+      const effectiveTenantId = (() => {
+        const rawId = String(tenantId || '').toLowerCase().trim();
+        if (reqLower.includes('supuja') || reqLower === 'tnt00001' || rawId === 'tnt00001' || rawId === '0a37b8e8-1c28-4e19-8891-951fc3f8f8af') return '0a37b8e8-1c28-4e19-8891-951fc3f8f8af';
+        if (reqLower.includes('testing') || reqLower === 'tnt00003' || rawId === 'tnt00003' || rawId === '922d3e72-6588-457f-a562-4f1bdbf10d98') return '922d3e72-6588-457f-a562-4f1bdbf10d98';
+        if (reqLower === 'tnt00002' || rawId === 'tnt00002') return '00000000-0000-0000-0000-000000000001';
+        if (tenantId && tenantId !== '00000000-0000-0000-0000-000000000001') return tenantId;
+        return '00000000-0000-0000-0000-000000000001';
+      })();
 
-      const isSwanRequester = !requesterCompany || reqLower === 'all' || reqLower === 'all companies' || SWAN_COMPANIES.includes(reqLower) || effectiveTenantId === '00000000-0000-0000-0000-000000000001';
+      const isSwanRequester = effectiveTenantId === '00000000-0000-0000-0000-000000000001' && (!requesterCompany || reqLower === 'all' || reqLower === 'all companies' || SWAN_COMPANIES.includes(reqLower));
 
       allTeamMembers = allTeamMembers.filter(u => {
         const userComp = String(u.company || '').toLowerCase().trim();
-        const userTenantId = u.tenant_id;
+        const rawUTenant = String(u.tenant_id || '').toLowerCase().trim();
+        const userTenantId = (() => {
+          if (userComp.includes('supuja') || userComp === 'tnt00001' || rawUTenant === '0a37b8e8-1c28-4e19-8891-951fc3f8f8af' || rawUTenant === 'tnt00001') return '0a37b8e8-1c28-4e19-8891-951fc3f8f8af';
+          if (userComp.includes('testing') || userComp === 'tnt00003' || rawUTenant === '922d3e72-6588-457f-a562-4f1bdbf10d98' || rawUTenant === 'tnt00003') return '922d3e72-6588-457f-a562-4f1bdbf10d98';
+          if (u.tenant_id && u.tenant_id !== '00000000-0000-0000-0000-000000000001') return u.tenant_id;
+          return '00000000-0000-0000-0000-000000000001';
+        })();
 
         // If specific client tenant workspace
         if (effectiveTenantId && effectiveTenantId !== '00000000-0000-0000-0000-000000000001') {
-          return userTenantId === effectiveTenantId || (reqLower && userComp === reqLower);
+          return userTenantId === effectiveTenantId;
         }
 
         if (!isSwanRequester) {
           // Client workspace by company name
-          return userComp === reqLower;
+          return userTenantId === effectiveTenantId || userComp === reqLower;
         }
 
-        // Swan Group All / Group level: match all Swan plants, exclude other external tenants
+        // Swan Group All / Group level: match strictly Swan plants, exclude other external tenants
         if (!requesterCompany || reqLower === 'all' || reqLower === 'all companies' || reqLower === 'new swan group' || reqLower === 'tnt00002') {
-          const isExplicitExternalTenant = userTenantId && userTenantId !== '00000000-0000-0000-0000-000000000001';
-          if (isExplicitExternalTenant) return false;
-          return SWAN_COMPANIES.includes(userComp) || !userComp || userTenantId === '00000000-0000-0000-0000-000000000001';
+          return userTenantId === '00000000-0000-0000-0000-000000000001' && (SWAN_COMPANIES.includes(userComp) || !userComp);
         }
 
         // Specific Swan sub-company selected (e.g. NSMLR, NSTLP)
-        return userComp === reqLower;
+        return userTenantId === '00000000-0000-0000-0000-000000000001' && userComp === reqLower;
       });
     }
 

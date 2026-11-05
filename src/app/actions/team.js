@@ -31,16 +31,16 @@ export async function getTeamMembers(requesterCompany = null, tenantId = null) {
   const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl', 'tnt00002'];
   const reqLower = String(requesterCompany || '').toLowerCase().trim();
 
-  // Handle Standard Tenant Codes passed as requesterCompany
+  // Handle Standard Tenant Codes or Company passed as requesterCompany
   if (reqLower === 'tnt00002') {
     tenantId = '00000000-0000-0000-0000-000000000001';
-  } else if (reqLower === 'tnt00001') {
+  } else if (reqLower === 'tnt00001' || reqLower.includes('supuja')) {
     tenantId = '0a37b8e8-1c28-4e19-8891-951fc3f8f8af';
-  } else if (reqLower === 'tnt00003') {
+  } else if (reqLower === 'tnt00003' || reqLower.includes('testing')) {
     tenantId = '922d3e72-6588-457f-a562-4f1bdbf10d98';
   }
 
-  const isSwanRequester = !requesterCompany || SWAN_COMPANIES.includes(reqLower) || reqLower === 'tnt00002' || tenantId === '00000000-0000-0000-0000-000000000001';
+  const isSwanRequester = tenantId === '00000000-0000-0000-0000-000000000001' && (!requesterCompany || SWAN_COMPANIES.includes(reqLower) || reqLower === 'all' || reqLower === 'all companies');
 
   // If non-default tenantId is provided, resolve tenant details from database
   let tenantName = '';
@@ -64,10 +64,17 @@ export async function getTeamMembers(requesterCompany = null, tenantId = null) {
     const userComp = String(u.company || '').toLowerCase().trim();
     const uEmail = String(u.email || '').toLowerCase().trim();
     const uOfficialEmail = String(u.emp_official_mail_id || '').toLowerCase().trim();
+    const rawUTenant = String(u.tenant_id || '').toLowerCase().trim();
+    const uTenant = (() => {
+      if (userComp.includes('supuja') || userComp === 'tnt00001' || rawUTenant === '0a37b8e8-1c28-4e19-8891-951fc3f8f8af' || rawUTenant === 'tnt00001') return '0a37b8e8-1c28-4e19-8891-951fc3f8f8af';
+      if (userComp.includes('testing') || userComp === 'tnt00003' || rawUTenant === '922d3e72-6588-457f-a562-4f1bdbf10d98' || rawUTenant === 'tnt00003') return '922d3e72-6588-457f-a562-4f1bdbf10d98';
+      if (u.tenant_id && u.tenant_id !== '00000000-0000-0000-0000-000000000001') return u.tenant_id;
+      return '00000000-0000-0000-0000-000000000001';
+    })();
 
     // If tenantId was provided and resolved to a non-default tenant
     if (tenantId && tenantId !== '00000000-0000-0000-0000-000000000001') {
-      if (u.tenant_id && u.tenant_id === tenantId) return true;
+      if (uTenant === tenantId) return true;
       if (tenantAdminEmail && (uEmail === tenantAdminEmail || uOfficialEmail === tenantAdminEmail)) return true;
       if (tenantName && userComp === tenantName) return true;
       if (tenantCode && userComp === tenantCode) return true;
@@ -77,13 +84,13 @@ export async function getTeamMembers(requesterCompany = null, tenantId = null) {
 
     if (!isSwanRequester) {
       // Client workspace (e.g. SuPuja Creations, Testing New Swan Group): strictly return users of that company
-      return userComp === reqLower;
+      return uTenant === tenantId || userComp === reqLower;
     }
-    // New Swan Group: return New Swan Group members, exclude separate client tenants
-    return SWAN_COMPANIES.includes(userComp) || !userComp;
+    // New Swan Group: strictly return New Swan Group members, exclude separate client tenants
+    return uTenant === '00000000-0000-0000-0000-000000000001' && (SWAN_COMPANIES.includes(userComp) || !userComp);
   });
 
-  const finalData = (scopedData.length > 0 ? scopedData : (data || []));
+  const finalData = scopedData;
   return finalData.map(u => ({
     ...u,
     emp_status: u.emp_status || (u.module_access && u.module_access.emp_status) || 'Active',

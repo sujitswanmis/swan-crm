@@ -76,17 +76,12 @@ export default async function Home({ params, searchParams }) {
   const canRead = isMasterAdminUser || userRole === 'admin' || userRole === 'Admin' || effectiveRoleData?.can_read !== false;
   const canWrite = isMasterAdminUser || userRole === 'admin' || userRole === 'Admin' || effectiveRoleData?.can_write !== false;
   let userTenantId = effectiveRoleData?.tenant_id;
-  if (!userTenantId && effectiveRoleData?.company) {
-    const compLower = String(effectiveRoleData.company).toLowerCase().trim();
-    if (compLower === 'supuja creations' || compLower === 'supuja_creations') {
-      userTenantId = '0a37b8e8-1c28-4e19-8891-951fc3f8f8af';
-    } else if (compLower === 'testing new swan group' || compLower === 'testing_new_swan_group') {
-      userTenantId = '922d3e72-6588-457f-a562-4f1bdbf10d98';
-    } else {
-      userTenantId = '00000000-0000-0000-0000-000000000001';
-    }
-  }
-  if (!userTenantId) {
+  const compLower = String(effectiveRoleData?.company || '').toLowerCase().trim();
+  if (compLower.includes('supuja') || userEmailLower.includes('supuja')) {
+    userTenantId = '0a37b8e8-1c28-4e19-8891-951fc3f8f8af';
+  } else if (compLower.includes('testing') || userEmailLower.includes('testing') || userEmailLower === 'sujitswanmis@gmail.com') {
+    userTenantId = '922d3e72-6588-457f-a562-4f1bdbf10d98';
+  } else if (!userTenantId) {
     userTenantId = '00000000-0000-0000-0000-000000000001';
   }
   let tenantEntitlements = null;
