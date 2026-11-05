@@ -1,6 +1,6 @@
 'use client';
 
-import MobileTableView from '@/components/common/MobileTableView';
+import MobileTableView, { TableViewToggle, useTableViewPreference } from '@/components/common/MobileTableView';
 import StandardTablePagination from '@/components/common/StandardTablePagination';
 import React, { useState, useEffect } from 'react';
 import { 
@@ -177,6 +177,11 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
   const [savingAuto, setSavingAuto] = useState(false);
   const [currentAuto, setCurrentAuto] = useState({ stage_name: '', template_id: '', frequency: 'Once', company: 'All', is_active: true });
   const [stages, setStages] = useState([]);
+  const [autoSearch, setAutoSearch] = useState('');
+  const [autoCompanyFilter, setAutoCompanyFilter] = useState('ALL');
+  const [autoStatusFilter, setAutoStatusFilter] = useState('ALL');
+  const [autoFrequencyFilter, setAutoFrequencyFilter] = useState('ALL');
+  const [autoTableView, setAutoTableView] = useTableViewPreference('WhatsappOfficial-1');
   const [autoPage, setAutoPage] = useState(1);
   const [autoPageSize, setAutoPageSize] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -188,13 +193,47 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
     return 15;
   });
 
-  const paginatedAutomations = React.useMemo(() => {
-    if (autoPageSize === 100000) return automations;
-    const startIdx = (autoPage - 1) * autoPageSize;
-    return automations.slice(startIdx, startIdx + autoPageSize);
-  }, [automations, autoPage, autoPageSize]);
+  const autoCompanyOptions = React.useMemo(() => {
+    const set = new Set();
+    automations.forEach(a => {
+      if (a.company && a.company !== 'All') set.add(a.company);
+    });
+    return Array.from(set).sort();
+  }, [automations]);
 
-  const totalAutoPages = Math.max(1, Math.ceil(automations.length / (autoPageSize === 100000 ? (automations.length || 1) : autoPageSize)));
+  const filteredAutomations = React.useMemo(() => {
+    return automations.filter(auto => {
+      // 1. Search text
+      if (autoSearch.trim()) {
+        const q = autoSearch.toLowerCase().trim();
+        const stageMatch = (auto.stage_name || '').toLowerCase().includes(q);
+        const tplIdMatch = (auto.template_id || '').toLowerCase().includes(q);
+        const tplNameMatch = (auto.whatsapp_templates?.template_name || '').toLowerCase().includes(q);
+        const compMatch = (auto.company || '').toLowerCase().includes(q);
+        if (!stageMatch && !tplIdMatch && !tplNameMatch && !compMatch) return false;
+      }
+      // 2. Company filter
+      if (autoCompanyFilter !== 'ALL') {
+        if ((auto.company || '').toUpperCase() !== autoCompanyFilter.toUpperCase()) return false;
+      }
+      // 3. Status filter
+      if (autoStatusFilter === 'ACTIVE' && !auto.is_active) return false;
+      if (autoStatusFilter === 'PAUSED' && auto.is_active) return false;
+      // 4. Frequency filter
+      if (autoFrequencyFilter !== 'ALL') {
+        if ((auto.frequency || '').toLowerCase() !== autoFrequencyFilter.toLowerCase()) return false;
+      }
+      return true;
+    });
+  }, [automations, autoSearch, autoCompanyFilter, autoStatusFilter, autoFrequencyFilter]);
+
+  const paginatedAutomations = React.useMemo(() => {
+    if (autoPageSize === 100000) return filteredAutomations;
+    const startIdx = (autoPage - 1) * autoPageSize;
+    return filteredAutomations.slice(startIdx, startIdx + autoPageSize);
+  }, [filteredAutomations, autoPage, autoPageSize]);
+
+  const totalAutoPages = Math.max(1, Math.ceil(filteredAutomations.length / (autoPageSize === 100000 ? (filteredAutomations.length || 1) : autoPageSize)));
 
   useEffect(() => {
     if (autoPage > totalAutoPages) {
@@ -1173,7 +1212,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
   };
 
   const handleSelectAllAutomations = () => {
-    if (automations.length === 0) return;
+    if (filteredAutomations.length === 0) return;
     const visibleIds = paginatedAutomations.map(a => a.id);
     const allVisibleSelected = visibleIds.length > 0 && visibleIds.every(id => selectedAutoIds.includes(id));
     if (allVisibleSelected) {
@@ -3538,19 +3577,22 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
       {/* AUTOMATIONS TAB */}
       {activeTab === 'automations' && (
         <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '1rem' }}>
             <div>
               <h2 style={{ fontSize: '1.25rem', margin: '0 0 0.25rem 0' }}>Stage-Based Automation Rules</h2>
               <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Map your templates to specific CRM stages to send automated drip campaigns.</p>
             </div>
-            {automationsPerms.add && (
-              <button 
-                onClick={() => { setCurrentAuto({ stage_name: '', template_id: '', frequency: 'Once', company: 'All', is_active: true }); setShowAutoForm(true); }}
-                style={{ padding: '0.5rem 1rem', background: '#10b981', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 500 }}
-              >
-                <Plus size={18} /> Add New Rule
-              </button>
-            )}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.5rem' }}>
+              <TableViewToggle view={autoTableView} onChange={setAutoTableView} />
+              {automationsPerms.add && (
+                <button 
+                  onClick={() => { setCurrentAuto({ stage_name: '', template_id: '', frequency: 'Once', company: 'All', is_active: true }); setShowAutoForm(true); }}
+                  style={{ padding: '0.5rem 1rem', background: '#10b981', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 500 }}
+                >
+                  <Plus size={18} /> Add New Rule
+                </button>
+              )}
+            </div>
           </div>
 
           {showAutoForm && (
@@ -3802,8 +3844,159 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
             </div>
           )}
 
+          {/* Filter & Search Toolbar */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '0.75rem',
+            flexWrap: 'wrap',
+            padding: '0.75rem 1rem',
+            backgroundColor: 'var(--bg-surface)',
+            border: '1px solid var(--border-light)',
+            borderRadius: '8px',
+            marginBottom: '1rem'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', flex: 1 }}>
+              {/* Search input */}
+              <div style={{ position: 'relative', minWidth: '240px', flex: '1 1 240px', maxWidth: '380px' }}>
+                <Search size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
+                <input
+                  type="text"
+                  value={autoSearch}
+                  onChange={(e) => {
+                    setAutoSearch(e.target.value);
+                    setAutoPage(1);
+                  }}
+                  placeholder="Search by stage, template, or company..."
+                  style={{
+                    width: '100%',
+                    padding: '0.45rem 2rem 0.45rem 2.1rem',
+                    borderRadius: '6px',
+                    border: '1px solid var(--border-light)',
+                    backgroundColor: 'var(--bg-primary)',
+                    color: 'var(--text-primary)',
+                    fontSize: '0.85rem'
+                  }}
+                />
+                {autoSearch && (
+                  <button
+                    type="button"
+                    onClick={() => { setAutoSearch(''); setAutoPage(1); }}
+                    style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '2px' }}
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+
+              {/* Company Filter */}
+              <select
+                value={autoCompanyFilter}
+                onChange={(e) => {
+                  setAutoCompanyFilter(e.target.value);
+                  setAutoPage(1);
+                }}
+                style={{
+                  padding: '0.45rem 0.75rem',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border-light)',
+                  backgroundColor: 'var(--bg-primary)',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.85rem',
+                  cursor: 'pointer'
+                }}
+              >
+                <option value="ALL">All Companies</option>
+                {autoCompanyOptions.map(comp => (
+                  <option key={comp} value={comp}>{comp}</option>
+                ))}
+              </select>
+
+              {/* Status Filter */}
+              <select
+                value={autoStatusFilter}
+                onChange={(e) => {
+                  setAutoStatusFilter(e.target.value);
+                  setAutoPage(1);
+                }}
+                style={{
+                  padding: '0.45rem 0.75rem',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border-light)',
+                  backgroundColor: 'var(--bg-primary)',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.85rem',
+                  cursor: 'pointer'
+                }}
+              >
+                <option value="ALL">All Statuses</option>
+                <option value="ACTIVE">🟢 Active Only</option>
+                <option value="PAUSED">⚪ Paused Only</option>
+              </select>
+
+              {/* Frequency Filter */}
+              <select
+                value={autoFrequencyFilter}
+                onChange={(e) => {
+                  setAutoFrequencyFilter(e.target.value);
+                  setAutoPage(1);
+                }}
+                style={{
+                  padding: '0.45rem 0.75rem',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border-light)',
+                  backgroundColor: 'var(--bg-primary)',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.85rem',
+                  cursor: 'pointer'
+                }}
+              >
+                <option value="ALL">All Frequencies</option>
+                <option value="Once">Once</option>
+                <option value="Weekly">Weekly</option>
+                <option value="Monthly">Monthly</option>
+                <option value="Quarterly">Quarterly</option>
+              </select>
+
+              {/* Clear Filters Button */}
+              {(autoSearch || autoCompanyFilter !== 'ALL' || autoStatusFilter !== 'ALL' || autoFrequencyFilter !== 'ALL') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAutoSearch('');
+                    setAutoCompanyFilter('ALL');
+                    setAutoStatusFilter('ALL');
+                    setAutoFrequencyFilter('ALL');
+                    setAutoPage(1);
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.35rem',
+                    padding: '0.45rem 0.75rem',
+                    borderRadius: '6px',
+                    border: '1px dashed var(--border-light)',
+                    backgroundColor: 'transparent',
+                    color: 'var(--text-secondary)',
+                    fontSize: '0.82rem',
+                    cursor: 'pointer'
+                  }}
+                  title="Reset all filters"
+                >
+                  <RotateCcw size={13} /> Reset
+                </button>
+              )}
+            </div>
+
+            {/* Results count pill */}
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
+              <span>{filteredAutomations.length} of {automations.length} rules</span>
+            </div>
+          </div>
+
           <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 310px)', minHeight: '380px', borderRadius: '8px 8px 0 0', border: '1px solid var(--border-light)', borderBottom: 'none' }}>
-            <MobileTableView id="WhatsappOfficial-1"><table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', backgroundColor: 'var(--bg-surface)' }}>
+            <MobileTableView id="WhatsappOfficial-1" view={autoTableView} hideToggle={true}><table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', backgroundColor: 'var(--bg-surface)' }}>
               <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--bg-surface)' }}>
                 <tr style={{ borderBottom: '1px solid var(--border-light)' }}>
                   <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)', padding: '1rem', width: '40px', textAlign: 'center' }}>
@@ -3824,8 +4017,41 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                 </tr>
               </thead>
               <tbody>
-                {automations.length === 0 ? (
-                  <tr><td colSpan="7" style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>No automation rules defined yet.</td></tr>
+                {filteredAutomations.length === 0 ? (
+                  <tr>
+                    <td colSpan="7" style={{ padding: '3rem 1rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.6rem' }}>
+                        <Filter size={26} style={{ opacity: 0.35 }} />
+                        <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>
+                          {automations.length === 0 ? 'No automation rules defined yet.' : 'No automation rules match your filters or search.'}
+                        </div>
+                        {(autoSearch || autoCompanyFilter !== 'ALL' || autoStatusFilter !== 'ALL' || autoFrequencyFilter !== 'ALL') && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAutoSearch('');
+                              setAutoCompanyFilter('ALL');
+                              setAutoStatusFilter('ALL');
+                              setAutoFrequencyFilter('ALL');
+                              setAutoPage(1);
+                            }}
+                            style={{
+                              marginTop: '0.35rem',
+                              padding: '0.35rem 0.85rem',
+                              borderRadius: '6px',
+                              border: '1px solid var(--border-light)',
+                              background: 'var(--bg-surface)',
+                              color: 'var(--text-primary)',
+                              fontSize: '0.8rem',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            Reset Filters
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
                 ) : (
                   paginatedAutomations.map(auto => {
                     const isSelected = selectedAutoIds.includes(auto.id);
@@ -3907,7 +4133,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
           {/* Unified Standard Bottom Page Navigation */}
           <StandardTablePagination
             currentPage={autoPage}
-            totalRecords={automations.length}
+            totalRecords={filteredAutomations.length}
             pageSize={autoPageSize}
             onPageChange={setAutoPage}
             onPageSizeChange={setAutoPageSize}
