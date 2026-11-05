@@ -49,21 +49,26 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - **No Cache, Build, or Temp Folder Purging**: Never delete `.next`, `node_modules`, `.git`, or temporary folders. Deleting runtime or build directories can break active dev servers, corrupt in-memory Turbopack state, and lead to fatal application crashes.
 - **Safe Alternatives Only**: If code needs cleanup or space is tight, archive, comment out, create non-destructive additive changes, or instruct the user to handle disk cleanup manually outside the agent environment.
 
-# Mandatory Standard Table Pagination & Sticky Header Rule (Unified Table Setup)
-- **Universal Application Across All CRM Tables**: The standard page navigation setup and frozen header structure MUST be applied uniformly across every tabular view in the CRM (Daily Order Followup tabs, Pipeline, Feedback, Complaints, Users, Party Master, Leads, etc.):
-  1. **Frozen Table Header (`position: sticky`)**:
+# Mandatory Standard Table Pagination & Sticky Header Rule (Unified Table Setup & Config Master Page Navigation)
+- **Universal Application Across All CRM Tables**: The standard page navigation setup and frozen header structure MUST be applied uniformly across every tabular view in the CRM (Daily Order Followup tabs, Pipeline, Feedback, Complaints, Users, Party Master, Leads, WhatsApp Official/Automations, etc.):
+  1. **Dynamic Config Master Page Navigation Integration (`crmPageNavSettings`)**:
+     - All CRM tables MUST connect to and respect settings configured in **Config Master Studio ➔ Page Navigation Rules** (`/config-master/navigation`).
+     - Tables MUST preferably utilize the universal reusable component `StandardTablePagination` (`src/components/common/StandardTablePagination.jsx`).
+     - Must dynamically read settings from `localStorage.getItem('crmPageNavSettings')` and re-sync on `crm_page_nav_updated` & `crm_config_updated` window events:
+       - **Default Records Per Page**: Defaults dynamically to `settings.defaultPageSize` (e.g. `15` or `25`).
+       - **Available Page Sizes Dropdown**: Must dynamically offer options from `settings.availablePageSizes` (e.g. `3, 5, 10, 15, 20, 50, 100, 500, 1000, All`).
+       - **Page Numbering Jump**: Must show pagination pills according to `settings.pageNumberingJump` (e.g. `3` jump: `[1 2 3 (4) 5 6 7]`).
+  2. **Frozen Table Header (`position: sticky`)**:
      - All table headers (`<thead>` and `<th>`) must be sticky (`position: sticky; top: 0; zIndex: 10; backgroundColor: 'var(--bg-surface)'`) with `boxShadow: 'inset 0 -1px 0 var(--border-light)'`.
      - The table wrapper must have a bounded scrollable height (`overflow: 'auto'`, e.g., `maxHeight: 'calc(100vh - 310px)'`, `minHeight: '380px'`) so headers remain frozen during scrolling.
      - Column resizing (`ColumnResizer`) must remain fully integrated and active on every frozen header.
-  2. **Unified Bottom Page Navigation (Navigation Bar Setup)**:
-     - **Record Counter**: Display exact range on left: `Showing <strong>{from}</strong> to <strong>{to}</strong> of <strong>{total}</strong> records`.
-     - **Rows Per Page Selector**: Standard dropdown selector with options `[10, 25, 50, 100]`, with default set to **25** records.
-     - **Standard 5-Button Navigation Controls**:
-       - First Page (`<<` / `ChevronsLeft`)
-       - Previous Page (`<` / `ChevronLeft`)
-       - Current Page Indicator (`Page {currentPage} of {totalPages}`)
-       - Next Page (`>` / `ChevronRight`)
-       - Last Page (`>>` / `ChevronsRight`)
+  3. **Unified Bottom Page Navigation (Navigation Bar Setup)**:
+     - **Record Counter**: Display exact range on left: `Showing <strong>{startRecord}</strong> to <strong>{endRecord}</strong> of <strong>{totalRecords}</strong> records`.
+     - **Rows Per Page Selector**: Dropdown selector reflecting options from Config Master (`availablePageSizes`).
+     - **Standard Navigation Controls**:
+       - Previous Page (`<` / `ChevronLeft` / `Previous`)
+       - Dynamic Numbered Page Pills (with current active page highlighted in `var(--accent-color, #2563eb)`)
+       - Next Page (`>` / `ChevronRight` / `Next`)
        - Boundary disabled states (disabled when on first/last page).
      - **Automatic Page Reset**: Whenever the user types in search, changes tab/filter, switches period/date, or updates rows per page, `currentPage` MUST automatically reset to `1`.
 
