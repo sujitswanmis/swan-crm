@@ -3578,7 +3578,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
             </div>
             {automationsPerms.add && (
               <button 
-                onClick={() => { setCurrentAuto({ stage_name: '', template_id: '', frequency: 'Once' }); setShowAutoForm(true); }}
+                onClick={() => { setCurrentAuto({ stage_name: '', template_id: '', frequency: 'Once', company: 'All', is_active: true }); setShowAutoForm(true); }}
                 style={{ padding: '0.5rem 1rem', background: '#10b981', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 500 }}
               >
                 <Plus size={18} /> Add New Rule
@@ -3715,7 +3715,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                       </td>
                       <td style={{ padding: '1rem', textAlign: 'right' }}>
                         {automationsPerms.edit && (
-                          <button onClick={() => { setCurrentAuto(auto); setShowAutoForm(true); }} style={{ padding: '0.4rem', background: 'transparent', color: '#475569', border: 'none', cursor: 'pointer' }}>Edit</button>
+                          <button onClick={() => { const { whatsapp_templates, ...cleanAuto } = auto; setCurrentAuto(cleanAuto); setShowAutoForm(true); }} style={{ padding: '0.4rem', background: 'transparent', color: '#475569', border: 'none', cursor: 'pointer' }}>Edit</button>
                         )}
                         {automationsPerms.delete && (
                           <button onClick={() => handleDeleteAutomation(auto.id)} style={{ padding: '0.4rem', background: 'transparent', color: '#ef4444', border: 'none', cursor: 'pointer' }}>Delete</button>

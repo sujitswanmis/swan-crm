@@ -485,11 +485,19 @@ export async function getWhatsappAutomations() {
 export async function saveWhatsappAutomation(autoData) {
   const supabase = await createClient();
   
+  const payload = {
+    stage_name: autoData.stage_name,
+    template_id: autoData.template_id,
+    frequency: autoData.frequency || 'Once',
+    company: autoData.company || 'All',
+    is_active: autoData.is_active !== undefined ? autoData.is_active : true
+  };
+
   let result;
   if (autoData.id) {
-    result = await supabase.from('whatsapp_automations').update(autoData).eq('id', autoData.id);
+    result = await supabase.from('whatsapp_automations').update(payload).eq('id', autoData.id);
   } else {
-    result = await supabase.from('whatsapp_automations').insert([autoData]);
+    result = await supabase.from('whatsapp_automations').insert([payload]);
   }
 
   if (result.error) return { success: false, error: result.error.message };
