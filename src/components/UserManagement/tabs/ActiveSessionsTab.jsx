@@ -16,15 +16,16 @@ import useTableColumnResize, { ColumnResizer } from '@/utils/tableColumnResize';
 
 const DEFAULT_ACTIVE_SESSIONS_COL_WIDTHS = {
   user_employee: 240,
-  branch_plant: 115,
+  branch_plant: 110,
   dept_role: 150,
-  first_login: 125,
-  last_seen: 125,
-  shift_span: 125,
+  first_login: 120,
+  last_seen: 120,
+  shift_span: 120,
   active_time: 125,
-  breaks_taken: 125,
-  live_status: 145,
-  device_ip: 160,
+  idle_time: 130,
+  breaks_taken: 120,
+  live_status: 140,
+  device_ip: 155,
   session_action: 115
 };
 
@@ -137,7 +138,7 @@ export default function ActiveSessionsTab({ currentUserCompany = '', tenantId = 
     handleTouchStart: handleSessionTouchStart,
     handleDoubleClickReset: handleSessionReset,
     getTableTotalWidth: getSessionTotalWidth
-  } = useTableColumnResize(DEFAULT_ACTIVE_SESSIONS_COL_WIDTHS, 'active_sessions_tab_col_widths_v2');
+  } = useTableColumnResize(DEFAULT_ACTIVE_SESSIONS_COL_WIDTHS, 'active_sessions_tab_col_widths_v3');
 
   // Fetch current user email
   useEffect(() => {
@@ -764,6 +765,10 @@ export default function ActiveSessionsTab({ currentUserCompany = '', tenantId = 
                   <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Active Work Time</div>
                   <ColumnResizer columnKey="active_time" isResizing={isSessionResizing('active_time')} onMouseDown={(e) => handleSessionResizeStart('active_time', e)} onTouchStart={(e) => handleSessionTouchStart('active_time', e)} onDoubleClick={() => handleSessionReset('active_time')} />
                 </th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 10, padding: '0.8rem 1rem', width: `${sessionColWidths.idle_time}px`, backgroundColor: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Idle / Away Time</div>
+                  <ColumnResizer columnKey="idle_time" isResizing={isSessionResizing('idle_time')} onMouseDown={(e) => handleSessionResizeStart('idle_time', e)} onTouchStart={(e) => handleSessionTouchStart('idle_time', e)} onDoubleClick={() => handleSessionReset('idle_time')} />
+                </th>
                 <th style={{ position: 'sticky', top: 0, zIndex: 10, padding: '0.8rem 1rem', width: `${sessionColWidths.breaks_taken}px`, backgroundColor: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Breaks Taken</div>
                   <ColumnResizer columnKey="breaks_taken" isResizing={isSessionResizing('breaks_taken')} onMouseDown={(e) => handleSessionResizeStart('breaks_taken', e)} onTouchStart={(e) => handleSessionTouchStart('breaks_taken', e)} onDoubleClick={() => handleSessionReset('breaks_taken')} />
@@ -785,7 +790,7 @@ export default function ActiveSessionsTab({ currentUserCompany = '', tenantId = 
             <tbody>
               {paginatedEmployees.length === 0 ? (
                 <tr>
-                  <td colSpan={11} style={{ padding: '3.5rem 1rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                  <td colSpan={12} style={{ padding: '3.5rem 1rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
                       <Monitor size={36} style={{ opacity: 0.35 }} />
                       <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>
@@ -970,6 +975,32 @@ export default function ActiveSessionsTab({ currentUserCompany = '', tenantId = 
                           </div>
                         ) : (
                           <span style={{ color: '#94a3b8', fontSize: '0.78rem' }}>0h 00m</span>
+                        )}
+                      </td>
+
+                      {/* Idle / Away Time (System chhod kar inactive / idle) */}
+                      <td style={{ padding: '0.75rem 1rem' }}>
+                        {emp.hasActivityToday ? (
+                          <div>
+                            <div style={{
+                              fontWeight: 800,
+                              fontFamily: 'monospace',
+                              color: (emp.idleSeconds && emp.idleSeconds > 1800) ? '#d97706' : 'var(--text-primary)',
+                              fontSize: '0.9rem'
+                            }}>
+                              {emp.idleDurationFormatted || '0m 00s'}
+                            </div>
+                            <div style={{
+                              fontSize: '0.7rem',
+                              color: (emp.idleSeconds && emp.idleSeconds > 1800) ? '#b45309' : 'var(--text-secondary)',
+                              marginTop: '0.1rem',
+                              fontWeight: 500
+                            }}>
+                              {(emp.idleSeconds && emp.idleSeconds > 0) ? 'Away from system' : 'No idle time'}
+                            </div>
+                          </div>
+                        ) : (
+                          <span style={{ color: '#94a3b8', fontSize: '0.78rem' }}>0m 00s</span>
                         )}
                       </td>
 
