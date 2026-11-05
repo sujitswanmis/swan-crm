@@ -2,6 +2,7 @@
 
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/utils/supabase/server';
+import { headers } from 'next/headers';
 
 const getAdminClient = () => {
   return createSupabaseClient(
@@ -9,6 +10,29 @@ const getAdminClient = () => {
     process.env.SUPABASE_SERVICE_ROLE_KEY
   );
 };
+
+async function resolveClientIp() {
+  try {
+    const h = await headers();
+    const forwarded = h.get('x-forwarded-for');
+    if (forwarded) {
+      const first = forwarded.split(',')[0].trim();
+      if (first) {
+        if (first === '::1' || first === '127.0.0.1') return '127.0.0.1 (Local)';
+        return first;
+      }
+    }
+    const realIp = h.get('x-real-ip');
+    if (realIp) {
+      const trimmed = realIp.trim();
+      if (trimmed === '::1' || trimmed === '127.0.0.1') return '127.0.0.1 (Local)';
+      return trimmed;
+    }
+    const cfIp = h.get('cf-connecting-ip');
+    if (cfIp) return cfIp.trim();
+  } catch (e) {}
+  return '127.0.0.1 (Local)';
+}
 
 export async function logAuditAction(action, target, details = {}) {
   try {
@@ -55,7 +79,10 @@ export async function logAuditAction(action, target, details = {}) {
       // Fallback gracefully
     }
 
-    const ipAddressVal = typeof detailsInfo === 'string' && detailsInfo ? detailsInfo : (detailsInfo?.ip || 'Web App');
+    const clientIp = await resolveClientIp();
+    const ipAddressVal = (typeof detailsInfo === 'string' && detailsInfo && detailsInfo !== 'Web App')
+      ? detailsInfo
+      : ((detailsInfo?.ip && detailsInfo.ip !== 'Web App') ? detailsInfo.ip : clientIp);
 
     const payload = {
       user_id: userId,
@@ -63,7 +90,7 @@ export async function logAuditAction(action, target, details = {}) {
       email: userEmail,
       action: String(actionStr || 'Action'),
       target: String(targetStr || ''),
-      ip_address: String(ipAddressVal || 'Web App'),
+      ip_address: String(ipAddressVal || '127.0.0.1 (Local)'),
       created_at: new Date().toISOString()
     };
 
@@ -448,7 +475,9 @@ export async function getAuditLogs({
         target: cleanTargetText(l.target),
         rawTarget: l.target,
         details: l.details || {},
-        ip: l.ip_address || l.details?.ip || 'Web App',
+        ip: (!l.ip_address || l.ip_address === 'Web App' || l.ip_address === 'Logged via Web App') 
+          ? (l.details?.ip && l.details.ip !== 'Web App' ? l.details.ip : '127.0.0.1 (Local)') 
+          : l.ip_address,
         time: timeFormatted,
         istHours,
         istMinutes,

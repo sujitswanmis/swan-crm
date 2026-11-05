@@ -1,11 +1,12 @@
 'use client';
 
-import MobileTableView from '@/components/common/MobileTableView';
+import MobileTableView, { TableViewToggle, useTableViewPreference } from '@/components/common/MobileTableView';
+import StandardTablePagination from '@/components/common/StandardTablePagination';
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   Monitor, Smartphone, Laptop, LogOut, RefreshCw, Search, ShieldCheck, 
   AlertCircle, CheckCircle2, Clock, Globe, User, ShieldAlert, Wifi, Filter,
-  Calendar, Check, UserCheck, UserX, Coffee, Activity, Zap, Sliders
+  Calendar, Check, UserCheck, UserX, Coffee, Activity, Zap, Sliders, X
 } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { getEmployeeDailyActivitySummary } from '@/app/actions/sessionSettings';
@@ -102,6 +103,20 @@ export default function ActiveSessionsTab({ currentUserCompany = '', tenantId = 
   const [searchQuery, setSearchQuery] = useState('');
   // Default filter: 'Present' (Shows only employees who logged in today)
   const [statusFilter, setStatusFilter] = useState('Present'); 
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const settings = JSON.parse(localStorage.getItem('crmPageNavSettings') || '{}');
+        if (settings.defaultPageSize) {
+          if (settings.defaultPageSize === 'All') return 100000;
+          return parseInt(settings.defaultPageSize, 10) || 15;
+        }
+      } catch (e) {}
+    }
+    return 15;
+  });
+  const [tableView, setTableView] = useTableViewPreference('active_sessions_tab_view');
   const [revokingId, setRevokingId] = useState(null);
   const [successMsg, setSuccessMsg] = useState('');
   const [currentUserEmail, setCurrentUserEmail] = useState('');
@@ -283,6 +298,12 @@ export default function ActiveSessionsTab({ currentUserCompany = '', tenantId = 
       return (a.empName || '').localeCompare(b.empName || '');
     });
   }, [evaluatedEmployees, statusFilter, searchQuery]);
+
+  const paginatedEmployees = useMemo(() => {
+    if (pageSize === 100000) return filteredEmployees;
+    const start = (currentPage - 1) * pageSize;
+    return filteredEmployees.slice(start, start + pageSize);
+  }, [filteredEmployees, currentPage, pageSize]);
 
   // Force single session termination
   const handleForceLogout = async (emp) => {
@@ -569,7 +590,7 @@ export default function ActiveSessionsTab({ currentUserCompany = '', tenantId = 
         alignItems: 'center',
         justifyContent: 'space-between',
         backgroundColor: 'var(--bg-surface)',
-        padding: '0.75rem 1rem',
+        padding: '0.65rem 0.85rem',
         borderRadius: '10px',
         border: '1px solid var(--border-light)'
       }}>
@@ -587,7 +608,10 @@ export default function ActiveSessionsTab({ currentUserCompany = '', tenantId = 
               <button
                 key={tab.id}
                 type="button"
-                onClick={() => setStatusFilter(tab.id)}
+                onClick={() => {
+                  setStatusFilter(tab.id);
+                  setCurrentPage(1);
+                }}
                 style={{
                   padding: '0.35rem 0.75rem',
                   borderRadius: '20px',
@@ -618,24 +642,53 @@ export default function ActiveSessionsTab({ currentUserCompany = '', tenantId = 
           })}
         </div>
 
-        {/* Search Input */}
-        <div style={{ position: 'relative', flex: 1, minWidth: '240px' }}>
-          <Search size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            placeholder="Search by name, employee code, email, department..."
-            style={{
-              width: '100%',
-              padding: '0.45rem 0.75rem 0.45rem 2.1rem',
-              borderRadius: '8px',
-              border: '1px solid var(--border-light)',
-              backgroundColor: 'var(--bg-primary, #f8fafc)',
-              color: 'var(--text-primary)',
-              fontSize: '0.82rem'
-            }}
-          />
+        {/* Right side: Search Input & View Toggle */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexWrap: 'wrap' }}>
+          <div style={{ position: 'relative', width: '280px' }}>
+            <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => {
+                setSearchQuery(e.target.value);
+                setCurrentPage(1);
+              }}
+              placeholder="Search employee, dept, role..."
+              style={{
+                width: '100%',
+                padding: '0.42rem 1.8rem 0.42rem 2rem',
+                borderRadius: '8px',
+                border: '1px solid var(--border-light)',
+                backgroundColor: 'var(--bg-primary, #f8fafc)',
+                color: 'var(--text-primary)',
+                fontSize: '0.82rem'
+              }}
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('');
+                  setCurrentPage(1);
+                }}
+                style={{
+                  position: 'absolute',
+                  right: '8px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-secondary)',
+                  cursor: 'pointer',
+                  padding: 0
+                }}
+              >
+                <X size={13} />
+              </button>
+            )}
+          </div>
+
+          <TableViewToggle view={tableView} onChange={setTableView} />
         </div>
       </div>
 
@@ -646,56 +699,57 @@ export default function ActiveSessionsTab({ currentUserCompany = '', tenantId = 
         overflow: 'hidden',
         backgroundColor: 'var(--bg-surface)'
       }}>
-        <div style={{ overflowX: 'auto', maxHeight: '68vh' }}>
-          <MobileTableView id="UserManagement/tabs/ActiveSessionsTab-1"><table style={{ width: `${getSessionTotalWidth()}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem' }}>
+        <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 340px)', minHeight: '380px' }}>
+          <MobileTableView id="active_sessions_tab_view" view={tableView} hideToggle={true}><table style={{ width: `${getSessionTotalWidth()}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem' }}>
             <thead>
               <tr style={{
                 position: 'sticky',
                 top: 0,
-                backgroundColor: 'var(--bg-primary, #f1f5f9)',
+                backgroundColor: 'var(--bg-surface)',
+                boxShadow: 'inset 0 -1px 0 var(--border-light)',
                 borderBottom: '1px solid var(--border-light)',
-                zIndex: 2,
+                zIndex: 10,
                 color: 'var(--text-secondary)',
                 fontSize: '0.74rem',
                 textTransform: 'uppercase',
                 letterSpacing: '0.04em'
               }}>
-                <th style={{ position: 'sticky', top: 0, zIndex: 2, padding: '0.8rem 1rem', width: `${sessionColWidths.user_employee}px`, backgroundColor: 'var(--bg-primary, #f1f5f9)' }}>
+                <th style={{ position: 'sticky', top: 0, zIndex: 10, padding: '0.8rem 1rem', width: `${sessionColWidths.user_employee}px`, backgroundColor: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Employee / User</div>
                   <ColumnResizer columnKey="user_employee" isResizing={isSessionResizing('user_employee')} onMouseDown={(e) => handleSessionResizeStart('user_employee', e)} onTouchStart={(e) => handleSessionTouchStart('user_employee', e)} onDoubleClick={() => handleSessionReset('user_employee')} />
                 </th>
-                <th style={{ position: 'sticky', top: 0, zIndex: 2, padding: '0.8rem 1rem', width: `${sessionColWidths.dept_role}px`, backgroundColor: 'var(--bg-primary, #f1f5f9)' }}>
+                <th style={{ position: 'sticky', top: 0, zIndex: 10, padding: '0.8rem 1rem', width: `${sessionColWidths.dept_role}px`, backgroundColor: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Department & Role</div>
                   <ColumnResizer columnKey="dept_role" isResizing={isSessionResizing('dept_role')} onMouseDown={(e) => handleSessionResizeStart('dept_role', e)} onTouchStart={(e) => handleSessionTouchStart('dept_role', e)} onDoubleClick={() => handleSessionReset('dept_role')} />
                 </th>
-                <th style={{ position: 'sticky', top: 0, zIndex: 2, padding: '0.8rem 1rem', width: `${sessionColWidths.first_login}px`, backgroundColor: 'var(--bg-primary, #f1f5f9)' }}>
+                <th style={{ position: 'sticky', top: 0, zIndex: 10, padding: '0.8rem 1rem', width: `${sessionColWidths.first_login}px`, backgroundColor: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>First Login (In-Time)</div>
                   <ColumnResizer columnKey="first_login" isResizing={isSessionResizing('first_login')} onMouseDown={(e) => handleSessionResizeStart('first_login', e)} onTouchStart={(e) => handleSessionTouchStart('first_login', e)} onDoubleClick={() => handleSessionReset('first_login')} />
                 </th>
-                <th style={{ position: 'sticky', top: 0, zIndex: 2, padding: '0.8rem 1rem', width: `${sessionColWidths.last_seen}px`, backgroundColor: 'var(--bg-primary, #f1f5f9)' }}>
+                <th style={{ position: 'sticky', top: 0, zIndex: 10, padding: '0.8rem 1rem', width: `${sessionColWidths.last_seen}px`, backgroundColor: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Last Seen (Out-Time)</div>
                   <ColumnResizer columnKey="last_seen" isResizing={isSessionResizing('last_seen')} onMouseDown={(e) => handleSessionResizeStart('last_seen', e)} onTouchStart={(e) => handleSessionTouchStart('last_seen', e)} onDoubleClick={() => handleSessionReset('last_seen')} />
                 </th>
-                <th style={{ position: 'sticky', top: 0, zIndex: 2, padding: '0.8rem 1rem', width: `${sessionColWidths.active_time}px`, backgroundColor: 'var(--bg-primary, #f1f5f9)' }}>
+                <th style={{ position: 'sticky', top: 0, zIndex: 10, padding: '0.8rem 1rem', width: `${sessionColWidths.active_time}px`, backgroundColor: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Active Work Time</div>
                   <ColumnResizer columnKey="active_time" isResizing={isSessionResizing('active_time')} onMouseDown={(e) => handleSessionResizeStart('active_time', e)} onTouchStart={(e) => handleSessionTouchStart('active_time', e)} onDoubleClick={() => handleSessionReset('active_time')} />
                 </th>
-                <th style={{ position: 'sticky', top: 0, zIndex: 2, padding: '0.8rem 1rem', width: `${sessionColWidths.live_status}px`, textAlign: 'center', backgroundColor: 'var(--bg-primary, #f1f5f9)' }}>
+                <th style={{ position: 'sticky', top: 0, zIndex: 10, padding: '0.8rem 1rem', width: `${sessionColWidths.live_status}px`, textAlign: 'center', backgroundColor: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Live Status</div>
                   <ColumnResizer columnKey="live_status" isResizing={isSessionResizing('live_status')} onMouseDown={(e) => handleSessionResizeStart('live_status', e)} onTouchStart={(e) => handleSessionTouchStart('live_status', e)} onDoubleClick={() => handleSessionReset('live_status')} />
                 </th>
-                <th style={{ position: 'sticky', top: 0, zIndex: 2, padding: '0.8rem 1rem', width: `${sessionColWidths.device_ip}px`, backgroundColor: 'var(--bg-primary, #f1f5f9)' }}>
+                <th style={{ position: 'sticky', top: 0, zIndex: 10, padding: '0.8rem 1rem', width: `${sessionColWidths.device_ip}px`, backgroundColor: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Device & IP</div>
                   <ColumnResizer columnKey="device_ip" isResizing={isSessionResizing('device_ip')} onMouseDown={(e) => handleSessionResizeStart('device_ip', e)} onTouchStart={(e) => handleSessionTouchStart('device_ip', e)} onDoubleClick={() => handleSessionReset('device_ip')} />
                 </th>
-                <th style={{ position: 'sticky', top: 0, zIndex: 2, padding: '0.8rem 1rem', width: `${sessionColWidths.session_action}px`, textAlign: 'center', backgroundColor: 'var(--bg-primary, #f1f5f9)' }}>
+                <th style={{ position: 'sticky', top: 0, zIndex: 10, padding: '0.8rem 1rem', width: `${sessionColWidths.session_action}px`, textAlign: 'center', backgroundColor: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Session Action</div>
                   <ColumnResizer columnKey="session_action" isResizing={isSessionResizing('session_action')} onMouseDown={(e) => handleSessionResizeStart('session_action', e)} onTouchStart={(e) => handleSessionTouchStart('session_action', e)} onDoubleClick={() => handleSessionReset('session_action')} />
                 </th>
               </tr>
             </thead>
             <tbody>
-              {filteredEmployees.length === 0 ? (
+              {paginatedEmployees.length === 0 ? (
                 <tr>
                   <td colSpan={8} style={{ padding: '3.5rem 1rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
@@ -711,7 +765,10 @@ export default function ActiveSessionsTab({ currentUserCompany = '', tenantId = 
                         {statusFilter !== 'All' ? (
                           <button
                             type="button"
-                            onClick={() => setStatusFilter('All')}
+                            onClick={() => {
+                              setStatusFilter('All');
+                              setCurrentPage(1);
+                            }}
                             style={{
                               marginTop: '0.5rem',
                               padding: '0.35rem 0.75rem',
@@ -732,10 +789,14 @@ export default function ActiveSessionsTab({ currentUserCompany = '', tenantId = 
                   </td>
                 </tr>
               ) : (
-                filteredEmployees.map((emp, idx) => {
+                paginatedEmployees.map((emp, idx) => {
                   const dev = parseDeviceInfo(emp.device);
                   const DevIcon = dev.icon;
-                  const initials = (emp.empName || emp.email || 'E').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
+                  const cleanName = String(emp.empName || emp.email || 'E').split(' - ')[0].trim();
+                  const nameWords = cleanName.split(/\s+/).filter(w => w && w !== '-');
+                  const initials = nameWords.length > 1
+                    ? (nameWords[0][0] + nameWords[1][0]).toUpperCase()
+                    : (cleanName.length >= 2 ? cleanName.slice(0, 2).toUpperCase() : cleanName.toUpperCase() || 'EM');
 
                   return (
                     <tr
@@ -876,7 +937,7 @@ export default function ActiveSessionsTab({ currentUserCompany = '', tenantId = 
                           <span style={{ fontSize: '0.78rem' }}>{dev.browser} on {dev.os}</span>
                         </div>
                         <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.15rem', whiteSpace: 'normal', wordBreak: 'break-all', lineHeight: 1.3 }}>
-                          {emp.ipAddress || 'Logged via Web App'}
+                          {(!emp.ipAddress || emp.ipAddress === 'Logged via Web App' || emp.ipAddress === 'Web App') ? '127.0.0.1 (Local)' : emp.ipAddress}
                         </div>
                       </td>
 
@@ -918,8 +979,18 @@ export default function ActiveSessionsTab({ currentUserCompany = '', tenantId = 
                 })
               )}
             </tbody>
-          </table></MobileTableView>
+          </table>
+          </MobileTableView>
         </div>
+
+        {/* Unified Standard Bottom Page Navigation */}
+        <StandardTablePagination
+          currentPage={currentPage}
+          totalRecords={filteredEmployees.length}
+          pageSize={pageSize}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={setPageSize}
+        />
       </div>
     </div>
   );

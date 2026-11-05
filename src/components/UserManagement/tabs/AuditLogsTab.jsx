@@ -1,9 +1,9 @@
 'use client';
 
-import MobileTableView from '@/components/common/MobileTableView';
+import MobileTableView, { TableViewToggle, useTableViewPreference } from '@/components/common/MobileTableView';
 import StandardTablePagination from '@/components/common/StandardTablePagination';
 import React, { useState, useEffect } from 'react';
-import { Clock, Search, RefreshCw, Filter, ShieldCheck, User, Globe, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Clock, Search, RefreshCw, Filter, ShieldCheck, User, Globe, AlertCircle, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { getAuditLogs } from '@/app/actions/audit';
 import { formatISTDateTime } from '../utils/userManagementUtils';
 import { useTableColumnResize, ColumnResizer } from '@/utils/tableColumnResize';
@@ -31,6 +31,7 @@ export default function AuditLogsTab({ currentUserCompany = '', tenantId = null 
   const [currentPage, setCurrentPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const [loadError, setLoadError] = useState('');
+  const [tableView, setTableView] = useTableViewPreference('audit_logs_tab_view');
   const [pageSize, setPageSize] = useState(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -97,10 +98,10 @@ export default function AuditLogsTab({ currentUserCompany = '', tenantId = null 
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', width: '100%' }}>
-      {/* Intro Header */}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', width: '100%' }}>
+      {/* Intro Header & Action Toolbar */}
       <div style={{
-        padding: '1.25rem 1.5rem',
+        padding: '0.85rem 1.25rem',
         borderRadius: '12px',
         backgroundColor: 'var(--bg-surface)',
         border: '1px solid var(--border-light)',
@@ -108,83 +109,105 @@ export default function AuditLogsTab({ currentUserCompany = '', tenantId = null 
         justifyContent: 'space-between',
         alignItems: 'center',
         flexWrap: 'wrap',
-        gap: '1rem'
+        gap: '0.75rem'
       }}>
         <div>
-          <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <Clock size={20} style={{ color: '#475569' }} />
+          <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <Clock size={19} style={{ color: '#475569' }} />
             Security & User Activity Audit Trail
           </h3>
-          <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+          <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
             Immutable records of employee role changes, security permissions, session events, and administrative actions
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => fetchLogs(currentPage)}
-          style={{
-            padding: '0.45rem 0.85rem',
-            borderRadius: '8px',
-            border: '1px solid var(--border-light)',
-            backgroundColor: 'var(--bg-surface)',
-            color: 'var(--text-primary)',
-            fontSize: '0.78rem',
-            fontWeight: 600,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.35rem'
-          }}
-        >
-          <RefreshCw size={14} className={loading ? 'spin' : ''} />
-          Refresh Logs
-        </button>
-      </div>
+        {/* Toolbar Controls: Search, View Toggle, Refresh */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexWrap: 'wrap' }}>
+          <form onSubmit={handleSearchSubmit} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', margin: 0 }}>
+            <div style={{ position: 'relative', width: '280px' }}>
+              <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="Search user, action, target, IP..."
+                style={{
+                  width: '100%',
+                  padding: '0.42rem 1.8rem 0.42rem 2rem',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-light)',
+                  backgroundColor: 'var(--bg-primary, #f8fafc)',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.82rem'
+                }}
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery('');
+                    if (currentPage === 1) fetchLogs(1);
+                    else setCurrentPage(1);
+                  }}
+                  style={{
+                    position: 'absolute',
+                    right: '8px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--text-secondary)',
+                    cursor: 'pointer',
+                    padding: 0
+                  }}
+                >
+                  <X size={13} />
+                </button>
+              )}
+            </div>
 
-      {/* Search Input */}
-      <form onSubmit={handleSearchSubmit} style={{
-        padding: '0.75rem 1rem',
-        borderRadius: '10px',
-        backgroundColor: 'var(--bg-surface)',
-        border: '1px solid var(--border-light)',
-        display: 'flex',
-        gap: '0.75rem'
-      }}>
-        <div style={{ position: 'relative', flex: 1 }}>
-          <Search size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            placeholder="Search audit trail by user, action, target or IP..."
+            <button
+              type="submit"
+              style={{
+                padding: '0.42rem 0.85rem',
+                borderRadius: '8px',
+                border: 'none',
+                backgroundColor: 'var(--primary-color, #2563eb)',
+                color: '#ffffff',
+                fontWeight: 600,
+                fontSize: '0.8rem',
+                cursor: 'pointer'
+              }}
+            >
+              Search
+            </button>
+          </form>
+
+          <TableViewToggle view={tableView} onChange={setTableView} />
+
+          <button
+            type="button"
+            onClick={() => fetchLogs(currentPage)}
+            title="Refresh Logs"
             style={{
-              width: '100%',
-              padding: '0.45rem 0.75rem 0.45rem 2.1rem',
+              padding: '0.42rem 0.75rem',
               borderRadius: '8px',
               border: '1px solid var(--border-light)',
-              backgroundColor: 'var(--bg-primary, #f8fafc)',
+              backgroundColor: 'var(--bg-surface)',
               color: 'var(--text-primary)',
-              fontSize: '0.82rem'
+              fontSize: '0.78rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.35rem'
             }}
-          />
+          >
+            <RefreshCw size={14} className={loading ? 'spin' : ''} />
+            <span>Refresh</span>
+          </button>
         </div>
-        <button
-          type="submit"
-          style={{
-            padding: '0.45rem 1rem',
-            borderRadius: '8px',
-            border: 'none',
-            backgroundColor: 'var(--primary-color, #2563eb)',
-            color: '#ffffff',
-            fontWeight: 600,
-            fontSize: '0.8rem',
-            cursor: 'pointer'
-          }}
-        >
-          Search
-        </button>
-      </form>
+      </div>
 
       {loadError && <div role="alert" style={{ padding: '0.75rem 1rem', borderRadius: '8px', backgroundColor: '#fef2f2', color: '#b91c1c' }}>Could not load audit logs: {loadError}</div>}
 
@@ -195,45 +218,46 @@ export default function AuditLogsTab({ currentUserCompany = '', tenantId = null 
         overflow: 'hidden',
         backgroundColor: 'var(--bg-surface)'
       }}>
-        <div style={{ overflowX: 'auto', maxHeight: '68vh' }}>
-          <MobileTableView id="UserManagement/tabs/AuditLogsTab-1"><table style={{ width: `${getTotalTableWidth()}px`, borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem', tableLayout: 'fixed' }}>
+        <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 320px)', minHeight: '380px' }}>
+          <MobileTableView id="audit_logs_tab_view" view={tableView} hideToggle={true}><table style={{ width: `${getTotalTableWidth()}px`, borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem', tableLayout: 'fixed' }}>
             <thead>
               <tr style={{
                 position: 'sticky',
                 top: 0,
-                backgroundColor: 'var(--bg-primary, #f1f5f9)',
+                backgroundColor: 'var(--bg-surface)',
+                boxShadow: 'inset 0 -1px 0 var(--border-light)',
                 borderBottom: '1px solid var(--border-light)',
-                zIndex: 2,
+                zIndex: 10,
                 color: 'var(--text-secondary)',
                 fontSize: '0.74rem',
                 textTransform: 'uppercase',
                 letterSpacing: '0.04em'
               }}>
-                <th style={{ width: `${colWidths.user}px`, padding: '0.75rem 1rem', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                <th style={{ width: `${colWidths.user}px`, padding: '0.75rem 1rem', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)', boxSizing: 'border-box', verticalAlign: 'middle' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
                     <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>User / Performer</span>
                   </div>
                   <ColumnResizer colKey="user" isResizing={resizingCol === 'user'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
                 </th>
-                <th style={{ width: `${colWidths.action}px`, padding: '0.75rem 1rem', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                <th style={{ width: `${colWidths.action}px`, padding: '0.75rem 1rem', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)', boxSizing: 'border-box', verticalAlign: 'middle' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
                     <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Action</span>
                   </div>
                   <ColumnResizer colKey="action" isResizing={resizingCol === 'action'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
                 </th>
-                <th style={{ width: `${colWidths.target}px`, padding: '0.75rem 1rem', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                <th style={{ width: `${colWidths.target}px`, padding: '0.75rem 1rem', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)', boxSizing: 'border-box', verticalAlign: 'middle' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
                     <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Target & Details</span>
                   </div>
                   <ColumnResizer colKey="target" isResizing={resizingCol === 'target'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
                 </th>
-                <th style={{ width: `${colWidths.source}px`, padding: '0.75rem 1rem', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                <th style={{ width: `${colWidths.source}px`, padding: '0.75rem 1rem', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)', boxSizing: 'border-box', verticalAlign: 'middle' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
                     <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>IP / Source</span>
                   </div>
                   <ColumnResizer colKey="source" isResizing={resizingCol === 'source'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
                 </th>
-                <th style={{ width: `${colWidths.timestamp}px`, padding: '0.75rem 1rem', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                <th style={{ width: `${colWidths.timestamp}px`, padding: '0.75rem 1rem', position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)', boxSizing: 'border-box', verticalAlign: 'middle' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
                     <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Timestamp (IST)</span>
                   </div>
@@ -296,8 +320,8 @@ export default function AuditLogsTab({ currentUserCompany = '', tenantId = null 
                       )}
                     </td>
 
-                    <td style={{ width: `${colWidths.source}px`, padding: '0.75rem 1rem', fontSize: '0.78rem', color: 'var(--text-secondary)', boxSizing: 'border-box', whiteSpace: 'normal', wordBreak: 'break-all', verticalAlign: 'top' }} title={log.ip_address || log.ip || '—'}>
-                      {log.ip_address || log.ip || '—'}
+                    <td style={{ width: `${colWidths.source}px`, padding: '0.75rem 1rem', fontSize: '0.78rem', color: 'var(--text-secondary)', boxSizing: 'border-box', whiteSpace: 'normal', wordBreak: 'break-all', verticalAlign: 'top' }} title={(!log.ip_address && !log.ip) || log.ip_address === 'Web App' || log.ip === 'Web App' || log.ip_address === 'Logged via Web App' || log.ip === 'Logged via Web App' ? '127.0.0.1 (Local)' : (log.ip_address || log.ip)}>
+                      {(!log.ip_address && !log.ip) || log.ip_address === 'Web App' || log.ip === 'Web App' || log.ip_address === 'Logged via Web App' || log.ip === 'Logged via Web App' ? '127.0.0.1 (Local)' : (log.ip_address || log.ip)}
                     </td>
 
                     <td style={{ width: `${colWidths.timestamp}px`, padding: '0.75rem 1rem', fontSize: '0.78rem', color: 'var(--text-secondary)', boxSizing: 'border-box', whiteSpace: 'normal', wordBreak: 'break-word', verticalAlign: 'top' }}>

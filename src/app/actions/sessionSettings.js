@@ -2,11 +2,35 @@
 
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/utils/supabase/server';
+import { headers } from 'next/headers';
 import fs from 'fs/promises';
 import path from 'path';
 
 const SETTINGS_FILE_PATH = path.join(process.cwd(), 'src', 'config', 'session_security_settings.json');
 const ACTIVITY_FILE_PATH = path.join(process.cwd(), 'src', 'config', 'user_daily_activity.json');
+
+async function resolveClientIp() {
+  try {
+    const h = await headers();
+    const forwarded = h.get('x-forwarded-for');
+    if (forwarded) {
+      const first = forwarded.split(',')[0].trim();
+      if (first) {
+        if (first === '::1' || first === '127.0.0.1') return '127.0.0.1 (Local)';
+        return first;
+      }
+    }
+    const realIp = h.get('x-real-ip');
+    if (realIp) {
+      const trimmed = realIp.trim();
+      if (trimmed === '::1' || trimmed === '127.0.0.1') return '127.0.0.1 (Local)';
+      return trimmed;
+    }
+    const cfIp = h.get('cf-connecting-ip');
+    if (cfIp) return cfIp.trim();
+  } catch (e) {}
+  return '127.0.0.1 (Local)';
+}
 
 function getOfficeTodayDateStr() {
   try {
@@ -305,12 +329,15 @@ export async function recordUserActivityHeartbeat({
 
     // 3. Update Supabase table `user_sessions` heartbeat
     try {
+      const clientIp = await resolveClientIp();
       if (existingSess) {
         await adminClient.from('user_sessions').update({
           last_active: nowIso,
           is_active: true,
           emp_name: empName,
-          email: user.email
+          email: user.email,
+          device: device || existingSess.device || 'Web Browser',
+          ip_address: clientIp
         }).eq('id', existingSess.id);
       } else {
         await adminClient.from('user_sessions').insert([{
@@ -318,7 +345,7 @@ export async function recordUserActivityHeartbeat({
           emp_name: empName,
           email: user.email,
           device: device || 'Web Browser',
-          ip_address: 'Logged via Web App',
+          ip_address: clientIp,
           is_active: true,
           last_active: nowIso
         }]);
@@ -1018,7 +1045,7 @@ export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, 
         hasActivityToday,
         sessionId: sess?.id || null,
         device: sess?.device || 'Web Browser',
-        ipAddress: sess?.ip_address || 'Logged via Web App',
+        ipAddress: (!sess?.ip_address || sess.ip_address === 'Logged via Web App' || sess.ip_address === 'Web App') ? '127.0.0.1 (Local)' : sess.ip_address,
         currentBreak,
         breaks: breaksList,
         breakCount: breaksList.length,
@@ -1080,7 +1107,7 @@ export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, 
           hasActivityToday: true,
           sessionId: sess.id || null,
           device: sess.device || 'Web Browser',
-          ipAddress: sess.ip_address || 'Logged via Web App',
+          ipAddress: (!sess.ip_address || sess.ip_address === 'Logged via Web App' || sess.ip_address === 'Web App') ? '127.0.0.1 (Local)' : sess.ip_address,
           currentBreak: null,
           breaks: [],
           breakCount: 0,
