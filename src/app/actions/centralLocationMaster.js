@@ -1201,10 +1201,14 @@ export async function getPendingLocationRequests() {
   const adminClient = getAdminClient();
   const { data } = await adminClient
     .from('location_requests')
-    .select('*, state:location_states(state_name), district:location_districts(district_name)')
+    .select('*, state:location_states(name), district:location_districts(name)')
     .order('requested_at', { ascending: false });
 
-  return data || [];
+  return (data || []).map(r => ({
+    ...r,
+    state_name: r.state?.name || r.state_name,
+    district_name: r.district?.name || r.district_name
+  }));
 }
 
 export async function processLocationRequest(requestId, status, matchedLocationId = null, reviewRemarks = '', userId = null) {

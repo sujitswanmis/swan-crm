@@ -361,7 +361,7 @@ export async function getActiveFieldVisit(userId, company = 'TNT00001') {
       .select('*')
       .eq('assigned_to_user_id', userId)
       .eq('status', 'IN_PROGRESS')
-      .order('actual_start_time', { ascending: false })
+      .order('updated_at', { ascending: false })
       .limit(1)
       .maybeSingle();
 

@@ -234,11 +234,16 @@ export async function saveSessionSecuritySettings(newSettings) {
         updated_by: updated.updatedBy
       };
 
-      const { error: upsertErr } = await adminClient.from('session_security_settings').upsert(dbPayload);
+      const { error: upsertErr } = await adminClient
+        .from('session_security_settings')
+        .upsert(dbPayload, { onConflict: 'id' });
+
       if (upsertErr) {
         // If column break_rules doesn't exist in Supabase table, retry without it
         delete dbPayload.break_rules;
-        await adminClient.from('session_security_settings').upsert(dbPayload);
+        await adminClient
+          .from('session_security_settings')
+          .upsert(dbPayload, { onConflict: 'id' });
       }
     } catch (dbErr) {
       // Supabase table issue - file backup is safe
