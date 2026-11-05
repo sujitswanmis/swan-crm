@@ -3,7 +3,7 @@
 import MobileTableView from '@/components/common/MobileTableView';
 import React, { useState, useEffect } from 'react';
 import { 
-  Save, Plus, Trash2, Image as ImageIcon, Upload, PlayCircle, Settings, MessageSquare, Repeat,
+  Save, Plus, Trash2, Image as ImageIcon, Upload, PlayCircle, PauseCircle, Settings, MessageSquare, Repeat,
   CheckCircle2, AlertCircle, Eye, EyeOff, Send, ShieldCheck, Users, HelpCircle, RefreshCw, Zap,
   Building2, Filter, Briefcase, Edit3, Globe, Code2, X, ExternalLink, Check, Search, Layers, Key,
   RotateCcw, LayoutGrid, List, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, CheckSquare, Square
@@ -18,6 +18,8 @@ import {
   getWhatsappAutomations,
   saveWhatsappAutomation,
   deleteWhatsappAutomation,
+  bulkUpdateWhatsappAutomationStatus,
+  toggleWhatsappAutomationStatus,
   testWhatsappProviderConnection,
   getGlobalBspCatalog,
   getClientBspAllocations,
@@ -168,6 +170,8 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
 
   // Automations State
   const [automations, setAutomations] = useState([]);
+  const [selectedAutoIds, setSelectedAutoIds] = useState([]);
+  const [updatingBulkAuto, setUpdatingBulkAuto] = useState(false);
   const [showAutoForm, setShowAutoForm] = useState(false);
   const [savingAuto, setSavingAuto] = useState(false);
   const [currentAuto, setCurrentAuto] = useState({ stage_name: '', template_id: '', frequency: 'Once', company: 'All', is_active: true });
@@ -1127,12 +1131,63 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
     if (!window.confirm('Are you sure you want to delete this rule?')) return;
     const res = await deleteWhatsappAutomation(id);
     if (res.success) {
+      setSelectedAutoIds(prev => prev.filter(x => x !== id));
       const autoRes = await getWhatsappAutomations();
       if (autoRes.success && Array.isArray(autoRes.data)) {
         setAutomations(autoRes.data);
       }
     } else {
       alert('Error deleting automation: ' + res.error);
+    }
+  };
+
+  const handleToggleSelectAuto = (id) => {
+    setSelectedAutoIds(prev => 
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
+
+  const handleSelectAllAutomations = () => {
+    if (automations.length === 0) return;
+    const allSelected = automations.every(a => selectedAutoIds.includes(a.id));
+    if (allSelected) {
+      setSelectedAutoIds([]);
+    } else {
+      setSelectedAutoIds(automations.map(a => a.id));
+    }
+  };
+
+  const handleBulkToggleAutoStatus = async (isActive) => {
+    if (selectedAutoIds.length === 0) return;
+    const actionName = isActive ? 'activate' : 'pause';
+    if (!window.confirm(`Are you sure you want to ${actionName} ${selectedAutoIds.length} selected rule(s)?`)) return;
+    
+    setUpdatingBulkAuto(true);
+    // Optimistic update
+    setAutomations(prev => prev.map(a => selectedAutoIds.includes(a.id) ? { ...a, is_active: isActive } : a));
+
+    const res = await bulkUpdateWhatsappAutomationStatus(selectedAutoIds, isActive);
+    if (!res.success) {
+      alert(`Error updating rules: ${res.error}`);
+      // Revert from server
+      const autoRes = await getWhatsappAutomations();
+      if (autoRes.success && Array.isArray(autoRes.data)) {
+        setAutomations(autoRes.data);
+      }
+    }
+    setUpdatingBulkAuto(false);
+    setSelectedAutoIds([]);
+  };
+
+  const handleQuickToggleAutoStatus = async (auto) => {
+    const newStatus = !auto.is_active;
+    // Optimistic update
+    setAutomations(prev => prev.map(a => a.id === auto.id ? { ...a, is_active: newStatus } : a));
+
+    const res = await toggleWhatsappAutomationStatus(auto.id, newStatus);
+    if (!res.success) {
+      alert(`Error changing rule status: ${res.error}`);
+      setAutomations(prev => prev.map(a => a.id === auto.id ? { ...a, is_active: auto.is_active } : a));
     }
   };
 
@@ -3755,10 +3810,114 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
             </div>
           )}
 
+          {/* Bulk Selection Action Bar */}
+          {selectedAutoIds.length > 0 && (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '0.75rem 1.25rem',
+              backgroundColor: 'var(--accent-subtle, rgba(37,99,235,0.08))',
+              border: '1px solid var(--accent-color, #2563eb)',
+              borderRadius: '8px',
+              marginBottom: '1rem',
+              flexWrap: 'wrap',
+              gap: '0.75rem'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', fontWeight: 600, fontSize: '0.9rem' }}>
+                <span style={{ 
+                  backgroundColor: 'var(--accent-color, #2563eb)', 
+                  color: 'white', 
+                  borderRadius: '50%', 
+                  width: '22px', 
+                  height: '22px', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center', 
+                  fontSize: '0.75rem' 
+                }}>
+                  {selectedAutoIds.length}
+                </span>
+                <span>rule{selectedAutoIds.length > 1 ? 's' : ''} selected</span>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={() => handleBulkToggleAutoStatus(false)}
+                  disabled={updatingBulkAuto}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.4rem',
+                    padding: '0.45rem 0.9rem',
+                    backgroundColor: '#fff1f2',
+                    color: '#e11d48',
+                    border: '1px solid #fecdd3',
+                    borderRadius: '6px',
+                    fontWeight: 600,
+                    fontSize: '0.85rem',
+                    cursor: updatingBulkAuto ? 'not-allowed' : 'pointer'
+                  }}
+                  title="Pause all selected rules"
+                >
+                  <PauseCircle size={16} /> {updatingBulkAuto ? 'Updating...' : `Pause Selected (${selectedAutoIds.length})`}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleBulkToggleAutoStatus(true)}
+                  disabled={updatingBulkAuto}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.4rem',
+                    padding: '0.45rem 0.9rem',
+                    backgroundColor: '#f0fdf4',
+                    color: '#16a34a',
+                    border: '1px solid #bbf7d0',
+                    borderRadius: '6px',
+                    fontWeight: 600,
+                    fontSize: '0.85rem',
+                    cursor: updatingBulkAuto ? 'not-allowed' : 'pointer'
+                  }}
+                  title="Activate all selected rules"
+                >
+                  <PlayCircle size={16} /> {updatingBulkAuto ? 'Updating...' : `Activate Selected (${selectedAutoIds.length})`}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedAutoIds([])}
+                  style={{
+                    padding: '0.45rem 0.75rem',
+                    backgroundColor: 'transparent',
+                    color: 'var(--text-secondary)',
+                    border: '1px solid var(--border-light)',
+                    borderRadius: '6px',
+                    fontSize: '0.85rem',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Clear Selection
+                </button>
+              </div>
+            </div>
+          )}
+
           <div style={{ overflowX: 'auto', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
             <MobileTableView id="WhatsappOfficial-1"><table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', backgroundColor: 'var(--bg-surface)' }}>
               <thead style={{ backgroundColor: 'var(--th-bg)' }}>
                 <tr style={{ borderBottom: '1px solid var(--border-light)' }}>
+                  <th style={{ padding: '1rem', width: '40px', textAlign: 'center' }}>
+                    <input 
+                      type="checkbox"
+                      checked={automations.length > 0 && automations.every(a => selectedAutoIds.includes(a.id))}
+                      onChange={handleSelectAllAutomations}
+                      style={{ cursor: 'pointer', width: '16px', height: '16px' }}
+                      title="Select / Deselect All Rules"
+                    />
+                  </th>
                   <th style={{ padding: '1rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Company</th>
                   <th style={{ padding: '1rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Target Stage</th>
                   <th style={{ padding: '1rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Template Assigned</th>
@@ -3769,38 +3928,80 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
               </thead>
               <tbody>
                 {automations.length === 0 ? (
-                  <tr><td colSpan="5" style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>No automation rules defined yet.</td></tr>
+                  <tr><td colSpan="7" style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>No automation rules defined yet.</td></tr>
                 ) : (
-                  automations.map(auto => (
-                    <tr key={auto.id} style={{ borderBottom: '1px solid var(--border-light)' }}>
-                      <td style={{ padding: '1rem' }}>
-                        <span style={{ fontSize: '0.75rem', fontWeight: 600, padding: '0.15rem 0.4rem', backgroundColor: 'var(--th-hover-bg)', borderRadius: '4px' }}>{auto.company || 'All'}</span>
-                      </td>
-                      <td style={{ padding: '1rem', fontWeight: 500 }}>{auto.stage_name}</td>
-                      <td style={{ padding: '1rem' }}>
-                        {auto.whatsapp_templates?.template_name || <span style={{color: '#ef4444'}}>Missing Template</span>}
-                      </td>
-                      <td style={{ padding: '1rem' }}>
-                        <span style={{ padding: '0.2rem 0.5rem', backgroundColor: '#e0f2fe', color: '#0284c7', borderRadius: '4px', fontSize: '0.8rem' }}>
-                          {auto.frequency}
-                        </span>
-                      </td>
-                      <td style={{ padding: '1rem' }}>
-                        {auto.is_active ? 
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', color: '#10b981', fontSize: '0.85rem' }}><div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#10b981' }}></div> Active</span> : 
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', color: '#94a3b8', fontSize: '0.85rem' }}><div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#94a3b8' }}></div> Paused</span>
-                        }
-                      </td>
-                      <td style={{ padding: '1rem', textAlign: 'right' }}>
-                        {automationsPerms.edit && (
-                          <button onClick={() => { const { whatsapp_templates, ...cleanAuto } = auto; setCurrentAuto(cleanAuto); setShowAutoForm(true); }} style={{ padding: '0.4rem', background: 'transparent', color: '#475569', border: 'none', cursor: 'pointer' }}>Edit</button>
-                        )}
-                        {automationsPerms.delete && (
-                          <button onClick={() => handleDeleteAutomation(auto.id)} style={{ padding: '0.4rem', background: 'transparent', color: '#ef4444', border: 'none', cursor: 'pointer' }}>Delete</button>
-                        )}
-                      </td>
-                    </tr>
-                  ))
+                  automations.map(auto => {
+                    const isSelected = selectedAutoIds.includes(auto.id);
+                    return (
+                      <tr 
+                        key={auto.id} 
+                        style={{ 
+                          borderBottom: '1px solid var(--border-light)',
+                          backgroundColor: isSelected ? 'var(--accent-subtle, rgba(37,99,235,0.06))' : 'transparent'
+                        }}
+                      >
+                        <td style={{ padding: '1rem', textAlign: 'center' }}>
+                          <input 
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => handleToggleSelectAuto(auto.id)}
+                            style={{ cursor: 'pointer', width: '16px', height: '16px' }}
+                          />
+                        </td>
+                        <td style={{ padding: '1rem' }}>
+                          <span style={{ fontSize: '0.75rem', fontWeight: 600, padding: '0.15rem 0.4rem', backgroundColor: 'var(--th-hover-bg)', borderRadius: '4px' }}>{auto.company || 'All'}</span>
+                        </td>
+                        <td style={{ padding: '1rem', fontWeight: 500 }}>{auto.stage_name}</td>
+                        <td style={{ padding: '1rem' }}>
+                          {auto.whatsapp_templates?.template_name || <span style={{color: '#ef4444'}}>Missing Template</span>}
+                        </td>
+                        <td style={{ padding: '1rem' }}>
+                          <span style={{ padding: '0.2rem 0.5rem', backgroundColor: '#e0f2fe', color: '#0284c7', borderRadius: '4px', fontSize: '0.8rem' }}>
+                            {auto.frequency}
+                          </span>
+                        </td>
+                        <td style={{ padding: '1rem' }}>
+                          {automationsPerms.edit ? (
+                            <button
+                              type="button"
+                              onClick={() => handleQuickToggleAutoStatus(auto)}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.35rem',
+                                padding: '0.25rem 0.6rem',
+                                borderRadius: '12px',
+                                border: '1px solid',
+                                borderColor: auto.is_active ? '#bbf7d0' : '#e2e8f0',
+                                backgroundColor: auto.is_active ? '#f0fdf4' : '#f8fafc',
+                                color: auto.is_active ? '#16a34a' : '#64748b',
+                                fontSize: '0.8rem',
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                                transition: 'all 0.15s ease'
+                              }}
+                              title={auto.is_active ? 'Click to Pause this rule' : 'Click to Activate this rule'}
+                            >
+                              <div style={{ width: '7px', height: '7px', borderRadius: '50%', backgroundColor: auto.is_active ? '#16a34a' : '#94a3b8' }}></div>
+                              {auto.is_active ? 'Active' : 'Paused'}
+                            </button>
+                          ) : (
+                            auto.is_active ? 
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', color: '#10b981', fontSize: '0.85rem' }}><div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#10b981' }}></div> Active</span> : 
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', color: '#94a3b8', fontSize: '0.85rem' }}><div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#94a3b8' }}></div> Paused</span>
+                          )}
+                        </td>
+                        <td style={{ padding: '1rem', textAlign: 'right' }}>
+                          {automationsPerms.edit && (
+                            <button onClick={() => { const { whatsapp_templates, ...cleanAuto } = auto; setCurrentAuto(cleanAuto); setShowAutoForm(true); }} style={{ padding: '0.4rem', background: 'transparent', color: '#475569', border: 'none', cursor: 'pointer' }}>Edit</button>
+                          )}
+                          {automationsPerms.delete && (
+                            <button onClick={() => handleDeleteAutomation(auto.id)} style={{ padding: '0.4rem', background: 'transparent', color: '#ef4444', border: 'none', cursor: 'pointer' }}>Delete</button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table></MobileTableView>

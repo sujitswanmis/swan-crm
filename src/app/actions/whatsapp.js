@@ -511,6 +511,30 @@ export async function deleteWhatsappAutomation(id) {
   return { success: true };
 }
 
+export async function bulkUpdateWhatsappAutomationStatus(ids, isActive) {
+  if (!Array.isArray(ids) || ids.length === 0) return { success: false, error: 'No automation IDs provided' };
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from('whatsapp_automations')
+    .update({ is_active: !!isActive })
+    .in('id', ids);
+
+  if (error) return { success: false, error: error.message };
+  return { success: true };
+}
+
+export async function toggleWhatsappAutomationStatus(id, isActive) {
+  if (!id) return { success: false, error: 'No automation ID provided' };
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from('whatsapp_automations')
+    .update({ is_active: !!isActive })
+    .eq('id', id);
+
+  if (error) return { success: false, error: error.message };
+  return { success: true };
+}
+
 // ==========================================
 // SEND MESSAGE LOGIC (AiSensy & Nextel Integration)
 // ==========================================
