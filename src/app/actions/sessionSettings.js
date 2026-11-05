@@ -993,26 +993,26 @@ export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, 
 
         if (hasActivityToday && spanSeconds > 0) {
           const rawActive = Math.max(d.active_seconds || 0, f.activeSeconds || 0);
-          const rawIdle = Math.max(d.idle_seconds || 0, f.idleSeconds || 0);
           const workingSpanSec = Math.max(0, spanSeconds - recordedBreakSec);
-          const trackedTotal = rawActive + rawIdle;
 
-          if (trackedTotal >= (workingSpanSec * 0.60) && trackedTotal > 0) {
-            // High tracker coverage throughout the shift
-            const activeRatio = rawActive / trackedTotal;
-            activeScreenSec = Math.min(workingSpanSec, Math.round(activeRatio * workingSpanSec));
-            idleAwaySec = Math.max(0, workingSpanSec - activeScreenSec);
-          } else {
-            // Partial tracker coverage: use tracked ratio (bounded between 70% and 90%) or default 75-80% active
-            const baseRatio = trackedTotal > 0 ? Math.min(0.85, Math.max(0.70, rawActive / trackedTotal)) : 0.75;
-            activeScreenSec = Math.round(workingSpanSec * baseRatio);
-            idleAwaySec = Math.max(0, workingSpanSec - activeScreenSec);
-          }
+          // 100% Accurate Ground Truth:
+          // Active Work Time = actual interactive time spent typing/clicking on CRM (cannot exceed working span)
+          activeScreenSec = Math.min(workingSpanSec, rawActive);
+          // Idle / Away Time = remaining working shift span when user was away from desk / not active on screen
+          idleAwaySec = Math.max(0, workingSpanSec - activeScreenSec);
+        } else if (hasActivityToday && spanSeconds === 0) {
+          const rawActive = Math.max(d.active_seconds || 0, f.activeSeconds || 0);
+          const rawIdle = Math.max(d.idle_seconds || 0, f.idleSeconds || 0);
+          activeScreenSec = rawActive;
+          idleAwaySec = rawIdle;
+          spanSeconds = activeScreenSec + idleAwaySec + recordedBreakSec;
         }
       } else {
         // Multi-day accumulation
-        activeScreenSec = activeSeconds;
-        idleAwaySec = idleSeconds;
+        const rawActive = activeSeconds;
+        const rawIdle = idleSeconds;
+        activeScreenSec = rawActive;
+        idleAwaySec = rawIdle;
         spanSeconds = activeScreenSec + idleAwaySec + recordedBreakSec;
       }
 
@@ -1094,7 +1094,7 @@ export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, 
 
         const d = (userId && dbMap[userId]) || dbMap[emailLower] || {};
         const f = (userId && aggregatedFileRecords[userId]) || aggregatedFileRecords[emailLower] || {};
-        const activeSeconds = Math.max(d.active_seconds || 0, f.activeSeconds || 0, 1800);
+        const activeSeconds = Math.max(d.active_seconds || 0, f.activeSeconds || 0);
 
         records.push({
           userId: sess.user_id,
