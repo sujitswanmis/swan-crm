@@ -2,6 +2,7 @@
 
 import MobileTableView, { TableViewToggle, useTableViewPreference } from '@/components/common/MobileTableView';
 import StandardTablePagination from '@/components/common/StandardTablePagination';
+import DateRangePicker from '@/components/common/DateRangePicker';
 import React, { useState, useEffect } from 'react';
 import { Clock, Search, RefreshCw, Filter, ShieldCheck, User, Globe, AlertCircle, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { getAuditLogs } from '@/app/actions/audit';
@@ -32,6 +33,9 @@ export default function AuditLogsTab({ currentUserCompany = '', tenantId = null 
   const [totalCount, setTotalCount] = useState(0);
   const [loadError, setLoadError] = useState('');
   const [tableView, setTableView] = useTableViewPreference('audit_logs_tab_view');
+  const [datePreset, setDatePreset] = useState('all');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [pageSize, setPageSize] = useState(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -68,7 +72,9 @@ export default function AuditLogsTab({ currentUserCompany = '', tenantId = null 
         searchQuery: searchQuery.trim(),
         module: 'all',
         company: currentUserCompany,
-        tenantId
+        tenantId,
+        dateFrom,
+        dateTo
       });
 
       if (res?.success && Array.isArray(res.logs)) {
@@ -87,7 +93,7 @@ export default function AuditLogsTab({ currentUserCompany = '', tenantId = null 
 
   useEffect(() => {
     fetchLogs(currentPage);
-  }, [currentPage, pageSize, currentUserCompany, tenantId]);
+  }, [currentPage, pageSize, currentUserCompany, tenantId, dateFrom, dateTo]);
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
@@ -121,8 +127,22 @@ export default function AuditLogsTab({ currentUserCompany = '', tenantId = null 
           </p>
         </div>
 
-        {/* Toolbar Controls: Search, View Toggle, Refresh */}
+        {/* Toolbar Controls: Date Preset, Search, View Toggle, Refresh */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexWrap: 'wrap' }}>
+          <DateRangePicker
+            preset={datePreset}
+            startDate={dateFrom}
+            endDate={dateTo}
+            allowAllTime={true}
+            title="Filter Audit Logs by Date"
+            onChange={({ preset, startDate, endDate }) => {
+              setDatePreset(preset);
+              setDateFrom(startDate);
+              setDateTo(endDate);
+              setCurrentPage(1);
+            }}
+          />
+
           <form onSubmit={handleSearchSubmit} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', margin: 0 }}>
             <div style={{ position: 'relative', width: '280px' }}>
               <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />

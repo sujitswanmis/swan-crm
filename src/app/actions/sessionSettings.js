@@ -492,7 +492,7 @@ export async function startEmployeeBreak({ breakType = 'Tea Break', breakIcon = 
         .select('*')
         .in('action', ['Start Break', 'End Break'])
         .eq('email', email)
-        .gte('created_at', `${today}T00:00:00.000Z`)
+        .gte('created_at', new Date(`${today}T00:00:00+05:30`).toISOString())
         .order('created_at', { ascending: true });
       const recentParsed = parseBreaksFromAuditLogs(recentLogs || []);
       const curBreak = recentParsed[email.toLowerCase()]?.currentBreak;
@@ -590,7 +590,7 @@ export async function endEmployeeBreak({ userEmail = '' } = {}) {
       .select('*')
       .in('action', ['Start Break', 'End Break'])
       .eq('email', email)
-      .gte('created_at', `${today}T00:00:00.000Z`)
+      .gte('created_at', new Date(`${today}T00:00:00+05:30`).toISOString())
       .order('created_at', { ascending: true });
 
     const breaksMap = parseBreaksFromAuditLogs(breakLogs || []);
@@ -667,7 +667,7 @@ export async function getCurrentEmployeeStatus(userEmail = '') {
       .select('*')
       .in('action', ['Start Break', 'End Break'])
       .eq('email', email)
-      .gte('created_at', `${today}T00:00:00.000Z`)
+      .gte('created_at', new Date(`${today}T00:00:00+05:30`).toISOString())
       .order('created_at', { ascending: true });
 
     const parsed = parseBreaksFromAuditLogs(breakLogs || []);
@@ -704,8 +704,8 @@ export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, 
       : Math.max(1, Math.round((new Date(finalEndDate).getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24)) + 1);
     
     const TARGET_WORK_SECONDS = daysCount * 9 * 3600; // Scaled by number of days (9h per day)
-    const dateStartIso = `${startDate}T00:00:00.000Z`;
-    const dateEndIso = `${finalEndDate}T23:59:59.999Z`;
+    const dateStartIso = new Date(`${startDate}T00:00:00+05:30`).toISOString();
+    const dateEndIso = new Date(`${finalEndDate}T23:59:59.999+05:30`).toISOString();
 
     // ⚡ HIGH PERFORMANCE: Fetch all database tables concurrently in parallel
     const [rolesResult, activityFileResult, dbRecordsResult, auditLogsResult, sessionsResult, breakLogsResult] = await Promise.allSettled([

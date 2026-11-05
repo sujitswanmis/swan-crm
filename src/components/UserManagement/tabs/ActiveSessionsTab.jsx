@@ -2,6 +2,7 @@
 
 import MobileTableView, { TableViewToggle, useTableViewPreference } from '@/components/common/MobileTableView';
 import StandardTablePagination from '@/components/common/StandardTablePagination';
+import DateRangePicker from '@/components/common/DateRangePicker';
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   Monitor, Smartphone, Laptop, LogOut, RefreshCw, Search, ShieldCheck, 
@@ -98,6 +99,10 @@ export default function ActiveSessionsTab({ currentUserCompany = '', tenantId = 
   const todayDateStr = useMemo(() => getTodayDateStr(), []);
   const todayReadableStr = useMemo(() => getTodayReadableIST(), []);
 
+  const [datePreset, setDatePreset] = useState('today');
+  const [selectedStartDate, setSelectedStartDate] = useState(() => getTodayDateStr());
+  const [selectedEndDate, setSelectedEndDate] = useState(() => getTodayDateStr());
+
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -147,11 +152,11 @@ export default function ActiveSessionsTab({ currentUserCompany = '', tenantId = 
     loadUser();
   }, []);
 
-  // Fetch strictly today's employee shift & active session summary (1 row per employee)
+  // Fetch employee shift & active session summary across selected date range (1 row per employee)
   const fetchActivitySummary = useCallback(async (showSpinner = true) => {
     if (showSpinner) setLoading(true);
     try {
-      const res = await getEmployeeDailyActivitySummary(todayDateStr, todayDateStr, currentUserCompany, tenantId);
+      const res = await getEmployeeDailyActivitySummary(selectedStartDate, selectedEndDate, currentUserCompany, tenantId);
       if (res && res.success) {
         setEmployees(res.employees || []);
       } else {
@@ -162,7 +167,7 @@ export default function ActiveSessionsTab({ currentUserCompany = '', tenantId = 
     } finally {
       if (showSpinner) setLoading(false);
     }
-  }, [todayDateStr, currentUserCompany, tenantId]);
+  }, [selectedStartDate, selectedEndDate, currentUserCompany, tenantId]);
 
   // Periodic poll every 25 seconds for live status
   useEffect(() => {
@@ -350,7 +355,7 @@ export default function ActiveSessionsTab({ currentUserCompany = '', tenantId = 
               <Monitor size={22} style={{ color: '#059669' }} />
               Active User Sessions & Daily Login Monitor
             </h3>
-            {/* Today IST Badge */}
+            {/* Date IST Badge */}
             <span style={{
               fontSize: '0.75rem',
               fontWeight: 700,
@@ -364,7 +369,7 @@ export default function ActiveSessionsTab({ currentUserCompany = '', tenantId = 
               gap: '0.35rem'
             }}>
               <Calendar size={13} />
-              Today: {todayReadableStr} (IST)
+              {datePreset === 'today' ? `Today: ${todayReadableStr} (IST)` : (selectedStartDate === selectedEndDate ? `${selectedStartDate} (IST)` : `${selectedStartDate} → ${selectedEndDate} (IST)`)}
             </span>
           </div>
           <p style={{ margin: '0.35rem 0 0 0', fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
@@ -642,8 +647,22 @@ export default function ActiveSessionsTab({ currentUserCompany = '', tenantId = 
           })}
         </div>
 
-        {/* Right side: Search Input & View Toggle */}
+        {/* Right side: Date Preset, Search Input & View Toggle */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexWrap: 'wrap' }}>
+          <DateRangePicker
+            preset={datePreset}
+            startDate={selectedStartDate}
+            endDate={selectedEndDate}
+            allowAllTime={false}
+            title="Select Date Preset"
+            onChange={({ preset, startDate, endDate }) => {
+              setDatePreset(preset);
+              setSelectedStartDate(startDate);
+              setSelectedEndDate(endDate);
+              setCurrentPage(1);
+            }}
+          />
+
           <div style={{ position: 'relative', width: '280px' }}>
             <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
             <input
