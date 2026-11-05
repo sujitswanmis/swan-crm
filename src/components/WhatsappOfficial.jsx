@@ -1,6 +1,7 @@
 'use client';
 
 import MobileTableView from '@/components/common/MobileTableView';
+import StandardTablePagination from '@/components/common/StandardTablePagination';
 import React, { useState, useEffect } from 'react';
 import { 
   Save, Plus, Trash2, Image as ImageIcon, Upload, PlayCircle, PauseCircle, Settings, MessageSquare, Repeat,
@@ -176,6 +177,30 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
   const [savingAuto, setSavingAuto] = useState(false);
   const [currentAuto, setCurrentAuto] = useState({ stage_name: '', template_id: '', frequency: 'Once', company: 'All', is_active: true });
   const [stages, setStages] = useState([]);
+  const [autoPage, setAutoPage] = useState(1);
+  const [autoPageSize, setAutoPageSize] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const s = JSON.parse(localStorage.getItem('crmPageNavSettings') || '{}');
+        if (s.defaultPageSize) return Number(s.defaultPageSize);
+      } catch (e) {}
+    }
+    return 15;
+  });
+
+  const paginatedAutomations = React.useMemo(() => {
+    if (autoPageSize === 100000) return automations;
+    const startIdx = (autoPage - 1) * autoPageSize;
+    return automations.slice(startIdx, startIdx + autoPageSize);
+  }, [automations, autoPage, autoPageSize]);
+
+  const totalAutoPages = Math.max(1, Math.ceil(automations.length / (autoPageSize === 100000 ? (automations.length || 1) : autoPageSize)));
+
+  useEffect(() => {
+    if (autoPage > totalAutoPages) {
+      setAutoPage(totalAutoPages);
+    }
+  }, [totalAutoPages, autoPage]);
 
   useEffect(() => {
     loadAllData();
@@ -1149,11 +1174,12 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
 
   const handleSelectAllAutomations = () => {
     if (automations.length === 0) return;
-    const allSelected = automations.every(a => selectedAutoIds.includes(a.id));
-    if (allSelected) {
-      setSelectedAutoIds([]);
+    const visibleIds = paginatedAutomations.map(a => a.id);
+    const allVisibleSelected = visibleIds.length > 0 && visibleIds.every(id => selectedAutoIds.includes(id));
+    if (allVisibleSelected) {
+      setSelectedAutoIds(prev => prev.filter(id => !visibleIds.includes(id)));
     } else {
-      setSelectedAutoIds(automations.map(a => a.id));
+      setSelectedAutoIds(prev => Array.from(new Set([...prev, ...visibleIds])));
     }
   };
 
@@ -3905,32 +3931,32 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
             </div>
           )}
 
-          <div style={{ overflowX: 'auto', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
+          <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 310px)', minHeight: '380px', borderRadius: '8px 8px 0 0', border: '1px solid var(--border-light)', borderBottom: 'none' }}>
             <MobileTableView id="WhatsappOfficial-1"><table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', backgroundColor: 'var(--bg-surface)' }}>
-              <thead style={{ backgroundColor: 'var(--th-bg)' }}>
+              <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--bg-surface)' }}>
                 <tr style={{ borderBottom: '1px solid var(--border-light)' }}>
-                  <th style={{ padding: '1rem', width: '40px', textAlign: 'center' }}>
+                  <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)', padding: '1rem', width: '40px', textAlign: 'center' }}>
                     <input 
                       type="checkbox"
-                      checked={automations.length > 0 && automations.every(a => selectedAutoIds.includes(a.id))}
+                      checked={paginatedAutomations.length > 0 && paginatedAutomations.every(a => selectedAutoIds.includes(a.id))}
                       onChange={handleSelectAllAutomations}
                       style={{ cursor: 'pointer', width: '16px', height: '16px' }}
-                      title="Select / Deselect All Rules"
+                      title="Select / Deselect Visible Rules"
                     />
                   </th>
-                  <th style={{ padding: '1rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Company</th>
-                  <th style={{ padding: '1rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Target Stage</th>
-                  <th style={{ padding: '1rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Template Assigned</th>
-                  <th style={{ padding: '1rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Frequency</th>
-                  <th style={{ padding: '1rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Status</th>
-                  <th style={{ padding: '1rem', fontSize: '0.85rem', color: 'var(--text-secondary)', textAlign: 'right' }}>Actions</th>
+                  <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)', padding: '1rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Company</th>
+                  <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)', padding: '1rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Target Stage</th>
+                  <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)', padding: '1rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Template Assigned</th>
+                  <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)', padding: '1rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Frequency</th>
+                  <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)', padding: '1rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Status</th>
+                  <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)', padding: '1rem', fontSize: '0.85rem', color: 'var(--text-secondary)', textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {automations.length === 0 ? (
                   <tr><td colSpan="7" style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>No automation rules defined yet.</td></tr>
                 ) : (
-                  automations.map(auto => {
+                  paginatedAutomations.map(auto => {
                     const isSelected = selectedAutoIds.includes(auto.id);
                     return (
                       <tr 
@@ -4006,6 +4032,16 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
               </tbody>
             </table></MobileTableView>
           </div>
+
+          {/* Unified Standard Bottom Page Navigation */}
+          <StandardTablePagination
+            currentPage={autoPage}
+            totalRecords={automations.length}
+            pageSize={autoPageSize}
+            onPageChange={setAutoPage}
+            onPageSizeChange={setAutoPageSize}
+            style={{ borderRadius: '0 0 8px 8px', border: '1px solid var(--border-light)' }}
+          />
 
         </div>
       )}
