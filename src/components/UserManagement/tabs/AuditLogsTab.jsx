@@ -66,9 +66,16 @@ export default function AuditLogsTab({ currentUserCompany = '', tenantId = null 
   const [totalCount, setTotalCount] = useState(0);
   const [loadError, setLoadError] = useState('');
   const [tableView, setTableView] = useTableViewPreference('audit_logs_tab_view');
-  const [datePreset, setDatePreset] = useState('all');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  const getTodayIST = () => {
+    try {
+      return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+    } catch {
+      return new Date().toISOString().split('T')[0];
+    }
+  };
+  const [datePreset, setDatePreset] = useState('today');
+  const [dateFrom, setDateFrom] = useState(() => getTodayIST());
+  const [dateTo, setDateTo] = useState(() => getTodayIST());
   const [pageSize, setPageSize] = useState(() => {
     if (typeof window !== 'undefined') {
       try {

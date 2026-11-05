@@ -14,22 +14,38 @@ const getAdminClient = () => {
 async function resolveClientIp() {
   try {
     const h = await headers();
+    // 1. Cloudflare Connecting IP (Authoritative client public IP when proxied via Cloudflare / Tunnel)
+    const cfIp = h.get('cf-connecting-ip');
+    if (cfIp && cfIp.trim() && cfIp !== '::1' && cfIp !== '127.0.0.1') {
+      return cfIp.trim();
+    }
+
+    // 2. Client IP header from proxies or edge CDNs
+    const clientIp = h.get('x-client-ip') || h.get('true-client-ip');
+    if (clientIp && clientIp.trim() && clientIp !== '::1' && clientIp !== '127.0.0.1') {
+      return clientIp.trim();
+    }
+
+    // 3. X-Forwarded-For (filter out internal proxies and localhost)
     const forwarded = h.get('x-forwarded-for');
     if (forwarded) {
-      const first = forwarded.split(',')[0].trim();
-      if (first) {
-        if (first === '::1' || first === '127.0.0.1') return '127.0.0.1 (Local)';
-        return first;
+      const parts = forwarded.split(',').map(p => p.trim()).filter(Boolean);
+      for (const p of parts) {
+        if (p && p !== '::1' && p !== '127.0.0.1' && !p.startsWith('10.') && !p.startsWith('192.168.')) {
+          return p;
+        }
       }
+      if (parts[0]) return parts[0];
     }
+
+    // 4. X-Real-IP
     const realIp = h.get('x-real-ip');
     if (realIp) {
       const trimmed = realIp.trim();
-      if (trimmed === '::1' || trimmed === '127.0.0.1') return '127.0.0.1 (Local)';
-      return trimmed;
+      if (trimmed && trimmed !== '::1' && trimmed !== '127.0.0.1') {
+        return trimmed;
+      }
     }
-    const cfIp = h.get('cf-connecting-ip');
-    if (cfIp) return cfIp.trim();
   } catch (e) {}
   return '127.0.0.1 (Local)';
 }
