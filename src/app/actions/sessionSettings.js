@@ -660,7 +660,7 @@ export async function getCurrentEmployeeStatus(userEmail = '') {
 // -------------------------------------------------------------
 // 4. GET DAILY/PERIOD ACTIVITY, 9-HOUR SHIFT & BREAK SUMMARY FOR ADMIN
 // -------------------------------------------------------------
-export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, endDate = null, requesterCompany = null) {
+export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, endDate = null, requesterCompany = null, tenantId = null) {
   try {
     const todayStr = getOfficeTodayDateStr();
     const startDate = startDateOrTarget || todayStr;
@@ -685,7 +685,7 @@ export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, 
       // 1. Approved team members
       adminClient
         .from('user_roles')
-        .select('user_id, email, emp_name, emp_department, emp_designation, emp_id, company, module_access, is_approved, role')
+        .select('user_id, email, emp_name, emp_department, emp_designation, emp_id, company, tenant_id, module_access, is_approved, role')
         .eq('is_approved', true)
         .neq('role', 'customer')
         .order('emp_name', { ascending: true }),
@@ -725,7 +725,7 @@ export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, 
       // 5. User sessions active during period
       adminClient
         .from('user_sessions')
-        .select('id, user_id, email, is_active, last_active')
+        .select('id, user_id, email, is_active, last_active, device, ip_address')
         .gte('last_active', dateStartIso)
         .lte('last_active', dateEndIso),
 
@@ -748,23 +748,39 @@ export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, 
         return hasNameOrEmail && status === 'Active';
       });
 
-      if (requesterCompany) {
-        const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl'];
-        const reqLower = String(requesterCompany || '').toLowerCase().trim();
-        const isSwanRequester = SWAN_COMPANIES.includes(reqLower);
+      const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl', 'tnt00002'];
+      const reqLower = String(requesterCompany || '').toLowerCase().trim();
+      let effectiveTenantId = tenantId;
+      if (reqLower === 'tnt00002') effectiveTenantId = '00000000-0000-0000-0000-000000000001';
+      else if (reqLower === 'tnt00001') effectiveTenantId = '0a37b8e8-1c28-4e19-8891-951fc3f8f8af';
+      else if (reqLower === 'tnt00003') effectiveTenantId = '922d3e72-6588-457f-a562-4f1bdbf10d98';
 
-        allTeamMembers = allTeamMembers.filter(u => {
-          const userComp = String(u.company || '').toLowerCase().trim();
-          if (!isSwanRequester) {
-            // Client workspace (e.g. SuPuja Creations, Testing New Swan Group): strictly return users of that company
-            return userComp === reqLower;
-          }
-          if (requesterCompany === 'All') {
-            return SWAN_COMPANIES.includes(userComp) || !userComp;
-          }
+      const isSwanRequester = !requesterCompany || reqLower === 'all' || reqLower === 'all companies' || SWAN_COMPANIES.includes(reqLower) || effectiveTenantId === '00000000-0000-0000-0000-000000000001';
+
+      allTeamMembers = allTeamMembers.filter(u => {
+        const userComp = String(u.company || '').toLowerCase().trim();
+        const userTenantId = u.tenant_id;
+
+        // If specific client tenant workspace
+        if (effectiveTenantId && effectiveTenantId !== '00000000-0000-0000-0000-000000000001') {
+          return userTenantId === effectiveTenantId || (reqLower && userComp === reqLower);
+        }
+
+        if (!isSwanRequester) {
+          // Client workspace by company name
           return userComp === reqLower;
-        });
-      }
+        }
+
+        // Swan Group All / Group level: match all Swan plants, exclude other external tenants
+        if (!requesterCompany || reqLower === 'all' || reqLower === 'all companies' || reqLower === 'new swan group' || reqLower === 'tnt00002') {
+          const isExplicitExternalTenant = userTenantId && userTenantId !== '00000000-0000-0000-0000-000000000001';
+          if (isExplicitExternalTenant) return false;
+          return SWAN_COMPANIES.includes(userComp) || !userComp || userTenantId === '00000000-0000-0000-0000-000000000001';
+        }
+
+        // Specific Swan sub-company selected (e.g. NSMLR, NSTLP)
+        return userComp === reqLower;
+      });
     }
 
     // Process 2: Aggregate Local activity records across date range

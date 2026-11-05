@@ -982,11 +982,11 @@ export default function UserManagementContainer({
         )}
 
         {activeTab === 'sessions' && visibleSubpages.some(t => t.id === 'sessions') && (
-          <ActiveSessionsTab currentUserCompany={currentUserCompany} />
+          <ActiveSessionsTab currentUserCompany={currentUserCompany} tenantId={tenantId} />
         )}
 
         {activeTab === 'audit' && visibleSubpages.some(t => t.id === 'audit') && (
-          <AuditLogsTab currentUserCompany={currentUserCompany} />
+          <AuditLogsTab currentUserCompany={currentUserCompany} tenantId={tenantId} />
         )}
       </div>
 

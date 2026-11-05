@@ -24,7 +24,7 @@ const MIN_AUDIT_LOGS_COL_WIDTHS = {
   timestamp: 140
 };
 
-export default function AuditLogsTab({ currentUserCompany = '' }) {
+export default function AuditLogsTab({ currentUserCompany = '', tenantId = null }) {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -66,7 +66,8 @@ export default function AuditLogsTab({ currentUserCompany = '' }) {
         pageSize,
         searchQuery: searchQuery.trim(),
         module: 'all',
-        company: currentUserCompany
+        company: currentUserCompany,
+        tenantId
       });
 
       if (res?.success && Array.isArray(res.logs)) {
@@ -85,7 +86,7 @@ export default function AuditLogsTab({ currentUserCompany = '' }) {
 
   useEffect(() => {
     fetchLogs(currentPage);
-  }, [currentPage, pageSize, currentUserCompany]);
+  }, [currentPage, pageSize, currentUserCompany, tenantId]);
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();

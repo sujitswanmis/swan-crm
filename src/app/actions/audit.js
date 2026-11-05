@@ -192,7 +192,8 @@ export async function getAuditLogs({
   customTimeTo = '09:00',
   dateFrom = '',
   dateTo = '',
-  company = ''
+  company = '',
+  tenantId = null
 }) {
   try {
     const adminClient = getAdminClient();
@@ -203,24 +204,42 @@ export async function getAuditLogs({
       .select('*', { count: 'exact' });
 
     // Company / Tenant Isolation Filter
-    if (company) {
-      const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl'];
-      const compLower = String(company).toLowerCase().trim();
-      const isSwan = SWAN_COMPANIES.includes(compLower);
+    let effectiveTenantId = tenantId;
+    const compLower = String(company || '').toLowerCase().trim();
+    if (compLower === 'tnt00002') effectiveTenantId = '00000000-0000-0000-0000-000000000001';
+    else if (compLower === 'tnt00001') effectiveTenantId = '0a37b8e8-1c28-4e19-8891-951fc3f8f8af';
+    else if (compLower === 'tnt00003') effectiveTenantId = '922d3e72-6588-457f-a562-4f1bdbf10d98';
 
+    const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl', 'tnt00002'];
+    const isSwan = !company || compLower === 'all' || compLower === 'all companies' || SWAN_COMPANIES.includes(compLower) || effectiveTenantId === '00000000-0000-0000-0000-000000000001';
+
+    if (company || effectiveTenantId) {
       const { data: companyUsers } = await adminClient
         .from('user_roles')
-        .select('user_id, email, company');
+        .select('user_id, email, company, tenant_id');
 
       const targetEmails = (companyUsers || [])
         .filter(u => {
           const uComp = String(u.company || '').toLowerCase().trim();
+          const uTenant = u.tenant_id;
+
+          // If specific client tenant workspace
+          if (effectiveTenantId && effectiveTenantId !== '00000000-0000-0000-0000-000000000001') {
+            return uTenant === effectiveTenantId || (compLower && uComp === compLower);
+          }
+
           if (!isSwan) {
             return uComp === compLower;
           }
-          if (company === 'All') {
-            return SWAN_COMPANIES.includes(uComp) || !uComp;
+
+          // Swan Group All / Group level: match all Swan plants, exclude other external tenants
+          if (!company || compLower === 'all' || compLower === 'all companies' || compLower === 'new swan group' || compLower === 'tnt00002') {
+            const isExplicitExternalTenant = uTenant && uTenant !== '00000000-0000-0000-0000-000000000001';
+            if (isExplicitExternalTenant) return false;
+            return SWAN_COMPANIES.includes(uComp) || !uComp || uTenant === '00000000-0000-0000-0000-000000000001';
           }
+
+          // Specific Swan sub-company selected (e.g. NSMLR, NSTLP)
           return uComp === compLower;
         })
         .map(u => (u.email || '').toLowerCase().trim())
