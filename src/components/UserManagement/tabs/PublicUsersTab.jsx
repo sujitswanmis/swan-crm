@@ -1,7 +1,8 @@
 'use client';
 
 import MobileTableView from '@/components/common/MobileTableView';
-import React, { useState, useMemo } from 'react';
+import StandardTablePagination from '@/components/common/StandardTablePagination';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Users, Search, CheckCircle2, XCircle, Key, Pencil, MessageSquare, 
   RefreshCw, AlertCircle, Eye, EyeOff, ShieldCheck, UserCheck 
@@ -34,6 +35,19 @@ export default function PublicUsersTab({
   const [searchQuery, setSearchQuery] = useState('');
   const [filterApproved, setFilterApproved] = useState('All'); // 'All' | 'Approved' | 'Pending'
   const [togglingId, setTogglingId] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const settings = JSON.parse(localStorage.getItem('crmPageNavSettings') || '{}');
+        if (settings.defaultPageSize) {
+          if (settings.defaultPageSize === 'All') return 100000;
+          return parseInt(settings.defaultPageSize, 10) || 15;
+        }
+      } catch (e) {}
+    }
+    return 15;
+  });
 
   // Column Resizing Hook (Lead Data Pattern)
   const {
@@ -79,6 +93,17 @@ export default function PublicUsersTab({
 
     return result;
   }, [customerUsers, filterApproved, searchQuery]);
+
+  // Reset page on filter/search change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, filterApproved]);
+
+  const paginatedCustomers = useMemo(() => {
+    if (pageSize === 100000) return filteredCustomers;
+    const start = (currentPage - 1) * pageSize;
+    return filteredCustomers.slice(start, start + pageSize);
+  }, [filteredCustomers, currentPage, pageSize]);
 
   const handleToggleApproval = async (user) => {
     setTogglingId(user.user_id);
@@ -285,7 +310,7 @@ export default function PublicUsersTab({
               </tr>
             </thead>
             <tbody>
-              {filteredCustomers.length === 0 ? (
+              {paginatedCustomers.length === 0 ? (
                 <tr>
                   <td colSpan={5} style={{ padding: '3rem 1rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
@@ -295,7 +320,7 @@ export default function PublicUsersTab({
                   </td>
                 </tr>
               ) : (
-                filteredCustomers.map((u, idx) => (
+                paginatedCustomers.map((u, idx) => (
                   <tr
                     key={u.user_id || idx}
                     style={{
@@ -372,6 +397,15 @@ export default function PublicUsersTab({
             </tbody>
           </table></MobileTableView>
         </div>
+
+        {/* Unified Standard Bottom Page Navigation */}
+        <StandardTablePagination
+          currentPage={currentPage}
+          totalRecords={filteredCustomers.length}
+          pageSize={pageSize}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={setPageSize}
+        />
       </div>
 
       {/* Edit Public User Modal */}

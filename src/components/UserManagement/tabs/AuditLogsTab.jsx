@@ -1,6 +1,7 @@
 'use client';
 
 import MobileTableView from '@/components/common/MobileTableView';
+import StandardTablePagination from '@/components/common/StandardTablePagination';
 import React, { useState, useEffect } from 'react';
 import { Clock, Search, RefreshCw, Filter, ShieldCheck, User, Globe, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 import { getAuditLogs } from '@/app/actions/audit';
@@ -30,7 +31,18 @@ export default function AuditLogsTab({ currentUserCompany = '' }) {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const [loadError, setLoadError] = useState('');
-  const pageSize = 25;
+  const [pageSize, setPageSize] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const settings = JSON.parse(localStorage.getItem('crmPageNavSettings') || '{}');
+        if (settings.defaultPageSize) {
+          if (settings.defaultPageSize === 'All') return 100000;
+          return parseInt(settings.defaultPageSize, 10) || 15;
+        }
+      } catch (e) {}
+    }
+    return 15;
+  });
 
   // Column Resizing Hook (Lead Data Pattern)
   const {
@@ -73,7 +85,7 @@ export default function AuditLogsTab({ currentUserCompany = '' }) {
 
   useEffect(() => {
     fetchLogs(currentPage);
-  }, [currentPage, currentUserCompany]);
+  }, [currentPage, pageSize, currentUserCompany]);
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
@@ -297,57 +309,14 @@ export default function AuditLogsTab({ currentUserCompany = '' }) {
           </table></MobileTableView>
         </div>
 
-        {/* Pagination */}
-        <div style={{
-          padding: '0.75rem 1rem',
-          borderTop: '1px solid var(--border-light)',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          backgroundColor: 'var(--bg-primary, #f8fafc)',
-          fontSize: '0.78rem',
-          color: 'var(--text-secondary)'
-        }}>
-          <div>
-            Showing <strong>{logs.length > 0 ? (currentPage - 1) * pageSize + 1 : 0}</strong> to <strong>{Math.min(currentPage * pageSize, totalCount)}</strong> of <strong>{totalCount}</strong> events
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <button
-              type="button"
-              disabled={currentPage <= 1}
-              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-              style={{
-                padding: '0.3rem 0.55rem',
-                borderRadius: '6px',
-                border: '1px solid var(--border-light)',
-                backgroundColor: 'var(--bg-surface)',
-                color: 'var(--text-primary)',
-                cursor: currentPage <= 1 ? 'not-allowed' : 'pointer',
-                opacity: currentPage <= 1 ? 0.5 : 1
-              }}
-            >
-              <ChevronLeft size={14} />
-            </button>
-            <span style={{ fontWeight: 600 }}>Page {currentPage} of {totalPages}</span>
-            <button
-              type="button"
-              disabled={currentPage >= totalPages}
-              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-              style={{
-                padding: '0.3rem 0.55rem',
-                borderRadius: '6px',
-                border: '1px solid var(--border-light)',
-                backgroundColor: 'var(--bg-surface)',
-                color: 'var(--text-primary)',
-                cursor: currentPage >= totalPages ? 'not-allowed' : 'pointer',
-                opacity: currentPage >= totalPages ? 0.5 : 1
-              }}
-            >
-              <ChevronRight size={14} />
-            </button>
-          </div>
-        </div>
+        {/* Unified Standard Bottom Page Navigation */}
+        <StandardTablePagination
+          currentPage={currentPage}
+          totalRecords={totalCount}
+          pageSize={pageSize}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={setPageSize}
+        />
       </div>
     </div>
   );

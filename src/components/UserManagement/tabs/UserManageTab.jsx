@@ -1,6 +1,7 @@
 'use client';
 
 import MobileTableView, { TableViewToggle, useTableViewPreference } from '@/components/common/MobileTableView';
+import StandardTablePagination from '@/components/common/StandardTablePagination';
 import React, { useState, useMemo } from 'react';
 import { 
   Search, Plus, Download, Upload, Filter, User, Shield, Key, Pencil, 
@@ -103,7 +104,18 @@ export default function UserManageTab({
   const [selectedDepartment, setSelectedDepartment] = useState('All');
   const [selectedSubDepartment, setSelectedSubDepartment] = useState('All');
   const [currentPage, setCurrentPage] = useState(1);
-  const [rowsPerPage, setRowsPerPage] = useState(25);
+  const [rowsPerPage, setRowsPerPage] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const settings = JSON.parse(localStorage.getItem('crmPageNavSettings') || '{}');
+        if (settings.defaultPageSize) {
+          if (settings.defaultPageSize === 'All') return 100000;
+          return parseInt(settings.defaultPageSize, 10) || 15;
+        }
+      } catch (e) {}
+    }
+    return 15;
+  });
 
   // Table vs Tiles view preference
   const [tableView, setTableView] = useTableViewPreference('UserManagement/tabs/UserManageTab-1');
@@ -1273,88 +1285,14 @@ export default function UserManageTab({
           </MobileTableView>
         </div>
 
-        {/* Pagination Footer */}
-        <div style={{
-          padding: '0.75rem 1rem',
-          borderTop: '1px solid var(--border-light)',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          backgroundColor: 'var(--bg-primary, #f8fafc)',
-          fontSize: '0.78rem',
-          color: 'var(--text-secondary)',
-          flexWrap: 'wrap',
-          gap: '0.5rem'
-        }}>
-          <div>
-            Showing <strong>{totalRows > 0 ? (currentPage - 1) * rowsPerPage + 1 : 0}</strong> to <strong>{Math.min(currentPage * rowsPerPage, totalRows)}</strong> of <strong>{totalRows}</strong> records
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            {/* Rows per page selector */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-              <span>Rows per page:</span>
-              <select
-                value={rowsPerPage}
-                onChange={e => {
-                  setRowsPerPage(Number(e.target.value));
-                  setCurrentPage(1);
-                }}
-                style={{
-                  padding: '0.25rem 0.5rem',
-                  borderRadius: '6px',
-                  border: '1px solid var(--border-light)',
-                  backgroundColor: 'var(--bg-surface)',
-                  color: 'var(--text-primary)',
-                  fontSize: '0.75rem'
-                }}
-              >
-                {[10, 25, 50, 100].map(n => (
-                  <option key={n} value={n}>{n}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Page navigation */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-              <button
-                type="button"
-                disabled={currentPage <= 1}
-                onClick={() => handlePageChange(currentPage - 1)}
-                style={{
-                  padding: '0.3rem 0.55rem',
-                  borderRadius: '6px',
-                  border: '1px solid var(--border-light)',
-                  backgroundColor: 'var(--bg-surface)',
-                  color: 'var(--text-primary)',
-                  cursor: currentPage <= 1 ? 'not-allowed' : 'pointer',
-                  opacity: currentPage <= 1 ? 0.5 : 1
-                }}
-              >
-                <ChevronLeft size={14} />
-              </button>
-              <span style={{ fontWeight: 600, padding: '0 0.5rem' }}>
-                Page {currentPage} of {totalPages}
-              </span>
-              <button
-                type="button"
-                disabled={currentPage >= totalPages}
-                onClick={() => handlePageChange(currentPage + 1)}
-                style={{
-                  padding: '0.3rem 0.55rem',
-                  borderRadius: '6px',
-                  border: '1px solid var(--border-light)',
-                  backgroundColor: 'var(--bg-surface)',
-                  color: 'var(--text-primary)',
-                  cursor: currentPage >= totalPages ? 'not-allowed' : 'pointer',
-                  opacity: currentPage >= totalPages ? 0.5 : 1
-                }}
-              >
-                <ChevronRight size={14} />
-              </button>
-            </div>
-          </div>
-        </div>
+        {/* Unified Standard Bottom Page Navigation */}
+        <StandardTablePagination
+          currentPage={currentPage}
+          totalRecords={totalRows}
+          pageSize={rowsPerPage}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={setRowsPerPage}
+        />
       </div>
     </div>
   );
