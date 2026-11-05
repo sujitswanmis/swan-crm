@@ -2,7 +2,7 @@
 
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { logAuditAction } from '@/app/actions/audit';
-import { createPartyMaster } from '@/app/actions/partyMaster';
+import { createPartyMaster, resolveDbTenantUuid } from '@/app/actions/partyMaster';
 
 const getAdminClient = () => {
   return createSupabaseClient(
@@ -120,6 +120,7 @@ export async function saveClientRegistrationDraft(draftData, userCompany = '', c
       // Create new draft record
       rawPayload.created_at = new Date().toISOString();
       const cleanPayload = sanitizeLeadPayload(rawPayload, false);
+      delete cleanPayload.id; // Ensure clean UUID generation with zero pkey collision
       let insertError = null;
       let insertedData = null;
 
@@ -286,6 +287,7 @@ export async function submitClientRegistrationAndSync(formData, userCompany = ''
     } else {
       rawPayload.created_at = new Date().toISOString();
       const cleanPayload = sanitizeLeadPayload(rawPayload, false);
+      delete cleanPayload.id; // Ensure clean UUID generation with zero pkey collision
       let { data, error } = await adminClient
         .from('leads')
         .insert([cleanPayload])
@@ -386,10 +388,12 @@ export async function submitClientRegistrationAndSync(formData, userCompany = ''
           onboarding_stage: 'S01_Approved',
           acquisition_source: 'CRM_REGISTRATION',
           source_lead_id: savedLeadId,
+          our_company: finalCompany,
           created_by: currentUser || 'Sales Executive'
         };
 
-        const newParty = await createPartyMaster(partyPayload, finalCompany);
+        const tenantUuid = await resolveDbTenantUuid(finalCompany);
+        const newParty = await createPartyMaster(partyPayload, tenantUuid, currentUser || 'Sales Executive');
         if (newParty && newParty.id) {
           partyMasterResult = newParty;
 

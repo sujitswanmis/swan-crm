@@ -1383,6 +1383,7 @@ export async function syncPendingQueue(supabaseClient, onProgress = null) {
           const noteText = item.payload.noteText || item.payload.remarks;
           const actor = item.payload.created_by || item.payload.actor || 'System';
           const cleanPayload = sanitizeLeadPayloadForDb(item.payload, false);
+          delete cleanPayload.id; // Guarantee fresh UUID and zero leads_pkey collision on insert
 
           let inserted = null;
           let insertError = null;

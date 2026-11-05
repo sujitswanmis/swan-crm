@@ -1018,7 +1018,6 @@ export async function getSettlementsCentral(districtId, subdistrictId = null, bl
     .from('location_settlements')
     .select('*')
     .eq('district_id', districtId)
-    .eq('is_active', true)
     .order('settlement_name', { ascending: true });
 
   if (subdistrictId) {
@@ -1036,7 +1035,7 @@ export async function getSettlementsCentral(districtId, subdistrictId = null, bl
 
   const { data, error } = await query;
   if (error) return [];
-  return data || [];
+  return (data || []).filter(item => item.is_active !== false);
 }
 
 // 7. POST OFFICES & PIN CODES

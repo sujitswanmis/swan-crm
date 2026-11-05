@@ -1369,6 +1369,7 @@ export default function ClientRegistration({
         // INSERT MODE
         rawNormalized.created_by = actor;
         const cleanPayload = sanitizeLeadPayloadForDb(rawNormalized, false);
+        delete cleanPayload.id; // Guarantee fresh UUID and zero leads_pkey collision
 
         if (typeof navigator !== 'undefined' && !navigator.onLine) {
           const check = canPerformOfflineAction('clientRegistration');

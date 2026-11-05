@@ -1,12 +1,15 @@
 {
   "name": "crm",
-  "version": "2.5.1049",
+  "version": "2.5.1052",
   "private": true,
+  "main": "desktop/main.js",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "desktop:start": "electron desktop/main.js",
+    "desktop:build": "electron-packager desktop \"SPC Workspace\" --platform=win32 --arch=x64 --out=dist-crm-desktop --asar --overwrite",
     "android:sync": "cap sync android",
     "android:open": "cap open android",
     "android:build": "powershell -Command \"$env:JAVA_HOME = 'C:\\Program Files\\Android\\Android Studio\\jbr'; cd android; .\\gradlew.bat assembleDebug\"",
@@ -42,7 +45,48 @@
     "@capacitor/cli": "^8.6.0",
     "@capacitor/core": "^8.6.0",
     "@capacitor/ios": "^8.6.0",
+    "@electron/packager": "^20.3.0",
+    "electron": "45.2.2",
+    "electron-builder": "^26.18.0",
     "eslint": "^9",
     "eslint-config-next": "16.3.8"
+  },
+  "build": {
+    "appId": "com.supujacreations.workspace",
+    "productName": "SuPuja Workspace",
+    "copyright": "Copyright © 2026 SuPuja Creations",
+    "npmRebuild": false,
+    "directories": {
+      "output": "dist-desktop-v1"
+    },
+    "files": [
+      "desktop/**/*",
+      "public/icon-512x512.png",
+      "!node_modules/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "public/icon-512x512.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "SuPuja Workspace"
+    }
   }
 }

@@ -452,7 +452,8 @@ export async function createPartyMaster(partyData, tenantId = DEFAULT_TENANT_ID,
 
   const { primary_contact_name, ...cleanPartyData } = partyData;
 
-  const rawComp = cleanPartyData.our_company || 'NSMLR';
+  const resolvedTenantUuid = await resolveDbTenantUuid(tenantId);
+  const rawComp = cleanPartyData.our_company || (typeof tenantId === 'string' && ['NSMLR', 'NSTLP', 'NSTL'].includes(tenantId.toUpperCase().trim()) ? tenantId : 'NSMLR');
   const branchCode = ['NSTL', 'NSTLP'].includes(String(rawComp).toUpperCase().trim()) ? 'NSTLP' : 'NSMLR';
 
   // Generate branch-prefixed atomic PTY code (e.g., PTY-NSMLR-100001)
@@ -476,7 +477,7 @@ export async function createPartyMaster(partyData, tenantId = DEFAULT_TENANT_ID,
     : 'PROPRIETORSHIP';
 
   const dbPayload = {
-    tenant_id: tenantId,
+    tenant_id: resolvedTenantUuid,
     party_universal_code: partyCode,
     firm_name: cleanPartyData.firm_name || cleanPartyData.company || 'Draft Firm',
     legal_name: cleanPartyData.legal_name || cleanPartyData.firm_name || cleanPartyData.company || null,
