@@ -3577,22 +3577,19 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
       {/* AUTOMATIONS TAB */}
       {activeTab === 'automations' && (
         <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '1rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
             <div>
               <h2 style={{ fontSize: '1.25rem', margin: '0 0 0.25rem 0' }}>Stage-Based Automation Rules</h2>
               <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Map your templates to specific CRM stages to send automated drip campaigns.</p>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.5rem' }}>
-              <TableViewToggle view={autoTableView} onChange={setAutoTableView} />
-              {automationsPerms.add && (
-                <button 
-                  onClick={() => { setCurrentAuto({ stage_name: '', template_id: '', frequency: 'Once', company: 'All', is_active: true }); setShowAutoForm(true); }}
-                  style={{ padding: '0.5rem 1rem', background: '#10b981', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 500 }}
-                >
-                  <Plus size={18} /> Add New Rule
-                </button>
-              )}
-            </div>
+            {automationsPerms.add && (
+              <button 
+                onClick={() => { setCurrentAuto({ stage_name: '', template_id: '', frequency: 'Once', company: 'All', is_active: true }); setShowAutoForm(true); }}
+                style={{ padding: '0.5rem 1rem', background: '#10b981', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 500 }}
+              >
+                <Plus size={18} /> Add New Rule
+              </button>
+            )}
           </div>
 
           {showAutoForm && (
@@ -3989,9 +3986,12 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
               )}
             </div>
 
-            {/* Results count pill */}
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
-              <span>{filteredAutomations.length} of {automations.length} rules</span>
+            {/* Right: TableViewToggle & Results Count */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+              <TableViewToggle view={autoTableView} onChange={setAutoTableView} />
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                <span>{filteredAutomations.length} of {automations.length} rules</span>
+              </div>
             </div>
           </div>
 
