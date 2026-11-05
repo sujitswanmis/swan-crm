@@ -169,6 +169,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
   // Automations State
   const [automations, setAutomations] = useState([]);
   const [showAutoForm, setShowAutoForm] = useState(false);
+  const [savingAuto, setSavingAuto] = useState(false);
   const [currentAuto, setCurrentAuto] = useState({ stage_name: '', template_id: '', frequency: 'Once', company: 'All', is_active: true });
   const [stages, setStages] = useState([]);
 
@@ -1103,22 +1104,36 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
       alert('Please select a template');
       return;
     }
-    setLoading(true);
+    if (!currentAuto.stage_name) {
+      alert('Please select a target stage');
+      return;
+    }
+    setSavingAuto(true);
     const res = await saveWhatsappAutomation(currentAuto);
     if (res.success) {
       setShowAutoForm(false);
       setCurrentAuto({ stage_name: '', template_id: '', frequency: 'Once', company: 'All', is_active: true });
-      loadAllData();
+      const autoRes = await getWhatsappAutomations();
+      if (autoRes.success && Array.isArray(autoRes.data)) {
+        setAutomations(autoRes.data);
+      }
     } else {
       alert('Error saving automation: ' + res.error);
     }
-    setLoading(false);
+    setSavingAuto(false);
   };
 
   const handleDeleteAutomation = async (id) => {
     if (!window.confirm('Are you sure you want to delete this rule?')) return;
     const res = await deleteWhatsappAutomation(id);
-    if (res.success) loadAllData();
+    if (res.success) {
+      const autoRes = await getWhatsappAutomations();
+      if (autoRes.success && Array.isArray(autoRes.data)) {
+        setAutomations(autoRes.data);
+      }
+    } else {
+      alert('Error deleting automation: ' + res.error);
+    }
   };
 
   const templatesPerms = getSubItemPermissions(moduleAccess, userRole, 'whatsapp_official', 'templates');
@@ -3587,92 +3602,155 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
           </div>
 
           {showAutoForm && (
-            <div style={{ backgroundColor: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '8px', padding: '1.5rem', marginBottom: '2rem' }}>
-              <h3 style={{ marginTop: 0, marginBottom: '1.5rem', fontSize: '1.1rem' }}>{currentAuto.id ? 'Edit' : 'New'} Automation Rule</h3>
-              
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '2rem' }}>
-                <div className="form-group">
-                  <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.5rem' }}>Company</label>
-                  <select 
-                    value={currentAuto.company || 'All'} 
-                    onChange={e => setCurrentAuto({...currentAuto, company: e.target.value})}
-                    style={{ width: '100%', padding: '0.6rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}
+            <div 
+              style={{ 
+                position: 'fixed', 
+                top: 0, 
+                left: 0, 
+                right: 0, 
+                bottom: 0, 
+                backgroundColor: 'rgba(15, 23, 42, 0.65)', 
+                backdropFilter: 'blur(3px)',
+                zIndex: 99999, 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center',
+                padding: '1rem'
+              }}
+              onClick={() => setShowAutoForm(false)}
+            >
+              <div 
+                style={{ 
+                  backgroundColor: 'var(--bg-surface)', 
+                  borderRadius: '12px', 
+                  width: '100%', 
+                  maxWidth: '620px', 
+                  maxHeight: '90vh',
+                  overflowY: 'auto', 
+                  boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+                  border: '1px solid var(--border-light)'
+                }}
+                onClick={e => e.stopPropagation()}
+              >
+                {/* Header */}
+                <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border-light)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'var(--bg-primary)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                    <div style={{ width: '32px', height: '32px', borderRadius: '8px', backgroundColor: 'var(--accent-subtle, rgba(37,99,235,0.1))', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent-color)' }}>
+                      <Zap size={18} />
+                    </div>
+                    <div>
+                      <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600 }}>{currentAuto.id ? 'Edit' : 'New'} Automation Rule</h3>
+                      <p style={{ margin: '0.15rem 0 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                        {currentAuto.id ? 'Update trigger stage and template for this rule' : 'Configure a new automated WhatsApp message rule'}
+                      </p>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => setShowAutoForm(false)}
+                    style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '0.35rem', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    title="Close"
                   >
-                    <option value="All">All Companies</option>
-                    <option value="NSMLR">NSMLR Only</option>
-                    <option value="NSTLP">NSTLP Only</option>
-                  </select>
+                    <X size={18} />
+                  </button>
                 </div>
 
-                <div className="form-group">
-                  <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.5rem' }}>Status</label>
-                  <select 
-                    value={currentAuto.is_active ? 'active' : 'inactive'} 
-                    onChange={e => setCurrentAuto({...currentAuto, is_active: e.target.value === 'active'})}
-                    style={{ width: '100%', padding: '0.6rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', color: currentAuto.is_active ? '#16a34a' : '#ef4444', fontWeight: 600 }}
-                  >
-                    <option value="active">Active (Sending)</option>
-                    <option value="inactive">Paused (Inactive)</option>
-                  </select>
-                </div>
+                {/* Form Body */}
+                <div style={{ padding: '1.5rem' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem', marginBottom: '1.5rem' }}>
+                    <div className="form-group">
+                      <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.4rem' }}>Company</label>
+                      <select 
+                        value={currentAuto.company || 'All'} 
+                        onChange={e => setCurrentAuto({...currentAuto, company: e.target.value})}
+                        style={{ width: '100%', padding: '0.6rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}
+                      >
+                        <option value="All">All Companies</option>
+                        <option value="NSMLR">NSMLR Only</option>
+                        <option value="NSTLP">NSTLP Only</option>
+                      </select>
+                    </div>
 
-                <div className="form-group">
-                  <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.5rem' }}>If Lead is in Stage:</label>
-                  <select value={currentAuto.stage_name} onChange={e => setCurrentAuto({...currentAuto, stage_name: e.target.value})} style={{ width: '100%', padding: '0.6rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}>
-                    <option value="">Select Stage</option>
-                    {stages.map((stageObj, i) => {
-                      const stageNum = i + 1;
-                      const cleanStageName = stageObj.name.replace(/^\d+\s*-\s*/, '');
-                      return (
-                        <optgroup key={`wa-stage-${i}`} label={stageObj.name}>
-                          {stageObj.substages.map((sub, j) => {
-                            const subNum = String(j + 1).padStart(2, '0');
-                            const prefix = `${stageNum};${subNum}>${cleanStageName}>`;
-                            const val = sub.startsWith(prefix) ? sub : `${prefix}${sub.includes('>') ? sub.split('>').pop() : sub}`;
-                            return <option key={val} value={val}>{val}</option>;
-                          })}
-                        </optgroup>
-                      );
-                    })}
-                  </select>
-                </div>
+                    <div className="form-group">
+                      <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.4rem' }}>Status</label>
+                      <select 
+                        value={currentAuto.is_active ? 'active' : 'inactive'} 
+                        onChange={e => setCurrentAuto({...currentAuto, is_active: e.target.value === 'active'})}
+                        style={{ width: '100%', padding: '0.6rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', color: currentAuto.is_active ? '#16a34a' : '#ef4444', fontWeight: 600 }}
+                      >
+                        <option value="active">Active (Sending)</option>
+                        <option value="inactive">Paused (Inactive)</option>
+                      </select>
+                    </div>
 
-                <div className="form-group">
-                  <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.5rem' }}>Send this Template:</label>
-                  <select 
-                    value={currentAuto.template_id} 
-                    onChange={e => setCurrentAuto({...currentAuto, template_id: e.target.value})}
-                    style={{ width: '100%', padding: '0.6rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}
-                  >
-                    <option value="">-- Select Template --</option>
-                    {templates.filter(tpl => !currentAuto.company || currentAuto.company === 'All' || tpl.company === 'All' || tpl.company === currentAuto.company).map(tpl => (
-                      <option key={tpl.id} value={tpl.id}>{tpl.template_name} ({tpl.company || 'All'})</option>
-                    ))}
-                  </select>
-                </div>
+                    <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                      <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.4rem' }}>If Lead is in Stage:</label>
+                      <select value={currentAuto.stage_name} onChange={e => setCurrentAuto({...currentAuto, stage_name: e.target.value})} style={{ width: '100%', padding: '0.6rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}>
+                        <option value="">Select Stage</option>
+                        {stages.map((stageObj, i) => {
+                          const stageNum = i + 1;
+                          const cleanStageName = stageObj.name.replace(/^\d+\s*-\s*/, '');
+                          return (
+                            <optgroup key={`wa-stage-${i}`} label={stageObj.name}>
+                              {stageObj.substages.map((sub, j) => {
+                                const subNum = String(j + 1).padStart(2, '0');
+                                const prefix = `${stageNum};${subNum}>${cleanStageName}>`;
+                                const val = sub.startsWith(prefix) ? sub : `${prefix}${sub.includes('>') ? sub.split('>').pop() : sub}`;
+                                return <option key={val} value={val}>{val}</option>;
+                              })}
+                            </optgroup>
+                          );
+                        })}
+                      </select>
+                    </div>
 
-                <div className="form-group">
-                  <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.5rem' }}>Frequency:</label>
-                  <select 
-                    value={currentAuto.frequency} 
-                    onChange={e => setCurrentAuto({...currentAuto, frequency: e.target.value})}
-                    style={{ width: '100%', padding: '0.6rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}
-                  >
-                    <option value="Once">Send Once (On Entry)</option>
-                    <option value="Weekly">Weekly (Every 7 Days)</option>
-                    <option value="Monthly">Monthly (Every 30 Days)</option>
-                    <option value="Quarterly">Quarterly (Every 90 Days)</option>
-                  </select>
-                </div>
-              </div>
+                    <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                      <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.4rem' }}>Send this Template:</label>
+                      <select 
+                        value={currentAuto.template_id} 
+                        onChange={e => setCurrentAuto({...currentAuto, template_id: e.target.value})}
+                        style={{ width: '100%', padding: '0.6rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}
+                      >
+                        <option value="">-- Select Template --</option>
+                        {templates.filter(tpl => !currentAuto.company || currentAuto.company === 'All' || tpl.company === 'All' || tpl.company === currentAuto.company).map(tpl => (
+                          <option key={tpl.id} value={tpl.id}>{tpl.template_name} ({tpl.company || 'All'})</option>
+                        ))}
+                      </select>
+                    </div>
 
-              <div style={{ display: 'flex', gap: '1rem' }}>
-                <button onClick={handleSaveAutomation} disabled={loading} style={{ padding: '0.6rem 1.5rem', background: 'var(--accent-color)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 500 }}>
-                  {loading ? 'Saving...' : 'Save Rule'}
-                </button>
-                <button onClick={() => setShowAutoForm(false)} style={{ padding: '0.6rem 1.5rem', background: 'transparent', color: 'var(--text-secondary)', border: '1px solid var(--border-light)', borderRadius: '6px', cursor: 'pointer', fontWeight: 500 }}>
-                  Cancel
-                </button>
+                    <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                      <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.4rem' }}>Frequency:</label>
+                      <select 
+                        value={currentAuto.frequency} 
+                        onChange={e => setCurrentAuto({...currentAuto, frequency: e.target.value})}
+                        style={{ width: '100%', padding: '0.6rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}
+                      >
+                        <option value="Once">Send Once (On Entry)</option>
+                        <option value="Weekly">Weekly (Every 7 Days)</option>
+                        <option value="Monthly">Monthly (Every 30 Days)</option>
+                        <option value="Quarterly">Quarterly (Every 90 Days)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Footer Actions */}
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', borderTop: '1px solid var(--border-light)', paddingTop: '1.25rem' }}>
+                    <button 
+                      type="button"
+                      onClick={() => setShowAutoForm(false)} 
+                      style={{ padding: '0.6rem 1.25rem', background: 'transparent', color: 'var(--text-secondary)', border: '1px solid var(--border-light)', borderRadius: '6px', cursor: 'pointer', fontWeight: 500 }}
+                    >
+                      Cancel
+                    </button>
+                    <button 
+                      type="button"
+                      onClick={handleSaveAutomation} 
+                      disabled={savingAuto} 
+                      style={{ padding: '0.6rem 1.5rem', background: 'var(--accent-color)', color: 'white', border: 'none', borderRadius: '6px', cursor: savingAuto ? 'not-allowed' : 'pointer', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+                    >
+                      {savingAuto ? 'Saving...' : (currentAuto.id ? 'Update Rule' : 'Save Rule')}
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           )}

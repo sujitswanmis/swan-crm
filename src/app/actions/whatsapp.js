@@ -501,7 +501,6 @@ export async function saveWhatsappAutomation(autoData) {
   }
 
   if (result.error) return { success: false, error: result.error.message };
-  revalidatePath('/');
   return { success: true };
 }
 
@@ -509,7 +508,6 @@ export async function deleteWhatsappAutomation(id) {
   const supabase = await createClient();
   const { error } = await supabase.from('whatsapp_automations').delete().eq('id', id);
   if (error) return { success: false, error: error.message };
-  revalidatePath('/');
   return { success: true };
 }
 
