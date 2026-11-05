@@ -3520,146 +3520,17 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
 
           {/* PAGINATION NAVIGATION BAR */}
           {filteredTemplates.length > 0 && (
-            <div style={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: '1rem',
-              marginTop: '1.5rem',
-              padding: '0.85rem 1.15rem',
-              backgroundColor: 'var(--bg-primary)',
-              borderRadius: '8px',
-              border: '1px solid var(--border-light)'
-            }}>
-              <div style={{ fontSize: '0.83rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
-                Showing <strong>{(templatePage - 1) * templatePerPage + 1}</strong> to <strong>{Math.min(templatePage * templatePerPage, filteredTemplates.length)}</strong> of <strong>{filteredTemplates.length}</strong> template(s)
-                {templateSearch && <span> (filtered from {templates.length} total)</span>}
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
-                <button
-                  type="button"
-                  onClick={() => setTemplatePage(1)}
-                  disabled={templatePage === 1}
-                  style={{
-                    padding: '0.35rem 0.65rem',
-                    borderRadius: '4px',
-                    border: '1px solid var(--border-light)',
-                    backgroundColor: 'var(--bg-surface)',
-                    color: templatePage === 1 ? 'var(--text-tertiary, #9ca3af)' : 'var(--text-primary)',
-                    cursor: templatePage === 1 ? 'not-allowed' : 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    fontSize: '0.78rem',
-                    fontWeight: 600
-                  }}
-                  title="First Page"
-                >
-                  <ChevronsLeft size={14} /> First
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setTemplatePage(prev => Math.max(1, prev - 1))}
-                  disabled={templatePage === 1}
-                  style={{
-                    padding: '0.35rem 0.65rem',
-                    borderRadius: '4px',
-                    border: '1px solid var(--border-light)',
-                    backgroundColor: 'var(--bg-surface)',
-                    color: templatePage === 1 ? 'var(--text-tertiary, #9ca3af)' : 'var(--text-primary)',
-                    cursor: templatePage === 1 ? 'not-allowed' : 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    fontSize: '0.78rem',
-                    fontWeight: 600
-                  }}
-                  title="Previous Page"
-                >
-                  <ChevronLeft size={14} /> Prev
-                </button>
-
-                {/* NUMBERED PAGE PILLS */}
-                {Array.from({ length: totalTemplatePages }, (_, i) => i + 1)
-                  .filter(p => p === 1 || p === totalTemplatePages || Math.abs(p - templatePage) <= 1)
-                  .reduce((acc, p, idx, arr) => {
-                    if (idx > 0 && p - arr[idx - 1] > 1) {
-                      acc.push('ellipsis-' + p);
-                    }
-                    acc.push(p);
-                    return acc;
-                  }, [])
-                  .map(item => {
-                    if (typeof item === 'string' && item.startsWith('ellipsis')) {
-                      return <span key={item} style={{ padding: '0 0.35rem', color: 'var(--text-secondary)' }}>...</span>;
-                    }
-                    const isCurrent = item === templatePage;
-                    return (
-                      <button
-                        key={item}
-                        type="button"
-                        onClick={() => setTemplatePage(item)}
-                        style={{
-                          minWidth: '32px',
-                          height: '32px',
-                          borderRadius: '4px',
-                          border: isCurrent ? '1px solid var(--accent-color, #2563eb)' : '1px solid var(--border-light)',
-                          backgroundColor: isCurrent ? 'var(--accent-color, #2563eb)' : 'var(--bg-surface)',
-                          color: isCurrent ? '#fff' : 'var(--text-primary)',
-                          fontWeight: isCurrent ? 700 : 500,
-                          fontSize: '0.82rem',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        {item}
-                      </button>
-                    );
-                  })}
-
-                <button
-                  type="button"
-                  onClick={() => setTemplatePage(prev => Math.min(totalTemplatePages, prev + 1))}
-                  disabled={templatePage === totalTemplatePages}
-                  style={{
-                    padding: '0.35rem 0.65rem',
-                    borderRadius: '4px',
-                    border: '1px solid var(--border-light)',
-                    backgroundColor: 'var(--bg-surface)',
-                    color: templatePage === totalTemplatePages ? 'var(--text-tertiary, #9ca3af)' : 'var(--text-primary)',
-                    cursor: templatePage === totalTemplatePages ? 'not-allowed' : 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    fontSize: '0.78rem',
-                    fontWeight: 600
-                  }}
-                  title="Next Page"
-                >
-                  Next <ChevronRight size={14} />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setTemplatePage(totalTemplatePages)}
-                  disabled={templatePage === totalTemplatePages}
-                  style={{
-                    padding: '0.35rem 0.65rem',
-                    borderRadius: '4px',
-                    border: '1px solid var(--border-light)',
-                    backgroundColor: 'var(--bg-surface)',
-                    color: templatePage === totalTemplatePages ? 'var(--text-tertiary, #9ca3af)' : 'var(--text-primary)',
-                    cursor: templatePage === totalTemplatePages ? 'not-allowed' : 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    fontSize: '0.78rem',
-                    fontWeight: 600
-                  }}
-                  title="Last Page"
-                >
-                  Last <ChevronsRight size={14} />
-                </button>
-              </div>
-            </div>
+            <StandardTablePagination
+              currentPage={templatePage}
+              totalRecords={filteredTemplates.length}
+              pageSize={templatePerPage === 'All' ? 100000 : Number(templatePerPage)}
+              onPageChange={setTemplatePage}
+              onPageSizeChange={(newSize) => {
+                setTemplatePerPage(newSize);
+                setTemplatePage(1);
+              }}
+              style={{ marginTop: '1.5rem', borderRadius: '8px' }}
+            />
           )}
         </div>
       )}

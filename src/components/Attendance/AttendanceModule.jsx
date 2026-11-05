@@ -1,6 +1,7 @@
 'use client';
 
 import MobileTableView from '@/components/common/MobileTableView';
+import StandardTablePagination from '@/components/common/StandardTablePagination';
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   Clock, Calendar, CheckCircle2, XCircle, AlertCircle, RefreshCw, Send,
@@ -205,7 +206,15 @@ export function LeaveApplicationsTable({ records = [], loading = false, error = 
   teamView = false, scope = '', filterKey = '', processing = false, onDecision }) {
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('ALL');
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const s = JSON.parse(localStorage.getItem('crmPageNavSettings') || '{}');
+        if (s.defaultPageSize) return s.defaultPageSize === 'All' ? 100000 : parseInt(s.defaultPageSize, 10) || 25;
+      } catch (e) {}
+    }
+    return 25;
+  });
   const [pageState, setPageState] = useState({ key: '', page: 1 });
   const { colWidths, resizingCol, handleResizeStart, resetColWidth } = useTableColumnResize(
     teamView ? 'hod_leave_application_columns_v1' : 'my_leave_application_columns_v1', LEAVE_TABLE_WIDTHS, LEAVE_TABLE_MIN_WIDTHS
@@ -266,17 +275,17 @@ export function LeaveApplicationsTable({ records = [], loading = false, error = 
         </table>
       </MobileTableView>
     </div>
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', marginTop: '1rem', fontSize: '0.8rem' }}>
-      <span>Showing <strong>{from}</strong> to <strong>{to}</strong> of <strong>{filtered.length}</strong> records</span>
-      <label>Rows per page <select aria-label="Rows per page" value={pageSize} onChange={event => setPageSize(Number(event.target.value))}>{[10, 25, 50, 100].map(size => <option key={size} value={size}>{size}</option>)}</select></label>
-      <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
-        <button type="button" className="btn-action-secondary" aria-label="First Page" disabled={page === 1} onClick={() => setPage(1)}><ChevronsLeft size={16} /></button>
-        <button type="button" className="btn-action-secondary" aria-label="Previous Page" disabled={page === 1} onClick={() => setPage(page - 1)}><ChevronLeft size={16} /></button>
-        <span>Page {page} of {totalPages}</span>
-        <button type="button" className="btn-action-secondary" aria-label="Next Page" disabled={page === totalPages} onClick={() => setPage(page + 1)}><ChevronRight size={16} /></button>
-        <button type="button" className="btn-action-secondary" aria-label="Last Page" disabled={page === totalPages} onClick={() => setPage(totalPages)}><ChevronsRight size={16} /></button>
-      </div>
-    </div>
+    <StandardTablePagination
+      currentPage={page}
+      totalRecords={filtered.length}
+      pageSize={pageSize === 'All' ? 100000 : Number(pageSize)}
+      onPageChange={setPage}
+      onPageSizeChange={(newSize) => {
+        setPageSize(newSize);
+        setPage(1);
+      }}
+      style={{ marginTop: '1rem', borderRadius: '10px' }}
+    />
   </div>;
 }
 

@@ -1,12 +1,21 @@
 'use client';
 import React,{useEffect,useMemo,useRef,useState} from 'react';
-import {ChevronsLeft,ChevronLeft,ChevronRight,ChevronsRight} from 'lucide-react';
 import {useTableColumnResize,ColumnResizer} from '@/utils/tableColumnResize';
+import StandardTablePagination from '@/components/common/StandardTablePagination';
 import {Button,Notice,inputStyle} from './MappingEditor';
 
 const sticky={position:'sticky',top:0,zIndex:10,backgroundColor:'var(--bg-surface)',boxShadow:'inset 0 -1px 0 var(--border-light)'};
 export default function IntegrationTable({columns,resource,type,loadRows,refreshKey,scopeKey,statuses=[],dateFilters=false}) {
-  const [query,setQuery]=useState({currentPage:1,pageSize:25,search:'',status:'',fromDate:'',toDate:''});
+  const [query,setQuery]=useState(()=>{
+    let initialSize = 25;
+    if (typeof window !== 'undefined') {
+      try {
+        const s = JSON.parse(localStorage.getItem('crmPageNavSettings') || '{}');
+        if (s.defaultPageSize) initialSize = s.defaultPageSize === 'All' ? 100000 : parseInt(s.defaultPageSize, 10) || 25;
+      } catch (e) {}
+    }
+    return {currentPage:1,pageSize:initialSize,search:'',status:'',fromDate:'',toDate:''};
+  });
   const [search,setSearch]=useState(''),[data,setData]=useState({rows:[],total:0,loading:true,error:''});
   const timer=useRef();
   const widths=useMemo(()=>Object.fromEntries(columns.map(column=>[column.key,column.width || 180])),[columns]);
@@ -40,16 +49,12 @@ export default function IntegrationTable({columns,resource,type,loadRows,refresh
         <tbody>{data.loading?<tr><td colSpan={columns.length} style={{padding:'2rem'}}>Loading records…</td></tr>:data.rows.length?data.rows.map(row=><tr key={row.code}>{columns.map(column=><td key={column.key} style={{padding:'0.8rem',borderBottom:'1px solid var(--border-light)',verticalAlign:'top',overflowWrap:'anywhere'}}>{column.render?column.render(row):String(row[column.key] ?? '—')}</td>)}</tr>):<tr><td colSpan={columns.length} style={{padding:'3rem',textAlign:'center',color:'var(--text-secondary)'}}>No records in this scope.</td></tr>}</tbody>
       </table>
     </div>
-    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,flexWrap:'wrap',padding:'0.85rem 0',fontSize:'0.82rem'}}>
-      <span>Showing <strong>{from}</strong> to <strong>{to}</strong> of <strong>{data.total}</strong> records</span>
-      <label>Rows per page <select aria-label="Rows per page" value={query.pageSize} onChange={event=>update({pageSize:Number(event.target.value)})} style={{...inputStyle,width:80,display:'inline-block'}}>{[10,25,50,100].map(size=><option key={size}>{size}</option>)}</select></label>
-      <div style={{display:'flex',alignItems:'center',gap:5}}>
-        <Button secondary aria-label="First page" disabled={data.loading||query.currentPage===1} onClick={()=>setQuery(previous=>({...previous,currentPage:1}))}><ChevronsLeft size={16}/></Button>
-        <Button secondary aria-label="Previous page" disabled={data.loading||query.currentPage===1} onClick={()=>setQuery(previous=>({...previous,currentPage:previous.currentPage-1}))}><ChevronLeft size={16}/></Button>
-        <Button secondary disabled aria-current="page">Page {query.currentPage} of {pages}</Button>
-        <Button secondary aria-label="Next page" disabled={data.loading||query.currentPage>=pages} onClick={()=>setQuery(previous=>({...previous,currentPage:previous.currentPage+1}))}><ChevronRight size={16}/></Button>
-        <Button secondary aria-label="Last page" disabled={data.loading||query.currentPage>=pages} onClick={()=>setQuery(previous=>({...previous,currentPage:pages}))}><ChevronsRight size={16}/></Button>
-      </div>
-    </div>
+    <StandardTablePagination
+      currentPage={query.currentPage}
+      totalRecords={data.total}
+      pageSize={query.pageSize}
+      onPageChange={page => setQuery(prev => ({ ...prev, currentPage: page }))}
+      onPageSizeChange={size => update({ pageSize: size === 'All' ? 100000 : Number(size) })}
+    />
   </div>;
 }

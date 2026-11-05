@@ -22,6 +22,7 @@ import { getTeamMembers } from '@/app/actions/team';
 import MaskedPhoneDisplay from '../common/MaskedPhoneDisplay';
 import DateRangePicker from '../common/DateRangePicker';
 import SearchablePartySelect from '../common/SearchablePartySelect';
+import StandardTablePagination from '../common/StandardTablePagination';
 import ComplaintStageActionModal from './modals/ComplaintStageActionModal';
 import ComplaintStageHistoryModal from './modals/ComplaintStageHistoryModal';
 import RegisterEndCustomerModal from './modals/RegisterEndCustomerModal';
@@ -98,7 +99,15 @@ export default function ComplaintManagementModule({
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const s = JSON.parse(localStorage.getItem('crmPageNavSettings') || '{}');
+        if (s.defaultPageSize) return s.defaultPageSize === 'All' ? 100000 : parseInt(s.defaultPageSize, 10) || 25;
+      } catch (e) {}
+    }
+    return 25;
+  });
 
   // Dynamic Pipeline Config & Team
   const [stages, setStages] = useState(DEFAULT_STAGES);
@@ -999,22 +1008,17 @@ export default function ComplaintManagementModule({
             </table>
           </div>
 
-          {/* Complaint pagination uses the standard record range and first/previous/next/last controls. */}
-          <div aria-label="Complaint pagination" style={{ padding: '0.75rem 1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', borderTop: '1px solid var(--border-light)', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-            <span>Showing <strong>{filteredTickets.length ? (displayPage - 1) * pageSize + 1 : 0}</strong> to <strong>{Math.min(displayPage * pageSize, filteredTickets.length)}</strong> of <strong>{filteredTickets.length}</strong> records</span>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>Rows per page
-              <select aria-label="Complaint rows per page" value={pageSize} onChange={e => updateFilter(setPageSize, Number(e.target.value))} style={{ padding: '0.35rem', border: '1px solid var(--border-light)', borderRadius: '5px', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
-                {[10, 25, 50, 100].map(size => <option key={size} value={size}>{size}</option>)}
-              </select>
-            </label>
-            <nav aria-label="Complaint page navigation" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              <button type="button" aria-label="First complaint page" title="First Page" disabled={displayPage === 1} onClick={() => setCurrentPage(1)} style={{ padding: '0.3rem', display: 'flex', border: '1px solid var(--border-light)', borderRadius: '5px', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}><ChevronsLeft size={16} /></button>
-              <button type="button" aria-label="Previous complaint page" title="Previous Page" disabled={displayPage === 1} onClick={() => setCurrentPage(displayPage - 1)} style={{ padding: '0.3rem', display: 'flex', border: '1px solid var(--border-light)', borderRadius: '5px', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}><ChevronLeft size={16} /></button>
-              <span aria-live="polite">Page {displayPage} of {totalPages}</span>
-              <button type="button" aria-label="Next complaint page" title="Next Page" disabled={displayPage === totalPages} onClick={() => setCurrentPage(displayPage + 1)} style={{ padding: '0.3rem', display: 'flex', border: '1px solid var(--border-light)', borderRadius: '5px', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}><ChevronRight size={16} /></button>
-              <button type="button" aria-label="Last complaint page" title="Last Page" disabled={displayPage === totalPages} onClick={() => setCurrentPage(totalPages)} style={{ padding: '0.3rem', display: 'flex', border: '1px solid var(--border-light)', borderRadius: '5px', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}><ChevronsRight size={16} /></button>
-            </nav>
-          </div>
+          {/* Standard Bottom Page Navigation */}
+          <StandardTablePagination
+            currentPage={displayPage}
+            totalRecords={filteredTickets.length}
+            pageSize={pageSize === 'All' ? 100000 : Number(pageSize)}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={(newSize) => {
+              setPageSize(newSize);
+              setCurrentPage(1);
+            }}
+          />
         </div>
       )}
 

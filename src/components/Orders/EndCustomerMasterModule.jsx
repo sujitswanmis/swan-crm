@@ -14,6 +14,7 @@ import { getStatesCentral } from '@/app/actions/centralLocationMaster';
 import RegisterEndCustomerModal from './modals/RegisterEndCustomerModal';
 import useTableColumnResize, { ColumnResizer } from '@/utils/tableColumnResize';
 import MaskedPhoneDisplay from '@/components/common/MaskedPhoneDisplay';
+import StandardTablePagination from '@/components/common/StandardTablePagination';
 import ImportEndCustomersModal from './modals/ImportEndCustomersModal';
 import { downloadEndCustomerFile, exportEndCustomerRows } from '@/utils/endCustomerTransfer';
 
@@ -82,7 +83,15 @@ export default function EndCustomerMasterModule({
 
   // Pagination state (Standard Table Pagination Rule)
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const s = JSON.parse(localStorage.getItem('crmPageNavSettings') || '{}');
+        if (s.defaultPageSize) return s.defaultPageSize === 'All' ? 100000 : parseInt(s.defaultPageSize, 10) || 25;
+      } catch (e) {}
+    }
+    return 25;
+  });
 
   // Modals state
   const [showRegisterModal, setShowRegisterModal] = useState(false);
@@ -781,141 +790,15 @@ export default function EndCustomerMasterModule({
           </table>
         </div>
 
-        {/* Unified Standard Bottom Page Navigation (Standard Pagination Rule) */}
-        <div style={{
-          padding: '0.75rem 1.25rem',
-          borderTop: '1px solid var(--border-light)',
-          background: 'var(--bg-surface)',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: '0.75rem',
-          fontSize: '0.82rem'
-        }}>
-          {/* Record Counter */}
-          <div style={{ color: 'var(--text-secondary)' }}>
-            Showing <strong>{fromRecord}</strong> to <strong>{toRecord}</strong> of <strong>{totalRecords}</strong> records
-          </div>
-
-          {/* Controls: Rows per page + 5-button nav */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-            {/* Rows Per Page Dropdown */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>Rows per page:</span>
-              <select
-                value={pageSize}
-                onChange={e => setPageSize(Number(e.target.value))}
-                style={{
-                  padding: '0.3rem 0.5rem',
-                  background: 'var(--bg-primary)',
-                  border: '1px solid var(--border-light)',
-                  borderRadius: '6px',
-                  color: 'var(--text-primary)',
-                  fontSize: '0.8rem',
-                  cursor: 'pointer'
-                }}
-              >
-                {[10, 25, 50, 100].map(sz => (
-                  <option key={sz} value={sz}>{sz}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* 5-Button Navigation Controls */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-              {/* First Page */}
-              <button
-                type="button"
-                onClick={() => setCurrentPage(1)}
-                disabled={currentPage <= 1}
-                title="First Page"
-                style={{
-                  padding: '0.35rem 0.5rem',
-                  background: 'var(--bg-primary)',
-                  border: '1px solid var(--border-light)',
-                  borderRadius: '6px',
-                  color: currentPage <= 1 ? 'var(--text-muted, #94a3b8)' : 'var(--text-primary)',
-                  cursor: currentPage <= 1 ? 'not-allowed' : 'pointer',
-                  display: 'flex',
-                  alignItems: 'center'
-                }}
-              >
-                <ChevronsLeft size={14} />
-              </button>
-
-              {/* Previous Page */}
-              <button
-                type="button"
-                onClick={() => setCurrentPage(p => Math.max(p - 1, 1))}
-                disabled={currentPage <= 1}
-                title="Previous Page"
-                style={{
-                  padding: '0.35rem 0.5rem',
-                  background: 'var(--bg-primary)',
-                  border: '1px solid var(--border-light)',
-                  borderRadius: '6px',
-                  color: currentPage <= 1 ? 'var(--text-muted, #94a3b8)' : 'var(--text-primary)',
-                  cursor: currentPage <= 1 ? 'not-allowed' : 'pointer',
-                  display: 'flex',
-                  alignItems: 'center'
-                }}
-              >
-                <ChevronLeft size={14} />
-              </button>
-
-              {/* Current Page Indicator */}
-              <span style={{
-                padding: '0.35rem 0.75rem',
-                fontSize: '0.8rem',
-                fontWeight: 700,
-                color: 'var(--text-primary)'
-              }}>
-                Page {currentPage} of {totalPages}
-              </span>
-
-              {/* Next Page */}
-              <button
-                type="button"
-                onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))}
-                disabled={currentPage >= totalPages}
-                title="Next Page"
-                style={{
-                  padding: '0.35rem 0.5rem',
-                  background: 'var(--bg-primary)',
-                  border: '1px solid var(--border-light)',
-                  borderRadius: '6px',
-                  color: currentPage >= totalPages ? 'var(--text-muted, #94a3b8)' : 'var(--text-primary)',
-                  cursor: currentPage >= totalPages ? 'not-allowed' : 'pointer',
-                  display: 'flex',
-                  alignItems: 'center'
-                }}
-              >
-                <ChevronRight size={14} />
-              </button>
-
-              {/* Last Page */}
-              <button
-                type="button"
-                onClick={() => setCurrentPage(totalPages)}
-                disabled={currentPage >= totalPages}
-                title="Last Page"
-                style={{
-                  padding: '0.35rem 0.5rem',
-                  background: 'var(--bg-primary)',
-                  border: '1px solid var(--border-light)',
-                  borderRadius: '6px',
-                  color: currentPage >= totalPages ? 'var(--text-muted, #94a3b8)' : 'var(--text-primary)',
-                  cursor: currentPage >= totalPages ? 'not-allowed' : 'pointer',
-                  display: 'flex',
-                  alignItems: 'center'
-                }}
-              >
-                <ChevronsRight size={14} />
-              </button>
-            </div>
-          </div>
-        </div>
+        {/* Unified Standard Bottom Page Navigation */}
+        <StandardTablePagination
+          currentPage={currentPage}
+          totalRecords={totalRecords}
+          pageSize={pageSize === 'All' ? 100000 : Number(pageSize)}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={setPageSize}
+          style={{ borderRadius: '0 0 10px 10px' }}
+        />
       </div>
 
       {/* Customer 360 Detail Modal */}

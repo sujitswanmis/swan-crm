@@ -9,6 +9,7 @@ import Papa from 'papaparse';
 import { bulkImportPartyMaster, checkPartyAndLeadDuplicates } from '@/app/actions/partyMaster';
 import { ALL_INDIAN_STATES, INDIAN_STATE_DISTRICTS } from '@/config/indianStateDistricts';
 import { PRODUCT_GROUPS } from '@/config/productCatalog';
+import StandardTablePagination from '@/components/common/StandardTablePagination';
 
 export default function PartyImportModal({
   isOpen,
@@ -27,7 +28,15 @@ export default function PartyImportModal({
   const [importProgress, setImportProgress] = useState(null); // { active, percentage, current, total, created, skipped, logs, complete }
   const [previewFilter, setPreviewFilter] = useState('ALL'); // 'ALL' | 'VALID' | 'ISSUES'
   const [searchQuery, setSearchQuery] = useState('');
-  const [pageSize, setPageSize] = useState(25); // 10 | 25 | 50 | 100 | 'ALL'
+  const [pageSize, setPageSize] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const s = JSON.parse(localStorage.getItem('crmPageNavSettings') || '{}');
+        if (s.defaultPageSize) return s.defaultPageSize === 'All' ? 100000 : parseInt(s.defaultPageSize, 10) || 25;
+      } catch (e) {}
+    }
+    return 25;
+  });
   const [currentPage, setCurrentPage] = useState(1);
 
   const fileInputRef = useRef(null);
@@ -1612,84 +1621,17 @@ export default function PartyImportModal({
                   </div>
 
                   {/* Pagination & Full Data Controls */}
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    flexWrap: 'wrap',
-                    gap: '0.5rem',
-                    fontSize: '0.76rem',
-                    color: 'var(--text-secondary, #94a3b8)',
-                    paddingTop: '0.2rem'
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                      <span>Rows per page:</span>
-                      <select
-                        value={pageSize}
-                        onChange={(e) => {
-                          const val = e.target.value === 'ALL' ? 'ALL' : Number(e.target.value);
-                          setPageSize(val);
-                          setCurrentPage(1);
-                        }}
-                        style={{
-                          background: 'rgba(0,0,0,0.35)',
-                          border: '1px solid var(--border-light, rgba(255,255,255,0.15))',
-                          borderRadius: '5px',
-                          color: 'var(--text-primary, #fff)',
-                          padding: '0.2rem 0.45rem',
-                          fontSize: '0.75rem',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        <option value={10}>10</option>
-                        <option value={25}>25</option>
-                        <option value={50}>50</option>
-                        <option value={100}>100</option>
-                        <option value="ALL">All ({filteredRows.length} Rows)</option>
-                      </select>
-                      <span>
-                        Showing {filteredRows.length === 0 ? 0 : pageSize === 'ALL' ? `1-${filteredRows.length}` : `${(safeCurrentPage - 1) * pageSize + 1}-${Math.min(safeCurrentPage * pageSize, filteredRows.length)}`} of {filteredRows.length} records {previewFilter !== 'ALL' ? `(${previewFilter.toLowerCase()})` : ''}
-                      </span>
-                    </div>
-
-                    {pageSize !== 'ALL' && totalPages > 1 && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                        <button
-                          type="button"
-                          disabled={safeCurrentPage <= 1}
-                          onClick={() => setCurrentPage(p => Math.max(p - 1, 1))}
-                          style={{
-                            padding: '0.25rem 0.6rem',
-                            background: 'rgba(255,255,255,0.05)',
-                            border: '1px solid var(--border-light, rgba(255,255,255,0.1))',
-                            borderRadius: '5px',
-                            color: safeCurrentPage <= 1 ? 'rgba(255,255,255,0.3)' : 'var(--text-primary, #fff)',
-                            cursor: safeCurrentPage <= 1 ? 'not-allowed' : 'pointer'
-                          }}
-                        >
-                          ◀ Prev
-                        </button>
-                        <span style={{ padding: '0 0.4rem', fontWeight: 700, color: 'var(--text-primary, #fff)' }}>
-                          Page {safeCurrentPage} of {totalPages}
-                        </span>
-                        <button
-                          type="button"
-                          disabled={safeCurrentPage >= totalPages}
-                          onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))}
-                          style={{
-                            padding: '0.25rem 0.6rem',
-                            background: 'rgba(255,255,255,0.05)',
-                            border: '1px solid var(--border-light, rgba(255,255,255,0.1))',
-                            borderRadius: '5px',
-                            color: safeCurrentPage >= totalPages ? 'rgba(255,255,255,0.3)' : 'var(--text-primary, #fff)',
-                            cursor: safeCurrentPage >= totalPages ? 'not-allowed' : 'pointer'
-                          }}
-                        >
-                          Next ▶
-                        </button>
-                      </div>
-                    )}
-                  </div>
+                  <StandardTablePagination
+                    currentPage={safeCurrentPage}
+                    totalRecords={filteredRows.length}
+                    pageSize={pageSize === 'ALL' ? 100000 : Number(pageSize)}
+                    onPageChange={setCurrentPage}
+                    onPageSizeChange={(newSize) => {
+                      setPageSize(newSize);
+                      setCurrentPage(1);
+                    }}
+                    style={{ marginTop: '0.4rem', borderRadius: '8px' }}
+                  />
                 </div>
               )}
 

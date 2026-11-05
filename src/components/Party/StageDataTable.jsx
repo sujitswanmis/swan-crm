@@ -1,6 +1,7 @@
 'use client';
 
 import MobileTableView, { TableViewToggle, useTableViewPreference } from '@/components/common/MobileTableView';
+import StandardTablePagination from '@/components/common/StandardTablePagination';
 import React, { useState, useMemo, useEffect } from 'react';
 import {
   Search, Filter, CheckCircle2, Clock, AlertCircle, ArrowRight,
@@ -122,7 +123,18 @@ export default function StageDataTable({
   const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'PENDING' | 'APPROVED'
   const [companyFilter, setCompanyFilter] = useState('ALL'); // 'ALL' | 'NSMLR' | 'NSTLP'
   const [onlyStageTier, setOnlyStageTier] = useState(Boolean(meta.filterTiers));
-  const [pageSize, setPageSize] = useState(15);
+  const [pageSize, setPageSize] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const settings = JSON.parse(localStorage.getItem('crmPageNavSettings') || '{}');
+        if (settings.defaultPageSize) {
+          if (settings.defaultPageSize === 'All') return 100000;
+          return parseInt(settings.defaultPageSize, 10) || 15;
+        }
+      } catch (e) {}
+    }
+    return 15;
+  });
   const [currentPage, setCurrentPage] = useState(1);
 
   // Reset to first page when search or filters change
@@ -224,12 +236,12 @@ export default function StageDataTable({
 
   // Pagination calculations
   const totalRecords = displayedParties.length;
-  const effectivePageSize = pageSize === 'All' ? totalRecords : Number(pageSize);
+  const effectivePageSize = (pageSize === 'All' || pageSize === 100000) ? (totalRecords || 1) : Number(pageSize);
   const totalPages = effectivePageSize > 0 ? Math.ceil(totalRecords / effectivePageSize) : 1;
   const validCurrentPage = Math.min(Math.max(1, currentPage), Math.max(1, totalPages));
 
   const paginatedParties = useMemo(() => {
-    if (pageSize === 'All') return displayedParties;
+    if (pageSize === 'All' || pageSize === 100000) return displayedParties;
     const start = (validCurrentPage - 1) * effectivePageSize;
     return displayedParties.slice(start, start + effectivePageSize);
   }, [displayedParties, validCurrentPage, effectivePageSize, pageSize]);
@@ -1234,164 +1246,15 @@ export default function StageDataTable({
         </table></MobileTableView>
       </div>
 
-      {/* Pagination Bar Matching Lead Data */}
-      <div style={{
-        padding: '0.75rem 1.25rem',
-        borderTop: '1px solid var(--border-light)',
-        backgroundColor: 'var(--bg-surface)',
-        borderRadius: '0 0 10px 10px',
-        display: 'flex',
-        flexWrap: 'wrap',
-        gap: '1rem',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        fontSize: '0.84rem',
-        color: 'var(--text-secondary)'
-      }}>
-        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.85rem' }}>
-          <span>
-            {totalRecords === 0
-              ? 'Showing 0 to 0 of 0 channel partners'
-              : `Showing ${(validCurrentPage - 1) * (pageSize === 'All' ? totalRecords : Number(pageSize)) + 1} to ${Math.min(validCurrentPage * (pageSize === 'All' ? totalRecords : Number(pageSize)), totalRecords)} of ${totalRecords} channel partners`}
-          </span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-            <span style={{ fontSize: '0.8rem' }}>Rows per page:</span>
-            <select
-              value={pageSize}
-              onChange={e => {
-                setPageSize(e.target.value === 'All' ? 'All' : Number(e.target.value));
-                setCurrentPage(1);
-              }}
-              style={{
-                padding: '0.3rem 0.55rem',
-                borderRadius: '6px',
-                border: '1px solid var(--border-light)',
-                background: 'var(--bg-primary)',
-                color: 'var(--text-primary)',
-                fontSize: '0.82rem',
-                cursor: 'pointer'
-              }}
-            >
-              {[10, 15, 20, 50, 100].map(s => (
-                <option key={s} value={s}>Show {s}</option>
-              ))}
-              <option value="All">All</option>
-            </select>
-          </div>
-        </div>
-
-        {pageSize !== 'All' && totalPages > 1 && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', alignItems: 'center' }}>
-            <button
-              type="button"
-              onClick={() => setCurrentPage(1)}
-              disabled={validCurrentPage <= 1}
-              title="First Page"
-              style={{
-                padding: '0.3rem 0.6rem',
-                border: '1px solid var(--border-light)',
-                background: 'var(--bg-surface)',
-                color: 'var(--text-primary)',
-                borderRadius: '5px',
-                cursor: validCurrentPage <= 1 ? 'not-allowed' : 'pointer',
-                opacity: validCurrentPage <= 1 ? 0.45 : 1,
-                fontSize: '0.78rem'
-              }}
-            >
-              « First
-            </button>
-            <button
-              type="button"
-              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-              disabled={validCurrentPage <= 1}
-              title="Previous Page"
-              style={{
-                padding: '0.3rem 0.65rem',
-                border: '1px solid var(--border-light)',
-                background: 'var(--bg-surface)',
-                color: 'var(--text-primary)',
-                borderRadius: '5px',
-                cursor: validCurrentPage <= 1 ? 'not-allowed' : 'pointer',
-                opacity: validCurrentPage <= 1 ? 0.45 : 1,
-                fontSize: '0.78rem'
-              }}
-            >
-              ‹ Prev
-            </button>
-
-            {/* Page Numbers */}
-            {(() => {
-              const pages = [];
-              let start = Math.max(1, validCurrentPage - 2);
-              let end = Math.min(totalPages, validCurrentPage + 2);
-              if (validCurrentPage <= 3) end = Math.min(5, totalPages);
-              if (validCurrentPage >= totalPages - 2) start = Math.max(1, totalPages - 4);
-
-              for (let i = start; i <= end; i++) {
-                pages.push(
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => setCurrentPage(i)}
-                    style={{
-                      minWidth: '30px',
-                      height: '30px',
-                      padding: '0 0.4rem',
-                      border: '1px solid var(--border-light)',
-                      borderRadius: '5px',
-                      background: validCurrentPage === i ? (meta.badgeColor || 'var(--accent-color, #2563eb)') : 'var(--bg-surface)',
-                      color: validCurrentPage === i ? '#ffffff' : 'var(--text-primary)',
-                      fontWeight: validCurrentPage === i ? 700 : 500,
-                      cursor: 'pointer',
-                      fontSize: '0.78rem'
-                    }}
-                  >
-                    {i}
-                  </button>
-                );
-              }
-              return pages;
-            })()}
-
-            <button
-              type="button"
-              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-              disabled={validCurrentPage >= totalPages}
-              title="Next Page"
-              style={{
-                padding: '0.3rem 0.65rem',
-                border: '1px solid var(--border-light)',
-                background: 'var(--bg-surface)',
-                color: 'var(--text-primary)',
-                borderRadius: '5px',
-                cursor: validCurrentPage >= totalPages ? 'not-allowed' : 'pointer',
-                opacity: validCurrentPage >= totalPages ? 0.45 : 1,
-                fontSize: '0.78rem'
-              }}
-            >
-              Next ›
-            </button>
-            <button
-              type="button"
-              onClick={() => setCurrentPage(totalPages)}
-              disabled={validCurrentPage >= totalPages}
-              title="Last Page"
-              style={{
-                padding: '0.3rem 0.6rem',
-                border: '1px solid var(--border-light)',
-                background: 'var(--bg-surface)',
-                color: 'var(--text-primary)',
-                borderRadius: '5px',
-                cursor: validCurrentPage >= totalPages ? 'not-allowed' : 'pointer',
-                opacity: validCurrentPage >= totalPages ? 0.45 : 1,
-                fontSize: '0.78rem'
-              }}
-            >
-              Last »
-            </button>
-          </div>
-        )}
-      </div>
+      {/* Unified Standard Bottom Page Navigation */}
+      <StandardTablePagination
+        currentPage={validCurrentPage}
+        totalRecords={totalRecords}
+        pageSize={pageSize === 'All' ? 100000 : Number(pageSize)}
+        onPageChange={setCurrentPage}
+        onPageSizeChange={setPageSize}
+        style={{ borderRadius: '0 0 10px 10px' }}
+      />
 
       {/* Bulk Import Modal */}
       {showImportModal && (

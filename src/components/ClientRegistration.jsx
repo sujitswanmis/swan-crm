@@ -1,6 +1,7 @@
 'use client';
 
 import MobileTableView from '@/components/common/MobileTableView';
+import StandardTablePagination from '@/components/common/StandardTablePagination';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { ChevronDown, ChevronUp, Save, Briefcase, MapPin, User, FileText, CheckCircle2, Upload, Download, X, AlertTriangle, AlertCircle, Search, ChevronLeft, ChevronRight, Filter, UserPlus, Edit3, Trash2, Clock } from 'lucide-react';
@@ -623,7 +624,15 @@ export default function ClientRegistration({
   const [allMappedData, setAllMappedData] = useState([]);
   const [previewFilterTab, setPreviewFilterTab] = useState('all'); // 'all' | 'clean' | 'potentialMatches' | 'blocked'
   const [previewPage, setPreviewPage] = useState(1);
-  const [previewPageSize, setPreviewPageSize] = useState(25);
+  const [previewPageSize, setPreviewPageSize] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const s = JSON.parse(localStorage.getItem('crmPageNavSettings') || '{}');
+        if (s.defaultPageSize) return s.defaultPageSize === 'All' ? 100000 : parseInt(s.defaultPageSize, 10) || 25;
+      } catch (e) {}
+    }
+    return 25;
+  });
   const [previewSearch, setPreviewSearch] = useState('');
 
   // 100% Clean leads (0% similarity match score, completely fresh)
@@ -767,7 +776,15 @@ export default function ClientRegistration({
   const [draftViewFilter, setDraftViewFilter] = useState('all'); // 'all' | 'my'
   const [draftUserFilter, setDraftUserFilter] = useState('all');
   const [draftPage, setDraftPage] = useState(1);
-  const [draftPageSize, setDraftPageSize] = useState(25);
+  const [draftPageSize, setDraftPageSize] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const s = JSON.parse(localStorage.getItem('crmPageNavSettings') || '{}');
+        if (s.defaultPageSize) return s.defaultPageSize === 'All' ? 100000 : parseInt(s.defaultPageSize, 10) || 25;
+      } catch (e) {}
+    }
+    return 25;
+  });
 
   useEffect(() => {
     async function resolveActor() {
@@ -2781,65 +2798,17 @@ export default function ClientRegistration({
                 </div>
 
                 {/* Standard Unified Pagination Bar */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.6rem 0.5rem', flexWrap: 'wrap', gap: '0.75rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                  <div>
-                    Showing <strong>{filteredDraftsList.length === 0 ? 0 : (draftPage - 1) * draftPageSize + 1}</strong> to <strong>{Math.min(draftPage * draftPageSize, filteredDraftsList.length)}</strong> of <strong>{filteredDraftsList.length}</strong> drafts
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                      <span>Rows:</span>
-                      <select
-                        value={draftPageSize}
-                        onChange={(e) => { setDraftPageSize(Number(e.target.value)); setDraftPage(1); }}
-                        style={{ padding: '0.25rem 0.5rem', borderRadius: '6px', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', fontSize: '0.82rem' }}
-                      >
-                        <option value={10}>10</option>
-                        <option value={25}>25</option>
-                        <option value={50}>50</option>
-                        <option value={100}>100</option>
-                      </select>
-                    </div>
-
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                      <button
-                        type="button"
-                        disabled={draftPage <= 1}
-                        onClick={() => setDraftPage(1)}
-                        style={{ padding: '0.25rem 0.5rem', borderRadius: '4px', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', cursor: draftPage <= 1 ? 'not-allowed' : 'pointer', opacity: draftPage <= 1 ? 0.4 : 1 }}
-                      >
-                        «
-                      </button>
-                      <button
-                        type="button"
-                        disabled={draftPage <= 1}
-                        onClick={() => setDraftPage(p => Math.max(1, p - 1))}
-                        style={{ padding: '0.25rem 0.5rem', borderRadius: '4px', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', cursor: draftPage <= 1 ? 'not-allowed' : 'pointer', opacity: draftPage <= 1 ? 0.4 : 1 }}
-                      >
-                        ‹
-                      </button>
-                      <span style={{ fontWeight: 600, padding: '0 0.35rem' }}>
-                        Page {draftPage} of {totalDraftPages}
-                      </span>
-                      <button
-                        type="button"
-                        disabled={draftPage >= totalDraftPages}
-                        onClick={() => setDraftPage(p => Math.min(totalDraftPages, p + 1))}
-                        style={{ padding: '0.25rem 0.5rem', borderRadius: '4px', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', cursor: draftPage >= totalDraftPages ? 'not-allowed' : 'pointer', opacity: draftPage >= totalDraftPages ? 0.4 : 1 }}
-                      >
-                        ›
-                      </button>
-                      <button
-                        type="button"
-                        disabled={draftPage >= totalDraftPages}
-                        onClick={() => setDraftPage(totalDraftPages)}
-                        style={{ padding: '0.25rem 0.5rem', borderRadius: '4px', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', cursor: draftPage >= totalDraftPages ? 'not-allowed' : 'pointer', opacity: draftPage >= totalDraftPages ? 0.4 : 1 }}
-                      >
-                        »
-                      </button>
-                    </div>
-                  </div>
-                </div>
+                <StandardTablePagination
+                  currentPage={draftPage}
+                  totalRecords={filteredDraftsList.length}
+                  pageSize={draftPageSize === 'All' ? 100000 : Number(draftPageSize)}
+                  onPageChange={setDraftPage}
+                  onPageSizeChange={(newSize) => {
+                    setDraftPageSize(newSize);
+                    setDraftPage(1);
+                  }}
+                  style={{ borderRadius: '0 0 10px 10px' }}
+                />
               </div>
             )}
           </div>
@@ -3891,78 +3860,19 @@ export default function ClientRegistration({
                     )}
                   </div>
 
-                  {/* Pagination Controls Bar */}
+                  {/* Standard Table Pagination */}
                   {searchedPreviewList.length > 0 && previewPageSize > 0 && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.4rem 0.5rem', fontSize: '0.78rem', color: 'var(--text-secondary)', flexWrap: 'wrap', gap: '0.5rem' }}>
-                      <div>
-                        Showing <strong>{(previewPage - 1) * previewPageSize + 1}</strong> to <strong>{Math.min(previewPage * previewPageSize, searchedPreviewList.length)}</strong> of <strong>{searchedPreviewList.length}</strong> rows
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                        <button
-                          type="button"
-                          disabled={previewPage <= 1}
-                          onClick={() => setPreviewPage(1)}
-                          style={{
-                            padding: '0.25rem 0.55rem',
-                            borderRadius: '4px',
-                            border: '1px solid var(--border-light)',
-                            background: 'var(--bg-surface)',
-                            cursor: previewPage <= 1 ? 'not-allowed' : 'pointer',
-                            opacity: previewPage <= 1 ? 0.5 : 1
-                          }}
-                        >
-                          « First
-                        </button>
-                        <button
-                          type="button"
-                          disabled={previewPage <= 1}
-                          onClick={() => setPreviewPage(prev => Math.max(1, prev - 1))}
-                          style={{
-                            padding: '0.25rem 0.55rem',
-                            borderRadius: '4px',
-                            border: '1px solid var(--border-light)',
-                            background: 'var(--bg-surface)',
-                            cursor: previewPage <= 1 ? 'not-allowed' : 'pointer',
-                            opacity: previewPage <= 1 ? 0.5 : 1
-                          }}
-                        >
-                          ‹ Prev
-                        </button>
-                        <span style={{ fontWeight: 600, padding: '0 0.35rem' }}>
-                          Page {previewPage} of {totalPreviewPages}
-                        </span>
-                        <button
-                          type="button"
-                          disabled={previewPage >= totalPreviewPages}
-                          onClick={() => setPreviewPage(prev => Math.min(totalPreviewPages, prev + 1))}
-                          style={{
-                            padding: '0.25rem 0.55rem',
-                            borderRadius: '4px',
-                            border: '1px solid var(--border-light)',
-                            background: 'var(--bg-surface)',
-                            cursor: previewPage >= totalPreviewPages ? 'not-allowed' : 'pointer',
-                            opacity: previewPage >= totalPreviewPages ? 0.5 : 1
-                          }}
-                        >
-                          Next ›
-                        </button>
-                        <button
-                          type="button"
-                          disabled={previewPage >= totalPreviewPages}
-                          onClick={() => setPreviewPage(totalPreviewPages)}
-                          style={{
-                            padding: '0.25rem 0.55rem',
-                            borderRadius: '4px',
-                            border: '1px solid var(--border-light)',
-                            background: 'var(--bg-surface)',
-                            cursor: previewPage >= totalPreviewPages ? 'not-allowed' : 'pointer',
-                            opacity: previewPage >= totalPreviewPages ? 0.5 : 1
-                          }}
-                        >
-                          Last »
-                        </button>
-                      </div>
-                    </div>
+                    <StandardTablePagination
+                      currentPage={previewPage}
+                      totalRecords={searchedPreviewList.length}
+                      pageSize={previewPageSize === 'All' ? 100000 : Number(previewPageSize)}
+                      onPageChange={setPreviewPage}
+                      onPageSizeChange={(newSize) => {
+                        setPreviewPageSize(newSize);
+                        setPreviewPage(1);
+                      }}
+                      style={{ padding: '0.4rem 0.5rem', borderRadius: '0 0 8px 8px' }}
+                    />
                   )}
                 </div>
               )}

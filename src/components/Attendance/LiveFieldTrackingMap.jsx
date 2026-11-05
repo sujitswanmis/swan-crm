@@ -15,6 +15,7 @@ import {
 } from '@/app/actions/liveTracking';
 import { getTeamMembers } from '@/app/actions/team';
 import useTableColumnResize, { ColumnResizer } from '@/utils/tableColumnResize';
+import StandardTablePagination from '@/components/common/StandardTablePagination';
 
 const DEFAULT_VOUCHER_WIDTHS = {
   employee: 200,
@@ -60,7 +61,15 @@ export default function LiveFieldTrackingMap({ company = 'TNT00001', branchCode 
   const [loadingVouchers, setLoadingVouchers] = useState(false);
   const [voucherSearch, setVoucherSearch] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const [rowsPerPage, setRowsPerPage] = useState(25);
+  const [rowsPerPage, setRowsPerPage] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const s = JSON.parse(localStorage.getItem('crmPageNavSettings') || '{}');
+        if (s.defaultPageSize) return s.defaultPageSize === 'All' ? 100000 : parseInt(s.defaultPageSize, 10) || 25;
+      } catch (e) {}
+    }
+    return 25;
+  });
 
   const { colWidths, resizingCol, handleResizeStart, resetColumnWidth } = useTableColumnResize(
     'live_conveyance_vouchers_table',
@@ -994,40 +1003,17 @@ export default function LiveFieldTrackingMap({ company = 'TNT00001', branchCode 
             </div>
 
             {/* Standard Unified Bottom Navigation Bar */}
-            <div style={{
-              padding: '10px 16px',
-              borderTop: '1px solid #e2e8f0',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              fontSize: 12,
-              color: '#64748b'
-            }}>
-              <div>
-                Showing <strong>{totalRecords === 0 ? 0 : (currentPage - 1) * rowsPerPage + 1}</strong> to <strong>{Math.min(currentPage * rowsPerPage, totalRecords)}</strong> of <strong>{totalRecords}</strong> records
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span>Rows per page:</span>
-                  <select
-                    value={rowsPerPage}
-                    onChange={(e) => { setRowsPerPage(Number(e.target.value)); setCurrentPage(1); }}
-                    style={{ padding: '2px 6px', borderRadius: 4, border: '1px solid #cbd5e1', fontSize: 12 }}
-                  >
-                    {[10, 25, 50, 100].map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                </div>
-
-                <div style={{ display: 'flex', gap: 4 }}>
-                  <button onClick={() => setCurrentPage(1)} disabled={currentPage === 1} style={{ padding: '4px 8px', border: '1px solid #cbd5e1', background: '#fff', borderRadius: 4, cursor: currentPage === 1 ? 'default' : 'pointer' }}>&lt;&lt;</button>
-                  <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} style={{ padding: '4px 8px', border: '1px solid #cbd5e1', background: '#fff', borderRadius: 4, cursor: currentPage === 1 ? 'default' : 'pointer' }}>&lt;</button>
-                  <span style={{ padding: '4px 8px' }}>Page {currentPage} of {totalPages}</span>
-                  <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} style={{ padding: '4px 8px', border: '1px solid #cbd5e1', background: '#fff', borderRadius: 4, cursor: currentPage === totalPages ? 'default' : 'pointer' }}>&gt;</button>
-                  <button onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages} style={{ padding: '4px 8px', border: '1px solid #cbd5e1', background: '#fff', borderRadius: 4, cursor: currentPage === totalPages ? 'default' : 'pointer' }}>&gt;&gt;</button>
-                </div>
-              </div>
-            </div>
+            <StandardTablePagination
+              currentPage={currentPage}
+              totalRecords={totalRecords}
+              pageSize={rowsPerPage === 'All' ? 100000 : Number(rowsPerPage)}
+              onPageChange={setCurrentPage}
+              onPageSizeChange={(newSize) => {
+                setRowsPerPage(newSize);
+                setCurrentPage(1);
+              }}
+              style={{ borderRadius: '0 0 10px 10px' }}
+            />
           </div>
         </div>
       )}

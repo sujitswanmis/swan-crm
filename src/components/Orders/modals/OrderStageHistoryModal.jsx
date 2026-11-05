@@ -7,6 +7,7 @@ import {
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Edit3, Ban, Package, Info
 } from 'lucide-react';
 import { useTableColumnResize, ColumnResizer } from '@/utils/tableColumnResize';
+import StandardTablePagination from '@/components/common/StandardTablePagination';
 
 // Format ISO date string to readable Indian Standard Time (+05:30)
 function formatIST(isoDate) {
@@ -78,9 +79,17 @@ export default function OrderStageHistoryModal({
   // View state: 'TABLE' (default) or 'TIMELINE'
   const [activeView, setActiveView] = useState('TABLE');
 
-  // Pagination state (default 25 so all stages fit on 1-2 pages)
+  // Pagination state (Standard Table Pagination Rule)
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const s = JSON.parse(localStorage.getItem('crmPageNavSettings') || '{}');
+        if (s.defaultPageSize) return s.defaultPageSize === 'All' ? 100000 : parseInt(s.defaultPageSize, 10) || 25;
+      } catch (e) {}
+    }
+    return 25;
+  });
 
   const history = Array.isArray(order.stage_history) ? order.stage_history : [];
 
@@ -878,129 +887,14 @@ export default function OrderStageHistoryModal({
               </div>
 
               {/* Standard Table Pagination Footer (CRM Unified Standard) */}
-              <div style={{
-                padding: '0.75rem 1.25rem',
-                borderTop: '1px solid var(--border-light)',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                flexWrap: 'wrap',
-                gap: '0.75rem',
-                background: 'var(--bg-surface)'
-              }}>
-                {/* Record Counter */}
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                  Showing <strong>{fromRecord}</strong> to <strong>{toRecord}</strong> of <strong>{totalRecords}</strong> records
-                </div>
-
-                {/* Rows per page selector and 5-Button Controls */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                    <span>Rows per page:</span>
-                    <select
-                      value={pageSize}
-                      onChange={(e) => handlePageSizeChange(e.target.value)}
-                      style={{
-                        padding: '0.25rem 0.5rem',
-                        borderRadius: '6px',
-                        border: '1px solid var(--border-light)',
-                        background: 'var(--bg-primary)',
-                        color: 'var(--text-primary)',
-                        fontSize: '0.78rem',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      <option value={10}>10</option>
-                      <option value={25}>25</option>
-                      <option value={50}>50</option>
-                      <option value={100}>100</option>
-                    </select>
-                  </div>
-
-                  {/* Standard 5-Button Navigation Controls */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                    <button
-                      type="button"
-                      disabled={safeCurrentPage <= 1}
-                      onClick={() => handlePageChange(1)}
-                      style={{
-                        padding: '0.3rem 0.5rem',
-                        borderRadius: '6px',
-                        border: '1px solid var(--border-light)',
-                        background: safeCurrentPage <= 1 ? 'var(--bg-primary)' : 'var(--bg-surface)',
-                        color: safeCurrentPage <= 1 ? 'var(--text-muted, #94a3b8)' : 'var(--text-primary)',
-                        cursor: safeCurrentPage <= 1 ? 'not-allowed' : 'pointer',
-                        display: 'flex',
-                        alignItems: 'center'
-                      }}
-                      title="First Page"
-                    >
-                      <ChevronsLeft size={14} />
-                    </button>
-
-                    <button
-                      type="button"
-                      disabled={safeCurrentPage <= 1}
-                      onClick={() => handlePageChange(safeCurrentPage - 1)}
-                      style={{
-                        padding: '0.3rem 0.5rem',
-                        borderRadius: '6px',
-                        border: '1px solid var(--border-light)',
-                        background: safeCurrentPage <= 1 ? 'var(--bg-primary)' : 'var(--bg-surface)',
-                        color: safeCurrentPage <= 1 ? 'var(--text-muted, #94a3b8)' : 'var(--text-primary)',
-                        cursor: safeCurrentPage <= 1 ? 'not-allowed' : 'pointer',
-                        display: 'flex',
-                        alignItems: 'center'
-                      }}
-                      title="Previous Page"
-                    >
-                      <ChevronLeft size={14} />
-                    </button>
-
-                    <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)', padding: '0 0.35rem' }}>
-                      Page {safeCurrentPage} of {totalPages}
-                    </span>
-
-                    <button
-                      type="button"
-                      disabled={safeCurrentPage >= totalPages}
-                      onClick={() => handlePageChange(safeCurrentPage + 1)}
-                      style={{
-                        padding: '0.3rem 0.5rem',
-                        borderRadius: '6px',
-                        border: '1px solid var(--border-light)',
-                        background: safeCurrentPage >= totalPages ? 'var(--bg-primary)' : 'var(--bg-surface)',
-                        color: safeCurrentPage >= totalPages ? 'var(--text-muted, #94a3b8)' : 'var(--text-primary)',
-                        cursor: safeCurrentPage >= totalPages ? 'not-allowed' : 'pointer',
-                        display: 'flex',
-                        alignItems: 'center'
-                      }}
-                      title="Next Page"
-                    >
-                      <ChevronRight size={14} />
-                    </button>
-
-                    <button
-                      type="button"
-                      disabled={safeCurrentPage >= totalPages}
-                      onClick={() => handlePageChange(totalPages)}
-                      style={{
-                        padding: '0.3rem 0.5rem',
-                        borderRadius: '6px',
-                        border: '1px solid var(--border-light)',
-                        background: safeCurrentPage >= totalPages ? 'var(--bg-primary)' : 'var(--bg-surface)',
-                        color: safeCurrentPage >= totalPages ? 'var(--text-muted, #94a3b8)' : 'var(--text-primary)',
-                        cursor: safeCurrentPage >= totalPages ? 'not-allowed' : 'pointer',
-                        display: 'flex',
-                        alignItems: 'center'
-                      }}
-                      title="Last Page"
-                    >
-                      <ChevronsRight size={14} />
-                    </button>
-                  </div>
-                </div>
-              </div>
+              <StandardTablePagination
+                currentPage={safeCurrentPage}
+                totalRecords={totalRecords}
+                pageSize={pageSize === 'All' ? 100000 : Number(pageSize)}
+                onPageChange={handlePageChange}
+                onPageSizeChange={handlePageSizeChange}
+                style={{ borderRadius: '0 0 10px 10px' }}
+              />
             </div>
           )}
 

@@ -1,6 +1,7 @@
 'use client';
 
 import MobileTableView, { TableViewToggle, useTableViewPreference } from '@/components/common/MobileTableView';
+import StandardTablePagination from '@/components/common/StandardTablePagination';
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   CheckCircle2, AlertCircle, Clock, Calendar, CheckSquare, Plus,
@@ -172,7 +173,15 @@ export default function ChecklistModule({
   const [complianceStatusFilter, setComplianceStatusFilter] = useState('ALL'); // 'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED'
   const [complianceTimingFilter, setComplianceTimingFilter] = useState('ALL'); // 'ALL' | 'ON_TIME' | 'DELAYED'
   const [compliancePage, setCompliancePage] = useState(1);
-  const [compliancePageSize, setCompliancePageSize] = useState(25);
+  const [compliancePageSize, setCompliancePageSize] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const s = JSON.parse(localStorage.getItem('crmPageNavSettings') || '{}');
+        if (s.defaultPageSize) return s.defaultPageSize === 'All' ? 100000 : parseInt(s.defaultPageSize, 10) || 25;
+      } catch (e) {}
+    }
+    return 25;
+  });
 
   const handleCompliancePresetChange = (preset) => {
     setComplianceDatePreset(preset);
@@ -4642,162 +4651,18 @@ export default function ChecklistModule({
               </table></MobileTableView>
             </div>
 
-            {/* Interactive Pagination Navigation Bar */}
-            {totalSubmissions > 0 && (
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                flexWrap: 'wrap',
-                gap: '0.75rem',
-                padding: '0.75rem 1rem',
-                background: 'var(--card-bg, #ffffff)',
-                border: '1px solid var(--border-color, #e2e8f0)',
-                borderRadius: '10px'
-              }}>
-                {/* Left: Rows Per Page & Showing Info */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', color: 'var(--text-secondary, #64748b)' }}>
-                    <span>Rows per page:</span>
-                    <select
-                      value={compliancePageSize}
-                      onChange={(e) => {
-                        setCompliancePageSize(Number(e.target.value));
-                        setCompliancePage(1);
-                      }}
-                      style={{
-                        padding: '0.25rem 0.5rem',
-                        borderRadius: '6px',
-                        border: '1px solid var(--border-color, #cbd5e1)',
-                        background: 'var(--bg-secondary, #f8fafc)',
-                        color: 'var(--text-primary, #0f172a)',
-                        fontSize: '0.85rem',
-                        fontWeight: 600,
-                        cursor: 'pointer'
-                      }}
-                    >
-                      <option value={10}>10</option>
-                      <option value={25}>25</option>
-                      <option value={50}>50</option>
-                      <option value={100}>100</option>
-                    </select>
-                  </div>
-
-                  <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary, #64748b)' }}>
-                    Showing <strong style={{ color: 'var(--text-primary, #0f172a)' }}>{startIndex + 1}</strong> to <strong style={{ color: 'var(--text-primary, #0f172a)' }}>{endIndex}</strong> of <strong style={{ color: 'var(--text-primary, #0f172a)' }}>{totalSubmissions}</strong> submissions
-                  </span>
-                </div>
-
-                {/* Right: Page Navigation Controls */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                  <button
-                    type="button"
-                    disabled={currentPage <= 1}
-                    onClick={() => setCompliancePage(1)}
-                    style={{
-                      padding: '0.3rem 0.6rem',
-                      borderRadius: '6px',
-                      border: '1px solid var(--border-color, #cbd5e1)',
-                      background: currentPage <= 1 ? '#f1f5f9' : 'var(--card-bg, #ffffff)',
-                      color: currentPage <= 1 ? '#94a3b8' : 'var(--text-primary, #1e293b)',
-                      fontSize: '0.8rem',
-                      fontWeight: 600,
-                      cursor: currentPage <= 1 ? 'not-allowed' : 'pointer'
-                    }}
-                    title="First Page"
-                  >
-                    « First
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={currentPage <= 1}
-                    onClick={() => setCompliancePage(p => Math.max(1, p - 1))}
-                    style={{
-                      padding: '0.3rem 0.65rem',
-                      borderRadius: '6px',
-                      border: '1px solid var(--border-color, #cbd5e1)',
-                      background: currentPage <= 1 ? '#f1f5f9' : 'var(--card-bg, #ffffff)',
-                      color: currentPage <= 1 ? '#94a3b8' : 'var(--text-primary, #1e293b)',
-                      fontSize: '0.8rem',
-                      fontWeight: 600,
-                      cursor: currentPage <= 1 ? 'not-allowed' : 'pointer'
-                    }}
-                  >
-                    ‹ Prev
-                  </button>
-
-                  {/* Page numbers (smart sliding window) */}
-                  {Array.from({ length: totalPages }, (_, i) => i + 1)
-                    .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1)
-                    .map((p, idx, arr) => {
-                      const prev = arr[idx - 1];
-                      const showEllipsis = prev && p - prev > 1;
-                      const isCurrent = p === currentPage;
-
-                      return (
-                        <React.Fragment key={p}>
-                          {showEllipsis && <span style={{ padding: '0 0.25rem', color: '#94a3b8' }}>...</span>}
-                          <button
-                            type="button"
-                            onClick={() => setCompliancePage(p)}
-                            style={{
-                              minWidth: '28px',
-                              height: '28px',
-                              borderRadius: '6px',
-                              border: isCurrent ? '1.5px solid #2563eb' : '1px solid var(--border-color, #cbd5e1)',
-                              background: isCurrent ? '#2563eb' : 'var(--card-bg, #ffffff)',
-                              color: isCurrent ? '#ffffff' : 'var(--text-primary, #1e293b)',
-                              fontSize: '0.8rem',
-                              fontWeight: isCurrent ? 700 : 500,
-                              cursor: 'pointer'
-                            }}
-                          >
-                            {p}
-                          </button>
-                        </React.Fragment>
-                      );
-                    })}
-
-                  <button
-                    type="button"
-                    disabled={currentPage >= totalPages}
-                    onClick={() => setCompliancePage(p => Math.min(totalPages, p + 1))}
-                    style={{
-                      padding: '0.3rem 0.65rem',
-                      borderRadius: '6px',
-                      border: '1px solid var(--border-color, #cbd5e1)',
-                      background: currentPage >= totalPages ? '#f1f5f9' : 'var(--card-bg, #ffffff)',
-                      color: currentPage >= totalPages ? '#94a3b8' : 'var(--text-primary, #1e293b)',
-                      fontSize: '0.8rem',
-                      fontWeight: 600,
-                      cursor: currentPage >= totalPages ? 'not-allowed' : 'pointer'
-                    }}
-                  >
-                    Next ›
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={currentPage >= totalPages}
-                    onClick={() => setCompliancePage(totalPages)}
-                    style={{
-                      padding: '0.3rem 0.6rem',
-                      borderRadius: '6px',
-                      border: '1px solid var(--border-color, #cbd5e1)',
-                      background: currentPage >= totalPages ? '#f1f5f9' : 'var(--card-bg, #ffffff)',
-                      color: currentPage >= totalPages ? '#94a3b8' : 'var(--text-primary, #1e293b)',
-                      fontSize: '0.8rem',
-                      fontWeight: 600,
-                      cursor: currentPage >= totalPages ? 'not-allowed' : 'pointer'
-                    }}
-                    title="Last Page"
-                  >
-                    Last »
-                  </button>
-                </div>
-              </div>
-            )}
+            {/* Standard Table Pagination */}
+            <StandardTablePagination
+              currentPage={currentPage}
+              totalRecords={totalSubmissions}
+              pageSize={compliancePageSize === 'All' ? 100000 : Number(compliancePageSize)}
+              onPageChange={setCompliancePage}
+              onPageSizeChange={(newSize) => {
+                setCompliancePageSize(newSize);
+                setCompliancePage(1);
+              }}
+              style={{ marginTop: '0.75rem', borderRadius: '10px' }}
+            />
           </div>
         );
       })()}

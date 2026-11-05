@@ -5,6 +5,7 @@ import { X, Upload, Download, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsR
 import { bulkImportEndCustomers, getEndCustomerTransferContext } from '@/app/actions/endCustomers';
 import { downloadEndCustomerFile, parseEndCustomerFile, validateEndCustomerRows, IMPORT_BATCH_SIZE, MAX_IMPORT_ROWS } from '@/utils/endCustomerTransfer';
 import useTableColumnResize, { ColumnResizer } from '@/utils/tableColumnResize';
+import StandardTablePagination from '@/components/common/StandardTablePagination';
 
 const WIDTHS = { row: 65, status: 110, name: 180, mobile: 145, dealer: 230, product: 220, messages: 320 };
 const COLUMNS = [['row', 'File Row'], ['status', 'Status'], ['name', 'Full Name'], ['mobile', 'Mobile 1'], ['dealer', 'Dealer'], ['product', 'Product Model'], ['messages', 'Validation / Result']];
@@ -23,7 +24,15 @@ export default function ImportEndCustomersModal({ format, tenantId, customers = 
   const [progress, setProgress] = useState(null);
   const [filter, setFilter] = useState('all');
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const s = JSON.parse(localStorage.getItem('crmPageNavSettings') || '{}');
+        if (s.defaultPageSize) return s.defaultPageSize === 'All' ? 100000 : parseInt(s.defaultPageSize, 10) || 25;
+      } catch (e) {}
+    }
+    return 25;
+  });
   const alive = useRef(true);
   const importInFlight = useRef(false);
   const importedCount = useRef(0);
@@ -160,17 +169,17 @@ export default function ImportEndCustomersModal({ format, tenantId, customers = 
               </tr>)}{!pageRows.length && <tr><td colSpan={COLUMNS.length} style={{ padding: '2rem', textAlign: 'center' }}>No rows match this filter.</td></tr>}</tbody>
             </table>
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', marginTop: '0.75rem', fontSize: '0.8rem' }}>
-            <span>Showing <strong>{visibleRows.length ? (currentPage - 1) * pageSize + 1 : 0}</strong> to <strong>{Math.min(currentPage * pageSize, visibleRows.length)}</strong> of <strong>{visibleRows.length}</strong> records</span>
-            <label>Rows per page: <select aria-label="Import rows per page" value={pageSize} onChange={event => { setPageSize(Number(event.target.value)); setPage(1); }}>{[10, 25, 50, 100].map(size => <option key={size}>{size}</option>)}</select></label>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-              <button type="button" aria-label="First import page" disabled={currentPage === 1} onClick={() => setPage(1)} style={buttonStyle}><ChevronsLeft size={15} /></button>
-              <button type="button" aria-label="Previous import page" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)} style={buttonStyle}><ChevronLeft size={15} /></button>
-              <span>Page {currentPage} of {totalPages}</span>
-              <button type="button" aria-label="Next import page" disabled={currentPage === totalPages} onClick={() => setPage(currentPage + 1)} style={buttonStyle}><ChevronRight size={15} /></button>
-              <button type="button" aria-label="Last import page" disabled={currentPage === totalPages} onClick={() => setPage(totalPages)} style={buttonStyle}><ChevronsRight size={15} /></button>
-            </div>
-          </div>
+          <StandardTablePagination
+            currentPage={currentPage}
+            totalRecords={visibleRows.length}
+            pageSize={pageSize === 'All' ? 100000 : Number(pageSize)}
+            onPageChange={setPage}
+            onPageSizeChange={(newSize) => {
+              setPageSize(newSize);
+              setPage(1);
+            }}
+            style={{ marginTop: '0.75rem', borderRadius: '8px' }}
+          />
         </>}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.65rem', marginTop: '1.25rem' }}>
           <button type="button" onClick={close} disabled={importing || busy} style={buttonStyle}>{importedCount.current ? 'Done' : 'Cancel'}</button>

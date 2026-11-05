@@ -1,6 +1,7 @@
 'use client';
 
 import MobileTableView, { TableViewToggle, useTableViewPreference } from '@/components/common/MobileTableView';
+import StandardTablePagination from '@/components/common/StandardTablePagination';
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import {
@@ -481,7 +482,15 @@ export default function PartyMasterModule({
   // S00 Search, Filters and Pagination states
   const [s00SearchTerm, setS00SearchTerm] = useState('');
   const [s00StatusFilter, setS00StatusFilter] = useState('ALL'); // 'ALL' | 'PENDING' | 'CONFIRMED'
-  const [s00PageSize, setS00PageSize] = useState(15);
+  const [s00PageSize, setS00PageSize] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const s = JSON.parse(localStorage.getItem('crmPageNavSettings') || '{}');
+        if (s.defaultPageSize) return s.defaultPageSize === 'All' ? 100000 : parseInt(s.defaultPageSize, 10) || 15;
+      } catch (e) {}
+    }
+    return 15;
+  });
   const [s00CurrentPage, setS00CurrentPage] = useState(1);
 
   // All Party Stage States
@@ -491,12 +500,28 @@ export default function PartyMasterModule({
   const [allStageCompanyFilter, setAllStageCompanyFilter] = useState('ALL');
   const [allStageStateFilter, setAllStageStateFilter] = useState('ALL');
   const [allStageStatusFilter, setAllStageStatusFilter] = useState('ALL');
-  const [allStagePageSize, setAllStagePageSize] = useState(15);
+  const [allStagePageSize, setAllStagePageSize] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const s = JSON.parse(localStorage.getItem('crmPageNavSettings') || '{}');
+        if (s.defaultPageSize) return s.defaultPageSize === 'All' ? 100000 : parseInt(s.defaultPageSize, 10) || 15;
+      } catch (e) {}
+    }
+    return 15;
+  });
   const [allStageCurrentPage, setAllStageCurrentPage] = useState(1);
   const [selectedAllStageIds, setSelectedAllStageIds] = useState([]);
 
   // R03 Report Row Selection, Column Visibility and Pagination states
-  const [reportPageSize, setReportPageSize] = useState(15);
+  const [reportPageSize, setReportPageSize] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const s = JSON.parse(localStorage.getItem('crmPageNavSettings') || '{}');
+        if (s.defaultPageSize) return s.defaultPageSize === 'All' ? 100000 : parseInt(s.defaultPageSize, 10) || 15;
+      } catch (e) {}
+    }
+    return 15;
+  });
   const [reportCurrentPage, setReportCurrentPage] = useState(1);
   const [selectedPartyIds, setSelectedPartyIds] = useState([]);
   const [showColumnSelector, setShowColumnSelector] = useState(false);
@@ -3024,163 +3049,15 @@ export default function PartyMasterModule({
               </tbody>
             </table></MobileTableView>
 
-            {/* Pagination Bar Matching Lead Data */}
-            <div style={{
-              padding: '0.75rem 1.25rem',
-              borderTop: '1px solid var(--border-light)',
-              backgroundColor: 'var(--bg-surface)',
-              display: 'flex',
-              flexWrap: 'wrap',
-              gap: '1rem',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              fontSize: '0.84rem',
-              color: 'var(--text-secondary)'
-            }}>
-              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.85rem' }}>
-                <span>
-                  {totalAllStageRecords === 0
-                    ? 'Showing 0 to 0 of 0 channel partners'
-                    : `Showing ${(validAllStageCurrentPage - 1) * effectiveAllStagePageSize + 1} to ${Math.min(validAllStageCurrentPage * effectiveAllStagePageSize, totalAllStageRecords)} of ${totalAllStageRecords} channel partners`}
-                </span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                  <span style={{ fontSize: '0.8rem' }}>Rows per page:</span>
-                  <select
-                    value={allStagePageSize}
-                    onChange={e => {
-                      setAllStagePageSize(e.target.value === 'All' ? 'All' : Number(e.target.value));
-                      setAllStageCurrentPage(1);
-                    }}
-                    style={{
-                      padding: '0.3rem 0.55rem',
-                      borderRadius: '6px',
-                      border: '1px solid var(--border-light)',
-                      background: 'var(--bg-primary)',
-                      color: 'var(--text-primary)',
-                      fontSize: '0.82rem',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    {[10, 15, 20, 50, 100].map(s => (
-                      <option key={s} value={s}>Show {s}</option>
-                    ))}
-                    <option value="All">All</option>
-                  </select>
-                </div>
-              </div>
-
-              {allStagePageSize !== 'All' && totalAllStagePages > 1 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', alignItems: 'center' }}>
-                  <button
-                    type="button"
-                    onClick={() => setAllStageCurrentPage(1)}
-                    disabled={validAllStageCurrentPage <= 1}
-                    title="First Page"
-                    style={{
-                      padding: '0.3rem 0.6rem',
-                      border: '1px solid var(--border-light)',
-                      background: 'var(--bg-surface)',
-                      color: 'var(--text-primary)',
-                      borderRadius: '5px',
-                      cursor: validAllStageCurrentPage <= 1 ? 'not-allowed' : 'pointer',
-                      opacity: validAllStageCurrentPage <= 1 ? 0.45 : 1,
-                      fontSize: '0.78rem'
-                    }}
-                  >
-                    « First
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAllStageCurrentPage(prev => Math.max(1, prev - 1))}
-                    disabled={validAllStageCurrentPage <= 1}
-                    title="Previous Page"
-                    style={{
-                      padding: '0.3rem 0.65rem',
-                      border: '1px solid var(--border-light)',
-                      background: 'var(--bg-surface)',
-                      color: 'var(--text-primary)',
-                      borderRadius: '5px',
-                      cursor: validAllStageCurrentPage <= 1 ? 'not-allowed' : 'pointer',
-                      opacity: validAllStageCurrentPage <= 1 ? 0.45 : 1,
-                      fontSize: '0.78rem'
-                    }}
-                  >
-                    ‹ Prev
-                  </button>
-
-                  {/* Page Numbers */}
-                  {(() => {
-                    const pages = [];
-                    let start = Math.max(1, validAllStageCurrentPage - 2);
-                    let end = Math.min(totalAllStagePages, validAllStageCurrentPage + 2);
-                    if (validAllStageCurrentPage <= 3) end = Math.min(5, totalAllStagePages);
-                    if (validAllStageCurrentPage >= totalAllStagePages - 2) start = Math.max(1, totalAllStagePages - 4);
-
-                    for (let i = start; i <= end; i++) {
-                      pages.push(
-                        <button
-                          key={i}
-                          type="button"
-                          onClick={() => setAllStageCurrentPage(i)}
-                          style={{
-                            minWidth: '30px',
-                            height: '30px',
-                            padding: '0 0.4rem',
-                            border: '1px solid var(--border-light)',
-                            borderRadius: '5px',
-                            background: validAllStageCurrentPage === i ? '#8b5cf6' : 'var(--bg-surface)',
-                            color: validAllStageCurrentPage === i ? '#ffffff' : 'var(--text-primary)',
-                            fontWeight: validAllStageCurrentPage === i ? 700 : 500,
-                            cursor: 'pointer',
-                            fontSize: '0.78rem'
-                          }}
-                        >
-                          {i}
-                        </button>
-                      );
-                    }
-                    return pages;
-                  })()}
-
-                  <button
-                    type="button"
-                    onClick={() => setAllStageCurrentPage(prev => Math.min(totalAllStagePages, prev + 1))}
-                    disabled={validAllStageCurrentPage >= totalAllStagePages}
-                    title="Next Page"
-                    style={{
-                      padding: '0.3rem 0.65rem',
-                      border: '1px solid var(--border-light)',
-                      background: 'var(--bg-surface)',
-                      color: 'var(--text-primary)',
-                      borderRadius: '5px',
-                      cursor: validAllStageCurrentPage >= totalAllStagePages ? 'not-allowed' : 'pointer',
-                      opacity: validAllStageCurrentPage >= totalAllStagePages ? 0.45 : 1,
-                      fontSize: '0.78rem'
-                    }}
-                  >
-                    Next ›
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAllStageCurrentPage(totalAllStagePages)}
-                    disabled={validAllStageCurrentPage >= totalAllStagePages}
-                    title="Last Page"
-                    style={{
-                      padding: '0.3rem 0.6rem',
-                      border: '1px solid var(--border-light)',
-                      background: 'var(--bg-surface)',
-                      color: 'var(--text-primary)',
-                      borderRadius: '5px',
-                      cursor: validAllStageCurrentPage >= totalAllStagePages ? 'not-allowed' : 'pointer',
-                      opacity: validAllStageCurrentPage >= totalAllStagePages ? 0.45 : 1,
-                      fontSize: '0.78rem'
-                    }}
-                  >
-                    Last »
-                  </button>
-                </div>
-              )}
-            </div>
+            {/* Unified Standard Bottom Page Navigation */}
+            <StandardTablePagination
+              currentPage={validAllStageCurrentPage}
+              totalRecords={totalAllStageRecords}
+              pageSize={allStagePageSize === 'All' ? 100000 : Number(allStagePageSize)}
+              onPageChange={setAllStageCurrentPage}
+              onPageSizeChange={setAllStagePageSize}
+              style={{ borderRadius: '0 0 10px 10px' }}
+            />
           </div>
         </div>
       )}
@@ -3604,163 +3481,15 @@ export default function PartyMasterModule({
               </tbody>
             </table></MobileTableView>
 
-            {/* S00 Pagination Bar Matching Lead Data */}
-            <div style={{
-              padding: '0.75rem 1.25rem',
-              borderTop: '1px solid var(--border-light)',
-              backgroundColor: 'var(--bg-surface)',
-              display: 'flex',
-              flexWrap: 'wrap',
-              gap: '1rem',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              fontSize: '0.84rem',
-              color: 'var(--text-secondary)'
-            }}>
-              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.85rem' }}>
-                <span>
-                  {totalS00Records === 0
-                    ? 'Showing 0 to 0 of 0 leads'
-                    : `Showing ${(validS00CurrentPage - 1) * (s00PageSize === 'All' ? totalS00Records : Number(s00PageSize)) + 1} to ${Math.min(validS00CurrentPage * (s00PageSize === 'All' ? totalS00Records : Number(s00PageSize)), totalS00Records)} of ${totalS00Records} leads`}
-                </span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                  <span style={{ fontSize: '0.8rem' }}>Rows per page:</span>
-                  <select
-                    value={s00PageSize}
-                    onChange={e => {
-                      setS00PageSize(e.target.value === 'All' ? 'All' : Number(e.target.value));
-                      setS00CurrentPage(1);
-                    }}
-                    style={{
-                      padding: '0.3rem 0.55rem',
-                      borderRadius: '6px',
-                      border: '1px solid var(--border-light)',
-                      background: 'var(--bg-primary)',
-                      color: 'var(--text-primary)',
-                      fontSize: '0.82rem',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    {[10, 15, 20, 50, 100].map(s => (
-                      <option key={s} value={s}>Show {s}</option>
-                    ))}
-                    <option value="All">All</option>
-                  </select>
-                </div>
-              </div>
-
-              {s00PageSize !== 'All' && totalS00Pages > 1 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', alignItems: 'center' }}>
-                  <button
-                    type="button"
-                    onClick={() => setS00CurrentPage(1)}
-                    disabled={validS00CurrentPage <= 1}
-                    title="First Page"
-                    style={{
-                      padding: '0.3rem 0.6rem',
-                      border: '1px solid var(--border-light)',
-                      background: 'var(--bg-surface)',
-                      color: 'var(--text-primary)',
-                      borderRadius: '5px',
-                      cursor: validS00CurrentPage <= 1 ? 'not-allowed' : 'pointer',
-                      opacity: validS00CurrentPage <= 1 ? 0.45 : 1,
-                      fontSize: '0.78rem'
-                    }}
-                  >
-                    « First
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setS00CurrentPage(prev => Math.max(1, prev - 1))}
-                    disabled={validS00CurrentPage <= 1}
-                    title="Previous Page"
-                    style={{
-                      padding: '0.3rem 0.65rem',
-                      border: '1px solid var(--border-light)',
-                      background: 'var(--bg-surface)',
-                      color: 'var(--text-primary)',
-                      borderRadius: '5px',
-                      cursor: validS00CurrentPage <= 1 ? 'not-allowed' : 'pointer',
-                      opacity: validS00CurrentPage <= 1 ? 0.45 : 1,
-                      fontSize: '0.78rem'
-                    }}
-                  >
-                    ‹ Prev
-                  </button>
-
-                  {/* Page Numbers */}
-                  {(() => {
-                    const pages = [];
-                    let start = Math.max(1, validS00CurrentPage - 2);
-                    let end = Math.min(totalS00Pages, validS00CurrentPage + 2);
-                    if (validS00CurrentPage <= 3) end = Math.min(5, totalS00Pages);
-                    if (validS00CurrentPage >= totalS00Pages - 2) start = Math.max(1, totalS00Pages - 4);
-
-                    for (let i = start; i <= end; i++) {
-                      pages.push(
-                        <button
-                          key={i}
-                          type="button"
-                          onClick={() => setS00CurrentPage(i)}
-                          style={{
-                            minWidth: '30px',
-                            height: '30px',
-                            padding: '0 0.4rem',
-                            border: '1px solid var(--border-light)',
-                            borderRadius: '5px',
-                            background: validS00CurrentPage === i ? '#ef4444' : 'var(--bg-surface)',
-                            color: validS00CurrentPage === i ? '#ffffff' : 'var(--text-primary)',
-                            fontWeight: validS00CurrentPage === i ? 700 : 500,
-                            cursor: 'pointer',
-                            fontSize: '0.78rem'
-                          }}
-                        >
-                          {i}
-                        </button>
-                      );
-                    }
-                    return pages;
-                  })()}
-
-                  <button
-                    type="button"
-                    onClick={() => setS00CurrentPage(prev => Math.min(totalS00Pages, prev + 1))}
-                    disabled={validS00CurrentPage >= totalS00Pages}
-                    title="Next Page"
-                    style={{
-                      padding: '0.3rem 0.65rem',
-                      border: '1px solid var(--border-light)',
-                      background: 'var(--bg-surface)',
-                      color: 'var(--text-primary)',
-                      borderRadius: '5px',
-                      cursor: validS00CurrentPage >= totalS00Pages ? 'not-allowed' : 'pointer',
-                      opacity: validS00CurrentPage >= totalS00Pages ? 0.45 : 1,
-                      fontSize: '0.78rem'
-                    }}
-                  >
-                    Next ›
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setS00CurrentPage(totalS00Pages)}
-                    disabled={validS00CurrentPage >= totalS00Pages}
-                    title="Last Page"
-                    style={{
-                      padding: '0.3rem 0.6rem',
-                      border: '1px solid var(--border-light)',
-                      background: 'var(--bg-surface)',
-                      color: 'var(--text-primary)',
-                      borderRadius: '5px',
-                      cursor: validS00CurrentPage >= totalS00Pages ? 'not-allowed' : 'pointer',
-                      opacity: validS00CurrentPage >= totalS00Pages ? 0.45 : 1,
-                      fontSize: '0.78rem'
-                    }}
-                  >
-                    Last »
-                  </button>
-                </div>
-              )}
-            </div>
+            {/* Unified Standard Bottom Page Navigation */}
+            <StandardTablePagination
+              currentPage={validS00CurrentPage}
+              totalRecords={totalS00Records}
+              pageSize={s00PageSize === 'All' ? 100000 : Number(s00PageSize)}
+              onPageChange={setS00CurrentPage}
+              onPageSizeChange={setS00PageSize}
+              style={{ borderRadius: '0 0 10px 10px' }}
+            />
           </div>
         </div>
       )}
@@ -4931,163 +4660,15 @@ export default function PartyMasterModule({
               </div>
             )}
 
-            {/* Pagination Bar Matching Lead Data */}
-            <div style={{
-              padding: '0.75rem 1.25rem',
-              borderTop: '1px solid var(--border-light)',
-              backgroundColor: 'var(--bg-surface)',
-              display: 'flex',
-              flexWrap: 'wrap',
-              gap: '1rem',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              fontSize: '0.84rem',
-              color: 'var(--text-secondary)'
-            }}>
-              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.85rem' }}>
-                <span>
-                  {totalReportRecords === 0
-                    ? 'Showing 0 to 0 of 0 channel partners'
-                    : `Showing ${(validReportCurrentPage - 1) * effectiveReportPageSize + 1} to ${Math.min(validReportCurrentPage * effectiveReportPageSize, totalReportRecords)} of ${totalReportRecords} channel partners`}
-                </span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                  <span style={{ fontSize: '0.8rem' }}>Rows per page:</span>
-                  <select
-                    value={reportPageSize}
-                    onChange={e => {
-                      setReportPageSize(e.target.value === 'All' ? 'All' : Number(e.target.value));
-                      setReportCurrentPage(1);
-                    }}
-                    style={{
-                      padding: '0.3rem 0.55rem',
-                      borderRadius: '6px',
-                      border: '1px solid var(--border-light)',
-                      background: 'var(--bg-primary)',
-                      color: 'var(--text-primary)',
-                      fontSize: '0.82rem',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    {[10, 15, 20, 50, 100].map(s => (
-                      <option key={s} value={s}>Show {s}</option>
-                    ))}
-                    <option value="All">All</option>
-                  </select>
-                </div>
-              </div>
-
-              {reportPageSize !== 'All' && totalReportPages > 1 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', alignItems: 'center' }}>
-                  <button
-                    type="button"
-                    onClick={() => setReportCurrentPage(1)}
-                    disabled={validReportCurrentPage <= 1}
-                    title="First Page"
-                    style={{
-                      padding: '0.3rem 0.6rem',
-                      border: '1px solid var(--border-light)',
-                      background: 'var(--bg-surface)',
-                      color: 'var(--text-primary)',
-                      borderRadius: '5px',
-                      cursor: validReportCurrentPage <= 1 ? 'not-allowed' : 'pointer',
-                      opacity: validReportCurrentPage <= 1 ? 0.45 : 1,
-                      fontSize: '0.78rem'
-                    }}
-                  >
-                    « First
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setReportCurrentPage(prev => Math.max(1, prev - 1))}
-                    disabled={validReportCurrentPage <= 1}
-                    title="Previous Page"
-                    style={{
-                      padding: '0.3rem 0.65rem',
-                      border: '1px solid var(--border-light)',
-                      background: 'var(--bg-surface)',
-                      color: 'var(--text-primary)',
-                      borderRadius: '5px',
-                      cursor: validReportCurrentPage <= 1 ? 'not-allowed' : 'pointer',
-                      opacity: validReportCurrentPage <= 1 ? 0.45 : 1,
-                      fontSize: '0.78rem'
-                    }}
-                  >
-                    ‹ Prev
-                  </button>
-
-                  {/* Page Numbers */}
-                  {(() => {
-                    const pages = [];
-                    let start = Math.max(1, validReportCurrentPage - 2);
-                    let end = Math.min(totalReportPages, validReportCurrentPage + 2);
-                    if (validReportCurrentPage <= 3) end = Math.min(5, totalReportPages);
-                    if (validReportCurrentPage >= totalReportPages - 2) start = Math.max(1, totalReportPages - 4);
-
-                    for (let i = start; i <= end; i++) {
-                      pages.push(
-                        <button
-                          key={i}
-                          type="button"
-                          onClick={() => setReportCurrentPage(i)}
-                          style={{
-                            minWidth: '30px',
-                            height: '30px',
-                            padding: '0 0.4rem',
-                            border: '1px solid var(--border-light)',
-                            borderRadius: '5px',
-                            background: validReportCurrentPage === i ? '#2563eb' : 'var(--bg-surface)',
-                            color: validReportCurrentPage === i ? '#ffffff' : 'var(--text-primary)',
-                            fontWeight: validReportCurrentPage === i ? 700 : 500,
-                            cursor: 'pointer',
-                            fontSize: '0.78rem'
-                          }}
-                        >
-                          {i}
-                        </button>
-                      );
-                    }
-                    return pages;
-                  })()}
-
-                  <button
-                    type="button"
-                    onClick={() => setReportCurrentPage(prev => Math.min(totalReportPages, prev + 1))}
-                    disabled={validReportCurrentPage >= totalReportPages}
-                    title="Next Page"
-                    style={{
-                      padding: '0.3rem 0.65rem',
-                      border: '1px solid var(--border-light)',
-                      background: 'var(--bg-surface)',
-                      color: 'var(--text-primary)',
-                      borderRadius: '5px',
-                      cursor: validReportCurrentPage >= totalReportPages ? 'not-allowed' : 'pointer',
-                      opacity: validReportCurrentPage >= totalReportPages ? 0.45 : 1,
-                      fontSize: '0.78rem'
-                    }}
-                  >
-                    Next ›
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setReportCurrentPage(totalReportPages)}
-                    disabled={validReportCurrentPage >= totalReportPages}
-                    title="Last Page"
-                    style={{
-                      padding: '0.3rem 0.6rem',
-                      border: '1px solid var(--border-light)',
-                      background: 'var(--bg-surface)',
-                      color: 'var(--text-primary)',
-                      borderRadius: '5px',
-                      cursor: validReportCurrentPage >= totalReportPages ? 'not-allowed' : 'pointer',
-                      opacity: validReportCurrentPage >= totalReportPages ? 0.45 : 1,
-                      fontSize: '0.78rem'
-                    }}
-                  >
-                    Last »
-                  </button>
-                </div>
-              )}
-            </div>
+            {/* Unified Standard Bottom Page Navigation */}
+            <StandardTablePagination
+              currentPage={validReportCurrentPage}
+              totalRecords={totalReportRecords}
+              pageSize={reportPageSize === 'All' ? 100000 : Number(reportPageSize)}
+              onPageChange={setReportCurrentPage}
+              onPageSizeChange={setReportPageSize}
+              style={{ borderRadius: '0 0 10px 10px' }}
+            />
           </div>
         </div>
       )}

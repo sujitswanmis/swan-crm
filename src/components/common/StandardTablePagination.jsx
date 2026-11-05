@@ -73,6 +73,12 @@ export default function StandardTablePagination({
             const parsed = settings.availablePageSizes.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
             if (parsed.length > 0) setAvailablePageSizes(parsed);
           }
+          if (settings.defaultPageSize !== undefined && onPageSizeChange) {
+            const defSize = settings.defaultPageSize === 'All' ? 100000 : parseInt(settings.defaultPageSize, 10);
+            if (defSize && defSize !== pageSize) {
+              onPageSizeChange(defSize);
+            }
+          }
         }
       } catch (e) {}
     };
