@@ -59,8 +59,7 @@ export const ROLE_PRESETS = [
           dashboard: { view: true },
           my_checklists: { view: true },
           templates: { view: true },
-          compliance: { view: true },
-          holidays: { view: true }
+          compliance: { view: true }
         }
       },
       delegation: {
@@ -203,8 +202,7 @@ export const ROLE_PRESETS = [
           dashboard: { view: true },
           my_checklists: { view: true },
           templates: { view: true },
-          compliance: { view: true },
-          holidays: { view: true }
+          compliance: { view: true }
         }
       },
       delegation: {
@@ -632,8 +630,7 @@ export const ROLE_PRESETS = [
           dashboard: { view: true },
           my_checklists: { view: true },
           templates: { view: true },
-          compliance: { view: true },
-          holidays: { view: true }
+          compliance: { view: true }
         }
       },
       delegation: {
@@ -917,7 +914,7 @@ for (const preset of ROLE_PRESETS) {
     sub_items: {
       ...(settings?.sub_items || Object.fromEntries([
         'business', 'products', 'order_pipeline', 'complaints_config', 'crm',
-        'notifications', 'departments', 'targets', 'sessions', 'data', 'media',
+        'notifications', 'departments', 'targets', 'sessions', 'holidays', 'data', 'media',
       ].map(id => [id, { view: settings?.view === true, add: manages, edit: manages, delete: false }]))),
       ...Object.fromEntries(INTEGRATION_TABS.map(tab => [tab.id, {
         view: settings?.view === true, add: manages, edit: manages, delete: false,

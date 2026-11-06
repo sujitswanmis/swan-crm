@@ -47,3 +47,6 @@ scratch/
 backups/
 /CRM-Backups Plivo Calling Perfect 2.1/
 *.apk
+dist-*/
+release-builds/
+SPC-APPS/

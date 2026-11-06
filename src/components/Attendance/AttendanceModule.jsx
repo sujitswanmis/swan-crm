@@ -51,6 +51,7 @@ import { getCurrentGPSLocation, calculateDistanceMeters } from '@/utils/geoAtten
 import { enqueueOfflineAction, canPerformOfflineAction } from '@/utils/offlineSync';
 import { useTableColumnResize, ColumnResizer } from '@/utils/tableColumnResize';
 import { filterVisibleSubTabs, getSubItemPermissions } from '@/utils/permissionUtils';
+import { recordLocationPingBatch } from '@/app/actions/liveTracking';
 import LiveFieldTrackingMap from './LiveFieldTrackingMap';
 
 const ALL_ATTENDANCE_TABS = [
@@ -117,21 +118,23 @@ const ATTENDANCE_SHIFTS_MIN_COL_WIDTHS = {
 };
 
 const ATTENDANCE_GEOFENCE_DEFAULT_COL_WIDTHS = {
-  name: 210,
-  coordinates: 190,
+  name: 200,
+  branch: 220,
+  coordinates: 180,
   radius: 130,
-  address: 230,
-  status: 120,
-  actions: 140
+  address: 200,
+  status: 110,
+  actions: 130
 };
 
 const ATTENDANCE_GEOFENCE_MIN_COL_WIDTHS = {
-  name: 140,
-  coordinates: 130,
+  name: 130,
+  branch: 140,
+  coordinates: 120,
   radius: 90,
-  address: 140,
-  status: 90,
-  actions: 100
+  address: 120,
+  status: 80,
+  actions: 90
 };
 
 const ATTENDANCE_LEAVE_POLICIES_DEFAULT_COL_WIDTHS = {
@@ -351,7 +354,24 @@ export default function AttendanceModule({
 
   const initialCompany = resolvedWorkspaceCompany;
   const [selectedShiftPolicyCompany, setSelectedShiftPolicyCompany] = useState(initialCompany);
-  const [selectedShiftPolicyBranch, setSelectedShiftPolicyBranch] = useState('All Branches');
+  const [selectedShiftPolicyBranch, setSelectedShiftPolicyBranch] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('crm_selected_geofence_branch');
+        if (saved) return saved;
+      } catch {}
+    }
+    return 'All Branches';
+  });
+
+  const handleSelectGeofenceBranch = (branch) => {
+    setSelectedShiftPolicyBranch(branch);
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('crm_selected_geofence_branch', branch);
+      } catch {}
+    }
+  };
   const [availablePolicyBranches, setAvailablePolicyBranches] = useState([]);
   const [tenantShiftPolicy, setTenantShiftPolicy] = useState(null);
   const [loadingShiftPolicy, setLoadingShiftPolicy] = useState(false);
@@ -398,8 +418,8 @@ export default function AttendanceModule({
   // Helper to resolve specific tenant ID by company name
   const getCompanyTenantId = (comp) => {
     const c = (comp || '').toLowerCase().trim();
-    if (c.includes('supuja')) return '0a37b8e8-1c28-4e19-8891-951fc3f8f8af';
-    if (c.includes('testing')) return '922d3e72-6588-457f-a562-4f1bdbf10d98';
+    if (c.includes('supuja') || c.includes('tnt00001') || c === '0a37b8e8-1c28-4e19-8891-951fc3f8f8af') return '0a37b8e8-1c28-4e19-8891-951fc3f8f8af';
+    if (c.includes('testing') || c.includes('tnt00003') || c === '922d3e72-6588-457f-a562-4f1bdbf10d98') return '922d3e72-6588-457f-a562-4f1bdbf10d98';
     return '00000000-0000-0000-0000-000000000001';
   };
 
@@ -451,13 +471,6 @@ export default function AttendanceModule({
       });
     }
   }, [tenantShiftPolicy]);
-
-  // Fetch policy when entering geofencing tab
-  useEffect(() => {
-    if (activeTab === 'geofencing') {
-      fetchTenantShiftPolicy(selectedShiftPolicyCompany, selectedShiftPolicyBranch);
-    }
-  }, [activeTab, selectedShiftPolicyCompany, selectedShiftPolicyBranch]);
 
   // Save Geofence Policy
   const handleSaveGeofencePolicy = async () => {
@@ -537,8 +550,13 @@ export default function AttendanceModule({
   // Office Location Handlers
   const handleOpenAddLocation = () => {
     setEditingLocationIndex(null);
+    const defaultBranch = selectedShiftPolicyBranch !== 'All Branches'
+      ? selectedShiftPolicyBranch
+      : (availablePolicyBranches[0] ? (typeof availablePolicyBranches[0] === 'string' ? availablePolicyBranches[0] : (availablePolicyBranches[0].name || availablePolicyBranches[0].branch_name)) : 'All Branches');
+
     setLocationForm({
       name: '',
+      branch_name: defaultBranch || 'All Branches',
       latitude: '',
       longitude: '',
       radius_meters: 200,
@@ -553,6 +571,7 @@ export default function AttendanceModule({
     const loc = geofenceSettings.geofence_locations[index];
     setLocationForm({
       name: loc.name || '',
+      branch_name: loc.branch_name || (selectedShiftPolicyBranch !== 'All Branches' ? selectedShiftPolicyBranch : 'All Branches'),
       latitude: loc.latitude || '',
       longitude: loc.longitude || '',
       radius_meters: loc.radius_meters || 200,
@@ -571,6 +590,7 @@ export default function AttendanceModule({
     const cleanLocation = {
       id: editingLocationIndex !== null ? (geofenceSettings.geofence_locations[editingLocationIndex]?.id || `loc_${Date.now()}`) : `loc_${Date.now()}`,
       name: locationForm.name.trim(),
+      branch_name: locationForm.branch_name || (selectedShiftPolicyBranch !== 'All Branches' ? selectedShiftPolicyBranch : 'All Branches'),
       latitude: Number(locationForm.latitude),
       longitude: Number(locationForm.longitude),
       radius_meters: Number(locationForm.radius_meters || 200),
@@ -1654,6 +1674,56 @@ export default function AttendanceModule({
       setLiveDuration('00h 00m 00s');
     }
   }, [currentTime, todayRecord]);
+
+  // 2b. Background GPS Breadcrumb Ping Service during Active Shift
+  useEffect(() => {
+    if (typeof window === 'undefined' || !navigator.geolocation) return;
+    if (!todayRecord?.in_time || todayRecord?.out_time) return;
+
+    let pingActive = true;
+    const sendShiftLivePing = () => {
+      if (!pingActive || !navigator.onLine) return;
+      navigator.geolocation.getCurrentPosition(
+        async (pos) => {
+          if (!pingActive) return;
+          try {
+            const lat = pos.coords.latitude;
+            const lng = pos.coords.longitude;
+            const speed = pos.coords.speed ? Math.round(pos.coords.speed * 3.6) : 0;
+            const accuracy = pos.coords.accuracy || null;
+            const targetUserId = userId || todayRecord.user_id;
+
+            if (targetUserId && lat && lng) {
+              await recordLocationPingBatch([{
+                user_id: targetUserId,
+                company: userCompany || 'TNT00001',
+                latitude: lat,
+                longitude: lng,
+                speed_kmh: speed,
+                accuracy_meters: accuracy,
+                is_moving: speed > 3,
+                recorded_at: new Date().toISOString()
+              }]);
+            }
+          } catch (e) {
+            console.debug('Background GPS ping suppressed:', e);
+          }
+        },
+        () => {},
+        { enableHighAccuracy: true, timeout: 12000, maximumAge: 10000 }
+      );
+    };
+
+    // Immediate ping on mount if punched in
+    sendShiftLivePing();
+
+    // Periodic ping every 60 seconds
+    const pingTimer = setInterval(sendShiftLivePing, 60000);
+    return () => {
+      pingActive = false;
+      clearInterval(pingTimer);
+    };
+  }, [todayRecord?.in_time, todayRecord?.out_time, userId, userCompany]);
 
   // 3. Load Today's Attendance
   const fetchTodayAttendance = useCallback(async (clearError = false) => {
@@ -7805,9 +7875,10 @@ export default function AttendanceModule({
       {activeTab === 'live_tracking' && visibleTabs.some(t => t.id === 'live_tracking') && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
           <LiveFieldTrackingMap
-            company={selectedShiftPolicyCompany || initialCompany || 'TNT00001'}
+            company={selectedShiftPolicyCompany || userCompany || 'New Swan Group'}
             branchCode={selectedShiftPolicyBranch !== 'All Branches' ? selectedShiftPolicyBranch : null}
             currentUserRole={userRole}
+            tenantId={effectiveTenantId}
           />
         </div>
       )}
@@ -7864,7 +7935,7 @@ export default function AttendanceModule({
                     value={selectedShiftPolicyCompany}
                     onChange={(e) => {
                       setSelectedShiftPolicyCompany(e.target.value);
-                      setSelectedShiftPolicyBranch('All Branches');
+                      handleSelectGeofenceBranch('All Branches');
                     }}
                     style={{
                       padding: '0.45rem 0.75rem',
@@ -7906,7 +7977,7 @@ export default function AttendanceModule({
                 <MapPin size={15} style={{ color: 'var(--text-secondary)' }} />
                 <select
                   value={selectedShiftPolicyBranch}
-                  onChange={(e) => setSelectedShiftPolicyBranch(e.target.value)}
+                  onChange={(e) => handleSelectGeofenceBranch(e.target.value)}
                   style={{
                     padding: '0.45rem 0.75rem',
                     borderRadius: '8px',
@@ -8268,6 +8339,10 @@ export default function AttendanceModule({
                           <span>Campus Name</span>
                           <ColumnResizer colKey="name" isResizing={geofenceResizingCol === 'name'} onResizeStart={handleGeofenceResizeStart} onReset={resetGeofenceColWidth} />
                         </th>
+                        <th style={{ width: `${geofenceColWidths.branch}px`, padding: '0.75rem 0.85rem', fontWeight: 700, position: 'relative', boxSizing: 'border-box' }}>
+                          <span>Branch / Plant</span>
+                          <ColumnResizer colKey="branch" isResizing={geofenceResizingCol === 'branch'} onResizeStart={handleGeofenceResizeStart} onReset={resetGeofenceColWidth} />
+                        </th>
                         <th style={{ width: `${geofenceColWidths.coordinates}px`, padding: '0.75rem 0.85rem', fontWeight: 700, position: 'relative', boxSizing: 'border-box' }}>
                           <span>GPS Coordinates</span>
                           <ColumnResizer colKey="coordinates" isResizing={geofenceResizingCol === 'coordinates'} onResizeStart={handleGeofenceResizeStart} onReset={resetGeofenceColWidth} />
@@ -8298,6 +8373,23 @@ export default function AttendanceModule({
                               <MapPin size={16} color="#0ea5e9" />
                               <span>{loc.name}</span>
                             </div>
+                          </td>
+                          <td style={{ padding: '0.75rem 0.85rem' }}>
+                            <span style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.35rem',
+                              padding: '0.25rem 0.6rem',
+                              borderRadius: '6px',
+                              background: 'var(--bg-secondary, rgba(14, 165, 233, 0.1))',
+                              color: 'var(--text-primary)',
+                              fontSize: '0.78rem',
+                              fontWeight: 600,
+                              border: '1px solid var(--border-light)'
+                            }}>
+                              <Building size={12} color="#0ea5e9" />
+                              <span>{loc.branch_name || (selectedShiftPolicyBranch !== 'All Branches' ? selectedShiftPolicyBranch : 'All Branches')}</span>
+                            </span>
                           </td>
                           <td style={{ padding: '0.75rem 0.85rem' }}>
                             <a
@@ -8422,6 +8514,39 @@ export default function AttendanceModule({
                 </div>
 
                 <form onSubmit={handleSaveLocationForm} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  {/* Branch / Plant Selector */}
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.35rem' }}>
+                      Branch / Manufacturing Plant *
+                    </label>
+                    <select
+                      value={locationForm.branch_name || selectedShiftPolicyBranch}
+                      onChange={(e) => setLocationForm({ ...locationForm, branch_name: e.target.value })}
+                      style={{
+                        width: '100%',
+                        padding: '0.55rem 0.75rem',
+                        borderRadius: '8px',
+                        border: '1px solid var(--border-light)',
+                        background: 'var(--bg-primary)',
+                        color: 'var(--text-primary)',
+                        fontSize: '0.85rem',
+                        fontWeight: 600,
+                        outline: 'none'
+                      }}
+                    >
+                      <option value="All Branches">All Branches (Company-wide Default)</option>
+                      {availablePolicyBranches.map((b) => {
+                        const bName = typeof b === 'string' ? b : (b.name || b.branch_name || b.code);
+                        const bCode = b?.branch_code || b?.id || '';
+                        return (
+                          <option key={b.id || bName} value={bName}>
+                            {bName} {bCode ? `(${bCode})` : ''}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+
                   <div>
                     <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.35rem' }}>
                       Campus / Unit Name *

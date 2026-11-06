@@ -1,0 +1,190 @@
+.workspace {
+  box-sizing: border-box;
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  padding: 20px;
+  overflow: hidden;
+}
+
+.pageHeader,
+.statusTabs,
+.toolbar,
+.pagination {
+  flex-shrink: 0;
+}
+
+.pageHeader h2 {
+  margin: 0 0 6px;
+  font-size: 1.2rem;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.pageHeader p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.statusTabs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow-x: auto;
+  padding: 2px 0 4px;
+}
+
+.statusTabs > button {
+  flex-shrink: 0;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.search {
+  box-sizing: border-box;
+  flex: 1 1 280px;
+  width: 100%;
+  min-width: 180px;
+  max-width: 420px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+}
+
+.search:focus-visible {
+  outline: 2px solid var(--accent-color, #2563eb);
+  outline-offset: 2px;
+}
+
+.toolbarActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-left: auto;
+  min-width: 0;
+}
+
+.toolbarActions > button {
+  min-height: 36px;
+  white-space: nowrap;
+}
+
+.tableViewport {
+  position: relative;
+  flex: 1 1 0;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  border: 1px solid var(--border-light);
+  border-radius: 9px;
+  background: var(--bg-surface);
+}
+
+.teamTable {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0;
+  text-align: left;
+  font-size: 0.86rem;
+}
+
+.workspace .teamTable thead,
+.workspace .teamTable th {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 10 !important;
+  background-color: var(--table-header-bg, #e2e8f0) !important;
+  color: var(--table-header-text, #1e293b) !important;
+  border-bottom: 2px solid var(--table-header-border, #cbd5e1) !important;
+  box-shadow: inset 0 -1px 0 var(--table-header-border, #cbd5e1);
+}
+
+.workspace .teamTable th {
+  padding: 12px !important;
+}
+
+.workspace .teamTable tbody td {
+  padding: 10px 12px !important;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.teamTable select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  text-overflow: ellipsis;
+}
+
+.accessButton {
+  max-width: 100%;
+  white-space: normal;
+}
+
+.actionsCell {
+  white-space: normal;
+}
+
+.rowActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.rowActions > div {
+  flex: 0 0 auto;
+}
+
+@media (max-width: 767px) {
+  .workspace {
+    gap: 12px;
+    padding: 12px;
+  }
+
+  .search {
+    flex-basis: 100%;
+    max-width: none;
+  }
+
+  .toolbarActions {
+    justify-content: flex-start;
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .toolbarActions > button {
+    flex-grow: 1;
+  }
+}
+
+@media (max-height: 600px) {
+  .workspace {
+    min-height: 420px;
+  }
+}

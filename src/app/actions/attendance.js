@@ -307,108 +307,162 @@ function resolveTenantId(tenantId, userCompany = '') {
  */
 export async function getTenantAttendancePolicy(tenantId = null, userCompany = '', branchName = '') {
   const effectiveTenantId = resolveTenantId(tenantId, userCompany);
-  const cleanBranch = branchName && branchName !== 'All Branches' ? branchName.trim() : '';
+  const cleanBranch = branchName && branchName !== 'All Branches' && branchName !== 'All Branches (Default)' ? branchName.trim() : '';
   const adminClient = getAdminClient();
+  const fallbackPolicies = await getFallbackPolicies();
 
-  // 1. Try Supabase Database first
+  // Helper to merge DB row and fallback policy cleanly preserving geofence settings
+  const mergePolicy = (fb = {}, db = {}) => {
+    return {
+      ...fb,
+      ...db,
+      // If DB has geofence fields, use them; otherwise preserve fallback geofence fields
+      enable_geofence: db.enable_geofence !== undefined && db.enable_geofence !== null ? Boolean(db.enable_geofence) : Boolean(fb.enable_geofence),
+      require_gps: db.require_gps || fb.require_gps || 'OFF',
+      geofence_mode: db.geofence_mode || fb.geofence_mode || 'STRICT_BLOCK',
+      geofence_locations: (Array.isArray(db.geofence_locations) && db.geofence_locations.length > 0)
+        ? db.geofence_locations
+        : (Array.isArray(fb.geofence_locations) ? fb.geofence_locations : []),
+      leave_policy: db.leave_policy || fb.leave_policy || DEFAULT_ATTENDANCE_POLICIES[effectiveTenantId]?.leave_policy || DEFAULT_ATTENDANCE_POLICIES[DEFAULT_TENANT_ID]?.leave_policy
+    };
+  };
+
+  // 1. If a specific branch is requested, prioritize that branch's configuration
+  if (cleanBranch) {
+    const branchFallback = fallbackPolicies[`${effectiveTenantId}:${cleanBranch}`] || null;
+
+    // 1a. Try Supabase Database for this specific branch
+    try {
+      if (adminClient) {
+        const { data: dbBranchPolicy, error: branchErr } = await adminClient
+          .from('attendance_shift_policies')
+          .select('*')
+          .eq('tenant_id', effectiveTenantId)
+          .eq('branch_name', cleanBranch)
+          .maybeSingle();
+
+        if (!branchErr && dbBranchPolicy && dbBranchPolicy.tenant_id) {
+          const merged = mergePolicy(branchFallback || fallbackPolicies[effectiveTenantId] || {}, dbBranchPolicy);
+          return { success: true, data: merged };
+        }
+      }
+    } catch (err) {
+      // Continue to fallback
+    }
+
+    // 1b. If not in DB, check local JSON fallback for this specific branch
+    if (branchFallback) {
+      return { success: true, data: branchFallback };
+    }
+  }
+
+  // 2. Tenant-Wide Policy (All Branches / Default)
+  const tenantFallback = fallbackPolicies[`${effectiveTenantId}:All Branches`] || fallbackPolicies[effectiveTenantId] || null;
+
+  // Helper to aggregate all locations across tenant & branches for "All Branches" view
+  const getAllTenantLocations = () => {
+    const locMap = new Map();
+    // 1. From tenant default
+    const baseLocs = tenantFallback?.geofence_locations || fallbackPolicies[effectiveTenantId]?.geofence_locations || [];
+    if (Array.isArray(baseLocs)) {
+      baseLocs.forEach(l => {
+        if (l && (l.id || l.name)) locMap.set(l.id || l.name, { ...l, branch_name: l.branch_name || 'All Branches' });
+      });
+    }
+    // 2. From all branches of this tenant
+    for (const [key, pol] of Object.entries(fallbackPolicies)) {
+      if (key.startsWith(effectiveTenantId) && key.includes(':') && !key.endsWith(':All Branches')) {
+        const bName = pol.branch_name || key.split(':')[1] || 'Branch';
+        if (Array.isArray(pol.geofence_locations)) {
+          pol.geofence_locations.forEach(l => {
+            if (l && (l.id || l.name)) locMap.set(l.id || l.name, { ...l, branch_name: l.branch_name || bName });
+          });
+        }
+      }
+    }
+    return Array.from(locMap.values());
+  };
+
   try {
-    const fallbackPolicies = await getFallbackPolicies();
-    if (cleanBranch) {
-      const { data: dbBranchPolicy, error: branchErr } = await adminClient
+    if (adminClient) {
+      // First check branch_name IS NULL
+      const { data: dbPolicy, error: dbErr } = await adminClient
         .from('attendance_shift_policies')
         .select('*')
         .eq('tenant_id', effectiveTenantId)
-        .eq('branch_name', cleanBranch)
+        .is('branch_name', null)
         .maybeSingle();
 
-      if (!branchErr && dbBranchPolicy && dbBranchPolicy.tenant_id) {
-        const fb = fallbackPolicies[`${effectiveTenantId}:${cleanBranch}`] || fallbackPolicies[effectiveTenantId] || {};
-        return {
-          success: true,
-          data: {
-            ...fb,
-            ...dbBranchPolicy,
-            leave_policy: dbBranchPolicy.leave_policy || fb.leave_policy || DEFAULT_ATTENDANCE_POLICIES[effectiveTenantId]?.leave_policy || DEFAULT_ATTENDANCE_POLICIES[DEFAULT_TENANT_ID]?.leave_policy
-          }
-        };
+      if (!dbErr && dbPolicy && dbPolicy.tenant_id) {
+        const merged = mergePolicy(tenantFallback || {}, dbPolicy);
+        if (cleanBranch) {
+          merged.branch_name = cleanBranch;
+        } else {
+          // On All Branches, include aggregated locations across all plants
+          const aggregated = getAllTenantLocations();
+          if (aggregated.length > 0) merged.geofence_locations = aggregated;
+        }
+        return { success: true, data: merged };
       }
-    }
 
-    const { data: dbPolicy, error: dbErr } = await adminClient
-      .from('attendance_shift_policies')
-      .select('*')
-      .eq('tenant_id', effectiveTenantId)
-      .is('branch_name', null)
-      .maybeSingle();
+      // Fallback check: any policy for this tenant
+      const { data: fallbackDbPolicy } = await adminClient
+        .from('attendance_shift_policies')
+        .select('*')
+        .eq('tenant_id', effectiveTenantId)
+        .maybeSingle();
 
-    if (!dbErr && dbPolicy && dbPolicy.tenant_id) {
-      const fb = fallbackPolicies[effectiveTenantId] || fallbackPolicies[`${effectiveTenantId}:All Branches`] || {};
-      return {
-        success: true,
-        data: {
-          ...fb,
-          ...dbPolicy,
-          leave_policy: dbPolicy.leave_policy || fb.leave_policy || DEFAULT_ATTENDANCE_POLICIES[effectiveTenantId]?.leave_policy || DEFAULT_ATTENDANCE_POLICIES[DEFAULT_TENANT_ID]?.leave_policy
+      if (fallbackDbPolicy && fallbackDbPolicy.tenant_id) {
+        const merged = mergePolicy(tenantFallback || {}, fallbackDbPolicy);
+        if (cleanBranch) {
+          merged.branch_name = cleanBranch;
+        } else {
+          const aggregated = getAllTenantLocations();
+          if (aggregated.length > 0) merged.geofence_locations = aggregated;
         }
-      };
-    }
-
-    const { data: fallbackDbPolicy } = await adminClient
-      .from('attendance_shift_policies')
-      .select('*')
-      .eq('tenant_id', effectiveTenantId)
-      .maybeSingle();
-
-    if (fallbackDbPolicy && fallbackDbPolicy.tenant_id) {
-      const fb = fallbackPolicies[effectiveTenantId] || fallbackPolicies[`${effectiveTenantId}:All Branches`] || {};
-      return {
-        success: true,
-        data: {
-          ...fb,
-          ...fallbackDbPolicy,
-          leave_policy: fallbackDbPolicy.leave_policy || fb.leave_policy || DEFAULT_ATTENDANCE_POLICIES[effectiveTenantId]?.leave_policy || DEFAULT_ATTENDANCE_POLICIES[DEFAULT_TENANT_ID]?.leave_policy
-        }
-      };
+        return { success: true, data: merged };
+      }
     }
   } catch (err) {
     // Database table not created yet or offline, continue to fallback
   }
 
-  // 2. Try Local File Fallback
-  const fallbackPolicies = await getFallbackPolicies();
-  if (cleanBranch && fallbackPolicies[`${effectiveTenantId}:${cleanBranch}`]) {
-    return {
-      success: true,
-      data: fallbackPolicies[`${effectiveTenantId}:${cleanBranch}`]
-    };
+  // 3. Try Local File Fallback for Tenant
+  if (tenantFallback) {
+    const resPolicy = { ...tenantFallback };
+    if (cleanBranch) {
+      resPolicy.branch_name = cleanBranch;
+    } else {
+      const aggregated = getAllTenantLocations();
+      if (aggregated.length > 0) resPolicy.geofence_locations = aggregated;
+    }
+    return { success: true, data: resPolicy };
   }
 
-  if (!cleanBranch && fallbackPolicies[`${effectiveTenantId}:All Branches`]) {
-    return {
-      success: true,
-      data: fallbackPolicies[`${effectiveTenantId}:All Branches`]
-    };
-  }
-
-  if (fallbackPolicies[effectiveTenantId]) {
-    return {
-      success: true,
-      data: fallbackPolicies[effectiveTenantId]
-    };
-  }
-
-  // 3. Match by company name in fallback
+  // 4. Match by company name in fallback
   for (const pol of Object.values(fallbackPolicies)) {
     if (userCompany && matchesCompany(userCompany, pol.company_name)) {
-      return { success: true, data: pol };
+      const resPolicy = { ...pol };
+      if (cleanBranch) {
+        resPolicy.branch_name = cleanBranch;
+      } else {
+        const aggregated = getAllTenantLocations();
+        if (aggregated.length > 0) resPolicy.geofence_locations = aggregated;
+      }
+      return { success: true, data: resPolicy };
     }
   }
 
-  // 4. Default Enterprise Template
+  // 5. Default Enterprise Template
   const defaultPol = {
     ...DEFAULT_ATTENDANCE_POLICIES['00000000-0000-0000-0000-000000000001'],
     tenant_id: effectiveTenantId,
-    company_name: userCompany || 'Enterprise'
+    company_name: userCompany || 'Enterprise',
+    branch_name: cleanBranch || null,
+    enable_geofence: false,
+    require_gps: 'OFF',
+    geofence_mode: 'STRICT_BLOCK',
+    geofence_locations: []
   };
 
   return { success: true, data: defaultPol };
@@ -495,34 +549,105 @@ export async function saveTenantAttendancePolicy(tenantId, userCompany, policyDa
   fallbackPolicies[fileKey] = cleanPolicy;
   if (!cleanBranch) {
     fallbackPolicies[`${effectiveTenantId}:All Branches`] = cleanPolicy;
+
+    // Also sync branch-tagged campuses to their respective branch entries
+    if (Array.isArray(cleanPolicy.geofence_locations)) {
+      const branchMap = {};
+      cleanPolicy.geofence_locations.forEach(loc => {
+        if (loc && loc.branch_name && loc.branch_name !== 'All Branches') {
+          if (!branchMap[loc.branch_name]) branchMap[loc.branch_name] = [];
+          branchMap[loc.branch_name].push(loc);
+        }
+      });
+      for (const [bName, locs] of Object.entries(branchMap)) {
+        const bKey = `${effectiveTenantId}:${bName}`;
+        const existingBranchPol = fallbackPolicies[bKey] || cleanPolicy;
+        fallbackPolicies[bKey] = {
+          ...existingBranchPol,
+          branch_name: bName,
+          enable_geofence: cleanPolicy.enable_geofence,
+          require_gps: cleanPolicy.require_gps,
+          geofence_mode: cleanPolicy.geofence_mode,
+          geofence_locations: locs,
+          updated_at: new Date().toISOString()
+        };
+      }
+    }
   }
   await saveFallbackPolicies(fallbackPolicies);
 
-  // 2. Dual-write to Supabase DB
+  // 2. Dual-write to Supabase DB (Defensive for missing columns & unique constraints)
   try {
     const adminClient = getAdminClient();
-    if (cleanBranch) {
-      const { data: existing } = await adminClient
-        .from('attendance_shift_policies')
-        .select('id')
-        .eq('tenant_id', effectiveTenantId)
-        .eq('branch_name', cleanBranch)
-        .maybeSingle();
+    if (adminClient) {
+      if (cleanBranch) {
+        const { data: existing } = await adminClient
+          .from('attendance_shift_policies')
+          .select('id')
+          .eq('tenant_id', effectiveTenantId)
+          .eq('branch_name', cleanBranch)
+          .maybeSingle();
 
-      if (existing?.id) {
-        await adminClient
-          .from('attendance_shift_policies')
-          .update(cleanPolicy)
-          .eq('id', existing.id);
+        if (existing?.id) {
+          const { error: updateErr } = await adminClient
+            .from('attendance_shift_policies')
+            .update(cleanPolicy)
+            .eq('id', existing.id);
+
+          if (updateErr && (updateErr.code === 'PGRST204' || updateErr.message?.includes('column'))) {
+            const { enable_geofence, require_gps, geofence_mode, geofence_locations, ...basePolicy } = cleanPolicy;
+            await adminClient
+              .from('attendance_shift_policies')
+              .update(basePolicy)
+              .eq('id', existing.id);
+          }
+        } else {
+          const { error: insertErr } = await adminClient
+            .from('attendance_shift_policies')
+            .insert(cleanPolicy);
+
+          if (insertErr && (insertErr.code === 'PGRST204' || insertErr.message?.includes('column'))) {
+            const { enable_geofence, require_gps, geofence_mode, geofence_locations, ...basePolicy } = cleanPolicy;
+            await adminClient
+              .from('attendance_shift_policies')
+              .insert(basePolicy);
+          }
+        }
       } else {
-        await adminClient
+        // Tenant-wide policy (branch_name IS NULL)
+        const { data: existingTenant } = await adminClient
           .from('attendance_shift_policies')
-          .insert(cleanPolicy);
+          .select('id')
+          .eq('tenant_id', effectiveTenantId)
+          .is('branch_name', null)
+          .maybeSingle();
+
+        if (existingTenant?.id) {
+          const { error: updateErr } = await adminClient
+            .from('attendance_shift_policies')
+            .update(cleanPolicy)
+            .eq('id', existingTenant.id);
+
+          if (updateErr && (updateErr.code === 'PGRST204' || updateErr.message?.includes('column'))) {
+            const { enable_geofence, require_gps, geofence_mode, geofence_locations, ...basePolicy } = cleanPolicy;
+            await adminClient
+              .from('attendance_shift_policies')
+              .update(basePolicy)
+              .eq('id', existingTenant.id);
+          }
+        } else {
+          const { error: insertErr } = await adminClient
+            .from('attendance_shift_policies')
+            .insert(cleanPolicy);
+
+          if (insertErr && (insertErr.code === 'PGRST204' || insertErr.message?.includes('column'))) {
+            const { enable_geofence, require_gps, geofence_mode, geofence_locations, ...basePolicy } = cleanPolicy;
+            await adminClient
+              .from('attendance_shift_policies')
+              .insert(basePolicy);
+          }
+        }
       }
-    } else {
-      await adminClient
-        .from('attendance_shift_policies')
-        .upsert(cleanPolicy, { onConflict: 'tenant_id' });
     }
   } catch (err) {
     console.warn('Notice: Could not write attendance policy to Supabase table (saved to local config file):', err?.message);
@@ -988,11 +1113,12 @@ export async function punchIn({
   let resolvedDepartment = department || '';
   let resolvedEmpName = empName || email.split('@')[0];
   let assignedShiftFromDb = null;
+  let employeeBranchFromDb = '';
 
   try {
     const { data: userRole } = await adminClient
       .from('user_roles')
-      .select('emp_id, emp_name, emp_department, assigned_shift')
+      .select('emp_id, emp_name, emp_department, assigned_shift, branch_name, company_name')
       .ilike('email', normalizedEmail)
       .maybeSingle();
 
@@ -1001,12 +1127,13 @@ export async function punchIn({
       if (!resolvedDepartment) resolvedDepartment = userRole.emp_department || 'General';
       if (!resolvedEmpName || resolvedEmpName === email.split('@')[0]) resolvedEmpName = userRole.emp_name || resolvedEmpName;
       if (userRole.assigned_shift) assignedShiftFromDb = userRole.assigned_shift;
+      if (userRole.branch_name) employeeBranchFromDb = userRole.branch_name;
     }
   } catch {}
 
   const effectiveCompany = userCompany || '';
   const effectiveTenant = resolveTenantId(tenantId, effectiveCompany);
-  const policyRes = await getTenantAttendancePolicy(effectiveTenant, effectiveCompany);
+  const policyRes = await getTenantAttendancePolicy(effectiveTenant, effectiveCompany, employeeBranchFromDb);
   const tenantPolicy = policyRes?.data || null;
 
   // 1. Mandatory GPS Permission Check (ON / OFF / AUTO)
@@ -1122,6 +1249,35 @@ export async function punchIn({
     error: 'Aapka aaj ka Punch In pehle se saved hai.'
   };
   resultRecord = saved.data;
+
+  // Insert initial starting live ping into employee_live_locations
+  try {
+    const gpsMatch = String(location || '').match(/GPS\s*\(\s*([0-9.-]+)\s*,\s*([0-9.-]+)\s*\)/i);
+    const resolvedUserId = resultRecord.user_id || (userId && isValidUuid(userId) ? userId : null);
+    if (gpsMatch && resolvedUserId) {
+      const pLat = parseFloat(gpsMatch[1]);
+      const pLng = parseFloat(gpsMatch[2]);
+      if (!isNaN(pLat) && !isNaN(pLng)) {
+        await adminClient.from('employee_live_locations').insert({
+          user_id: resolvedUserId,
+          company: userCompany || 'TNT00001',
+          branch_code: null,
+          latitude: pLat,
+          longitude: pLng,
+          accuracy_meters: null,
+          speed_kmh: 0,
+          battery_pct: null,
+          is_charging: false,
+          is_moving: false,
+          is_mock_gps: false,
+          is_offline_synced: false,
+          recorded_at: nowIso
+        });
+      }
+    }
+  } catch (locErr) {
+    console.warn('Could not insert punch-in live location ping:', locErr);
+  }
 
   // Update local fallback storage
   const existingIdx = local.records.findIndex(r => (r.tenant_id || DEFAULT_TENANT_ID) === tenantId && (r.email || '').toLowerCase() === normalizedEmail && r.attendance_date === today);
@@ -1243,18 +1399,18 @@ export async function punchOut({
   } catch {}
 
   let effectiveCompany = userCompany || existing.company_name || '';
-  if (!effectiveCompany) {
-    try {
-      const { data: uRole } = await adminClient
-        .from('user_roles')
-        .select('company_name, tenant_id')
-        .ilike('email', normalizedEmail)
-        .maybeSingle();
-      if (uRole?.company_name) effectiveCompany = uRole.company_name;
-    } catch {}
-  }
+  let employeeBranch = existing.branch_name || '';
+  try {
+    const { data: uRole } = await adminClient
+      .from('user_roles')
+      .select('company_name, tenant_id, branch_name')
+      .ilike('email', normalizedEmail)
+      .maybeSingle();
+    if (uRole?.company_name && !effectiveCompany) effectiveCompany = uRole.company_name;
+    if (uRole?.branch_name && !employeeBranch) employeeBranch = uRole.branch_name;
+  } catch {}
   const effectiveTenant = resolveTenantId(tenantId, effectiveCompany);
-  const policyRes = await getTenantAttendancePolicy(effectiveTenant, effectiveCompany);
+  const policyRes = await getTenantAttendancePolicy(effectiveTenant, effectiveCompany, employeeBranch);
   const tenantPolicy = policyRes?.data || null;
 
   // 1. Mandatory GPS Permission Check (ON / OFF / AUTO)
@@ -1392,6 +1548,35 @@ export async function punchOut({
     error: 'Aapka aaj ka Punch Out pehle se saved hai.'
   };
   updatedRecord = saved.data;
+
+  // Insert closing live ping into employee_live_locations
+  try {
+    const gpsMatch = String(location || '').match(/GPS\s*\(\s*([0-9.-]+)\s*,\s*([0-9.-]+)\s*\)/i);
+    const resolvedUserId = updatedRecord.user_id || (userId && isValidUuid(userId) ? userId : null);
+    if (gpsMatch && resolvedUserId) {
+      const pLat = parseFloat(gpsMatch[1]);
+      const pLng = parseFloat(gpsMatch[2]);
+      if (!isNaN(pLat) && !isNaN(pLng)) {
+        await adminClient.from('employee_live_locations').insert({
+          user_id: resolvedUserId,
+          company: userCompany || 'TNT00001',
+          branch_code: null,
+          latitude: pLat,
+          longitude: pLng,
+          accuracy_meters: null,
+          speed_kmh: 0,
+          battery_pct: null,
+          is_charging: false,
+          is_moving: false,
+          is_mock_gps: false,
+          is_offline_synced: false,
+          recorded_at: nowIso
+        });
+      }
+    }
+  } catch (locErr) {
+    console.warn('Could not insert punch-out live location ping:', locErr);
+  }
 
   // Update local storage
   const existingIdx = local.records.findIndex(r => (r.tenant_id || DEFAULT_TENANT_ID) === tenantId && (r.email || '').toLowerCase() === normalizedEmail && r.attendance_date === today);

@@ -138,6 +138,10 @@ export function getSubItemPermissions(moduleAccess, userRole, moduleId, subItemI
       if (moduleId === 'settings' && subItemId === 'complaints_config') {
         return { view: parentPerms.view, add: parentPerms.add, edit: parentPerms.edit, delete: false };
       }
+      // If this is holidays in settings, inherit from parent settings view if not explicitly disabled
+      if (moduleId === 'settings' && subItemId === 'holidays') {
+        return { view: parentPerms.view, add: parentPerms.add, edit: parentPerms.edit, delete: false };
+      }
       // If this is end_customers in channel_ops or party, inherit from parent permissions if not explicitly disabled
       if ((moduleId === 'channel_ops' || moduleId === 'party') && subItemId === 'end_customers') {
         return { view: parentPerms.view, add: parentPerms.add, edit: parentPerms.edit, delete: false };

@@ -1,7 +1,7 @@
 {
-  "inactivityTimeoutMinutes": 120,
-  "enableAutoLogout": true,
-  "showTimerInHeader": true,
+  "inactivityTimeoutMinutes": 5,
+  "enableAutoLogout": false,
+  "showTimerInHeader": false,
   "warningSeconds": 45,
   "idleThresholdSeconds": 30,
   "dailyWorkTargetHours": 9,
@@ -97,6 +97,6 @@
       "enabled": true
     }
   ],
-  "updatedAt": "2026-10-20T15:41:23.126Z",
+  "updatedAt": "2026-11-05T16:38:02.730Z",
   "updatedBy": "supujacreations@gmail.com"
 }

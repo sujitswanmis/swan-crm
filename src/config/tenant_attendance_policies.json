@@ -336,5 +336,47 @@
         "max_cpl_accumulation": 10
       }
     }
+  },
+  "00000000-0000-0000-0000-000000000001:New Swan Multitech Limited Raian": {
+    "tenant_id": "00000000-0000-0000-0000-000000000001",
+    "branch_name": "New Swan Multitech Limited Raian",
+    "company_name": "New Swan Group",
+    "policy_version": "v2.4",
+    "shift_name": "Regular Shift (NSMLR / New Swan Group)",
+    "start_time": "09:00",
+    "end_time": "18:30",
+    "grace_minutes": 5,
+    "short_leave_total_monthly": 4,
+    "max_short_leave_per_day": 1,
+    "short_leave_1_name": "20-Minute Short Leave",
+    "short_leave_1_minutes": 20,
+    "short_leave_1_quota": 2,
+    "short_leave_2_name": "2-Hour Short Leave",
+    "short_leave_2_minutes": 120,
+    "short_leave_2_quota": 2,
+    "min_half_day_minutes": 270,
+    "min_full_day_minutes": 450,
+    "half_day_deduction_credit": 0.5,
+    "absent_deduction_credit": 0,
+    "enable_short_leaves": true,
+    "enable_voice_alerts": true,
+    "shifts": [],
+    "policy_notes": "New Swan Group / NSMLR Enterprise Attendance Guidelines, Grace Periods, Short Leave Quotas & Penalties.",
+    "enable_geofence": false,
+    "require_gps": "OFF",
+    "geofence_mode": "STRICT_BLOCK",
+    "geofence_locations": [
+      {
+        "id": "loc_1793883911024",
+        "name": "nsmlr to nsacpl",
+        "latitude": 30.886788192051156,
+        "longitude": 75.93258697174744,
+        "radius_meters": 200,
+        "address": "",
+        "is_active": true
+      }
+    ],
+    "updated_by": "New Swan Admin",
+    "updated_at": "2026-11-05T13:05:19.443Z"
   }
 }

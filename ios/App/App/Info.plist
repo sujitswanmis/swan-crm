@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-        <string>SuPuja Workspace</string>
+        <string>SPC Workspace</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -67,10 +67,14 @@
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>SuPuja Workspace requires microphone access for CRM softphone calling.</string>
+	<string>SPC Workspace requires microphone access for CRM softphone calling.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>SuPuja Workspace requires camera access for uploading receipts, profile pictures and documents.</string>
+	<string>SPC Workspace requires camera access for uploading receipts, profile pictures and documents.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>SuPuja Workspace requires photo library access to upload attachments.</string>
+	<string>SPC Workspace requires photo library access to upload attachments.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>SPC Workspace requires location access for employee attendance punch-in and GPS geofencing verification.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>SPC Workspace requires location access for employee attendance punch-in and field force verification.</string>
 </dict>
 </plist>

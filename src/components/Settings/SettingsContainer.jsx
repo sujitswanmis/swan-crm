@@ -2,7 +2,7 @@ import React, { useState, useEffect, startTransition } from 'react';
 import dynamic from 'next/dynamic';
 import { INTEGRATION_PAGE, INTEGRATION_PAGE_IDS } from '@/config/integrationsConfig';
 import ErrorBoundary from '@/components/ErrorBoundary';
-import { Building2, Settings2, Bell, Database, Target, FileType, Monitor, Package, Truck, AlertTriangle } from 'lucide-react';
+import { Building2, Settings2, Bell, Database, Target, FileType, Monitor, Package, Truck, AlertTriangle, Calendar } from 'lucide-react';
 
 // Subcomponents
 import BusinessProfile from './BusinessProfile';
@@ -16,6 +16,7 @@ import ActiveSessionsConfig from './ActiveSessionsConfig';
 import ProductListConfig from './ProductListConfig';
 import OrderPipelineConfig from './OrderPipelineConfig';
 import ComplaintPipelineConfig from './ComplaintPipelineConfig';
+import HolidaysConfig from './HolidaysConfig';
 import { filterVisibleSubTabs } from '@/utils/permissionUtils';
 
 const IntegrationsContainer = dynamic(() => import('./Integrations/IntegrationsContainer'), {
@@ -32,6 +33,7 @@ const SETTINGS_TABS = [
   { id: 'departments', label: 'Manage Departments', icon: <Building2 size={18} /> },
   { id: 'targets', label: 'Targets & Performance', icon: <Target size={18} /> },
   { id: 'sessions', label: 'Work & Session Rules', icon: <Monitor size={18} /> },
+  { id: 'holidays', label: 'Holidays Calendar Config', icon: <Calendar size={18} /> },
   { id: 'data', label: 'Data Management', icon: <Database size={18} /> },
   { id: 'media', label: 'File & Media Settings', icon: <FileType size={18} /> },
   INTEGRATION_PAGE
@@ -62,6 +64,7 @@ export default function SettingsContainer({
         if (['manage-departments', 'dept'].includes(sub)) return 'departments';
         if (['performance', 'target'].includes(sub)) return 'targets';
         if (['sessions', 'active-sessions', 'work-session', 'breaks', 'shift-monitoring'].includes(sub)) return 'sessions';
+        if (['holidays', 'holiday-calendar', 'holiday_master', 'holiday'].includes(sub)) return 'holidays';
         if (['data-management'].includes(sub)) return 'data';
         if (['file-media', 'files'].includes(sub)) return 'media';
         if (sub) return sub;
@@ -132,6 +135,7 @@ export default function SettingsContainer({
         {activeTab === 'departments' && <ManageDepartments />}
         {activeTab === 'targets' && <TargetPerformance />}
         {activeTab === 'sessions' && <ActiveSessionsConfig userCompany={userCompany} />}
+        {activeTab === 'holidays' && <HolidaysConfig userCompany={userCompany} isMasterAdmin={isMasterAdmin} userRole={userRole} />}
         {activeTab === 'data' && <DataManagement />}
         {activeTab === 'media' && <FileMedia />}
         {activeTab === INTEGRATION_PAGE.id && visibleTabs.some(tab => tab.id === activeTab) && (

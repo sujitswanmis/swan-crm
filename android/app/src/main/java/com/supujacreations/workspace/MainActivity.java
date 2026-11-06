@@ -14,16 +14,24 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // Request microphone permission on startup if not yet granted
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(
-                this,
-                new String[]{
-                    Manifest.permission.RECORD_AUDIO,
-                    Manifest.permission.MODIFY_AUDIO_SETTINGS
-                },
-                PERMISSION_REQ_CODE
-            );
+        // Request essential permissions (Audio & GPS Location) on startup if not yet granted
+        String[] requiredPermissions = new String[]{
+            Manifest.permission.RECORD_AUDIO,
+            Manifest.permission.MODIFY_AUDIO_SETTINGS,
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION
+        };
+
+        boolean needsRequest = false;
+        for (String perm : requiredPermissions) {
+            if (ContextCompat.checkSelfPermission(this, perm) != PackageManager.PERMISSION_GRANTED) {
+                needsRequest = true;
+                break;
+            }
+        }
+
+        if (needsRequest) {
+            ActivityCompat.requestPermissions(this, requiredPermissions, PERMISSION_REQ_CODE);
         }
     }
 }

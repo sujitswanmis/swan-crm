@@ -822,10 +822,47 @@
       "userId": "15e6a4bb-ca0c-4743-bf79-494ae64074ee",
       "email": "supujacreations@gmail.com",
       "empName": "SuPuja Creations",
-      "activeSeconds": 175,
-      "idleSeconds": 249,
+      "activeSeconds": 203,
+      "idleSeconds": 1311,
       "firstSeen": "2026-11-04T14:44:12.83691+00:00",
-      "lastSeen": "2026-11-04T16:59:53.503Z",
+      "lastSeen": "2026-11-04T17:19:50.660Z",
+      "status": "away",
+      "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36"
+    }
+  },
+  "2026-11-05": {
+    "15e6a4bb-ca0c-4743-bf79-494ae64074ee": {
+      "userId": "15e6a4bb-ca0c-4743-bf79-494ae64074ee",
+      "email": "supujacreations@gmail.com",
+      "empName": "SuPuja Creations",
+      "activeSeconds": 1381,
+      "idleSeconds": 246,
+      "firstSeen": "2026-11-05T05:18:53.541275+00:00",
+      "lastSeen": "2026-11-05T16:38:34.767Z",
+      "status": "working",
+      "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36"
+    },
+    "07fa35d3-f50a-4e41-ae15-b2692e393ea0": {
+      "userId": "07fa35d3-f50a-4e41-ae15-b2692e393ea0",
+      "email": "admin@newswangroup.com",
+      "empName": "New Swan Admin",
+      "activeSeconds": 18085,
+      "idleSeconds": 23020,
+      "firstSeen": "2026-11-04T18:57:34.787202+00:00",
+      "lastSeen": "2026-11-05T18:07:26.876Z",
+      "status": "working",
+      "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36"
+    }
+  },
+  "2026-11-06": {
+    "07fa35d3-f50a-4e41-ae15-b2692e393ea0": {
+      "userId": "07fa35d3-f50a-4e41-ae15-b2692e393ea0",
+      "email": "admin@newswangroup.com",
+      "empName": "New Swan Admin",
+      "activeSeconds": 1918,
+      "idleSeconds": 3590,
+      "firstSeen": "2026-11-06T03:43:22.050179+00:00",
+      "lastSeen": "2026-11-06T05:46:01.911Z",
       "status": "away",
       "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36"
     }

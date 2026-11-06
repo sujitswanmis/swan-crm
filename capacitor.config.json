@@ -1,6 +1,6 @@
 {
   "appId": "com.supujacreations.workspace",
-  "appName": "SuPuja Workspace",
+  "appName": "SPC Workspace",
   "webDir": "public",
   "server": {
     "url": "https://app.supujacreations.com",

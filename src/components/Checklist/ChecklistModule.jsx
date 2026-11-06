@@ -17,7 +17,6 @@ import {
   getHumanPeriodLabel,
   calculateChecklistCompletion,
   generateDefaultDailySlots,
-  DEFAULT_HOLIDAYS_LIST,
   isDateHoliday,
   isDateSunday,
   formatDurationHuman,
@@ -33,10 +32,6 @@ import {
   submitChecklistResponse,
   verifyChecklistSubmission,
   getChecklistComplianceReport,
-  getCompanyHolidays,
-  saveCompanyHoliday,
-  deleteCompanyHoliday,
-  resetCompanyHolidaysToDefault,
   getCompanyDepartmentsList
 } from '@/app/actions/checklist';
 import { getEmployeesMaster } from '@/app/actions/employee';
@@ -48,6 +43,7 @@ import { enqueueOfflineAction, canPerformOfflineAction, saveChecklistsLocally, g
 import useTableColumnResize, { ColumnResizer } from '@/utils/tableColumnResize';
 
 const DEFAULT_MY_CHECKLIST_COL_WIDTHS = {
+  sr: 60,
   title: 300,
   frequency: 200,
   period: 150,
@@ -58,6 +54,7 @@ const DEFAULT_MY_CHECKLIST_COL_WIDTHS = {
 };
 
 const DEFAULT_TEMPLATE_COL_WIDTHS = {
+  sr: 60,
   title: 300,
   frequency: 180,
   timing: 200,
@@ -68,14 +65,15 @@ const DEFAULT_TEMPLATE_COL_WIDTHS = {
 };
 
 const DEFAULT_LOGS_COL_WIDTHS = {
-  employee: 200,
+  sr: 60,
+  employee: 220,
   checklist: 240,
   period: 150,
   submitted_at: 170,
   timing: 170,
   score: 110,
   verification: 150,
-  action: 120
+  action: 130
 };
 
 const generateSubmissionUUID = () => {
@@ -123,7 +121,7 @@ export default function ChecklistModule({
     return '00000000-0000-0000-0000-000000000001';
   }, [tenantId, userCompany]);
 
-  // Tabs: 'dashboard' | 'my_checklists' | 'templates' | 'compliance' | 'holidays'
+  // Tabs: 'dashboard' | 'my_checklists' | 'templates' | 'compliance'
   const [activeTab, setActiveTab] = useState(initialSubTab || 'dashboard');
   const [selectedFrequency, setSelectedFrequency] = useState('ALL'); // Default to 'ALL' (All Checklists)
   const [loading, setLoading] = useState(false);
@@ -131,8 +129,12 @@ export default function ChecklistModule({
   const [successMsg, setSuccessMsg] = useState('');
   const [complianceTeamFilter, setComplianceTeamFilter] = useState('MY_TEAM'); // 'MY_TEAM' | 'ALL'
   const [templateStatusFilter, setTemplateStatusFilter] = useState('ALL'); // 'ALL' | 'ACTIVE' | 'INACTIVE'
+  const [templateSearchQuery, setTemplateSearchQuery] = useState('');
+  const [templatePage, setTemplatePage] = useState(1);
+  const [templatePageSize, setTemplatePageSize] = useState(25);
   const [togglingStatusId, setTogglingStatusId] = useState(null);
   const [templateTableView, setTemplateTableView] = useTableViewPreference('Checklist/ChecklistModule-3');
+  const [complianceTableView, setComplianceTableView] = useTableViewPreference('Checklist/ChecklistModule-4');
 
   // Sync activeTab when initialSubTab changes from parent
   useEffect(() => {
@@ -761,14 +763,6 @@ export default function ChecklistModule({
     dashboardLeaderboardScoreFilter
   ]);
 
-  // Manual Holidays State
-  const [holidaysList, setHolidaysList] = useState([]);
-  const [holidayModalOpen, setHolidayModalOpen] = useState(false);
-  const [editingHoliday, setEditingHoliday] = useState(null);
-  const [holidayForm, setHolidayForm] = useState({ id: null, date: '', name: '', type: 'COMPANY', description: '' });
-  const [holidaySearchQuery, setHolidaySearchQuery] = useState('');
-  const [savingHoliday, setSavingHoliday] = useState(false);
-
   // Modals & Drawers
   const [executingChecklist, setExecutingChecklist] = useState(null);
   const [execResponses, setExecResponses] = useState({});
@@ -864,8 +858,6 @@ export default function ChecklistModule({
       loadCompliance(complianceLogs.length > 0);
       if (employeesList.length === 0) loadEmployees();
       if (managedDepartments.length === 0) loadDepartments();
-    } else if (activeTab === 'holidays') {
-      loadHolidays();
     }
   }, [activeTab, selectedFrequency, userEmail, dashboardDate, effectiveTenantId]);
 
@@ -994,96 +986,6 @@ export default function ChecklistModule({
       if (!silent) showNotification('Failed to load compliance report', true);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const loadHolidays = async () => {
-    setLoading(true);
-    try {
-      const res = await getCompanyHolidays(effectiveTenantId);
-      if (res.success) {
-        setHolidaysList(res.data || []);
-      }
-    } catch (e) {
-      console.error(e);
-      showNotification('Failed to load company holidays', true);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleOpenAddHoliday = () => {
-    const todayStr = new Date().toISOString().split('T')[0];
-    setEditingHoliday(null);
-    setHolidayForm({ id: null, date: todayStr, name: '', type: 'COMPANY', description: '' });
-    setHolidayModalOpen(true);
-  };
-
-  const handleOpenEditHoliday = (h) => {
-    setEditingHoliday(h);
-    setHolidayForm({
-      id: h.id || h.date,
-      date: h.date,
-      name: h.name,
-      type: h.type || 'COMPANY',
-      description: h.description || ''
-    });
-    setHolidayModalOpen(true);
-  };
-
-  const handleSaveHoliday = async () => {
-    if (!holidayForm.date || !holidayForm.name.trim()) {
-      showNotification('Please enter both holiday date and holiday name', true);
-      return;
-    }
-    setSavingHoliday(true);
-    try {
-      const res = await saveCompanyHoliday(holidayForm, effectiveTenantId);
-      if (res.success) {
-        setHolidaysList(res.data || []);
-        setHolidayModalOpen(false);
-        showNotification(`🎉 Holiday "${holidayForm.name}" saved successfully!`);
-      } else {
-        showNotification(res.error || 'Failed to save holiday', true);
-      }
-    } catch (e) {
-      showNotification(e.message, true);
-    } finally {
-      setSavingHoliday(false);
-    }
-  };
-
-  const handleDeleteHoliday = async (h) => {
-    if (!window.confirm(`Are you sure you want to delete holiday "${h.name}" (${h.date})?`)) {
-      return;
-    }
-    try {
-      const res = await deleteCompanyHoliday(h.id || h.date, effectiveTenantId);
-      if (res.success) {
-        setHolidaysList(res.data || []);
-        showNotification(`🗑️ Holiday "${h.name}" deleted!`);
-      } else {
-        showNotification(res.error || 'Failed to delete holiday', true);
-      }
-    } catch (e) {
-      showNotification(e.message, true);
-    }
-  };
-
-  const handleResetHolidays = async () => {
-    if (!window.confirm('Reset company holidays to standard National/Gazetted holidays list? Custom added holidays will be overwritten.')) {
-      return;
-    }
-    try {
-      const res = await resetCompanyHolidaysToDefault(effectiveTenantId);
-      if (res.success) {
-        setHolidaysList(res.data || []);
-        showNotification('🔄 Restored default national holidays list!');
-      } else {
-        showNotification(res.error || 'Failed to reset holidays', true);
-      }
-    } catch (e) {
-      showNotification(e.message, true);
     }
   };
 
@@ -1671,18 +1573,18 @@ export default function ChecklistModule({
   };
 
   return (
-    <div style={{ padding: 0, display: 'flex', flexDirection: 'column', gap: '1.25rem', height: '100%', overflowY: 'auto' }}>
+    <div style={{ padding: 0, display: 'flex', flexDirection: 'column', gap: '0.65rem', height: '100%', overflowY: 'auto' }}>
       
       {/* Toast Alert */}
       {successMsg && (
-        <div style={{ padding: '0.75rem 1.25rem', background: '#ecfdf5', color: '#065f46', border: '1px solid #a7f3d0', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 500 }}>
-          <CheckCircle2 size={18} />
+        <div style={{ padding: '0.5rem 1rem', background: '#ecfdf5', color: '#065f46', border: '1px solid #a7f3d0', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 500, fontSize: '0.85rem' }}>
+          <CheckCircle2 size={16} />
           <span>{successMsg}</span>
         </div>
       )}
       {errorMsg && (
-        <div style={{ padding: '0.75rem 1.25rem', background: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 500 }}>
-          <AlertCircle size={18} />
+        <div style={{ padding: '0.5rem 1rem', background: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 500, fontSize: '0.85rem' }}>
+          <AlertCircle size={16} />
           <span>{errorMsg}</span>
         </div>
       )}
@@ -1691,7 +1593,7 @@ export default function ChecklistModule({
       <div style={{
         background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
         color: '#ffffff',
-        padding: '1.5rem 2rem',
+        padding: '0.75rem 1.25rem',
         borderRadius: '12px',
         display: 'flex',
         justifyContent: 'space-between',
@@ -1699,11 +1601,11 @@ export default function ChecklistModule({
         boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
       }}>
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.25rem', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '1.75rem' }}>📋</span>
-            <h1 style={{ fontSize: '1.5rem', fontWeight: 700, margin: 0 }}>Smart Checklist Management</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.15rem', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '1.4rem' }}>📋</span>
+            <h1 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0 }}>Smart Checklist Management</h1>
             <span style={{
-              fontSize: '0.75rem',
+              fontSize: '0.72rem',
               fontWeight: 600,
               padding: '2px 8px',
               borderRadius: '6px',
@@ -1717,12 +1619,12 @@ export default function ChecklistModule({
               🏢 Workspace: {userCompany || 'Default'}
             </span>
           </div>
-          <p style={{ margin: 0, opacity: 0.85, fontSize: '0.9rem' }}>
+          <p style={{ margin: 0, opacity: 0.85, fontSize: '0.82rem' }}>
             Daily, Weekly, 15-Day, Monthly, Quarterly, 6-Month, & 1-Year Recurring Operations Engine
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: '0.75rem' }}>
+        <div style={{ display: 'flex', gap: '0.6rem' }}>
           {isManager && (
             <button
               onClick={handleOpenNewTemplate}
@@ -1730,16 +1632,17 @@ export default function ChecklistModule({
                 background: '#3b82f6',
                 color: '#fff',
                 border: 'none',
-                padding: '0.6rem 1.2rem',
+                padding: '0.45rem 0.95rem',
                 borderRadius: '8px',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '0.5rem',
+                gap: '0.4rem',
                 fontWeight: 600,
+                fontSize: '0.82rem',
                 cursor: 'pointer'
               }}
             >
-              <Plus size={18} /> Create Template
+              <Plus size={16} /> Create Template
             </button>
           )}
           <button
@@ -1754,31 +1657,31 @@ export default function ChecklistModule({
                 loadTemplates();
               } else if (activeTab === 'compliance') {
                 loadCompliance();
-              } else {
-                loadHolidays();
               }
             }}
             style={{
               background: 'rgba(255,255,255,0.15)',
               color: '#fff',
               border: 'none',
-              padding: '0.6rem 1rem',
+              padding: '0.45rem 0.85rem',
               borderRadius: '8px',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
-              gap: '0.4rem'
+              gap: '0.4rem',
+              fontSize: '0.82rem',
+              fontWeight: 600
             }}
           >
-            <RefreshCw size={16} className={loading ? 'spin' : ''} /> Refresh
+            <RefreshCw size={15} className={loading ? 'spin' : ''} /> Refresh
           </button>
         </div>
       </div>
 
       {/* Frequency Pill Bar (for My Checklists, Templates, Compliance) */}
-      {activeTab !== 'dashboard' && activeTab !== 'holidays' && (
-        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-          <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary, #64748b)', marginRight: '0.5rem' }}>
+      {activeTab !== 'dashboard' && (
+        <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'center' }}>
+          <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary, #64748b)', marginRight: '0.4rem' }}>
             Schedule Frequencies:
           </span>
 
@@ -1789,14 +1692,14 @@ export default function ChecklistModule({
               background: selectedFrequency === 'ALL' ? '#6366f1' : 'var(--bg-secondary, #f8fafc)',
               color: selectedFrequency === 'ALL' ? '#ffffff' : 'var(--text-primary, #1e293b)',
               border: selectedFrequency === 'ALL' ? '1px solid #6366f1' : '1px solid var(--border-color, #e2e8f0)',
-              padding: '0.45rem 0.95rem',
+              padding: '0.32rem 0.8rem',
               borderRadius: '20px',
-              fontSize: '0.85rem',
+              fontSize: '0.8rem',
               fontWeight: 700,
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
-              gap: '0.4rem',
+              gap: '0.35rem',
               transition: 'all 0.15s ease',
               boxShadow: selectedFrequency === 'ALL' ? '0 2px 5px rgba(99,102,241,0.3)' : 'none'
             }}
@@ -1815,14 +1718,14 @@ export default function ChecklistModule({
                   background: isSelected ? freq.badgeColor : 'var(--bg-secondary, #f8fafc)',
                   color: isSelected ? '#ffffff' : 'var(--text-primary, #1e293b)',
                   border: isSelected ? `1px solid ${freq.badgeColor}` : '1px solid var(--border-color, #e2e8f0)',
-                  padding: '0.45rem 0.9rem',
+                  padding: '0.32rem 0.75rem',
                   borderRadius: '20px',
-                  fontSize: '0.85rem',
+                  fontSize: '0.8rem',
                   fontWeight: 600,
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '0.4rem',
+                  gap: '0.35rem',
                   transition: 'all 0.15s ease',
                   boxShadow: isSelected ? `0 2px 5px ${freq.badgeColor}35` : 'none'
                 }}
@@ -2640,18 +2543,18 @@ export default function ChecklistModule({
       {/* TAB 1: MY CHECKLISTS (EMPLOYEE EXECUTION STATION)                         */}
       {/* ========================================================================= */}
       {activeTab === 'my_checklists' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
           {/* ========================================================================= */}
           {/* 1. TOP SECTION: CHECKLIST DASHBOARD & DATE NAVIGATOR                      */}
           {/* ========================================================================= */}
           <div style={{
             background: 'var(--card-bg, #ffffff)',
             border: '1px solid var(--border-color, #e2e8f0)',
-            borderRadius: '14px',
-            padding: '1.25rem',
+            borderRadius: '12px',
+            padding: '0.75rem 1rem',
             display: 'flex',
             flexDirection: 'column',
-            gap: '1rem',
+            gap: '0.55rem',
             boxShadow: '0 2px 10px rgba(0,0,0,0.03)'
           }}>
             {/* Row 1: Title + Quick Date Navigation Bar */}
@@ -3485,35 +3388,39 @@ export default function ChecklistModule({
 
               {/* 2. TABLE VIEW */}
               {myChecklistsViewMode === 'table' && (
-                <div style={{ overflowX: 'auto', background: 'var(--card-bg, #ffffff)', border: '1px solid var(--border-color, #e2e8f0)', borderRadius: '12px' }}>
-                  <MobileTableView id="Checklist/ChecklistModule-2"><table style={{ width: `${getMyChecklistTotalWidth()}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
-                    <thead>
+                <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 355px)', minHeight: '260px', background: 'var(--card-bg, #ffffff)', border: '1px solid var(--border-color, #e2e8f0)', borderRadius: '12px', position: 'relative' }}>
+                  <MobileTableView id="Checklist/ChecklistModule-2"><table style={{ width: `${getMyChecklistTotalWidth()}px`, minWidth: '100%', tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
+                    <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-secondary, #f8fafc)' }}>
                       <tr style={{ background: 'var(--bg-secondary, #f8fafc)', borderBottom: '1px solid var(--border-color, #e2e8f0)', color: 'var(--text-secondary, #64748b)' }}>
-                        <th style={{ position: 'relative', width: `${myChecklistColWidths.title}px`, padding: '0.75rem 1rem' }}>
+                        <th style={{ position: 'sticky', top: 0, zIndex: 10, width: `${myChecklistColWidths.sr || 60}px`, padding: '0.75rem 0.5rem', textAlign: 'center', background: 'var(--bg-secondary, #f8fafc)', boxShadow: 'inset 0 -1px 0 var(--border-color, #e2e8f0)' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', whiteSpace: 'nowrap' }}>#</div>
+                          <ColumnResizer columnKey="sr" isResizing={isMyChecklistResizing('sr')} onMouseDown={(e) => handleMyChecklistResizeStart('sr', e)} onTouchStart={(e) => handleMyChecklistTouchStart('sr', e)} onDoubleClick={() => handleMyChecklistReset('sr')} />
+                        </th>
+                        <th style={{ position: 'sticky', top: 0, zIndex: 10, width: `${myChecklistColWidths.title}px`, padding: '0.75rem 1rem', background: 'var(--bg-secondary, #f8fafc)', boxShadow: 'inset 0 -1px 0 var(--border-color, #e2e8f0)' }}>
                           <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Checklist Title</div>
                           <ColumnResizer columnKey="title" isResizing={isMyChecklistResizing('title')} onMouseDown={(e) => handleMyChecklistResizeStart('title', e)} onTouchStart={(e) => handleMyChecklistTouchStart('title', e)} onDoubleClick={() => handleMyChecklistReset('title')} />
                         </th>
-                        <th style={{ position: 'relative', width: `${myChecklistColWidths.frequency}px`, padding: '0.75rem 1rem' }}>
+                        <th style={{ position: 'sticky', top: 0, zIndex: 10, width: `${myChecklistColWidths.frequency}px`, padding: '0.75rem 1rem', background: 'var(--bg-secondary, #f8fafc)', boxShadow: 'inset 0 -1px 0 var(--border-color, #e2e8f0)' }}>
                           <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Frequency & Department</div>
                           <ColumnResizer columnKey="frequency" isResizing={isMyChecklistResizing('frequency')} onMouseDown={(e) => handleMyChecklistResizeStart('frequency', e)} onTouchStart={(e) => handleMyChecklistTouchStart('frequency', e)} onDoubleClick={() => handleMyChecklistReset('frequency')} />
                         </th>
-                        <th style={{ position: 'relative', width: `${myChecklistColWidths.period}px`, padding: '0.75rem 1rem' }}>
+                        <th style={{ position: 'sticky', top: 0, zIndex: 10, width: `${myChecklistColWidths.period}px`, padding: '0.75rem 1rem', background: 'var(--bg-secondary, #f8fafc)', boxShadow: 'inset 0 -1px 0 var(--border-color, #e2e8f0)' }}>
                           <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Period / Date</div>
                           <ColumnResizer columnKey="period" isResizing={isMyChecklistResizing('period')} onMouseDown={(e) => handleMyChecklistResizeStart('period', e)} onTouchStart={(e) => handleMyChecklistTouchStart('period', e)} onDoubleClick={() => handleMyChecklistReset('period')} />
                         </th>
-                        <th style={{ position: 'relative', width: `${myChecklistColWidths.cutoff}px`, padding: '0.75rem 1rem' }}>
+                        <th style={{ position: 'sticky', top: 0, zIndex: 10, width: `${myChecklistColWidths.cutoff}px`, padding: '0.75rem 1rem', background: 'var(--bg-secondary, #f8fafc)', boxShadow: 'inset 0 -1px 0 var(--border-color, #e2e8f0)' }}>
                           <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Cutoff / Time Window</div>
                           <ColumnResizer columnKey="cutoff" isResizing={isMyChecklistResizing('cutoff')} onMouseDown={(e) => handleMyChecklistResizeStart('cutoff', e)} onTouchStart={(e) => handleMyChecklistTouchStart('cutoff', e)} onDoubleClick={() => handleMyChecklistReset('cutoff')} />
                         </th>
-                        <th style={{ position: 'relative', width: `${myChecklistColWidths.progress}px`, padding: '0.75rem 1rem' }}>
+                        <th style={{ position: 'sticky', top: 0, zIndex: 10, width: `${myChecklistColWidths.progress}px`, padding: '0.75rem 1rem', background: 'var(--bg-secondary, #f8fafc)', boxShadow: 'inset 0 -1px 0 var(--border-color, #e2e8f0)' }}>
                           <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Progress</div>
                           <ColumnResizer columnKey="progress" isResizing={isMyChecklistResizing('progress')} onMouseDown={(e) => handleMyChecklistResizeStart('progress', e)} onTouchStart={(e) => handleMyChecklistTouchStart('progress', e)} onDoubleClick={() => handleMyChecklistReset('progress')} />
                         </th>
-                        <th style={{ position: 'relative', width: `${myChecklistColWidths.status}px`, padding: '0.75rem 1rem' }}>
+                        <th style={{ position: 'sticky', top: 0, zIndex: 10, width: `${myChecklistColWidths.status}px`, padding: '0.75rem 1rem', background: 'var(--bg-secondary, #f8fafc)', boxShadow: 'inset 0 -1px 0 var(--border-color, #e2e8f0)' }}>
                           <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Status</div>
                           <ColumnResizer columnKey="status" isResizing={isMyChecklistResizing('status')} onMouseDown={(e) => handleMyChecklistResizeStart('status', e)} onTouchStart={(e) => handleMyChecklistTouchStart('status', e)} onDoubleClick={() => handleMyChecklistReset('status')} />
                         </th>
-                        <th style={{ position: 'relative', width: `${myChecklistColWidths.action}px`, padding: '0.75rem 1rem', textAlign: 'right' }}>
+                        <th style={{ position: 'sticky', top: 0, zIndex: 10, width: `${myChecklistColWidths.action}px`, padding: '0.75rem 1rem', textAlign: 'right', background: 'var(--bg-secondary, #f8fafc)', boxShadow: 'inset 0 -1px 0 var(--border-color, #e2e8f0)' }}>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Action</div>
                           <ColumnResizer columnKey="action" isResizing={isMyChecklistResizing('action')} onMouseDown={(e) => handleMyChecklistResizeStart('action', e)} onTouchStart={(e) => handleMyChecklistTouchStart('action', e)} onDoubleClick={() => handleMyChecklistReset('action')} />
                         </th>
@@ -3549,6 +3456,9 @@ export default function ChecklistModule({
                               opacity: isLocked ? 0.82 : 1
                             }}
                           >
+                            <td style={{ padding: '0.85rem 0.5rem', textAlign: 'center', verticalAlign: 'top', fontWeight: 600, color: 'var(--text-secondary, #64748b)', fontSize: '0.82rem' }}>
+                              {idx + 1}
+                            </td>
                             <td style={{ padding: '0.85rem 1rem', verticalAlign: 'top', whiteSpace: 'normal', wordBreak: 'break-word' }} title={`${tmpl.title} - ${tmpl.description || tmpl.department}`}>
                               <div style={{ fontWeight: 700, color: 'var(--text-primary, #1e293b)', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }}>{tmpl.title}</div>
                               <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary, #64748b)', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3, marginTop: '0.2rem' }}>
@@ -3790,17 +3700,47 @@ export default function ChecklistModule({
       {/* TAB 2: TEMPLATES MASTER (FOR MANAGERS / ADMINS)                           */}
       {/* ========================================================================= */}
       {activeTab === 'templates' && (() => {
-        const displayedTemplates = templates.filter(tmpl => {
+        const filteredTemplates = templates.filter(tmpl => {
           const s = (tmpl.status || (tmpl.is_active ? 'ACTIVE' : 'INACTIVE')).toUpperCase();
-          if (templateStatusFilter === 'ACTIVE') return s === 'ACTIVE';
-          if (templateStatusFilter === 'INACTIVE') return s === 'INACTIVE';
-          if (templateStatusFilter === 'DRAFT') return s === 'DRAFT';
+          if (templateStatusFilter === 'ACTIVE' && s !== 'ACTIVE') return false;
+          if (templateStatusFilter === 'INACTIVE' && s !== 'INACTIVE') return false;
+          if (templateStatusFilter === 'DRAFT' && s !== 'DRAFT') return false;
+
+          if (templateSearchQuery && templateSearchQuery.trim()) {
+            const q = templateSearchQuery.toLowerCase().trim();
+            const title = (tmpl.title || '').toLowerCase();
+            const desc = (tmpl.description || '').toLowerCase();
+            const dept = (tmpl.department || '').toLowerCase();
+            const assignedName = (tmpl.assigned_employee_name || '').toLowerCase();
+            const assignedEmail = (tmpl.assigned_employee_email || '').toLowerCase();
+            const role = (tmpl.target_role || '').toLowerCase();
+            const freq = (tmpl.frequency || '').toLowerCase();
+            return (
+              title.includes(q) ||
+              desc.includes(q) ||
+              dept.includes(q) ||
+              assignedName.includes(q) ||
+              assignedEmail.includes(q) ||
+              role.includes(q) ||
+              freq.includes(q)
+            );
+          }
           return true;
         });
 
         const activeCount = templates.filter(t => (t.status || (t.is_active ? 'ACTIVE' : 'INACTIVE')).toUpperCase() === 'ACTIVE').length;
         const inactiveCount = templates.filter(t => (t.status || (t.is_active ? 'ACTIVE' : 'INACTIVE')).toUpperCase() === 'INACTIVE').length;
         const draftCount = templates.filter(t => (t.status || (t.is_active ? 'ACTIVE' : 'INACTIVE')).toUpperCase() === 'DRAFT').length;
+
+        // Pagination for Templates
+        const totalTemplatesCount = filteredTemplates.length;
+        const effectivePageSize = templatePageSize === 'All' ? 100000 : Number(templatePageSize || 25);
+        const totalTemplatePages = Math.max(1, Math.ceil(totalTemplatesCount / effectivePageSize));
+        const currentTemplatePage = Math.min(templatePage, totalTemplatePages);
+        const tmplStartIndex = (currentTemplatePage - 1) * effectivePageSize;
+        const displayedTemplates = templatePageSize === 'All'
+          ? filteredTemplates
+          : filteredTemplates.slice(tmplStartIndex, tmplStartIndex + effectivePageSize);
 
         return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -3813,9 +3753,48 @@ export default function ChecklistModule({
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                {/* Search Bar for Templates */}
+                <div style={{ position: 'relative', minWidth: '220px', maxWidth: '340px' }}>
+                  <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+                  <input
+                    type="text"
+                    placeholder="Search templates, dept, employee..."
+                    value={templateSearchQuery}
+                    onChange={(e) => {
+                      setTemplateSearchQuery(e.target.value);
+                      setTemplatePage(1);
+                    }}
+                    style={{
+                      padding: '0.5rem 2rem 0.5rem 2.1rem',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border-color, #cbd5e1)',
+                      background: 'var(--card-bg, #ffffff)',
+                      fontSize: '0.85rem',
+                      width: '100%',
+                      outline: 'none'
+                    }}
+                  />
+                  {templateSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTemplateSearchQuery('');
+                        setTemplatePage(1);
+                      }}
+                      style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'transparent', cursor: 'pointer', color: '#94a3b8', padding: 0 }}
+                      title="Clear search"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+
                 <select
                   value={templateStatusFilter}
-                  onChange={(e) => setTemplateStatusFilter(e.target.value)}
+                  onChange={(e) => {
+                    setTemplateStatusFilter(e.target.value);
+                    setTemplatePage(1);
+                  }}
                   style={{
                     padding: '0.5rem 0.85rem',
                     borderRadius: '8px',
@@ -3854,35 +3833,39 @@ export default function ChecklistModule({
               </div>
             </div>
 
-            <div style={{ overflowX: 'auto', background: 'var(--card-bg, #ffffff)', border: '1px solid var(--border-color, #e2e8f0)', borderRadius: '12px' }}>
-              <MobileTableView id="Checklist/ChecklistModule-3" view={templateTableView} hideToggle={true}><table style={{ width: `${getTemplateTotalWidth()}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
-                <thead>
+            <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 305px)', minHeight: '280px', background: 'var(--card-bg, #ffffff)', border: '1px solid var(--border-color, #e2e8f0)', borderRadius: '12px', position: 'relative' }}>
+              <MobileTableView id="Checklist/ChecklistModule-3" view={templateTableView} hideToggle={true}><table style={{ width: `${getTemplateTotalWidth()}px`, minWidth: '100%', tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
+                <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-secondary, #f8fafc)' }}>
                   <tr style={{ background: 'var(--bg-secondary, #f8fafc)', borderBottom: '1px solid var(--border-color, #e2e8f0)', color: 'var(--text-secondary, #64748b)' }}>
-                    <th style={{ position: 'relative', width: `${templateColWidths.title}px`, padding: '0.75rem 1rem' }}>
+                    <th style={{ position: 'sticky', top: 0, zIndex: 10, width: `${templateColWidths.sr || 60}px`, padding: '0.75rem 0.5rem', textAlign: 'center', background: 'var(--bg-secondary, #f8fafc)', boxShadow: 'inset 0 -1px 0 var(--border-color, #e2e8f0)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', whiteSpace: 'nowrap' }}>#</div>
+                      <ColumnResizer columnKey="sr" isResizing={isTemplateResizing('sr')} onMouseDown={(e) => handleTemplateResizeStart('sr', e)} onTouchStart={(e) => handleTemplateTouchStart('sr', e)} onDoubleClick={() => handleTemplateReset('sr')} />
+                    </th>
+                    <th style={{ position: 'sticky', top: 0, zIndex: 10, width: `${templateColWidths.title}px`, padding: '0.75rem 1rem', background: 'var(--bg-secondary, #f8fafc)', boxShadow: 'inset 0 -1px 0 var(--border-color, #e2e8f0)' }}>
                       <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Title & Description</div>
                       <ColumnResizer columnKey="title" isResizing={isTemplateResizing('title')} onMouseDown={(e) => handleTemplateResizeStart('title', e)} onTouchStart={(e) => handleTemplateTouchStart('title', e)} onDoubleClick={() => handleTemplateReset('title')} />
                     </th>
-                    <th style={{ position: 'relative', width: `${templateColWidths.frequency}px`, padding: '0.75rem 1rem' }}>
+                    <th style={{ position: 'sticky', top: 0, zIndex: 10, width: `${templateColWidths.frequency}px`, padding: '0.75rem 1rem', background: 'var(--bg-secondary, #f8fafc)', boxShadow: 'inset 0 -1px 0 var(--border-color, #e2e8f0)' }}>
                       <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Recurrence Frequency</div>
                       <ColumnResizer columnKey="frequency" isResizing={isTemplateResizing('frequency')} onMouseDown={(e) => handleTemplateResizeStart('frequency', e)} onTouchStart={(e) => handleTemplateTouchStart('frequency', e)} onDoubleClick={() => handleTemplateReset('frequency')} />
                     </th>
-                    <th style={{ position: 'relative', width: `${templateColWidths.timing}px`, padding: '0.75rem 1rem' }}>
+                    <th style={{ position: 'sticky', top: 0, zIndex: 10, width: `${templateColWidths.timing}px`, padding: '0.75rem 1rem', background: 'var(--bg-secondary, #f8fafc)', boxShadow: 'inset 0 -1px 0 var(--border-color, #e2e8f0)' }}>
                       <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Time / Days / Date</div>
                       <ColumnResizer columnKey="timing" isResizing={isTemplateResizing('timing')} onMouseDown={(e) => handleTemplateResizeStart('timing', e)} onTouchStart={(e) => handleTemplateTouchStart('timing', e)} onDoubleClick={() => handleTemplateReset('timing')} />
                     </th>
-                    <th style={{ position: 'relative', width: `${templateColWidths.assigned}px`, padding: '0.75rem 1rem' }}>
+                    <th style={{ position: 'sticky', top: 0, zIndex: 10, width: `${templateColWidths.assigned}px`, padding: '0.75rem 1rem', background: 'var(--bg-secondary, #f8fafc)', boxShadow: 'inset 0 -1px 0 var(--border-color, #e2e8f0)' }}>
                       <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Assigned To</div>
                       <ColumnResizer columnKey="assigned" isResizing={isTemplateResizing('assigned')} onMouseDown={(e) => handleTemplateResizeStart('assigned', e)} onTouchStart={(e) => handleTemplateTouchStart('assigned', e)} onDoubleClick={() => handleTemplateReset('assigned')} />
                     </th>
-                    <th style={{ position: 'relative', width: `${templateColWidths.questions}px`, padding: '0.75rem 1rem' }}>
+                    <th style={{ position: 'sticky', top: 0, zIndex: 10, width: `${templateColWidths.questions}px`, padding: '0.75rem 1rem', background: 'var(--bg-secondary, #f8fafc)', boxShadow: 'inset 0 -1px 0 var(--border-color, #e2e8f0)' }}>
                       <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Questions / Items</div>
                       <ColumnResizer columnKey="questions" isResizing={isTemplateResizing('questions')} onMouseDown={(e) => handleTemplateResizeStart('questions', e)} onTouchStart={(e) => handleTemplateTouchStart('questions', e)} onDoubleClick={() => handleTemplateReset('questions')} />
                     </th>
-                    <th style={{ position: 'relative', width: `${templateColWidths.status}px`, padding: '0.75rem 1rem' }}>
+                    <th style={{ position: 'sticky', top: 0, zIndex: 10, width: `${templateColWidths.status}px`, padding: '0.75rem 1rem', background: 'var(--bg-secondary, #f8fafc)', boxShadow: 'inset 0 -1px 0 var(--border-color, #e2e8f0)' }}>
                       <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Status</div>
                       <ColumnResizer columnKey="status" isResizing={isTemplateResizing('status')} onMouseDown={(e) => handleTemplateResizeStart('status', e)} onTouchStart={(e) => handleTemplateTouchStart('status', e)} onDoubleClick={() => handleTemplateReset('status')} />
                     </th>
-                    <th style={{ position: 'relative', width: `${templateColWidths.actions}px`, padding: '0.75rem 1rem', textAlign: 'right' }}>
+                    <th style={{ position: 'sticky', top: 0, zIndex: 10, width: `${templateColWidths.actions}px`, padding: '0.75rem 1rem', textAlign: 'right', background: 'var(--bg-secondary, #f8fafc)', boxShadow: 'inset 0 -1px 0 var(--border-color, #e2e8f0)' }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Actions</div>
                       <ColumnResizer columnKey="actions" isResizing={isTemplateResizing('actions')} onMouseDown={(e) => handleTemplateResizeStart('actions', e)} onTouchStart={(e) => handleTemplateTouchStart('actions', e)} onDoubleClick={() => handleTemplateReset('actions')} />
                     </th>
@@ -3891,12 +3874,12 @@ export default function ChecklistModule({
                 <tbody>
                   {displayedTemplates.length === 0 && (
                     <tr>
-                      <td colSpan={7} style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-secondary, #64748b)' }}>
-                        No templates found for this status. Click "Add New Template" to create one.
+                      <td colSpan={8} style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-secondary, #64748b)' }}>
+                        No templates found matching your search and filter criteria. Click "Add New Template" to create one.
                       </td>
                     </tr>
                   )}
-                  {displayedTemplates.map(tmpl => {
+                  {displayedTemplates.map((tmpl, idx) => {
                     const freqMeta = FREQUENCIES_CONFIG.find(f => f.id === tmpl.frequency) || FREQUENCIES_CONFIG[0];
                     const s = (tmpl.status || (tmpl.is_active ? 'ACTIVE' : 'INACTIVE')).toUpperCase();
                     const isAct = s === 'ACTIVE';
@@ -3918,6 +3901,9 @@ export default function ChecklistModule({
 
                     return (
                       <tr key={tmpl.id} style={{ borderBottom: '1px solid var(--border-color, #e2e8f0)' }}>
+                        <td style={{ padding: '0.85rem 0.5rem', textAlign: 'center', verticalAlign: 'top', fontWeight: 600, color: 'var(--text-secondary, #64748b)', fontSize: '0.82rem' }}>
+                          {tmplStartIndex + idx + 1}
+                        </td>
                         <td style={{ padding: '0.85rem 1rem', verticalAlign: 'top', whiteSpace: 'normal', wordBreak: 'break-word' }}>
                           <div style={{ fontWeight: 600, color: 'var(--text-primary, #1e293b)', wordBreak: 'break-word', lineHeight: 1.3 }}>{tmpl.title}</div>
                           <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary, #64748b)', wordBreak: 'break-word', lineHeight: 1.3, marginTop: '0.2rem' }}>{tmpl.description || tmpl.department}</div>
@@ -4147,6 +4133,19 @@ export default function ChecklistModule({
                 </tbody>
               </table></MobileTableView>
             </div>
+
+            {/* Standard Table Pagination for Templates */}
+            <StandardTablePagination
+              currentPage={currentTemplatePage}
+              totalRecords={totalTemplatesCount}
+              pageSize={templatePageSize === 'All' ? 100000 : Number(templatePageSize || 25)}
+              onPageChange={setTemplatePage}
+              onPageSizeChange={(newSize) => {
+                setTemplatePageSize(newSize);
+                setTemplatePage(1);
+              }}
+              style={{ marginTop: '0.5rem', borderRadius: '10px', paddingRight: '7rem' }}
+            />
           </div>
         );
       })()}
@@ -4215,19 +4214,19 @@ export default function ChecklistModule({
         const paginatedLogs = filteredLogs.slice(startIndex, endIndex);
 
         return (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
             {/* Header & Reporting Team Switcher */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
               <div>
-                <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0, color: 'var(--text-primary, #0f172a)' }}>
+                <h2 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0, color: 'var(--text-primary, #0f172a)' }}>
                   🛡️ Compliance & Sign-Off Dashboard
                 </h2>
-                <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary, #64748b)', margin: '0.2rem 0 0 0' }}>
+                <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary, #64748b)', margin: '0.15rem 0 0 0' }}>
                   Audit employee checklist completions, check submitted photos/readings, and sign off.
                 </p>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
                 {myReportingTeam.length > 0 && (
                   <select
                     value={complianceTeamFilter}
@@ -4236,13 +4235,13 @@ export default function ChecklistModule({
                       setCompliancePage(1);
                     }}
                     style={{
-                      padding: '0.5rem 0.85rem',
+                      padding: '0.35rem 0.75rem',
                       borderRadius: '8px',
                       border: '1.5px solid #3b82f6',
                       background: '#eff6ff',
                       color: '#1d4ed8',
                       fontWeight: 700,
-                      fontSize: '0.85rem',
+                      fontSize: '0.8rem',
                       cursor: 'pointer'
                     }}
                   >
@@ -4257,18 +4256,18 @@ export default function ChecklistModule({
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '0.4rem',
-                    padding: '0.5rem 0.85rem',
+                    gap: '0.35rem',
+                    padding: '0.35rem 0.75rem',
                     borderRadius: '8px',
                     border: '1px solid var(--border-color, #cbd5e1)',
                     background: 'var(--card-bg, #ffffff)',
                     color: 'var(--text-primary, #1e293b)',
-                    fontSize: '0.85rem',
+                    fontSize: '0.8rem',
                     fontWeight: 600,
                     cursor: 'pointer'
                   }}
                 >
-                  <RefreshCw size={14} /> Refresh
+                  <RefreshCw size={13} /> Refresh
                 </button>
               </div>
             </div>
@@ -4277,11 +4276,11 @@ export default function ChecklistModule({
             <div style={{
               background: 'var(--card-bg, #ffffff)',
               border: '1px solid var(--border-color, #e2e8f0)',
-              borderRadius: '12px',
-              padding: '0.85rem 1rem',
+              borderRadius: '10px',
+              padding: '0.5rem 0.75rem',
               display: 'flex',
               flexDirection: 'column',
-              gap: '0.75rem'
+              gap: '0.45rem'
             }}>
               {/* Row 1: Quick Date Presets Bar */}
               <div style={{
@@ -4289,19 +4288,19 @@ export default function ChecklistModule({
                 alignItems: 'center',
                 justifyContent: 'space-between',
                 flexWrap: 'wrap',
-                gap: '0.75rem'
+                gap: '0.5rem'
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
                   <span style={{
-                    fontSize: '0.82rem',
+                    fontSize: '0.78rem',
                     fontWeight: 700,
                     color: '#1e293b',
-                    marginRight: '0.25rem',
+                    marginRight: '0.2rem',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '0.3rem'
+                    gap: '0.25rem'
                   }}>
-                    <Calendar size={14} style={{ color: '#0284c7' }} /> 📅 Quick Date:
+                    <Calendar size={13} style={{ color: '#0284c7' }} /> 📅 Quick Date:
                   </span>
 
                   {[
@@ -4321,12 +4320,12 @@ export default function ChecklistModule({
                         type="button"
                         onClick={() => handleCompliancePresetChange(p.id)}
                         style={{
-                          padding: '0.35rem 0.75rem',
+                          padding: '0.22rem 0.55rem',
                           borderRadius: '20px',
                           border: isSelected ? '1.5px solid #0284c7' : '1px solid var(--border-color, #e2e8f0)',
                           background: isSelected ? '#0284c7' : 'var(--bg-secondary, #f8fafc)',
                           color: isSelected ? '#ffffff' : 'var(--text-secondary, #475569)',
-                          fontSize: '0.8rem',
+                          fontSize: '0.75rem',
                           fontWeight: isSelected ? 700 : 500,
                           cursor: 'pointer',
                           transition: 'all 0.15s ease',
@@ -4339,7 +4338,7 @@ export default function ChecklistModule({
                   })}
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                   <DateRangePicker
                     preset={complianceDatePreset}
                     startDate={complianceStartDate}
@@ -4351,62 +4350,62 @@ export default function ChecklistModule({
                 </div>
               </div>
 
-              {/* Row 2: Search, Status Filter & Timing Filter */}
+              {/* Row 2: Search, Status Filter, Timing Filter & KPI Badges */}
               <div style={{
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
                 flexWrap: 'wrap',
-                gap: '0.75rem',
+                gap: '0.5rem',
                 borderTop: '1px solid var(--border-color, #f1f5f9)',
-                paddingTop: '0.75rem'
+                paddingTop: '0.45rem'
               }}>
-                {/* Search Bar */}
-                <div style={{ position: 'relative', flex: '1 1 280px', maxWidth: '380px' }}>
-                  <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
-                  <input
-                    type="text"
-                    placeholder="Search employee, checklist, dept..."
-                    value={complianceSearchQuery}
-                    onChange={(e) => {
-                      setComplianceSearchQuery(e.target.value);
-                      setCompliancePage(1);
-                    }}
-                    style={{
-                      width: '100%',
-                      padding: '0.45rem 2rem 0.45rem 2.1rem',
-                      borderRadius: '8px',
-                      border: '1px solid var(--border-color, #cbd5e1)',
-                      fontSize: '0.85rem',
-                      background: 'var(--bg-secondary, #f8fafc)',
-                      color: 'var(--text-primary, #0f172a)'
-                    }}
-                  />
-                  {complianceSearchQuery && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setComplianceSearchQuery('');
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap', flex: '1 1 auto' }}>
+                  {/* Search Bar */}
+                  <div style={{ position: 'relative', minWidth: '220px', maxWidth: '320px', flex: '1 1 220px' }}>
+                    <Search size={14} style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+                    <input
+                      type="text"
+                      placeholder="Search employee, checklist, dept..."
+                      value={complianceSearchQuery}
+                      onChange={(e) => {
+                        setComplianceSearchQuery(e.target.value);
                         setCompliancePage(1);
                       }}
                       style={{
-                        position: 'absolute',
-                        right: '8px',
-                        top: '50%',
-                        transform: 'translateY(-50%)',
-                        background: 'transparent',
-                        border: 'none',
-                        cursor: 'pointer',
-                        color: '#94a3b8'
+                        width: '100%',
+                        padding: '0.35rem 1.8rem 0.35rem 1.8rem',
+                        borderRadius: '6px',
+                        border: '1px solid var(--border-color, #cbd5e1)',
+                        fontSize: '0.8rem',
+                        background: 'var(--bg-secondary, #f8fafc)',
+                        color: 'var(--text-primary, #0f172a)'
                       }}
-                    >
-                      <X size={14} />
-                    </button>
-                  )}
-                </div>
+                    />
+                    {complianceSearchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setComplianceSearchQuery('');
+                          setCompliancePage(1);
+                        }}
+                        style={{
+                          position: 'absolute',
+                          right: '6px',
+                          top: '50%',
+                          transform: 'translateY(-50%)',
+                          background: 'transparent',
+                          border: 'none',
+                          cursor: 'pointer',
+                          color: '#94a3b8'
+                        }}
+                      >
+                        <X size={13} />
+                      </button>
+                    )}
+                  </div>
 
-                {/* Status & Timing Dropdowns */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  {/* Status & Timing Dropdowns */}
                   <select
                     value={complianceStatusFilter}
                     onChange={(e) => {
@@ -4414,10 +4413,10 @@ export default function ChecklistModule({
                       setCompliancePage(1);
                     }}
                     style={{
-                      padding: '0.45rem 0.75rem',
-                      borderRadius: '8px',
+                      padding: '0.35rem 0.65rem',
+                      borderRadius: '6px',
                       border: '1px solid var(--border-color, #cbd5e1)',
-                      fontSize: '0.82rem',
+                      fontSize: '0.78rem',
                       fontWeight: 600,
                       background: 'var(--bg-secondary, #f8fafc)',
                       color: 'var(--text-primary, #1e293b)',
@@ -4437,10 +4436,10 @@ export default function ChecklistModule({
                       setCompliancePage(1);
                     }}
                     style={{
-                      padding: '0.45rem 0.75rem',
-                      borderRadius: '8px',
+                      padding: '0.35rem 0.65rem',
+                      borderRadius: '6px',
                       border: '1px solid var(--border-color, #cbd5e1)',
-                      fontSize: '0.82rem',
+                      fontSize: '0.78rem',
                       fontWeight: 600,
                       background: 'var(--bg-secondary, #f8fafc)',
                       color: 'var(--text-primary, #1e293b)',
@@ -4452,69 +4451,76 @@ export default function ChecklistModule({
                     <option value="DELAYED">⚠️ Delayed Only</option>
                   </select>
                 </div>
-              </div>
 
-              {/* Row 3: KPI Summary Badges */}
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.6rem',
-                flexWrap: 'wrap',
-                fontSize: '0.78rem',
-                fontWeight: 600,
-                color: 'var(--text-secondary, #64748b)'
-              }}>
-                <span style={{ background: '#f1f5f9', padding: '0.2rem 0.6rem', borderRadius: '6px' }}>
-                  Total: <strong style={{ color: '#0f172a' }}>{totalSubmissions}</strong>
-                </span>
-                <span style={{ background: '#fef3c7', color: '#92400e', padding: '0.2rem 0.6rem', borderRadius: '6px' }}>
-                  ⏳ Pending: <strong>{pendingCount}</strong>
-                </span>
-                <span style={{ background: '#dcfce7', color: '#166534', padding: '0.2rem 0.6rem', borderRadius: '6px' }}>
-                  ✅ Approved: <strong>{approvedCount}</strong>
-                </span>
-                {delayedCount > 0 && (
-                  <span style={{ background: '#fee2e2', color: '#991b1b', padding: '0.2rem 0.6rem', borderRadius: '6px' }}>
-                    ⚠️ Delayed: <strong>{delayedCount}</strong>
+                {/* KPI Summary Badges */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  flexWrap: 'wrap',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  color: 'var(--text-secondary, #64748b)'
+                }}>
+                  <span style={{ background: '#f1f5f9', padding: '0.18rem 0.5rem', borderRadius: '5px' }}>
+                    Total: <strong style={{ color: '#0f172a' }}>{totalSubmissions}</strong>
                   </span>
-                )}
+                  <span style={{ background: '#fef3c7', color: '#92400e', padding: '0.18rem 0.5rem', borderRadius: '5px' }}>
+                    ⏳ Pending: <strong>{pendingCount}</strong>
+                  </span>
+                  <span style={{ background: '#dcfce7', color: '#166534', padding: '0.18rem 0.5rem', borderRadius: '5px' }}>
+                    ✅ Approved: <strong>{approvedCount}</strong>
+                  </span>
+                  {delayedCount > 0 && (
+                    <span style={{ background: '#fee2e2', color: '#991b1b', padding: '0.18rem 0.5rem', borderRadius: '5px' }}>
+                      ⚠️ Delayed: <strong>{delayedCount}</strong>
+                    </span>
+                  )}
+
+                  {/* Layout View Toggle (Table / Tiles) */}
+                  <TableViewToggle view={complianceTableView} onChange={setComplianceTableView} style={{ marginLeft: '0.25rem' }} />
+                </div>
               </div>
             </div>
 
             {/* Submissions Table */}
-            <div style={{ overflowX: 'auto', background: 'var(--card-bg, #ffffff)', border: '1px solid var(--border-color, #e2e8f0)', borderRadius: '12px' }}>
-              <MobileTableView id="Checklist/ChecklistModule-4"><table style={{ width: `${getLogsTotalWidth()}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
-                <thead>
+            <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 355px)', minHeight: '260px', background: 'var(--card-bg, #ffffff)', border: '1px solid var(--border-color, #e2e8f0)', borderRadius: '12px', position: 'relative' }}>
+              <MobileTableView id="Checklist/ChecklistModule-4" view={complianceTableView} hideToggle={true}><table style={{ width: `${getLogsTotalWidth()}px`, minWidth: '100%', tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
+                <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-secondary, #f8fafc)' }}>
                   <tr style={{ background: 'var(--bg-secondary, #f8fafc)', borderBottom: '1px solid var(--border-color, #e2e8f0)', color: 'var(--text-secondary, #64748b)' }}>
-                    <th style={{ position: 'relative', width: `${logsColWidths.employee}px`, padding: '0.75rem 1rem' }}>
+                    <th style={{ position: 'sticky', top: 0, zIndex: 10, width: `${logsColWidths.sr || 60}px`, padding: '0.75rem 0.5rem', textAlign: 'center', background: 'var(--bg-secondary, #f8fafc)', boxShadow: 'inset 0 -1px 0 var(--border-color, #e2e8f0)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', whiteSpace: 'nowrap' }}>#</div>
+                      <ColumnResizer columnKey="sr" isResizing={isLogsResizing('sr')} onMouseDown={(e) => handleLogsResizeStart('sr', e)} onTouchStart={(e) => handleLogsTouchStart('sr', e)} onDoubleClick={() => handleLogsReset('sr')} />
+                    </th>
+                    <th style={{ position: 'sticky', top: 0, zIndex: 10, width: `${logsColWidths.employee}px`, padding: '0.75rem 1rem', background: 'var(--bg-secondary, #f8fafc)', boxShadow: 'inset 0 -1px 0 var(--border-color, #e2e8f0)' }}>
                       <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Employee</div>
                       <ColumnResizer columnKey="employee" isResizing={isLogsResizing('employee')} onMouseDown={(e) => handleLogsResizeStart('employee', e)} onTouchStart={(e) => handleLogsTouchStart('employee', e)} onDoubleClick={() => handleLogsReset('employee')} />
                     </th>
-                    <th style={{ position: 'relative', width: `${logsColWidths.checklist}px`, padding: '0.75rem 1rem' }}>
+                    <th style={{ position: 'sticky', top: 0, zIndex: 10, width: `${logsColWidths.checklist}px`, padding: '0.75rem 1rem', background: 'var(--bg-secondary, #f8fafc)', boxShadow: 'inset 0 -1px 0 var(--border-color, #e2e8f0)' }}>
                       <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Checklist</div>
                       <ColumnResizer columnKey="checklist" isResizing={isLogsResizing('checklist')} onMouseDown={(e) => handleLogsResizeStart('checklist', e)} onTouchStart={(e) => handleLogsTouchStart('checklist', e)} onDoubleClick={() => handleLogsReset('checklist')} />
                     </th>
-                    <th style={{ position: 'relative', width: `${logsColWidths.period}px`, padding: '0.75rem 1rem' }}>
+                    <th style={{ position: 'sticky', top: 0, zIndex: 10, width: `${logsColWidths.period}px`, padding: '0.75rem 1rem', background: 'var(--bg-secondary, #f8fafc)', boxShadow: 'inset 0 -1px 0 var(--border-color, #e2e8f0)' }}>
                       <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Period</div>
                       <ColumnResizer columnKey="period" isResizing={isLogsResizing('period')} onMouseDown={(e) => handleLogsResizeStart('period', e)} onTouchStart={(e) => handleLogsTouchStart('period', e)} onDoubleClick={() => handleLogsReset('period')} />
                     </th>
-                    <th style={{ position: 'relative', width: `${logsColWidths.submitted_at}px`, padding: '0.75rem 1rem' }}>
+                    <th style={{ position: 'sticky', top: 0, zIndex: 10, width: `${logsColWidths.submitted_at}px`, padding: '0.75rem 1rem', background: 'var(--bg-secondary, #f8fafc)', boxShadow: 'inset 0 -1px 0 var(--border-color, #e2e8f0)' }}>
                       <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Submitted At</div>
                       <ColumnResizer columnKey="submitted_at" isResizing={isLogsResizing('submitted_at')} onMouseDown={(e) => handleLogsResizeStart('submitted_at', e)} onTouchStart={(e) => handleLogsTouchStart('submitted_at', e)} onDoubleClick={() => handleLogsReset('submitted_at')} />
                     </th>
-                    <th style={{ position: 'relative', width: `${logsColWidths.timing}px`, padding: '0.75rem 1rem' }}>
+                    <th style={{ position: 'sticky', top: 0, zIndex: 10, width: `${logsColWidths.timing}px`, padding: '0.75rem 1rem', background: 'var(--bg-secondary, #f8fafc)', boxShadow: 'inset 0 -1px 0 var(--border-color, #e2e8f0)' }}>
                       <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Timing & Delay</div>
                       <ColumnResizer columnKey="timing" isResizing={isLogsResizing('timing')} onMouseDown={(e) => handleLogsResizeStart('timing', e)} onTouchStart={(e) => handleLogsTouchStart('timing', e)} onDoubleClick={() => handleLogsReset('timing')} />
                     </th>
-                    <th style={{ position: 'relative', width: `${logsColWidths.score}px`, padding: '0.75rem 1rem' }}>
+                    <th style={{ position: 'sticky', top: 0, zIndex: 10, width: `${logsColWidths.score}px`, padding: '0.75rem 1rem', background: 'var(--bg-secondary, #f8fafc)', boxShadow: 'inset 0 -1px 0 var(--border-color, #e2e8f0)' }}>
                       <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Score</div>
                       <ColumnResizer columnKey="score" isResizing={isLogsResizing('score')} onMouseDown={(e) => handleLogsResizeStart('score', e)} onTouchStart={(e) => handleLogsTouchStart('score', e)} onDoubleClick={() => handleLogsReset('score')} />
                     </th>
-                    <th style={{ position: 'relative', width: `${logsColWidths.verification}px`, padding: '0.75rem 1rem' }}>
+                    <th style={{ position: 'sticky', top: 0, zIndex: 10, width: `${logsColWidths.verification}px`, padding: '0.75rem 1rem', background: 'var(--bg-secondary, #f8fafc)', boxShadow: 'inset 0 -1px 0 var(--border-color, #e2e8f0)' }}>
                       <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Verification</div>
                       <ColumnResizer columnKey="verification" isResizing={isLogsResizing('verification')} onMouseDown={(e) => handleLogsResizeStart('verification', e)} onTouchStart={(e) => handleLogsTouchStart('verification', e)} onDoubleClick={() => handleLogsReset('verification')} />
                     </th>
-                    <th style={{ position: 'relative', width: `${logsColWidths.action}px`, padding: '0.75rem 1rem', textAlign: 'right' }}>
+                    <th style={{ position: 'sticky', top: 0, zIndex: 10, width: `${logsColWidths.action}px`, padding: '0.75rem 1rem', textAlign: 'right', background: 'var(--bg-secondary, #f8fafc)', boxShadow: 'inset 0 -1px 0 var(--border-color, #e2e8f0)' }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Action</div>
                       <ColumnResizer columnKey="action" isResizing={isLogsResizing('action')} onMouseDown={(e) => handleLogsResizeStart('action', e)} onTouchStart={(e) => handleLogsTouchStart('action', e)} onDoubleClick={() => handleLogsReset('action')} />
                     </th>
@@ -4523,25 +4529,28 @@ export default function ChecklistModule({
                 <tbody>
                   {paginatedLogs.length === 0 && (
                     <tr>
-                      <td colSpan={8} style={{ padding: '3rem 1rem', textAlign: 'center', color: 'var(--text-secondary, #64748b)' }}>
+                      <td colSpan={9} style={{ padding: '3rem 1rem', textAlign: 'center', color: 'var(--text-secondary, #64748b)' }}>
                         <div style={{ fontSize: '1.75rem', marginBottom: '0.5rem' }}>🔍</div>
                         <div style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--text-primary, #1e293b)' }}>No submissions found</div>
                         <div style={{ fontSize: '0.85rem' }}>Try adjusting your date range, search query, or status filter.</div>
                       </td>
                     </tr>
                   )}
-                  {paginatedLogs.map(log => {
+                  {paginatedLogs.map((log, idx) => {
                     const humanPeriod = getHumanPeriodLabel(log.frequency, log.period_key);
                     const isApproved = log.verification_status === 'APPROVED';
                     const isRejected = log.verification_status === 'REJECTED';
                     const isDelayed = log.delayInfo?.isDelayed;
                     return (
                       <tr key={log.id} style={{ borderBottom: '1px solid var(--border-color, #e2e8f0)' }}>
+                        <td style={{ padding: '0.85rem 0.5rem', textAlign: 'center', verticalAlign: 'top', fontWeight: 600, color: 'var(--text-secondary, #64748b)', fontSize: '0.82rem' }}>
+                          {startIndex + idx + 1}
+                        </td>
                         <td style={{ padding: '0.85rem 1rem', verticalAlign: 'top', whiteSpace: 'normal', wordBreak: 'break-word' }}>
                           <div style={{ fontWeight: 600, color: 'var(--text-primary, #0f172a)', wordBreak: 'break-word', lineHeight: 1.3 }}>{log.employee_name}</div>
-                          <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary, #64748b)', wordBreak: 'break-all', lineHeight: 1.3 }}>{log.employee_email}</div>
+                          <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary, #64748b)', wordBreak: 'break-word', lineHeight: 1.3, marginTop: '0.15rem' }} title={log.employee_email}>{log.employee_email}</div>
                           {log.department && (
-                            <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '0.1rem', wordBreak: 'break-word' }}>🏢 {log.department}</div>
+                            <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '0.15rem', wordBreak: 'break-word' }}>🏢 {log.department}</div>
                           )}
                         </td>
                         <td style={{ padding: '0.85rem 1rem', verticalAlign: 'top', whiteSpace: 'normal', wordBreak: 'break-word' }}>
@@ -4661,251 +4670,11 @@ export default function ChecklistModule({
                 setCompliancePageSize(newSize);
                 setCompliancePage(1);
               }}
-              style={{ marginTop: '0.75rem', borderRadius: '10px' }}
+              style={{ marginTop: '0.5rem', borderRadius: '10px', paddingRight: '7rem' }}
             />
           </div>
         );
       })()}
-
-      {/* ========================================================================= */}
-      {/* TAB 4: COMPANY & NATIONAL HOLIDAYS CALENDAR (MANUAL MANAGEMENT)          */}
-      {/* ========================================================================= */}
-      {activeTab === 'holidays' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
-            <div>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0, color: 'var(--text-primary, #1e293b)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                🎉 Company & Public Holidays Master
-              </h2>
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary, #64748b)', margin: '0.2rem 0 0' }}>
-                Manage custom company holidays, festivals, and mandatory days off. Checklists set to "Skip Holidays" will automatically exclude these dates.
-              </p>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-              <div style={{ position: 'relative', width: '220px' }}>
-                <Search size={16} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary, #94a3b8)' }} />
-                <input
-                  type="text"
-                  placeholder="Search holiday name / date..."
-                  value={holidaySearchQuery}
-                  onChange={(e) => setHolidaySearchQuery(e.target.value)}
-                  style={{
-                    padding: '0.45rem 0.75rem 0.45rem 2.2rem',
-                    borderRadius: '8px',
-                    border: '1px solid var(--border-color, #cbd5e1)',
-                    width: '100%',
-                    fontSize: '0.82rem'
-                  }}
-                />
-              </div>
-
-              {isManager && (
-                <>
-                  <button
-                    onClick={handleOpenAddHoliday}
-                    style={{
-                      background: '#16a34a',
-                      color: '#ffffff',
-                      border: 'none',
-                      padding: '0.5rem 1rem',
-                      borderRadius: '8px',
-                      fontWeight: 700,
-                      fontSize: '0.85rem',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.4rem',
-                      boxShadow: '0 2px 4px rgba(22, 163, 74, 0.2)'
-                    }}
-                  >
-                    <Plus size={16} /> Add Holiday
-                  </button>
-
-                  <button
-                    onClick={handleResetHolidays}
-                    title="Restore default national & gazetted holidays list"
-                    style={{
-                      background: 'var(--bg-secondary, #f1f5f9)',
-                      color: 'var(--text-secondary, #475569)',
-                      border: '1px solid var(--border-color, #cbd5e1)',
-                      padding: '0.5rem 0.85rem',
-                      borderRadius: '8px',
-                      fontWeight: 600,
-                      fontSize: '0.82rem',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.35rem'
-                    }}
-                  >
-                    <RefreshCw size={14} /> Reset List
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* Holiday List Grid */}
-          {(() => {
-            const queryLow = (holidaySearchQuery || '').toLowerCase().trim();
-            const filtered = (holidaysList || []).filter(h => {
-              if (!queryLow) return true;
-              return (h.name || '').toLowerCase().includes(queryLow) || (h.date || '').includes(queryLow);
-            });
-
-            if (filtered.length === 0) {
-              return (
-                <div style={{
-                  background: 'var(--bg-secondary, #f8fafc)',
-                  border: '1px dashed var(--border-color, #cbd5e1)',
-                  borderRadius: '12px',
-                  padding: '3rem 2rem',
-                  textAlign: 'center',
-                  color: 'var(--text-secondary, #64748b)'
-                }}>
-                  <Calendar size={42} style={{ opacity: 0.4, margin: '0 auto 0.75rem' }} />
-                  <h3 style={{ margin: '0 0 0.5rem', fontWeight: 600 }}>No Holidays Found</h3>
-                  <p style={{ margin: 0, fontSize: '0.88rem' }}>
-                    {queryLow ? `No holidays match "${holidaySearchQuery}".` : 'No company holidays are registered.'}
-                  </p>
-                  {isManager && (
-                    <button
-                      onClick={handleOpenAddHoliday}
-                      style={{
-                        marginTop: '1rem',
-                        background: '#16a34a',
-                        color: '#fff',
-                        border: 'none',
-                        padding: '0.5rem 1.25rem',
-                        borderRadius: '8px',
-                        cursor: 'pointer',
-                        fontWeight: 600
-                      }}
-                    >
-                      <Plus size={16} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px' }} />
-                      Add First Company Holiday
-                    </button>
-                  )}
-                </div>
-              );
-            }
-
-            return (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1rem' }}>
-                {filtered.map((h, hIdx) => {
-                  const d = new Date(h.date);
-                  const isPast = d.getTime() < new Date().setHours(0, 0, 0, 0);
-
-                  const typeColor = h.type === 'NATIONAL' ? '#2563eb' : h.type === 'FESTIVAL' ? '#d97706' : h.type === 'REGIONAL' ? '#7c3aed' : '#059669';
-                  const typeBg = h.type === 'NATIONAL' ? '#eff6ff' : h.type === 'FESTIVAL' ? '#fffbeb' : h.type === 'REGIONAL' ? '#f5f3ff' : '#ecfdf5';
-
-                  return (
-                    <div
-                      key={h.id ? `hol_${h.id}` : `hol_${h.date}_${hIdx}`}
-                      style={{
-                        background: isPast ? 'var(--bg-secondary, #f8fafc)' : 'var(--card-bg, #ffffff)',
-                        border: isPast ? '1px solid var(--border-color, #e2e8f0)' : '1.5px solid #fed7aa',
-                        borderRadius: '12px',
-                        padding: '1rem',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        justifyContent: 'space-between',
-                        gap: '0.75rem',
-                        opacity: isPast ? 0.78 : 1,
-                        boxShadow: isPast ? 'none' : '0 2px 6px rgba(251, 146, 60, 0.1)',
-                        transition: 'all 0.15s ease'
-                      }}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
-                        <div>
-                          <div style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--text-primary, #1e293b)' }}>
-                            {h.name}
-                          </div>
-                          <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary, #64748b)', marginTop: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                            <Calendar size={14} color="#f59e0b" />
-                            <strong>{d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</strong>
-                          </div>
-                          {h.description && (
-                            <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary, #64748b)', marginTop: '0.35rem', fontStyle: 'italic' }}>
-                              "{h.description}"
-                            </div>
-                          )}
-                        </div>
-
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.35rem' }}>
-                          <span style={{
-                            background: isPast ? 'var(--bg-primary, #e2e8f0)' : 'rgba(234, 88, 12, 0.15)',
-                            color: isPast ? 'var(--text-muted, #64748b)' : '#ea580c',
-                            fontSize: '0.72rem',
-                            fontWeight: 700,
-                            padding: '0.2rem 0.55rem',
-                            borderRadius: '10px'
-                          }}>
-                            {isPast ? 'Passed' : 'Upcoming'}
-                          </span>
-                          <span style={{
-                            background: typeBg,
-                            color: typeColor,
-                            fontSize: '0.68rem',
-                            fontWeight: 700,
-                            padding: '0.15rem 0.45rem',
-                            borderRadius: '6px'
-                          }}>
-                            {h.type || 'COMPANY'}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Card Footer with Edit / Delete */}
-                      {isManager && (
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.4rem', borderTop: '1px solid #f1f5f9', paddingTop: '0.5rem' }}>
-                          <button
-                            onClick={() => handleOpenEditHoliday(h)}
-                            style={{
-                              background: '#eff6ff',
-                              color: '#2563eb',
-                              border: '1px solid #bfdbfe',
-                              padding: '0.25rem 0.6rem',
-                              borderRadius: '6px',
-                              fontSize: '0.75rem',
-                              fontWeight: 600,
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '0.25rem'
-                            }}
-                          >
-                            <Edit3 size={12} /> Edit
-                          </button>
-                          <button
-                            onClick={() => handleDeleteHoliday(h)}
-                            style={{
-                              background: '#fef2f2',
-                              color: '#dc2626',
-                              border: '1px solid #fecaca',
-                              padding: '0.25rem 0.6rem',
-                              borderRadius: '6px',
-                              fontSize: '0.75rem',
-                              fontWeight: 600,
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '0.25rem'
-                            }}
-                          >
-                            <Trash2 size={12} /> Delete
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          })()}
-        </div>
-      )}
 
       {/* ========================================================================= */}
       {/* MODAL 1: CHECKLIST EXECUTION (FILL & SUBMIT)                               */}
@@ -6555,148 +6324,6 @@ export default function ChecklistModule({
                 }}
               >
                 Approve & Sign Off
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* MODAL 4: ADD / EDIT COMPANY HOLIDAY                                       */}
-      {/* ========================================================================= */}
-      {holidayModalOpen && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0,0,0,0.5)',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          zIndex: 9999,
-          padding: '1rem'
-        }}>
-          <div style={{
-            background: 'var(--card-bg, #ffffff)',
-            borderRadius: '14px',
-            width: '100%',
-            maxWidth: '500px',
-            overflow: 'hidden',
-            boxShadow: '0 20px 25px -5px rgba(0,0,0,0.25)',
-            display: 'flex',
-            flexDirection: 'column'
-          }}>
-            {/* Modal Header */}
-            <div style={{ padding: '1.2rem 1.5rem', background: '#1e293b', color: '#ffffff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <span style={{ fontSize: '1.2rem' }}>🎉</span>
-                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700 }}>
-                  {editingHoliday ? 'Edit Company Holiday' : 'Add New Company Holiday'}
-                </h3>
-              </div>
-              <button
-                onClick={() => setHolidayModalOpen(false)}
-                style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer' }}
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div>
-                <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
-                  Holiday Date *
-                </label>
-                <input
-                  type="date"
-                  value={holidayForm.date}
-                  onChange={(e) => setHolidayForm(prev => ({ ...prev, date: e.target.value }))}
-                  style={{ padding: '0.6rem', borderRadius: '6px', border: '1px solid #cbd5e1', width: '100%', fontWeight: 600 }}
-                />
-              </div>
-
-              <div>
-                <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
-                  Holiday Name / Occasion *
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Diwali Pujan / Company Founders Day"
-                  value={holidayForm.name}
-                  onChange={(e) => setHolidayForm(prev => ({ ...prev, name: e.target.value }))}
-                  style={{ padding: '0.6rem', borderRadius: '6px', border: '1px solid #cbd5e1', width: '100%' }}
-                />
-              </div>
-
-              <div>
-                <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
-                  Holiday Category / Type
-                </label>
-                <select
-                  value={holidayForm.type}
-                  onChange={(e) => setHolidayForm(prev => ({ ...prev, type: e.target.value }))}
-                  style={{ padding: '0.6rem', borderRadius: '6px', border: '1px solid #cbd5e1', width: '100%' }}
-                >
-                  <option value="COMPANY">🏢 Company Holiday / Annual Off</option>
-                  <option value="NATIONAL">🏛️ National Holiday</option>
-                  <option value="FESTIVAL">🎉 Festival / Religious</option>
-                  <option value="REGIONAL">📍 Regional / State Off</option>
-                </select>
-              </div>
-
-              <div>
-                <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
-                  Description / Remarks (Optional)
-                </label>
-                <textarea
-                  placeholder="e.g. Mandatory day off across all departments..."
-                  rows={2}
-                  value={holidayForm.description}
-                  onChange={(e) => setHolidayForm(prev => ({ ...prev, description: e.target.value }))}
-                  style={{ padding: '0.6rem', borderRadius: '6px', border: '1px solid #cbd5e1', width: '100%' }}
-                />
-              </div>
-            </div>
-
-            {/* Modal Footer */}
-            <div style={{ padding: '1rem 1.5rem', background: 'var(--bg-secondary, #f8fafc)', borderTop: '1px solid var(--border-color, #e2e8f0)', display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
-              <button
-                type="button"
-                onClick={() => setHolidayModalOpen(false)}
-                style={{
-                  background: 'none',
-                  border: '1px solid #cbd5e1',
-                  color: '#475569',
-                  padding: '0.55rem 1.2rem',
-                  borderRadius: '8px',
-                  cursor: 'pointer',
-                  fontWeight: 600
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={savingHoliday}
-                onClick={handleSaveHoliday}
-                style={{
-                  background: '#16a34a',
-                  color: '#ffffff',
-                  border: 'none',
-                  padding: '0.55rem 1.5rem',
-                  borderRadius: '8px',
-                  cursor: savingHoliday ? 'not-allowed' : 'pointer',
-                  fontWeight: 700,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.4rem'
-                }}
-              >
-                <Check size={16} />
-                {savingHoliday ? 'Saving...' : editingHoliday ? 'Update Holiday' : 'Save Holiday'}
               </button>
             </div>
           </div>

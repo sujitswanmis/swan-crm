@@ -122,8 +122,7 @@ export const MODULES_CONFIG = [
       { id: 'dashboard', label: '📊 Checklist Dashboard' },
       { id: 'my_checklists', label: '📋 My Checklists' },
       { id: 'templates', label: '📑 Templates Master' },
-      { id: 'compliance', label: '📊 Compliance & Audit' },
-      { id: 'holidays', label: '🎉 Holidays Calendar' }
+      { id: 'compliance', label: '📊 Compliance & Audit' }
     ]
   },
   {
@@ -437,6 +436,7 @@ export const MODULES_CONFIG = [
       { id: 'departments', label: 'Manage Departments' },
       { id: 'targets', label: 'Targets & Performance' },
       { id: 'sessions', label: 'Work & Session Rules' },
+      { id: 'holidays', label: 'Holidays Calendar Config' },
       { id: 'data', label: 'Data Management' },
       { id: 'media', label: 'File & Media Settings' },
       ...INTEGRATION_PAGES

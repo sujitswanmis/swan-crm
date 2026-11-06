@@ -1,6 +1,7 @@
 import './globals.css';
 import { cookies } from 'next/headers';
 import PWAInstallPrompt from '@/components/PWAInstallPrompt';
+import DesktopZoomControl from '@/components/DesktopZoomControl';
 
 export const metadata = {
   title: 'SuPuja Creations',
@@ -57,6 +58,7 @@ export default async function RootLayout({ children }) {
       <body suppressHydrationWarning>
         {children}
         <PWAInstallPrompt />
+        <DesktopZoomControl />
       </body>
     </html>
   );

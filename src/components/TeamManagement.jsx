@@ -1,7 +1,9 @@
 'use client';
 
-import MobileTableView from '@/components/common/MobileTableView';
-import React, { useState, useEffect } from 'react';
+import MobileTableView, { TableViewToggle, useTableViewPreference } from '@/components/common/MobileTableView';
+import StandardTablePagination from '@/components/common/StandardTablePagination';
+import styles from './TeamManagement.module.css';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { getTeamMembers, updateUserRole, toggleUserApproval, toggleUserPermissions, toggleReadPermissions, toggleWritePermissions, updateEmployeeDetailsAdmin, updateModuleAccess, createAccountAdmin, bulkImportEmployeesFast, cleanupDummyImportAccounts, updateEmpStatus, deleteUserAdmin, moveToTrashUser, restoreUserFromTrash, toggleSelfPasswordReset, sendAdminPasswordResetLink, impersonateUserAdmin } from '@/app/actions/team';
 import { Eye, EyeOff, Search, ChevronDown, ChevronRight, ChevronLeft, CheckSquare, Square, Shield, Filter, Download, Upload, FileSpreadsheet, MessageSquare, Pencil, Key, Trash2, RotateCcw, Archive, RefreshCw, Send, Check, Loader2, CheckCircle2, AlertCircle, Info, LogIn, UserCheck } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
@@ -22,8 +24,26 @@ const DEFAULT_TEAM_COL_WIDTHS = {
   approval_status: 130,
   role: 140,
   permissions: 160,
-  actions: 140
+  actions: 260
 };
+
+const MIN_TEAM_COL_WIDTHS = {
+  emp_id: 85,
+  emp_status: 110,
+  name_contact: 180,
+  dept_desig: 160,
+  company: 110,
+  approval_status: 120,
+  role: 130,
+  permissions: 150,
+  actions: 260
+};
+
+function normalizeTeamPageSize(value) {
+  if (String(value).toLowerCase() === 'all') return 100000;
+  const size = Number(value);
+  return Number.isInteger(size) && size > 0 ? Math.min(size, 100000) : null;
+}
 
 const DEFAULT_DEPARTMENTS = [
   "Accounts & Finance", "Administration", "Audit", "Dispatch", "Director",
@@ -135,19 +155,27 @@ const WORK_LOCATION_TYPES = [
   'National/Global'
 ];
 
-export default function TeamManagement({ initialUsers = [], currentUserCompany = '' }) {
+export default function TeamManagement({ initialUsers = [], currentUserCompany = '', tenantId = null }) {
   const [users, setUsers] = useState(initialUsers || []);
   const [loading, setLoading] = useState(!initialUsers || initialUsers.length === 0);
+  const usersRequestRef = useRef(0);
+  const [teamView, setTeamView] = useTableViewPreference('TeamManagement-1');
 
   // Column resizing hook for Team Management Table
   const {
-    columnWidths: teamColWidths,
+    columnWidths: savedTeamColWidths,
     isResizing: isTeamResizing,
     handleMouseDown: handleTeamResizeStart,
     handleTouchStart: handleTeamTouchStart,
-    handleDoubleClickReset: handleTeamReset,
-    getTableTotalWidth: getTeamTotalWidth
-  } = useTableColumnResize(DEFAULT_TEAM_COL_WIDTHS, 'team_management_col_widths');
+    handleDoubleClickReset: handleTeamReset
+  } = useTableColumnResize(DEFAULT_TEAM_COL_WIDTHS, 'team_management_col_widths', MIN_TEAM_COL_WIDTHS);
+  // Keep saved widths while containing controls in columns saved before this layout fix.
+  const teamColWidths = React.useMemo(() => Object.fromEntries(
+    Object.entries(DEFAULT_TEAM_COL_WIDTHS).map(([key, defaultWidth]) => [
+      key, Math.max(MIN_TEAM_COL_WIDTHS[key], Number(savedTeamColWidths[key]) || defaultWidth)
+    ])
+  ), [savedTeamColWidths]);
+  const teamTableWidth = Object.values(teamColWidths).reduce((total, width) => total + width, 0);
 
   // Edit state
   const [editingUser, setEditingUser] = useState(null);
@@ -207,83 +235,55 @@ export default function TeamManagement({ initialUsers = [], currentUserCompany =
   // Status Tabs State
   const [selectedTab, setSelectedTab] = useState('All');
 
-  // Pagination State (Matching Lead Data condition & config)
+  // Config Master owns navigation defaults; keep the existing per-table preference as a fallback.
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageJump, setPageJump] = useState(() => {
-    try {
-      const saved = localStorage.getItem('crm_config');
-      if (saved) {
-        const settings = JSON.parse(saved);
-        if (settings.pageNumberingJump) return settings.pageNumberingJump;
-      }
-    } catch (e) {}
-    return 3;
-  });
-
-  const [availablePageSizes, setAvailablePageSizes] = useState(() => {
-    let sizes = [10, 25, 50, 100, 200, 500];
-    try {
-      const saved = localStorage.getItem('crm_config');
-      if (saved) {
-        const settings = JSON.parse(saved);
-        if (settings.availablePageSizes) {
-          sizes = settings.availablePageSizes.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
-        }
-      }
-    } catch (e) {}
-    return sizes.length > 0 ? sizes : [10, 25, 50, 100, 200, 500];
-  });
-
   const [pageSize, setPageSize] = useState(() => {
     if (typeof window !== 'undefined') {
       try {
-        const saved = localStorage.getItem('team_management_page_size');
-        if (saved) {
-          if (saved === 'all') return 100000;
-          const parsed = parseInt(saved, 10);
-          if (!isNaN(parsed) && parsed > 0) return parsed;
-        }
-        const crmCfg = localStorage.getItem('crm_config');
-        if (crmCfg) {
-          const parsed = JSON.parse(crmCfg);
-          if (parsed.defaultPageSize) return parseInt(parsed.defaultPageSize, 10) || 25;
-        }
-      } catch (_e) {}
+        const navigation = JSON.parse(localStorage.getItem('crmPageNavSettings') || '{}');
+        const configured = normalizeTeamPageSize(navigation.defaultPageSize);
+        if (configured) return configured;
+        const saved = normalizeTeamPageSize(localStorage.getItem('team_management_page_size'));
+        if (saved) return saved;
+        const legacy = JSON.parse(localStorage.getItem('crm_config') || '{}');
+        const fallback = normalizeTeamPageSize(legacy.defaultPageSize);
+        if (fallback) return fallback;
+      } catch (_error) {}
     }
     return 25;
   });
 
-  const [isMobile, setIsMobile] = useState(false);
-  useEffect(() => {
-    const checkMobile = () => setIsMobile(window.innerWidth < 768);
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
+  const handleTeamPageSizeChange = useCallback(value => {
+    const nextSize = normalizeTeamPageSize(value);
+    if (!nextSize) return;
+    setPageSize(nextSize);
+    setCurrentPage(1);
+    try {
+      localStorage.setItem('team_management_page_size', nextSize === 100000 ? 'all' : String(nextSize));
+    } catch (_error) {}
   }, []);
 
-  // Listen to CRM config updates for availablePageSizes & pageJump
   useEffect(() => {
-    const handleConfigUpdate = () => {
+    const syncNavigation = () => {
       try {
-        const saved = localStorage.getItem('crm_config');
-        if (saved) {
-          const settings = JSON.parse(saved);
-          if (settings.pageNumberingJump) setPageJump(settings.pageNumberingJump);
-          if (settings.availablePageSizes) {
-            const sizes = settings.availablePageSizes.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
-            if (sizes.length > 0) setAvailablePageSizes(sizes);
-          }
-        }
-      } catch (e) {}
+        const navigation = JSON.parse(localStorage.getItem('crmPageNavSettings') || '{}');
+        const legacy = JSON.parse(localStorage.getItem('crm_config') || '{}');
+        const nextSize = normalizeTeamPageSize(navigation.defaultPageSize ?? legacy.defaultPageSize);
+        if (nextSize) handleTeamPageSizeChange(nextSize);
+      } catch (_error) {}
     };
-    window.addEventListener('crm_config_updated', handleConfigUpdate);
-    return () => window.removeEventListener('crm_config_updated', handleConfigUpdate);
-  }, []);
+    window.addEventListener('crm_page_nav_updated', syncNavigation);
+    window.addEventListener('crm_config_updated', syncNavigation);
+    return () => {
+      window.removeEventListener('crm_page_nav_updated', syncNavigation);
+      window.removeEventListener('crm_config_updated', syncNavigation);
+    };
+  }, [handleTeamPageSizeChange]);
 
   // Reset to first page whenever search query or status tab changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [selectedTab, searchQuery]);
+  }, [selectedTab, searchQuery, currentUserCompany, tenantId]);
 
   const [confirmModal, setConfirmModal] = useState({
     show: false,
@@ -459,8 +459,12 @@ export default function TeamManagement({ initialUsers = [], currentUserCompany =
     const timer = setTimeout(() => {
       setLoading(false);
     }, 2500);
-    return () => clearTimeout(timer);
-  }, [initialUsers]);
+    return () => {
+      clearTimeout(timer);
+      // Ignore pending refreshes after the tenant/list changes or the component unmounts.
+      usersRequestRef.current += 1;
+    };
+  }, [initialUsers, currentUserCompany, tenantId]);
 
   const fetchDepartments = async () => {
     try {
@@ -480,16 +484,18 @@ export default function TeamManagement({ initialUsers = [], currentUserCompany =
   };
 
   const fetchUsers = async (showLoader = false) => {
+    const requestId = ++usersRequestRef.current;
     if (showLoader && users.length === 0) setLoading(true);
     try {
-      const data = await getTeamMembers(currentUserCompany);
+      const data = await getTeamMembers(currentUserCompany, tenantId);
+      if (requestId !== usersRequestRef.current) return;
       if (data && Array.isArray(data)) {
         setUsers(data);
       }
     } catch (e) {
       console.error('fetchUsers error:', e);
     } finally {
-      setLoading(false);
+      if (requestId === usersRequestRef.current) setLoading(false);
     }
   };
 
@@ -1448,14 +1454,16 @@ export default function TeamManagement({ initialUsers = [], currentUserCompany =
   if (loading && users.length === 0) return <PremiumProgressLoader message="Loading Team Workplace" active={loading} />;
 
   return (
-    <div className="card" style={{ padding: '1.5rem' }}>
-      <h2 style={{ fontSize: '1.2rem', fontWeight: 600, marginBottom: '0.5rem' }}>Team Roles & Permissions</h2>
-      <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
+    <div className={`card ${styles.workspace}`}>
+      <header className={styles.pageHeader}>
+      <h2>Team Roles & Permissions</h2>
+      <p>
         Manage what your team members can see and do within the CRM. Only Admins can access this panel.
       </p>
+      </header>
 
       {/* Emp Status Filter Tabs */}
-      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem', overflowX: 'auto', paddingBottom: '0.25rem' }}>
+      <div className={styles.statusTabs} aria-label="Employee status filters">
         {[
           { id: 'All', label: 'All Employees', count: counts.all, color: '#2563eb' },
           { id: 'Active', label: 'Active', count: counts.active, color: '#16a34a' },
@@ -1501,15 +1509,16 @@ export default function TeamManagement({ initialUsers = [], currentUserCompany =
         ))}
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
+      <div className={styles.toolbar}>
         <input 
           type="text" 
           placeholder="Search by name, email, ID, or mobile..." 
           value={searchQuery}
           onChange={e => setSearchQuery(e.target.value)}
-          style={{ padding: '0.6rem 1rem', borderRadius: '6px', border: '1px solid var(--border-light)', width: '100%', maxWidth: '350px' }}
+          aria-label="Search employees"
+          className={styles.search}
         />
-        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+        <div className={styles.toolbarActions}>
           {users.some(u => /^[0-9]+@swanagro\.in$/.test(u.email || '') || /^emp_?[0-9]+@swanagro\.in$/.test(u.email || '')) && (
             <button 
               onClick={handleCleanupDummyAccounts}
@@ -1543,11 +1552,12 @@ export default function TeamManagement({ initialUsers = [], currentUserCompany =
           >
             Add New User
           </button>
+          <TableViewToggle view={teamView} onChange={setTeamView} style={{ marginLeft: 0 }} />
         </div>
       </div>
 
-      <div style={{ overflow: 'auto', width: '100%', maxHeight: 'calc(100vh - 260px)', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
-        <MobileTableView id="TeamManagement-1"><table style={{ width: `${Math.max(1100, getTeamTotalWidth())}px`, tableLayout: 'fixed', borderCollapse: 'separate', borderSpacing: 0, textAlign: 'left', fontSize: '0.9rem' }}>
+      <div className={styles.tableViewport}>
+        <MobileTableView id="TeamManagement-1" view={teamView} hideToggle><table className={styles.teamTable} style={{ minWidth: `${teamTableWidth}px` }}>
           <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)' }}>
           <tr style={{ backgroundColor: 'var(--th-bg)' }}>
             <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', padding: '0.75rem 1rem', color: 'var(--text-secondary)', width: `${teamColWidths.emp_id}px` }}>
@@ -1784,7 +1794,7 @@ export default function TeamManagement({ initialUsers = [], currentUserCompany =
                   ) : (
                     <button 
                       onClick={() => handleAccessClick(user)}
-                      className="btn-action-primary"
+                      className={`btn-action-primary ${styles.accessButton}`}
                       style={{ cursor: 'pointer' }}
                     >
                       Manage Access
@@ -1792,8 +1802,8 @@ export default function TeamManagement({ initialUsers = [], currentUserCompany =
                   )}
                 </div>
               </td>
-              <td style={{ padding: '1rem', whiteSpace: 'nowrap' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'nowrap' }}>
+              <td className={styles.actionsCell}>
+                <div className={styles.rowActions}>
                   {user.emp_status === 'Trash' ? (
                     <>
                       <HoverIconButton
@@ -1885,100 +1895,15 @@ export default function TeamManagement({ initialUsers = [], currentUserCompany =
       </table></MobileTableView>
       </div>
 
-      {/* Pagination & Page Navigation Bar (Exact same condition and layout as Lead Data) */}
-      <div style={{ padding: '0.85rem 1.25rem', borderTop: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', display: 'flex', flexWrap: 'wrap', gap: '1rem', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '1rem' }}>
-          <span>
-            {(() => {
-              const totalRecords = filteredUsers.length;
-              const startRecord = totalRecords === 0 ? 0 : (safeCurrentPage - 1) * effectivePageSize + 1;
-              const endRecord = effectivePageSize >= 100000 ? totalRecords : Math.min(safeCurrentPage * effectivePageSize, totalRecords);
-              return `Showing ${startRecord} to ${endRecord} of ${totalRecords} records`;
-            })()}
-          </span>
-          <select
-            value={effectivePageSize}
-            onChange={e => {
-              const newSize = Number(e.target.value);
-              setPageSize(newSize);
-              setCurrentPage(1);
-              if (typeof window !== 'undefined') {
-                try {
-                  localStorage.setItem('team_management_page_size', newSize >= 100000 ? 'all' : String(newSize));
-                } catch (_e) {}
-              }
-            }}
-            style={{ padding: '0.25rem 0.5rem', borderRadius: '4px', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', color: 'var(--text-primary)' }}
-          >
-            {(() => {
-              const currentSize = effectivePageSize;
-              const optionsSet = new Set(availablePageSizes);
-              if (currentSize !== 100000 && !isNaN(currentSize)) optionsSet.add(currentSize);
-              const optionsList = Array.from(optionsSet).sort((a,b) => a - b);
-              optionsList.push(100000);
-              
-              return optionsList.map(pageSizeOption => (
-                <option key={pageSizeOption} value={pageSizeOption}>
-                  {pageSizeOption === 100000 ? 'All' : `Show ${pageSizeOption}`}
-                </option>
-              ));
-            })()}
-          </select>
-        </div>
-        
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
-          <button
-            onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-            disabled={safeCurrentPage <= 1}
-            style={{ padding: '0.25rem 0.75rem', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', borderRadius: '4px', cursor: safeCurrentPage > 1 ? 'pointer' : 'not-allowed', opacity: safeCurrentPage > 1 ? 1 : 0.5 }}
-          >
-            Previous
-          </button>
-          
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', justifyContent: 'center' }}>
-            {(() => {
-              const totalPages = Math.max(1, Math.ceil(filteredUsers.length / (effectivePageSize >= 100000 ? (filteredUsers.length || 1) : effectivePageSize)));
-              const currentPage = safeCurrentPage;
-              const pages = [];
-              const effectivePageJump = isMobile ? 1 : pageJump;
-              
-              let startPage = Math.max(1, currentPage - effectivePageJump);
-              let endPage = Math.min(totalPages, currentPage + effectivePageJump);
-
-              if (currentPage <= effectivePageJump + 1) endPage = Math.min((effectivePageJump * 2) + 1, totalPages);
-              if (currentPage >= totalPages - effectivePageJump) startPage = Math.max(1, totalPages - (effectivePageJump * 2));
-
-              for (let i = startPage; i <= endPage; i++) {
-                pages.push(
-                  <button
-                    key={i}
-                    onClick={() => setCurrentPage(i)}
-                    style={{
-                      padding: '0.25rem 0.5rem',
-                      border: '1px solid var(--border-light)',
-                      borderRadius: '4px',
-                      background: currentPage === i ? 'var(--accent-color)' : 'var(--bg-surface)',
-                      color: currentPage === i ? 'white' : 'var(--text-primary)',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    {i}
-                  </button>
-                );
-              }
-              return pages;
-            })()}
-          </div>
-
-          <button
-            onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-            disabled={safeCurrentPage >= totalPages}
-            style={{ padding: '0.25rem 0.75rem', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', borderRadius: '4px', cursor: safeCurrentPage < totalPages ? 'pointer' : 'not-allowed', opacity: safeCurrentPage < totalPages ? 1 : 0.5 }}
-          >
-            Next
-          </button>
-        </div>
-      </div>
+      <StandardTablePagination
+        currentPage={safeCurrentPage}
+        totalRecords={filteredUsers.length}
+        pageSize={effectivePageSize}
+        onPageChange={setCurrentPage}
+        onPageSizeChange={handleTeamPageSizeChange}
+        className={styles.pagination}
+        style={{ padding: '0.35rem 0', background: 'transparent', borderTop: 'none' }}
+      />
 
       {/* Impersonate User Modal */}
       {impersonateModal.show && impersonateModal.user && (

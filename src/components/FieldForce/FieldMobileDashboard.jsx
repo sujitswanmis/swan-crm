@@ -10,7 +10,8 @@ import {
 import { performCheckIn, performCheckOutWithOutput, getFieldTasksForUser, getModuleEntitiesForCheckIn, getActiveFieldVisit, getUserCompletedVisitsToday, getTodayUserAttendanceStatus } from '@/app/actions/fieldTasks';
 import { getPublishedForms } from '@/app/actions/fieldFormStudio';
 import { burnWatermarkOnPhoto } from '@/utils/cameraWatermark';
-import { queueOfflineAction, getPendingQueue, syncOfflineQueue, isOnline } from '@/utils/offlineLocationVault';
+import { queueOfflineAction, getPendingQueue, syncOfflineQueue, isOnline, queueOfflineGpsPing } from '@/utils/offlineLocationVault';
+import { recordLocationPingBatch } from '@/app/actions/liveTracking';
 
 const CONNECTIVITY_MODES = [
   { id: 'PHYSICAL_VISIT', label: 'Physical Visit', icon: Navigation, desc: 'On-site GPS & Watermark verified. Qualifies for TA/DA petrol.', color: '#16a34a' },
@@ -465,6 +466,90 @@ export default function FieldMobileDashboard({
     }
     return () => clearInterval(interval);
   }, [activeCheckInTime, activeTab]);
+
+  // -------------------------------------------------------------
+  // On-Duty Continuous GPS Breadcrumb Tracker
+  // -------------------------------------------------------------
+  const lastRecordedGpsRef = useRef({ lat: null, lng: null, time: 0 });
+
+  useEffect(() => {
+    if (!currentUserId || typeof window === 'undefined' || !navigator.geolocation) return;
+
+    let watchId = null;
+    let fallbackInterval = null;
+
+    const recordLivePing = (pos) => {
+      if (!pos?.coords) return;
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      const accuracy = pos.coords.accuracy || null;
+      const speedKmh = pos.coords.speed != null ? Math.round(pos.coords.speed * 3.6) : 0;
+      const heading = pos.coords.heading || null;
+
+      const now = Date.now();
+      const last = lastRecordedGpsRef.current;
+
+      let distMeters = 999;
+      if (last.lat && last.lng) {
+        distMeters = calculateHaversineMeters(last.lat, last.lng, lat, lng);
+      }
+
+      // Record breadcrumb if initial point, moved >= 25m, or 3 mins elapsed
+      if (!last.lat || distMeters >= 25 || (now - last.time > 180000)) {
+        lastRecordedGpsRef.current = { lat, lng, time: now };
+        setUserLat(lat);
+        setUserLng(lng);
+        setGpsAccuracy(accuracy);
+
+        const pingPayload = {
+          user_id: currentUserId,
+          company: company || 'TNT00001',
+          branch_code: branchCode || null,
+          latitude: lat,
+          longitude: lng,
+          accuracy_meters: accuracy,
+          speed_kmh: speedKmh,
+          heading: heading,
+          is_moving: Boolean(speedKmh > 2 || distMeters >= 25),
+          recorded_at: new Date().toISOString()
+        };
+
+        if (navigator.onLine) {
+          recordLocationPingBatch([pingPayload]).catch((err) => {
+            console.warn('Live GPS ping remote error, saved to offline vault:', err);
+            queueOfflineGpsPing(pingPayload);
+          });
+        } else {
+          queueOfflineGpsPing(pingPayload);
+        }
+      }
+    };
+
+    try {
+      watchId = navigator.geolocation.watchPosition(
+        recordLivePing,
+        (err) => console.warn('GPS Watcher notice:', err?.message),
+        { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 }
+      );
+    } catch (e) {
+      console.warn('Geolocation watchPosition unavailable:', e);
+    }
+
+    fallbackInterval = setInterval(() => {
+      navigator.geolocation.getCurrentPosition(
+        recordLivePing,
+        () => {},
+        { enableHighAccuracy: true, maximumAge: 15000, timeout: 15000 }
+      );
+    }, 45000);
+
+    return () => {
+      if (watchId !== null) {
+        try { navigator.geolocation.clearWatch(watchId); } catch (_) {}
+      }
+      if (fallbackInterval) clearInterval(fallbackInterval);
+    };
+  }, [currentUserId, company, branchCode]);
 
   // 5. Select Task to Check-In
   const handleSelectTask = (task) => {

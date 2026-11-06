@@ -1,0 +1,40 @@
+{
+  "name": "spc-workspace",
+  "productName": "SPC Workspace",
+  "version": "2.5.1051",
+  "main": "main.js",
+  "description": "SPC Workspace CRM Windows Desktop Application",
+  "author": "SuPuja Creations",
+  "build": {
+    "appId": "com.supujacreations.workspace",
+    "productName": "SPC Workspace",
+    "electronVersion": "45.2.2",
+    "directories": {
+      "output": "../dist-single-exe"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "icon.png"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "SPC Workspace"
+    }
+  }
+}

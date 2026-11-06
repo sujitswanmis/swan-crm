@@ -40,6 +40,23 @@ function LoginFormContent() {
   const [empMobile, setEmpMobile] = useState('');
 
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
+
+  // Auto-fill saved credentials if previously saved
+  useEffect(() => {
+    try {
+      const savedCreds = localStorage.getItem('spc_saved_credentials');
+      if (savedCreds) {
+        const parsed = JSON.parse(savedCreds);
+        if (parsed.email) setEmail(parsed.email);
+        if (parsed.password) setPassword(parsed.password);
+        setRememberMe(true);
+      } else {
+        const savedEmail = localStorage.getItem('spc_saved_email');
+        if (savedEmail) setEmail(savedEmail);
+      }
+    } catch (_err) {}
+  }, []);
 
   // Email OTP Login state
   const [loginOtpStep, setLoginOtpStep] = useState(1); // 1: enter email, 2: enter otp
@@ -163,6 +180,15 @@ function LoginFormContent() {
         setError('Signup successful! Please check your email inbox to verify your account before logging in.');
         setLoading(false);
       } else {
+        if (rememberMe) {
+          try {
+            localStorage.setItem('spc_saved_credentials', JSON.stringify({ email: email.trim(), password }));
+          } catch (_err) {}
+        } else {
+          try {
+            localStorage.removeItem('spc_saved_credentials');
+          } catch (_err) {}
+        }
         await completeLoginFlow(result.data?.user?.id);
       }
     }
@@ -494,14 +520,19 @@ function LoginFormContent() {
         {/* ========================================================================= */}
         {mode === 'login' && loginMethod === 'password' && (
           <>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1.5rem' }}>
+            <form onSubmit={(e) => { e.preventDefault(); handleAuth(); }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1.25rem' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>
+                <label htmlFor="login-email" style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>
                   Official Email Address
                 </label>
                 <div style={{ position: 'relative' }}>
                   <input
+                    id="login-email"
+                    name="email"
                     type="email"
+                    autoComplete="username"
+                    required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="you@company.com"
@@ -513,7 +544,7 @@ function LoginFormContent() {
 
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
-                  <label style={{ fontSize: '0.85rem', fontWeight: 600 }}>Password *</label>
+                  <label htmlFor="login-password" style={{ fontSize: '0.85rem', fontWeight: 600 }}>Password *</label>
                   <button
                     type="button"
                     onClick={() => {
@@ -529,8 +560,11 @@ function LoginFormContent() {
                 </div>
                 <div className={styles.passwordField}>
                   <input
+                    id="login-password"
+                    name="password"
                     type={showPassword ? "text" : "password"}
                     autoComplete="current-password"
+                    required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
@@ -549,36 +583,49 @@ function LoginFormContent() {
                   </button>
                 </div>
               </div>
+
+              {/* Remember ID & Password Checkbox */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '-0.25rem' }}>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.55rem', fontSize: '0.84rem', cursor: 'pointer', userSelect: 'none', color: 'var(--text-secondary, #475569)' }}>
+                  <input
+                    type="checkbox"
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                    style={{ accentColor: '#4338ca', width: '16px', height: '16px', cursor: 'pointer', borderRadius: '4px' }}
+                  />
+                  <span style={{ fontWeight: 500 }}>Remember ID &amp; Password (याद रखें)</span>
+                </label>
+              </div>
             </div>
 
             <button
-              onClick={handleAuth}
+              type="submit"
               disabled={loading || !email || !password}
               className="btn-primary"
-              style={{ width: '100%', marginBottom: '0.75rem', padding: '0.75rem', fontSize: '0.95rem', fontWeight: 600, borderRadius: '8px', backgroundColor: '#4338ca' }}
+              style={{ width: '100%', marginBottom: '0.75rem', padding: '0.75rem', fontSize: '0.95rem', fontWeight: 600, borderRadius: '8px', backgroundColor: '#4338ca', cursor: 'pointer' }}
             >
               {loading ? 'Signing in...' : 'Sign In with Password'}
             </button>
-            
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' }}>
-              <button
-                type="button"
-                onClick={() => {
-                  setLoginMethod('otp');
-                  setError(null);
-                  setLoginOtpStep(1);
-                  setLoginOtpSuccessMsg(null);
-                  setLoginOtpChallenge(null);
-                  setLoginOtp('');
-                }}
-                style={{ width: '100%', padding: '0.65rem', fontSize: '0.85rem', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', cursor: 'pointer', fontWeight: 600, color: '#334155', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}
-              >
-                <Mail size={14} color="#4338ca" /> Sign in with Email OTP instead
-              </button>
+          </form>
 
-            </div>
-          </>
-        )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' }}>
+            <button
+              type="button"
+              onClick={() => {
+                setLoginMethod('otp');
+                setError(null);
+                setLoginOtpStep(1);
+                setLoginOtpSuccessMsg(null);
+                setLoginOtpChallenge(null);
+                setLoginOtp('');
+              }}
+              style={{ width: '100%', padding: '0.65rem', fontSize: '0.85rem', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', cursor: 'pointer', fontWeight: 600, color: '#334155', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}
+            >
+              <Mail size={14} color="#4338ca" /> Sign in with Email OTP instead
+            </button>
+          </div>
+        </>
+      )}
 
         {/* ========================================================================= */}
         {/* OPTION 2: EMAIL OTP LOGIN */}
