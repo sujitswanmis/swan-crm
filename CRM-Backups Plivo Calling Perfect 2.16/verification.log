@@ -1,0 +1,718 @@
+CRM Softphone v2.16 golden snapshot - verification record
+
+Scope: documentation and backup only. Current on-disk source is captured, including pre-existing workspace changes.
+No runtime edits, version bumps, database changes, credential changes, server restarts, commits, or pushes are part of this task.
+Integrity results and per-file source hashes are recorded in BACKUP_MANIFEST.json.
+
+FOCUSED WIDGET / CONTACT / INCOMING / RECOVERY REGRESSION CHECK
+Command: node --test --test-reporter=spec tests/softphone-incoming-call.test.mjs tests/softphone-incoming-ringtone.test.mjs tests/softphone-contact-lookup.test.mjs tests/softphone-connection-recovery.test.mjs tests/softphone-widget-effects.test.mjs
+Exit code: 0
+(node:39364) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///E:/swan%20hosting/src/lib/softphoneConnectionRecovery.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to E:\swan hosting\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ offline startup makes no credential request; internet resume registers without duplicate retries (1.1567ms)
+✔ the installed SDK emits state events and an SDK-managed reconnect synchronizes the UI without re-login (6.5344ms)
+✔ unexpected logout and transport loss recover automatically while manual Disconnect stays intentional (1.3384ms)
+✔ recovery never replaces an active call or duplicates an SDK connection in progress (0.4837ms)
+✔ fresh authorization failures and revoked/disabled endpoints stop automatic credential retries (0.9015ms)
+✔ transient credential errors back off to at most one request per minute and pause while offline (1.4997ms)
+✔ manual Disconnect, offline and unmount invalidate late credentials before the SDK can log in (0.7426ms)
+✔ registration watchdog retries a missing callback, and confirmed registration clears every recovery timer (0.6178ms)
+(node:45780) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///E:/swan%20hosting/src/app/api/plivo/phone-number.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to E:\swan hosting\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ lookup finds tenant lead, employee and recruiter names while returning only display metadata (72.9491ms)
+✔ contact-person numbers select the matching name and formatted/alternate user phones normalize completely (2.6001ms)
+✔ Lead Data business name takes priority for CP1, CP2 and CP3; a blank business falls back to the matching person (4.3659ms)
+✔ Party Master metadata matches CP1, CP2 and CP3, preferring the business name before contact names (2.4272ms)
+✔ Party contact children and transferred lead links respect parent tenant ownership (2.1391ms)
+✔ missing names, partial-number matches and names from another tenant produce the exact fallback (1.4349ms)
+✔ authentication and employee ownership are checked before contact reads; caller-supplied workspace is ignored (2.8626ms)
+✔ legacy company scoping and JSON mobile fields work without widening access after missing-column errors (1.6051ms)
+✔ verified legacy New Swan profiles resolve blank and null company rows while explicit foreign tenants remain excluded (1.9768ms)
+✔ explicit tenant mismatches override matching company labels; untagged recruiter positions stay in Swan (3.2446ms)
+✔ bounded invalid input and unavailable data degrade gracefully without a provider or database mutation (4.5066ms)
+✔ name enrichment is non-blocking, deduplicates concurrent reads and reuses only user-scoped short-lived cache (9.2207ms)
+✔ late caller metadata cannot overwrite a new call or recreate a canceled incoming invite (2.0676ms)
+✔ failed metadata requests do not cache failures or prevent retrying, including a synchronous transport failure (0.9914ms)
+(node:28360) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///E:/swan%20hosting/src/lib/softphoneIncomingCall.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to E:\swan hosting\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ a real ringing invite is answered once by its exact UUID, including double-clicks (1.2991ms)
+✔ slow lead lookup cannot recreate a cancelled invite even if the SDK list briefly lags (0.7774ms)
+✔ late metadata and cancellation for one call cannot overwrite a newer invitation (0.21ms)
+✔ a popup whose invite disappeared never calls SDK answer or creates a connected result (0.1145ms)
+✔ answered, rejected, ignored, cancelled, failed and ended SDK calls are not answerable (0.202ms)
+✔ SDK false/throw results are failures and never fall back to answering another call (0.2305ms)
+✔ old SDK instances and their cleanup cannot clear invitations owned by the replacement client (0.1702ms)
+✔ an invalid or absent UUID never falls back to the most recent ringing call (0.0802ms)
+✔ unavailable SDK inventory fails safely and a subsequent new call still works (0.2896ms)
+(node:39080) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///E:/swan%20hosting/src/lib/softphoneIncomingCall.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to E:\swan hosting\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ incoming ringtone repeats only for the current call and immediately disconnects every voice on stop (3.5611ms)
+✔ sound defaults On; per-call Silence stops audio without suppressing the next incoming call (1.3349ms)
+✔ Silent preference persists per agent across refresh while another agent still defaults to Sound On (1.226ms)
+✔ blocked browser storage or unavailable audio never throws or blocks the incoming UI (1.9197ms)
+✔ autoplay waits for interaction, resumes once, and cannot restart a cancelled call after a late resume (5.1416ms)
+✔ Enable sound retries a temporary audio failure for the same invitation without starting a different call (0.6883ms)
+✔ widget rings while docked; Silence leaves Answer guarded and Decline controls the parent through the server (51.2556ms)
+✔ answer, decline, cancel, failure, termination, logout and unmount all stop incoming audio (27.0677ms)
+✔ outgoing auto-answer agent legs remain silent and retain real carrier audio settings (3.0964ms)
+✔ the widget header toggles saved incoming sound without changing microphone or call state (6.5437ms)
+✔ Forward, Next Agent and Decline use distinct authenticated actions and do not show an expected Rejected error (28.5873ms)
+✔ missing routing metadata and unavailable options disable routing while keeping Answer and Silence available (17.1663ms)
+✔ an explicit routing rejection keeps the incoming call actionable and never reports a successful decline (7.759ms)
+✔ double-clicks cannot send two actions or Answer while routing; a late action cannot erase a new invitation (12.3486ms)
+✔ an unconfirmed network action blocks another action or Answer until the invitation ends (9.0326ms)
+✔ SDK header casing and stripped X-PH prefixes both resolve the same signed routing options (16.1488ms)
+✔ each incoming routing button shows immediate progress while the response is pending and rejects duplicate clicks (23.0777ms)
+✔ actual SDK state events and browser focus restore registration UI, while manual Disconnect remains offline (8.7539ms)
+✔ browser internet and idle-tab focus events automatically obtain fresh credentials and restore the Online widget (9.6937ms)
+✔ numbered headers surviving the actual SDK restore the full signed capability and enable all routing buttons (19.9466ms)
+✔ incomplete or malformed token chunks keep routing disabled while Answer and Silence remain available (27.7359ms)
+(node:42724) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///E:/swan%20hosting/src/lib/softphoneIncomingCall.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to E:\swan hosting\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ restored outbound duration starts from the answer timestamp, ticks every second and stops on unmount (41.9756ms)
+✔ an inbound call without a backend timestamp ticks and resets after the call ends (1.8601ms)
+✔ a session metadata refresh does not restart the duration interval or reset its next tick (2.293ms)
+✔ a rapid idle-to-connected transition cancels a queued stale duration reset (1.9963ms)
+✔ replaced answer timestamps resynchronize safely and never display a negative duration (2.483ms)
+✔ unmount before clock initialization cancels the pending synchronization (1.0717ms)
+✔ session polling retains the 60-second idle and 2-second engaged intervals without duplicates (6.8166ms)
+✔ session status changes refresh immediately while metadata updates do not create more requests (2.6194ms)
+✔ a new optimistic room refreshes immediately even when the poller is already engaged (2.1093ms)
+✔ unmount and agent replacement cancel queued initial session requests (3.9171ms)
+✔ saved widget position stays within the existing expanded and minimized bounds (4.2658ms)
+✔ rapid minimize/expand and unmount cancel stale layout callbacks (7.3647ms)
+✔ invalid or unavailable saved position storage degrades without throwing (5.706ms)
+ℹ tests 65
+ℹ suites 0
+ℹ pass 65
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 409.5176
+
+TARGETED ESLINT CHECK
+Command: node node_modules/eslint/bin/eslint.js src/components/CallCenter/GlobalSoftphoneWidget.jsx tests/softphone-widget-effects.test.mjs
+Exit code: 0
+No diagnostics: 0 errors, 0 warnings.
+
+BROADER SOFTPHONE / PLIVO / CALL ADMIN / DESK REGRESSION CHECK
+Command: node --test --test-reporter=spec tests/plivo-consultation.test.mjs tests/plivo-incoming-routing.test.mjs tests/plivo-outbound-dial.test.mjs tests/plivo-outcomes.test.mjs tests/plivo-start-call.test.mjs tests/softphone-incoming-call.test.mjs tests/softphone-incoming-ringtone.test.mjs tests/softphone-contact-lookup.test.mjs tests/softphone-connection-recovery.test.mjs tests/softphone-widget-effects.test.mjs tests/call-admin-agents.test.mjs tests/call-admin-endpoints.test.mjs tests/call-center-pages.test.mjs
+Exit code: 1
+Known result: 228 tests; 213 passed; 15 failed in the existing Call Admin/Desk test suites.
+Examples include missing StandardTablePagination fixture dependencies and changed pagination expectations.
+These separate failures were recorded as observed. No runtime source was changed to address them during this backup task.
+These automated results do not claim verification by a real carrier call.
+(node:22536) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///E:/swan%20hosting/src/utils/permissionUtils.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to E:\swan hosting\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ two employees can share a caller ID without altering legacy agent codes or credentials (118.3487ms)
+✔ workspace default clears the dedicated override and failures are reported (3.5409ms)
+✔ missing migration gives a precise error; unrelated numbers and foreign tenants cannot be changed (3.389ms)
+✔ unauthenticated and view-only users cannot save caller IDs or revoke access (2.6892ms)
+✔ revoke preserves call history and SIP settings; re-authorize restores the same profile (3.5297ms)
+✔ active calls, busy agents and full seat allocations prevent unsafe changes (5.8668ms)
+✔ self-activation cannot bypass an administrator revocation (0.995ms)
+✔ calling seats count only authorized employees and support the legacy user schema (2.9823ms)
+✔ revoked agents cannot obtain SIP credentials or create outbound sessions (6.9445ms)
+✔ new caller ID reaches both outbound legs; clearing it uses workspace default despite a legacy code (8.5945ms)
+✔ pending migration retains working legacy caller IDs on both outbound legs (2.6261ms)
+✔ sticky inbound routing skips revoked SIP endpoints and rings an authorized employee (3.9249ms)
+✖ agent table searches employee ID, email, SIP and caller ID without rendering system settings (41.6012ms)
+✖ table header stays in a bounded scroll region and retains every column resizer (1.9129ms)
+✖ the agent toolbar keeps search and the single view toggle outside horizontal table scrolling (1.6899ms)
+✖ agent rows show current employee identity when an old display name is saved (1.713ms)
+✖ SIP selection includes live-only endpoints and resolves a saved legacy registry key (1.7592ms)
+✖ Unauthorize removes the employee row and makes the same employee available again without losing SIP or history (1.7731ms)
+✖ Unauthorize reports active-call protection and retains the authorized row (1.7068ms)
+✖ caller-ID UI displays confirmed saves and actual failures instead of an unconditional tick (2.3825ms)
+✔ numeric endpoint IDs and registry mappings do not require a provider lookup or alter assignments (1.2497ms)
+✔ legacy endpoint keys resolve by the assigned SIP username across provider pages and cache the numeric ID (1.373ms)
+✔ endpoint metadata failures never return the internal key or change the calling profile (0.9907ms)
+✔ endpoint ID lookup requires authentication and respects employee workspace boundaries (3.4157ms)
+✔ softphone displays the actual numeric endpoint ID without changing the online connection or calling toggle (20.0273ms)
+✔ an old endpoint lookup cannot change the label after the assignment changes or the widget unmounts (3.1132ms)
+✔ incoming and connecting caller cards display verified names instead of unverified SIP header names (3.0532ms)
+✔ endpoint metadata is reused immediately after refresh only for the same user and SIP assignment (10.6487ms)
+✔ blocked storage, HTTP errors and malformed metadata leave dialing state intact without caching failures (7.9006ms)
+✔ the softphone launcher renders before startup data arrives and loads the profile outside the action queue (3.1342ms)
+✔ startup failures show retry, non-agents disappear, and canceled profile requests cannot restore old credentials (5.9842ms)
+✔ independent profile reads enforce authentication and tenant scope while preserving the existing profile API (2.951ms)
+✔ startup GET routes return private non-cacheable responses and retain server-side access checks (7.9025ms)
+✔ SIP password save uses the verified provider username and synchronizes assigned and shadow records (125.4306ms)
+✔ an unassigned endpoint gets verified inactive credential storage without an employee assignment (1.9398ms)
+✔ SIP save reports partial synchronization when failWrite occurs (1.6551ms)
+✔ SIP save reports partial synchronization when zeroWrite occurs (2.9611ms)
+✔ SIP save reports partial synchronization when badVerification occurs (1.3508ms)
+✔ SIP preflight stops unsafe provider mutation for noUser (1.4672ms)
+✔ SIP preflight stops unsafe provider mutation for foreignAssignment (1.6395ms)
+✔ SIP preflight stops unsafe provider mutation for foreignEndpoint (2.0734ms)
+✔ SIP preflight stops unsafe provider mutation for endpointMissing (1.9579ms)
+✔ SIP preflight stops unsafe provider mutation for failRead (1.3244ms)
+✔ provider failure and invalid passwords never write a CRM credential (2.6115ms)
+✔ the assignment selector loads every provider page even when total_count is missing (2.2887ms)
+(node:31572) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///E:/swan%20hosting/src/utils/permissionUtils.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to E:\swan hosting\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ page snapshots survive refresh, isolate user/tenant scope and exclude nested SIP secrets (2.7426ms)
+✔ page snapshots expire and blocked storage does not stop rendering (1.4948ms)
+✔ complete live endpoint metadata merges with registry aliases and retains live-only entries (0.798ms)
+✔ simultaneous page GETs are deduplicated, bounded and retried after failure (2.0568ms)
+✖ pagination provides the standard range, sizes, boundary states and last-page navigation (60.6953ms)
+✔ a post-save refresh cannot reuse an older in-flight read or erase the newer pending request (0.9906ms)
+✖ Call Admin header and call-log tab render immediately without loading employees or live endpoints (1.4735ms)
+✖ SIP toolbar groups its title, quota, actions and single view switch above the table (1.2353ms)
+✖ a late registry response cannot replace the complete live SIP selection list (2.6982ms)
+✖ Telecalling Desk loads its profile once and filters use only one independent call-log read (1.5916ms)
+✖ a stale profile cannot replace the current user after a scope change (1.2877ms)
+✔ page APIs authenticate and reject foreign tenant scope and read-only credential writes (3.1625ms)
+✔ page reads exclude foreign employees and unrelated salary/module data (0.9978ms)
+✖ call-log query bounds pagination, applies search before range and preserves explicit IST boundaries (19.7348ms)
+(node:35184) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///E:/swan%20hosting/src/app/api/plivo/phone-number.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to E:\swan hosting\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ missing migration or unreachable public webhook leaves the original call untouched (45.149ms)
+✔ Add Call holds the same original caller, uses real ringback, and never auto-merges on pickup (18.5373ms)
+✔ third-person dialing uses the session agent selected outgoing caller ID instead of the rejected workspace default (2.3873ms)
+✔ an empty or non-phone assignment retains this workspace default without reviving an old agent-code override (6.6329ms)
+✔ older caller-ID schemas retain their legacy phone assignment (6.9802ms)
+✔ a failed caller-ID read or mismatched agent owner fails before holding, transferring or dialing (2.336ms)
+✔ a selected caller ID works without a workspace default, but a completely missing number leaves the call untouched (3.5028ms)
+✔ ringing callback keeps the first caller held and only explicit Cancel resumes them (4.4923ms)
+✔ busy, no-answer, and media-anchoring rejection resume the caller without ending the session (11.3283ms)
+✔ Cancel after pickup removes only the guest before unholding the original caller (3.9918ms)
+✔ duplicate Add Call cannot place a second outbound call (2.9123ms)
+✔ Cancel during an in-flight invite keeps caller held until request cancellation is confirmed (5.4ms)
+✔ unknown invite IDs and failed cancellation never expose the original caller (11.471ms)
+✔ very fast terminal callback before invite response does not reverse completed recovery (5.2702ms)
+✔ late callbacks from a previous attempt cannot merge, cancel, or unhold a new consultation (5.6932ms)
+✔ subsequent Add Call preserves previously merged members and manual holds (5.2624ms)
+✔ unconfirmed hold prevents dialing and transfer rejection leaves single-call state intact (4.2369ms)
+✔ failed/unconfirmed Merge re-isolates callers and allows Cancel recovery (5.6981ms)
+✔ resume must be observed at provider before reporting an active call (3.0283ms)
+✔ owner checks and mode/role/attempt-bound signatures reject unrelated access (24.2493ms)
+✔ MPC XML holds customer, preserves agent, escapes signed URLs, and keeps private tokens out of UI (64.541ms)
+✔ original Dial completion during transfer is not treated as an MPC hangup (2.0906ms)
+✔ End Call targets this session only and a failed session write remains retryable (3.3132ms)
+✔ ordinary call status and Dial outcomes do not access consultation storage or MPC APIs (84.5568ms)
+✔ installed Plivo SDK accepts native MPC method signatures and request parameters (240.4766ms)
+✔ overlapping Cancel workers cannot resume a caller twice or unhold a later attempt (2.6662ms)
+✔ native session status preserves connected and ended response fields used by the softphone (4.405ms)
+✔ signed answer webhook rejects the wrong call and transient failure returns retry XML (8.1793ms)
+✔ transient MPC storage failure in Dial action does not hang up the transferred agent (2.9ms)
+✔ temporary provider failure never ends a native call; a confirmed missing active MPC is reconciled (2.8502ms)
+✔ localhost cannot mix old production callbacks with a new consultation tunnel (1.478ms)
+✔ provider history with exitTime is excluded from live members and cannot block caller resume (3.6655ms)
+✔ guest exit between listing and kick is reconciled before resuming the original caller (2.2941ms)
+✔ an unrelated kick failure keeps the original caller isolated (1.9564ms)
+✔ participant views expose full customer/guest phone numbers separately from role labels (2.7666ms)
+✔ initial XML and later invites use the same hold callback for both participant roles (2.6216ms)
+✔ hold audio is a small non-silent mono PCM WAV suitable for telephone playback (2.9065ms)
+✔ manual Hold promotes only the two connected callers and never dials a third person (2.2831ms)
+✔ mobile-agent Mute uses the same controlled promotion and resumes the customer after setup (1.5992ms)
+✔ Add Call still holds, consults privately, and explicitly merges after manual controls were prepared (3.0375ms)
+✔ manual controls validate role/action and public readiness before touching a live call (3.8073ms)
+✔ rejected manual-control transfer leaves no guest request and restores the direct-call marker (1.8475ms)
+✔ unconfirmed manual Hold resumes the customer and leaves a recoverable call (1.9193ms)
+✔ manual Hold waits for delayed original callers beyond the old Add Call readiness window (188.7146ms)
+✔ manual-control timeout is bounded, mentions no third person, and permits recovery (455.1381ms)
+✔ a confirmed manual-control retry clears old setup errors while an unconfirmed retry retains them (1.8599ms)
+✔ connected call duration is visible beside the call status and remains visible during Hold (45.0854ms)
+✔ customer names appear in the call header and pending/live participants while numbers remain visible (4.8203ms)
+✔ normal agent_leg/customer_leg calls render enabled Mute, Hold and End controls before participants (3.8656ms)
+✔ Hold shows progress immediately, blocks duplicate actions and ignores an older in-flight participant poll (4.8622ms)
+✔ failed Hold clears immediate progress and keeps the confirmed state available for retry (2.884ms)
+✔ legacy participant removal still refreshes confirmed members while owning its action lock (2.0227ms)
+✔ End Call reacts immediately and a late Hold response cannot clear its pending state or report success early (3.3672ms)
+✔ Merge is visible above participants while ringing and enables in consulting even without a busy flag (5.0508ms)
+✔ End Call does not report success when the server rejects hangup (1.8664ms)
+✔ normal two-person calls end directly, including calls promoted only for manual Hold (3.6264ms)
+✔ merged calls require End All Calls confirmation and Cancel keeps every participant connected (3.4779ms)
+✔ keyboard registration uses the same Mute/Hold/End guards and never bypasses a conference confirmation (1.7985ms)
+✔ the existing softphone timer reaches the single active panel and updates while docked or minimized (19.6932ms)
+✔ Ctrl+M/H/E use the active call controls, suppress defaults, and ignore held-key repeats (1.4273ms)
+✔ shortcuts preserve disabled controls, modal confirmation, unrelated keys and idle browser defaults (3.3697ms)
+✔ docked/minimized calls retain controls and Ctrl+E reveals the required conference confirmation (1.2774ms)
+✔ calling method has only Browser and Via Mobile toggles and shows the agent number only for Mobile (2.6513ms)
+(node:42896) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///E:/swan%20hosting/src/app/api/plivo/phone-number.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to E:\swan hosting\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ tracked incoming calls carry per-agent signed invitations and public notification-only Dial callbacks (119.0468ms)
+✔ options find only available authorized agents in the same workspace and a configured non-looping default number (15.5329ms)
+✔ Decline terminates the original customer leg and prevents every later mobile fallback (6.5005ms)
+✔ Default Forward transfers only the parent leg to signed XML and dials the configured mobile once (8.1977ms)
+✔ Next Agent routes to another agent, preserves the customer number, and does not loop to an earlier agent (7.6168ms)
+✔ Next Agent honors configured eligible agents and does not forward when none are available (5.2912ms)
+✔ busy/timeout still follows automatic fallback; answered calls and stale notifications never start another Dial (4.3258ms)
+✔ authentication, revoked access, foreign tenants, tampered/expired tokens and outbound legs fail before a provider mutation (21.1254ms)
+✔ concurrent agent actions claim one revision and cannot create duplicate transfers or hangups (6.0533ms)
+✔ provider failures restore a rejected request, while ambiguous timeouts keep the intent locked without retrying (7.174ms)
+✔ a missing migration, invalid provider signature or mixed-tenant selection leaves legacy incoming behavior available (2.3411ms)
+✔ the actual incoming route attaches verified controls, while untracked fallback retains its existing mobile behavior (5.0414ms)
+✔ completion capabilities last through a long conversation while browser invitation capabilities expire quickly (1.9826ms)
+✔ routes keep authentication private and reject mismatched webhook call IDs without executing fallback (8.6079ms)
+✔ native Plivo call SDK accepts the exact live lookup, parent transfer and hangup method signatures (133.5412ms)
+✔ agent and parent live checks overlap, but both generations are verified before the one mutation (2.1526ms)
+✔ provider V3 signature validation works with the installed SDK and the public inbound host survives local agent actions (368.4419ms)
+✔ routing capabilities survive the installed SDK 120-character limit for production and tunnel origins (3.2962ms)
+✔ the migration is additive, denies browser access, and grants only server reads/inserts/updates (0.347ms)
+(node:42728) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///E:/swan%20hosting/src/app/api/plivo/outbound-dial-xml.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to E:\swan hosting\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ customer Dial uses tenant caller ID with a tenant-aware profile schema (130.2586ms)
+✔ legacy schema retains tenant caller ID, real carrier ringback, recording and Dial callbacks (2.7593ms)
+✔ different legacy tenants receive their own customer-leg caller IDs (3.8225ms)
+✔ an explicitly assigned agent caller ID retains priority (2.8021ms)
+✔ workspace lookup failures never dial a customer with the platform fallback caller ID (5.102ms)
+✔ existing legacy profiles with no company retain the platform default caller ID (1.8203ms)
+(node:18216) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///E:/swan%20hosting/src/app/api/plivo/utils.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to E:\swan hosting\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ provider codes distinguish busy, invalid, unavailable and timeout (1.2417ms)
+✔ outbound Dial passes real carrier audio and reports final status (0.972ms)
+✔ outbound auto-answer requires the active room and provider call marker (0.4201ms)
+✔ ambiguous and app-cancelled calls do not claim the phone was switched off (0.4077ms)
+✔ a failed Dial with an unknown caller ID is a setup error, not a switched-off customer (0.1835ms)
+✔ known provider setup codes retain their meaning even when the destination never rang (0.2195ms)
+✔ outbound customer number accepts Indian mobile and landline formats (0.2896ms)
+(node:43956) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///E:/swan%20hosting/src/app/api/plivo/phone-number.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to E:\swan hosting\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ tenant-aware schema passes the caller company and tenant ID to the credential resolver (119.0219ms)
+✔ missing tenant_id retries company lookup and retains the original direct-call URL and SIP marker (2.3533ms)
+✔ different legacy companies remain separate inputs to tenant credential selection (3.3973ms)
+✔ unrelated workspace lookup errors fail before credentials, sessions or provider requests (4.4834ms)
+✔ a failed legacy lookup cannot silently dial through platform credentials (1.86ms)
+✔ missing profile fails before selecting any calling account (1.3661ms)
+✔ an existing legacy platform profile retains its empty-company default mapping (1.8156ms)
+✔ assigned caller ID and provider failure cleanup remain intact (2.0701ms)
+✔ unauthenticated requests cannot resolve credentials or create sessions (1.6565ms)
+(node:44352) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///E:/swan%20hosting/src/lib/softphoneConnectionRecovery.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to E:\swan hosting\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ offline startup makes no credential request; internet resume registers without duplicate retries (2.1949ms)
+✔ the installed SDK emits state events and an SDK-managed reconnect synchronizes the UI without re-login (12.4698ms)
+✔ unexpected logout and transport loss recover automatically while manual Disconnect stays intentional (1.793ms)
+✔ recovery never replaces an active call or duplicates an SDK connection in progress (0.889ms)
+✔ fresh authorization failures and revoked/disabled endpoints stop automatic credential retries (0.9395ms)
+✔ transient credential errors back off to at most one request per minute and pause while offline (1.3051ms)
+✔ manual Disconnect, offline and unmount invalidate late credentials before the SDK can log in (1.6709ms)
+✔ registration watchdog retries a missing callback, and confirmed registration clears every recovery timer (0.8311ms)
+(node:31472) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///E:/swan%20hosting/src/app/api/plivo/phone-number.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to E:\swan hosting\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ lookup finds tenant lead, employee and recruiter names while returning only display metadata (115.7211ms)
+✔ contact-person numbers select the matching name and formatted/alternate user phones normalize completely (4.5991ms)
+✔ Lead Data business name takes priority for CP1, CP2 and CP3; a blank business falls back to the matching person (5.8454ms)
+✔ Party Master metadata matches CP1, CP2 and CP3, preferring the business name before contact names (4.1111ms)
+✔ Party contact children and transferred lead links respect parent tenant ownership (4.2813ms)
+✔ missing names, partial-number matches and names from another tenant produce the exact fallback (2.875ms)
+✔ authentication and employee ownership are checked before contact reads; caller-supplied workspace is ignored (4.6549ms)
+✔ legacy company scoping and JSON mobile fields work without widening access after missing-column errors (2.1634ms)
+✔ verified legacy New Swan profiles resolve blank and null company rows while explicit foreign tenants remain excluded (2.5025ms)
+✔ explicit tenant mismatches override matching company labels; untagged recruiter positions stay in Swan (3.9301ms)
+✔ bounded invalid input and unavailable data degrade gracefully without a provider or database mutation (6.8792ms)
+✔ name enrichment is non-blocking, deduplicates concurrent reads and reuses only user-scoped short-lived cache (11.8685ms)
+✔ late caller metadata cannot overwrite a new call or recreate a canceled incoming invite (1.9059ms)
+✔ failed metadata requests do not cache failures or prevent retrying, including a synchronous transport failure (1.6531ms)
+(node:46320) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///E:/swan%20hosting/src/lib/softphoneIncomingCall.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to E:\swan hosting\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ a real ringing invite is answered once by its exact UUID, including double-clicks (3.3085ms)
+✔ slow lead lookup cannot recreate a cancelled invite even if the SDK list briefly lags (1.0718ms)
+✔ late metadata and cancellation for one call cannot overwrite a newer invitation (0.3705ms)
+✔ a popup whose invite disappeared never calls SDK answer or creates a connected result (0.2149ms)
+✔ answered, rejected, ignored, cancelled, failed and ended SDK calls are not answerable (0.3598ms)
+✔ SDK false/throw results are failures and never fall back to answering another call (0.3916ms)
+✔ old SDK instances and their cleanup cannot clear invitations owned by the replacement client (0.323ms)
+✔ an invalid or absent UUID never falls back to the most recent ringing call (0.1787ms)
+✔ unavailable SDK inventory fails safely and a subsequent new call still works (0.438ms)
+(node:23340) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///E:/swan%20hosting/src/lib/softphoneConnectionRecovery.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to E:\swan hosting\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ incoming ringtone repeats only for the current call and immediately disconnects every voice on stop (4.3447ms)
+✔ sound defaults On; per-call Silence stops audio without suppressing the next incoming call (1.5454ms)
+✔ Silent preference persists per agent across refresh while another agent still defaults to Sound On (1.6798ms)
+✔ blocked browser storage or unavailable audio never throws or blocks the incoming UI (3.7566ms)
+✔ autoplay waits for interaction, resumes once, and cannot restart a cancelled call after a late resume (10.9111ms)
+✔ Enable sound retries a temporary audio failure for the same invitation without starting a different call (0.9174ms)
+✔ widget rings while docked; Silence leaves Answer guarded and Decline controls the parent through the server (76.6101ms)
+✔ answer, decline, cancel, failure, termination, logout and unmount all stop incoming audio (39.3871ms)
+✔ outgoing auto-answer agent legs remain silent and retain real carrier audio settings (5.5372ms)
+✔ the widget header toggles saved incoming sound without changing microphone or call state (10.8764ms)
+✔ Forward, Next Agent and Decline use distinct authenticated actions and do not show an expected Rejected error (36.6474ms)
+✔ missing routing metadata and unavailable options disable routing while keeping Answer and Silence available (23.5513ms)
+✔ an explicit routing rejection keeps the incoming call actionable and never reports a successful decline (10.3431ms)
+✔ double-clicks cannot send two actions or Answer while routing; a late action cannot erase a new invitation (16.7541ms)
+✔ an unconfirmed network action blocks another action or Answer until the invitation ends (10.7419ms)
+✔ SDK header casing and stripped X-PH prefixes both resolve the same signed routing options (20.2568ms)
+✔ each incoming routing button shows immediate progress while the response is pending and rejects duplicate clicks (29.0934ms)
+✔ actual SDK state events and browser focus restore registration UI, while manual Disconnect remains offline (9.1845ms)
+✔ browser internet and idle-tab focus events automatically obtain fresh credentials and restore the Online widget (10.5223ms)
+✔ numbered headers surviving the actual SDK restore the full signed capability and enable all routing buttons (20.5846ms)
+✔ incomplete or malformed token chunks keep routing disabled while Answer and Silence remain available (32.7751ms)
+(node:38392) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///E:/swan%20hosting/src/lib/softphoneIncomingCall.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to E:\swan hosting\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ restored outbound duration starts from the answer timestamp, ticks every second and stops on unmount (61.0502ms)
+✔ an inbound call without a backend timestamp ticks and resets after the call ends (2.5052ms)
+✔ a session metadata refresh does not restart the duration interval or reset its next tick (4.4627ms)
+✔ a rapid idle-to-connected transition cancels a queued stale duration reset (3.4123ms)
+✔ replaced answer timestamps resynchronize safely and never display a negative duration (4.2396ms)
+✔ unmount before clock initialization cancels the pending synchronization (2.1443ms)
+✔ session polling retains the 60-second idle and 2-second engaged intervals without duplicates (11.5675ms)
+✔ session status changes refresh immediately while metadata updates do not create more requests (4.2451ms)
+✔ a new optimistic room refreshes immediately even when the poller is already engaged (4.269ms)
+✔ unmount and agent replacement cancel queued initial session requests (6.2702ms)
+✔ saved widget position stays within the existing expanded and minimized bounds (5.4402ms)
+✔ rapid minimize/expand and unmount cancel stale layout callbacks (5.8991ms)
+✔ invalid or unavailable saved position storage degrades without throwing (7.1279ms)
+ℹ tests 228
+ℹ suites 0
+ℹ pass 213
+ℹ fail 15
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1524.2062
+
+✖ failing tests:
+
+test at tests\call-admin-agents.test.mjs:325:1
+✖ agent table searches employee ID, email, SIP and caller ID without rendering system settings (41.6012ms)
+  node:internal/assert/utils:281
+      throw err;
+      ^
+  
+  AssertionError [ERR_ASSERTION]: Unexpected dependency: @/components/common/StandardTablePagination
+      at require (file:///E:/swan%20hosting/tests/call-admin-agents.test.mjs:131:30)
+      at evalmachine.<anonymous>:24:73
+      at Script.runInContext (node:vm:149:12)
+      at Script.runInNewContext (node:vm:154:17)
+      at Object.runInNewContext (node:vm:310:38)
+      at Object.load (file:///E:/swan%20hosting/tests/call-admin-agents.test.mjs:116:8)
+      at uiHarness (file:///E:/swan%20hosting/tests/call-admin-agents.test.mjs:300:52)
+      at TestContext.<anonymous> (file:///E:/swan%20hosting/tests/call-admin-agents.test.mjs:326:15)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1047:25) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '=='
+  }
+
+test at tests\call-admin-agents.test.mjs:339:1
+✖ table header stays in a bounded scroll region and retains every column resizer (1.9129ms)
+  node:internal/assert/utils:281
+      throw err;
+      ^
+  
+  AssertionError [ERR_ASSERTION]: Unexpected dependency: @/components/common/StandardTablePagination
+      at require (file:///E:/swan%20hosting/tests/call-admin-agents.test.mjs:131:30)
+      at evalmachine.<anonymous>:24:73
+      at Script.runInContext (node:vm:149:12)
+      at Script.runInNewContext (node:vm:154:17)
+      at Object.runInNewContext (node:vm:310:38)
+      at Object.load (file:///E:/swan%20hosting/tests/call-admin-agents.test.mjs:116:8)
+      at uiHarness (file:///E:/swan%20hosting/tests/call-admin-agents.test.mjs:300:52)
+      at TestContext.<anonymous> (file:///E:/swan%20hosting/tests/call-admin-agents.test.mjs:340:16)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1047:25) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '=='
+  }
+
+test at tests\call-admin-agents.test.mjs:356:1
+✖ the agent toolbar keeps search and the single view toggle outside horizontal table scrolling (1.6899ms)
+  node:internal/assert/utils:281
+      throw err;
+      ^
+  
+  AssertionError [ERR_ASSERTION]: Unexpected dependency: @/components/common/StandardTablePagination
+      at require (file:///E:/swan%20hosting/tests/call-admin-agents.test.mjs:131:30)
+      at evalmachine.<anonymous>:24:73
+      at Script.runInContext (node:vm:149:12)
+      at Script.runInNewContext (node:vm:154:17)
+      at Object.runInNewContext (node:vm:310:38)
+      at Object.load (file:///E:/swan%20hosting/tests/call-admin-agents.test.mjs:116:8)
+      at uiHarness (file:///E:/swan%20hosting/tests/call-admin-agents.test.mjs:300:52)
+      at TestContext.<anonymous> (file:///E:/swan%20hosting/tests/call-admin-agents.test.mjs:357:15)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1047:25) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '=='
+  }
+
+test at tests\call-admin-agents.test.mjs:368:1
+✖ agent rows show current employee identity when an old display name is saved (1.713ms)
+  node:internal/assert/utils:281
+      throw err;
+      ^
+  
+  AssertionError [ERR_ASSERTION]: Unexpected dependency: @/components/common/StandardTablePagination
+      at require (file:///E:/swan%20hosting/tests/call-admin-agents.test.mjs:131:30)
+      at evalmachine.<anonymous>:24:73
+      at Script.runInContext (node:vm:149:12)
+      at Script.runInNewContext (node:vm:154:17)
+      at Object.runInNewContext (node:vm:310:38)
+      at Object.load (file:///E:/swan%20hosting/tests/call-admin-agents.test.mjs:116:8)
+      at uiHarness (file:///E:/swan%20hosting/tests/call-admin-agents.test.mjs:300:52)
+      at TestContext.<anonymous> (file:///E:/swan%20hosting/tests/call-admin-agents.test.mjs:369:15)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1047:25) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '=='
+  }
+
+test at tests\call-admin-agents.test.mjs:376:1
+✖ SIP selection includes live-only endpoints and resolves a saved legacy registry key (1.7592ms)
+  node:internal/assert/utils:281
+      throw err;
+      ^
+  
+  AssertionError [ERR_ASSERTION]: Unexpected dependency: @/components/common/StandardTablePagination
+      at require (file:///E:/swan%20hosting/tests/call-admin-agents.test.mjs:131:30)
+      at evalmachine.<anonymous>:24:73
+      at Script.runInContext (node:vm:149:12)
+      at Script.runInNewContext (node:vm:154:17)
+      at Object.runInNewContext (node:vm:310:38)
+      at Object.load (file:///E:/swan%20hosting/tests/call-admin-agents.test.mjs:116:8)
+      at uiHarness (file:///E:/swan%20hosting/tests/call-admin-agents.test.mjs:300:52)
+      at TestContext.<anonymous> (file:///E:/swan%20hosting/tests/call-admin-agents.test.mjs:377:15)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1047:25) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '=='
+  }
+
+test at tests\call-admin-agents.test.mjs:389:1
+✖ Unauthorize removes the employee row and makes the same employee available again without losing SIP or history (1.7731ms)
+  node:internal/assert/utils:281
+      throw err;
+      ^
+  
+  AssertionError [ERR_ASSERTION]: Unexpected dependency: @/components/common/StandardTablePagination
+      at require (file:///E:/swan%20hosting/tests/call-admin-agents.test.mjs:131:30)
+      at evalmachine.<anonymous>:24:73
+      at Script.runInContext (node:vm:149:12)
+      at Script.runInNewContext (node:vm:154:17)
+      at Object.runInNewContext (node:vm:310:38)
+      at Object.load (file:///E:/swan%20hosting/tests/call-admin-agents.test.mjs:116:8)
+      at uiHarness (file:///E:/swan%20hosting/tests/call-admin-agents.test.mjs:300:52)
+      at TestContext.<anonymous> (file:///E:/swan%20hosting/tests/call-admin-agents.test.mjs:390:15)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1047:25) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '=='
+  }
+
+test at tests\call-admin-agents.test.mjs:407:1
+✖ Unauthorize reports active-call protection and retains the authorized row (1.7068ms)
+  node:internal/assert/utils:281
+      throw err;
+      ^
+  
+  AssertionError [ERR_ASSERTION]: Unexpected dependency: @/components/common/StandardTablePagination
+      at require (file:///E:/swan%20hosting/tests/call-admin-agents.test.mjs:131:30)
+      at evalmachine.<anonymous>:24:73
+      at Script.runInContext (node:vm:149:12)
+      at Script.runInNewContext (node:vm:154:17)
+      at Object.runInNewContext (node:vm:310:38)
+      at Object.load (file:///E:/swan%20hosting/tests/call-admin-agents.test.mjs:116:8)
+      at uiHarness (file:///E:/swan%20hosting/tests/call-admin-agents.test.mjs:300:52)
+      at TestContext.<anonymous> (file:///E:/swan%20hosting/tests/call-admin-agents.test.mjs:408:15)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1047:25) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '=='
+  }
+
+test at tests\call-admin-agents.test.mjs:415:1
+✖ caller-ID UI displays confirmed saves and actual failures instead of an unconditional tick (2.3825ms)
+  node:internal/assert/utils:281
+      throw err;
+      ^
+  
+  AssertionError [ERR_ASSERTION]: Unexpected dependency: @/components/common/StandardTablePagination
+      at require (file:///E:/swan%20hosting/tests/call-admin-agents.test.mjs:131:30)
+      at evalmachine.<anonymous>:24:73
+      at Script.runInContext (node:vm:149:12)
+      at Script.runInNewContext (node:vm:154:17)
+      at Object.runInNewContext (node:vm:310:38)
+      at Object.load (file:///E:/swan%20hosting/tests/call-admin-agents.test.mjs:116:8)
+      at uiHarness (file:///E:/swan%20hosting/tests/call-admin-agents.test.mjs:300:52)
+      at TestContext.<anonymous> (file:///E:/swan%20hosting/tests/call-admin-agents.test.mjs:417:17)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1047:25) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '=='
+  }
+
+test at tests\call-center-pages.test.mjs:91:1
+✖ pagination provides the standard range, sizes, boundary states and last-page navigation (60.6953ms)
+  file:///E:/swan%20hosting/tests/call-center-pages.test.mjs:18
+      process: { env: {} }, require(name) { if (name in imports) return imports[name]; throw new Error(`Unexpected import ${name}`); }, ...globals });
+                                                                                       ^
+  
+  Error: Unexpected import @/components/common/StandardTablePagination
+      at require (file:///E:/swan%20hosting/tests/call-center-pages.test.mjs:18:92)
+      at evalmachine.<anonymous>:24:73
+      at Script.runInContext (node:vm:149:12)
+      at Script.runInNewContext (node:vm:154:17)
+      at Object.runInNewContext (node:vm:310:38)
+      at load (file:///E:/swan%20hosting/tests/call-center-pages.test.mjs:17:6)
+      at TestContext.<anonymous> (file:///E:/swan%20hosting/tests/call-center-pages.test.mjs:92:22)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1047:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+
+test at tests\call-center-pages.test.mjs:144:1
+✖ Call Admin header and call-log tab render immediately without loading employees or live endpoints (1.4735ms)
+  file:///E:/swan%20hosting/tests/call-center-pages.test.mjs:18
+      process: { env: {} }, require(name) { if (name in imports) return imports[name]; throw new Error(`Unexpected import ${name}`); }, ...globals });
+                                                                                       ^
+  
+  Error: Unexpected import @/components/common/StandardTablePagination
+      at require (file:///E:/swan%20hosting/tests/call-center-pages.test.mjs:18:92)
+      at evalmachine.<anonymous>:24:73
+      at Script.runInContext (node:vm:149:12)
+      at Script.runInNewContext (node:vm:154:17)
+      at Object.runInNewContext (node:vm:310:38)
+      at load (file:///E:/swan%20hosting/tests/call-center-pages.test.mjs:17:6)
+      at uiHarness (file:///E:/swan%20hosting/tests/call-center-pages.test.mjs:132:63)
+      at TestContext.<anonymous> (file:///E:/swan%20hosting/tests/call-center-pages.test.mjs:145:15)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1047:25)
+
+test at tests\call-center-pages.test.mjs:154:1
+✖ SIP toolbar groups its title, quota, actions and single view switch above the table (1.2353ms)
+  file:///E:/swan%20hosting/tests/call-center-pages.test.mjs:18
+      process: { env: {} }, require(name) { if (name in imports) return imports[name]; throw new Error(`Unexpected import ${name}`); }, ...globals });
+                                                                                       ^
+  
+  Error: Unexpected import @/components/common/StandardTablePagination
+      at require (file:///E:/swan%20hosting/tests/call-center-pages.test.mjs:18:92)
+      at evalmachine.<anonymous>:24:73
+      at Script.runInContext (node:vm:149:12)
+      at Script.runInNewContext (node:vm:154:17)
+      at Object.runInNewContext (node:vm:310:38)
+      at load (file:///E:/swan%20hosting/tests/call-center-pages.test.mjs:17:6)
+      at uiHarness (file:///E:/swan%20hosting/tests/call-center-pages.test.mjs:132:63)
+      at TestContext.<anonymous> (file:///E:/swan%20hosting/tests/call-center-pages.test.mjs:155:15)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1047:25)
+
+test at tests\call-center-pages.test.mjs:170:1
+✖ a late registry response cannot replace the complete live SIP selection list (2.6982ms)
+  file:///E:/swan%20hosting/tests/call-center-pages.test.mjs:18
+      process: { env: {} }, require(name) { if (name in imports) return imports[name]; throw new Error(`Unexpected import ${name}`); }, ...globals });
+                                                                                       ^
+  
+  Error: Unexpected import @/components/common/StandardTablePagination
+      at require (file:///E:/swan%20hosting/tests/call-center-pages.test.mjs:18:92)
+      at evalmachine.<anonymous>:24:73
+      at Script.runInContext (node:vm:149:12)
+      at Script.runInNewContext (node:vm:154:17)
+      at Object.runInNewContext (node:vm:310:38)
+      at load (file:///E:/swan%20hosting/tests/call-center-pages.test.mjs:17:6)
+      at uiHarness (file:///E:/swan%20hosting/tests/call-center-pages.test.mjs:132:63)
+      at TestContext.<anonymous> (file:///E:/swan%20hosting/tests/call-center-pages.test.mjs:171:15)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1047:25)
+
+test at tests\call-center-pages.test.mjs:190:1
+✖ Telecalling Desk loads its profile once and filters use only one independent call-log read (1.5916ms)
+  file:///E:/swan%20hosting/tests/call-center-pages.test.mjs:18
+      process: { env: {} }, require(name) { if (name in imports) return imports[name]; throw new Error(`Unexpected import ${name}`); }, ...globals });
+                                                                                       ^
+  
+  Error: Unexpected import @/components/common/StandardTablePagination
+      at require (file:///E:/swan%20hosting/tests/call-center-pages.test.mjs:18:92)
+      at evalmachine.<anonymous>:24:73
+      at Script.runInContext (node:vm:149:12)
+      at Script.runInNewContext (node:vm:154:17)
+      at Object.runInNewContext (node:vm:310:38)
+      at load (file:///E:/swan%20hosting/tests/call-center-pages.test.mjs:17:6)
+      at uiHarness (file:///E:/swan%20hosting/tests/call-center-pages.test.mjs:132:63)
+      at TestContext.<anonymous> (file:///E:/swan%20hosting/tests/call-center-pages.test.mjs:191:15)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1047:25)
+
+test at tests\call-center-pages.test.mjs:207:1
+✖ a stale profile cannot replace the current user after a scope change (1.2877ms)
+  file:///E:/swan%20hosting/tests/call-center-pages.test.mjs:18
+      process: { env: {} }, require(name) { if (name in imports) return imports[name]; throw new Error(`Unexpected import ${name}`); }, ...globals });
+                                                                                       ^
+  
+  Error: Unexpected import @/components/common/StandardTablePagination
+      at require (file:///E:/swan%20hosting/tests/call-center-pages.test.mjs:18:92)
+      at evalmachine.<anonymous>:24:73
+      at Script.runInContext (node:vm:149:12)
+      at Script.runInNewContext (node:vm:154:17)
+      at Object.runInNewContext (node:vm:310:38)
+      at load (file:///E:/swan%20hosting/tests/call-center-pages.test.mjs:17:6)
+      at uiHarness (file:///E:/swan%20hosting/tests/call-center-pages.test.mjs:132:63)
+      at TestContext.<anonymous> (file:///E:/swan%20hosting/tests/call-center-pages.test.mjs:208:15)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1047:25)
+
+test at tests\call-center-pages.test.mjs:256:1
+✖ call-log query bounds pagination, applies search before range and preserves explicit IST boundaries (19.7348ms)
+  AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:
+  
+    assert.ok(app.log.some(item => item.from === 0 && item.to === 99))
+  
+      at TestContext.<anonymous> (file:///E:/swan%20hosting/tests/call-center-pages.test.mjs:259:10)
+      at async Test.run (node:internal/test_runner/test:1054:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:744:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '=='
+  }
+

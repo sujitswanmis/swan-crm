@@ -1,5 +1,6 @@
 import React from 'react';
 import { INTEGRATION_PAGE, INTEGRATION_PAGES, CONFIG_MASTER_PAGES } from './integrationsConfig';
+import { WHATSAPP_LOG_PAGE, WHATSAPP_LOG_PERMISSION_ITEMS } from './whatsappMessageLogsConfig.js';
 import { UserPlus, FileText, Users, Building2, CheckCircle, Archive, Globe, Bot, Shield, PhoneCall, Phone, MessageCircle, Settings2, PieChart, ShieldCheck, Clock, CheckSquare, WifiOff, GitMerge, Navigation } from 'lucide-react';
 
 export const MODULES_CONFIG = [
@@ -341,9 +342,11 @@ export const MODULES_CONFIG = [
       { id: 'allocations', label: 'Client Allocation Matrix' }
     ],
     roleDisplayNote: 'Catalog and Allocation Matrix are Master Admin only.',
+    subItemGroups: [WHATSAPP_LOG_PAGE],
     subItems: [
       { id: 'templates', label: 'Templates Library' },
       { id: 'automations', label: 'Stage Automations' },
+      ...WHATSAPP_LOG_PERMISSION_ITEMS,
       { id: 'settings', label: 'API Credentials & Setup' }
     ]
   },

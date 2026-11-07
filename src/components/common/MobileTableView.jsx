@@ -195,7 +195,8 @@ function interactionProps(props) {
     /^on[A-Z]|^data-|^aria-/.test(key) || ['id', 'title', 'tabIndex', 'role'].includes(key)));
 }
 
-export default function MobileTableView({ id, children, view: controlledView, hideToggle = false, summaryKeys = [] }) {
+export default function MobileTableView({ id: propId, tableId, children, view: controlledView, hideToggle = false, summaryKeys = [] }) {
+  const id = propId || tableId || 'table-view-default';
   const [savedView, setView, mobile] = useTableViewPreference(id);
   const view = controlledView === 'table' || controlledView === 'tiles' ? controlledView : savedView;
   const [page, setPage] = useState({ id, index: 0 });

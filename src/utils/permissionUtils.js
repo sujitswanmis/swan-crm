@@ -4,6 +4,7 @@
  */
 
 import { INTEGRATION_PAGE, INTEGRATION_PAGE_IDS, INTEGRATION_TABS } from '../config/integrationsConfig.js';
+import { WHATSAPP_LOG_PAGE_ID, WHATSAPP_LOG_VIEW_IDS } from '../config/whatsappMessageLogsConfig.js';
 
 export function checkIsAdminRole(userRole) {
   const rLower = String(userRole || '').trim().toLowerCase();
@@ -65,6 +66,19 @@ export function getSubItemPermissions(moduleAccess, userRole, moduleId, subItemI
   }
 
   const m = moduleAccess?.[moduleId];
+  // This existing page owns three registered views. Legacy explicit log grants
+  // retain raw access; the two analytics views require separate explicit grants.
+  if (moduleId === 'whatsapp_official' && subItemId === WHATSAPP_LOG_PAGE_ID) {
+    return { view: WHATSAPP_LOG_VIEW_IDS.some(id => getSubItemPermissions(moduleAccess, userRole, moduleId, id).view), add: false, edit: false, delete: false };
+  }
+  if (moduleId === 'whatsapp_official' && WHATSAPP_LOG_VIEW_IDS.includes(subItemId)) {
+    const configured = m?.sub_items?.[subItemId];
+    const explicit = configured !== undefined ? configured : subItemId === 'sent_logs_raw' ? m?.sub_items?.sent_logs : undefined;
+    return {
+      view: explicit === true || (typeof explicit === 'object' && explicit?.view === true),
+      add: false, edit: false, delete: false
+    };
+  }
   if (!m || typeof m !== 'object') {
     return { ...parentPerms };
   }

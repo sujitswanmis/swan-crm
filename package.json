@@ -1,6 +1,6 @@
 {
   "name": "crm",
-  "version": "2.5.1084",
+  "version": "2.5.1090",
   "private": true,
   "main": "desktop/main.js",
   "scripts": {
@@ -38,7 +38,8 @@
     "react-draggable": "^4.6.0",
     "react-markdown": "^10.1.0",
     "recharts": "^3.8.1",
-    "remark-gfm": "^4.0.1"
+    "remark-gfm": "^4.0.1",
+    "rimraf": "^3.0.2"
   },
   "devDependencies": {
     "@capacitor/android": "^8.6.0",
@@ -46,10 +47,12 @@
     "@capacitor/core": "^8.6.0",
     "@capacitor/ios": "^8.6.0",
     "@electron/packager": "^20.3.0",
+    "@tailwindcss/postcss": "4.3.5",
     "electron": "45.2.2",
     "electron-builder": "^26.18.0",
     "eslint": "^9",
-    "eslint-config-next": "16.3.8"
+    "eslint-config-next": "16.3.8",
+    "tailwindcss": "4.3.5"
   },
   "build": {
     "appId": "com.supujacreations.workspace",

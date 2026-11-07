@@ -2,6 +2,8 @@
 
 import MobileTableView, { TableViewToggle, useTableViewPreference } from '@/components/common/MobileTableView';
 import StandardTablePagination from '@/components/common/StandardTablePagination';
+import ErrorBoundary from '@/components/ErrorBoundary';
+import WhatsappOfficialMessageLogs from '@/components/WhatsappOfficialMessageLogs';
 import React, { useState, useEffect } from 'react';
 import { 
   Save, Plus, Trash2, Image as ImageIcon, Upload, PlayCircle, PauseCircle, Settings, MessageSquare, Repeat,
@@ -32,12 +34,13 @@ import { filterVisibleSubTabs, getSubItemPermissions } from '@/utils/permissionU
 const ALL_WA_TABS = [
   { id: 'templates', label: 'Templates Library', icon: MessageSquare },
   { id: 'automations', label: 'Stage Automations', icon: Repeat },
+  { id: 'sent_logs', label: 'API Message Sent Logs', icon: Send },
   { id: 'catalog', label: 'Master BSP Catalog (20+)', icon: Layers },
   { id: 'allocations', label: 'Client Allocation Matrix', icon: Users },
   { id: 'settings', label: 'API Credentials & Setup', icon: Settings }
 ];
 
-export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', userCompany = '', isMasterAdmin = false }) {
+export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', userCompany = '', isMasterAdmin = false, userId = '', tenantId = null, isActive = true, allowedLogViews }) {
   const rLower = String(userRole || '').trim().toLowerCase();
   const isAdmin = !userRole || rLower === 'admin' || rLower === 'superadmin' || rLower === 'super_admin' || rLower === 'masteradmin' || rLower === 'owner' || rLower.includes('admin');
 
@@ -1270,24 +1273,56 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
   }
 
   return (
-    <div className="card" style={{ padding: '2rem', minHeight: '80vh' }}>
+    <div className="card saas-card" style={{ padding: activeTab === 'sent_logs' ? '1.25rem' : '1.75rem', minHeight: '80vh', backgroundColor: 'var(--bg-surface)' }}>
       
-      {/* Top Navigation */}
-      <div style={{ display: 'flex', gap: '1rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '1rem', marginBottom: '2rem', overflowX: 'auto' }}>
-        {visibleTabs.map(tab => {
-          const Icon = tab.icon;
-          const isActive = activeTab === tab.id;
-          return (
-            <button 
-              key={tab.id}
-              onClick={() => handleTabChange(tab.id)}
-              style={{ padding: '0.5rem 1rem', background: isActive ? 'var(--accent-color)' : 'transparent', color: isActive ? 'white' : 'var(--text-secondary)', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 500 }}
-            >
-              <Icon size={18} /> {tab.label}
-            </button>
-          );
-        })}
+      {/* Enterprise B2B SaaS Segmented Sub-Tab Navigation */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(226, 232, 240, 0.85)', paddingBottom: '1.15rem', marginBottom: '1.75rem', flexWrap: 'wrap', gap: '1rem' }}>
+        <div style={{ display: 'inline-flex', padding: '0.3rem', backgroundColor: '#f1f5f9', borderRadius: '10px', border: '1px solid rgba(226, 232, 240, 0.9)', gap: '0.35rem', overflowX: 'auto', maxWidth: '100%' }}>
+          {visibleTabs.map(tab => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button 
+                key={tab.id}
+                onClick={() => handleTabChange(tab.id)}
+                className="saas-hover-lift"
+                style={{ 
+                  padding: '0.45rem 0.9rem', 
+                  backgroundColor: isActive ? '#ffffff' : 'transparent', 
+                  color: isActive ? '#4f46e5' : '#64748b', 
+                  border: isActive ? '1px solid rgba(99, 102, 241, 0.25)' : '1px solid transparent', 
+                  borderRadius: '7px', 
+                  cursor: 'pointer', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '0.5rem', 
+                  fontWeight: isActive ? 600 : 500,
+                  fontSize: '0.82rem',
+                  boxShadow: isActive ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
+                  transition: 'all 0.18s cubic-bezier(0.16, 1, 0.3, 1)'
+                }}
+              >
+                <Icon size={16} strokeWidth={isActive ? 2.2 : 1.8} style={{ color: isActive ? '#4f46e5' : '#64748b' }} /> {tab.label}
+              </button>
+            );
+          })}
+        </div>
       </div>
+
+      {activeTab === 'sent_logs' && visibleTabs.some(tab => tab.id === 'sent_logs') && (
+        <ErrorBoundary>
+          <WhatsappOfficialMessageLogs
+            userId={userId}
+            tenantId={tenantId}
+            userCompany={userCompany}
+            userRole={userRole}
+            moduleAccess={moduleAccess}
+            isMasterAdmin={isMasterAdmin}
+            isActive={isActive}
+            allowedLogViews={allowedLogViews}
+          />
+        </ErrorBoundary>
+      )}
 
       {/* SETTINGS, CATALOG & ALLOCATIONS TABS */}
       {['settings', 'catalog', 'allocations'].includes(activeTab) && (

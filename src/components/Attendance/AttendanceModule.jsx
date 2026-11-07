@@ -1,6 +1,6 @@
 'use client';
 
-import MobileTableView from '@/components/common/MobileTableView';
+import MobileTableView, { TableViewToggle, useTableViewPreference } from '@/components/common/MobileTableView';
 import StandardTablePagination from '@/components/common/StandardTablePagination';
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
@@ -218,6 +218,8 @@ export function LeaveApplicationsTable({ records = [], loading = false, error = 
     }
     return 25;
   });
+  const tableId = teamView ? 'hod_leave_applications_table' : 'my_leave_applications_table';
+  const [leaveViewMode, setLeaveViewMode] = useTableViewPreference(tableId);
   const [pageState, setPageState] = useState({ key: '', page: 1 });
   const { colWidths, resizingCol, handleResizeStart, resetColWidth } = useTableColumnResize(
     teamView ? 'hod_leave_application_columns_v1' : 'my_leave_application_columns_v1', LEAVE_TABLE_WIDTHS, LEAVE_TABLE_MIN_WIDTHS
@@ -257,19 +259,30 @@ export function LeaveApplicationsTable({ records = [], loading = false, error = 
   };
   return <div className="card" style={{ padding: '1.25rem', border: '1px solid var(--border-light)', borderRadius: '16px', background: 'var(--bg-surface)' }}>
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1rem' }}>
-      <h3 style={{ margin: 0, fontSize: '1rem' }}>{teamView ? 'Team Leave Applications' : 'My Leave Applications'}</h3>
-      <button type="button" className="btn-action-secondary" onClick={onRefresh} disabled={loading || processing}><RefreshCw size={14} /> Refresh History</button>
+      <div>
+        <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)' }}>{teamView ? 'Team Leave Applications' : 'My Leave Applications'}</h3>
+        <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Track and manage submitted leave applications and approval statuses</p>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+        <button type="button" className="btn-action-secondary" onClick={onRefresh} disabled={loading || processing} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', padding: '0.45rem 0.75rem', borderRadius: '8px', border: '1px solid var(--border-light)', background: 'var(--bg-primary)', color: 'var(--text-primary)', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600 }}>
+          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh History
+        </button>
+        <TableViewToggle view={leaveViewMode} onChange={setLeaveViewMode} />
+      </div>
     </div>
-    {!teamView && <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1rem' }}>
-      <input aria-label="Search my leave applications" placeholder="Search type, dates, reason or HOD remarks…" value={search} onChange={event => setSearch(event.target.value)} style={{ flex: 1, minWidth: '220px', padding: '0.55rem 0.75rem', border: '1px solid var(--border-light)', borderRadius: '8px', background: 'var(--bg-surface)', color: 'var(--text-primary)' }} />
-      <select aria-label="Leave application status" value={status} onChange={event => setStatus(event.target.value)} style={{ padding: '0.55rem', border: '1px solid var(--border-light)', borderRadius: '8px', background: 'var(--bg-surface)', color: 'var(--text-primary)' }}>
+    {!teamView && <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem', background: 'var(--bg-primary)', padding: '0.65rem 0.85rem', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
+      <div style={{ position: 'relative', flex: 1, minWidth: '240px' }}>
+        <Search size={14} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
+        <input aria-label="Search my leave applications" placeholder="Search type, dates, reason or HOD remarks…" value={search} onChange={event => setSearch(event.target.value)} style={{ width: '100%', padding: '0.45rem 0.75rem 0.45rem 2.2rem', border: '1px solid var(--border-light)', borderRadius: '8px', background: 'var(--bg-surface)', color: 'var(--text-primary)', fontSize: '0.82rem' }} />
+      </div>
+      <select aria-label="Leave application status" value={status} onChange={event => setStatus(event.target.value)} style={{ padding: '0.45rem 0.75rem', border: '1px solid var(--border-light)', borderRadius: '8px', background: 'var(--bg-surface)', color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: 600 }}>
         <option value="ALL">All Statuses</option><option value="PENDING">Pending</option><option value="APPROVED">Approved</option><option value="REJECTED">Rejected</option>
       </select>
     </div>}
     {error && <div role="alert" style={{ padding: '0.75rem', marginBottom: '0.75rem', color: '#92400e', background: '#fffbeb', borderRadius: '8px' }}>{error}</div>}
     <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 310px)', minHeight: '380px', border: '1px solid var(--border-light)', borderRadius: '10px' }}>
-      <MobileTableView tableId={teamView ? 'hod_leave_applications_table' : 'my_leave_applications_table'}>
-        <table aria-label={teamView ? 'Team Leave Applications' : 'My Leave Applications'} style={{ width: `${columns.reduce((sum, column) => sum + colWidths[column.key], 0)}px`, minWidth: '100%', tableLayout: 'fixed', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.82rem' }}>
+      <MobileTableView tableId={tableId} view={leaveViewMode} hideToggle={true}>
+        <table aria-label={teamView ? 'Team Leave Applications' : 'My Leave Applications'} style={{ width: '100%', minWidth: '100%', tableLayout: 'fixed', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.82rem' }}>
           <thead style={LEAVE_STICKY_HEADER}><tr>{columns.map(column => <th key={column.key} style={{ ...LEAVE_STICKY_HEADER, width: colWidths[column.key], padding: '0.85rem', textAlign: 'left', boxSizing: 'border-box' }}>
             {column.label}<ColumnResizer colKey={column.key} isResizing={resizingCol === column.key} onResizeStart={handleResizeStart} onReset={resetColWidth} />
           </th>)}</tr></thead>
@@ -776,6 +789,12 @@ export default function AttendanceModule({
     ATTENDANCE_LEAVE_POLICIES_MIN_COL_WIDTHS
   );
 
+  // Table vs Tiles responsive view preferences for attendance screens
+  const [monthlyViewMode, setMonthlyViewMode] = useTableViewPreference('Attendance/AttendanceModule-1');
+  const [regularizationViewMode, setRegularizationViewMode] = useTableViewPreference('Attendance/AttendanceModule-2');
+  const [hodViewMode, setHodViewMode] = useTableViewPreference('Attendance/AttendanceModule-3');
+  const [teamViewMode, setTeamViewMode] = useTableViewPreference('Attendance/AttendanceModule-4');
+
   // Cache only confirmed cloud punches or committed offline punches.
   const attendanceDate = getTodayDateString();
   const normalizedAttendanceEmail = userEmail.trim().toLowerCase();
@@ -784,8 +803,25 @@ export default function AttendanceModule({
   const todayRecordRef = useRef(null);
   const todayLoadRef = useRef(0);
   const punchInFlightRef = useRef(false);
-  const [todayRecord, setTodayRecord] = useState(null);
-  const [loadingToday, setLoadingToday] = useState(true);
+  // Restore cached today record synchronously on mount for instant 0ms rendering
+  const [todayRecord, setTodayRecord] = useState(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const cached = localStorage.getItem(`att_today_record_${attendanceScope}`)
+        || localStorage.getItem(`att_today_record_${userEmail}`);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed?.attendance_date === attendanceDate
+          && (parsed.email || '').trim().toLowerCase() === normalizedAttendanceEmail
+          && parsed.tenant_id === effectiveTenantId) {
+          todayRecordRef.current = parsed;
+          return parsed;
+        }
+      }
+    } catch {}
+    return null;
+  });
+  const [loadingToday, setLoadingToday] = useState(() => !todayRecordRef.current);
   const [punchingIn, setPunchingIn] = useState(false);
   const [punchingOut, setPunchingOut] = useState(false);
   const [punchMessage, setPunchMessage] = useState(null);
@@ -1725,13 +1761,13 @@ export default function AttendanceModule({
     };
   }, [todayRecord?.in_time, todayRecord?.out_time, userId, userCompany]);
 
-  // 3. Load Today's Attendance
-  const fetchTodayAttendance = useCallback(async (clearError = false) => {
+  // 3. Load Today's Attendance (Silent on focus/background to prevent button freezing)
+  const fetchTodayAttendance = useCallback(async (clearError = false, isSilent = false) => {
     if (!userEmail || punchInFlightRef.current === attendanceScope) return;
     const scope = attendanceScope;
     const requestId = ++todayLoadRef.current;
     const isCurrent = () => scope === attendanceScopeRef.current && requestId === todayLoadRef.current;
-    setLoadingToday(true);
+    if (!isSilent && !todayRecordRef.current) setLoadingToday(true);
     try {
       const res = await getTodayAttendance(userEmail, userId, effectiveTenantId, userCompany);
       if (!isCurrent()) return;
@@ -1755,7 +1791,8 @@ export default function AttendanceModule({
   }, [userEmail, userId, effectiveTenantId, userCompany, attendanceScope, updateTodayRecord]);
 
   useEffect(() => {
-    const refreshPunch = () => { fetchTodayAttendance(true); };
+    // Window focus / online event runs silently without blocking Punch In/Out buttons
+    const refreshPunch = () => { fetchTodayAttendance(true, true); };
     window.addEventListener('focus', refreshPunch);
     window.addEventListener('online', refreshPunch);
     return () => {
@@ -1917,15 +1954,15 @@ export default function AttendanceModule({
     }
   }, [activeTab, teamReportView, teamDatePreset, teamStartDate, teamEndDate, teamMasterDepartment, matrixYear, matrixMonth, effectiveTenantId, userCompany, adjustLeavesInReport, leaveReportDept]);
 
-  // Handle Punch In click — show confirm popup first
+  // Handle Punch In click — instant 1-click reaction, show confirm popup first
   const handlePunchIn = () => {
-    if (punchInFlightRef.current === attendanceScope || loadingToday || todayRecord?.in_time) return;
+    if (punchInFlightRef.current === attendanceScope || punchingIn || todayRecord?.in_time) return;
     setPunchConfirm('IN');
   };
 
-  // Handle Punch Out click — show confirm popup first
+  // Handle Punch Out click — instant 1-click reaction, show confirm popup first
   const handlePunchOut = () => {
-    if (punchInFlightRef.current === attendanceScope || loadingToday || !todayRecord?.in_time || todayRecord?.out_time) return;
+    if (punchInFlightRef.current === attendanceScope || punchingOut || !todayRecord?.in_time || todayRecord?.out_time) return;
     setPunchConfirm('OUT');
   };
 
@@ -3334,10 +3371,10 @@ export default function AttendanceModule({
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
                 
-                {/* 1. Punch In Button (Strict 1-Time Rule) */}
+                {/* 1. Punch In Button (Strict 1-Time Rule, Instant 1-Click Response) */}
                 <button
                   type="button"
-                  disabled={loadingToday || punchingIn || !!todayRecord?.in_time}
+                  disabled={punchingIn || !!todayRecord?.in_time}
                   onClick={handlePunchIn}
                   style={{
                     display: 'flex',
@@ -3368,10 +3405,10 @@ export default function AttendanceModule({
                   </span>
                 </button>
 
-                {/* 2. Punch Out Button (Strict 1-Time Rule) */}
+                {/* 2. Punch Out Button (Strict 1-Time Rule, Instant 1-Click Response) */}
                 <button
                   type="button"
-                  disabled={loadingToday || punchingOut || !todayRecord?.in_time || !!todayRecord?.out_time}
+                  disabled={punchingOut || !todayRecord?.in_time || !!todayRecord?.out_time}
                   onClick={handlePunchOut}
                   style={{
                     display: 'flex',
@@ -3929,16 +3966,16 @@ export default function AttendanceModule({
           {/* Monthly Attendance KPIs & History Matrix */}
           <div className="card" style={{ padding: '1.25rem', background: 'var(--bg-surface)', borderRadius: '16px', border: '1px solid var(--border-light)' }}>
             
-            {/* Header with Month/Year picker */}
+            {/* Header with Month/Year picker and View Toggle */}
             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', marginBottom: '1.25rem' }}>
               <div>
-                <h2 style={{ fontSize: '1.15rem', fontWeight: 700, margin: 0 }}>My Monthly Attendance</h2>
+                <h2 style={{ fontSize: '1.15rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>My Monthly Attendance</h2>
                 <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: '0.15rem 0 0 0' }}>
                   Detailed punch records, shift status, working hours, and regularized days
                 </p>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                 {/* Month selector */}
                 <select
                   value={historyMonth}
@@ -3949,8 +3986,8 @@ export default function AttendanceModule({
                     border: '1px solid var(--border-light)',
                     background: 'var(--bg-primary)',
                     color: 'var(--text-primary)',
-                    fontSize: '0.85rem',
-                    fontWeight: 500,
+                    fontSize: '0.82rem',
+                    fontWeight: 600,
                     outline: 'none'
                   }}
                 >
@@ -3971,8 +4008,8 @@ export default function AttendanceModule({
                     border: '1px solid var(--border-light)',
                     background: 'var(--bg-primary)',
                     color: 'var(--text-primary)',
-                    fontSize: '0.85rem',
-                    fontWeight: 500,
+                    fontSize: '0.82rem',
+                    fontWeight: 600,
                     outline: 'none'
                   }}
                 >
@@ -3986,16 +4023,23 @@ export default function AttendanceModule({
                   onClick={fetchHistory}
                   title="Refresh Data"
                   style={{
-                    padding: '0.45rem',
+                    padding: '0.45rem 0.75rem',
                     borderRadius: '8px',
                     border: '1px solid var(--border-light)',
                     background: 'var(--bg-primary)',
                     color: 'var(--text-primary)',
-                    cursor: 'pointer'
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.35rem',
+                    fontSize: '0.82rem',
+                    fontWeight: 600
                   }}
                 >
-                  <RefreshCw size={15} className={loadingHistory ? 'animate-spin' : ''} />
+                  <RefreshCw size={14} className={loadingHistory ? 'animate-spin' : ''} /> Refresh
                 </button>
+
+                <TableViewToggle view={monthlyViewMode} onChange={setMonthlyViewMode} />
               </div>
             </div>
 
@@ -4038,17 +4082,17 @@ export default function AttendanceModule({
 
             {/* Attendance History Table */}
             <div style={{ overflowX: 'auto', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
-              <MobileTableView id="Attendance/AttendanceModule-1"><table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.84rem' }}>
+              <MobileTableView id="Attendance/AttendanceModule-1" view={monthlyViewMode} hideToggle={true}><table style={{ width: '100%', minWidth: '100%', tableLayout: 'fixed', borderCollapse: 'separate', borderSpacing: 0, textAlign: 'left', fontSize: '0.84rem' }}>
                 <thead>
                   <tr style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
-                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Date</th>
-                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Day</th>
-                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>In Time</th>
-                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Out Time</th>
-                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Total Hours</th>
-                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Status & Short Leave</th>
-                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Method / Shift Remarks</th>
-                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600, textAlign: 'right' }}>Action</th>
+                    <th style={{ width: '12%', padding: '0.75rem 1rem', fontWeight: 600 }}>Date</th>
+                    <th style={{ width: '8%', padding: '0.75rem 1rem', fontWeight: 600 }}>Day</th>
+                    <th style={{ width: '11%', padding: '0.75rem 1rem', fontWeight: 600 }}>In Time</th>
+                    <th style={{ width: '11%', padding: '0.75rem 1rem', fontWeight: 600 }}>Out Time</th>
+                    <th style={{ width: '11%', padding: '0.75rem 1rem', fontWeight: 600 }}>Total Hours</th>
+                    <th style={{ width: '17%', padding: '0.75rem 1rem', fontWeight: 600 }}>Status & Short Leave</th>
+                    <th style={{ width: '21%', padding: '0.75rem 1rem', fontWeight: 600 }}>Method / Shift Remarks</th>
+                    <th style={{ width: '9%', padding: '0.75rem 1rem', fontWeight: 600, textAlign: 'right' }}>Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -4182,18 +4226,50 @@ export default function AttendanceModule({
 
           {/* User's Requests Table */}
           <div className="card" style={{ padding: '1.25rem', background: 'var(--bg-surface)', borderRadius: '16px', border: '1px solid var(--border-light)' }}>
+            
+            {/* Toolbar with Refresh and View Toggle */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1rem' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)' }}>Application Records</h3>
+                <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Track submission history and approval decisions ({myRequests.length} records)</p>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <button
+                  type="button"
+                  onClick={fetchMyRequests}
+                  disabled={loadingMyRequests}
+                  style={{
+                    padding: '0.45rem 0.75rem',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-light)',
+                    background: 'var(--bg-primary)',
+                    color: 'var(--text-primary)',
+                    cursor: loadingMyRequests ? 'not-allowed' : 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.35rem',
+                    fontSize: '0.82rem',
+                    fontWeight: 600
+                  }}
+                >
+                  <RefreshCw size={14} className={loadingMyRequests ? 'animate-spin' : ''} /> Refresh
+                </button>
+                <TableViewToggle view={regularizationViewMode} onChange={setRegularizationViewMode} />
+              </div>
+            </div>
+
             <div style={{ overflowX: 'auto', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
-              <MobileTableView id="Attendance/AttendanceModule-2"><table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.84rem' }}>
+              <MobileTableView id="Attendance/AttendanceModule-2" view={regularizationViewMode} hideToggle={true}><table style={{ width: '100%', minWidth: '100%', tableLayout: 'fixed', borderCollapse: 'separate', borderSpacing: 0, textAlign: 'left', fontSize: '0.84rem' }}>
                 <thead>
                   <tr style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
-                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Applied On</th>
-                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Missing Date</th>
-                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Missing Type</th>
-                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Requested Punch Times</th>
-                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Reason & Remarks</th>
-                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Assigned HOD</th>
-                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Status</th>
-                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>HOD Action / Remarks</th>
+                    <th style={{ width: '12%', padding: '0.75rem 1rem', fontWeight: 600 }}>Applied On</th>
+                    <th style={{ width: '11%', padding: '0.75rem 1rem', fontWeight: 600 }}>Missing Date</th>
+                    <th style={{ width: '11%', padding: '0.75rem 1rem', fontWeight: 600 }}>Missing Type</th>
+                    <th style={{ width: '15%', padding: '0.75rem 1rem', fontWeight: 600 }}>Requested Punch Times</th>
+                    <th style={{ width: '18%', padding: '0.75rem 1rem', fontWeight: 600 }}>Reason & Remarks</th>
+                    <th style={{ width: '13%', padding: '0.75rem 1rem', fontWeight: 600 }}>Assigned HOD</th>
+                    <th style={{ width: '10%', padding: '0.75rem 1rem', fontWeight: 600 }}>Status</th>
+                    <th style={{ width: '10%', padding: '0.75rem 1rem', fontWeight: 600 }}>HOD Action / Remarks</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -4549,7 +4625,7 @@ export default function AttendanceModule({
                 />
               </div>
 
-              {/* Refresh Button */}
+              {/* Refresh Button & View Toggle */}
               <button
                 type="button"
                 onClick={() => fetchHodRequests(true)}
@@ -4569,6 +4645,8 @@ export default function AttendanceModule({
               >
                 <RefreshCw size={14} className={loadingHodRequests ? 'animate-spin' : ''} /> Refresh
               </button>
+
+              <TableViewToggle view={hodViewMode} onChange={setHodViewMode} />
             </div>
           )}
 
@@ -4862,10 +4940,10 @@ export default function AttendanceModule({
           {/* Pending Requests Cards / Table */}
           <div className="card" style={{ padding: '1.25rem', background: 'var(--bg-surface)', borderRadius: '16px', border: '1px solid var(--border-light)' }}>
             <div style={{ overflowX: 'auto', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
-              <MobileTableView id="Attendance/AttendanceModule-3"><table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.84rem' }}>
+              <MobileTableView id="Attendance/AttendanceModule-3" view={hodViewMode} hideToggle={true}><table style={{ width: '100%', minWidth: '100%', tableLayout: 'fixed', borderCollapse: 'separate', borderSpacing: 0, textAlign: 'left', fontSize: '0.84rem' }}>
                 <thead>
                   <tr style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
-                    <th style={{ padding: '0.75rem 0.6rem', width: '38px', textAlign: 'center' }}>
+                    <th style={{ padding: '0.75rem 0.6rem', width: '40px', textAlign: 'center' }}>
                       <input
                         type="checkbox"
                         checked={
@@ -4877,13 +4955,13 @@ export default function AttendanceModule({
                         style={{ cursor: 'pointer', width: '15px', height: '15px', accentColor: '#2563eb' }}
                       />
                     </th>
-                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Employee</th>
-                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Date of Missing Punch</th>
-                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Missing Type</th>
-                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Proposed In / Out Times</th>
-                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Reason & Explanation</th>
-                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Status</th>
-                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600, textAlign: 'right' }}>HOD Action / Decision</th>
+                    <th style={{ width: '21%', padding: '0.75rem 1rem', fontWeight: 600 }}>Employee</th>
+                    <th style={{ width: '12%', padding: '0.75rem 1rem', fontWeight: 600 }}>Date of Missing Punch</th>
+                    <th style={{ width: '11%', padding: '0.75rem 1rem', fontWeight: 600 }}>Missing Type</th>
+                    <th style={{ width: '14%', padding: '0.75rem 1rem', fontWeight: 600 }}>Proposed In / Out Times</th>
+                    <th style={{ width: '18%', padding: '0.75rem 1rem', fontWeight: 600 }}>Reason & Explanation</th>
+                    <th style={{ width: '12%', padding: '0.75rem 1rem', fontWeight: 600 }}>Status</th>
+                    <th style={{ width: '12%', padding: '0.75rem 1rem', fontWeight: 600, textAlign: 'right' }}>HOD Action / Decision</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -5303,8 +5381,8 @@ export default function AttendanceModule({
                 </select>
               </div>
 
-              {/* Action Buttons: Refresh & CSV Export */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              {/* Action Buttons: Refresh, CSV Export & View Toggle */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                 <button
                   type="button"
                   onClick={teamReportView === 'DAILY' ? fetchTeamMaster : fetchTeamMonthlyMatrix}
@@ -5343,6 +5421,8 @@ export default function AttendanceModule({
                 >
                   <Download size={14} /> {teamReportView === 'DAILY' ? (teamStartDate !== teamEndDate ? 'Export Range CSV' : 'Export Daily CSV') : 'Export Monthly Excel / CSV'}
                 </button>
+
+                <TableViewToggle view={teamViewMode} onChange={setTeamViewMode} />
               </div>
             </div>
           </div>
@@ -5395,7 +5475,7 @@ export default function AttendanceModule({
               {/* Master Team Attendance Table */}
               <div className="card" style={{ padding: '1.25rem', background: 'var(--bg-surface)', borderRadius: '16px', border: '1px solid var(--border-light)' }}>
                 <div style={{ overflowX: 'auto', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
-                  <MobileTableView id="Attendance/AttendanceModule-4"><table style={{ width: `${getTeamTotalWidth()}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.84rem' }}>
+                  <MobileTableView id="Attendance/AttendanceModule-4" view={teamViewMode} hideToggle={true}><table style={{ width: '100%', minWidth: `${getTeamTotalWidth()}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.84rem' }}>
                     <thead>
                       <tr style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
                         <th style={{ width: `${teamColWidths.emp_code}px`, padding: '0.65rem 0.75rem', fontWeight: 600, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
@@ -5991,7 +6071,7 @@ export default function AttendanceModule({
               {/* Monthly Master Matrix Grid Table */}
               <div className="card" style={{ padding: '1.25rem', background: 'var(--bg-surface)', borderRadius: '16px', border: '1px solid var(--border-light)' }}>
                 <div style={{ overflowX: 'auto', borderRadius: '10px', border: '1px solid var(--border-light)', maxHeight: '680px', overflowY: 'auto' }}>
-                  <MobileTableView id="Attendance/AttendanceModule-5"><table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'center', fontSize: '0.78rem' }}>
+                  <MobileTableView id="Attendance/AttendanceModule-5" view={teamViewMode} hideToggle={true}><table style={{ width: '100%', minWidth: '100%', borderCollapse: 'collapse', textAlign: 'center', fontSize: '0.78rem' }}>
                     <thead style={{ position: 'sticky', top: 0, zIndex: 3, background: 'var(--bg-primary)' }}>
                       <tr style={{ borderBottom: '2px solid var(--border-light)', color: 'var(--text-secondary)' }}>
                         <th style={{ padding: '0.65rem 0.75rem', fontWeight: 700, textAlign: 'left', minWidth: '90px', position: 'sticky', left: 0, background: 'var(--bg-primary)', zIndex: 4 }}>Emp ID</th>

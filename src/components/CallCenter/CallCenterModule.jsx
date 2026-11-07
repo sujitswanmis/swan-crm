@@ -265,7 +265,8 @@ export default function CallCenterModule({ userId, userCompany = '', tenantId = 
     }
     setExportingExcel(true);
     try {
-      const ExcelJS = (await import('exceljs')).default;
+      const ExcelMod = await import('exceljs/dist/exceljs.min.js');
+      const ExcelJS = ExcelMod.default || ExcelMod;
       const { saveAs } = await import('file-saver');
 
       const workbook = new ExcelJS.Workbook();

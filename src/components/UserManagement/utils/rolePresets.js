@@ -3,6 +3,7 @@
  */
 
 import { INTEGRATION_TABS, CONFIG_MASTER_PAGES } from '../../../config/integrationsConfig.js';
+import { WHATSAPP_LOG_VIEW_IDS } from '../../../config/whatsappMessageLogsConfig.js';
 
 export const ROLE_PRESETS = [
   {
@@ -904,6 +905,21 @@ export const ROLE_PRESETS = [
 
 // Register every tab of the single Integrations page, preserving stored permission IDs.
 for (const preset of ROLE_PRESETS) {
+  const whatsapp = preset.presetData.whatsapp_official;
+  const canViewApiLogs = ['master_admin', 'admin'].includes(preset.key);
+  preset.presetData.whatsapp_official = {
+    ...(whatsapp || { view: false, add: false, edit: false, delete: false }),
+    sub_items: {
+      ...(whatsapp?.sub_items || Object.fromEntries(['templates', 'automations', 'settings'].map(id => [id, {
+        view: whatsapp?.view === true,
+        add: whatsapp?.write === true,
+        edit: whatsapp?.edit === true,
+        delete: false
+      }]))),
+      sent_logs: { view: canViewApiLogs, add: false, edit: false, delete: false },
+      ...Object.fromEntries(WHATSAPP_LOG_VIEW_IDS.map(id => [id, { view: canViewApiLogs, add: false, edit: false, delete: false }]))
+    }
+  };
   const master=preset.key==='master_admin';
   preset.presetData.config_master={view:master,add:master,edit:master,delete:false,sub_items:Object.fromEntries(CONFIG_MASTER_PAGES.map(page=>[page.id,{view:master,add:master,edit:master,delete:false}]))};
   const manages = ['master_admin', 'admin'].includes(preset.key);

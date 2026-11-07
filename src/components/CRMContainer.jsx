@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { INTEGRATION_PAGE, INTEGRATION_PAGE_IDS } from '@/config/integrationsConfig';
+import { WHATSAPP_LOG_VIEW_IDS } from '@/config/whatsappMessageLogsConfig';
 import pkg from '../../package.json';
 import LeadTable from '@/components/LeadTable';
 import GlobalSoftphoneWidget from './CallCenter/GlobalSoftphoneWidget';
@@ -8021,7 +8022,7 @@ export default function CRMContainer({
                 isVisited={isTabPermitted('whatsapp_official', moduleAccess, userRole) && visitedTabs.has('whatsapp_official')}
               >
                 <ErrorBoundary>
-                  <WhatsappOfficial moduleAccess={moduleAccess} userRole={userRole} userCompany={userCompany} isMasterAdmin={isMasterAdmin} />
+                  <WhatsappOfficial moduleAccess={moduleAccess} userRole={userRole} userCompany={userCompany} isMasterAdmin={isMasterAdmin} userId={userId} tenantId={effectiveTenantId} isActive={activeTab === 'whatsapp_official'} allowedLogViews={isMasterAdmin ? WHATSAPP_LOG_VIEW_IDS : WHATSAPP_LOG_VIEW_IDS.filter(id => getSubItemPermissions(moduleAccess, userRole, 'whatsapp_official', id).view)} />
                 </ErrorBoundary>
               </KeepAliveTab>
 

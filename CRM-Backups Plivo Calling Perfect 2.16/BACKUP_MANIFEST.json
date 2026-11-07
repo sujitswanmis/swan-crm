@@ -1,0 +1,899 @@
+{
+  "schema_version": 1,
+  "snapshot": "CRM Softphone v2.16",
+  "softphone_version": "v2.16",
+  "crm_version_reference": "2.5.1089",
+  "created_at_ist": "2026-11-07T16:05:58+05:30",
+  "timezone": "Asia/Kolkata",
+  "source_workspace": "E:\\swan hosting",
+  "source_state": "Current on-disk files, including approved and pre-existing uncommitted workspace changes. Unrelated concurrent workspace changes were preserved.",
+  "git_head": "3189be523a0a48fbba26901daac4259bbd022e40",
+  "archive": {
+    "filename": "CRM-Softphone-v2.16.zip",
+    "bytes": 6364429,
+    "sha256": "5a06df6ba5bed958964903e618ec947d26c8ab0818fa2fac787e50cf23c7fd4c"
+  },
+  "file_count": 95,
+  "uncompressed_bytes": 8648594,
+  "files": [
+    {
+      "source_path": "AGENTS.md",
+      "archive_path": "source/AGENTS.md",
+      "category": "workspace_reference_only",
+      "bytes": 30991,
+      "sha256": "aecdb06004f12d4fa006f6f3e9e51a2274495e4dbcd96b6df27474b4580d3e54",
+      "modified_at_ist": "2026-11-07T16:01:34+05:30"
+    },
+    {
+      "source_path": "eslint.config.mjs",
+      "archive_path": "source/eslint.config.mjs",
+      "category": "workspace_reference_only",
+      "bytes": 400,
+      "sha256": "d1257bff0b0aa0cb73034a730f33405d4de7d440678564d0183c5ca1244bb639",
+      "modified_at_ist": "2026-05-27T10:06:43+05:30"
+    },
+    {
+      "source_path": "jsconfig.json",
+      "archive_path": "source/jsconfig.json",
+      "category": "workspace_reference_only",
+      "bytes": 77,
+      "sha256": "56123956b551c203af11a2a5a985e82bcfdf6d4e619acbdd0a5e2bf1e79aba58",
+      "modified_at_ist": "2026-05-27T10:07:03+05:30"
+    },
+    {
+      "source_path": "migrations/33_call_consultations.sql",
+      "archive_path": "source/migrations/33_call_consultations.sql",
+      "category": "schema_reference_only_do_not_execute",
+      "bytes": 1454,
+      "sha256": "99ba4b532946da6c9169d8fb64b03045e57214908e2582ad4a5423499015e25a",
+      "modified_at_ist": "2026-10-20T18:57:32+05:30"
+    },
+    {
+      "source_path": "migrations/34_call_agent_outgoing_caller_id.sql",
+      "archive_path": "source/migrations/34_call_agent_outgoing_caller_id.sql",
+      "category": "schema_reference_only_do_not_execute",
+      "bytes": 961,
+      "sha256": "67fe28b41472cbd4f2bdde17d4cd3570281840b390654d227a5ca347743914a5",
+      "modified_at_ist": "2026-10-22T20:35:59+05:30"
+    },
+    {
+      "source_path": "migrations/35_call_incoming_routing.sql",
+      "archive_path": "source/migrations/35_call_incoming_routing.sql",
+      "category": "schema_reference_only_do_not_execute",
+      "bytes": 1762,
+      "sha256": "fb140803c08a2d6abd3c8a81ab1e7ca7c2597eb9e765ba81977e0a2ab3ec6caa",
+      "modified_at_ist": "2026-10-24T00:22:12+05:30"
+    },
+    {
+      "source_path": "next.config.mjs",
+      "archive_path": "source/next.config.mjs",
+      "category": "workspace_reference_only",
+      "bytes": 209,
+      "sha256": "68465813702ee8c7f48f8b673fa9ecb19f12d08fcd5fdd53bf6c7c106af16a6c",
+      "modified_at_ist": "2026-09-19T10:05:40+05:30"
+    },
+    {
+      "source_path": "package-lock.json",
+      "archive_path": "source/package-lock.json",
+      "category": "workspace_reference_only",
+      "bytes": 574198,
+      "sha256": "d2a89e1315ebeaf907448e185d29998cc04391e1868bd8426f832bdbefed90bd",
+      "modified_at_ist": "2026-11-07T15:33:17+05:30"
+    },
+    {
+      "source_path": "package.json",
+      "archive_path": "source/package.json",
+      "category": "workspace_reference_only",
+      "bytes": 2612,
+      "sha256": "e1c8cc53457470519937ba03c62915fc59880e7aea7fd83d344fbc9cfd10a099",
+      "modified_at_ist": "2026-11-07T15:33:17+05:30"
+    },
+    {
+      "source_path": "postcss.config.mjs",
+      "archive_path": "source/postcss.config.mjs",
+      "category": "workspace_reference_only",
+      "bytes": 86,
+      "sha256": "80f35dc050cc6ec541eefd7c4695652a4eb4aa870297c8dc0fc43fe16fa11a66",
+      "modified_at_ist": "2026-11-07T15:18:25+05:30"
+    },
+    {
+      "source_path": "public/hold.mp3",
+      "archive_path": "source/public/hold.mp3",
+      "category": "protected_telephony_audio",
+      "bytes": 5907008,
+      "sha256": "ca549204dbe6ef374ee690d52826ad81d3ae279cf1333c26c0fa65faaa3343ab",
+      "modified_at_ist": "2026-06-05T11:51:42+05:30"
+    },
+    {
+      "source_path": "public/plivo-hold-tone.wav",
+      "archive_path": "source/public/plivo-hold-tone.wav",
+      "category": "protected_telephony_audio",
+      "bytes": 64044,
+      "sha256": "919c6cc3fa0a4e452074948be2b3c4c2aea258a6989db9d39435cf00cf02ed90",
+      "modified_at_ist": "2026-10-20T23:50:22+05:30"
+    },
+    {
+      "source_path": "public/ringback.mp3",
+      "archive_path": "source/public/ringback.mp3",
+      "category": "protected_telephony_audio",
+      "bytes": 264644,
+      "sha256": "74b2fbb494e3d9941cce16de59e1ba99c215759481d30ef08e46e128487f341e",
+      "modified_at_ist": "2026-09-06T01:18:54+05:30"
+    },
+    {
+      "source_path": "public/ringback.wav",
+      "archive_path": "source/public/ringback.wav",
+      "category": "protected_telephony_audio",
+      "bytes": 264644,
+      "sha256": "74b2fbb494e3d9941cce16de59e1ba99c215759481d30ef08e46e128487f341e",
+      "modified_at_ist": "2026-09-06T01:18:54+05:30"
+    },
+    {
+      "source_path": "src/app/actions/team.js",
+      "archive_path": "source/src/app/actions/team.js",
+      "category": "workspace_reference_only",
+      "bytes": 76790,
+      "sha256": "947e48364aef33ba1344e0bb292a17bb2dcbf1e2e1bb8ec2de904cedeab44d5d",
+      "modified_at_ist": "2026-11-05T21:26:45+05:30"
+    },
+    {
+      "source_path": "src/app/api/plivo/admin/call-logs/route.js",
+      "archive_path": "source/src/app/api/plivo/admin/call-logs/route.js",
+      "category": "telephony_route_or_helper_review_required",
+      "bytes": 3572,
+      "sha256": "bf2f560945c7831f7c3b46902757e6b88abc49f849b101b7e02e9ea44a46927b",
+      "modified_at_ist": "2026-11-01T19:34:16+05:30"
+    },
+    {
+      "source_path": "src/app/api/plivo/admin/data/route.js",
+      "archive_path": "source/src/app/api/plivo/admin/data/route.js",
+      "category": "telephony_route_or_helper_review_required",
+      "bytes": 1774,
+      "sha256": "a05812e3fcaf768813132246a32120169a175271004166b1f8190fbe44cb0735",
+      "modified_at_ist": "2026-10-26T11:26:42+05:30"
+    },
+    {
+      "source_path": "src/app/api/plivo/admin/endpoints/route.js",
+      "archive_path": "source/src/app/api/plivo/admin/endpoints/route.js",
+      "category": "telephony_route_or_helper_review_required",
+      "bytes": 21831,
+      "sha256": "6e8ae5d010a1cacc5f9fb16ff0aaa29cd74f6aa07f6f9972610ec40e4ad4cd6e",
+      "modified_at_ist": "2026-10-26T11:37:33+05:30"
+    },
+    {
+      "source_path": "src/app/api/plivo/admin/numbers/route.js",
+      "archive_path": "source/src/app/api/plivo/admin/numbers/route.js",
+      "category": "telephony_route_or_helper_review_required",
+      "bytes": 4321,
+      "sha256": "4872548a3040dfe91abea0cb01bb604a3542016f489f64974bfca46a3e3aaad6",
+      "modified_at_ist": "2026-10-21T20:42:57+05:30"
+    },
+    {
+      "source_path": "src/app/api/plivo/admin/settings/route.js",
+      "archive_path": "source/src/app/api/plivo/admin/settings/route.js",
+      "category": "telephony_route_or_helper_review_required",
+      "bytes": 16574,
+      "sha256": "8caa0c20af36219824d114051017ae95d5786bcf6cd3820e4a228d77d6dccb1b",
+      "modified_at_ist": "2026-10-21T20:42:50+05:30"
+    },
+    {
+      "source_path": "src/app/api/plivo/agent-endpoint-id/route.js",
+      "archive_path": "source/src/app/api/plivo/agent-endpoint-id/route.js",
+      "category": "telephony_route_or_helper_review_required",
+      "bytes": 827,
+      "sha256": "a337666f0ad2ace2c62020d30f3b913d255deae855127380c94e074c1d267cf3",
+      "modified_at_ist": "2026-10-23T19:38:24+05:30"
+    },
+    {
+      "source_path": "src/app/api/plivo/agent-profile/route.js",
+      "archive_path": "source/src/app/api/plivo/agent-profile/route.js",
+      "category": "telephony_route_or_helper_review_required",
+      "bytes": 743,
+      "sha256": "0f6ac038f708ee33244ce49716cc4aa7b7e560fc17de3dbe14d6bc238e4b55b5",
+      "modified_at_ist": "2026-10-23T19:38:24+05:30"
+    },
+    {
+      "source_path": "src/app/api/plivo/answer/route.js",
+      "archive_path": "source/src/app/api/plivo/answer/route.js",
+      "category": "telephony_route_or_helper_review_required",
+      "bytes": 3865,
+      "sha256": "c7910b50fcdf0290ceef2a59c939797fcd4a693d8942b9408995ab49c30d57b6",
+      "modified_at_ist": "2026-10-01T14:13:52+05:30"
+    },
+    {
+      "source_path": "src/app/api/plivo/conference-callback/route.js",
+      "archive_path": "source/src/app/api/plivo/conference-callback/route.js",
+      "category": "telephony_route_or_helper_review_required",
+      "bytes": 14513,
+      "sha256": "999434ebe43ea72eb0b51d756626ac54ae5aed3410b41edb8c74779551eb2dbe",
+      "modified_at_ist": "2026-09-27T02:08:53+05:30"
+    },
+    {
+      "source_path": "src/app/api/plivo/consultation-webhook/route.js",
+      "archive_path": "source/src/app/api/plivo/consultation-webhook/route.js",
+      "category": "telephony_route_or_helper_review_required",
+      "bytes": 2411,
+      "sha256": "1559148f15b6578e215cf2d931af20f5a0d03aaaaaa8d46d5197ebb70e167258",
+      "modified_at_ist": "2026-10-20T23:49:45+05:30"
+    },
+    {
+      "source_path": "src/app/api/plivo/consultation/route.js",
+      "archive_path": "source/src/app/api/plivo/consultation/route.js",
+      "category": "telephony_route_or_helper_review_required",
+      "bytes": 1676,
+      "sha256": "6ec2a630e6f4b9b9edbaf266d15b9cfa666326b049b430bc89597db7da228aef",
+      "modified_at_ist": "2026-10-22T00:36:48+05:30"
+    },
+    {
+      "source_path": "src/app/api/plivo/contact-name/route.js",
+      "archive_path": "source/src/app/api/plivo/contact-name/route.js",
+      "category": "telephony_route_or_helper_review_required",
+      "bytes": 13949,
+      "sha256": "8cd41dd4be58543ec2dead45f6c1adf4e48461e768578cc592a52141d85c4de5",
+      "modified_at_ist": "2026-10-23T20:31:15+05:30"
+    },
+    {
+      "source_path": "src/app/api/plivo/controls/add-participant/route.js",
+      "archive_path": "source/src/app/api/plivo/controls/add-participant/route.js",
+      "category": "telephony_route_or_helper_review_required",
+      "bytes": 3563,
+      "sha256": "da9d48e886adfc6b28fe2d5635b057e09e89f2e80220300ad3bd246d564ea041",
+      "modified_at_ist": "2026-10-01T14:15:59+05:30"
+    },
+    {
+      "source_path": "src/app/api/plivo/controls/hangup-conference/route.js",
+      "archive_path": "source/src/app/api/plivo/controls/hangup-conference/route.js",
+      "category": "telephony_route_or_helper_review_required",
+      "bytes": 3402,
+      "sha256": "527ac5e85aa807f7a43006df68eec574dd5bd0448a748c9d8227e6dd267b6666",
+      "modified_at_ist": "2026-10-20T18:59:15+05:30"
+    },
+    {
+      "source_path": "src/app/api/plivo/controls/hold/route.js",
+      "archive_path": "source/src/app/api/plivo/controls/hold/route.js",
+      "category": "telephony_route_or_helper_review_required",
+      "bytes": 1288,
+      "sha256": "0112d6e01d6333d3ff9b7163487fd88e846b87df59c01098f1512c530eba0b42",
+      "modified_at_ist": "2026-06-17T11:40:51+05:30"
+    },
+    {
+      "source_path": "src/app/api/plivo/controls/kick/route.js",
+      "archive_path": "source/src/app/api/plivo/controls/kick/route.js",
+      "category": "telephony_route_or_helper_review_required",
+      "bytes": 646,
+      "sha256": "924c1cb95aad2d6dc8275cc20abfde5825b80e82c73597db21148c453169320b",
+      "modified_at_ist": "2026-06-04T00:23:37+05:30"
+    },
+    {
+      "source_path": "src/app/api/plivo/controls/members/route.js",
+      "archive_path": "source/src/app/api/plivo/controls/members/route.js",
+      "category": "telephony_route_or_helper_review_required",
+      "bytes": 3354,
+      "sha256": "f0152eb972a9b267dffd94f23a9cdc0fd779c52d7060697cbf2720047ca37460",
+      "modified_at_ist": "2026-09-27T01:27:44+05:30"
+    },
+    {
+      "source_path": "src/app/api/plivo/controls/mute/route.js",
+      "archive_path": "source/src/app/api/plivo/controls/mute/route.js",
+      "category": "telephony_route_or_helper_review_required",
+      "bytes": 803,
+      "sha256": "3f11dad62d5499a167c44d7d72b642dbacb1da044ee356c1a528278bfa1f11d8",
+      "modified_at_ist": "2026-06-04T00:23:30+05:30"
+    },
+    {
+      "source_path": "src/app/api/plivo/desk-data/route.js",
+      "archive_path": "source/src/app/api/plivo/desk-data/route.js",
+      "category": "telephony_route_or_helper_review_required",
+      "bytes": 1555,
+      "sha256": "4316d03a62ce4452528556f141ca214ef5b9dffa594f06223001be6e8937c3d6",
+      "modified_at_ist": "2026-10-26T11:26:42+05:30"
+    },
+    {
+      "source_path": "src/app/api/plivo/dial-action/route.js",
+      "archive_path": "source/src/app/api/plivo/dial-action/route.js",
+      "category": "telephony_route_or_helper_review_required",
+      "bytes": 6167,
+      "sha256": "87bef7c3aa890562cfc049424e237ff7664a3c98995964ac74f16078b491be5a",
+      "modified_at_ist": "2026-10-20T19:06:20+05:30"
+    },
+    {
+      "source_path": "src/app/api/plivo/dial-callback/route.js",
+      "archive_path": "source/src/app/api/plivo/dial-callback/route.js",
+      "category": "telephony_route_or_helper_review_required",
+      "bytes": 2516,
+      "sha256": "69b5f44a8db535dcb43d69f6b6476a8599cf722ef8048e53e7c575e2a601688a",
+      "modified_at_ist": "2026-10-01T14:15:43+05:30"
+    },
+    {
+      "source_path": "src/app/api/plivo/hangup/route.js",
+      "archive_path": "source/src/app/api/plivo/hangup/route.js",
+      "category": "telephony_route_or_helper_review_required",
+      "bytes": 2085,
+      "sha256": "bf713fb55cccd9a917c921fda111421e5f8d844d86632b9338c21c4d959850ce",
+      "modified_at_ist": "2026-09-06T01:10:10+05:30"
+    },
+    {
+      "source_path": "src/app/api/plivo/incoming-control/route.js",
+      "archive_path": "source/src/app/api/plivo/incoming-control/route.js",
+      "category": "telephony_route_or_helper_review_required",
+      "bytes": 952,
+      "sha256": "b78cef56057f50b3a9e7323f3b0ce9198120d80d11a09c3ce324fb3d24e39058",
+      "modified_at_ist": "2026-10-24T00:25:52+05:30"
+    },
+    {
+      "source_path": "src/app/api/plivo/incoming-fallback/route.js",
+      "archive_path": "source/src/app/api/plivo/incoming-fallback/route.js",
+      "category": "telephony_route_or_helper_review_required",
+      "bytes": 3698,
+      "sha256": "ca9570d8e46ad21df916fba02e064bc5e8ebb48df02f82e33fdbd745834a30c8",
+      "modified_at_ist": "2026-10-24T00:26:22+05:30"
+    },
+    {
+      "source_path": "src/app/api/plivo/incoming-route/route.js",
+      "archive_path": "source/src/app/api/plivo/incoming-route/route.js",
+      "category": "telephony_route_or_helper_review_required",
+      "bytes": 855,
+      "sha256": "886c95b894fbf999449435b28a1f541927c5a1b15bf968b095c09d5ad46a023a",
+      "modified_at_ist": "2026-10-24T00:25:52+05:30"
+    },
+    {
+      "source_path": "src/app/api/plivo/incoming/route.js",
+      "archive_path": "source/src/app/api/plivo/incoming/route.js",
+      "category": "telephony_route_or_helper_review_required",
+      "bytes": 9781,
+      "sha256": "1eb10b46cbfb1a145e32eed3ef96aa86ad264f1439832f261e9445036f1437d0",
+      "modified_at_ist": "2026-10-24T00:28:47+05:30"
+    },
+    {
+      "source_path": "src/app/api/plivo/missed-call-handler/route.js",
+      "archive_path": "source/src/app/api/plivo/missed-call-handler/route.js",
+      "category": "telephony_route_or_helper_review_required",
+      "bytes": 1961,
+      "sha256": "97dcb8fbf2ee568c0e6857017438215e748280c03388fcbff978002b5fc8aa24",
+      "modified_at_ist": "2026-10-31T22:48:15+05:30"
+    },
+    {
+      "source_path": "src/app/api/plivo/outbound-dial-xml.js",
+      "archive_path": "source/src/app/api/plivo/outbound-dial-xml.js",
+      "category": "telephony_route_or_helper_review_required",
+      "bytes": 1358,
+      "sha256": "21435fc85a2071f4e094ce3cac492b36baeaf5f9eababf09f2428804bbea96b2",
+      "modified_at_ist": "2026-09-27T02:11:27+05:30"
+    },
+    {
+      "source_path": "src/app/api/plivo/outbound-dial/route.js",
+      "archive_path": "source/src/app/api/plivo/outbound-dial/route.js",
+      "category": "telephony_route_or_helper_review_required",
+      "bytes": 4555,
+      "sha256": "91e925c6be6c0dc939c718295f52a692664e07dc845ca11d7981ef21fa2ace9d",
+      "modified_at_ist": "2026-10-22T20:37:55+05:30"
+    },
+    {
+      "source_path": "src/app/api/plivo/outbound-intent.js",
+      "archive_path": "source/src/app/api/plivo/outbound-intent.js",
+      "category": "telephony_route_or_helper_review_required",
+      "bytes": 788,
+      "sha256": "8e830fddf19a7f636c60db896d5603405bc4f5129fbda57ffa3f4527cf162129",
+      "modified_at_ist": "2026-09-27T00:53:53+05:30"
+    },
+    {
+      "source_path": "src/app/api/plivo/phone-number.js",
+      "archive_path": "source/src/app/api/plivo/phone-number.js",
+      "category": "telephony_route_or_helper_review_required",
+      "bytes": 740,
+      "sha256": "45b69b4ea54a5d06eb82aaa133de1d5086153721f6141337a30af9093e4b2dd2",
+      "modified_at_ist": "2026-09-27T00:41:35+05:30"
+    },
+    {
+      "source_path": "src/app/api/plivo/recording-callback/route.js",
+      "archive_path": "source/src/app/api/plivo/recording-callback/route.js",
+      "category": "telephony_route_or_helper_review_required",
+      "bytes": 2067,
+      "sha256": "58a3b123d4b6226796ec2c02ebdd8ab999db90edaa3edc8abd00ef0bf62e9feb",
+      "modified_at_ist": "2026-09-27T02:10:09+05:30"
+    },
+    {
+      "source_path": "src/app/api/plivo/ring-callback/route.js",
+      "archive_path": "source/src/app/api/plivo/ring-callback/route.js",
+      "category": "telephony_route_or_helper_review_required",
+      "bytes": 11094,
+      "sha256": "745e205c4e7c218f4d3873f2e12b990294c70476bbe73c8114fc2e132e53385f",
+      "modified_at_ist": "2026-10-20T18:59:15+05:30"
+    },
+    {
+      "source_path": "src/app/api/plivo/session-status/route.js",
+      "archive_path": "source/src/app/api/plivo/session-status/route.js",
+      "category": "telephony_route_or_helper_review_required",
+      "bytes": 12913,
+      "sha256": "ac015ae471f3568dfa27a168b9c39404f862fd84c1c0cf556267417a3f16180c",
+      "modified_at_ist": "2026-10-20T19:12:36+05:30"
+    },
+    {
+      "source_path": "src/app/api/plivo/start-call/route.js",
+      "archive_path": "source/src/app/api/plivo/start-call/route.js",
+      "category": "telephony_route_or_helper_review_required",
+      "bytes": 8283,
+      "sha256": "e23393e9ac99f792c1e8a878425b6a2a5172e5b0de450d0103de2522ae289dd8",
+      "modified_at_ist": "2026-10-22T20:37:55+05:30"
+    },
+    {
+      "source_path": "src/app/api/plivo/token/route.js",
+      "archive_path": "source/src/app/api/plivo/token/route.js",
+      "category": "telephony_route_or_helper_review_required",
+      "bytes": 2033,
+      "sha256": "07b2626c2198cf1140798d7544ac990cfd0d7142b1ff74e506eddd3fff84d593",
+      "modified_at_ist": "2026-10-22T20:37:55+05:30"
+    },
+    {
+      "source_path": "src/app/api/plivo/transfer-to-conference.js",
+      "archive_path": "source/src/app/api/plivo/transfer-to-conference.js",
+      "category": "telephony_route_or_helper_review_required",
+      "bytes": 1565,
+      "sha256": "fc8287c9275a1c191868f3031cd133eba0314e779dbbb2155607d0ac05c81cce",
+      "modified_at_ist": "2026-10-01T14:15:03+05:30"
+    },
+    {
+      "source_path": "src/app/api/plivo/utils.js",
+      "archive_path": "source/src/app/api/plivo/utils.js",
+      "category": "telephony_route_or_helper_review_required",
+      "bytes": 5859,
+      "sha256": "d44fdfcee78b1040df28f44d88cd04cf820be9c704630c8598a5601290b8491c",
+      "modified_at_ist": "2026-10-21T22:26:53+05:30"
+    },
+    {
+      "source_path": "src/app/api/plivo/wait-silence/route.js",
+      "archive_path": "source/src/app/api/plivo/wait-silence/route.js",
+      "category": "telephony_route_or_helper_review_required",
+      "bytes": 491,
+      "sha256": "84703c8ce3958e2a923d9e668aea5602976eb1e3313441494f251021da18505b",
+      "modified_at_ist": "2026-09-27T01:25:33+05:30"
+    },
+    {
+      "source_path": "src/components/CRMContainer.jsx",
+      "archive_path": "source/src/components/CRMContainer.jsx",
+      "category": "workspace_reference_only",
+      "bytes": 414570,
+      "sha256": "b3ff6e86cef58812479e6dbb73959db1ce8488323b17e0e8a5eb9e77bebae549",
+      "modified_at_ist": "2026-11-06T22:24:12+05:30"
+    },
+    {
+      "source_path": "src/components/CallCenter/ActiveCallPanel.jsx",
+      "archive_path": "source/src/components/CallCenter/ActiveCallPanel.jsx",
+      "category": "protected_softphone_source",
+      "bytes": 29073,
+      "sha256": "34c41e5c2471e68d8fbb809e85bfdcf7522f08fdc4ca9127c55193e2e2444628",
+      "modified_at_ist": "2026-10-24T20:08:16+05:30"
+    },
+    {
+      "source_path": "src/components/CallCenter/BrowserSoftphone.jsx",
+      "archive_path": "source/src/components/CallCenter/BrowserSoftphone.jsx",
+      "category": "call_center_context_review_required",
+      "bytes": 15053,
+      "sha256": "5d7d2f5cadae5a5b6bbb9b4aa6230ee3bd72a0888a901b1bb42de27462b6c09f",
+      "modified_at_ist": "2026-10-01T11:19:18+05:30"
+    },
+    {
+      "source_path": "src/components/CallCenter/CallAdminModule.jsx",
+      "archive_path": "source/src/components/CallCenter/CallAdminModule.jsx",
+      "category": "call_center_context_review_required",
+      "bytes": 224084,
+      "sha256": "525053b55f4c7ac1e0c0fdaf5ed66eb098a2fe99358f117dfc6bc8d72f898a8f",
+      "modified_at_ist": "2026-11-01T20:26:51+05:30"
+    },
+    {
+      "source_path": "src/components/CallCenter/CallCenterModule.jsx",
+      "archive_path": "source/src/components/CallCenter/CallCenterModule.jsx",
+      "category": "call_center_context_review_required",
+      "bytes": 38613,
+      "sha256": "7ebc67c745bb14d71bc567413477c4a8adf17d45f5361bdd39d6ab88143b2275",
+      "modified_at_ist": "2026-11-07T15:34:17+05:30"
+    },
+    {
+      "source_path": "src/components/CallCenter/CallCenterPagination.jsx",
+      "archive_path": "source/src/components/CallCenter/CallCenterPagination.jsx",
+      "category": "call_center_context_review_required",
+      "bytes": 1136,
+      "sha256": "4abbeeebb642cbe2545b4ac565f6d5b0ceaddef68d176bd274faba3def7b1430",
+      "modified_at_ist": "2026-11-05T15:03:31+05:30"
+    },
+    {
+      "source_path": "src/components/CallCenter/GlobalRecordingDownloader.jsx",
+      "archive_path": "source/src/components/CallCenter/GlobalRecordingDownloader.jsx",
+      "category": "call_center_context_review_required",
+      "bytes": 15020,
+      "sha256": "d7dd7e4a36b9add9b5627666ca71231de343ec830bc0dd494a5e9d5b830f05cc",
+      "modified_at_ist": "2026-11-01T20:26:29+05:30"
+    },
+    {
+      "source_path": "src/components/CallCenter/GlobalSoftphoneWidget.jsx",
+      "archive_path": "source/src/components/CallCenter/GlobalSoftphoneWidget.jsx",
+      "category": "protected_softphone_source",
+      "bytes": 97253,
+      "sha256": "b509902473a16cdaac4c33f00714c7a57eee2d4e17c8936fdb69a32ecfcf5fdc",
+      "modified_at_ist": "2026-11-07T15:54:29+05:30"
+    },
+    {
+      "source_path": "src/components/CallCenter/Softphone.module.css",
+      "archive_path": "source/src/components/CallCenter/Softphone.module.css",
+      "category": "protected_softphone_source",
+      "bytes": 18956,
+      "sha256": "37dba137a99e13dedb3cc8d6abaecd136592b359e37398d4955a86b3002fd930",
+      "modified_at_ist": "2026-10-22T01:19:45+05:30"
+    },
+    {
+      "source_path": "src/components/CallCenter/callCenterViewCache.js",
+      "archive_path": "source/src/components/CallCenter/callCenterViewCache.js",
+      "category": "call_center_context_review_required",
+      "bytes": 3549,
+      "sha256": "657409f3417c2fa6a2b943a613e09d8f669818f3b30c6aeab39babde58a20570",
+      "modified_at_ist": "2026-10-26T11:37:03+05:30"
+    },
+    {
+      "source_path": "src/components/CallCenter/useIncomingRingtone.js",
+      "archive_path": "source/src/components/CallCenter/useIncomingRingtone.js",
+      "category": "protected_softphone_source",
+      "bytes": 6024,
+      "sha256": "06acd0721c970f299f94cd46455af9d0258de30309c1216ce16c5b67c429b69f",
+      "modified_at_ist": "2026-10-24T00:00:21+05:30"
+    },
+    {
+      "source_path": "src/components/CallCenter/useSoftphoneContacts.js",
+      "archive_path": "source/src/components/CallCenter/useSoftphoneContacts.js",
+      "category": "protected_softphone_source",
+      "bytes": 3148,
+      "sha256": "adc44d8ca7b8ae790b39ba621de62c54bc818af20befbcbe6fa223848dbe5235",
+      "modified_at_ist": "2026-10-23T20:16:07+05:30"
+    },
+    {
+      "source_path": "src/components/PremiumProgressLoader.jsx",
+      "archive_path": "source/src/components/PremiumProgressLoader.jsx",
+      "category": "workspace_reference_only",
+      "bytes": 4724,
+      "sha256": "372d1602a64b465e86696bb36fb16f96bdd0f49ee98d689952551c84fb394b74",
+      "modified_at_ist": "2026-08-15T03:04:22+05:30"
+    },
+    {
+      "source_path": "src/components/common/MobileTableView.jsx",
+      "archive_path": "source/src/components/common/MobileTableView.jsx",
+      "category": "workspace_reference_only",
+      "bytes": 13714,
+      "sha256": "1135d968b8738630416d6cc773d978c6434cccd0f2426685698eddd495299ac6",
+      "modified_at_ist": "2026-11-07T16:04:49+05:30"
+    },
+    {
+      "source_path": "src/components/common/StandardTablePagination.jsx",
+      "archive_path": "source/src/components/common/StandardTablePagination.jsx",
+      "category": "workspace_reference_only",
+      "bytes": 8807,
+      "sha256": "c063e9dc0ad8a61403df9d5fb792de848eb708e0f8250f27b6c2bb6e963c0d1e",
+      "modified_at_ist": "2026-11-05T15:11:36+05:30"
+    },
+    {
+      "source_path": "src/config/modulesConfig.jsx",
+      "archive_path": "source/src/config/modulesConfig.jsx",
+      "category": "workspace_reference_only",
+      "bytes": 18099,
+      "sha256": "ddf5ef504caad0e75488b85c44f31b0a99b1a97cf7985336702cbcc1b23b9def",
+      "modified_at_ist": "2026-11-06T22:24:12+05:30"
+    },
+    {
+      "source_path": "src/lib/callCenterPageData.js",
+      "archive_path": "source/src/lib/callCenterPageData.js",
+      "category": "shared_telephony_source_review_required",
+      "bytes": 6131,
+      "sha256": "e8c0b52a4176d3ad71ba3c2ac66474239497b6acf83782c4c79ead4c04fb012a",
+      "modified_at_ist": "2026-11-01T19:33:59+05:30"
+    },
+    {
+      "source_path": "src/lib/plivoConsultation.js",
+      "archive_path": "source/src/lib/plivoConsultation.js",
+      "category": "protected_softphone_source",
+      "bytes": 37928,
+      "sha256": "38bcce7789d24c9a2c55855c35f72e1903ea1d0302d545c7908f4bd1ceeedaee",
+      "modified_at_ist": "2026-10-24T19:36:26+05:30"
+    },
+    {
+      "source_path": "src/lib/plivoIncomingRouting.js",
+      "archive_path": "source/src/lib/plivoIncomingRouting.js",
+      "category": "protected_softphone_source",
+      "bytes": 25142,
+      "sha256": "78b27a76e4d80b76b4e5bdd87a667e78d0b504c9ecfe6ac8976584f612131021",
+      "modified_at_ist": "2026-10-24T19:55:33+05:30"
+    },
+    {
+      "source_path": "src/lib/softphoneConnectionRecovery.js",
+      "archive_path": "source/src/lib/softphoneConnectionRecovery.js",
+      "category": "protected_softphone_source",
+      "bytes": 5098,
+      "sha256": "180d68989f5b93a4e248f53eedf7de0313b8b81bece549939cd6b2688c787688",
+      "modified_at_ist": "2026-10-24T20:08:50+05:30"
+    },
+    {
+      "source_path": "src/lib/softphoneIncomingCall.js",
+      "archive_path": "source/src/lib/softphoneIncomingCall.js",
+      "category": "protected_softphone_source",
+      "bytes": 2303,
+      "sha256": "7938f127f99e58fe1e6c28fe51e97e4797227936814745737c21162b37d35543",
+      "modified_at_ist": "2026-10-20T23:33:12+05:30"
+    },
+    {
+      "source_path": "src/utils/permissionUtils.js",
+      "archive_path": "source/src/utils/permissionUtils.js",
+      "category": "workspace_reference_only",
+      "bytes": 13983,
+      "sha256": "bfc722a754b900bb504c0d2c5b2886d4b61aa9516a966fd969ce258ffa1d1480",
+      "modified_at_ist": "2026-11-06T22:24:12+05:30"
+    },
+    {
+      "source_path": "src/utils/supabase/adminClient.js",
+      "archive_path": "source/src/utils/supabase/adminClient.js",
+      "category": "workspace_reference_only",
+      "bytes": 236,
+      "sha256": "cc95bab4a72a34a9312263496ffc79e93477200e592c956935c053126e4b07fc",
+      "modified_at_ist": "2026-08-28T13:57:28+05:30"
+    },
+    {
+      "source_path": "src/utils/supabase/client.js",
+      "archive_path": "source/src/utils/supabase/client.js",
+      "category": "workspace_reference_only",
+      "bytes": 212,
+      "sha256": "5e1b695e36eb4414f855d0750103f911b0626650c5a75588046bc64a99823bb3",
+      "modified_at_ist": "2026-05-27T11:44:59+05:30"
+    },
+    {
+      "source_path": "src/utils/supabase/middleware.js",
+      "archive_path": "source/src/utils/supabase/middleware.js",
+      "category": "workspace_reference_only",
+      "bytes": 2242,
+      "sha256": "537590836c0b4ddddb3b35103a760b06775ab904a45f6077c4bd26ac95daee26",
+      "modified_at_ist": "2026-09-08T10:13:32+05:30"
+    },
+    {
+      "source_path": "src/utils/supabase/server.js",
+      "archive_path": "source/src/utils/supabase/server.js",
+      "category": "workspace_reference_only",
+      "bytes": 806,
+      "sha256": "f66ac7b427c93884ceb9b9b95f5402f39bcddf9668c717f5c6cb77e32a10ba8f",
+      "modified_at_ist": "2026-05-27T11:56:42+05:30"
+    },
+    {
+      "source_path": "src/utils/tableColumnResize.js",
+      "archive_path": "source/src/utils/tableColumnResize.js",
+      "category": "workspace_reference_only",
+      "bytes": 6561,
+      "sha256": "1252ceba29036e8800054299d5d1d570cd3db0705edac4a728a2f26928f8ded1",
+      "modified_at_ist": "2026-10-05T23:09:16+05:30"
+    },
+    {
+      "source_path": "src/utils/telephonyConfig.js",
+      "archive_path": "source/src/utils/telephonyConfig.js",
+      "category": "shared_telephony_source_review_required",
+      "bytes": 6883,
+      "sha256": "940181d8de79b95237ced437368a4b3884710cee0ac40f4612dd82ddb7eb370b",
+      "modified_at_ist": "2026-10-22T20:37:55+05:30"
+    },
+    {
+      "source_path": "tests/call-admin-agents.test.mjs",
+      "archive_path": "source/tests/call-admin-agents.test.mjs",
+      "category": "regression_test",
+      "bytes": 42709,
+      "sha256": "8aafb170defdb0fc790ba5a8858e2df5b1e5a528f9ba7bcba83e6f203457bb68",
+      "modified_at_ist": "2026-10-26T11:46:36+05:30"
+    },
+    {
+      "source_path": "tests/call-admin-endpoints.test.mjs",
+      "archive_path": "source/tests/call-admin-endpoints.test.mjs",
+      "category": "regression_test",
+      "bytes": 8697,
+      "sha256": "434bc43b8a2c7d62dbf41bd69a5a3fd509131bf4d9ee61629337f85c2f69877a",
+      "modified_at_ist": "2026-10-26T11:37:57+05:30"
+    },
+    {
+      "source_path": "tests/call-center-pages.test.mjs",
+      "archive_path": "source/tests/call-center-pages.test.mjs",
+      "category": "regression_test",
+      "bytes": 18769,
+      "sha256": "5b85f8d457b80a712e955a3b42b2699d3afa224aae657c6634b3524708d4f489",
+      "modified_at_ist": "2026-10-26T11:46:36+05:30"
+    },
+    {
+      "source_path": "tests/plivo-consultation.test.mjs",
+      "archive_path": "source/tests/plivo-consultation.test.mjs",
+      "category": "regression_test",
+      "bytes": 64179,
+      "sha256": "05e36e7cb552a5765bdc1046f79e848e9f89661ba768b263e1ba89c1816b3f85",
+      "modified_at_ist": "2026-10-24T20:08:16+05:30"
+    },
+    {
+      "source_path": "tests/plivo-incoming-routing.test.mjs",
+      "archive_path": "source/tests/plivo-incoming-routing.test.mjs",
+      "category": "regression_test",
+      "bytes": 26988,
+      "sha256": "2cab7a61216b230ad2b95c15aff5066ab4829e9b222ed63e409af1c3642c6d8c",
+      "modified_at_ist": "2026-10-24T20:01:48+05:30"
+    },
+    {
+      "source_path": "tests/plivo-outbound-dial.test.mjs",
+      "archive_path": "source/tests/plivo-outbound-dial.test.mjs",
+      "category": "regression_test",
+      "bytes": 6884,
+      "sha256": "fb18bbe4bcc26551255684f29d1874b09497f933f38bff35f0163bb3dd15dfbd",
+      "modified_at_ist": "2026-10-21T22:26:53+05:30"
+    },
+    {
+      "source_path": "tests/plivo-outcomes.test.mjs",
+      "archive_path": "source/tests/plivo-outcomes.test.mjs",
+      "category": "regression_test",
+      "bytes": 5253,
+      "sha256": "20a82373d18dfd42e3b8b8beef20d77a42a57be0f68dea5824f74b75485d994a",
+      "modified_at_ist": "2026-10-21T22:26:53+05:30"
+    },
+    {
+      "source_path": "tests/plivo-start-call.test.mjs",
+      "archive_path": "source/tests/plivo-start-call.test.mjs",
+      "category": "regression_test",
+      "bytes": 8607,
+      "sha256": "64f52e667062be44218e2351474bbd9684c8d67e33571638ba29f0ee422ae73c",
+      "modified_at_ist": "2026-10-21T22:19:15+05:30"
+    },
+    {
+      "source_path": "tests/softphone-connection-recovery.test.mjs",
+      "archive_path": "source/tests/softphone-connection-recovery.test.mjs",
+      "category": "regression_test",
+      "bytes": 6744,
+      "sha256": "ba39b98eb7b9c6c1cc825826e313774f2de8a40ee4496f219b4f53bbe9dba8f4",
+      "modified_at_ist": "2026-10-24T20:08:50+05:30"
+    },
+    {
+      "source_path": "tests/softphone-contact-lookup.test.mjs",
+      "archive_path": "source/tests/softphone-contact-lookup.test.mjs",
+      "category": "regression_test",
+      "bytes": 19244,
+      "sha256": "96ad4c1784252bedd432c5cc54ad3b318503be7cb27c748195e2e768c482283e",
+      "modified_at_ist": "2026-10-23T20:31:15+05:30"
+    },
+    {
+      "source_path": "tests/softphone-incoming-call.test.mjs",
+      "archive_path": "source/tests/softphone-incoming-call.test.mjs",
+      "category": "regression_test",
+      "bytes": 6251,
+      "sha256": "a841f004800c0234dec251e6f02a98156f2483445d11ad684f57130740d59df0",
+      "modified_at_ist": "2026-10-20T23:32:56+05:30"
+    },
+    {
+      "source_path": "tests/softphone-incoming-ringtone.test.mjs",
+      "archive_path": "source/tests/softphone-incoming-ringtone.test.mjs",
+      "category": "regression_test",
+      "bytes": 29580,
+      "sha256": "35476dba451bfac154c3aff841ee286f9901924fe4fd20da9e5015c4a0a9de30",
+      "modified_at_ist": "2026-10-24T20:06:43+05:30"
+    },
+    {
+      "source_path": "tests/softphone-widget-effects.test.mjs",
+      "archive_path": "source/tests/softphone-widget-effects.test.mjs",
+      "category": "regression_test",
+      "bytes": 15033,
+      "sha256": "52722c2b2a924fa6a0b810eb959eeb372d2291e27adbd66db90dd7b7cd2b1d07",
+      "modified_at_ist": "2026-11-07T15:54:29+05:30"
+    }
+  ],
+  "verification": {
+    "focused_softphone": {
+      "test_files": 5,
+      "tests": 65,
+      "passed": 65,
+      "failed": 0,
+      "exit_code": 0
+    },
+    "targeted_lint": {
+      "errors": 0,
+      "warnings": 0,
+      "exit_code": 0
+    },
+    "broader_regression": {
+      "test_files": 13,
+      "tests": 228,
+      "passed": 213,
+      "failed": 15,
+      "exit_code": 1,
+      "known_failure_files": [
+        "tests/call-admin-agents.test.mjs",
+        "tests/call-center-pages.test.mjs"
+      ],
+      "note": "Existing UI fixture dependencies and pagination expectations. Complete observed results are recorded in verification.log; results are not a claim that every shared context file was unchanged after testing."
+    },
+    "zip_crc_verified": true,
+    "every_archive_entry_sha256_verified": true,
+    "protected_softphone_sources_unchanged_during_capture": true,
+    "source_bytes_unchanged_during_capture": true,
+    "source_files_changed_during_capture": [],
+    "whole_workspace_unchanged_since_initial_preflight": false,
+    "concurrent_workspace_activity_observed": [
+      {
+        "path": "src/components/common/MobileTableView.jsx",
+        "modified_at_ist": "2026-11-07T16:04:49+05:30"
+      },
+      {
+        "path": "src/config/company_holidays.json",
+        "modified_at_ist": "2026-11-07T16:04:55+05:30"
+      },
+      {
+        "path": "src/config/user_daily_activity.json",
+        "modified_at_ist": "2026-11-07T16:05:52+05:30"
+      }
+    ],
+    "workspace_note": "This task wrote AGENTS.md and new backup artifacts only. Other workspace files changed concurrently; they were not reverted or edited by this task. Shared references reflect bytes captured for this archive.",
+    "runtime_initial_preflight": {
+      "file_count": 502,
+      "bytes": 21187259,
+      "sha256": "8442201d4f4c918e840338361e58c610807c4b0658be2d758217c5ec0481bce0"
+    },
+    "runtime_before_capture": {
+      "file_count": 502,
+      "bytes": 21187335,
+      "sha256": "9516188afda03e84c3bd6ae21bd99bf3d3dd6d4e7d3268cb3d60dceba9ff0afd"
+    },
+    "runtime_after_capture": {
+      "file_count": 502,
+      "bytes": 21187335,
+      "sha256": "9516188afda03e84c3bd6ae21bd99bf3d3dd6d4e7d3268cb3d60dceba9ff0afd"
+    },
+    "historical_backups_unchanged": true,
+    "historical_backups_before": {
+      "2.1": {
+        "file_count": 33,
+        "bytes": 144326525,
+        "sha256": "78cd8b3ba748a303887e3b6b44b1353a0e6a9e0fcdd61d601b0e4d236728c2e1"
+      },
+      "2.5": {
+        "file_count": 44,
+        "bytes": 716170,
+        "sha256": "06d3142f1ae673a2a98a352c1e8b20500d757440797de597a4dffd74f51cfb12"
+      },
+      "2.9": {
+        "file_count": 116,
+        "bytes": 1687810,
+        "sha256": "809dc1e9e242f1324c4791b52d8944e8bf48a0287d9d34475fbb7550af6ec5ed"
+      },
+      "2.14": {
+        "file_count": 66,
+        "bytes": 7387127,
+        "sha256": "2b3c06f1f40c8de94ac569e67596ad38a853b70197c9ce4d524bd8e8fb5365a3"
+      }
+    },
+    "historical_backups_after": {
+      "2.1": {
+        "file_count": 33,
+        "bytes": 144326525,
+        "sha256": "78cd8b3ba748a303887e3b6b44b1353a0e6a9e0fcdd61d601b0e4d236728c2e1"
+      },
+      "2.5": {
+        "file_count": 44,
+        "bytes": 716170,
+        "sha256": "06d3142f1ae673a2a98a352c1e8b20500d757440797de597a4dffd74f51cfb12"
+      },
+      "2.9": {
+        "file_count": 116,
+        "bytes": 1687810,
+        "sha256": "809dc1e9e242f1324c4791b52d8944e8bf48a0287d9d34475fbb7550af6ec5ed"
+      },
+      "2.14": {
+        "file_count": 66,
+        "bytes": 7387127,
+        "sha256": "2b3c06f1f40c8de94ac569e67596ad38a853b70197c9ce4d524bd8e8fb5365a3"
+      }
+    },
+    "live_carrier_call_tested": false
+  },
+  "restore_policy": "Verify checksums and obtain an exact approved scoped restoration plan. Never bulk-overwrite shared sources, packages, permissions, schemas or credentials.",
+  "companion_files": {
+    "RESTORE_README.md": {
+      "bytes": 4949,
+      "sha256": "38ffe47f1ac32d8616e7f0b44e492936592445d001c7479be6b75e457d10168b"
+    },
+    "verification.log": {
+      "bytes": 56683,
+      "sha256": "495b8393c1dda72e6b888e7ff0c3324c19cf58b0bec133a53fb8e0e79e856a32"
+    }
+  }
+}

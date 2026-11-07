@@ -17,6 +17,7 @@ import { MODULES_CONFIG } from '@/config/modulesConfig';
 import { ROLE_PRESETS } from '../utils/rolePresets';
 import { INTEGRATION_PAGE_IDS } from '@/config/integrationsConfig';
 import { getSubItemPermissions } from '@/utils/permissionUtils';
+import { WHATSAPP_LOG_VIEW_IDS } from '@/config/whatsappMessageLogsConfig';
 
 const OPERATIONAL_POWERS = [
   { key: 'can_manage_integrations', label: '🔌 Manage Integrations & API Credentials', desc: 'Allows managing API keys, external connections and Meta lead sync within authorized tenant and branch scope' },
@@ -211,6 +212,9 @@ export default function PermissionMatrixModal({
   const getSubItemPerms = (moduleId, subId) => {
     const parentPerms = getModulePerms(moduleId);
     if (!parentPerms.view) return { view: false, add: false, edit: false, delete: false };
+    if (moduleId === 'whatsapp_official' && WHATSAPP_LOG_VIEW_IDS.includes(subId)) {
+      return getSubItemPermissions(accessForm, '', moduleId, subId);
+    }
     // Keep tab checkboxes aligned with the same fallback used by the integration server.
     if (moduleId === 'settings' && INTEGRATION_PAGE_IDS.includes(subId)) {
       return getSubItemPermissions(accessForm, '', moduleId, subId);

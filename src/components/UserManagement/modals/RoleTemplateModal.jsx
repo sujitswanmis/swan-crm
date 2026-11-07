@@ -17,6 +17,8 @@ import {
 } from 'lucide-react';
 import { MODULES_CONFIG } from '@/config/modulesConfig';
 import { ROLE_PRESETS } from '../utils/rolePresets';
+import { getSubItemPermissions } from '@/utils/permissionUtils';
+import { WHATSAPP_LOG_VIEW_IDS } from '@/config/whatsappMessageLogsConfig';
 
 const OPERATIONAL_POWERS = [
   { key: 'can_import_data', label: '📥 Import Leads Power', desc: 'Allows uploading and bulk importing CSV lead files into CRM' },
@@ -253,6 +255,9 @@ export default function RoleTemplateModal({ onClose, onSave, saving = false, use
   const getSubItemPerms = (moduleId, subId) => {
     const parentPerms = getModulePerms(moduleId);
     if (!parentPerms.view) return { view: false, add: false, edit: false, delete: false };
+    if (moduleId === 'whatsapp_official' && WHATSAPP_LOG_VIEW_IDS.includes(subId)) {
+      return getSubItemPermissions(permissions, '', moduleId, subId);
+    }
     const m = permissions[moduleId] || {};
     const subs = m.sub_items || {};
     const sub = subs[subId];

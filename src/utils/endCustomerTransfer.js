@@ -202,7 +202,8 @@ export async function parseEndCustomerFile(file, format) {
     return recordsFromMatrix(result.data);
   }
   if (format !== 'xlsx') throw new Error('Use CSV or Excel (.xlsx).');
-  const ExcelJS = (await import('exceljs')).default;
+  const ExcelMod = await import('exceljs/dist/exceljs.min.js');
+  const ExcelJS = ExcelMod.default || ExcelMod;
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(await file.arrayBuffer());
   const sheet = workbook.getWorksheet('End Customers') || workbook.worksheets.find(s => s.state === 'visible');
@@ -234,7 +235,8 @@ export async function createEndCustomerCSV(rows = []) {
 }
 
 export async function createEndCustomerWorkbook(rows = [], { template = false, parties = [], products = [], districtsByState = {} } = {}) {
-  const ExcelJS = (await import('exceljs')).default;
+  const ExcelMod = await import('exceljs/dist/exceljs.min.js');
+  const ExcelJS = ExcelMod.default || ExcelMod;
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'SuPuja Creations CRM';
   const sheet = workbook.addWorksheet('End Customers', { views: [{ state: 'frozen', ySplit: 1, xSplit: 2 }] });

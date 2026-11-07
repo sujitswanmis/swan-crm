@@ -149,7 +149,7 @@ if (typeof window !== 'undefined') {
   window.__crm_stop_all_ringing = (room) => globalRingController.stop(room);
 }
 
-const SOFTPHONE_VERSION = 'v2.14';
+const SOFTPHONE_VERSION = 'v2.16';
 
 function readIncomingRoutingToken(headers) {
   const values = Object.fromEntries(Object.entries(headers || {}).map(([key, value]) =>
@@ -353,6 +353,10 @@ export default function GlobalSoftphoneWidget({ userId }) {
   const [isMuted, setIsMuted] = useState(false);
   const [callDuration, setCallDuration] = useState(0);
   const [activeSession, setActiveSession] = useState(null);
+  const hasActiveSession = !!activeSession;
+  const activeSessionStatus = activeSession?.status;
+  const customerAnswerTime = activeSession?.customer_answer_time;
+  const activeCallDirection = activeCall?.direction;
   const [callAnnouncement, setCallAnnouncement] = useState(null);
   const [sdkStatus, setSdkStatus] = useState({ isRegistered: false, isConnected: false });
   const [agentDataState, setAgentData] = useState(null);
@@ -547,10 +551,10 @@ export default function GlobalSoftphoneWidget({ userId }) {
 
   // Auto-stop ringing immediately as soon as activeSession is connected or answered
   useEffect(() => {
-    if (activeSession && (activeSession.status === 'connected' || activeSession.customer_answer_time)) {
+    if (hasActiveSession && (activeSessionStatus === 'connected' || customerAnswerTime)) {
       stopRingingAudio();
     }
-  }, [activeSession?.status, activeSession?.customer_answer_time, stopRingingAudio]);
+  }, [hasActiveSession, activeSessionStatus, customerAnswerTime, stopRingingAudio]);
 
   const [bounds, setBounds] = useState({ left: -1000, top: -1000, right: 12, bottom: 12 });
   const [endpointIdLookup, setEndpointIdLookup] = useState(null);
@@ -627,28 +631,31 @@ export default function GlobalSoftphoneWidget({ userId }) {
 
   // Keep saved position clamped within screen boundaries on mount or resize
   useEffect(() => {
-    try {
-      const savedPos = localStorage.getItem('softphone_position');
-      if (savedPos) {
-        const parsed = JSON.parse(savedPos);
-        if (typeof parsed.x === 'number' && typeof parsed.y === 'number') {
-          const width = isMinimized ? 280 : 380;
-          const height = isMinimized ? 50 : 520;
-          const margin = 8;
-          const minX = -(window.innerWidth - width - 20 - margin);
-          const minY = -(window.innerHeight - height - 20 - margin);
-          const maxX = 20 - margin;
-          const maxY = 20 - margin;
-          const safeX = Math.max(minX, Math.min(maxX, parsed.x));
-          const safeY = Math.max(minY, Math.min(maxY, parsed.y));
-          if (safeX !== parsed.x || safeY !== parsed.y) {
-            setPosition({ x: safeX, y: safeY });
+    const frame = window.requestAnimationFrame(() => {
+      try {
+        const savedPos = localStorage.getItem('softphone_position');
+        if (savedPos) {
+          const parsed = JSON.parse(savedPos);
+          if (typeof parsed.x === 'number' && typeof parsed.y === 'number') {
+            const width = isMinimized ? 280 : 380;
+            const height = isMinimized ? 50 : 520;
+            const margin = 8;
+            const minX = -(window.innerWidth - width - 20 - margin);
+            const minY = -(window.innerHeight - height - 20 - margin);
+            const maxX = 20 - margin;
+            const maxY = 20 - margin;
+            const safeX = Math.max(minX, Math.min(maxX, parsed.x));
+            const safeY = Math.max(minY, Math.min(maxY, parsed.y));
+            if (safeX !== parsed.x || safeY !== parsed.y) {
+              setPosition({ x: safeX, y: safeY });
+            }
           }
         }
+      } catch (e) {
+        console.error("Error clamping softphone position:", e);
       }
-    } catch (e) {
-      console.error("Error clamping softphone position:", e);
-    }
+    });
+    return () => window.cancelAnimationFrame(frame);
   }, [isMinimized]);
 
   // Listen for custom events to toggle or open softphone from anywhere in the app
@@ -1072,16 +1079,19 @@ export default function GlobalSoftphoneWidget({ userId }) {
   }, [agentData, updateActiveSession, stopRingingAudio, handleSessionTerminationAnnouncement]);
 
   // Realtime handles immediate changes; polling recovers missed events.
+  const isSessionPollEngaged = !!(activeCall || activeSession || optimisticCall);
   useEffect(() => {
     if (!agentData) return;
-    fetchSession();
+    const initialRefresh = setTimeout(fetchSession, 0);
 
-    const isEngaged = !!(activeCall || activeSession || optimisticCall);
-    const intervalMs = isEngaged ? 2000 : 60000;
+    const intervalMs = isSessionPollEngaged ? 2000 : 60000;
     const interval = setInterval(fetchSession, intervalMs);
 
-    return () => clearInterval(interval);
-  }, [agentData, activeCall, activeSession?.status, optimisticCall, fetchSession]);
+    return () => {
+      clearTimeout(initialRefresh);
+      clearInterval(interval);
+    };
+  }, [agentData, activeCall, activeSessionStatus, optimisticCall, isSessionPollEngaged, fetchSession]);
 
   // Realtime Active Session listener
   useEffect(() => {
@@ -1379,7 +1389,6 @@ export default function GlobalSoftphoneWidget({ userId }) {
           incomingGuardRef.current.clear(client, callInfo);
           const uuid = incomingCallUuid(callInfo);
           setIncomingCall(previous => !uuid || incomingCallUuid(previous) === uuid ? null : previous);
-          startDurationTimer();
         });
 
         client.on('onCallTerminated', async (callInfo) => {
@@ -1390,7 +1399,6 @@ export default function GlobalSoftphoneWidget({ userId }) {
           setActiveCall(null);
           const uuid = incomingCallUuid(callInfo);
           setIncomingCall(previous => !uuid || incomingCallUuid(previous) === uuid ? null : previous);
-          stopDurationTimer();
           setCallDuration(0);
 
           const currentSession = activeSessionRef.current;
@@ -1468,33 +1476,30 @@ export default function GlobalSoftphoneWidget({ userId }) {
   // Declarative Call Duration Timer based on activeSession status or customer_answer_time
   useEffect(() => {
     let timerInterval = null;
-    const isConnected = (activeSession && (activeSession.status === 'connected' || !!activeSession.customer_answer_time)) ||
-      (activeCall && activeCall.direction === 'inbound');
+    const isConnected = (hasActiveSession && (activeSessionStatus === 'connected' || !!customerAnswerTime)) ||
+      activeCallDirection === 'inbound';
+
+    // Synchronize the external call clock after commit; cleanup cancels stale resets.
+    const initialUpdate = setTimeout(() => {
+      if (isConnected && customerAnswerTime) {
+        const elapsed = Math.floor((Date.now() - new Date(customerAnswerTime).getTime()) / 1000);
+        setCallDuration(Math.max(0, elapsed));
+      } else if (!isConnected) {
+        setCallDuration(0);
+      }
+    }, 0);
 
     if (isConnected) {
-      if (activeSession?.customer_answer_time) {
-        const elapsed = Math.floor((Date.now() - new Date(activeSession.customer_answer_time).getTime()) / 1000);
-        setCallDuration(Math.max(0, elapsed));
-      }
       timerInterval = setInterval(() => {
         setCallDuration(prev => prev + 1);
       }, 1000);
-    } else {
-      setCallDuration(0);
     }
 
     return () => {
+      clearTimeout(initialUpdate);
       if (timerInterval) clearInterval(timerInterval);
     };
-  }, [activeSession?.status, activeSession?.customer_answer_time, activeSession === null, activeCall?.direction]);
-
-  const startDurationTimer = () => {
-    // Handled declaratively
-  };
-
-  const stopDurationTimer = () => {
-    // Handled declaratively
-  };
+  }, [hasActiveSession, activeSessionStatus, customerAnswerTime, activeCallDirection]);
 
   const formatDuration = (seconds) => {
     const m = Math.floor(seconds / 60);
@@ -1805,9 +1810,9 @@ export default function GlobalSoftphoneWidget({ userId }) {
           aria-busy={profileLoadState === 'loading'}
           onClick={() => { setProfileLoad(null); setAgentData(null); setProfileReloadAttempt(value => value + 1); }}
           title={profileLoadState === 'error' ? 'Retry loading CRM Softphone' : 'Loading CRM Softphone'}
+          aria-label={profileLoadState === 'error' ? 'Retry loading CRM Softphone' : 'Loading CRM Softphone'}
         >
           <PhoneCall size={15} />
-          <span>Softphone</span>
           <span role="status">{profileLoadState === 'error' ? 'Retry' : 'Loading…'}</span>
         </button>
       </div>
@@ -1827,9 +1832,9 @@ export default function GlobalSoftphoneWidget({ userId }) {
           onClick={handleUnhideWidget}
           className={styles.launcherButton}
           title="Click to open CRM Softphone"
+          aria-label="Open CRM Softphone"
         >
           <PhoneCall size={15} />
-          <span>Softphone</span>
           <span className={styles.statusDot} data-state={connectionState} />
         </button>
       </div>
