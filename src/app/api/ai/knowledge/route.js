@@ -68,6 +68,7 @@ export async function POST(req) {
     }
 
     const tenantId = formData.get('tenantId') || formData.get('company') || '';
+    const branch = formData.get('branch') || '';
 
     // 1. Generate Embeddings using OpenAI
     let apiKey = process.env.OPENAI_API_KEY;
@@ -105,9 +106,10 @@ export async function POST(req) {
     const embeddingData = await embeddingResponse.json();
     const embedding = embeddingData.data[0].embedding;
 
-    // 2. Save to Supabase with optional tenant tag
+    // 2. Save to Supabase with optional tenant & branch tags
     const tenantPrefix = tenantId ? `[tenant:${tenantId}]` : '';
-    const dbTitle = `${tenantPrefix}[${visibility}][${type}]${title}`;
+    const branchPrefix = (branch && branch.toLowerCase() !== 'all') ? `[branch:${branch}]` : '';
+    const dbTitle = `${tenantPrefix}${branchPrefix}[${visibility}][${type}]${title}`;
     const { data, error } = await supabase
       .from('company_documents')
       .insert({
@@ -122,7 +124,7 @@ export async function POST(req) {
       throw error;
     }
 
-    // Return document with clean title and type
+    // Return document with clean title, type, and branch
     return NextResponse.json({ 
       success: true, 
       document: {
@@ -131,6 +133,7 @@ export async function POST(req) {
         type: type,
         visibility: visibility,
         tenantId: tenantId || null,
+        branch: branch || 'all',
         created_at: data.created_at
       } 
     });
@@ -155,10 +158,11 @@ export async function GET(req) {
 
     if (error) throw error;
     
-    // Parse the [tenant:xyz], [visibility], and [type] prefix from titles
+    // Parse the [tenant:xyz], [branch:abc], [visibility], and [type] prefix from titles
     const parsedDocuments = (data || []).map(doc => {
       let rawTitle = doc.title || '';
       let docTenant = null;
+      let docBranch = null;
 
       // Check for [tenant:xxx] prefix
       const tenantMatch = rawTitle.match(/^\[tenant:([^\]]+)\](.*)$/);
@@ -167,37 +171,49 @@ export async function GET(req) {
         rawTitle = tenantMatch[2];
       }
 
+      // Check for [branch:xxx] prefix
+      const branchMatch = rawTitle.match(/^\[branch:([^\]]+)\](.*)$/);
+      if (branchMatch) {
+        docBranch = branchMatch[1];
+        rawTitle = branchMatch[2];
+      }
+
+      let docType = 'text';
+      let docVisibility = 'internal';
+      let cleanTitle = rawTitle;
+
       const fullMatch = rawTitle.match(/^\[(public|internal)\]\[(text|url|pdf)\](.*)$/);
       if (fullMatch) {
-        return {
-          id: doc.id,
-          title: fullMatch[3],
-          type: fullMatch[2],
-          visibility: fullMatch[1],
-          tenantId: docTenant,
-          created_at: doc.created_at
-        };
+        docVisibility = fullMatch[1];
+        docType = fullMatch[2];
+        cleanTitle = fullMatch[3];
+      } else {
+        const typeMatch = rawTitle.match(/^\[(text|url|pdf)\](.*)$/);
+        if (typeMatch) {
+          docType = typeMatch[1];
+          cleanTitle = typeMatch[2];
+        }
       }
 
-      const typeMatch = rawTitle.match(/^\[(text|url|pdf)\](.*)$/);
-      if (typeMatch) {
-        return {
-          id: doc.id,
-          title: typeMatch[2],
-          type: typeMatch[1],
-          visibility: 'internal',
-          tenantId: docTenant,
-          created_at: doc.created_at
-        };
+      // Auto-detect branch for existing legacy documents if not explicitly tagged
+      if (!docBranch) {
+        const titleLower = cleanTitle.toLowerCase();
+        if (titleLower.includes('multitech') || titleLower.includes('nsmlr') || titleLower.includes('raian')) {
+          docBranch = 'NSMLR';
+        } else if (titleLower.includes('nstlp') || titleLower.includes('paharuwal') || titleLower.includes('technologies')) {
+          docBranch = 'NSTLP';
+        } else {
+          docBranch = 'all';
+        }
       }
 
-      // Default fallback for old docs
       return {
         id: doc.id,
-        title: rawTitle,
-        type: 'text',
-        visibility: 'internal',
+        title: cleanTitle,
+        type: docType,
+        visibility: docVisibility,
         tenantId: docTenant,
+        branch: docBranch,
         created_at: doc.created_at
       };
     });

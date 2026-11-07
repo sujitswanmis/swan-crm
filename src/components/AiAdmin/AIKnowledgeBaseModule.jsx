@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { BookOpen, Upload, FileText, Link as LinkIcon, Trash2, Edit3, Plus, Search, File, Database, Check, Loader2, Globe, Eye } from 'lucide-react';
+import { BookOpen, Upload, FileText, Link as LinkIcon, Trash2, Edit3, Plus, Search, File, Database, Check, Loader2, Globe, Eye, Building2 } from 'lucide-react';
 import { PremiumProgressLoader } from '../PremiumProgressLoader';
+import { getTenantBranches } from '@/app/actions/tenantBranches';
 
 const loadPdfJs = () => {
   return new Promise((resolve, reject) => {
@@ -36,6 +37,9 @@ const extractTextFromPdf = async (file) => {
 export default function AIKnowledgeBaseModule({ userCompany, tenantId, isMasterAdmin, userRole, userId }) {
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [branches, setBranches] = useState([]);
+  const [selectedBranch, setSelectedBranch] = useState('all');
+  const [activeBranchFilter, setActiveBranchFilter] = useState('all');
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
@@ -53,6 +57,22 @@ export default function AIKnowledgeBaseModule({ userCompany, tenantId, isMasterA
   useEffect(() => {
     fetchDocuments();
   }, [tenantId, userCompany]);
+
+  useEffect(() => {
+    let active = true;
+    async function loadBranches() {
+      try {
+        const res = await getTenantBranches(userCompany || 'New Swan Group');
+        if (active && res && res.success && Array.isArray(res.branches)) {
+          setBranches(res.branches);
+        }
+      } catch (e) {
+        console.warn('Failed to load tenant branches for knowledge base:', e);
+      }
+    }
+    loadBranches();
+    return () => { active = false; };
+  }, [userCompany]);
 
   const fetchDocuments = async () => {
     setLoading(true);
@@ -104,6 +124,7 @@ export default function AIKnowledgeBaseModule({ userCompany, tenantId, isMasterA
       formData.append('title', docTitle);
       formData.append('type', docType);
       formData.append('visibility', docVisibility);
+      formData.append('branch', selectedBranch);
       if (tenantId) formData.append('tenantId', tenantId);
       if (userCompany) formData.append('company', userCompany);
       
@@ -183,6 +204,7 @@ export default function AIKnowledgeBaseModule({ userCompany, tenantId, isMasterA
     setDocTitle(doc.title);
     setDocType(doc.type || 'text');
     setDocVisibility(doc.visibility || 'internal');
+    setSelectedBranch(doc.branch || 'all');
     setIsModalOpen(true);
     
     if (!doc.content) {
@@ -202,6 +224,7 @@ export default function AIKnowledgeBaseModule({ userCompany, tenantId, isMasterA
     setDocFile(null);
     setDocType('text');
     setDocVisibility('internal');
+    setSelectedBranch('all');
     setViewingDoc(null);
   };
 
@@ -215,11 +238,14 @@ export default function AIKnowledgeBaseModule({ userCompany, tenantId, isMasterA
   const urlCount = documents.filter(d => d.type === 'url').length;
   const pdfCount = documents.filter(d => d.type === 'pdf').length;
 
-  // Search & Filter execution
+  // Search & Filter execution (Title, Type, and Branch)
   const filteredDocuments = documents.filter(doc => {
     const matchesSearch = doc.title.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesType = activeFilterTab === 'all' || doc.type === activeFilterTab;
-    return matchesSearch && matchesType;
+    const docBranchUpper = (doc.branch || 'ALL').toUpperCase();
+    const filterBranchUpper = activeBranchFilter.toUpperCase();
+    const matchesBranch = filterBranchUpper === 'ALL' || docBranchUpper === filterBranchUpper;
+    return matchesSearch && matchesType && matchesBranch;
   });
 
   return (
@@ -513,17 +539,43 @@ export default function AIKnowledgeBaseModule({ userCompany, tenantId, isMasterA
       {/* Toolbar: Search and Filter */}
       {!loading && documents.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-          <div style={{ position: 'relative', width: '100%', maxWidth: '380px' }}>
-            <span style={{ position: 'absolute', left: '0.85rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>
-              <Search size={18} />
-            </span>
-            <input 
-              type="text"
-              placeholder="Search documents by title..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              style={{ width: '100%', padding: '0.65rem 1rem 0.65rem 2.5rem', borderRadius: '10px', fontSize: '0.9rem', border: '1px solid var(--border-light)', outline: 'none' }}
-            />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <div style={{ position: 'relative', width: '100%', minWidth: '240px', maxWidth: '340px' }}>
+              <span style={{ position: 'absolute', left: '0.85rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>
+                <Search size={18} />
+              </span>
+              <input 
+                type="text"
+                placeholder="Search documents by title..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                style={{ width: '100%', padding: '0.65rem 1rem 0.65rem 2.5rem', borderRadius: '10px', fontSize: '0.9rem', border: '1px solid var(--border-light)', outline: 'none' }}
+              />
+            </div>
+
+            {branches.length > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <Building2 size={16} color="var(--text-secondary)" />
+                <select
+                  value={activeBranchFilter}
+                  onChange={(e) => setActiveBranchFilter(e.target.value)}
+                  style={{ padding: '0.55rem 0.85rem', borderRadius: '10px', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', color: 'var(--text-primary)', fontSize: '0.85rem', fontWeight: 600, outline: 'none', cursor: 'pointer' }}
+                  title="Filter by Branch / Plant"
+                >
+                  <option value="all">All Branches ({documents.length})</option>
+                  {branches.map(br => {
+                    const bVal = br.legacy_code || br.custom_code || br.branch_code;
+                    const bCount = documents.filter(d => (d.branch || '').toUpperCase() === (bVal || '').toUpperCase()).length;
+                    const bLabel = br.legacy_code ? `${br.legacy_code} (${br.branch_code})` : br.branch_name;
+                    return (
+                      <option key={br.id || br.branch_code} value={bVal}>
+                        {bLabel} ({bCount})
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+            )}
           </div>
 
           <div style={{ display: 'flex', gap: '0.25rem', background: 'var(--bg-surface)', padding: '4px', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
@@ -600,6 +652,13 @@ export default function AIKnowledgeBaseModule({ userCompany, tenantId, isMasterA
                         color: doc.visibility === 'public' ? '#10b981' : '#6b7280'
                       }}>
                         {doc.visibility === 'public' ? 'Public' : 'Internal'}
+                      </span>
+                      <span className={`kb-badge`} style={{ 
+                        background: (doc.branch && doc.branch.toLowerCase() !== 'all') ? 'rgba(37, 99, 235, 0.08)' : 'rgba(107, 114, 128, 0.08)',
+                        color: (doc.branch && doc.branch.toLowerCase() !== 'all') ? '#2563eb' : 'var(--text-secondary)',
+                        fontWeight: 600
+                      }}>
+                        {doc.branch && doc.branch.toLowerCase() !== 'all' ? `🏢 ${doc.branch}` : '🌐 All Units'}
                       </span>
                     </div>
                     <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
@@ -714,6 +773,35 @@ export default function AIKnowledgeBaseModule({ userCompany, tenantId, isMasterA
                   placeholder="e.g. Sales Script 2026, Company Policy"
                   style={{ width: '100%', padding: '0.65rem 1rem', borderRadius: '8px', border: '1px solid var(--border-light)', outline: 'none', fontSize: '0.9rem' }} 
                 />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.5rem', color: 'var(--text-primary)' }}>
+                  Target Company / Branch
+                </label>
+                <select 
+                  value={selectedBranch} 
+                  onChange={e => setSelectedBranch(e.target.value)}
+                  style={{ width: '100%', padding: '0.65rem 1rem', borderRadius: '8px', border: '1px solid var(--border-light)', outline: 'none', fontSize: '0.9rem', background: 'var(--bg-surface)', color: 'var(--text-primary)', cursor: 'pointer' }}
+                >
+                  <option value="all">🌐 All Branches / Entire Group (Common Policy/Catalog)</option>
+                  {branches.map(br => {
+                    const branchCode = br.branch_code || br.id || '';
+                    const customCode = br.legacy_code || br.custom_code || '';
+                    const label = customCode 
+                      ? `${customCode} (${branchCode}) - ${br.branch_name}`
+                      : `${br.branch_name} (${branchCode})`;
+                    const val = customCode || branchCode;
+                    return (
+                      <option key={br.id || branchCode} value={val}>
+                        🏢 {label}
+                      </option>
+                    );
+                  })}
+                </select>
+                <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.35rem', marginBottom: 0 }}>
+                  Select whether this knowledge applies across all units (e.g. New Swan Group general) or specifically to a unit like NSMLR, NSTLP, etc.
+                </p>
               </div>
 
               <div>

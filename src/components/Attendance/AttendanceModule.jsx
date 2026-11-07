@@ -794,6 +794,9 @@ export default function AttendanceModule({
   const [regularizationViewMode, setRegularizationViewMode] = useTableViewPreference('Attendance/AttendanceModule-2');
   const [hodViewMode, setHodViewMode] = useTableViewPreference('Attendance/AttendanceModule-3');
   const [teamViewMode, setTeamViewMode] = useTableViewPreference('Attendance/AttendanceModule-4');
+  const [shiftViewMode, setShiftViewMode] = useTableViewPreference('Attendance/AttendanceModule-ShiftsMaster');
+  const [leavePolicyViewMode, setLeavePolicyViewMode] = useTableViewPreference('Attendance/AttendanceModule-LeavePoliciesMaster');
+  const [geofenceViewMode, setGeofenceViewMode] = useTableViewPreference('Attendance/AttendanceModule-GeofenceMaster');
 
   // Cache only confirmed cloud punches or committed offline punches.
   const attendanceDate = getTodayDateString();
@@ -5768,13 +5771,16 @@ export default function AttendanceModule({
                     <h3 style={{ fontSize: '1rem', fontWeight: 700, margin: 0 }}>All-Employee Leave Balances Ledger</h3>
                     <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', background: 'var(--bg-primary)', padding: '0.15rem 0.5rem', borderRadius: '6px' }}>Annual Quota vs Balance</span>
                   </div>
-                  <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                    Total: {teamLeaveReportData?.roster?.length || 0} employees
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                      Total: {teamLeaveReportData?.roster?.length || 0} employees
+                    </span>
+                    <TableViewToggle view={teamViewMode} onChange={setTeamViewMode} />
+                  </div>
                 </div>
 
                 <div style={{ overflowX: 'auto', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
-                  <MobileTableView tableId="team_leave_balances_roster">
+                  <MobileTableView tableId="team_leave_balances_roster" view={teamViewMode} hideToggle={true}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem' }}>
                       <thead>
                         <tr style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontSize: '0.75rem' }}>
@@ -5898,13 +5904,16 @@ export default function AttendanceModule({
                     <Calendar size={18} color="#9333ea" />
                     <h3 style={{ fontSize: '1rem', fontWeight: 700, margin: 0 }}>Leave Applications Audit History Log</h3>
                   </div>
-                  <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                    Total requests: {teamLeaveReportData?.history?.length || 0}
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                      Total requests: {teamLeaveReportData?.history?.length || 0}
+                    </span>
+                    <TableViewToggle view={teamViewMode} onChange={setTeamViewMode} />
+                  </div>
                 </div>
 
                 <div style={{ overflowX: 'auto', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
-                  <MobileTableView tableId="team_leave_history_audit">
+                  <MobileTableView tableId="team_leave_history_audit" view={teamViewMode} hideToggle={true}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem' }}>
                       <thead>
                         <tr style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontSize: '0.75rem' }}>
@@ -6575,32 +6584,35 @@ export default function AttendanceModule({
                 </p>
               </div>
 
-              {(isAdmin || isMasterAdmin) && (
-                <button
-                  type="button"
-                  onClick={() => handleOpenShiftConfig()}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.4rem',
-                    padding: '0.45rem 0.85rem',
-                    borderRadius: '8px',
-                    border: '1px solid var(--accent-color)',
-                    background: 'rgba(37, 99, 235, 0.08)',
-                    color: 'var(--accent-color)',
-                    fontSize: '0.82rem',
-                    fontWeight: 700,
-                    cursor: 'pointer'
-                  }}
-                  title="Add or Edit Shifts"
-                >
-                  <Plus size={15} /> Add / Manage Shifts
-                </button>
-              )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                {(isAdmin || isMasterAdmin) && (
+                  <button
+                    type="button"
+                    onClick={() => handleOpenShiftConfig()}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.4rem',
+                      padding: '0.45rem 0.85rem',
+                      borderRadius: '8px',
+                      border: '1px solid var(--accent-color)',
+                      background: 'rgba(37, 99, 235, 0.08)',
+                      color: 'var(--accent-color)',
+                      fontSize: '0.82rem',
+                      fontWeight: 700,
+                      cursor: 'pointer'
+                    }}
+                    title="Add or Edit Shifts"
+                  >
+                    <Plus size={15} /> Add / Manage Shifts
+                  </button>
+                )}
+                <TableViewToggle view={shiftViewMode} onChange={setShiftViewMode} />
+              </div>
             </div>
 
             <div style={{ overflowX: 'auto', border: '1px solid var(--border-light)', borderRadius: '10px' }}>
-              <MobileTableView id="Attendance/AttendanceModule-ShiftsMaster">
+              <MobileTableView id="Attendance/AttendanceModule-ShiftsMaster" view={shiftViewMode} hideToggle={true}>
                 <table style={{ width: '100%', minWidth: `${getShiftTotalWidth()}px`, borderCollapse: 'collapse', fontSize: '0.83rem' }}>
                   <thead>
                     <tr style={{ background: 'var(--bg-primary)', borderBottom: '2px solid var(--border-light)', textAlign: 'left' }}>
@@ -6781,7 +6793,7 @@ export default function AttendanceModule({
             </div>
 
             <div style={{ overflowX: 'auto' }}>
-              <MobileTableView id="Attendance/AttendanceModule-6"><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.84rem' }}>
+              <MobileTableView id="Attendance/AttendanceModule-6" hideToggle={true}><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.84rem' }}>
                 <thead>
                   <tr style={{ background: 'var(--bg-primary)', borderBottom: '2px solid var(--border-light)', textAlign: 'left' }}>
                     <th style={{ padding: '0.75rem 1rem', fontWeight: 700 }}>Condition / Scenario</th>
@@ -7707,7 +7719,7 @@ export default function AttendanceModule({
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                     <button
                       type="button"
                       onClick={() => {
@@ -7733,11 +7745,12 @@ export default function AttendanceModule({
                       <RefreshCw size={13} className={loadingAllLeavePolicies ? 'spin' : ''} />
                       Refresh
                     </button>
+                    <TableViewToggle view={leavePolicyViewMode} onChange={setLeavePolicyViewMode} />
                   </div>
                 </div>
 
                 <div style={{ overflowX: 'auto', border: '1px solid var(--border-light)', borderRadius: '10px' }}>
-                  <MobileTableView id="Attendance/AttendanceModule-LeavePoliciesMaster">
+                  <MobileTableView id="Attendance/AttendanceModule-LeavePoliciesMaster" view={leavePolicyViewMode} hideToggle={true}>
                     <table style={{ width: '100%', minWidth: `${getLeaveTotalWidth()}px`, borderCollapse: 'collapse', fontSize: '0.83rem' }}>
                       <thead>
                         <tr style={{ background: 'var(--bg-primary)', borderBottom: '2px solid var(--border-light)', textAlign: 'left' }}>
@@ -8352,27 +8365,32 @@ export default function AttendanceModule({
                 </p>
               </div>
 
-              {(isAdmin || isMasterAdmin) && (
-                <button
-                  type="button"
-                  onClick={handleOpenAddLocation}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.4rem',
-                    padding: '0.45rem 0.85rem',
-                    borderRadius: '8px',
-                    border: '1px solid #0ea5e9',
-                    background: 'rgba(14, 165, 233, 0.08)',
-                    color: '#0ea5e9',
-                    fontSize: '0.82rem',
-                    fontWeight: 700,
-                    cursor: 'pointer'
-                  }}
-                >
-                  <Plus size={15} /> Add Office Campus
-                </button>
-              )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                {(isAdmin || isMasterAdmin) && (
+                  <button
+                    type="button"
+                    onClick={handleOpenAddLocation}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.4rem',
+                      padding: '0.45rem 0.85rem',
+                      borderRadius: '8px',
+                      border: '1px solid #0ea5e9',
+                      background: 'rgba(14, 165, 233, 0.08)',
+                      color: '#0ea5e9',
+                      fontSize: '0.82rem',
+                      fontWeight: 700,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <Plus size={15} /> Add Office Campus
+                  </button>
+                )}
+                {geofenceSettings.geofence_locations.length > 0 && (
+                  <TableViewToggle view={geofenceViewMode} onChange={setGeofenceViewMode} />
+                )}
+              </div>
             </div>
 
             {geofenceSettings.geofence_locations.length === 0 ? (
@@ -8411,7 +8429,7 @@ export default function AttendanceModule({
               </div>
             ) : (
               <div style={{ overflowX: 'auto', border: '1px solid var(--border-light)', borderRadius: '10px' }}>
-                <MobileTableView id="Attendance/AttendanceModule-GeofenceMaster">
+                <MobileTableView id="Attendance/AttendanceModule-GeofenceMaster" view={geofenceViewMode} hideToggle={true}>
                   <table style={{ width: '100%', minWidth: `${getGeofenceTotalWidth()}px`, borderCollapse: 'collapse', fontSize: '0.83rem' }}>
                     <thead>
                       <tr style={{ background: 'var(--bg-primary)', borderBottom: '2px solid var(--border-light)', textAlign: 'left' }}>
