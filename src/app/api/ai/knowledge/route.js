@@ -144,7 +144,9 @@ export async function POST(req) {
 export async function GET(req) {
   try {
     const { searchParams } = new URL(req.url);
-    const tenantId = searchParams.get('tenantId') || searchParams.get('company') || '';
+    const reqTenantId = searchParams.get('tenantId') || '';
+    const reqCompany = searchParams.get('company') || '';
+    const rawFilter = reqTenantId || reqCompany || '';
 
     const { data, error } = await supabase
       .from('company_documents')
@@ -202,15 +204,37 @@ export async function GET(req) {
 
     // Filter by tenant if provided
     let finalDocuments = parsedDocuments;
-    if (tenantId && tenantId.toLowerCase() !== 'all') {
-      const tLower = tenantId.toLowerCase().trim();
-      const isSwan = tLower.includes('swan') || ['nsmlr', 'nstlp', 'nse'].includes(tLower);
+    if (rawFilter && rawFilter.toLowerCase() !== 'all') {
+      const tLower = reqTenantId.toLowerCase().trim();
+      const cLower = reqCompany.toLowerCase().trim();
+
+      const SWAN_IDENTIFIERS = [
+        '00000000-0000-0000-0000-000000000001',
+        'tnt00002',
+        'swan',
+        'nsmlr',
+        'nstlp',
+        'nstl',
+        'nse',
+        'nse-1',
+        'nse-2',
+        'nse-6',
+        'nscpl',
+        'nsacpl'
+      ];
+
+      const isSwanRequest = SWAN_IDENTIFIERS.some(id => (tLower && tLower.includes(id)) || (cLower && cLower.includes(id)));
+
       finalDocuments = parsedDocuments.filter(d => {
         if (!d.tenantId) {
           // Untagged documents belong to primary/swan workspace
-          return isSwan;
+          return isSwanRequest;
         }
-        return d.tenantId.toLowerCase().trim() === tLower;
+        const docTenantLower = d.tenantId.toLowerCase().trim();
+        if (isSwanRequest) {
+          return SWAN_IDENTIFIERS.some(id => docTenantLower.includes(id));
+        }
+        return docTenantLower === tLower || (cLower && docTenantLower === cLower);
       });
     }
 

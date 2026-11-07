@@ -573,7 +573,7 @@ export default function CallCenterModule({ userId, userCompany = '', tenantId = 
 
         {/* Responsive Table with Draggable Resizable Columns */}
         <div style={tableScroll}>
-          <MobileTableView id="CallCenter/CallCenterModule-1" view={callLogView} hideToggle={true}><table style={{ width: `${Math.max(1185, getTotalTableWidth())}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
+          <MobileTableView id="CallCenter/CallCenterModule-1" view={callLogView} hideToggle={true}><table style={{ width: '100%', minWidth: `${Math.max(1185, getTotalTableWidth())}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
             <thead style={stickyHeader}>
               <tr style={{ fontSize: '0.76rem', textTransform: 'uppercase', color: 'var(--text-secondary, #64748b)', borderBottom: '1px solid #e2e8f0', letterSpacing: '0.04em' }}>
                 <th style={{ width: `${colWidths.time}px`, padding: '0.65rem 0.75rem', fontWeight: 700, ...stickyHeader, boxSizing: 'border-box', verticalAlign: 'middle' }}>

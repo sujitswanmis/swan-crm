@@ -667,7 +667,7 @@ function TabAgents({ agents, endpoints, endpointsReady = true, users, onRefresh,
           </div>
         </div>
         <div id="calladmin-agents-scroll" role="region" aria-label="Call agents table" tabIndex={0} style={tableScroll}>
-          <MobileTableView id="CallCenter/CallAdminModule-1" view={agentView} hideToggle={true}><table style={{ width: `${getTotalTableWidth()}px`, borderCollapse:'separate', borderSpacing:0, tableLayout: 'fixed' }}>
+          <MobileTableView id="CallCenter/CallAdminModule-1" view={agentView} hideToggle={true}><table style={{ width: '100%', minWidth: `${getTotalTableWidth()}px`, borderCollapse:'separate', borderSpacing:0, tableLayout: 'fixed' }}>
             <thead style={stickyHeader}>
               <tr style={{ fontSize: '0.78rem', textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>
                 <th style={{ width: `${colWidths.agent}px`, padding: '0.75rem 1rem', textAlign: 'left', fontWeight: 600, ...stickyHeader, boxSizing: 'border-box', verticalAlign: 'middle' }}>
@@ -1142,7 +1142,7 @@ function TabEndpoints({ scope = '', initialEndpoints = [], userCompany = '', ten
         {savingPassword && <div role="status" style={{ padding: '0.5rem 1rem' }}>Saving password…</div>}
         <fieldset disabled={!verified || savingPassword} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
         <div style={tableScroll}>
-          <MobileTableView id="CallCenter/CallAdminModule-2" view={endpointView} hideToggle={true}><table style={{ width: `${getTotalTableWidth()}px`, borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+          <MobileTableView id="CallCenter/CallAdminModule-2" view={endpointView} hideToggle={true}><table style={{ width: '100%', minWidth: `${getTotalTableWidth()}px`, borderCollapse: 'collapse', tableLayout: 'fixed' }}>
             <thead style={stickyHeader}>
               <tr style={{ fontSize:'0.78rem', textTransform:'uppercase', color:'var(--text-secondary)' }}>
                 {[
@@ -1942,7 +1942,7 @@ function TabCallLogs({ scope = '', userCompany = '', tenantId = null }) {
         {/* Main Table */}
         <div style={{ background:'white', borderRadius:'12px', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0', overflow:'hidden' }}>
           <div style={tableScroll}>
-            <MobileTableView id="CallCenter/CallAdminModule-3"><table style={{ width: source === 'db' ? `${Math.max(1400, dbColResize.getTotalTableWidth() + 40)}px` : `${Math.max(900, plivoColResize.getTotalTableWidth())}px`, tableLayout: 'fixed', borderCollapse:'collapse' }}>
+            <MobileTableView id="CallCenter/CallAdminModule-3"><table style={{ width: '100%', minWidth: source === 'db' ? `${Math.max(1400, dbColResize.getTotalTableWidth() + 40)}px` : `${Math.max(900, plivoColResize.getTotalTableWidth())}px`, tableLayout: 'fixed', borderCollapse:'collapse' }}>
               <thead style={stickyHeader}>
                 <tr style={{ fontSize:'0.78rem', textTransform:'uppercase', color:'var(--text-secondary, #64748b)', borderBottom:'1px solid #e2e8f0' }}>
                   {source === 'db' && (
@@ -2983,7 +2983,7 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
       {/* Main Table with Interactive Column Resizing (Lead Data Pattern) */}
       <div style={{ background:'white', borderRadius:'12px', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0', overflow:'hidden' }}>
         <div style={{ overflowX:'auto' }}>
-          <table style={{ width: `${getTotalTableWidth()}px`, borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+          <table style={{ width: '100%', minWidth: `${getTotalTableWidth()}px`, borderCollapse: 'collapse', tableLayout: 'fixed' }}>
             <thead style={{ backgroundColor: '#f8fafc', borderBottom:'1px solid #e2e8f0' }}>
               <tr style={{ fontSize:'0.76rem', textTransform:'uppercase', color:'#64748b', letterSpacing:'0.05em' }}>
                 {[
