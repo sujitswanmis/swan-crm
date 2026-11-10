@@ -52,6 +52,7 @@ import { enqueueOfflineAction, canPerformOfflineAction } from '@/utils/offlineSy
 import { useTableColumnResize, ColumnResizer } from '@/utils/tableColumnResize';
 import { filterVisibleSubTabs, getSubItemPermissions } from '@/utils/permissionUtils';
 import { recordLocationPingBatch } from '@/app/actions/liveTracking';
+import { detectClientPlatform, PLATFORM_LABELS } from '@/utils/platformDetection';
 import LiveFieldTrackingMap from './LiveFieldTrackingMap';
 
 const ALL_ATTENDANCE_TABS = [
@@ -1714,10 +1715,19 @@ export default function AttendanceModule({
     }
   }, [currentTime, todayRecord]);
 
-  // 2b. Background GPS Breadcrumb Ping Service during Active Shift
+  // 2b. Background GPS Breadcrumb Ping Service during Active Shift (Mobile / Android / iOS only)
   useEffect(() => {
     if (typeof window === 'undefined' || !navigator.geolocation) return;
     if (!todayRecord?.in_time || todayRecord?.out_time) return;
+
+    // Never send background pings from Desktop PCs / Windows/Mac apps so an office PC left open
+    // never overwrites or ping-pongs with the employee's traveling mobile device GPS.
+    const { platform } = detectClientPlatform();
+    const isMobileTracker =
+      platform === PLATFORM_LABELS.ANDROID_APP ||
+      platform === PLATFORM_LABELS.IOS_APP ||
+      /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '');
+    if (!isMobileTracker) return;
 
     let pingActive = true;
     const sendShiftLivePing = () => {
@@ -1732,6 +1742,18 @@ export default function AttendanceModule({
             const accuracy = pos.coords.accuracy || null;
             const targetUserId = userId || todayRecord.user_id;
 
+            let batteryPct = null;
+            let isCharging = false;
+            try {
+              if (typeof navigator !== 'undefined' && typeof navigator.getBattery === 'function') {
+                const bat = await navigator.getBattery();
+                if (bat && typeof bat.level === 'number') {
+                  batteryPct = Math.round(bat.level * 100);
+                  isCharging = Boolean(bat.charging);
+                }
+              }
+            } catch (_) {}
+
             if (targetUserId && lat && lng) {
               await recordLocationPingBatch([{
                 user_id: targetUserId,
@@ -1740,6 +1762,8 @@ export default function AttendanceModule({
                 longitude: lng,
                 speed_kmh: speed,
                 accuracy_meters: accuracy,
+                battery_pct: batteryPct,
+                is_charging: isCharging,
                 is_moving: speed > 3,
                 recorded_at: new Date().toISOString()
               }]);

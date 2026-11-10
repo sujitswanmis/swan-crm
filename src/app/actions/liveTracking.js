@@ -697,7 +697,40 @@ export async function getEmployee360Route(userId, dateStr) {
     }
 
     const totalKm = (totalMeters / 1000).toFixed(2);
-    const lastPing = pings.length > 0 ? pings[pings.length - 1] : (polyline.length > 0 ? polyline[polyline.length - 1] : null);
+    const lastPing = accuratePings.length > 0
+      ? accuratePings[accuratePings.length - 1]
+      : (pings.length > 0 ? pings[pings.length - 1] : (polyline.length > 0 ? polyline[polyline.length - 1] : null));
+
+    // Preserve latest non-null battery reading (Punch-In/Out inserts have null battery_pct)
+    let latestBattery = null;
+    for (let i = pings.length - 1; i >= 0; i--) {
+      if (pings[i]?.battery_pct != null) {
+        latestBattery = {
+          pct: Number(pings[i].battery_pct),
+          isCharging: Boolean(pings[i].is_charging),
+          recordedAt: pings[i].recorded_at
+        };
+        break;
+      }
+    }
+
+    // Check active mobile/Android app session heartbeat to distinguish Data ON vs GPS OFF
+    let mobileSessionLastActive = null;
+    try {
+      const { data: userSess } = await supabase
+        .from('user_sessions')
+        .select('device, last_active, is_active')
+        .eq('user_id', userId)
+        .eq('is_active', true)
+        .order('last_active', { ascending: false })
+        .limit(5);
+      const mobSess = (userSess || []).find(s =>
+        /Android|iPhone|iPad|iPod|Mobile|SPC Workspace APK|Capacitor/i.test(s.device || '')
+      );
+      if (mobSess?.last_active) {
+        mobileSessionLastActive = mobSess.last_active;
+      }
+    } catch (_) {}
 
     return {
       userId,
@@ -705,6 +738,12 @@ export async function getEmployee360Route(userId, dateStr) {
       totalKm: Number(totalKm),
       totalPings: Math.max(pings.length, finalPolyline.length),
       lastPing,
+      latestBattery,
+      mobileSessionLastActive,
+      shiftCompleted: Boolean(attRecord?.out_time),
+      punchInTime: attRecord?.in_time || null,
+      punchOutTime: attRecord?.out_time || null,
+      hadOfflineSync: Boolean(routePings.some(p => p.is_offline_synced)),
       polyline: finalPolyline,
       rawPolyline: polyline,
       isRoadSnapped,

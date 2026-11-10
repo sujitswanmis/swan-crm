@@ -273,6 +273,7 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
 
   const [routeData, setRouteData] = useState(null);
   const [loadingRoute, setLoadingRoute] = useState(false);
+  const [liveNowMs, setLiveNowMs] = useState(() => Date.now());
   const [executiveSearch, setExecutiveSearch] = useState('');
   const [isExecutiveDropdownOpen, setIsExecutiveDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
@@ -427,10 +428,27 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
   }, [activeMainTab, selectedCompany, selectedBranch, selectedDate]);
 
   useEffect(() => {
+    const ticker = setInterval(() => setLiveNowMs(Date.now()), 30000);
+    return () => clearInterval(ticker);
+  }, []);
+
+  useEffect(() => {
     if (selectedUserId && activeMainTab === '360_PLAYBACK') {
       loadEmployeeRoute(selectedUserId, selectedDate);
     }
   }, [selectedUserId, selectedDate, activeMainTab]);
+
+  useEffect(() => {
+    const todayIST = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+    if (activeMainTab !== '360_PLAYBACK' || !selectedUserId || selectedDate !== todayIST) return;
+    const autoSync = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      if (!isPlaying) {
+        loadEmployeeRoute(selectedUserId, selectedDate, { silent: true, forceFresh: true });
+      }
+    }, 60000);
+    return () => clearInterval(autoSync);
+  }, [selectedUserId, selectedDate, activeMainTab, isPlaying]);
 
   const loadRadarAndEmployees = async () => {
     setLoadingRadar(true);
@@ -502,10 +520,10 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
     }
   };
 
-  const loadEmployeeRoute = async (userId, dateStr) => {
+  const loadEmployeeRoute = async (userId, dateStr, { silent = false, forceFresh = false } = {}) => {
     if (!userId) return;
     const cacheKey = `${userId}_${dateStr}`;
-    if (routeCacheRef.current[cacheKey]) {
+    if (!forceFresh && routeCacheRef.current[cacheKey]) {
       setRouteData(routeCacheRef.current[cacheKey]);
       setLoadingRoute(false);
       setIsPlaying(false);
@@ -513,9 +531,11 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
       return;
     }
 
-    setLoadingRoute(true);
-    setIsPlaying(false);
-    setPlaybackIndex(0);
+    if (!silent) {
+      setLoadingRoute(true);
+      setIsPlaying(false);
+      setPlaybackIndex(0);
+    }
     try {
       const data = await getEmployee360Route(userId, dateStr);
       if (data?.polyline && data.polyline.length >= 2 && !data.isRoadSnapped) {
@@ -534,10 +554,11 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
         routeCacheRef.current[cacheKey] = data;
       }
       setRouteData(data);
+      setLiveNowMs(Date.now());
     } catch (err) {
       console.error('Failed to load 360 route:', err);
     } finally {
-      setLoadingRoute(false);
+      if (!silent) setLoadingRoute(false);
     }
   };
 
@@ -1395,35 +1416,68 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
             {/* Header Device & Stats Bar */}
             {routeData && (() => {
               const lp = routeData.lastPing;
+              const todayIST = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date(liveNowMs));
+              const isToday = selectedDate === todayIST;
+              const isShiftCompleted = Boolean(routeData.shiftCompleted);
 
-              // --- Battery ---
-              const battPct = lp?.battery_pct != null ? lp.battery_pct : null;
-              const isCharging = Boolean(lp?.is_charging);
+              // --- Battery (preserves last non-null battery reading across punch-out) ---
+              const battObj = routeData.latestBattery;
+              const battPct = battObj?.pct != null ? battObj.pct : (lp?.battery_pct != null ? Number(lp.battery_pct) : null);
+              const isCharging = battObj != null ? Boolean(battObj.isCharging) : Boolean(lp?.is_charging);
               const battColor = battPct == null ? '#64748b' : battPct <= 15 ? '#dc2626' : battPct <= 30 ? '#d97706' : '#16a34a';
               const battLabel = battPct != null ? `${battPct}%` : 'N/A';
 
-              // --- Mobile Data / Network ---
-              // is_offline_synced = true means that ping was recorded offline & synced later
-              // If the last ping itself is offline-synced, data was off at that moment
-              const isLastPingOfflineSync = Boolean(lp?.is_offline_synced);
-              // Also infer from time gap: if last ping > 10 mins ago and not today's fresh ping, data may be off
+              // --- Ping & Mobile Session Freshness (3-minute active threshold) ---
               const lastPingMs = lp?.recorded_at ? new Date(lp.recorded_at).getTime() : null;
-              const nowMs = Date.now();
-              const gapMins = lastPingMs ? Math.floor((nowMs - lastPingMs) / 60000) : null;
-              const isMobileDataOff = isLastPingOfflineSync || (gapMins != null && gapMins > 10);
-
-              // --- GPS Status ---
-              // GPS considered "off" if last ping gap > 10 minutes from now
-              const isGpsOff = gapMins != null && gapMins > 10;
-              const gpsOffSinceLabel = isGpsOff && lp?.recorded_at
-                ? (() => {
-                    const t = new Date(lp.recorded_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
-                    const hrs = Math.floor(gapMins / 60);
-                    const mins = gapMins % 60;
-                    const ago = hrs > 0 ? `${hrs}h ${mins}m ago` : `${mins}m ago`;
-                    return `Off since ${t} (${ago})`;
-                  })()
+              const gapMins = lastPingMs != null ? Math.max(0, Math.floor((liveNowMs - lastPingMs) / 60000)) : null;
+              const mobSessMs = routeData.mobileSessionLastActive ? new Date(routeData.mobileSessionLastActive).getTime() : null;
+              const mobSessGapMins = mobSessMs != null ? Math.max(0, Math.floor((liveNowMs - mobSessMs) / 60000)) : null;
+              const formatGap = (mins) => {
+                const hrs = Math.floor(mins / 60);
+                const rem = mins % 60;
+                return hrs > 0 ? `${hrs}h ${rem}m` : `${rem}m`;
+              };
+              const lastPingTimeIST = lp?.recorded_at
+                ? new Date(lp.recorded_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })
                 : null;
+
+              let mobileDataState = { label: 'No Data Yet', color: '#64748b', bg: '#f8fafc', border: '#e2e8f0', isOff: false };
+              let gpsStatusState = { label: 'No GPS Ping', color: '#64748b', bg: '#f8fafc', border: '#e2e8f0', isOff: false };
+
+              if (!isToday || isShiftCompleted) {
+                mobileDataState = routeData.hadOfflineSync
+                  ? { label: 'Offline Gaps Synced', color: '#d97706', bg: '#fffbeb', border: '#fde68a', isOff: false }
+                  : lastPingMs
+                    ? { label: 'Tracked Online', color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0', isOff: false }
+                    : { label: 'No Data Logged', color: '#64748b', bg: '#f8fafc', border: '#e2e8f0', isOff: false };
+
+                if (isShiftCompleted && routeData.punchOutTime) {
+                  const outTimeIST = new Date(routeData.punchOutTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
+                  gpsStatusState = { label: `Shift Ended (${outTimeIST})`, color: '#475569', bg: '#f1f5f9', border: '#cbd5e1', isOff: false };
+                } else {
+                  gpsStatusState = { label: `Archive (${routeData.totalPings || 0} pings)`, color: '#475569', bg: '#f1f5f9', border: '#cbd5e1', isOff: false };
+                }
+              } else if (lastPingMs == null) {
+                if (mobSessGapMins != null && mobSessGapMins <= 3) {
+                  mobileDataState = { label: 'Online (App Active)', color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0', isOff: false };
+                  gpsStatusState = { label: 'GPS Off / No Lock', color: '#ea580c', bg: '#fff7ed', border: '#fed7aa', isOff: true };
+                }
+              } else {
+                const isLastPingOfflineSync = Boolean(lp?.is_offline_synced);
+                const isGpsInactive = gapMins > 3 || isLastPingOfflineSync;
+                const isMobileAppAlive = mobSessGapMins != null && mobSessGapMins <= 3 && !isLastPingOfflineSync;
+
+                if (!isGpsInactive) {
+                  mobileDataState = { label: 'Online', color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0', isOff: false };
+                  gpsStatusState = { label: gapMins > 0 ? `Active (${gapMins}m ago)` : 'Active', color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0', isOff: false };
+                } else {
+                  const sinceLabel = `Off since ${lastPingTimeIST} (${formatGap(gapMins)} ago)`;
+                  gpsStatusState = { label: sinceLabel, color: '#ea580c', bg: '#fff7ed', border: '#fed7aa', isOff: true };
+                  mobileDataState = isMobileAppAlive
+                    ? { label: 'Online (App Active)', color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0', isOff: false }
+                    : { label: `Offline (${formatGap(gapMins)} ago)`, color: '#ea580c', bg: '#fff7ed', border: '#fed7aa', isOff: true };
+                }
+              }
 
               return (
                 <div style={{ padding: 14, background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
@@ -1441,7 +1495,6 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
 
                   {/* Row 2: Battery + Last Ping */}
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginBottom: 8 }}>
-                    {/* Battery — fixed accuracy (was using truthy check, 0% would show 85%) */}
                     <div style={{ background: '#ffffff', padding: '8px 10px', borderRadius: 8, border: `1px solid ${battColor}33` }}>
                       <div style={{ fontSize: 10, color: '#64748b', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
                         {isCharging ? <BatteryCharging size={12} color="#16a34a" /> : <Battery size={12} color={battColor} />}
@@ -1453,46 +1506,43 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
                       </div>
                     </div>
 
-                    {/* Last Ping */}
                     <div style={{ background: '#ffffff', padding: '8px 10px', borderRadius: 8, border: '1px solid #e2e8f0' }}>
                       <div style={{ fontSize: 10, color: '#64748b', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
                         <Clock size={12} /> LAST PING
                       </div>
                       <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>
-                        {lp?.recorded_at ? new Date(lp.recorded_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }) : 'Active'}
+                        {lastPingTimeIST || 'No Ping'}
                       </div>
                     </div>
                   </div>
 
                   {/* Row 3: Mobile Data + GPS Status */}
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
-                    {/* Mobile Data ON/OFF */}
-                    <div style={{ background: isMobileDataOff ? '#fff7ed' : '#f0fdf4', padding: '8px 10px', borderRadius: 8, border: `1px solid ${isMobileDataOff ? '#fed7aa' : '#bbf7d0'}` }}>
+                    <div style={{ background: mobileDataState.bg, padding: '8px 10px', borderRadius: 8, border: `1px solid ${mobileDataState.border}` }}>
                       <div style={{ fontSize: 10, color: '#64748b', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
-                        {isMobileDataOff ? <WifiOff size={12} color="#ea580c" /> : <Wifi size={12} color="#16a34a" />}
+                        {mobileDataState.isOff ? <WifiOff size={12} color={mobileDataState.color} /> : <Wifi size={12} color={mobileDataState.color} />}
                         MOBILE DATA
                       </div>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: isMobileDataOff ? '#ea580c' : '#16a34a', display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <span style={{ width: 7, height: 7, borderRadius: '50%', background: isMobileDataOff ? '#ea580c' : '#16a34a', display: 'inline-block', flexShrink: 0 }} />
-                        {isMobileDataOff ? 'Offline / No Data' : 'Online'}
+                      <div style={{ fontSize: 11, fontWeight: 700, color: mobileDataState.color, display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <span style={{ width: 7, height: 7, borderRadius: '50%', background: mobileDataState.color, display: 'inline-block', flexShrink: 0 }} />
+                        {mobileDataState.label}
                       </div>
                     </div>
 
-                    {/* GPS Status */}
-                    <div style={{ background: isGpsOff ? '#fff7ed' : '#f0fdf4', padding: '8px 10px', borderRadius: 8, border: `1px solid ${isGpsOff ? '#fed7aa' : '#bbf7d0'}` }}>
+                    <div style={{ background: gpsStatusState.bg, padding: '8px 10px', borderRadius: 8, border: `1px solid ${gpsStatusState.border}` }}>
                       <div style={{ fontSize: 10, color: '#64748b', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <Satellite size={12} color={isGpsOff ? '#ea580c' : '#16a34a'} /> GPS STATUS
+                        <Satellite size={12} color={gpsStatusState.color} /> GPS STATUS
                       </div>
-                      {isGpsOff ? (
-                        <div style={{ fontSize: 10, fontWeight: 700, color: '#ea580c', lineHeight: 1.3 }}>
-                          🔴 {gpsOffSinceLabel || 'Signal Lost'}
-                        </div>
-                      ) : (
-                        <div style={{ fontSize: 12, fontWeight: 700, color: '#16a34a', display: 'flex', alignItems: 'center', gap: 4 }}>
-                          <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#16a34a', display: 'inline-block', flexShrink: 0 }} />
-                          Active
-                        </div>
-                      )}
+                      <div style={{ fontSize: 10.5, fontWeight: 700, color: gpsStatusState.color, lineHeight: 1.3, display: 'flex', alignItems: 'center', gap: 4 }}>
+                        {gpsStatusState.isOff ? (
+                          <span>🔴 {gpsStatusState.label}</span>
+                        ) : (
+                          <>
+                            <span style={{ width: 7, height: 7, borderRadius: '50%', background: gpsStatusState.color, display: 'inline-block', flexShrink: 0 }} />
+                            <span>{gpsStatusState.label}</span>
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>

@@ -12,6 +12,7 @@ import { getPublishedForms } from '@/app/actions/fieldFormStudio';
 import { burnWatermarkOnPhoto } from '@/utils/cameraWatermark';
 import { queueOfflineAction, getPendingQueue, syncOfflineQueue, isOnline, queueOfflineGpsPing } from '@/utils/offlineLocationVault';
 import { recordLocationPingBatch } from '@/app/actions/liveTracking';
+import { detectClientPlatform, PLATFORM_LABELS } from '@/utils/platformDetection';
 
 const CONNECTIVITY_MODES = [
   { id: 'PHYSICAL_VISIT', label: 'Physical Visit', icon: Navigation, desc: 'On-site GPS & Watermark verified. Qualifies for TA/DA petrol.', color: '#16a34a' },
@@ -475,10 +476,18 @@ export default function FieldMobileDashboard({
   useEffect(() => {
     if (!currentUserId || typeof window === 'undefined' || !navigator.geolocation) return;
 
+    // Only track live route breadcrumbs from Mobile / Android / iOS devices (never from Desktop PCs)
+    const { platform } = detectClientPlatform();
+    const isMobileTracker =
+      platform === PLATFORM_LABELS.ANDROID_APP ||
+      platform === PLATFORM_LABELS.IOS_APP ||
+      /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '');
+    if (!isMobileTracker) return;
+
     let watchId = null;
     let fallbackInterval = null;
 
-    const recordLivePing = (pos) => {
+    const recordLivePing = async (pos) => {
       if (!pos?.coords) return;
       const lat = pos.coords.latitude;
       const lng = pos.coords.longitude;
@@ -501,6 +510,18 @@ export default function FieldMobileDashboard({
         setUserLng(lng);
         setGpsAccuracy(accuracy);
 
+        let batteryPct = null;
+        let isCharging = false;
+        try {
+          if (typeof navigator !== 'undefined' && typeof navigator.getBattery === 'function') {
+            const bat = await navigator.getBattery();
+            if (bat && typeof bat.level === 'number') {
+              batteryPct = Math.round(bat.level * 100);
+              isCharging = Boolean(bat.charging);
+            }
+          }
+        } catch (_) {}
+
         const pingPayload = {
           user_id: currentUserId,
           company: company || 'TNT00001',
@@ -510,6 +531,8 @@ export default function FieldMobileDashboard({
           accuracy_meters: accuracy,
           speed_kmh: speedKmh,
           heading: heading,
+          battery_pct: batteryPct,
+          is_charging: isCharging,
           is_moving: Boolean(speedKmh > 2 || distMeters >= 25),
           recorded_at: new Date().toISOString()
         };
