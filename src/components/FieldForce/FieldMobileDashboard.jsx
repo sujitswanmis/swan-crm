@@ -482,9 +482,9 @@ export default function FieldMobileDashboard({
       if (!pos?.coords) return;
       const lat = pos.coords.latitude;
       const lng = pos.coords.longitude;
-      const accuracy = pos.coords.accuracy || null;
-      const speedKmh = pos.coords.speed != null ? Math.round(pos.coords.speed * 3.6) : 0;
-      const heading = pos.coords.heading || null;
+      const accuracy = pos.coords.accuracy != null ? Math.min(Math.round(pos.coords.accuracy), 9999) : null;
+      const speedKmh = pos.coords.speed != null ? Math.min(Math.round(pos.coords.speed * 3.6), 999) : 0;
+      const heading = pos.coords.heading != null ? Math.min(Math.round(pos.coords.heading), 360) : null;
 
       const now = Date.now();
       const last = lastRecordedGpsRef.current;
