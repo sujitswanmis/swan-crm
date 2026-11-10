@@ -33,22 +33,37 @@ export async function recordLocationPingBatch(pings) {
   const supabase = getAdminClient();
 
   try {
-    const formatted = pings.map(p => ({
-      user_id: p.user_id,
-      company: p.company || 'TNT00001',
-      branch_code: p.branch_code || null,
-      latitude: p.latitude,
-      longitude: p.longitude,
-      accuracy_meters: p.accuracy_meters != null ? Math.min(Math.round(p.accuracy_meters), 9999) : (p.accuracy != null ? Math.min(Math.round(p.accuracy), 9999) : null),
-      speed_kmh: p.speed_kmh != null ? Math.min(Math.round(p.speed_kmh), 999) : (p.speed != null ? Math.min(Math.round(p.speed), 999) : 0),
-      heading: p.heading != null ? Math.min(Math.round(p.heading), 360) : null,
-      battery_pct: p.battery_pct != null ? Math.min(Math.max(Math.round(p.battery_pct), 0), 100) : (p.battery_level != null ? Math.min(Math.max(Math.round(p.battery_level), 0), 100) : null),
-      is_charging: Boolean(p.is_charging),
-      is_moving: Boolean(p.is_moving),
-      is_mock_gps: Boolean(p.is_mock_gps),
-      is_offline_synced: Boolean(p.is_offline_synced),
-      recorded_at: p.recorded_at || new Date().toISOString()
-    }));
+    const formatted = pings
+      .filter(p => {
+        const lat = Number(p.latitude);
+        const lng = Number(p.longitude);
+        if (isNaN(lat) || isNaN(lng) || (Math.abs(lat) < 0.01 && Math.abs(lng) < 0.01)) return false;
+        if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return false;
+        // Drop desktop IP / coarse cell-tower fixes (>300m accuracy) so routes stay road-accurate
+        const rawAcc = p.accuracy_meters != null ? Number(p.accuracy_meters) : (p.accuracy != null ? Number(p.accuracy) : null);
+        if (rawAcc != null && !isNaN(rawAcc) && rawAcc > 300) return false;
+        return true;
+      })
+      .map(p => ({
+        user_id: p.user_id,
+        company: p.company || 'TNT00001',
+        branch_code: p.branch_code || null,
+        latitude: p.latitude,
+        longitude: p.longitude,
+        accuracy_meters: p.accuracy_meters != null ? Math.min(Math.round(p.accuracy_meters), 9999) : (p.accuracy != null ? Math.min(Math.round(p.accuracy), 9999) : null),
+        speed_kmh: p.speed_kmh != null ? Math.min(Math.round(p.speed_kmh), 999) : (p.speed != null ? Math.min(Math.round(p.speed), 999) : 0),
+        heading: p.heading != null ? Math.min(Math.round(p.heading), 360) : null,
+        battery_pct: p.battery_pct != null ? Math.min(Math.max(Math.round(p.battery_pct), 0), 100) : (p.battery_level != null ? Math.min(Math.max(Math.round(p.battery_level), 0), 100) : null),
+        is_charging: Boolean(p.is_charging),
+        is_moving: Boolean(p.is_moving),
+        is_mock_gps: Boolean(p.is_mock_gps),
+        is_offline_synced: Boolean(p.is_offline_synced),
+        recorded_at: p.recorded_at || new Date().toISOString()
+      }));
+
+    if (formatted.length === 0) {
+      return { success: true, count: 0, skippedLowAccuracy: pings.length };
+    }
 
     const { error } = await supabase
       .from('employee_live_locations')
@@ -118,8 +133,94 @@ export async function resolveLocationName(lat, lng) {
 }
 
 /**
- * Snaps waypoints to real OpenStreetMap road geometry via OSRM Driving Engine.
- * Supports multi-chunk stitching for long routes (>35 waypoints) with graceful fallback.
+ * Fetch helper with timeout for OSRM requests
+ */
+async function fetchOsrmJson(url, timeoutMs = 8000) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      headers: { 'Accept': 'application/json' },
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    if (!res.ok) return { ok: false, status: res.status, data: null };
+    const data = await res.json();
+    return { ok: true, status: res.status, data };
+  } catch (_) {
+    clearTimeout(timeoutId);
+    return { ok: false, status: 0, data: null };
+  }
+}
+
+/**
+ * Aligns snapped OSRM road coordinates monotonically back to original GPS waypoints
+ * so each road vertex keeps accurate segment timing, calculated speed, and offline-gap flags.
+ */
+function alignSnappedCoordsToWaypoints(stitchedCoords, valid) {
+  const N = stitchedCoords.length;
+  const M = valid.length;
+  const cumDist = new Array(N).fill(0);
+  for (let j = 1; j < N; j++) {
+    cumDist[j] = cumDist[j - 1] + haversineMeters(
+      stitchedCoords[j - 1][1], stitchedCoords[j - 1][0],
+      stitchedCoords[j][1], stitchedCoords[j][0]
+    );
+  }
+
+  const anchors = new Array(M).fill(0);
+  anchors[0] = 0;
+  anchors[M - 1] = N - 1;
+  for (let i = 1; i < M - 1; i++) {
+    let bestIdx = anchors[i - 1];
+    let bestDist = Infinity;
+    for (let k = anchors[i - 1]; k < N; k++) {
+      const d = haversineMeters(valid[i].lat, valid[i].lng, stitchedCoords[k][1], stitchedCoords[k][0]);
+      if (d < bestDist) {
+        bestDist = d;
+        bestIdx = k;
+      }
+      if (bestDist < 50 && d > 200) break;
+    }
+    anchors[i] = Math.max(anchors[i - 1], bestIdx);
+  }
+
+  const snappedPolyline = [];
+  let lastEmitted = -1;
+  for (let i = 0; i < M - 1; i++) {
+    const a = anchors[i];
+    const b = anchors[i + 1];
+    const t1 = valid[i].time ? new Date(valid[i].time).getTime() : Date.now();
+    const t2 = valid[i + 1].time ? new Date(valid[i + 1].time).getTime() : t1;
+    const gapMs = Math.max(0, t2 - t1);
+    const segIsOffline = Boolean(valid[i + 1].isOffline || gapMs > 480000);
+    const segDist = Math.max(0, cumDist[b] - cumDist[a]);
+    const calcSpeed = (gapMs > 2000 && segDist > 10)
+      ? Math.min(Math.round((segDist / (gapMs / 1000)) * 3.6), 120)
+      : Math.max(0, Math.round(Number(valid[i + 1].speed || valid[i].speed || 0)));
+
+    const startK = Math.max(a, lastEmitted + 1);
+    const endK = (i === M - 2) ? b : Math.max(a, b - 1);
+    for (let k = startK; k <= endK; k++) {
+      const frac = segDist > 0 ? Math.min(1, Math.max(0, (cumDist[k] - cumDist[a]) / segDist)) : 0;
+      snappedPolyline.push({
+        lat: stitchedCoords[k][1],
+        lng: stitchedCoords[k][0],
+        time: new Date(t1 + frac * gapMs).toISOString(),
+        speed: calcSpeed,
+        isSnapped: true,
+        isOffline: segIsOffline
+      });
+      lastEmitted = k;
+    }
+  }
+  return snappedPolyline;
+}
+
+/**
+ * Snaps GPS breadcrumbs to actual travelled road geometry using OSRM Map Matching API.
+ * Uses /match (Hidden Markov Model) with radiuses clamped <= 40m (OSRM hard server limit).
+ * Filters inaccurate (>300m) pings, deduplicates stationary jitter, and aligns timing per segment.
  */
 async function snapWaypointsToRoad(waypoints) {
   if (!Array.isArray(waypoints) || waypoints.length < 2) {
@@ -127,18 +228,43 @@ async function snapWaypointsToRoad(waypoints) {
   }
 
   try {
-    const valid = waypoints.filter(p => {
+    // 1. Valid non-zero coordinates
+    let valid = waypoints.filter(p => {
       const lat = Number(p.lat);
       const lng = Number(p.lng);
-      return !isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0;
+      return !isNaN(lat) && !isNaN(lng) &&
+             lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180 &&
+             (Math.abs(lat) > 0.01 || Math.abs(lng) > 0.01);
     });
-
     if (valid.length < 2) {
       return { polyline: waypoints, totalDistanceMeters: 0, snapped: false };
     }
 
-    // Split points into chunks of 35 with 1 overlapping point between chunks
-    const chunkSize = 35;
+    // 2. Drop wildly inaccurate pings (>300m) when acceptable pings exist
+    const accuracyFiltered = valid.filter(p => {
+      const acc = p.accuracy_meters != null ? Number(p.accuracy_meters) : null;
+      return acc == null || isNaN(acc) || acc <= 300;
+    });
+    if (accuracyFiltered.length >= 2) valid = accuracyFiltered;
+
+    // 3. Filter impossible speed spikes (>130 km/h over >250m within 5 mins) & stationary jitter (<8m)
+    const cleaned = [valid[0]];
+    for (let i = 1; i < valid.length; i++) {
+      const prev = cleaned[cleaned.length - 1];
+      const cur = valid[i];
+      const dist = haversineMeters(prev.lat, prev.lng, cur.lat, cur.lng);
+      const dtSec = (prev.time && cur.time) ? Math.max(0, (new Date(cur.time) - new Date(prev.time)) / 1000) : 60;
+      const spdKmh = dtSec > 0 ? (dist / dtSec) * 3.6 : (dist > 50 ? 999 : 0);
+
+      if (dist > 250 && spdKmh > 130 && dtSec < 300) continue; // skip teleport spike
+      if (dist >= 8 || cur.isOffline || i === valid.length - 1) {
+        cleaned.push(cur);
+      }
+    }
+    if (cleaned.length >= 2) valid = cleaned;
+
+    // 4. Chunk into max 90 points with 1 overlap
+    const chunkSize = 90;
     const chunks = [];
     if (valid.length <= chunkSize) {
       chunks.push(valid);
@@ -154,28 +280,37 @@ async function snapWaypointsToRoad(waypoints) {
 
     for (const chunk of chunks) {
       if (chunk.length < 2) continue;
+
       const coordStr = chunk.map(p => `${Number(p.lng).toFixed(6)},${Number(p.lat).toFixed(6)}`).join(';');
-      const url = `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=full&geometries=geojson`;
+      // OSRM demo /match rejects radius > 40m with 400 TooBig; clamp cleanly to [25, 40]
+      const radiusStr = chunk
+        .map(p => {
+          const acc = p.accuracy_meters != null ? Number(p.accuracy_meters) : NaN;
+          if (isNaN(acc) || acc <= 0) return '35';
+          return String(Math.min(Math.max(Math.round(acc), 25), 40));
+        })
+        .join(';');
 
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 6000);
+      // Use gaps=ignore & omit timestamps (OSRM drops middle stopped waypoints when timestamps stay flat/slow)
+      const matchUrl = `https://router.project-osrm.org/match/v1/driving/${coordStr}?overview=full&geometries=geojson&gaps=ignore&tidy=false&radiuses=${radiusStr}`;
+      const matchRes = await fetchOsrmJson(matchUrl, 8000);
 
-      const res = await fetch(url, {
-        headers: { 'Accept': 'application/json' },
-        signal: controller.signal
-      });
-      clearTimeout(timeoutId);
-
-      if (!res.ok) continue;
-
-      const data = await res.json();
-      if (data.code === 'Ok' && data.routes?.[0]?.geometry?.coordinates) {
-        const road = data.routes[0].geometry.coordinates;
-        totalDistanceMeters += (data.routes[0].distance || 0);
-        if (stitchedCoords.length === 0) {
-          stitchedCoords = road;
-        } else {
-          stitchedCoords = stitchedCoords.concat(road.slice(1));
+      if (matchRes.ok && matchRes.data?.code === 'Ok' && Array.isArray(matchRes.data.matchings) && matchRes.data.matchings.length > 0) {
+        for (const matching of matchRes.data.matchings) {
+          const road = matching.geometry?.coordinates;
+          if (!road || road.length === 0) continue;
+          totalDistanceMeters += (matching.distance || 0);
+          stitchedCoords = stitchedCoords.length === 0 ? road : stitchedCoords.concat(road.slice(1));
+        }
+      } else {
+        // Fallback for sparse or off-road chunk: /route with continue_straight=true prevents U-turn loops
+        const unlimitedRads = chunk.map(() => 'unlimited').join(';');
+        const routeUrl = `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=full&geometries=geojson&continue_straight=true&radiuses=${unlimitedRads}`;
+        const routeRes = await fetchOsrmJson(routeUrl, 6000);
+        const road = routeRes.data?.routes?.[0]?.geometry?.coordinates;
+        if (routeRes.ok && routeRes.data?.code === 'Ok' && road?.length > 0) {
+          totalDistanceMeters += (routeRes.data.routes[0].distance || 0);
+          stitchedCoords = stitchedCoords.length === 0 ? road : stitchedCoords.concat(road.slice(1));
         }
       }
     }
@@ -184,41 +319,13 @@ async function snapWaypointsToRoad(waypoints) {
       return { polyline: waypoints, totalDistanceMeters: 0, snapped: false };
     }
 
-    const tStart = valid[0].time ? new Date(valid[0].time).getTime() : Date.now();
-    const tEnd = valid[valid.length - 1].time ? new Date(valid[valid.length - 1].time).getTime() : tStart + 3600000;
-    const timeSpan = Math.max(1000, tEnd - tStart);
-
-    const snappedPolyline = stitchedCoords.map(([lng, lat], idx) => {
-      const progress = idx / (stitchedCoords.length - 1);
-      const curT = tStart + progress * timeSpan;
-      const interpolatedTime = new Date(curT).toISOString();
-
-      // Check if this point falls into an offline gap (> 8 mins)
-      const isPointOffline = valid.some((w, wIdx) => {
-        if (wIdx === 0) return false;
-        const wPrev = valid[wIdx - 1];
-        const t1 = new Date(wPrev.time).getTime();
-        const t2 = new Date(w.time).getTime();
-        return (w.isOffline || (t2 - t1) > 480000) && curT >= t1 && curT <= t2;
-      });
-
-      return {
-        lat,
-        lng,
-        time: interpolatedTime,
-        speed: 25,
-        isSnapped: true,
-        isOffline: Boolean(isPointOffline)
-      };
-    });
-
     return {
-      polyline: snappedPolyline,
+      polyline: alignSnappedCoordsToWaypoints(stitchedCoords, valid),
       totalDistanceMeters,
       snapped: true
     };
   } catch (err) {
-    console.warn('OSRM road snapping fallback:', err?.message || err);
+    console.warn('OSRM map matching fallback:', err?.message || err);
     return { polyline: waypoints, totalDistanceMeters: 0, snapped: false };
   }
 }
@@ -310,6 +417,7 @@ export async function getEmployee360Route(userId, dateStr) {
             lng: pLng,
             time: attRecord.in_time,
             speed: 0,
+            accuracy_meters: 25,
             isOffline: false,
             label: 'Punch In'
           };
@@ -353,10 +461,12 @@ export async function getEmployee360Route(userId, dateStr) {
         }
       }
 
-      // If out_location was not GPS format, fallback to latest ping or punchIn coordinates
+      // If out_location was not GPS format, fallback to latest accurate ping or punchIn coordinates
+      const usableOutPings = pings.filter(p => p.accuracy_meters == null || Number(p.accuracy_meters) <= 300);
+      const fallbackOutSource = usableOutPings.length > 0 ? usableOutPings : pings;
       if (oLat == null || oLng == null || isNaN(oLat) || isNaN(oLng)) {
-        if (pings.length > 0) {
-          const lp = pings[pings.length - 1];
+        if (fallbackOutSource.length > 0) {
+          const lp = fallbackOutSource[fallbackOutSource.length - 1];
           oLat = Number(lp.latitude);
           oLng = Number(lp.longitude);
         } else if (punchInPoint) {
@@ -388,27 +498,45 @@ export async function getEmployee360Route(userId, dateStr) {
           lng: oLng,
           time: attRecord.out_time,
           speed: 0,
+          accuracy_meters: 25,
           isOffline: false,
           label: 'Punch Out'
         };
       }
     }
 
-    for (let i = 0; i < pings.length; i++) {
-      const p = pings[i];
+    // Filter out low-accuracy (>300m desktop/IP/cell) pings when accurate GPS/attendance points exist
+    const accuratePings = pings.filter(p => {
+      const lat = Number(p.latitude);
+      const lng = Number(p.longitude);
+      if (isNaN(lat) || isNaN(lng) || (Math.abs(lat) < 0.01 && Math.abs(lng) < 0.01)) return false;
+      const acc = p.accuracy_meters != null ? Number(p.accuracy_meters) : null;
+      return acc == null || isNaN(acc) || acc <= 300;
+    });
+    const routePings = (accuratePings.length > 0 || punchInPoint || (visits || []).length > 0)
+      ? accuratePings
+      : pings;
+
+    let lastValidPing = null;
+    for (let i = 0; i < routePings.length; i++) {
+      const p = routePings[i];
       let isOffline = Boolean(p.is_offline_synced);
 
-      if (i > 0) {
-        const prev = pings[i - 1];
-        const dist = haversineMeters(prev.latitude, prev.longitude, p.latitude, p.longitude);
-        const timeDiffSec = (new Date(p.recorded_at) - new Date(prev.recorded_at)) / 1000;
-        
+      if (lastValidPing) {
+        const dist = haversineMeters(lastValidPing.latitude, lastValidPing.longitude, p.latitude, p.longitude);
+        const timeDiffSec = (new Date(p.recorded_at) - new Date(lastValidPing.recorded_at)) / 1000;
+        const speedKmh = timeDiffSec > 0 ? (dist / timeDiffSec) * 3.6 : (dist > 50 ? 999 : 0);
+
+        // Reject impossible GPS teleportation spikes (>130 km/h over >250m within 5 mins)
+        if (dist > 250 && speedKmh > 130 && timeDiffSec < 300) {
+          continue;
+        }
+
         // Gap > 8 minutes indicates phone was offline, app closed, or GPS signal was lost
         if (timeDiffSec > 480 || p.is_offline_synced) {
           isOffline = true;
         }
 
-        const speedKmh = timeDiffSec > 0 ? (dist / timeDiffSec) * 3.6 : 0;
         if (speedKmh <= 130) {
           totalMeters += dist;
         }
@@ -418,7 +546,7 @@ export async function getEmployee360Route(userId, dateStr) {
           if (!currentStoppage) {
             currentStoppage = {
               type: 'stoppage',
-              startTime: prev.recorded_at,
+              startTime: lastValidPing.recorded_at,
               endTime: p.recorded_at,
               lat: p.latitude,
               lng: p.longitude,
@@ -448,11 +576,13 @@ export async function getEmployee360Route(userId, dateStr) {
         }
       }
 
+      lastValidPing = p;
       polyline.push({
         lat: Number(p.latitude),
         lng: Number(p.longitude),
         time: p.recorded_at,
         speed: p.speed_kmh,
+        accuracy_meters: p.accuracy_meters != null ? Number(p.accuracy_meters) : null,
         isOffline
       });
     }
@@ -542,8 +672,11 @@ export async function getEmployee360Route(userId, dateStr) {
       }
     }
 
-    // Sort timeline chronologically
+    // Sort timeline & polyline chronologically before snapping
     timeline.sort((a, b) => new Date(a.startTime || a.checkInTime) - new Date(b.startTime || b.checkInTime));
+    if (polyline.length >= 2) {
+      polyline.sort((a, b) => new Date(a.time || 0) - new Date(b.time || 0));
+    }
 
     // Snap route to real street geometry via OSRM Driving Engine
     let finalPolyline = polyline;
@@ -596,7 +729,7 @@ export async function getNationwideRadarData(company = 'TNT00001', branchCode = 
 
     let query = supabase
       .from('employee_live_locations')
-      .select('user_id, latitude, longitude, speed_kmh, battery_pct, is_moving, recorded_at, branch_code, company')
+      .select('user_id, latitude, longitude, accuracy_meters, speed_kmh, battery_pct, is_moving, recorded_at, branch_code, company')
       .gte('recorded_at', recentThreshold)
       .order('recorded_at', { ascending: false });
 
@@ -614,11 +747,18 @@ export async function getNationwideRadarData(company = 'TNT00001', branchCode = 
       return [];
     }
 
-    // Keep only the latest ping per user
+    // Keep latest accurate (<=300m or null) ping per user; fallback to any ping only if none accurate
     const userMap = new Map();
     (rawPings || []).forEach(p => {
-      if (!userMap.has(p.user_id)) {
+      const existing = userMap.get(p.user_id);
+      const isCurAcc = p.accuracy_meters == null || Number(p.accuracy_meters) <= 300;
+      if (!existing) {
         userMap.set(p.user_id, p);
+      } else {
+        const isExistingAcc = existing.accuracy_meters == null || Number(existing.accuracy_meters) <= 300;
+        if (!isExistingAcc && isCurAcc) {
+          userMap.set(p.user_id, p);
+        }
       }
     });
 

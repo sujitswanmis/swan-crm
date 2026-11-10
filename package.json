@@ -1,6 +1,6 @@
 {
   "name": "crm",
-  "version": "2.5.1093",
+  "version": "2.5.1094",
   "private": true,
   "main": "desktop/main.js",
   "scripts": {

@@ -42,17 +42,112 @@ function calculateBearing(lat1, lon1, lat2, lon2) {
   return (brng + 360) % 360;
 }
 
-// Client-side OSRM Road-Snapping helper with batched chunk stitching
+// Local Haversine distance in meters for map matching alignment
+function haversineDistMeters(lat1, lon1, lat2, lon2) {
+  if (lat1 == null || lon1 == null || lat2 == null || lon2 == null) return 0;
+  const R = 6371000;
+  const dLat = ((Number(lat2) - Number(lat1)) * Math.PI) / 180;
+  const dLon = ((Number(lon2) - Number(lon1)) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((Number(lat1) * Math.PI) / 180) * Math.cos((Number(lat2) * Math.PI) / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// Align snapped road geometry monotonically back to original GPS waypoints for timing/speed/offline status
+function alignSnappedPolylineClient(stitchedCoords, valid) {
+  const N = stitchedCoords.length;
+  const M = valid.length;
+  const cumDist = new Array(N).fill(0);
+  for (let j = 1; j < N; j++) {
+    cumDist[j] = cumDist[j - 1] + haversineDistMeters(
+      stitchedCoords[j - 1][1], stitchedCoords[j - 1][0],
+      stitchedCoords[j][1], stitchedCoords[j][0]
+    );
+  }
+
+  const anchors = new Array(M).fill(0);
+  anchors[0] = 0;
+  anchors[M - 1] = N - 1;
+  for (let i = 1; i < M - 1; i++) {
+    let bestIdx = anchors[i - 1];
+    let bestDist = Infinity;
+    for (let k = anchors[i - 1]; k < N; k++) {
+      const d = haversineDistMeters(valid[i].lat, valid[i].lng, stitchedCoords[k][1], stitchedCoords[k][0]);
+      if (d < bestDist) {
+        bestDist = d;
+        bestIdx = k;
+      }
+      if (bestDist < 50 && d > 200) break;
+    }
+    anchors[i] = Math.max(anchors[i - 1], bestIdx);
+  }
+
+  const snappedPolyline = [];
+  let lastEmitted = -1;
+  for (let i = 0; i < M - 1; i++) {
+    const a = anchors[i];
+    const b = anchors[i + 1];
+    const t1 = valid[i].time ? new Date(valid[i].time).getTime() : Date.now();
+    const t2 = valid[i + 1].time ? new Date(valid[i + 1].time).getTime() : t1;
+    const gapMs = Math.max(0, t2 - t1);
+    const segIsOffline = Boolean(valid[i + 1].isOffline || gapMs > 480000);
+    const segDist = Math.max(0, cumDist[b] - cumDist[a]);
+    const calcSpeed = (gapMs > 2000 && segDist > 10)
+      ? Math.min(Math.round((segDist / (gapMs / 1000)) * 3.6), 120)
+      : Math.max(0, Math.round(Number(valid[i + 1].speed || valid[i].speed || 0)));
+
+    const startK = Math.max(a, lastEmitted + 1);
+    const endK = (i === M - 2) ? b : Math.max(a, b - 1);
+    for (let k = startK; k <= endK; k++) {
+      const frac = segDist > 0 ? Math.min(1, Math.max(0, (cumDist[k] - cumDist[a]) / segDist)) : 0;
+      snappedPolyline.push({
+        lat: stitchedCoords[k][1],
+        lng: stitchedCoords[k][0],
+        time: new Date(t1 + frac * gapMs).toISOString(),
+        speed: calcSpeed,
+        isSnapped: true,
+        isOffline: segIsOffline
+      });
+      lastEmitted = k;
+    }
+  }
+  return snappedPolyline;
+}
+
+// Client-side OSRM Map Matching fallback — uses /match (HMM) with radiuses <= 40m
 async function snapPolylineToRoadClient(waypoints) {
   if (!Array.isArray(waypoints) || waypoints.length < 2) return null;
-  const valid = waypoints.filter(p => {
+
+  let valid = waypoints.filter(p => {
     const lat = Number(p.lat);
     const lng = Number(p.lng);
-    return !isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0;
+    return !isNaN(lat) && !isNaN(lng) &&
+           lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180 &&
+           (Math.abs(lat) > 0.01 || Math.abs(lng) > 0.01);
   });
   if (valid.length < 2) return null;
 
-  const chunkSize = 35;
+  const accFiltered = valid.filter(p => {
+    const acc = p.accuracy_meters != null ? Number(p.accuracy_meters) : null;
+    return acc == null || isNaN(acc) || acc <= 300;
+  });
+  if (accFiltered.length >= 2) valid = accFiltered;
+
+  const cleaned = [valid[0]];
+  for (let i = 1; i < valid.length; i++) {
+    const prev = cleaned[cleaned.length - 1];
+    const cur = valid[i];
+    const dist = haversineDistMeters(prev.lat, prev.lng, cur.lat, cur.lng);
+    const dtSec = (prev.time && cur.time) ? Math.max(0, (new Date(cur.time) - new Date(prev.time)) / 1000) : 60;
+    const spdKmh = dtSec > 0 ? (dist / dtSec) * 3.6 : (dist > 50 ? 999 : 0);
+    if (dist > 250 && spdKmh > 130 && dtSec < 300) continue;
+    if (dist >= 8 || cur.isOffline || i === valid.length - 1) cleaned.push(cur);
+  }
+  if (cleaned.length >= 2) valid = cleaned;
+
+  const chunkSize = 90;
   const chunks = [];
   if (valid.length <= chunkSize) {
     chunks.push(valid);
@@ -70,61 +165,65 @@ async function snapPolylineToRoadClient(waypoints) {
     for (const chunk of chunks) {
       if (chunk.length < 2) continue;
       const coordStr = chunk.map(p => `${Number(p.lng).toFixed(6)},${Number(p.lat).toFixed(6)}`).join(';');
-      const url = `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=full&geometries=geojson`;
+      const radiusStr = chunk
+        .map(p => {
+          const acc = p.accuracy_meters != null ? Number(p.accuracy_meters) : NaN;
+          if (isNaN(acc) || acc <= 0) return '35';
+          return String(Math.min(Math.max(Math.round(acc), 25), 40));
+        })
+        .join(';');
 
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 6000);
-      const res = await fetch(url, { headers: { Accept: 'application/json' }, signal: controller.signal });
-      clearTimeout(timer);
-
-      if (!res.ok) continue;
-      const json = await res.json();
-      if (json.code === 'Ok' && json.routes?.[0]?.geometry?.coordinates) {
-        const road = json.routes[0].geometry.coordinates;
-        totalDist += (json.routes[0].distance || 0);
-        if (stitchedCoords.length === 0) {
-          stitchedCoords = road;
-        } else {
-          stitchedCoords = stitchedCoords.concat(road.slice(1));
+      const matchUrl = `https://router.project-osrm.org/match/v1/driving/${coordStr}?overview=full&geometries=geojson&gaps=ignore&tidy=false&radiuses=${radiusStr}`;
+      let matched = false;
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 8000);
+        const res = await fetch(matchUrl, { headers: { Accept: 'application/json' }, signal: controller.signal });
+        clearTimeout(timer);
+        if (res.ok) {
+          const json = await res.json();
+          if (json.code === 'Ok' && Array.isArray(json.matchings) && json.matchings.length > 0) {
+            for (const matching of json.matchings) {
+              const road = matching.geometry?.coordinates;
+              if (!road?.length) continue;
+              totalDist += (matching.distance || 0);
+              stitchedCoords = stitchedCoords.length === 0 ? road : stitchedCoords.concat(road.slice(1));
+              matched = true;
+            }
+          }
         }
+      } catch (_) {}
+
+      if (!matched) {
+        try {
+          const rCtrl = new AbortController();
+          const rTimer = setTimeout(() => rCtrl.abort(), 6000);
+          const unlimitedRads = chunk.map(() => 'unlimited').join(';');
+          const rRes = await fetch(
+            `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=full&geometries=geojson&continue_straight=true&radiuses=${unlimitedRads}`,
+            { headers: { Accept: 'application/json' }, signal: rCtrl.signal }
+          );
+          clearTimeout(rTimer);
+          if (rRes.ok) {
+            const rJson = await rRes.json();
+            const road = rJson.routes?.[0]?.geometry?.coordinates;
+            if (rJson.code === 'Ok' && road?.length > 0) {
+              totalDist += (rJson.routes[0].distance || 0);
+              stitchedCoords = stitchedCoords.length === 0 ? road : stitchedCoords.concat(road.slice(1));
+            }
+          }
+        } catch (_) {}
       }
     }
 
     if (stitchedCoords.length < 2) return null;
 
-    const tStart = valid[0].time ? new Date(valid[0].time).getTime() : Date.now();
-    const tEnd = valid[valid.length - 1].time ? new Date(valid[valid.length - 1].time).getTime() : tStart + 3600000;
-    const timeSpan = Math.max(1000, tEnd - tStart);
-
-    const snappedPolyline = stitchedCoords.map(([lng, lat], idx) => {
-      const progress = idx / (stitchedCoords.length - 1);
-      const curT = tStart + progress * timeSpan;
-      const time = new Date(curT).toISOString();
-
-      const isPointOffline = valid.some((w, wIdx) => {
-        if (wIdx === 0) return false;
-        const wPrev = valid[wIdx - 1];
-        const t1 = new Date(wPrev.time).getTime();
-        const t2 = new Date(w.time).getTime();
-        return (w.isOffline || (t2 - t1) > 480000) && curT >= t1 && curT <= t2;
-      });
-
-      return {
-        lat,
-        lng,
-        time,
-        speed: 25,
-        isSnapped: true,
-        isOffline: Boolean(isPointOffline)
-      };
-    });
-
     return {
-      polyline: snappedPolyline,
+      polyline: alignSnappedPolylineClient(stitchedCoords, valid),
       totalDistanceMeters: totalDist
     };
   } catch (err) {
-    console.warn('Client road snapping error:', err?.message || err);
+    console.warn('Client map matching error:', err?.message || err);
     return null;
   }
 }
@@ -546,14 +645,16 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
     const t1 = p1.time ? new Date(p1.time).getTime() : Date.now();
     const t2 = p2.time ? new Date(p2.time).getTime() : t1;
     const interpTime = new Date(t1 + frac * (t2 - t1)).toISOString();
-    const interpSpeed = Math.round(Number(p1.speed || 25) + frac * (Number(p2.speed || 25) - Number(p1.speed || 25)));
+    const s1 = p1.speed != null ? Number(p1.speed) : 0;
+    const s2 = p2.speed != null ? Number(p2.speed) : s1;
+    const interpSpeed = Math.round(s1 + frac * (s2 - s1));
 
     const isCurrentOffline = Boolean(p1?.isOffline);
 
     setCurrentTelemetry({
       lat,
       lng,
-      speed: interpSpeed || 25,
+      speed: interpSpeed,
       time: interpTime,
       bearing: brng,
       isOffline: isCurrentOffline
@@ -1613,7 +1714,7 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
                 <div style={{ position: 'absolute', top: 12, left: 56, zIndex: 500, background: 'rgba(255,255,255,0.96)', padding: '6px 14px', borderRadius: 8, border: '1px solid #cbd5e1', color: '#0f172a', fontSize: 12, fontWeight: 700, boxShadow: '0 2px 8px rgba(0,0,0,0.1)', display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span>🚗 Live Playhead:</span>
                   <span style={{ color: currentTelemetry?.isOffline ? '#ea580c' : '#2563eb' }}>
-                    {currentTelemetry?.speed != null ? currentTelemetry.speed : (routeData.polyline[playbackIndex]?.speed || 25)} km/h
+                    {currentTelemetry?.speed != null ? currentTelemetry.speed : (routeData.polyline[playbackIndex]?.speed ?? 0)} km/h
                   </span>
                   <span style={{ color: '#64748b' }}>•</span>
                   <span>
