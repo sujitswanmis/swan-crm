@@ -80,6 +80,7 @@ const FieldTaskManager = dynamic(() => import('./FieldForce/FieldTaskManager'), 
 const AdminFormStudio = dynamic(() => import('./FieldForce/AdminFormStudio'), { loading: () => <WorkspaceSkeleton variant="table" /> });
 const LiveFieldTrackingMap = dynamic(() => import('./Attendance/LiveFieldTrackingMap'), { loading: () => <WorkspaceSkeleton variant="analytics" /> });
 const BroadcastNotificationReceiver = dynamic(() => import('./common/BroadcastNotificationReceiver'), { ssr: false });
+const GlobalMobileTelemetryTracker = dynamic(() => import('./FieldForce/GlobalMobileTelemetryTracker'), { ssr: false });
 
 markLeadStartupTiming('crm-module-ready');
 
@@ -8521,6 +8522,14 @@ export default function CRMContainer({
         isOpen={showNotificationPreferencesModal}
         onClose={() => setShowNotificationPreferencesModal(false)}
       />
+
+      {/* Always-On Mobile GPS & Battery Telemetry Tracker (Inactive on Desktop PCs) */}
+      {isMounted && userId && (
+        <GlobalMobileTelemetryTracker
+          userId={userId}
+          company={userCompany || 'TNT00001'}
+        />
+      )}
     </div>
   );
 }

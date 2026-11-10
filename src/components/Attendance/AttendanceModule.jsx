@@ -51,8 +51,6 @@ import { getCurrentGPSLocation, calculateDistanceMeters } from '@/utils/geoAtten
 import { enqueueOfflineAction, canPerformOfflineAction } from '@/utils/offlineSync';
 import { useTableColumnResize, ColumnResizer } from '@/utils/tableColumnResize';
 import { filterVisibleSubTabs, getSubItemPermissions } from '@/utils/permissionUtils';
-import { recordLocationPingBatch } from '@/app/actions/liveTracking';
-import { detectClientPlatform, PLATFORM_LABELS } from '@/utils/platformDetection';
 import LiveFieldTrackingMap from './LiveFieldTrackingMap';
 
 const ALL_ATTENDANCE_TABS = [
@@ -1715,78 +1713,7 @@ export default function AttendanceModule({
     }
   }, [currentTime, todayRecord]);
 
-  // 2b. Background GPS Breadcrumb Ping Service during Active Shift (Mobile / Android / iOS only)
-  useEffect(() => {
-    if (typeof window === 'undefined' || !navigator.geolocation) return;
-    if (!todayRecord?.in_time || todayRecord?.out_time) return;
-
-    // Never send background pings from Desktop PCs / Windows/Mac apps so an office PC left open
-    // never overwrites or ping-pongs with the employee's traveling mobile device GPS.
-    const { platform } = detectClientPlatform();
-    const isMobileTracker =
-      platform === PLATFORM_LABELS.ANDROID_APP ||
-      platform === PLATFORM_LABELS.IOS_APP ||
-      /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '');
-    if (!isMobileTracker) return;
-
-    let pingActive = true;
-    const sendShiftLivePing = () => {
-      if (!pingActive || !navigator.onLine) return;
-      navigator.geolocation.getCurrentPosition(
-        async (pos) => {
-          if (!pingActive) return;
-          try {
-            const lat = pos.coords.latitude;
-            const lng = pos.coords.longitude;
-            const speed = pos.coords.speed ? Math.round(pos.coords.speed * 3.6) : 0;
-            const accuracy = pos.coords.accuracy || null;
-            const targetUserId = userId || todayRecord.user_id;
-
-            let batteryPct = null;
-            let isCharging = false;
-            try {
-              if (typeof navigator !== 'undefined' && typeof navigator.getBattery === 'function') {
-                const bat = await navigator.getBattery();
-                if (bat && typeof bat.level === 'number') {
-                  batteryPct = Math.round(bat.level * 100);
-                  isCharging = Boolean(bat.charging);
-                }
-              }
-            } catch (_) {}
-
-            if (targetUserId && lat && lng) {
-              await recordLocationPingBatch([{
-                user_id: targetUserId,
-                company: userCompany || 'TNT00001',
-                latitude: lat,
-                longitude: lng,
-                speed_kmh: speed,
-                accuracy_meters: accuracy,
-                battery_pct: batteryPct,
-                is_charging: isCharging,
-                is_moving: speed > 3,
-                recorded_at: new Date().toISOString()
-              }]);
-            }
-          } catch (e) {
-            console.debug('Background GPS ping suppressed:', e);
-          }
-        },
-        () => {},
-        { enableHighAccuracy: true, timeout: 12000, maximumAge: 10000 }
-      );
-    };
-
-    // Immediate ping on mount if punched in
-    sendShiftLivePing();
-
-    // Periodic ping every 60 seconds
-    const pingTimer = setInterval(sendShiftLivePing, 60000);
-    return () => {
-      pingActive = false;
-      clearInterval(pingTimer);
-    };
-  }, [todayRecord?.in_time, todayRecord?.out_time, userId, userCompany]);
+  // 2b. Live Mobile GPS & Battery tracking now runs globally via GlobalMobileTelemetryTracker in CRMContainer.
 
   // 3. Load Today's Attendance (Silent on focus/background to prevent button freezing)
   const fetchTodayAttendance = useCallback(async (clearError = false, isSilent = false) => {

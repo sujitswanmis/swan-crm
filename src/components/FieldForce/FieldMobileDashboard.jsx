@@ -10,9 +10,7 @@ import {
 import { performCheckIn, performCheckOutWithOutput, getFieldTasksForUser, getModuleEntitiesForCheckIn, getActiveFieldVisit, getUserCompletedVisitsToday, getTodayUserAttendanceStatus } from '@/app/actions/fieldTasks';
 import { getPublishedForms } from '@/app/actions/fieldFormStudio';
 import { burnWatermarkOnPhoto } from '@/utils/cameraWatermark';
-import { queueOfflineAction, getPendingQueue, syncOfflineQueue, isOnline, queueOfflineGpsPing } from '@/utils/offlineLocationVault';
-import { recordLocationPingBatch } from '@/app/actions/liveTracking';
-import { detectClientPlatform, PLATFORM_LABELS } from '@/utils/platformDetection';
+import { queueOfflineAction, getPendingQueue, syncOfflineQueue, isOnline } from '@/utils/offlineLocationVault';
 
 const CONNECTIVITY_MODES = [
   { id: 'PHYSICAL_VISIT', label: 'Physical Visit', icon: Navigation, desc: 'On-site GPS & Watermark verified. Qualifies for TA/DA petrol.', color: '#16a34a' },
@@ -469,110 +467,21 @@ export default function FieldMobileDashboard({
   }, [activeCheckInTime, activeTab]);
 
   // -------------------------------------------------------------
-  // On-Duty Continuous GPS Breadcrumb Tracker
+  // Synchronize on-screen coordinates from GlobalMobileTelemetryTracker
   // -------------------------------------------------------------
-  const lastRecordedGpsRef = useRef({ lat: null, lng: null, time: 0 });
-
   useEffect(() => {
-    if (!currentUserId || typeof window === 'undefined' || !navigator.geolocation) return;
-
-    // Only track live route breadcrumbs from Mobile / Android / iOS devices (never from Desktop PCs)
-    const { platform } = detectClientPlatform();
-    const isMobileTracker =
-      platform === PLATFORM_LABELS.ANDROID_APP ||
-      platform === PLATFORM_LABELS.IOS_APP ||
-      /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '');
-    if (!isMobileTracker) return;
-
-    let watchId = null;
-    let fallbackInterval = null;
-
-    const recordLivePing = async (pos) => {
-      if (!pos?.coords) return;
-      const lat = pos.coords.latitude;
-      const lng = pos.coords.longitude;
-      const accuracy = pos.coords.accuracy != null ? Math.min(Math.round(pos.coords.accuracy), 9999) : null;
-      const speedKmh = pos.coords.speed != null ? Math.min(Math.round(pos.coords.speed * 3.6), 999) : 0;
-      const heading = pos.coords.heading != null ? Math.min(Math.round(pos.coords.heading), 360) : null;
-
-      const now = Date.now();
-      const last = lastRecordedGpsRef.current;
-
-      let distMeters = 999;
-      if (last.lat && last.lng) {
-        distMeters = calculateHaversineMeters(last.lat, last.lng, lat, lng);
-      }
-
-      // Record breadcrumb if initial point, moved >= 25m, or 3 mins elapsed
-      if (!last.lat || distMeters >= 25 || (now - last.time > 180000)) {
-        lastRecordedGpsRef.current = { lat, lng, time: now };
-        setUserLat(lat);
-        setUserLng(lng);
-        setGpsAccuracy(accuracy);
-
-        let batteryPct = null;
-        let isCharging = false;
-        try {
-          if (typeof navigator !== 'undefined' && typeof navigator.getBattery === 'function') {
-            const bat = await navigator.getBattery();
-            if (bat && typeof bat.level === 'number') {
-              batteryPct = Math.round(bat.level * 100);
-              isCharging = Boolean(bat.charging);
-            }
-          }
-        } catch (_) {}
-
-        const pingPayload = {
-          user_id: currentUserId,
-          company: company || 'TNT00001',
-          branch_code: branchCode || null,
-          latitude: lat,
-          longitude: lng,
-          accuracy_meters: accuracy,
-          speed_kmh: speedKmh,
-          heading: heading,
-          battery_pct: batteryPct,
-          is_charging: isCharging,
-          is_moving: Boolean(speedKmh > 2 || distMeters >= 25),
-          recorded_at: new Date().toISOString()
-        };
-
-        if (navigator.onLine) {
-          recordLocationPingBatch([pingPayload]).catch((err) => {
-            console.warn('Live GPS ping remote error, saved to offline vault:', err);
-            queueOfflineGpsPing(pingPayload);
-          });
-        } else {
-          queueOfflineGpsPing(pingPayload);
-        }
-      }
+    if (typeof window === 'undefined') return;
+    const handleGlobalGpsFix = (e) => {
+      const detail = e?.detail;
+      if (!detail || detail.lat == null || detail.lng == null) return;
+      setUserLat(detail.lat);
+      setUserLng(detail.lng);
+      if (detail.accuracy != null) setGpsAccuracy(detail.accuracy);
+      setGpsError(null);
     };
-
-    try {
-      watchId = navigator.geolocation.watchPosition(
-        recordLivePing,
-        (err) => console.warn('GPS Watcher notice:', err?.message),
-        { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 }
-      );
-    } catch (e) {
-      console.warn('Geolocation watchPosition unavailable:', e);
-    }
-
-    fallbackInterval = setInterval(() => {
-      navigator.geolocation.getCurrentPosition(
-        recordLivePing,
-        () => {},
-        { enableHighAccuracy: true, maximumAge: 15000, timeout: 15000 }
-      );
-    }, 45000);
-
-    return () => {
-      if (watchId !== null) {
-        try { navigator.geolocation.clearWatch(watchId); } catch (_) {}
-      }
-      if (fallbackInterval) clearInterval(fallbackInterval);
-    };
-  }, [currentUserId, company, branchCode]);
+    window.addEventListener('spc_mobile_gps_fix', handleGlobalGpsFix);
+    return () => window.removeEventListener('spc_mobile_gps_fix', handleGlobalGpsFix);
+  }, []);
 
   // 5. Select Task to Check-In
   const handleSelectTask = (task) => {
