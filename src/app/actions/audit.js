@@ -2,7 +2,15 @@
 
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/utils/supabase/server';
-import { headers } from 'next/headers';
+import { headers, cookies } from 'next/headers';
+import {
+  resolvePlatformFromRequest,
+  normalizePlatformLabel,
+  inferPlatformFromSessions,
+  PLATFORM_LABELS,
+  CLIENT_PLATFORM_COOKIE,
+  CLIENT_PLATFORM_DETAILS_COOKIE
+} from '@/utils/platformDetection';
 
 const getAdminClient = () => {
   return createSupabaseClient(
@@ -50,22 +58,87 @@ async function resolveClientIp() {
   return '127.0.0.1 (Local)';
 }
 
+function isMissingPlatformColumnError(error) {
+  const code = String(error?.code || '');
+  const msg = String(error?.message || '').toLowerCase();
+  return (
+    code === 'PGRST204' ||
+    code === '42703' ||
+    msg.includes('platform') && (msg.includes('column') || msg.includes('schema cache'))
+  );
+}
+
+function sanitizeAuditIp(rawIp, rawTarget = '') {
+  const ip = String(rawIp || '').trim();
+  if (!ip || ip === 'Web App' || ip === 'Logged via Web App') return null;
+  if (rawTarget && ip === String(rawTarget).trim()) return null;
+  if (ip.length > 45 && !ip.includes('(Local)')) return null;
+  return ip;
+}
+
+async function resolveClientPlatform(explicitPlatform = '', explicitDetails = '') {
+  let userAgent = '';
+  let xRequestedWith = '';
+  let xPlatform = '';
+  let secChUaPlatform = '';
+  let cookiePlatform = '';
+  let cookieDetails = '';
+
+  try {
+    const h = await headers();
+    userAgent = h.get('user-agent') || '';
+    xRequestedWith = h.get('x-requested-with') || '';
+    xPlatform = h.get('x-spc-platform') || '';
+    secChUaPlatform = h.get('sec-ch-ua-platform') || '';
+  } catch (_e) {}
+
+  try {
+    const c = await cookies();
+    cookiePlatform = decodeURIComponent(c.get(CLIENT_PLATFORM_COOKIE)?.value || '');
+    cookieDetails = decodeURIComponent(c.get(CLIENT_PLATFORM_DETAILS_COOKIE)?.value || '');
+  } catch (_e) {}
+
+  return resolvePlatformFromRequest({
+    userAgent,
+    xRequestedWith,
+    xPlatform,
+    secChUaPlatform,
+    cookiePlatform,
+    cookieDetails,
+    explicitPlatform,
+    explicitDetails
+  });
+}
+
 export async function logAuditAction(action, target, details = {}) {
   try {
+    const actionObj = (typeof action === 'object' && action !== null) ? action : null;
     let actionStr = action;
     let targetStr = target;
     let detailsInfo = details;
 
     // Handle single object parameter e.g. logAuditAction({ action, target, ... })
-    if (typeof action === 'object' && action !== null) {
-      actionStr = action.action || 'Action';
-      targetStr = action.target || action.details || '';
-      detailsInfo = action.details || '';
+    if (actionObj) {
+      actionStr = actionObj.action || 'Action';
+      targetStr = actionObj.target || (typeof actionObj.details === 'string' ? actionObj.details : '') || '';
+      detailsInfo = actionObj.details ?? '';
     }
 
-    let empName = 'System User';
-    let userEmail = 'system@internal';
-    let userId = null;
+    const explicitPlatform =
+      actionObj?.platform ||
+      (typeof detailsInfo === 'object' && detailsInfo !== null ? detailsInfo.platform : '') ||
+      '';
+    const explicitDetails =
+      actionObj?.platformDetails ||
+      actionObj?.platform_details ||
+      (typeof detailsInfo === 'object' && detailsInfo !== null
+        ? (detailsInfo.platformDetails || detailsInfo.platform_details || '')
+        : '') ||
+      '';
+
+    let empName = actionObj?.userName || actionObj?.performedBy || 'System User';
+    let userEmail = actionObj?.userEmail || 'system@internal';
+    let userId = actionObj?.userId || null;
 
     try {
       const supabase = await createClient();
@@ -73,8 +146,8 @@ export async function logAuditAction(action, target, details = {}) {
       const user = data?.user || null;
       if (user) {
         userId = user.id;
-        userEmail = user.email || 'system@internal';
-        empName = user.user_metadata?.full_name || user.user_metadata?.emp_name;
+        userEmail = user.email || userEmail;
+        empName = user.user_metadata?.full_name || user.user_metadata?.emp_name || actionObj?.userName;
         if (!empName) {
           const adminClient = getAdminClient();
           const { data: roleData } = await adminClient
@@ -95,12 +168,15 @@ export async function logAuditAction(action, target, details = {}) {
       // Fallback gracefully
     }
 
-    const clientIp = await resolveClientIp();
-    const ipAddressVal = (typeof detailsInfo === 'string' && detailsInfo && detailsInfo !== 'Web App')
-      ? detailsInfo
-      : ((detailsInfo?.ip && detailsInfo.ip !== 'Web App') ? detailsInfo.ip : clientIp);
+    const [clientIp, resolvedPlatform] = await Promise.all([
+      resolveClientIp(),
+      resolveClientPlatform(explicitPlatform, explicitDetails)
+    ]);
 
-    const payload = {
+    const objIp = (typeof detailsInfo === 'object' && detailsInfo !== null) ? sanitizeAuditIp(detailsInfo.ip) : null;
+    const ipAddressVal = objIp || clientIp;
+
+    const basePayload = {
       user_id: userId,
       emp_name: empName,
       email: userEmail,
@@ -110,8 +186,19 @@ export async function logAuditAction(action, target, details = {}) {
       created_at: new Date().toISOString()
     };
 
+    const fullPayload = {
+      ...basePayload,
+      platform: resolvedPlatform.platform,
+      platform_details: resolvedPlatform.details
+    };
+
     const adminClient = getAdminClient();
-    const { error } = await adminClient.from('audit_logs').insert([payload]);
+    let { error } = await adminClient.from('audit_logs').insert([fullPayload]);
+    if (error && isMissingPlatformColumnError(error)) {
+      const fallbackRes = await adminClient.from('audit_logs').insert([basePayload]);
+      error = fallbackRes.error;
+    }
+
     if (error) {
       console.warn('Audit Log Insert Warning:', error.message);
       return { success: false, error: error.message };
@@ -229,6 +316,7 @@ export async function getAuditLogs({
   actionType = 'all',
   actionFilter = '',
   module = 'all',
+  platform = 'all',
   userId = 'all',
   timeOfDay = 'all', // 'all' | 'off_hours' | 'day' | 'night' | 'custom'
   customTimeFrom = '19:00',
@@ -241,10 +329,6 @@ export async function getAuditLogs({
   try {
     const adminClient = getAdminClient();
     const { offHoursIds, nightShiftIds } = await refreshShiftLogCache(adminClient);
-
-    let query = adminClient
-      .from('audit_logs')
-      .select('*', { count: 'exact' });
 
     // Company / Tenant Isolation Filter
     const compLower = String(company || '').toLowerCase().trim();
@@ -260,12 +344,13 @@ export async function getAuditLogs({
     const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl', 'tnt00002'];
     const isSwan = effectiveTenantId === '00000000-0000-0000-0000-000000000001' && (!company || compLower === 'all' || compLower === 'all companies' || SWAN_COMPANIES.includes(compLower));
 
+    let targetEmails = null;
     if (company || effectiveTenantId) {
       const { data: companyUsers } = await adminClient
         .from('user_roles')
         .select('user_id, email, company, tenant_id');
 
-      const targetEmails = (companyUsers || [])
+      targetEmails = (companyUsers || [])
         .filter(u => {
           const uComp = String(u.company || '').toLowerCase().trim();
           const rawUTenant = String(u.tenant_id || '').toLowerCase().trim();
@@ -296,152 +381,189 @@ export async function getAuditLogs({
         .map(u => (u.email || '').toLowerCase().trim())
         .filter(Boolean);
 
-      if (targetEmails.length > 0) {
-        query = query.in('email', targetEmails);
-      } else {
+      if (targetEmails.length === 0) {
         return { success: true, logs: [], totalCount: 0, page, pageSize };
       }
     }
 
     const effectiveSearch = (search || searchQuery || '').trim();
     const effectiveAction = (actionFilter || (actionType !== 'all' ? actionType : '')).trim();
-
-    // 1. Action Filter (supports groups and exact substrings)
-    if (effectiveAction) {
-      const actLower = effectiveAction.toLowerCase();
-      if (actLower === 'login') {
-        query = query.or('action.ilike.%login%,action.ilike.%logout%,action.ilike.%session%');
-      } else if (actLower === 'password') {
-        query = query.or('action.ilike.%password%,action.ilike.%role%,action.ilike.%permission%');
-      } else if (actLower === 'config') {
-        query = query.or('action.ilike.%setting%,action.ilike.%config%,action.ilike.%department%,action.ilike.%branch%');
-      } else if (actLower === 'export') {
-        query = query.or('action.ilike.%export%,action.ilike.%download%');
-      } else {
-        query = query.ilike('action', `%${effectiveAction}%`);
-      }
-    }
-
-    // 2. Module Filter (executed at database level for full pagination accuracy)
-    if (module && module !== 'all') {
-      const modLower = module.toLowerCase();
-      if (modLower.includes('lead') || modLower.includes('pipeline') || modLower.includes('crm')) {
-        query = query.or('action.ilike.%lead%,action.ilike.%stage%,action.ilike.%claim%,target.ilike.%lead%,target.ilike.%stage%,target.ilike.%pipeline%');
-      } else if (modLower.includes('team') || modLower.includes('access')) {
-        query = query.or('action.ilike.%team%,action.ilike.%employee%,action.ilike.%user%,action.ilike.%role%,action.ilike.%permission%,target.ilike.%team%,target.ilike.%employee%,target.ilike.%user%,target.ilike.%role%');
-      } else if (modLower.includes('setting') || modLower.includes('config')) {
-        query = query.or('action.ilike.%setting%,action.ilike.%profile%,action.ilike.%config%,action.ilike.%branch%,action.ilike.%department%,target.ilike.%setting%,target.ilike.%config%,target.ilike.%branch%,target.ilike.%department%');
-      } else if (modLower.includes('auth') || modLower.includes('security')) {
-        query = query.or('action.ilike.%auth%,action.ilike.%login%,action.ilike.%logout%,action.ilike.%password%,action.ilike.%session%,target.ilike.%login%,target.ilike.%logout%,target.ilike.%session%');
-      } else if (modLower.includes('report') || modLower.includes('data')) {
-        query = query.or('action.ilike.%report%,action.ilike.%export%,action.ilike.%import%,action.ilike.%download%,target.ilike.%report%,target.ilike.%export%,target.ilike.%import%');
-      } else if (modLower.includes('call')) {
-        query = query.or('action.ilike.%call%,action.ilike.%dial%,action.ilike.%ivr%,target.ilike.%call%,target.ilike.%dial%');
-      } else if (modLower.includes('message') || modLower.includes('sms') || modLower.includes('whatsapp')) {
-        query = query.or('action.ilike.%message%,action.ilike.%whatsapp%,action.ilike.%sms%,target.ilike.%whatsapp%,target.ilike.%sms%');
-      }
-    }
-
-    // 3. User Filter (safely handles UUID vs email vs text)
-    if (userId && userId !== 'all') {
-      const cleanUser = String(userId).trim();
-      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanUser);
-      if (isUuid) {
-        query = query.eq('user_id', cleanUser);
-      } else if (cleanUser.includes('@')) {
-        query = query.ilike('email', cleanUser);
-      } else {
-        query = query.or(`emp_name.ilike.%${cleanUser}%,email.ilike.%${cleanUser}%`);
-      }
-    }
-
-    // 4. Live Search Filter
-    if (effectiveSearch) {
-      query = query.or(`emp_name.ilike.%${effectiveSearch}%,email.ilike.%${effectiveSearch}%,action.ilike.%${effectiveSearch}%,target.ilike.%${effectiveSearch}%,ip_address.ilike.%${effectiveSearch}%`);
-    }
-
-    // 5. Date Range Filter in Indian Standard Time (IST)
-    if (dateFrom) {
-      query = query.gte('created_at', new Date(`${dateFrom}T00:00:00+05:30`).toISOString());
-    }
-    if (dateTo) {
-      const endOfDay = new Date(`${dateTo}T23:59:59.999+05:30`);
-      query = query.lte('created_at', endOfDay.toISOString());
-    }
-
-    // 6. Shift / Hours Filter
-    if (timeOfDay === 'off_hours') {
-      // Off hours: >= 19:00 to <= 09:00 IST
-      if (offHoursIds.length > 0) {
-        query = query.in('id', offHoursIds);
-      } else {
-        query = query.eq('id', '00000000-0000-0000-0000-000000000000');
-      }
-    } else if (timeOfDay === 'night') {
-      // Night shift: >= 20:00 to <= 08:00 IST
-      if (nightShiftIds.length > 0) {
-        query = query.in('id', nightShiftIds);
-      } else {
-        query = query.eq('id', '00000000-0000-0000-0000-000000000000');
-      }
-    } else if (timeOfDay === 'day') {
-      // Day shift: >= 09:00 to < 19:00 IST
-      if (offHoursIds.length > 0) {
-        query = query.not('id', 'in', `(${offHoursIds.join(',')})`);
-      }
-    } else if (timeOfDay === 'custom' && customTimeFrom && customTimeTo) {
-      // Custom Hours Filter in IST
-      const [fromH, fromM] = customTimeFrom.split(':').map(Number);
-      const [toH, toM] = customTimeTo.split(':').map(Number);
-      const startMin = (isNaN(fromH) ? 0 : fromH) * 60 + (isNaN(fromM) ? 0 : fromM);
-      const endMin = (isNaN(toH) ? 23 : toH) * 60 + (isNaN(toM) ? 59 : toM);
-
-      const targetDates = [];
-      if (dateFrom && dateTo) {
-        let curr = new Date(`${dateFrom}T00:00:00+05:30`);
-        const end = new Date(`${dateTo}T00:00:00+05:30`);
-        while (curr <= end && targetDates.length < 60) {
-          targetDates.push(curr.toISOString().split('T')[0]);
-          curr.setDate(curr.getDate() + 1);
-        }
-      } else if (dateFrom) {
-        targetDates.push(dateFrom);
-      } else {
-        // Default to past 30 days if no explicit date filter
-        const now = new Date();
-        for (let i = 0; i < 30; i++) {
-          const d = new Date(now.getTime() - i * 86400000);
-          targetDates.push(d.toISOString().split('T')[0]);
-        }
-      }
-
-      const intervals = [];
-      targetDates.forEach(dStr => {
-        if (startMin <= endMin) {
-          const sIso = new Date(`${dStr}T${String(Math.floor(startMin / 60)).padStart(2, '0')}:${String(startMin % 60).padStart(2, '0')}:00+05:30`).toISOString();
-          const eIso = new Date(`${dStr}T${String(Math.floor(endMin / 60)).padStart(2, '0')}:${String(endMin % 60).padStart(2, '0')}:59+05:30`).toISOString();
-          intervals.push(`and(created_at.gte.${sIso},created_at.lte.${eIso})`);
-        } else {
-          const sEveningIso = new Date(`${dStr}T${String(Math.floor(startMin / 60)).padStart(2, '0')}:${String(startMin % 60).padStart(2, '0')}:00+05:30`).toISOString();
-          const eEveningIso = new Date(`${dStr}T23:59:59.999+05:30`).toISOString();
-          const sMorningIso = new Date(`${dStr}T00:00:00+05:30`).toISOString();
-          const eMorningIso = new Date(`${dStr}T${String(Math.floor(endMin / 60)).padStart(2, '0')}:${String(endMin % 60).padStart(2, '0')}:59+05:30`).toISOString();
-          intervals.push(`and(created_at.gte.${sEveningIso},created_at.lte.${eEveningIso})`);
-          intervals.push(`and(created_at.gte.${sMorningIso},created_at.lte.${eMorningIso})`);
-        }
-      });
-
-      if (intervals.length > 0) {
-        query = query.or(intervals.join(','));
-      }
-    }
+    const normalizedPlatformFilter = (platform && platform !== 'all')
+      ? (normalizePlatformLabel(platform) || platform)
+      : 'all';
 
     const from = (page - 1) * pageSize;
     const to = from + pageSize - 1;
 
-    query = query.order('created_at', { ascending: false }).range(from, to);
+    const buildAuditLogsQuery = (includePlatformCols) => {
+      let query = adminClient
+        .from('audit_logs')
+        .select('*', { count: 'exact' });
 
-    const { data, count, error } = await query;
+      if (targetEmails && targetEmails.length > 0) {
+        query = query.in('email', targetEmails);
+      }
+
+      // 1. Action Filter (supports groups and exact substrings)
+      if (effectiveAction) {
+        const actLower = effectiveAction.toLowerCase();
+        if (actLower === 'login') {
+          query = query.or('action.ilike.%login%,action.ilike.%logout%,action.ilike.%session%');
+        } else if (actLower === 'password') {
+          query = query.or('action.ilike.%password%,action.ilike.%role%,action.ilike.%permission%');
+        } else if (actLower === 'config') {
+          query = query.or('action.ilike.%setting%,action.ilike.%config%,action.ilike.%department%,action.ilike.%branch%');
+        } else if (actLower === 'export') {
+          query = query.or('action.ilike.%export%,action.ilike.%download%');
+        } else {
+          query = query.ilike('action', `%${effectiveAction}%`);
+        }
+      }
+
+      // 2. Module Filter (executed at database level for full pagination accuracy)
+      if (module && module !== 'all') {
+        const modLower = module.toLowerCase();
+        if (modLower.includes('lead') || modLower.includes('pipeline') || modLower.includes('crm')) {
+          query = query.or('action.ilike.%lead%,action.ilike.%stage%,action.ilike.%claim%,target.ilike.%lead%,target.ilike.%stage%,target.ilike.%pipeline%');
+        } else if (modLower.includes('team') || modLower.includes('access')) {
+          query = query.or('action.ilike.%team%,action.ilike.%employee%,action.ilike.%user%,action.ilike.%role%,action.ilike.%permission%,target.ilike.%team%,target.ilike.%employee%,target.ilike.%user%,target.ilike.%role%');
+        } else if (modLower.includes('setting') || modLower.includes('config')) {
+          query = query.or('action.ilike.%setting%,action.ilike.%profile%,action.ilike.%config%,action.ilike.%branch%,action.ilike.%department%,target.ilike.%setting%,target.ilike.%config%,target.ilike.%branch%,target.ilike.%department%');
+        } else if (modLower.includes('auth') || modLower.includes('security')) {
+          query = query.or('action.ilike.%auth%,action.ilike.%login%,action.ilike.%logout%,action.ilike.%password%,action.ilike.%session%,target.ilike.%login%,target.ilike.%logout%,target.ilike.%session%');
+        } else if (modLower.includes('report') || modLower.includes('data')) {
+          query = query.or('action.ilike.%report%,action.ilike.%export%,action.ilike.%import%,action.ilike.%download%,target.ilike.%report%,target.ilike.%export%,target.ilike.%import%');
+        } else if (modLower.includes('call')) {
+          query = query.or('action.ilike.%call%,action.ilike.%dial%,action.ilike.%ivr%,target.ilike.%call%,target.ilike.%dial%');
+        } else if (modLower.includes('message') || modLower.includes('sms') || modLower.includes('whatsapp')) {
+          query = query.or('action.ilike.%message%,action.ilike.%whatsapp%,action.ilike.%sms%,target.ilike.%whatsapp%,target.ilike.%sms%');
+        }
+      }
+
+      // 2b. Platform Filter (when platform column exists)
+      if (includePlatformCols && normalizedPlatformFilter !== 'all') {
+        if (normalizedPlatformFilter === PLATFORM_LABELS.LEGACY) {
+          query = query.is('platform', null);
+        } else {
+          query = query.eq('platform', normalizedPlatformFilter);
+        }
+      }
+
+      // 3. User Filter (safely handles UUID vs email vs text)
+      if (userId && userId !== 'all') {
+        const cleanUser = String(userId).trim();
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanUser);
+        if (isUuid) {
+          query = query.eq('user_id', cleanUser);
+        } else if (cleanUser.includes('@')) {
+          query = query.ilike('email', cleanUser);
+        } else {
+          query = query.or(`emp_name.ilike.%${cleanUser}%,email.ilike.%${cleanUser}%`);
+        }
+      }
+
+      // 4. Live Search Filter
+      if (effectiveSearch) {
+        const searchFields = [
+          `emp_name.ilike.%${effectiveSearch}%`,
+          `email.ilike.%${effectiveSearch}%`,
+          `action.ilike.%${effectiveSearch}%`,
+          `target.ilike.%${effectiveSearch}%`,
+          `ip_address.ilike.%${effectiveSearch}%`
+        ];
+        if (includePlatformCols) {
+          searchFields.push(`platform.ilike.%${effectiveSearch}%`, `platform_details.ilike.%${effectiveSearch}%`);
+        }
+        query = query.or(searchFields.join(','));
+      }
+
+      // 5. Date Range Filter in Indian Standard Time (IST)
+      if (dateFrom) {
+        query = query.gte('created_at', new Date(`${dateFrom}T00:00:00+05:30`).toISOString());
+      }
+      if (dateTo) {
+        const endOfDay = new Date(`${dateTo}T23:59:59.999+05:30`);
+        query = query.lte('created_at', endOfDay.toISOString());
+      }
+
+      // 6. Shift / Hours Filter
+      if (timeOfDay === 'off_hours') {
+        if (offHoursIds.length > 0) {
+          query = query.in('id', offHoursIds);
+        } else {
+          query = query.eq('id', '00000000-0000-0000-0000-000000000000');
+        }
+      } else if (timeOfDay === 'night') {
+        if (nightShiftIds.length > 0) {
+          query = query.in('id', nightShiftIds);
+        } else {
+          query = query.eq('id', '00000000-0000-0000-0000-000000000000');
+        }
+      } else if (timeOfDay === 'day') {
+        if (offHoursIds.length > 0) {
+          query = query.not('id', 'in', `(${offHoursIds.join(',')})`);
+        }
+      } else if (timeOfDay === 'custom' && customTimeFrom && customTimeTo) {
+        const [fromH, fromM] = customTimeFrom.split(':').map(Number);
+        const [toH, toM] = customTimeTo.split(':').map(Number);
+        const startMin = (isNaN(fromH) ? 0 : fromH) * 60 + (isNaN(fromM) ? 0 : fromM);
+        const endMin = (isNaN(toH) ? 23 : toH) * 60 + (isNaN(toM) ? 59 : toM);
+
+        const targetDates = [];
+        if (dateFrom && dateTo) {
+          let curr = new Date(`${dateFrom}T00:00:00+05:30`);
+          const end = new Date(`${dateTo}T00:00:00+05:30`);
+          while (curr <= end && targetDates.length < 60) {
+            targetDates.push(curr.toISOString().split('T')[0]);
+            curr.setDate(curr.getDate() + 1);
+          }
+        } else if (dateFrom) {
+          targetDates.push(dateFrom);
+        } else {
+          const now = new Date();
+          for (let i = 0; i < 30; i++) {
+            const d = new Date(now.getTime() - i * 86400000);
+            targetDates.push(d.toISOString().split('T')[0]);
+          }
+        }
+
+        const intervals = [];
+        targetDates.forEach(dStr => {
+          if (startMin <= endMin) {
+            const sIso = new Date(`${dStr}T${String(Math.floor(startMin / 60)).padStart(2, '0')}:${String(startMin % 60).padStart(2, '0')}:00+05:30`).toISOString();
+            const eIso = new Date(`${dStr}T${String(Math.floor(endMin / 60)).padStart(2, '0')}:${String(endMin % 60).padStart(2, '0')}:59+05:30`).toISOString();
+            intervals.push(`and(created_at.gte.${sIso},created_at.lte.${eIso})`);
+          } else {
+            const sEveningIso = new Date(`${dStr}T${String(Math.floor(startMin / 60)).padStart(2, '0')}:${String(startMin % 60).padStart(2, '0')}:00+05:30`).toISOString();
+            const eEveningIso = new Date(`${dStr}T23:59:59.999+05:30`).toISOString();
+            const sMorningIso = new Date(`${dStr}T00:00:00+05:30`).toISOString();
+            const eMorningIso = new Date(`${dStr}T${String(Math.floor(endMin / 60)).padStart(2, '0')}:${String(endMin % 60).padStart(2, '0')}:59+05:30`).toISOString();
+            intervals.push(`and(created_at.gte.${sEveningIso},created_at.lte.${eEveningIso})`);
+            intervals.push(`and(created_at.gte.${sMorningIso},created_at.lte.${eMorningIso})`);
+          }
+        });
+
+        if (intervals.length > 0) {
+          query = query.or(intervals.join(','));
+        }
+      }
+
+      return query.order('created_at', { ascending: false }).range(from, to);
+    };
+
+    let { data, count, error } = await buildAuditLogsQuery(true);
+    if (error && isMissingPlatformColumnError(error)) {
+      if (normalizedPlatformFilter !== 'all' && normalizedPlatformFilter !== PLATFORM_LABELS.LEGACY) {
+        data = [];
+        count = 0;
+        error = null;
+      } else {
+        const fallbackRes = await buildAuditLogsQuery(false);
+        data = fallbackRes.data;
+        count = fallbackRes.count;
+        error = fallbackRes.error;
+      }
+    }
     if (error) throw error;
 
     // Helper to derive clean module
@@ -464,6 +586,62 @@ export async function getAuditLogs({
         .replace(/(\d+;\d+>)([^>"]+)>([^>"]+)/g, '$2 → $3')
         .replace(/(\d+;\d+>)([^>"]+)/g, '$2');
     };
+
+    // Enrich pre-deploy / null-platform rows from user_sessions (non-blocking best effort)
+    const legacyByUserId = new Map();
+    const legacyByEmail = new Map();
+    const legacyRows = (data || []).filter(r => !r.platform);
+    if (legacyRows.length > 0) {
+      try {
+        const legacyUserIds = Array.from(new Set(legacyRows.map(r => r.user_id).filter(Boolean)));
+        const legacyEmails = Array.from(new Set(
+          legacyRows
+            .flatMap(r => [r.email, r.email ? String(r.email).toLowerCase() : ''])
+            .map(e => String(e || '').trim())
+            .filter(e => e && e !== 'system@internal' && e !== '—')
+        ));
+
+        const sessionQueries = [];
+        if (legacyUserIds.length > 0) {
+          sessionQueries.push(
+            adminClient
+              .from('user_sessions')
+              .select('user_id, email, device, ip_address, last_active')
+              .in('user_id', legacyUserIds)
+              .order('last_active', { ascending: false })
+          );
+        }
+        if (legacyEmails.length > 0) {
+          sessionQueries.push(
+            adminClient
+              .from('user_sessions')
+              .select('user_id, email, device, ip_address, last_active')
+              .in('email', legacyEmails)
+              .order('last_active', { ascending: false })
+          );
+        }
+
+        const sessionResults = await Promise.allSettled(sessionQueries);
+        sessionResults.forEach(res => {
+          const rows = res.status === 'fulfilled' ? (res.value?.data || []) : [];
+          rows.forEach(s => {
+            if (s.user_id) {
+              const list = legacyByUserId.get(s.user_id) || [];
+              list.push(s);
+              legacyByUserId.set(s.user_id, list);
+            }
+            const em = String(s.email || '').toLowerCase().trim();
+            if (em) {
+              const list = legacyByEmail.get(em) || [];
+              list.push(s);
+              legacyByEmail.set(em, list);
+            }
+          });
+        });
+      } catch (_sessErr) {
+        // Non-blocking: falls back to Legacy / N/A
+      }
+    }
 
     const formattedLogs = (data || []).map(l => {
       const createdAt = new Date(l.created_at);
@@ -488,6 +666,13 @@ export async function getAuditLogs({
       });
 
       const derivedMod = deriveModule(l.action, l.target);
+      const cleanIp = sanitizeAuditIp(l.ip_address, l.target) || sanitizeAuditIp(l.details?.ip) || '127.0.0.1 (Local)';
+      const emailKey = String(l.email || '').toLowerCase().trim();
+      const candidateSessions = [
+        ...(l.user_id ? (legacyByUserId.get(l.user_id) || []) : []),
+        ...(emailKey ? (legacyByEmail.get(emailKey) || []) : [])
+      ];
+      const inferredPlatform = inferPlatformFromSessions(l, candidateSessions, cleanIp);
 
       return {
         id: l.id,
@@ -499,9 +684,10 @@ export async function getAuditLogs({
         target: cleanTargetText(l.target),
         rawTarget: l.target,
         details: l.details || {},
-        ip: (!l.ip_address || l.ip_address === 'Web App' || l.ip_address === 'Logged via Web App') 
-          ? (l.details?.ip && l.details.ip !== 'Web App' ? l.details.ip : '127.0.0.1 (Local)') 
-          : l.ip_address,
+        ip: cleanIp,
+        ip_address: cleanIp,
+        platform: inferredPlatform.platform,
+        platform_details: inferredPlatform.details,
         time: timeFormatted,
         istHours,
         istMinutes,
@@ -563,13 +749,16 @@ export async function exportAuditLogsCsv() {
 
     if (error) throw error;
 
-    const headers = ['Timestamp', 'Employee Name', 'Email', 'Action', 'Target', 'Details'];
+    const headers = ['Timestamp (IST)', 'Employee Name', 'Email', 'Action', 'Target', 'IP Address', 'Platform', 'Platform Details', 'Details'];
     const rows = (data || []).map(log => [
-      `"${new Date(log.created_at).toLocaleString('en-IN')}"`,
+      `"${new Date(log.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}"`,
       `"${log.emp_name || ''}"`,
       `"${log.email || ''}"`,
       `"${log.action || ''}"`,
-      `"${log.target || ''}"`,
+      `"${String(log.target || '').replace(/"/g, '""')}"`,
+      `"${sanitizeAuditIp(log.ip_address, log.target) || '127.0.0.1 (Local)'}"`,
+      `"${log.platform || PLATFORM_LABELS.LEGACY}"`,
+      `"${String(log.platform_details || '').replace(/"/g, '""')}"`,
       `"${JSON.stringify(log.details || {}).replace(/"/g, '""')}"`
     ]);
 

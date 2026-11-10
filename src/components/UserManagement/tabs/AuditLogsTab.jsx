@@ -4,7 +4,7 @@ import MobileTableView, { TableViewToggle, useTableViewPreference } from '@/comp
 import StandardTablePagination from '@/components/common/StandardTablePagination';
 import DateRangePicker from '@/components/common/DateRangePicker';
 import React, { useState, useEffect } from 'react';
-import { Clock, Search, RefreshCw, Filter, ShieldCheck, User, Globe, AlertCircle, ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { Clock, Search, RefreshCw, Filter, ShieldCheck, User, Globe, Monitor, Smartphone, Cpu, AlertCircle, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { getAuditLogs } from '@/app/actions/audit';
 import { formatISTDateTime } from '../utils/userManagementUtils';
 import { useTableColumnResize, ColumnResizer } from '@/utils/tableColumnResize';
@@ -16,7 +16,7 @@ const DEFAULT_AUDIT_LOGS_COL_WIDTHS = {
   target: 330,
   status: 100,
   ip_address: 140,
-  platform: 120,
+  platform: 138,
   timestamp: 180
 };
 
@@ -27,9 +27,23 @@ const MIN_AUDIT_LOGS_COL_WIDTHS = {
   target: 200,
   status: 80,
   ip_address: 110,
-  platform: 100,
+  platform: 115,
   timestamp: 150
 };
+
+const PLATFORM_STYLES = {
+  'Windows App': { label: 'Windows App', icon: Monitor, color: '#4338ca', bg: '#eef2ff', border: '#c7d2fe' },
+  'macOS App': { label: 'macOS App', icon: Monitor, color: '#4338ca', bg: '#eef2ff', border: '#c7d2fe' },
+  'Android App': { label: 'Android App', icon: Smartphone, color: '#047857', bg: '#ecfdf5', border: '#a7f3d0' },
+  'iOS App': { label: 'iOS App', icon: Smartphone, color: '#0369a1', bg: '#f0f9ff', border: '#bae6fd' },
+  'Web App': { label: 'Web App', icon: Globe, color: '#1d4ed8', bg: '#eff6ff', border: '#bfdbfe' },
+  'System': { label: 'System', icon: Cpu, color: '#b45309', bg: '#fffbeb', border: '#fde68a' },
+  'Legacy / N/A': { label: 'Legacy / N/A', icon: Clock, color: '#64748b', bg: '#f8fafc', border: '#e2e8f0' }
+};
+
+function getPlatformBadge(platform = '') {
+  return PLATFORM_STYLES[platform] || PLATFORM_STYLES['Legacy / N/A'];
+}
 
 function getAuditLogModule(log) {
   const act = String(log.action || '').toLowerCase();
@@ -62,6 +76,7 @@ export default function AuditLogsTab({ currentUserCompany = '', tenantId = null 
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [platformFilter, setPlatformFilter] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const [loadError, setLoadError] = useState('');
@@ -111,6 +126,7 @@ export default function AuditLogsTab({ currentUserCompany = '', tenantId = null 
         pageSize,
         searchQuery: searchQuery.trim(),
         module: 'all',
+        platform: platformFilter,
         company: currentUserCompany,
         tenantId,
         dateFrom,
@@ -133,7 +149,7 @@ export default function AuditLogsTab({ currentUserCompany = '', tenantId = null 
 
   useEffect(() => {
     fetchLogs(currentPage);
-  }, [currentPage, pageSize, currentUserCompany, tenantId, dateFrom, dateTo]);
+  }, [currentPage, pageSize, currentUserCompany, tenantId, dateFrom, dateTo, platformFilter]);
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
@@ -182,6 +198,33 @@ export default function AuditLogsTab({ currentUserCompany = '', tenantId = null 
               setCurrentPage(1);
             }}
           />
+
+          <select
+            value={platformFilter}
+            onChange={e => {
+              setPlatformFilter(e.target.value);
+              setCurrentPage(1);
+            }}
+            aria-label="Filter Audit Logs by Platform"
+            title="Filter by Platform"
+            style={{
+              padding: '0.42rem 0.7rem',
+              borderRadius: '8px',
+              border: '1px solid var(--border-light)',
+              backgroundColor: 'var(--bg-primary, #f8fafc)',
+              color: 'var(--text-primary)',
+              fontSize: '0.8rem',
+              fontWeight: 600,
+              cursor: 'pointer'
+            }}
+          >
+            <option value="all">All Platforms</option>
+            <option value="Web App">Web App</option>
+            <option value="Windows App">Windows App</option>
+            <option value="Android App">Android App</option>
+            <option value="iOS App">iOS App</option>
+            <option value="Legacy / N/A">Legacy / N/A</option>
+          </select>
 
           <form onSubmit={handleSearchSubmit} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', margin: 0 }}>
             <div style={{ position: 'relative', width: '280px' }}>
@@ -356,7 +399,15 @@ export default function AuditLogsTab({ currentUserCompany = '', tenantId = null 
               ) : (
                 logs.map((log, idx) => {
                   const mod = getAuditLogModule(log);
-                  const resolvedIp = (!log.ip_address && !log.ip) || log.ip_address === 'Web App' || log.ip === 'Web App' || log.ip_address === 'Logged via Web App' || log.ip === 'Logged via Web App' ? '127.0.0.1 (Local)' : (log.ip_address || log.ip);
+                  const rawIp = log.ip || log.ip_address || '';
+                  const resolvedIp = (!rawIp || rawIp === 'Web App' || rawIp === 'Logged via Web App' || (rawIp.length > 45 && !rawIp.includes('(Local)')))
+                    ? '127.0.0.1 (Local)'
+                    : rawIp;
+                  const platBadge = getPlatformBadge(log.platform);
+                  const PlatIcon = platBadge.icon;
+                  const platTitle = log.platform_details
+                    ? `${platBadge.label} — ${log.platform_details}`
+                    : platBadge.label;
                   return (
                     <tr
                       key={log.id || idx}
@@ -444,19 +495,24 @@ export default function AuditLogsTab({ currentUserCompany = '', tenantId = null 
 
                       {/* Platform */}
                       <td style={{ width: `${colWidths.platform}px`, padding: '0.75rem 1rem', fontSize: '0.78rem', color: 'var(--text-primary)', boxSizing: 'border-box', verticalAlign: 'top' }}>
-                        <span style={{
-                          fontSize: '0.72rem',
-                          fontWeight: 600,
-                          padding: '0.15rem 0.45rem',
-                          borderRadius: '6px',
-                          backgroundColor: '#f8fafc',
-                          color: '#475569',
-                          border: '1px solid #e2e8f0',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '0.3rem'
-                        }}>
-                          Web App
+                        <span
+                          title={platTitle}
+                          style={{
+                            fontSize: '0.72rem',
+                            fontWeight: 600,
+                            padding: '0.18rem 0.5rem',
+                            borderRadius: '6px',
+                            backgroundColor: platBadge.bg,
+                            color: platBadge.color,
+                            border: `1px solid ${platBadge.border}`,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.32rem',
+                            whiteSpace: 'nowrap'
+                          }}
+                        >
+                          <PlatIcon size={12} style={{ flexShrink: 0 }} />
+                          <span>{platBadge.label}</span>
                         </span>
                       </td>
 

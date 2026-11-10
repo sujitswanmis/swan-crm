@@ -198,10 +198,17 @@ function LoginFormContent() {
   const completeLoginFlow = (userId) => {
     // 1. Fire-and-forget background session & audit logging without blocking the redirect
     try {
-      import('@/app/actions/audit').then(({ logUserSession, logAuditAction }) => {
+      Promise.all([
+        import('@/app/actions/audit'),
+        import('@/utils/platformDetection')
+      ]).then(([{ logUserSession, logAuditAction }, { detectClientPlatform }]) => {
         const device = typeof navigator !== 'undefined' ? navigator.userAgent : 'Web Browser';
+        const { platform, details: platformDetails } = detectClientPlatform();
         logUserSession(device).catch(err => console.warn('Non-blocking session log:', err));
-        logAuditAction('User Login', 'User successfully logged in to Web App').catch(err => console.warn('Non-blocking audit log:', err));
+        logAuditAction('User Login', `User successfully logged in via ${platform}`, {
+          platform,
+          platformDetails
+        }).catch(err => console.warn('Non-blocking audit log:', err));
       }).catch(err => console.warn('Failed to load audit module:', err));
     } catch (e) { 
       console.warn('Failed to initiate session logging', e); 
