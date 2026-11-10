@@ -1,6 +1,6 @@
 {
   "name": "crm",
-  "version": "2.5.1098",
+  "version": "2.5.1103",
   "private": true,
   "main": "desktop/main.js",
   "scripts": {
@@ -12,7 +12,7 @@
     "desktop:build": "electron-packager desktop \"SPC Workspace\" --platform=win32 --arch=x64 --out=dist-crm-desktop --asar --overwrite",
     "android:sync": "cap sync android",
     "android:open": "cap open android",
-    "android:build": "powershell -Command \"$env:JAVA_HOME = 'C:\\Program Files\\Android\\Android Studio\\jbr'; cd android; .\\gradlew.bat assembleDebug\"",
+    "android:build": "powershell -Command \"$env:JAVA_HOME = 'C:\\Program Files\\Android\\Android Studio\\jbr'; Push-Location android; .\\gradlew.bat assembleDebug; $c = $LASTEXITCODE; Pop-Location; if ($c -ne 0) { exit $c }; New-Item -ItemType Directory -Force -Path 'SPC-APPS\\archive' | Out-Null; $dest = 'SPC-APPS\\SPC Workspace (Android).apk'; if (Test-Path $dest) { $ts = [System.TimeZoneInfo]::ConvertTimeBySystemTimeZoneId([DateTime]::UtcNow, 'India Standard Time').ToString('yyyyMMdd_HHmmss'); Move-Item -Path $dest -Destination ('SPC-APPS\\archive\\SPC Workspace (Android)_' + $ts + '.apk') }; Copy-Item -Path 'android\\app\\build\\outputs\\apk\\debug\\app-debug.apk' -Destination $dest\"",
     "ios:sync": "cap sync ios",
     "ios:open": "cap open ios"
   },

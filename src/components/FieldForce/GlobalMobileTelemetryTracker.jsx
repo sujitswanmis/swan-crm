@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { MapPinOff, X } from 'lucide-react';
-import { recordLocationPingBatch } from '@/app/actions/liveTracking';
+import { recordLocationPingBatch, issueFieldTelemetryToken } from '@/app/actions/liveTracking';
 import { detectClientPlatform, PLATFORM_LABELS } from '@/utils/platformDetection';
 import { flushOfflineVault, queueOfflineGpsPing } from '@/utils/offlineLocationVault';
 
@@ -61,6 +61,7 @@ export default function GlobalMobileTelemetryTracker({
   branchCode = null
 }) {
   const lastRecordedRef = useRef({ lat: null, lng: null, time: 0 });
+  const lastForceAtRef = useRef(0);
   const inFlightRef = useRef(false);
   const [gpsAlert, setGpsAlert] = useState(null);
   const [dismissedAlert, setDismissedAlert] = useState(false);
@@ -71,6 +72,64 @@ export default function GlobalMobileTelemetryTracker({
 
     let disposed = false;
     let watchId = null;
+    let heartbeatTimer = null;
+    let nativeServiceActive = false;
+    let lastNativeTokenAt = 0;
+
+    const getNativeTrackerPlugin = () => {
+      try {
+        if (typeof window === 'undefined') return null;
+        if (!window.Capacitor?.isNativePlatform?.()) return null;
+        return window.Capacitor?.Plugins?.FieldTracker || null;
+      } catch {
+        return null;
+      }
+    };
+
+    const startOrRefreshNativeService = async (forceRefresh = false) => {
+      const plugin = getNativeTrackerPlugin();
+      if (!plugin || disposed) return false;
+      const now = Date.now();
+      if (!forceRefresh && nativeServiceActive && now - lastNativeTokenAt < 6 * 3600 * 1000) {
+        try {
+          await plugin.flushNow();
+        } catch {}
+        return true;
+      }
+
+      try {
+        const tokenRes = await issueFieldTelemetryToken({
+          userId,
+          company: company || 'TNT00001',
+          branchCode: branchCode || null
+        });
+        if (disposed || !tokenRes?.success || !tokenRes?.token) return false;
+
+        lastNativeTokenAt = Date.now();
+        const startRes = await plugin.startTracking({
+          userId,
+          company: company || 'TNT00001',
+          branchCode: branchCode || '',
+          endpointUrl: window.location.origin,
+          token: tokenRes.token
+        });
+        if (startRes?.started || startRes?.running) {
+          nativeServiceActive = true;
+          if (heartbeatTimer) {
+            clearInterval(heartbeatTimer);
+            heartbeatTimer = null;
+          }
+          setGpsAlert(null);
+          return true;
+        }
+        if (startRes?.permissionDenied) {
+          setGpsAlert('Background location permission required for offline field tracking.');
+        }
+      } catch {
+        // Fallback smoothly to web tracker if native bridge unavailable
+      }
+      return false;
+    };
 
     const syncQueuedPings = async () => {
       if (typeof navigator !== 'undefined' && !navigator.onLine) return;
@@ -107,6 +166,9 @@ export default function GlobalMobileTelemetryTracker({
         // Ignore custom event failures
       }
 
+      // Skip web server uploads when Native Android Foreground Service is actively handling GPS + SQLite sync
+      if (nativeServiceActive) return;
+
       // Skip coarse cell-tower fixes (>300m) without updating throttle ref so a crisp fix sends immediately
       if (accuracy != null && accuracy > 300) return;
 
@@ -116,28 +178,36 @@ export default function GlobalMobileTelemetryTracker({
         ? calculateHaversineMeters(last.lat, last.lng, lat, lng)
         : 999;
 
-      // Record on initial fix, movement >= 20m, every 55s heartbeat, or explicit resume
-      const shouldSend = forceSend || !last.lat || distMeters >= 20 || (now - last.time >= 55000);
+      // Record on initial fix, movement >= 20m, true ~25s stationary heartbeat, or unthrottled resume
+      const canForce = forceSend && (now - lastForceAtRef.current >= 2000);
+      const shouldSend = canForce || !last.lat || distMeters >= 20 || (now - last.time >= 22000);
       if (!shouldSend || inFlightRef.current) return;
 
       inFlightRef.current = true;
       lastRecordedRef.current = { lat, lng, time: now };
+      if (forceSend) lastForceAtRef.current = now;
+
+      let pingPayload = {
+        user_id: userId,
+        company: company || 'TNT00001',
+        branch_code: branchCode || null,
+        latitude: lat,
+        longitude: lng,
+        accuracy_meters: accuracy,
+        speed_kmh: speedKmh,
+        heading,
+        battery_pct: null,
+        is_charging: false,
+        is_moving: Boolean(speedKmh > 2 || distMeters >= 20),
+        recorded_at: new Date().toISOString()
+      };
 
       try {
         const { batteryPct, isCharging } = await readBatterySnapshot();
-        const pingPayload = {
-          user_id: userId,
-          company: company || 'TNT00001',
-          branch_code: branchCode || null,
-          latitude: lat,
-          longitude: lng,
-          accuracy_meters: accuracy,
-          speed_kmh: speedKmh,
-          heading,
+        pingPayload = {
+          ...pingPayload,
           battery_pct: batteryPct,
-          is_charging: isCharging,
-          is_moving: Boolean(speedKmh > 2 || distMeters >= 20),
-          recorded_at: new Date().toISOString()
+          is_charging: isCharging
         };
 
         if (navigator.onLine) {
@@ -152,18 +222,7 @@ export default function GlobalMobileTelemetryTracker({
         }
       } catch {
         try {
-          await queueOfflineGpsPing({
-            user_id: userId,
-            company: company || 'TNT00001',
-            branch_code: branchCode || null,
-            latitude: lat,
-            longitude: lng,
-            accuracy_meters: accuracy,
-            speed_kmh: speedKmh,
-            heading,
-            is_moving: Boolean(speedKmh > 2 || distMeters >= 20),
-            recorded_at: new Date().toISOString()
-          });
+          await queueOfflineGpsPing(pingPayload);
         } catch {
           // Ignore vault errors
         }
@@ -173,7 +232,7 @@ export default function GlobalMobileTelemetryTracker({
     };
 
     const handleGeoError = (err) => {
-      if (disposed || !err) return;
+      if (disposed || !err || nativeServiceActive) return;
       if (err.code === 1) {
         setGpsAlert('Location permission is blocked. Enable GPS permission for SPC Workspace.');
       } else if (err.code === 2) {
@@ -182,53 +241,71 @@ export default function GlobalMobileTelemetryTracker({
     };
 
     const captureImmediatePing = (force = false) => {
-      if (disposed) return;
+      if (disposed || nativeServiceActive) return;
       try {
         navigator.geolocation.getCurrentPosition(
           (pos) => handlePosition(pos, force),
           handleGeoError,
-          { enableHighAccuracy: true, maximumAge: 10000, timeout: 15000 }
+          { enableHighAccuracy: true, maximumAge: 8000, timeout: 10000 }
         );
       } catch {
         // Ignore geolocation call errors
       }
     };
 
-    // Initial ping + offline flush
-    captureImmediatePing(true);
+    // Start Native Android Foreground Service first (if on APK); always flush legacy web vault
+    startOrRefreshNativeService(true).then((started) => {
+      if (disposed) return;
+      if (!started) {
+        captureImmediatePing(true);
+      }
+    });
     syncQueuedPings();
 
     try {
       watchId = navigator.geolocation.watchPosition(
         (pos) => handlePosition(pos, false),
         handleGeoError,
-        { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 }
+        { enableHighAccuracy: true, maximumAge: 8000, timeout: 15000 }
       );
     } catch {
       // Fallback interval covers devices where watchPosition fails
     }
 
-    const heartbeatTimer = setInterval(() => captureImmediatePing(false), 45000);
+    // 25s interval > 22s stationary threshold (used on mobile browsers / older APKs without native plugin)
+    heartbeatTimer = setInterval(() => {
+      if (!nativeServiceActive) captureImmediatePing(false);
+    }, 25000);
 
-    const handleResumeOrOnline = () => {
+    const handleResume = () => {
       if (document.visibilityState === 'hidden') return;
       syncQueuedPings();
-      captureImmediatePing(true);
+      startOrRefreshNativeService(false).then((started) => {
+        if (!started && !disposed) captureImmediatePing(true);
+      });
     };
 
-    document.addEventListener('visibilitychange', handleResumeOrOnline);
-    window.addEventListener('focus', handleResumeOrOnline);
-    window.addEventListener('online', handleResumeOrOnline);
+    const handleOnline = () => {
+      lastForceAtRef.current = 0;
+      syncQueuedPings();
+      startOrRefreshNativeService(false).then((started) => {
+        if (!started && !disposed) captureImmediatePing(true);
+      });
+    };
+
+    document.addEventListener('visibilitychange', handleResume);
+    window.addEventListener('focus', handleResume);
+    window.addEventListener('online', handleOnline);
 
     return () => {
       disposed = true;
       if (watchId !== null) {
         try { navigator.geolocation.clearWatch(watchId); } catch {}
       }
-      clearInterval(heartbeatTimer);
-      document.removeEventListener('visibilitychange', handleResumeOrOnline);
-      window.removeEventListener('focus', handleResumeOrOnline);
-      window.removeEventListener('online', handleResumeOrOnline);
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+      document.removeEventListener('visibilitychange', handleResume);
+      window.removeEventListener('focus', handleResume);
+      window.removeEventListener('online', handleOnline);
     };
   }, [userId, company, branchCode]);
 

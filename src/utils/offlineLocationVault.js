@@ -123,22 +123,34 @@ export async function flushOfflineVault(syncPingsFn, syncSubmissionFn) {
   let syncedPings = 0;
   let syncedSubmissions = 0;
 
-  // 1. Flush GPS Pings in batches
+  // 1. Flush GPS Pings in safe 50-row batches deleting ONLY uploaded IDs
   try {
-    const txPings = db.transaction(STORE_PINGS, 'readonly');
-    const pingsReq = txPings.objectStore(STORE_PINGS).getAll();
-    const pings = await new Promise((res) => {
-      pingsReq.onsuccess = () => res(pingsReq.result || []);
-      pingsReq.onerror = () => res([]);
-    });
+    while (true) {
+      const txPings = db.transaction(STORE_PINGS, 'readonly');
+      const pingsReq = txPings.objectStore(STORE_PINGS).getAll(null, 50);
+      const pings = await new Promise((res) => {
+        pingsReq.onsuccess = () => res(pingsReq.result || []);
+        pingsReq.onerror = () => res([]);
+      });
 
-    if (pings.length > 0 && typeof syncPingsFn === 'function') {
-      const success = await syncPingsFn(pings);
-      if (success) {
-        const clearTx = db.transaction(STORE_PINGS, 'readwrite');
-        clearTx.objectStore(STORE_PINGS).clear();
-        syncedPings = pings.length;
-      }
+      if (!pings.length || typeof syncPingsFn !== 'function') break;
+
+      const payload = pings.map(({ id, queued_at, ...rest }) => rest);
+      const success = await syncPingsFn(payload);
+      if (!success) break;
+
+      await new Promise((resolve) => {
+        const delTx = db.transaction(STORE_PINGS, 'readwrite');
+        const store = delTx.objectStore(STORE_PINGS);
+        pings.forEach((p) => {
+          if (p?.id != null) store.delete(p.id);
+        });
+        delTx.oncomplete = () => resolve(true);
+        delTx.onerror = () => resolve(false);
+        delTx.onabort = () => resolve(false);
+      });
+      syncedPings += pings.length;
+      if (pings.length < 50) break;
     }
   } catch (err) {
     console.warn('Error syncing queued offline pings:', err);

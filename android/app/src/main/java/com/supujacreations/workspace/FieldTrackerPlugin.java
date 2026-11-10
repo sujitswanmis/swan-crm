@@ -1,0 +1,173 @@
+package com.supujacreations.workspace;
+
+import android.Manifest;
+import android.content.Context;
+import android.content.Intent;
+import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
+import android.os.Build;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
+import com.getcapacitor.JSObject;
+import com.getcapacitor.PermissionState;
+import com.getcapacitor.Plugin;
+import com.getcapacitor.PluginCall;
+import com.getcapacitor.PluginMethod;
+import com.getcapacitor.annotation.CapacitorPlugin;
+import com.getcapacitor.annotation.Permission;
+import com.getcapacitor.annotation.PermissionCallback;
+
+@CapacitorPlugin(
+    name = "FieldTracker",
+    permissions = {
+        @Permission(
+            strings = {
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            },
+            alias = "location"
+        )
+    }
+)
+public class FieldTrackerPlugin extends Plugin {
+
+    private static final int BG_PERM_REQ_CODE = 1002;
+
+    @PluginMethod
+    public void startTracking(PluginCall call) {
+        String userId = call.getString("userId", "");
+        if (userId == null || userId.trim().isEmpty()) {
+            call.reject("userId is required");
+            return;
+        }
+        String company = call.getString("company", "TNT00001");
+        String branchCode = call.getString("branchCode", "");
+        String endpointUrl = call.getString("endpointUrl", "https://app.supujacreations.com");
+        String token = call.getString("token", "");
+
+        Context ctx = getContext();
+        SharedPreferences prefs = ctx.getSharedPreferences(FieldTrackingService.PREFS_NAME, Context.MODE_PRIVATE);
+        prefs.edit()
+            .putBoolean("enabled", true)
+            .putString("userId", userId.trim())
+            .putString("company", company != null ? company.trim() : "TNT00001")
+            .putString("branchCode", branchCode != null ? branchCode.trim() : "")
+            .putString("endpointUrl", endpointUrl != null ? endpointUrl.trim() : "https://app.supujacreations.com")
+            .putString("token", token != null ? token.trim() : "")
+            .apply();
+
+        if (!hasLocationPermission()) {
+            requestPermissionForAlias("location", call, "locationPermissionCallback");
+            return;
+        }
+
+        boolean started = launchService(FieldTrackingService.ACTION_START);
+        maybeRequestBackgroundPermissionOnce(prefs);
+
+        JSObject res = new JSObject();
+        res.put("started", started);
+        res.put("running", FieldTrackingService.isServiceRunning || started);
+        call.resolve(res);
+    }
+
+    @PermissionCallback
+    private void locationPermissionCallback(PluginCall call) {
+        if (getPermissionState("location") == PermissionState.GRANTED || hasLocationPermission()) {
+            boolean started = launchService(FieldTrackingService.ACTION_START);
+            SharedPreferences prefs = getContext().getSharedPreferences(FieldTrackingService.PREFS_NAME, Context.MODE_PRIVATE);
+            maybeRequestBackgroundPermissionOnce(prefs);
+
+            JSObject res = new JSObject();
+            res.put("started", started);
+            res.put("running", FieldTrackingService.isServiceRunning || started);
+            call.resolve(res);
+        } else {
+            JSObject res = new JSObject();
+            res.put("started", false);
+            res.put("permissionDenied", true);
+            call.resolve(res);
+        }
+    }
+
+    @PluginMethod
+    public void stopTracking(PluginCall call) {
+        Context ctx = getContext();
+        SharedPreferences prefs = ctx.getSharedPreferences(FieldTrackingService.PREFS_NAME, Context.MODE_PRIVATE);
+        prefs.edit().putBoolean("enabled", false).apply();
+
+        try {
+            Intent stopIntent = new Intent(ctx, FieldTrackingService.class);
+            stopIntent.setAction(FieldTrackingService.ACTION_STOP);
+            ctx.startService(stopIntent);
+        } catch (Exception ignored) {}
+
+        JSObject res = new JSObject();
+        res.put("stopped", true);
+        call.resolve(res);
+    }
+
+    @PluginMethod
+    public void flushNow(PluginCall call) {
+        boolean triggered = false;
+        if (hasLocationPermission()) {
+            triggered = launchService(FieldTrackingService.ACTION_FLUSH);
+        }
+        JSObject res = new JSObject();
+        res.put("triggered", triggered);
+        call.resolve(res);
+    }
+
+    @PluginMethod
+    public void getStatus(PluginCall call) {
+        Context ctx = getContext();
+        OfflinePingDbHelper helper = new OfflinePingDbHelper(ctx);
+        long pendingCount = helper.getPendingCount();
+        boolean hasBg = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
+            || ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED;
+
+        JSObject res = new JSObject();
+        res.put("running", FieldTrackingService.isServiceRunning);
+        res.put("pendingCount", pendingCount);
+        res.put("hasForegroundLocation", hasLocationPermission());
+        res.put("hasBackgroundLocation", hasBg);
+        call.resolve(res);
+    }
+
+    private boolean hasLocationPermission() {
+        Context ctx = getContext();
+        return ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+            || ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private boolean launchService(String action) {
+        try {
+            Context ctx = getContext();
+            Intent intent = new Intent(ctx, FieldTrackingService.class);
+            intent.setAction(action);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                ctx.startForegroundService(intent);
+            } else {
+                ctx.startService(intent);
+            }
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private void maybeRequestBackgroundPermissionOnce(SharedPreferences prefs) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || getActivity() == null) return;
+        if (ContextCompat.checkSelfPermission(getContext(), Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+            return;
+        }
+        if (prefs.getBoolean("bg_perm_prompted", false)) return;
+        prefs.edit().putBoolean("bg_perm_prompted", true).apply();
+        try {
+            ActivityCompat.requestPermissions(
+                getActivity(),
+                new String[]{ Manifest.permission.ACCESS_BACKGROUND_LOCATION },
+                BG_PERM_REQ_CODE
+            );
+        } catch (Exception ignored) {}
+    }
+}

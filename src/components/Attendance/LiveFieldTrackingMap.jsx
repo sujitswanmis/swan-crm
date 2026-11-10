@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   MapPin, Play, Pause, RotateCcw, FastForward, Navigation, Battery,
   BatteryCharging, Smartphone, Clock, Calendar, Search, Filter,
@@ -17,6 +17,7 @@ import {
 import { getTeamMembers } from '@/app/actions/team';
 import useTableColumnResize, { ColumnResizer } from '@/utils/tableColumnResize';
 import StandardTablePagination from '@/components/common/StandardTablePagination';
+import { snapRouteSegmentsToRoad } from '@/utils/routeGeometryMatcher';
 
 const DEFAULT_VOUCHER_WIDTHS = {
   employee: 200,
@@ -42,190 +43,174 @@ function calculateBearing(lat1, lon1, lat2, lon2) {
   return (brng + 360) % 360;
 }
 
-// Local Haversine distance in meters for map matching alignment
-function haversineDistMeters(lat1, lon1, lat2, lon2) {
-  if (lat1 == null || lon1 == null || lat2 == null || lon2 == null) return 0;
-  const R = 6371000;
-  const dLat = ((Number(lat2) - Number(lat1)) * Math.PI) / 180;
-  const dLon = ((Number(lon2) - Number(lon1)) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos((Number(lat1) * Math.PI) / 180) * Math.cos((Number(lat2) * Math.PI) / 180) *
-    Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+const LIVE_OFFLINE_THRESHOLD_SEC = 90; // 1.5 minutes (3 missed ~25s heartbeats => truly offline)
+
+function getTodayISTDateStr(nowMs = Date.now()) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date(nowMs));
 }
 
-// Align snapped road geometry monotonically back to original GPS waypoints for timing/speed/offline status
-function alignSnappedPolylineClient(stitchedCoords, valid) {
-  const N = stitchedCoords.length;
-  const M = valid.length;
-  const cumDist = new Array(N).fill(0);
-  for (let j = 1; j < N; j++) {
-    cumDist[j] = cumDist[j - 1] + haversineDistMeters(
-      stitchedCoords[j - 1][1], stitchedCoords[j - 1][0],
-      stitchedCoords[j][1], stitchedCoords[j][0]
-    );
-  }
-
-  const anchors = new Array(M).fill(0);
-  anchors[0] = 0;
-  anchors[M - 1] = N - 1;
-  for (let i = 1; i < M - 1; i++) {
-    let bestIdx = anchors[i - 1];
-    let bestDist = Infinity;
-    for (let k = anchors[i - 1]; k < N; k++) {
-      const d = haversineDistMeters(valid[i].lat, valid[i].lng, stitchedCoords[k][1], stitchedCoords[k][0]);
-      if (d < bestDist) {
-        bestDist = d;
-        bestIdx = k;
-      }
-      if (bestDist < 50 && d > 200) break;
-    }
-    anchors[i] = Math.max(anchors[i - 1], bestIdx);
-  }
-
-  const snappedPolyline = [];
-  let lastEmitted = -1;
-  for (let i = 0; i < M - 1; i++) {
-    const a = anchors[i];
-    const b = anchors[i + 1];
-    const t1 = valid[i].time ? new Date(valid[i].time).getTime() : Date.now();
-    const t2 = valid[i + 1].time ? new Date(valid[i + 1].time).getTime() : t1;
-    const gapMs = Math.max(0, t2 - t1);
-    const segIsOffline = Boolean(valid[i + 1].isOffline || gapMs > 480000);
-    const segDist = Math.max(0, cumDist[b] - cumDist[a]);
-    const calcSpeed = (gapMs > 2000 && segDist > 10)
-      ? Math.min(Math.round((segDist / (gapMs / 1000)) * 3.6), 120)
-      : Math.max(0, Math.round(Number(valid[i + 1].speed || valid[i].speed || 0)));
-
-    const startK = Math.max(a, lastEmitted + 1);
-    const endK = (i === M - 2) ? b : Math.max(a, b - 1);
-    for (let k = startK; k <= endK; k++) {
-      const frac = segDist > 0 ? Math.min(1, Math.max(0, (cumDist[k] - cumDist[a]) / segDist)) : 0;
-      snappedPolyline.push({
-        lat: stitchedCoords[k][1],
-        lng: stitchedCoords[k][0],
-        time: new Date(t1 + frac * gapMs).toISOString(),
-        speed: calcSpeed,
-        isSnapped: true,
-        isOffline: segIsOffline
-      });
-      lastEmitted = k;
-    }
-  }
-  return snappedPolyline;
+function formatDurationSeconds(totalSeconds) {
+  if (totalSeconds == null || isNaN(totalSeconds)) return '0s';
+  const s = Math.max(0, Math.floor(totalSeconds));
+  if (s < 60) return `${s}s`;
+  const mins = Math.floor(s / 60);
+  const remSec = s % 60;
+  if (mins < 2 && remSec > 0) return `${mins}m ${remSec}s`;
+  const hrs = Math.floor(mins / 60);
+  const remMin = mins % 60;
+  return hrs > 0 ? `${hrs}h ${remMin}m` : `${mins}m`;
 }
 
-// Client-side OSRM Map Matching fallback — uses /match (HMM) with radiuses <= 40m
-async function snapPolylineToRoadClient(waypoints) {
-  if (!Array.isArray(waypoints) || waypoints.length < 2) return null;
+function computeEmployeeLiveDeviceStatus(routeData, selectedDate, nowMs, fallbackEmployee = null) {
+  const todayIST = getTodayISTDateStr(nowMs);
+  const isToday = selectedDate === todayIST;
 
-  let valid = waypoints.filter(p => {
-    const lat = Number(p.lat);
-    const lng = Number(p.lng);
-    return !isNaN(lat) && !isNaN(lng) &&
-           lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180 &&
-           (Math.abs(lat) > 0.01 || Math.abs(lng) > 0.01);
-  });
-  if (valid.length < 2) return null;
-
-  const accFiltered = valid.filter(p => {
-    const acc = p.accuracy_meters != null ? Number(p.accuracy_meters) : null;
-    return acc == null || isNaN(acc) || acc <= 300;
-  });
-  if (accFiltered.length >= 2) valid = accFiltered;
-
-  const cleaned = [valid[0]];
-  for (let i = 1; i < valid.length; i++) {
-    const prev = cleaned[cleaned.length - 1];
-    const cur = valid[i];
-    const dist = haversineDistMeters(prev.lat, prev.lng, cur.lat, cur.lng);
-    const dtSec = (prev.time && cur.time) ? Math.max(0, (new Date(cur.time) - new Date(prev.time)) / 1000) : 60;
-    const spdKmh = dtSec > 0 ? (dist / dtSec) * 3.6 : (dist > 50 ? 999 : 0);
-    if (dist > 250 && spdKmh > 130 && dtSec < 300) continue;
-    if (dist >= 8 || cur.isOffline || i === valid.length - 1) cleaned.push(cur);
-  }
-  if (cleaned.length >= 2) valid = cleaned;
-
-  const chunkSize = 90;
-  const chunks = [];
-  if (valid.length <= chunkSize) {
-    chunks.push(valid);
-  } else {
-    for (let i = 0; i < valid.length - 1; i += (chunkSize - 1)) {
-      chunks.push(valid.slice(i, i + chunkSize));
-      if (i + chunkSize >= valid.length) break;
+  if (!routeData) {
+    const fallbackPingMs = fallbackEmployee?.last_ping ? new Date(fallbackEmployee.last_ping).getTime() : null;
+    const fbGapSec = fallbackPingMs != null ? Math.max(0, Math.floor((nowMs - fallbackPingMs) / 1000)) : null;
+    if (!isToday) {
+      return {
+        isToday: false,
+        isShiftCompleted: false,
+        lastPingMs: fallbackPingMs,
+        lastPingTimeIST: null,
+        gapSeconds: fbGapSec,
+        battPct: fallbackEmployee?.battery_pct ?? null,
+        isCharging: false,
+        battColor: '#64748b',
+        battLabel: 'N/A',
+        mobileDataState: { label: 'Archive', color: '#64748b', bg: '#f8fafc', border: '#e2e8f0', isOff: false },
+        gpsStatusState: { label: 'Archive', color: '#64748b', bg: '#f8fafc', border: '#e2e8f0', isOff: false },
+        headerBadge: { label: 'Archive', color: '#64748b', dot: '#94a3b8' }
+      };
     }
-  }
-
-  try {
-    let stitchedCoords = [];
-    let totalDist = 0;
-
-    for (const chunk of chunks) {
-      if (chunk.length < 2) continue;
-      const coordStr = chunk.map(p => `${Number(p.lng).toFixed(6)},${Number(p.lat).toFixed(6)}`).join(';');
-      const radiusStr = chunk
-        .map(p => {
-          const acc = p.accuracy_meters != null ? Number(p.accuracy_meters) : NaN;
-          if (isNaN(acc) || acc <= 0) return '35';
-          return String(Math.min(Math.max(Math.round(acc), 25), 40));
-        })
-        .join(';');
-
-      const matchUrl = `https://router.project-osrm.org/match/v1/driving/${coordStr}?overview=full&geometries=geojson&gaps=ignore&tidy=false&radiuses=${radiusStr}`;
-      let matched = false;
-      try {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 8000);
-        const res = await fetch(matchUrl, { headers: { Accept: 'application/json' }, signal: controller.signal });
-        clearTimeout(timer);
-        if (res.ok) {
-          const json = await res.json();
-          if (json.code === 'Ok' && Array.isArray(json.matchings) && json.matchings.length > 0) {
-            for (const matching of json.matchings) {
-              const road = matching.geometry?.coordinates;
-              if (!road?.length) continue;
-              totalDist += (matching.distance || 0);
-              stitchedCoords = stitchedCoords.length === 0 ? road : stitchedCoords.concat(road.slice(1));
-              matched = true;
-            }
-          }
-        }
-      } catch (_) {}
-
-      if (!matched) {
-        try {
-          const rCtrl = new AbortController();
-          const rTimer = setTimeout(() => rCtrl.abort(), 6000);
-          const unlimitedRads = chunk.map(() => 'unlimited').join(';');
-          const rRes = await fetch(
-            `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=full&geometries=geojson&continue_straight=true&radiuses=${unlimitedRads}`,
-            { headers: { Accept: 'application/json' }, signal: rCtrl.signal }
-          );
-          clearTimeout(rTimer);
-          if (rRes.ok) {
-            const rJson = await rRes.json();
-            const road = rJson.routes?.[0]?.geometry?.coordinates;
-            if (rJson.code === 'Ok' && road?.length > 0) {
-              totalDist += (rJson.routes[0].distance || 0);
-              stitchedCoords = stitchedCoords.length === 0 ? road : stitchedCoords.concat(road.slice(1));
-            }
-          }
-        } catch (_) {}
-      }
-    }
-
-    if (stitchedCoords.length < 2) return null;
-
+    const isFbLive = fbGapSec != null && fbGapSec <= LIVE_OFFLINE_THRESHOLD_SEC;
     return {
-      polyline: alignSnappedPolylineClient(stitchedCoords, valid),
-      totalDistanceMeters: totalDist
+      isToday: true,
+      isShiftCompleted: false,
+      lastPingMs: fallbackPingMs,
+      lastPingTimeIST: fallbackPingMs
+        ? new Date(fallbackPingMs).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })
+        : null,
+      gapSeconds: fbGapSec,
+      battPct: fallbackEmployee?.battery_pct ?? null,
+      isCharging: false,
+      battColor: '#64748b',
+      battLabel: fallbackEmployee?.battery_pct != null ? `${fallbackEmployee.battery_pct}%` : 'N/A',
+      mobileDataState: isFbLive
+        ? { label: 'Online', color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0', isOff: false }
+        : {
+            label: fbGapSec != null ? `Offline (${formatDurationSeconds(fbGapSec)} ago)` : 'No Data Yet',
+            color: fbGapSec != null ? '#ea580c' : '#64748b',
+            bg: fbGapSec != null ? '#fff7ed' : '#f8fafc',
+            border: fbGapSec != null ? '#fed7aa' : '#e2e8f0',
+            isOff: fbGapSec != null
+          },
+      gpsStatusState: isFbLive
+        ? { label: fbGapSec < 10 ? 'Active (Live)' : `Active (${formatDurationSeconds(fbGapSec)} ago)`, color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0', isOff: false }
+        : {
+            label: fbGapSec != null ? `Offline (${formatDurationSeconds(fbGapSec)} ago)` : 'No GPS Ping',
+            color: fbGapSec != null ? '#ea580c' : '#64748b',
+            bg: fbGapSec != null ? '#fff7ed' : '#f8fafc',
+            border: fbGapSec != null ? '#fed7aa' : '#e2e8f0',
+            isOff: fbGapSec != null
+          },
+      headerBadge: isFbLive
+        ? { label: 'Live Active', color: '#16a34a', dot: '#16a34a' }
+        : fbGapSec != null
+          ? { label: `Offline (${formatDurationSeconds(fbGapSec)} ago)`, color: '#ea580c', dot: '#ea580c' }
+          : { label: 'No Signal', color: '#64748b', dot: '#94a3b8' }
     };
-  } catch (err) {
-    console.warn('Client map matching error:', err?.message || err);
-    return null;
   }
+
+  const lp = routeData.lastPing;
+  const isShiftCompleted = Boolean(routeData.shiftCompleted);
+
+  const battObj = routeData.latestBattery;
+  const battPct = battObj?.pct != null ? battObj.pct : (lp?.battery_pct != null ? Number(lp.battery_pct) : null);
+  const isCharging = battObj != null ? Boolean(battObj.isCharging) : Boolean(lp?.is_charging);
+  const battColor = battPct == null ? '#64748b' : battPct <= 15 ? '#dc2626' : battPct <= 30 ? '#d97706' : '#16a34a';
+  const battLabel = battPct != null ? `${battPct}%` : 'N/A';
+
+  const lastPingMs = lp?.recorded_at ? new Date(lp.recorded_at).getTime() : null;
+  const gapSeconds = lastPingMs != null ? Math.max(0, Math.floor((nowMs - lastPingMs) / 1000)) : null;
+  const mobSessMs = routeData.mobileSessionLastActive ? new Date(routeData.mobileSessionLastActive).getTime() : null;
+  const mobSessGapSeconds = mobSessMs != null ? Math.max(0, Math.floor((nowMs - mobSessMs) / 1000)) : null;
+  const lastPingTimeIST = lp?.recorded_at
+    ? new Date(lp.recorded_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })
+    : null;
+
+  let mobileDataState = { label: 'No Data Yet', color: '#64748b', bg: '#f8fafc', border: '#e2e8f0', isOff: false };
+  let gpsStatusState = { label: 'No GPS Ping', color: '#64748b', bg: '#f8fafc', border: '#e2e8f0', isOff: false };
+  let headerBadge = { label: 'No Signal', color: '#64748b', dot: '#94a3b8' };
+
+  if (!isToday || isShiftCompleted) {
+    mobileDataState = routeData.hadOfflineSync
+      ? { label: 'Offline Gaps Synced', color: '#d97706', bg: '#fffbeb', border: '#fde68a', isOff: false }
+      : lastPingMs
+        ? { label: 'Tracked Online', color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0', isOff: false }
+        : { label: 'No Data Logged', color: '#64748b', bg: '#f8fafc', border: '#e2e8f0', isOff: false };
+
+    if (isShiftCompleted && routeData.punchOutTime) {
+      const outTimeIST = new Date(routeData.punchOutTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
+      gpsStatusState = { label: `Shift Ended (${outTimeIST})`, color: '#475569', bg: '#f1f5f9', border: '#cbd5e1', isOff: false };
+      headerBadge = { label: `Shift Ended (${outTimeIST})`, color: '#475569', dot: '#64748b' };
+    } else {
+      gpsStatusState = { label: `Archive (${routeData.totalPings || 0} pings)`, color: '#475569', bg: '#f1f5f9', border: '#cbd5e1', isOff: false };
+      headerBadge = { label: `Archive (${routeData.totalPings || 0})`, color: '#475569', dot: '#64748b' };
+    }
+  } else if (lastPingMs == null) {
+    if (mobSessGapSeconds != null && mobSessGapSeconds <= LIVE_OFFLINE_THRESHOLD_SEC) {
+      mobileDataState = { label: 'Online (App Active)', color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0', isOff: false };
+      gpsStatusState = { label: 'GPS Off / No Lock', color: '#ea580c', bg: '#fff7ed', border: '#fed7aa', isOff: true };
+      headerBadge = { label: 'GPS Off (App Online)', color: '#ea580c', dot: '#f59e0b' };
+    }
+  } else {
+    const isLastPingOfflineSync = Boolean(lp?.is_offline_synced);
+    const isGpsInactive = gapSeconds > LIVE_OFFLINE_THRESHOLD_SEC || isLastPingOfflineSync;
+    const isMobileAppAlive =
+      mobSessGapSeconds != null &&
+      mobSessGapSeconds <= LIVE_OFFLINE_THRESHOLD_SEC &&
+      !isLastPingOfflineSync;
+
+    if (!isGpsInactive) {
+      const agoText = gapSeconds < 10 ? 'Live' : `${formatDurationSeconds(gapSeconds)} ago`;
+      mobileDataState = { label: 'Online', color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0', isOff: false };
+      gpsStatusState = {
+        label: gapSeconds < 10 ? 'Active (Live)' : `Active (${agoText})`,
+        color: '#16a34a',
+        bg: '#f0fdf4',
+        border: '#bbf7d0',
+        isOff: false
+      };
+      headerBadge = { label: 'Live Active', color: '#16a34a', dot: '#16a34a' };
+    } else {
+      const gapText = formatDurationSeconds(gapSeconds);
+      const sinceLabel = `Off since ${lastPingTimeIST} (${gapText} ago)`;
+      gpsStatusState = { label: sinceLabel, color: '#ea580c', bg: '#fff7ed', border: '#fed7aa', isOff: true };
+      mobileDataState = isMobileAppAlive
+        ? { label: 'Online (App Active)', color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0', isOff: false }
+        : { label: `Offline (${gapText} ago)`, color: '#ea580c', bg: '#fff7ed', border: '#fed7aa', isOff: true };
+      headerBadge = isMobileAppAlive
+        ? { label: 'GPS Off (App Online)', color: '#ea580c', dot: '#f59e0b' }
+        : { label: `Offline (${gapText} ago)`, color: '#ea580c', dot: '#ea580c' };
+    }
+  }
+
+  return {
+    isToday,
+    isShiftCompleted,
+    lastPingMs,
+    lastPingTimeIST,
+    gapSeconds,
+    battPct,
+    isCharging,
+    battColor,
+    battLabel,
+    mobileDataState,
+    gpsStatusState,
+    headerBadge
+  };
 }
 
 export default function LiveFieldTrackingMap({ company = 'New Swan Group', branchCode = null, currentUserRole = 'ADMIN', tenantId = null }) {
@@ -279,6 +264,9 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
   const dropdownRef = useRef(null);
   const searchInputRef = useRef(null);
   const routeCacheRef = useRef({});
+  const lastRouteFetchMetaRef = useRef({ key: '', at: 0 });
+  const routeFetchSeqRef = useRef(0);
+  const lastFitRouteKeyRef = useRef('');
 
   useEffect(() => {
     if (isExecutiveDropdownOpen) {
@@ -312,6 +300,10 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
   const selectedEmployee = useMemo(() => {
     return activeEmployeesList.find(e => e.user_id === selectedUserId) || null;
   }, [activeEmployeesList, selectedUserId]);
+
+  const liveDeviceStatus = useMemo(() => {
+    return computeEmployeeLiveDeviceStatus(routeData, selectedDate, liveNowMs, selectedEmployee);
+  }, [routeData, selectedDate, liveNowMs, selectedEmployee]);
 
   // Video-like Animated Playback State
   const [isPlaying, setIsPlaying] = useState(false);
@@ -417,41 +409,8 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
     };
   }, []);
 
-  useEffect(() => {
-    loadRadarAndEmployees();
-  }, [selectedCompany, selectedBranch]);
-
-  useEffect(() => {
-    if (activeMainTab === 'CONVEYANCE_VOUCHERS') {
-      loadVouchers();
-    }
-  }, [activeMainTab, selectedCompany, selectedBranch, selectedDate]);
-
-  useEffect(() => {
-    const ticker = setInterval(() => setLiveNowMs(Date.now()), 30000);
-    return () => clearInterval(ticker);
-  }, []);
-
-  useEffect(() => {
-    if (selectedUserId && activeMainTab === '360_PLAYBACK') {
-      loadEmployeeRoute(selectedUserId, selectedDate);
-    }
-  }, [selectedUserId, selectedDate, activeMainTab]);
-
-  useEffect(() => {
-    const todayIST = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
-    if (activeMainTab !== '360_PLAYBACK' || !selectedUserId || selectedDate !== todayIST) return;
-    const autoSync = setInterval(() => {
-      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
-      if (!isPlaying) {
-        loadEmployeeRoute(selectedUserId, selectedDate, { silent: true, forceFresh: true });
-      }
-    }, 60000);
-    return () => clearInterval(autoSync);
-  }, [selectedUserId, selectedDate, activeMainTab, isPlaying]);
-
-  const loadRadarAndEmployees = async () => {
-    setLoadingRadar(true);
+  const loadRadarAndEmployees = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setLoadingRadar(true);
     try {
       const [radarData, allMembers] = await Promise.all([
         getNationwideRadarData(selectedCompany, selectedBranch || null),
@@ -469,6 +428,7 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
         return true;
       });
 
+      const nowMs = Date.now();
       const combined = filteredMembers.map(m => {
         const id = m.user_id || m.id;
         const pingMatch = (radarData || []).find(r => r.user_id === id);
@@ -479,18 +439,24 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
           phone: m.emp_mobile || m.phone || '',
           hasPings: Boolean(pingMatch),
           battery_pct: pingMatch?.battery_pct,
-          last_ping: pingMatch?.last_ping
+          last_ping: pingMatch?.recorded_at || pingMatch?.last_ping || null
         };
       });
 
-      // Sort: Employees with live pings / on-duty today first, then alphabetically by name
+      // Sort: Truly live online (<=90s) first, then recent pings descending, then alphabetically
       combined.sort((a, b) => {
-        if (a.hasPings && !b.hasPings) return -1;
-        if (!a.hasPings && b.hasPings) return 1;
+        const aTime = a.last_ping ? new Date(a.last_ping).getTime() : 0;
+        const bTime = b.last_ping ? new Date(b.last_ping).getTime() : 0;
+        const aLive = aTime > 0 && ((nowMs - aTime) / 1000) <= LIVE_OFFLINE_THRESHOLD_SEC;
+        const bLive = bTime > 0 && ((nowMs - bTime) / 1000) <= LIVE_OFFLINE_THRESHOLD_SEC;
+        if (aLive !== bLive) return aLive ? -1 : 1;
+        if (a.hasPings !== b.hasPings) return a.hasPings ? -1 : 1;
+        if (aTime !== bTime) return bTime - aTime;
         return a.name.localeCompare(b.name);
       });
 
       setActiveEmployeesList(combined);
+      setLiveNowMs(nowMs);
       if (typeof window !== 'undefined' && combined.length > 0) {
         try {
           localStorage.setItem(`crm_cached_field_executives_${selectedCompany}`, JSON.stringify(combined));
@@ -516,37 +482,57 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
     } catch (err) {
       console.error('Failed to load radar data:', err);
     } finally {
-      setLoadingRadar(false);
+      if (!silent) setLoadingRadar(false);
     }
-  };
+  }, [selectedCompany, selectedBranch, tenantId]);
 
-  const loadEmployeeRoute = async (userId, dateStr, { silent = false, forceFresh = false } = {}) => {
+  const loadEmployeeRoute = useCallback(async (userId, dateStr, { silent = false, forceFresh = false } = {}) => {
     if (!userId) return;
     const cacheKey = `${userId}_${dateStr}`;
+    const todayIST = getTodayISTDateStr();
+
+    let shouldBackgroundRefresh = false;
     if (!forceFresh && routeCacheRef.current[cacheKey]) {
       setRouteData(routeCacheRef.current[cacheKey]);
       setLoadingRoute(false);
       setIsPlaying(false);
       setPlaybackIndex(0);
-      return;
+      setLiveNowMs(Date.now());
+      if (dateStr === todayIST) {
+        const elapsed = Date.now() - (lastRouteFetchMetaRef.current.at || 0);
+        if (lastRouteFetchMetaRef.current.key !== cacheKey || elapsed >= 8000) {
+          shouldBackgroundRefresh = true;
+        } else {
+          return;
+        }
+      } else {
+        return;
+      }
     }
 
-    if (!silent) {
+    const isSilent = silent || shouldBackgroundRefresh;
+    const reqSeq = ++routeFetchSeqRef.current;
+    lastRouteFetchMetaRef.current = { key: cacheKey, at: Date.now() };
+
+    if (!isSilent) {
       setLoadingRoute(true);
       setIsPlaying(false);
       setPlaybackIndex(0);
     }
     try {
       const data = await getEmployee360Route(userId, dateStr);
-      if (data?.polyline && data.polyline.length >= 2 && !data.isRoadSnapped) {
+      if (reqSeq !== routeFetchSeqRef.current) return;
+      if (data?.polyline && data.polyline.length >= 2 && !data.routeCleaned && !data.isRoadSnapped) {
         try {
-          const clientSnapped = await snapPolylineToRoadClient(data.polyline);
+          const clientSnapped = await snapRouteSegmentsToRoad(data.polyline);
+          if (reqSeq !== routeFetchSeqRef.current) return;
           if (clientSnapped?.polyline?.length > 0) {
             data.polyline = clientSnapped.polyline;
-            data.isRoadSnapped = true;
-            if (clientSnapped.totalDistanceMeters > 0) {
-              data.totalKm = Number((clientSnapped.totalDistanceMeters / 1000).toFixed(2));
-            }
+            data.isRoadSnapped = Boolean(clientSnapped.hasSnappedRoad);
+            data.routeCleaned = Boolean(clientSnapped.routeCleaned);
+            data.totalKm = Number((clientSnapped.totalDistanceMeters / 1000).toFixed(2));
+            data.trackedRoadKm = Number(((clientSnapped.trackedRoadMeters || 0) / 1000).toFixed(2));
+            data.offlineGapKm = Number(((clientSnapped.offlineGapMeters || 0) / 1000).toFixed(2));
           }
         } catch (_) {}
       }
@@ -558,11 +544,11 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
     } catch (err) {
       console.error('Failed to load 360 route:', err);
     } finally {
-      if (!silent) setLoadingRoute(false);
+      if (!isSilent && reqSeq === routeFetchSeqRef.current) setLoadingRoute(false);
     }
-  };
+  }, []);
 
-  const loadVouchers = async () => {
+  const loadVouchers = useCallback(async () => {
     setLoadingVouchers(true);
     try {
       const data = await getDailyConveyanceVouchers(selectedCompany, selectedBranch || null, selectedDate);
@@ -572,7 +558,70 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
     } finally {
       setLoadingVouchers(false);
     }
-  };
+  }, [selectedCompany, selectedBranch, selectedDate]);
+
+  useEffect(() => {
+    loadRadarAndEmployees();
+  }, [loadRadarAndEmployees]);
+
+  useEffect(() => {
+    if (activeMainTab === 'CONVEYANCE_VOUCHERS') {
+      loadVouchers();
+    }
+  }, [activeMainTab, loadVouchers]);
+
+  useEffect(() => {
+    const syncClockAndLiveRoute = () => {
+      setLiveNowMs(Date.now());
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      const todayIST = getTodayISTDateStr();
+      if (activeMainTab === '360_PLAYBACK' && selectedUserId && selectedDate === todayIST && !isPlaying) {
+        const key = `${selectedUserId}_${selectedDate}`;
+        const elapsed = Date.now() - (lastRouteFetchMetaRef.current.at || 0);
+        if (lastRouteFetchMetaRef.current.key !== key || elapsed >= 8000) {
+          loadEmployeeRoute(selectedUserId, selectedDate, { silent: true, forceFresh: true });
+        }
+      } else if (activeMainTab === 'ALL_INDIA_RADAR') {
+        loadRadarAndEmployees({ silent: true });
+      }
+    };
+
+    const ticker = setInterval(() => setLiveNowMs(Date.now()), 5000);
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', syncClockAndLiveRoute);
+    }
+    if (typeof window !== 'undefined') {
+      window.addEventListener('focus', syncClockAndLiveRoute);
+    }
+    return () => {
+      clearInterval(ticker);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', syncClockAndLiveRoute);
+      }
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('focus', syncClockAndLiveRoute);
+      }
+    };
+  }, [activeMainTab, selectedUserId, selectedDate, isPlaying, loadEmployeeRoute, loadRadarAndEmployees]);
+
+  useEffect(() => {
+    if (selectedUserId && activeMainTab === '360_PLAYBACK') {
+      loadEmployeeRoute(selectedUserId, selectedDate);
+    }
+  }, [selectedUserId, selectedDate, activeMainTab, loadEmployeeRoute]);
+
+  useEffect(() => {
+    const autoSync = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      const todayIST = getTodayISTDateStr();
+      if (activeMainTab === '360_PLAYBACK' && selectedUserId && selectedDate === todayIST && !isPlaying) {
+        loadEmployeeRoute(selectedUserId, selectedDate, { silent: true, forceFresh: true });
+      } else if (activeMainTab === 'ALL_INDIA_RADAR') {
+        loadRadarAndEmployees({ silent: true });
+      }
+    }, 20000);
+    return () => clearInterval(autoSync);
+  }, [selectedUserId, selectedDate, activeMainTab, isPlaying, loadEmployeeRoute, loadRadarAndEmployees]);
 
   // -------------------------------------------------------------
   // Leaflet Map Engine Setup & Route Rendering
@@ -588,10 +637,17 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
     }
 
     try {
+      const canvasRenderer = typeof window.L.canvas === 'function'
+        ? window.L.canvas({ padding: 0.5, tolerance: 8 })
+        : undefined;
       const map = window.L.map(mapContainerRef.current, {
         center: [30.9010, 75.8573],
         zoom: 12,
         zoomControl: true,
+        zoomSnap: 0.5,
+        zoomDelta: 0.5,
+        preferCanvas: true,
+        ...(canvasRenderer ? { renderer: canvasRenderer } : {}),
         fadeAnimation: true,
         markerZoomAnimation: true
       });
@@ -670,7 +726,7 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
     const s2 = p2.speed != null ? Number(p2.speed) : s1;
     const interpSpeed = Math.round(s1 + frac * (s2 - s1));
 
-    const isCurrentOffline = Boolean(p1?.isOffline);
+    const isCurrentOffline = Boolean((nextIdx > idx ? p2?.isOffline : p1?.isOffline) ?? p1?.isOffline);
 
     setCurrentTelemetry({
       lat,
@@ -712,7 +768,8 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
       traveledCoords.push([lat, lng]);
       traveledTrailRef.current.setLatLngs(traveledCoords);
       traveledTrailRef.current.setStyle({
-        color: isCurrentOffline ? '#ea580c' : '#2563eb'
+        color: isCurrentOffline ? '#ea580c' : '#2563eb',
+        dashArray: isCurrentOffline ? '8, 6' : null
       });
     }
 
@@ -782,82 +839,84 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
         .filter(([lat, lng]) => !isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0);
 
       if (coords.length > 0) {
-        // 1. Group route into continuous segments: Live Online (Blue) vs Offline Gap (Orange)
+        // 1. Group route edge-by-edge: Live Online (Blue), Offline-Tracked Road (Solid Amber), Offline Gap (Dashed Orange)
         const segments = [];
-        let curSeg = {
-          isOffline: Boolean(routeData.polyline[0]?.isOffline),
-          coords: [coords[0]],
-          startTime: routeData.polyline[0]?.time,
-          endTime: routeData.polyline[0]?.time
-        };
-
         for (let i = 1; i < coords.length; i++) {
           const pt = routeData.polyline[i];
-          const isOff = Boolean(pt?.isOffline);
-          const c = coords[i];
+          const mode = !pt?.isOffline ? 'ONLINE' : (pt?.isSnapped ? 'OFFLINE_ROAD' : 'OFFLINE_GAP');
+          const prevCoord = coords[i - 1];
+          const curCoord = coords[i];
+          const lastSeg = segments[segments.length - 1];
 
-          if (isOff === curSeg.isOffline) {
-            curSeg.coords.push(c);
-            curSeg.endTime = pt?.time;
+          if (lastSeg && lastSeg.mode === mode) {
+            lastSeg.coords.push(curCoord);
+            lastSeg.endTime = pt?.time;
           } else {
-            curSeg.coords.push(c); // Bridge point to prevent gaps
-            segments.push(curSeg);
-            curSeg = {
-              isOffline: isOff,
-              coords: [coords[i - 1], c],
-              startTime: pt?.time,
+            segments.push({
+              mode,
+              isOffline: Boolean(pt?.isOffline),
+              coords: [prevCoord, curCoord],
+              startTime: routeData.polyline[i - 1]?.time || pt?.time,
               endTime: pt?.time
-            };
+            });
           }
         }
-        if (curSeg.coords.length >= 2) {
-          segments.push(curSeg);
-        }
 
-        // 2. Draw segmented polylines (Blue = Live Online, Orange = Offline Gap)
+        // 2. Draw segmented polylines with Canvas-friendly sharp geometry (smoothFactor: 0.5)
+        const basePolylineOpts = {
+          smoothFactor: 0.5,
+          lineJoin: 'round',
+          lineCap: 'round'
+        };
         segments.forEach(seg => {
-          if (seg.isOffline) {
+          const timeRange = `${seg.startTime ? new Date(seg.startTime).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }) : '-'} - ${seg.endTime ? new Date(seg.endTime).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }) : '-'}`;
+          if (seg.mode === 'OFFLINE_GAP') {
             window.L.polyline(seg.coords, {
+              ...basePolylineOpts,
               color: '#ea580c',
-              weight: 5.5,
+              weight: 5,
               opacity: 0.95,
-              dashArray: '8, 6',
-              lineJoin: 'round',
-              lineCap: 'round'
+              dashArray: '8, 6'
             })
-            .bindPopup(`<b>🟠 Offline Gap (Signal Lost / GPS Inactive)</b><br/><span style="color:#64748b;font-size:11px;">Time: ${seg.startTime ? new Date(seg.startTime).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }) : '-'} - ${seg.endTime ? new Date(seg.endTime).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }) : '-'}</span>`)
+            .bindPopup(`<b>🟠 Offline Gap (GPS/Data Off)</b><br/><span style="color:#64748b;font-size:11px;">Direct estimate — actual road not tracked during signal loss<br/>Time: ${timeRange}</span>`)
+            .addTo(markersGroupRef.current);
+          } else if (seg.mode === 'OFFLINE_ROAD') {
+            window.L.polyline(seg.coords, {
+              ...basePolylineOpts,
+              color: '#d97706',
+              weight: 5.5,
+              opacity: 0.95
+            })
+            .bindPopup(`<b>🟠 Offline-Tracked Road (Synced Later)</b><br/><span style="color:#64748b;font-size:11px;">Recorded offline via device GPS vault & synced automatically<br/>Time: ${timeRange}</span>`)
             .addTo(markersGroupRef.current);
           } else {
             window.L.polyline(seg.coords, {
+              ...basePolylineOpts,
               color: '#2563eb',
               weight: 5.5,
-              opacity: 0.95,
-              lineJoin: 'round',
-              lineCap: 'round'
+              opacity: 0.95
             })
-            .bindPopup(`<b>🔵 Live Online Tracking (GPS Active)</b><br/><span style="color:#64748b;font-size:11px;">Active: ${seg.startTime ? new Date(seg.startTime).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }) : '-'} - ${seg.endTime ? new Date(seg.endTime).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }) : '-'}</span>`)
+            .bindPopup(`<b>🔵 Live Online Tracking (GPS Active)</b><br/><span style="color:#64748b;font-size:11px;">Active: ${timeRange}</span>`)
             .addTo(markersGroupRef.current);
           }
         });
 
         // 3. Traveled dynamic glowing polyline (changes dynamically during playback)
         const traveledTrail = window.L.polyline([coords[0]], {
+          ...basePolylineOpts,
           color: routeData.polyline[0]?.isOffline ? '#ea580c' : '#2563eb',
           weight: 6,
-          opacity: 0.95,
-          lineJoin: 'round',
-          lineCap: 'round'
+          opacity: 0.95
         }).addTo(markersGroupRef.current);
         traveledTrailRef.current = traveledTrail;
 
         // 4. Upcoming route polyline (subtle dashed slate ahead of vehicle)
         const upcomingTrail = window.L.polyline(coords, {
+          ...basePolylineOpts,
           color: '#64748b',
           weight: 2.5,
           opacity: 0.5,
-          dashArray: '4, 6',
-          lineJoin: 'round',
-          lineCap: 'round'
+          dashArray: '4, 6'
         }).addTo(markersGroupRef.current);
         upcomingTrailRef.current = upcomingTrail;
 
@@ -873,7 +932,13 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
           .bindPopup(`<b>🚩 ${isSinglePunch ? 'Attendance Punch In (On Duty)' : 'Route Start Point'}</b><br/><span style="color:#64748b;font-size:11px;">Time: ${routeData.polyline[0].time ? new Date(routeData.polyline[0].time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }) : '-'}</span>`)
           .addTo(markersGroupRef.current);
 
-        if (isSinglePunch) {
+        const fitKey = `${routeData.userId || ''}_${routeData.date || ''}`;
+        const prevFitPrefix = `${fitKey}:`;
+        const prevFitCount = lastFitRouteKeyRef.current.startsWith(prevFitPrefix)
+          ? Number(lastFitRouteKeyRef.current.slice(prevFitPrefix.length) || 0)
+          : -1;
+
+        if (isSinglePunch && prevFitCount === -1) {
           startMarker.openPopup();
         }
 
@@ -965,12 +1030,15 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
           .addTo(markersGroupRef.current);
         runnerMarkerRef.current = runner;
 
-        // Auto Fit Bounds to road route
+        // Auto Fit Bounds on initial route view or transition from single point to multi-point route
         try {
-          if (coords.length === 1) {
-            mapInstanceRef.current.setView(coords[0], 15);
-          } else {
-            mapInstanceRef.current.fitBounds(coords, { padding: [50, 50], maxZoom: 16 });
+          if (prevFitCount === -1 || (prevFitCount <= 1 && coords.length > 1)) {
+            if (coords.length === 1) {
+              mapInstanceRef.current.setView(coords[0], 15);
+            } else {
+              mapInstanceRef.current.fitBounds(coords, { padding: [50, 50], maxZoom: 16 });
+            }
+            lastFitRouteKeyRef.current = `${fitKey}:${coords.length}`;
           }
         } catch (_) {}
 
@@ -1189,7 +1257,9 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
             onClick={() => {
               if (activeMainTab === '360_PLAYBACK' && selectedUserId) {
                 delete routeCacheRef.current[`${selectedUserId}_${selectedDate}`];
-                loadEmployeeRoute(selectedUserId, selectedDate);
+                lastFitRouteKeyRef.current = '';
+                loadEmployeeRoute(selectedUserId, selectedDate, { forceFresh: true });
+                loadRadarAndEmployees({ silent: true });
               }
               else if (activeMainTab === 'ALL_INDIA_RADAR') loadRadarAndEmployees();
               else if (activeMainTab === 'CONVEYANCE_VOUCHERS') loadVouchers();
@@ -1233,10 +1303,10 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
                 <label style={{ fontSize: 11, fontWeight: 700, color: '#64748b' }}>
                   SELECT FIELD EXECUTIVE ({activeEmployeesList.length})
                 </label>
-                {selectedEmployee?.hasPings && (
-                  <span style={{ fontSize: 11, fontWeight: 700, color: '#16a34a', display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#16a34a', display: 'inline-block' }}></span>
-                    Live Active
+                {selectedEmployee && (
+                  <span style={{ fontSize: 11, fontWeight: 700, color: liveDeviceStatus.headerBadge.color, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: liveDeviceStatus.headerBadge.dot, display: 'inline-block' }}></span>
+                    {liveDeviceStatus.headerBadge.label}
                   </span>
                 )}
               </div>
@@ -1269,8 +1339,18 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
                     width: 28,
                     height: 28,
                     borderRadius: '50%',
-                    background: selectedEmployee?.hasPings ? '#dcfce7' : '#f1f5f9',
-                    color: selectedEmployee?.hasPings ? '#15803d' : '#475569',
+                    background:
+                      !liveDeviceStatus.gpsStatusState.isOff && liveDeviceStatus.isToday && !liveDeviceStatus.isShiftCompleted && liveDeviceStatus.lastPingMs
+                        ? '#dcfce7'
+                        : selectedEmployee?.hasPings
+                          ? '#fff7ed'
+                          : '#f1f5f9',
+                    color:
+                      !liveDeviceStatus.gpsStatusState.isOff && liveDeviceStatus.isToday && !liveDeviceStatus.isShiftCompleted && liveDeviceStatus.lastPingMs
+                        ? '#15803d'
+                        : selectedEmployee?.hasPings
+                          ? '#ea580c'
+                          : '#475569',
                     fontWeight: 700,
                     fontSize: 12,
                     display: 'flex',
@@ -1352,6 +1432,14 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
                     ) : (
                       filteredExecutives.map(emp => {
                         const isSelected = emp.user_id === selectedUserId;
+                        const empPingMs = emp.last_ping ? new Date(emp.last_ping).getTime() : null;
+                        const empGapSec = empPingMs != null ? Math.max(0, Math.floor((liveNowMs - empPingMs) / 1000)) : null;
+                        const empDotColor =
+                          empGapSec != null && empGapSec <= LIVE_OFFLINE_THRESHOLD_SEC
+                            ? '#16a34a'
+                            : emp.hasPings
+                              ? '#f59e0b'
+                              : '#cbd5e1';
                         return (
                           <div
                             key={emp.user_id}
@@ -1389,7 +1477,7 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
                                 width: 8,
                                 height: 8,
                                 borderRadius: '50%',
-                                background: emp.hasPings ? '#16a34a' : '#cbd5e1',
+                                background: empDotColor,
                                 flexShrink: 0
                               }} />
                               <div style={{ overflow: 'hidden' }}>
@@ -1415,69 +1503,14 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
 
             {/* Header Device & Stats Bar */}
             {routeData && (() => {
-              const lp = routeData.lastPing;
-              const todayIST = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date(liveNowMs));
-              const isToday = selectedDate === todayIST;
-              const isShiftCompleted = Boolean(routeData.shiftCompleted);
-
-              // --- Battery (preserves last non-null battery reading across punch-out) ---
-              const battObj = routeData.latestBattery;
-              const battPct = battObj?.pct != null ? battObj.pct : (lp?.battery_pct != null ? Number(lp.battery_pct) : null);
-              const isCharging = battObj != null ? Boolean(battObj.isCharging) : Boolean(lp?.is_charging);
-              const battColor = battPct == null ? '#64748b' : battPct <= 15 ? '#dc2626' : battPct <= 30 ? '#d97706' : '#16a34a';
-              const battLabel = battPct != null ? `${battPct}%` : 'N/A';
-
-              // --- Ping & Mobile Session Freshness (3-minute active threshold) ---
-              const lastPingMs = lp?.recorded_at ? new Date(lp.recorded_at).getTime() : null;
-              const gapMins = lastPingMs != null ? Math.max(0, Math.floor((liveNowMs - lastPingMs) / 60000)) : null;
-              const mobSessMs = routeData.mobileSessionLastActive ? new Date(routeData.mobileSessionLastActive).getTime() : null;
-              const mobSessGapMins = mobSessMs != null ? Math.max(0, Math.floor((liveNowMs - mobSessMs) / 60000)) : null;
-              const formatGap = (mins) => {
-                const hrs = Math.floor(mins / 60);
-                const rem = mins % 60;
-                return hrs > 0 ? `${hrs}h ${rem}m` : `${rem}m`;
-              };
-              const lastPingTimeIST = lp?.recorded_at
-                ? new Date(lp.recorded_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })
-                : null;
-
-              let mobileDataState = { label: 'No Data Yet', color: '#64748b', bg: '#f8fafc', border: '#e2e8f0', isOff: false };
-              let gpsStatusState = { label: 'No GPS Ping', color: '#64748b', bg: '#f8fafc', border: '#e2e8f0', isOff: false };
-
-              if (!isToday || isShiftCompleted) {
-                mobileDataState = routeData.hadOfflineSync
-                  ? { label: 'Offline Gaps Synced', color: '#d97706', bg: '#fffbeb', border: '#fde68a', isOff: false }
-                  : lastPingMs
-                    ? { label: 'Tracked Online', color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0', isOff: false }
-                    : { label: 'No Data Logged', color: '#64748b', bg: '#f8fafc', border: '#e2e8f0', isOff: false };
-
-                if (isShiftCompleted && routeData.punchOutTime) {
-                  const outTimeIST = new Date(routeData.punchOutTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
-                  gpsStatusState = { label: `Shift Ended (${outTimeIST})`, color: '#475569', bg: '#f1f5f9', border: '#cbd5e1', isOff: false };
-                } else {
-                  gpsStatusState = { label: `Archive (${routeData.totalPings || 0} pings)`, color: '#475569', bg: '#f1f5f9', border: '#cbd5e1', isOff: false };
-                }
-              } else if (lastPingMs == null) {
-                if (mobSessGapMins != null && mobSessGapMins <= 3) {
-                  mobileDataState = { label: 'Online (App Active)', color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0', isOff: false };
-                  gpsStatusState = { label: 'GPS Off / No Lock', color: '#ea580c', bg: '#fff7ed', border: '#fed7aa', isOff: true };
-                }
-              } else {
-                const isLastPingOfflineSync = Boolean(lp?.is_offline_synced);
-                const isGpsInactive = gapMins > 3 || isLastPingOfflineSync;
-                const isMobileAppAlive = mobSessGapMins != null && mobSessGapMins <= 3 && !isLastPingOfflineSync;
-
-                if (!isGpsInactive) {
-                  mobileDataState = { label: 'Online', color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0', isOff: false };
-                  gpsStatusState = { label: gapMins > 0 ? `Active (${gapMins}m ago)` : 'Active', color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0', isOff: false };
-                } else {
-                  const sinceLabel = `Off since ${lastPingTimeIST} (${formatGap(gapMins)} ago)`;
-                  gpsStatusState = { label: sinceLabel, color: '#ea580c', bg: '#fff7ed', border: '#fed7aa', isOff: true };
-                  mobileDataState = isMobileAppAlive
-                    ? { label: 'Online (App Active)', color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0', isOff: false }
-                    : { label: `Offline (${formatGap(gapMins)} ago)`, color: '#ea580c', bg: '#fff7ed', border: '#fed7aa', isOff: true };
-                }
-              }
+              const {
+                battColor,
+                battLabel,
+                isCharging,
+                lastPingTimeIST,
+                mobileDataState,
+                gpsStatusState
+              } = liveDeviceStatus;
 
               return (
                 <div style={{ padding: 14, background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
@@ -1486,6 +1519,12 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
                     <div style={{ background: '#ffffff', padding: '8px 10px', borderRadius: 8, border: '1px solid #e2e8f0' }}>
                       <div style={{ fontSize: 10, color: '#64748b', fontWeight: 600 }}>TOTAL DISTANCE</div>
                       <div style={{ fontSize: 16, fontWeight: 800, color: '#2563eb' }}>{routeData.totalKm} km</div>
+                      {routeData.offlineGapKm > 0 && (
+                        <div style={{ fontSize: 9.5, color: '#c2410c', fontWeight: 600, marginTop: 2, lineHeight: 1.25 }}>
+                          <span style={{ whiteSpace: 'nowrap' }}>Road: {routeData.trackedRoadKm ?? 0} km</span>{' '}
+                          • <span style={{ whiteSpace: 'nowrap' }}>Offline: {routeData.offlineGapKm} km</span>
+                        </div>
+                      )}
                     </div>
                     <div style={{ background: '#ffffff', padding: '8px 10px', borderRadius: 8, border: '1px solid #e2e8f0' }}>
                       <div style={{ fontSize: 10, color: '#64748b', fontWeight: 600 }}>CLIENT VISITS</div>
@@ -1810,11 +1849,15 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                     <span style={{ width: 14, height: 4, background: '#2563eb', borderRadius: 2, display: 'inline-block' }}></span>
-                    <span style={{ color: '#1e293b' }}>Live Online Route</span>
+                    <span style={{ color: '#1e293b' }}>Live Online</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <span style={{ width: 14, height: 4, background: '#d97706', borderRadius: 2, display: 'inline-block' }}></span>
+                    <span style={{ color: '#1e293b' }}>Offline Recorded</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                     <span style={{ width: 14, height: 0, borderTop: '3px dashed #ea580c', display: 'inline-block' }}></span>
-                    <span style={{ color: '#1e293b' }}>Offline Gap (Signal Lost)</span>
+                    <span style={{ color: '#1e293b' }}>Signal Lost Gap</span>
                   </div>
                 </div>
               )}
@@ -1979,37 +2022,52 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
           <div style={{ background: '#ffffff', borderRadius: 12, border: '1px solid #e2e8f0', flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             <div style={{ padding: '14px 18px', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ fontWeight: 700, fontSize: 14, color: '#0f172a' }}>
-                Field Force Distribution ({radarEmployees.length} Active Today)
+                Field Force Distribution ({radarEmployees.filter(e => e.recorded_at && Math.max(0, Math.floor((liveNowMs - new Date(e.recorded_at).getTime()) / 1000)) <= LIVE_OFFLINE_THRESHOLD_SEC).length} Online Now • {radarEmployees.length} Active Today)
               </div>
             </div>
 
             <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12 }}>
-                {radarEmployees.map((emp, idx) => (
+                {radarEmployees.map((emp, idx) => {
+                  const empGapSec = emp.recorded_at ? Math.max(0, Math.floor((liveNowMs - new Date(emp.recorded_at).getTime()) / 1000)) : null;
+                  const isEmpOnline = empGapSec != null && empGapSec <= LIVE_OFFLINE_THRESHOLD_SEC;
+                  return (
                   <div
                     key={idx}
                     style={{
                       background: '#f8fafc',
                       borderRadius: 10,
                       padding: 14,
-                      border: '1px solid #e2e8f0',
+                      border: `1px solid ${isEmpOnline ? '#bbf7d0' : '#fed7aa'}`,
                       display: 'flex',
                       flexDirection: 'column',
                       gap: 8
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
                       <span style={{ fontWeight: 700, fontSize: 14, color: '#0f172a' }}>{emp.name}</span>
-                      <span style={{
-                        fontSize: 10,
-                        fontWeight: 700,
-                        padding: '2px 8px',
-                        borderRadius: 6,
-                        background: emp.is_moving ? '#dcfce7' : '#f1f5f9',
-                        color: emp.is_moving ? '#166534' : '#475569'
-                      }}>
-                        {emp.is_moving ? '🟢 Moving' : '⚪ Stationary'}
-                      </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <span style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          padding: '2px 7px',
+                          borderRadius: 6,
+                          background: isEmpOnline ? '#dcfce7' : '#fff7ed',
+                          color: isEmpOnline ? '#166534' : '#c2410c'
+                        }}>
+                          {isEmpOnline ? '🟢 Online' : `🔴 Offline (${empGapSec != null ? formatDurationSeconds(empGapSec) : 'No ping'})`}
+                        </span>
+                        <span style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          padding: '2px 7px',
+                          borderRadius: 6,
+                          background: emp.is_moving ? '#e0f2fe' : '#f1f5f9',
+                          color: emp.is_moving ? '#0369a1' : '#475569'
+                        }}>
+                          {emp.is_moving ? 'Moving' : 'Stationary'}
+                        </span>
+                      </div>
                     </div>
 
                     <div style={{ fontSize: 12, color: '#64748b' }}>
@@ -2018,11 +2076,12 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
 
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 11, color: '#475569', paddingTop: 6, borderTop: '1px solid #e2e8f0' }}>
                       <span>Speed: {emp.speed_kmh} km/h</span>
-                      <span>Battery: {emp.battery_pct}%</span>
-                      <span>{new Date(emp.recorded_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
+                      <span>Battery: {emp.battery_pct != null ? `${emp.battery_pct}%` : 'N/A'}</span>
+                      <span>{emp.recorded_at ? new Date(emp.recorded_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }) : '-'}</span>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </div>
