@@ -5,17 +5,90 @@
 
 import { INTEGRATION_PAGE, INTEGRATION_PAGE_IDS, INTEGRATION_TABS } from '../config/integrationsConfig.js';
 import { WHATSAPP_LOG_PAGE_ID, WHATSAPP_LOG_VIEW_IDS } from '../config/whatsappMessageLogsConfig.js';
+import { detectClientPlatform, PLATFORM_LABELS } from './platformDetection.js';
+
+export const PLATFORM_ACCESS_OPTIONS = [
+  { key: 'web', label: 'Web App', shortLabel: 'Web', emoji: '🌐', color: '#2563eb' },
+  { key: 'windows', label: 'Windows / Desktop', shortLabel: 'Win', emoji: '💻', color: '#0f766e' },
+  { key: 'android', label: 'Android APK', shortLabel: 'And', emoji: '🤖', color: '#16a34a' },
+  { key: 'ios', label: 'iPhone / iOS IPA', shortLabel: 'iOS', emoji: '🍎', color: '#7c3aed' }
+];
+
+export function checkIsMasterAdmin(moduleAccess, userRole, userEmail = '') {
+  const rLower = String(userRole || '').trim().toLowerCase();
+  const emailLower = String(userEmail || moduleAccess?._userEmail || '').trim().toLowerCase();
+  return (
+    rLower === 'masteradmin' ||
+    rLower === 'master_admin' ||
+    moduleAccess?.is_master_admin === true ||
+    emailLower === 'supujacreations@gmail.com'
+  );
+}
+
+export function getActiveClientPlatformKey(platformOverride = null) {
+  if (platformOverride) {
+    const raw = String(platformOverride).trim().toLowerCase();
+    if (['all', 'web', 'windows', 'android', 'ios'].includes(raw)) return raw;
+    if (raw.includes('android')) return 'android';
+    if (raw.includes('ios') || raw.includes('iphone')) return 'ios';
+    if (raw.includes('windows') || raw.includes('mac') || raw.includes('desktop')) return 'windows';
+    return 'web';
+  }
+  if (typeof window === 'undefined') return 'all';
+  try {
+    const detected = detectClientPlatform();
+    if (detected?.platform === PLATFORM_LABELS.ANDROID_APP) return 'android';
+    if (detected?.platform === PLATFORM_LABELS.IOS_APP) return 'ios';
+    if (detected?.platform === PLATFORM_LABELS.WINDOWS_APP || detected?.platform === PLATFORM_LABELS.MACOS_APP) {
+      return 'windows';
+    }
+    return 'web';
+  } catch {
+    return 'web';
+  }
+}
+
+export function isUserPlatformAllowed(moduleAccess, userRole, platformKey = null, userEmail = '') {
+  if (checkIsMasterAdmin(moduleAccess, userRole, userEmail)) return true;
+  const key = getActiveClientPlatformKey(platformKey);
+  if (key === 'all') return true;
+  const allowed = moduleAccess?.allowed_platforms;
+  if (!allowed || typeof allowed !== 'object') return true;
+  return allowed[key] !== false;
+}
+
+export function isPlatformEntryAllowed(entryPlatforms, parentPlatforms = null, platformKey = null) {
+  const key = getActiveClientPlatformKey(platformKey);
+  if (key === 'all') return true;
+  if (parentPlatforms && typeof parentPlatforms === 'object' && parentPlatforms[key] === false) {
+    return false;
+  }
+  if (entryPlatforms && typeof entryPlatforms === 'object' && entryPlatforms[key] === false) {
+    return false;
+  }
+  return true;
+}
 
 export function checkIsAdminRole(userRole) {
   const rLower = String(userRole || '').trim().toLowerCase();
   return rLower === 'admin' || rLower === 'superadmin' || rLower === 'masteradmin' || rLower === 'super_admin' || rLower === 'master_admin';
 }
 
-export function getModulePermissions(moduleAccess, userRole, moduleId) {
-  if(moduleId==='config_master') {
-    const master=['masteradmin','master_admin'].includes(String(userRole || '').trim().toLowerCase()) || moduleAccess?.is_master_admin===true || String(moduleAccess?._userEmail || '').trim().toLowerCase()==='supujacreations@gmail.com';
-    return {view:master,add:master,edit:master,delete:false,is_manager:master};
+export function getModulePermissions(moduleAccess, userRole, moduleId, platformKey = null) {
+  const isMaster = checkIsMasterAdmin(moduleAccess, userRole);
+  if (moduleId === 'config_master') {
+    return { view: isMaster, add: isMaster, edit: isMaster, delete: false, is_manager: isMaster };
   }
+
+  if (!isMaster && !isUserPlatformAllowed(moduleAccess, userRole, platformKey)) {
+    return { view: false, add: false, edit: false, delete: false, is_manager: false };
+  }
+
+  const m = moduleAccess?.[moduleId];
+  if (!isMaster && m && typeof m === 'object' && !isPlatformEntryAllowed(m.platforms, null, platformKey)) {
+    return { view: false, add: false, edit: false, delete: false, is_manager: false };
+  }
+
   const isAdmin = checkIsAdminRole(userRole);
   if (isAdmin) {
     return { view: true, add: true, edit: true, delete: true, is_manager: true };
@@ -25,7 +98,6 @@ export function getModulePermissions(moduleAccess, userRole, moduleId) {
     return { view: false, add: false, edit: false, delete: false, is_manager: false };
   }
 
-  const m = moduleAccess[moduleId];
   if (!m) {
     return { view: false, add: false, edit: false, delete: false, is_manager: false };
   }
@@ -50,22 +122,30 @@ export function getModulePermissions(moduleAccess, userRole, moduleId) {
   return { view: false, add: false, edit: false, delete: false, is_manager: false };
 }
 
-export function getSubItemPermissions(moduleAccess, userRole, moduleId, subItemId) {
-  if(moduleId==='config_master') {
-    const parent=getModulePermissions(moduleAccess,userRole,moduleId);
-    return {view:parent.view,add:parent.add,edit:parent.edit,delete:false};
-  }
-  const isAdmin = checkIsAdminRole(userRole);
-  if (isAdmin) {
-    return { view: true, add: true, edit: true, delete: true };
+export function getSubItemPermissions(moduleAccess, userRole, moduleId, subItemId, platformKey = null) {
+  const isMaster = checkIsMasterAdmin(moduleAccess, userRole);
+  if (moduleId === 'config_master') {
+    const parent = getModulePermissions(moduleAccess, userRole, moduleId, platformKey);
+    return { view: parent.view, add: parent.add, edit: parent.edit, delete: false };
   }
 
-  const parentPerms = getModulePermissions(moduleAccess, userRole, moduleId);
+  const parentPerms = getModulePermissions(moduleAccess, userRole, moduleId, platformKey);
   if (!parentPerms.view) {
     return { view: false, add: false, edit: false, delete: false };
   }
 
   const m = moduleAccess?.[moduleId];
+  const subRaw = (m && typeof m === 'object' && m.sub_items && typeof m.sub_items === 'object')
+    ? m.sub_items[subItemId]
+    : undefined;
+  if (!isMaster && !isPlatformEntryAllowed(typeof subRaw === 'object' ? subRaw?.platforms : null, typeof m === 'object' ? m?.platforms : null, platformKey)) {
+    return { view: false, add: false, edit: false, delete: false };
+  }
+
+  const isAdmin = checkIsAdminRole(userRole);
+  if (isAdmin) {
+    return { view: true, add: true, edit: true, delete: true };
+  }
   // This existing page owns three registered views. Legacy explicit log grants
   // retain raw access; the two analytics views require separate explicit grants.
   if (moduleId === 'whatsapp_official' && subItemId === WHATSAPP_LOG_PAGE_ID) {
@@ -270,8 +350,7 @@ export function getSubItemPermissions(moduleAccess, userRole, moduleId, subItemI
 }
 
 export function filterVisibleSubTabs(moduleAccess, userRole, moduleId, tabsList = []) {
-  const isAdmin = checkIsAdminRole(userRole);
-  if (isAdmin) return tabsList;
+  if (checkIsMasterAdmin(moduleAccess, userRole)) return tabsList;
 
   return tabsList.filter(tab => {
     if (moduleId === 'settings' && tab.id === INTEGRATION_PAGE.id && tab.subItems?.length) {

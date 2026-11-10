@@ -31,7 +31,17 @@ import UserNotificationPreferencesModal from '@/components/common/UserNotificati
 import { getTransferredLeads } from '@/app/actions/partyHandoff';
 
 import { MODULES_CONFIG } from '@/config/modulesConfig';
-import { getSubItemPermissions, getModulePermissions, canViewIntegrations } from '@/utils/permissionUtils';
+import {
+  getSubItemPermissions,
+  getModulePermissions,
+  canViewIntegrations,
+  isUserPlatformAllowed,
+  isPlatformEntryAllowed,
+  getActiveClientPlatformKey,
+  checkIsMasterAdmin,
+  checkIsAdminRole,
+  PLATFORM_ACCESS_OPTIONS
+} from '@/utils/permissionUtils';
 import { sameLeadList } from '@/utils/sameLeadList';
 import { getReportingTeam, getLeadAssignees, isLeadInAssignmentScope, getLeadStageKey, getLeadStageAccess } from '@/utils/reportingHierarchy';
 import { isCompleteLeadCache, matchesLeadCacheContext, mergeLeadCacheForDisplay } from '@/utils/leadCachePolicy';
@@ -177,6 +187,30 @@ const KeepAliveTab = React.memo(
   }
 );
 
+export function isModuleVisibleOnPlatform(tabId, moduleAccess = {}, userRole = '', userEmail = '') {
+  if (checkIsMasterAdmin(moduleAccess, userRole, userEmail)) return true;
+  if (!isUserPlatformAllowed(moduleAccess, userRole, null, userEmail)) return false;
+
+  const baseId = typeof tabId === 'string' && (tabId.startsWith('party/') || tabId.startsWith('party_'))
+    ? 'party'
+    : (typeof tabId === 'string' && (tabId.startsWith('channel_ops') || tabId.startsWith('channel-operations')))
+      ? 'channel_ops'
+      : tabId;
+
+  const modKeys =
+    baseId === 'dashboard' ? ['analytics'] :
+    baseId === 'ai' ? ['ai', 'new_swan_ai'] :
+    baseId === 'location_master' || baseId === 'location_territory' || baseId === 'location-master' ? ['location_master', 'location_territory'] :
+    [baseId];
+
+  // If any resolved module object explicitly blocks the active platform, deny on this platform
+  return modKeys.some(k => {
+    const entry = moduleAccess?.[k];
+    if (!entry || typeof entry !== 'object') return true;
+    return isPlatformEntryAllowed(entry.platforms);
+  });
+}
+
 export function isTabPermitted(tabId, moduleAccess = {}, userRole = '', tenantEntitlements = null, tenantId = null, userEmail = '') {
   const activeEntitlements = tenantEntitlements || moduleAccess?._tenantEntitlements || null;
   const activeTenantId = tenantId || moduleAccess?._tenantId || null;
@@ -188,14 +222,15 @@ export function isTabPermitted(tabId, moduleAccess = {}, userRole = '', tenantEn
 
   // 2. SaaS Studio, Workflow Builder & Admin Message Gate: STRICTLY restricted to Master Admin (supujacreations@gmail.com)
   if (tabId === 'saas_studio' || tabId === 'saas_master' || tabId === 'config_master' || tabId === 'workplace' || tabId === 'workflow' || tabId === 'admin_message_config') {
-    const emailLower = (userEmail || moduleAccess?._userEmail || '').toLowerCase().trim();
-    const isMaster = emailLower === 'supujacreations@gmail.com' ||
-                     (typeof userRole === 'string' && userRole.toLowerCase() === 'masteradmin') ||
-                     moduleAccess?.is_master_admin === true;
-    return isMaster;
+    return checkIsMasterAdmin(moduleAccess, userRole, userEmail);
   }
 
-  const isAdmin = typeof userRole === 'string' && (userRole.toLowerCase() === 'admin' || userRole.toLowerCase() === 'superadmin' || userRole.toLowerCase() === 'masteradmin');
+  // 2b. Device Platform Gate (Layer 1 Global + Layer 2 Per-Module)
+  if (!isModuleVisibleOnPlatform(tabId, moduleAccess, userRole, userEmail)) {
+    return false;
+  }
+
+  const isAdmin = checkIsAdminRole(userRole);
   if (isAdmin) return true;
   if (!moduleAccess) return false;
 
@@ -3204,25 +3239,27 @@ export default function CRMContainer({
     }
   }, [moduleAccess, userRole, activeTab, leadsFilterStage]);
 
-  // Live Active Tab Access Guard: If current active tab is revoked or unauthorized (e.g. non-master trying to access saas_studio/config_master), immediately switch to allowed tab
+  // Live Active Tab Access Guard: If current active tab is revoked or unauthorized (including platform restriction), immediately switch to allowed tab
   useEffect(() => {
     if ((activeTab === 'saas_studio' || activeTab === 'saas_master' || activeTab === 'config_master') && !isMasterAdmin) {
       handleTabChange('dashboard');
       return;
     }
-    if (isAdmin) return;
+    if (isMasterAdmin) return;
     if (!isTabPermitted(activeTab, moduleAccess, userRole, effectiveTenantEntitlements, effectiveTenantId, userEmail)) {
       const allPossibleTabs = [
-        'dashboard', 'leads', 'registration', 'report', 'orders', 'mrp', 'mrp_against',
-        'recruiter', 'joining', 'party', 'workplace', 'callcenter', 'whatsapp_official',
-        'whatsapp_unofficial', 'calladmin', 'aicallcenter', 'email_config', 'admin_message_config', 'settings'
+        'dashboard', 'leads', 'attendance', 'checklist', 'delegation', 'field_force',
+        'registration', 'report', 'orders', 'mrp', 'mrp_against', 'recruiter', 'joining',
+        'party', 'channel_ops', 'location_master', 'ai', 'callcenter', 'whatsapp_official',
+        'whatsapp_unofficial', 'calladmin', 'aicallcenter', 'email_config', 'user_management_new',
+        'team', 'admin_message_config', 'settings'
       ];
       const nextAllowedTab = allPossibleTabs.find(t => isTabPermitted(t, moduleAccess, userRole, effectiveTenantEntitlements, effectiveTenantId, userEmail));
       if (nextAllowedTab) {
         handleTabChange(nextAllowedTab);
       }
     }
-  }, [moduleAccess, userRole, activeTab, isAdmin, isMasterAdmin, effectiveTenantEntitlements, effectiveTenantId, userEmail]);
+  }, [moduleAccess, userRole, activeTab, isMasterAdmin, effectiveTenantEntitlements, effectiveTenantId, userEmail]);
 
   const handleTabChange = (tabId) => {
     if (tabId === 'ai' && activeTab !== 'ai') {
@@ -4251,6 +4288,49 @@ export default function CRMContainer({
       leadsVisited: visitedTabs.has('leads') });
   }, [isMounted, activeTab, loadingLeads, leads.length, isCurrentTabAllowedOffline, visitedTabs]);
 
+  if (isMounted && !isUserPlatformAllowed(moduleAccess, userRole, null, userEmail)) {
+    const currentPlatKey = getActiveClientPlatformKey();
+    const currentPlatMeta = PLATFORM_ACCESS_OPTIONS.find(p => p.key === currentPlatKey) || PLATFORM_ACCESS_OPTIONS[0];
+    const allowedPlatList = PLATFORM_ACCESS_OPTIONS.filter(p => !moduleAccess?.allowed_platforms || moduleAccess.allowed_platforms[p.key] !== false);
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', width: '100vw', background: '#f8fafc', padding: '1.5rem' }}>
+        <div style={{ maxWidth: '460px', width: '100%', background: '#ffffff', borderRadius: '16px', padding: '2rem', border: '1px solid #e2e8f0', boxShadow: '0 20px 45px rgba(15, 23, 42, 0.1)', textAlign: 'center' }}>
+          <div style={{ width: '56px', height: '56px', margin: '0 auto 1rem', borderRadius: '50%', background: '#fef2f2', border: '1px solid #fecaca', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#dc2626' }}>
+            <Shield size={28} />
+          </div>
+          <h2 style={{ margin: '0 0 0.5rem', fontSize: '1.25rem', fontWeight: 800, color: '#0f172a' }}>
+            Device Platform Restricted
+          </h2>
+          <p style={{ margin: '0 0 1rem', fontSize: '0.88rem', color: '#475569', lineHeight: 1.5 }}>
+            Your account (<strong>{userName || userEmail}</strong>) is currently restricted from opening SPC Workspace on <strong>{currentPlatMeta.emoji} {currentPlatMeta.label}</strong>.
+          </p>
+          <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '0.75rem 1rem', marginBottom: '1.25rem', textAlign: 'left' }}>
+            <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', marginBottom: '0.4rem' }}>
+              Allowed Devices for Your Account
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+              {allowedPlatList.length === 0 ? (
+                <span style={{ fontSize: '0.8rem', color: '#dc2626', fontWeight: 600 }}>All platforms disabled. Contact Admin.</span>
+              ) : allowedPlatList.map(p => (
+                <span key={p.key} style={{ fontSize: '0.76rem', fontWeight: 700, padding: '0.2rem 0.55rem', borderRadius: '6px', background: `${p.color}15`, color: p.color, border: `1px solid ${p.color}33` }}>
+                  {p.emoji} {p.label}
+                </span>
+              ))}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleLogout}
+            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '0.45rem', width: '100%', padding: '0.65rem 1.25rem', borderRadius: '8px', border: 'none', background: '#dc2626', color: '#ffffff', fontWeight: 700, fontSize: '0.88rem', cursor: 'pointer' }}
+          >
+            <LogOut size={16} /> Sign Out
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (userRole === 'customer') {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw', background: 'linear-gradient(135deg, #020617 0%, #0b1329 50%, #030712 100%)' }}>
@@ -4277,6 +4357,13 @@ export default function CRMContainer({
       </div>
     );
   }
+
+  const canShowSidebarModule = (modId, legacyAllowed = false) => {
+    if (isMounted && !isModuleVisibleOnPlatform(modId, moduleAccess, userRole, userEmail)) {
+      return false;
+    }
+    return Boolean(legacyAllowed);
+  };
 
   return (
     <div className="app-layout">
@@ -4560,7 +4647,7 @@ export default function CRMContainer({
             </SidebarSubmenu>
           )}
 
-          {(userRole === 'admin' || userRole === 'Admin' || moduleAccess['analytics']?.view) && (
+          {canShowSidebarModule('dashboard', userRole === 'admin' || userRole === 'Admin' || moduleAccess['analytics']?.view) && (
             <button 
               onClick={() => handleTabChange('dashboard')}
               className="nav-item" 
@@ -4574,7 +4661,7 @@ export default function CRMContainer({
           )}
 
           {/* AI Chatbot & AI Suite */}
-          {(isTabPermitted('ai', moduleAccess, userRole, tenantEntitlements, tenantId, userEmail) || userRole === 'admin' || userRole === 'Admin' || moduleAccess['ai']?.view || moduleAccess['new_swan_ai']?.view) && (
+          {canShowSidebarModule('ai', isTabPermitted('ai', moduleAccess, userRole, tenantEntitlements, tenantId, userEmail) || userRole === 'admin' || userRole === 'Admin' || moduleAccess['ai']?.view || moduleAccess['new_swan_ai']?.view) && (
             <SidebarSubmenu collapsed={isSidebarCollapsed}>
               <button 
                 onClick={() => {
@@ -4607,7 +4694,7 @@ export default function CRMContainer({
                   >
                     💬 AI Assistant Chat
                   </button>
-                  {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['aiadmin']?.view) && (
+                  {canShowSidebarModule('aiadmin', (userRole === 'admin' || userRole === 'Admin') || moduleAccess['aiadmin']?.view) && (
                     <button
                       onClick={() => handleTabChange('aiadmin')}
                       className="submenu-item"
@@ -4616,7 +4703,7 @@ export default function CRMContainer({
                       ⚙️ AI Admin & Models
                     </button>
                   )}
-                  {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['aiknowledgebase']?.view) && (
+                  {canShowSidebarModule('aiknowledgebase', (userRole === 'admin' || userRole === 'Admin') || moduleAccess['aiknowledgebase']?.view) && (
                     <button
                       onClick={() => handleTabChange('aiknowledgebase')}
                       className="submenu-item"
@@ -4631,7 +4718,7 @@ export default function CRMContainer({
           )}
 
           {/* Call Center */}
-          {(isTabPermitted('callcenter', moduleAccess, userRole, tenantEntitlements, tenantId, userEmail) || userRole === 'admin' || userRole === 'Admin' || moduleAccess['callcenter']?.view) && (
+          {canShowSidebarModule('callcenter', isTabPermitted('callcenter', moduleAccess, userRole, tenantEntitlements, tenantId, userEmail) || userRole === 'admin' || userRole === 'Admin' || moduleAccess['callcenter']?.view) && (
             <SidebarSubmenu collapsed={isSidebarCollapsed}>
               <button 
                 onClick={() => {
@@ -4664,7 +4751,7 @@ export default function CRMContainer({
                   >
                     📞 Telecalling Desk
                   </button>
-                  {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['calladmin']?.view) && (
+                  {canShowSidebarModule('calladmin', (userRole === 'admin' || userRole === 'Admin') || moduleAccess['calladmin']?.view) && (
                     <button
                       onClick={() => handleTabChange('calladmin')}
                       className="submenu-item"
@@ -4673,7 +4760,7 @@ export default function CRMContainer({
                       ⚙️ Call Admin & SIP
                     </button>
                   )}
-                  {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['aicallcenter']?.view) && (
+                  {canShowSidebarModule('aicallcenter', (userRole === 'admin' || userRole === 'Admin') || moduleAccess['aicallcenter']?.view) && (
                     <button
                       onClick={() => handleTabChange('aicallcenter')}
                       className="submenu-item"
@@ -4688,7 +4775,7 @@ export default function CRMContainer({
           )}
 
           {/* Smart Attendance (Positioned Above Sales) */}
-          {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['attendance']?.view) && (
+          {canShowSidebarModule('attendance', (userRole === 'admin' || userRole === 'Admin') || moduleAccess['attendance']?.view) && (
             <SidebarSubmenu collapsed={isSidebarCollapsed}>
               <button 
                 onClick={() => {
@@ -4810,7 +4897,7 @@ export default function CRMContainer({
           )}
 
           {/* Smart Checklist (Daily, Weekly, 15-Day, Monthly, Quarterly, 6-Month, 1-Year) */}
-          {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['checklist']?.view !== false) && (
+          {canShowSidebarModule('checklist', (userRole === 'admin' || userRole === 'Admin') || moduleAccess['checklist']?.view !== false) && (
             <SidebarSubmenu collapsed={isSidebarCollapsed}>
               <button 
                 onClick={() => {
@@ -4878,7 +4965,7 @@ export default function CRMContainer({
           )}
 
           {/* Delegation Tasks (Emp-to-Emp Task Management) */}
-          {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['delegation']?.view !== false) && (
+          {canShowSidebarModule('delegation', (userRole === 'admin' || userRole === 'Admin') || moduleAccess['delegation']?.view !== false) && (
             <SidebarSubmenu collapsed={isSidebarCollapsed}>
               <button 
                 onClick={() => {
@@ -4946,7 +5033,7 @@ export default function CRMContainer({
           )}
 
           {/* Field Force Management (Mobile App, Tasks, Custom Forms, Radar) */}
-          {((userRole === 'admin' || userRole === 'Admin') || isTabPermitted('field_force', moduleAccess, userRole)) && (
+          {canShowSidebarModule('field_force', (userRole === 'admin' || userRole === 'Admin') || isTabPermitted('field_force', moduleAccess, userRole)) && (
             <SidebarSubmenu collapsed={isSidebarCollapsed}>
               <button 
                 onClick={() => {
@@ -5016,7 +5103,7 @@ export default function CRMContainer({
           {['Sales', 'Purchase', 'Human Resource'].map(category => {
             const visibleModules = MODULES_CONFIG.filter(m => 
               m.category === category && 
-              ((userRole === 'admin' || userRole === 'Admin') || moduleAccess[m.id]?.view)
+              canShowSidebarModule(m.id, (userRole === 'admin' || userRole === 'Admin') || moduleAccess[m.id]?.view)
             );
 
             if (visibleModules.length === 0) return null;
@@ -5532,7 +5619,7 @@ export default function CRMContainer({
           })}
 
           {/* USER MANAGEMENT CATEGORY (Strictly positioned between Human Resource and System) */}
-          {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['team']?.view || moduleAccess['user_management_new']?.view) && (
+          {canShowSidebarModule('user_management_new', (userRole === 'admin' || userRole === 'Admin') || moduleAccess['team']?.view || moduleAccess['user_management_new']?.view) && (
             <div>
               <button
                 onClick={() => {
@@ -5661,12 +5748,9 @@ export default function CRMContainer({
           )}
 
           {/* COMMUNICATION CENTER CATEGORY ACCORDION (Between User Management/Workflow Builder and System) */}
-          {((userRole === 'admin' || userRole === 'Admin') || 
-            moduleAccess['whatsapp_official']?.view || 
-            moduleAccess['whatsapp_unofficial']?.view || 
-            moduleAccess['sms_config']?.view || 
-            moduleAccess['rcs_config']?.view || 
-            moduleAccess['email_config']?.view) && (
+          {['whatsapp_official', 'whatsapp_unofficial', 'sms_config', 'rcs_config', 'email_config'].some(cid =>
+            canShowSidebarModule(cid, (userRole === 'admin' || userRole === 'Admin') || moduleAccess[cid]?.view)
+          ) && (
               <div>
                 <button
                   onClick={() => toggleCategory('Communication Center')}
@@ -5683,7 +5767,7 @@ export default function CRMContainer({
                   suppressHydrationWarning
                 >
                   <div className="category-modules-inner">
-                    {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['whatsapp_official']?.view) && (
+                    {canShowSidebarModule('whatsapp_official', (userRole === 'admin' || userRole === 'Admin') || moduleAccess['whatsapp_official']?.view) && (
                       <button 
                         onClick={() => handleTabChange('whatsapp_official')}
                         className="nav-item" 
@@ -5696,7 +5780,7 @@ export default function CRMContainer({
                       </button>
                     )}
 
-                    {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['whatsapp_unofficial']?.view) && (
+                    {canShowSidebarModule('whatsapp_unofficial', (userRole === 'admin' || userRole === 'Admin') || moduleAccess['whatsapp_unofficial']?.view) && (
                       <button 
                         onClick={() => handleTabChange('whatsapp_unofficial')}
                         className="nav-item" 
@@ -5709,7 +5793,7 @@ export default function CRMContainer({
                       </button>
                     )}
 
-                    {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['sms_config']?.view) && (
+                    {canShowSidebarModule('sms_config', (userRole === 'admin' || userRole === 'Admin') || moduleAccess['sms_config']?.view) && (
                       <button 
                         onClick={() => handleTabChange('sms_config')}
                         className="nav-item" 
@@ -5722,7 +5806,7 @@ export default function CRMContainer({
                       </button>
                     )}
 
-                    {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['rcs_config']?.view) && (
+                    {canShowSidebarModule('rcs_config', (userRole === 'admin' || userRole === 'Admin') || moduleAccess['rcs_config']?.view) && (
                       <button 
                         onClick={() => handleTabChange('rcs_config')}
                         className="nav-item" 
@@ -5735,7 +5819,7 @@ export default function CRMContainer({
                       </button>
                     )}
 
-                    {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['email_config']?.view) && (
+                    {canShowSidebarModule('email_config', (userRole === 'admin' || userRole === 'Admin') || moduleAccess['email_config']?.view) && (
                       <button 
                         onClick={() => handleTabChange('email_config')}
                         className="nav-item" 
@@ -5753,8 +5837,7 @@ export default function CRMContainer({
             )}
 
           {/* SYSTEM CATEGORY ACCORDION */}
-          {((userRole === 'admin' || userRole === 'Admin') || 
-            moduleAccess['team']?.view) && (
+          {canShowSidebarModule('team', (userRole === 'admin' || userRole === 'Admin') || moduleAccess['team']?.view) && (
               <div>
                 <button
                   onClick={() => toggleCategory('System')}
@@ -5771,7 +5854,7 @@ export default function CRMContainer({
                 >
                   <div className="category-modules-inner">
                     {/* Team Management */}
-                    {((userRole === 'admin' || userRole === 'Admin') || moduleAccess['team']?.view) && (
+                    {canShowSidebarModule('team', (userRole === 'admin' || userRole === 'Admin') || moduleAccess['team']?.view) && (
                       <button 
                         onClick={() => handleTabChange('team')}
                         className="nav-item" 
@@ -5789,7 +5872,7 @@ export default function CRMContainer({
           )}
 
           {/* Settings Category (Exact same structure & styling as System category) */}
-          {(userRole === 'admin' || userRole === 'Admin' || moduleAccess['settings']?.view || globalRolePermissions?.editSettings) && (
+          {canShowSidebarModule('settings', userRole === 'admin' || userRole === 'Admin' || moduleAccess['settings']?.view || globalRolePermissions?.editSettings) && (
             <div>
               <button
                 onClick={() => toggleCategory('Settings')}
@@ -5806,6 +5889,7 @@ export default function CRMContainer({
               >
                 <div className="category-modules-inner">
                   {SETTINGS_MODULE_ITEMS.filter(item => {
+                    if (isMounted && !isPlatformEntryAllowed(moduleAccess?.settings?.sub_items?.[item.id]?.platforms, moduleAccess?.settings?.platforms)) return false;
                     if (userRole === 'admin' || userRole === 'Admin') return true;
                     if (item.id === INTEGRATION_PAGE.id) return canViewIntegrations(moduleAccess, userRole);
                     return getSubItemPermissions(moduleAccess, userRole, 'settings', item.id)?.view !== false;

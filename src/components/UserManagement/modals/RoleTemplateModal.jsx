@@ -19,6 +19,12 @@ import { MODULES_CONFIG } from '@/config/modulesConfig';
 import { ROLE_PRESETS } from '../utils/rolePresets';
 import { getSubItemPermissions } from '@/utils/permissionUtils';
 import { WHATSAPP_LOG_VIEW_IDS } from '@/config/whatsappMessageLogsConfig';
+import {
+  AllowedPlatformsBar,
+  PlatformRowPills,
+  togglePlatformKeyInMap,
+  cleanPlatformsForSave
+} from '../components/PlatformAccessPills';
 
 const OPERATIONAL_POWERS = [
   { key: 'can_import_data', label: '📥 Import Leads Power', desc: 'Allows uploading and bulk importing CSV lead files into CRM' },
@@ -35,11 +41,12 @@ const OPERATIONAL_POWERS = [
 ];
 
 const TABLE_COLUMNS = [
-  { id: 'page', label: 'Module / Page / Sub-Page / Tab', width: 440, minWidth: 240 },
-  { id: 'view', label: 'VIEW', width: 85, minWidth: 65 },
-  { id: 'add', label: 'ADD', width: 85, minWidth: 65 },
-  { id: 'edit', label: 'EDIT / SAVE', width: 115, minWidth: 95 },
-  { id: 'delete', label: 'DELETE', width: 85, minWidth: 65 }
+  { id: 'page', label: 'Module / Page / Sub-Page / Tab', width: 410, minWidth: 230 },
+  { id: 'view', label: 'VIEW', width: 78, minWidth: 60 },
+  { id: 'add', label: 'ADD', width: 78, minWidth: 60 },
+  { id: 'edit', label: 'EDIT / SAVE', width: 105, minWidth: 85 },
+  { id: 'delete', label: 'DELETE', width: 78, minWidth: 60 },
+  { id: 'platforms', label: 'PLATFORMS (Web / Win / And / iOS)', width: 228, minWidth: 195 }
 ];
 const COLUMN_WIDTHS_KEY = 'crm-role-template-modal-column-widths';
 const COLUMN_COUNT = TABLE_COLUMNS.length;
@@ -389,6 +396,104 @@ export default function RoleTemplateModal({ onClose, onSave, saving = false, use
     });
   };
 
+  // Layer 1: Allowed Login Platforms for Role Template
+  const handleToggleAllowedPlatform = (platformKey) => {
+    setPermissions(prev => {
+      const nextMap = togglePlatformKeyInMap(prev.allowed_platforms, platformKey);
+      const next = { ...prev };
+      if (nextMap) next.allowed_platforms = nextMap;
+      else delete next.allowed_platforms;
+      return next;
+    });
+  };
+
+  const handleAllowAllPlatforms = () => {
+    setPermissions(prev => {
+      const next = { ...prev };
+      delete next.allowed_platforms;
+      return next;
+    });
+  };
+
+  // Layer 2: Module & Sub-Item Platform Toggles
+  const handleToggleModulePlatform = (module, platformKey) => {
+    if (module.roleAssignable === false) return;
+    setPermissions(prev => {
+      const current = prev[module.id] || {};
+      const nextPlatforms = togglePlatformKeyInMap(current.platforms, platformKey);
+      const updated = { ...current, view: current.view !== false };
+      if (nextPlatforms) updated.platforms = nextPlatforms;
+      else delete updated.platforms;
+      return { ...prev, [module.id]: updated };
+    });
+  };
+
+  const handleToggleSubItemPlatform = (moduleId, subId, platformKey) => {
+    setPermissions(prev => {
+      const parent = prev[moduleId] || { view: true, read: true, write: true, add: true, edit: true };
+      const currentSubs = parent.sub_items || {};
+      const currentSubPerms = getSubItemPerms(moduleId, subId);
+      const existingRaw = typeof currentSubs[subId] === 'object' ? currentSubs[subId] : {};
+      const nextPlatforms = togglePlatformKeyInMap(existingRaw.platforms, platformKey);
+      const nextSub = {
+        view: currentSubPerms.view !== false,
+        add: currentSubPerms.add,
+        edit: currentSubPerms.edit,
+        delete: currentSubPerms.delete,
+        ...existingRaw
+      };
+      if (nextPlatforms) nextSub.platforms = nextPlatforms;
+      else delete nextSub.platforms;
+      return {
+        ...prev,
+        [moduleId]: {
+          ...parent,
+          view: true,
+          read: true,
+          sub_items: {
+            ...currentSubs,
+            [subId]: nextSub
+          }
+        }
+      };
+    });
+  };
+
+  const handleBatchSubItemsPlatform = (module, mode) => {
+    setPermissions(prev => {
+      const parent = prev[module.id] || { view: true, read: true, write: true, add: true, edit: true };
+      const currentSubs = parent.sub_items || {};
+      const newSubs = { ...currentSubs };
+      (module.subItems || []).forEach(sub => {
+        const curPerms = getSubItemPerms(module.id, sub.id);
+        const existingRaw = typeof newSubs[sub.id] === 'object' ? newSubs[sub.id] : {
+          view: curPerms.view,
+          add: curPerms.add,
+          edit: curPerms.edit,
+          delete: curPerms.delete
+        };
+        const updatedSub = { ...existingRaw };
+        if (mode === 'all') {
+          delete updatedSub.platforms;
+        } else if (mode === 'mobile') {
+          updatedSub.platforms = { web: false, windows: false, android: true, ios: true };
+        } else if (mode === 'desktop') {
+          updatedSub.platforms = { web: true, windows: true, android: false, ios: false };
+        }
+        newSubs[sub.id] = updatedSub;
+      });
+      return {
+        ...prev,
+        [module.id]: {
+          ...parent,
+          view: true,
+          read: true,
+          sub_items: newSubs
+        }
+      };
+    });
+  };
+
   // Global Powers Toggle
   const handleTogglePower = (key) => {
     setPermissions(prev => ({
@@ -431,7 +536,8 @@ export default function RoleTemplateModal({ onClose, onSave, saving = false, use
         const cur = updated[m.id] || {};
         const subItems = {};
         (m.subItems || []).forEach(s => {
-          subItems[s.id] = { view: true, add: false, edit: false, delete: false };
+          const prevPlat = cur.sub_items?.[s.id]?.platforms;
+          subItems[s.id] = { view: true, add: false, edit: false, delete: false, ...(prevPlat ? { platforms: prevPlat } : {}) };
         });
         updated[m.id] = {
           ...cur,
@@ -453,11 +559,14 @@ export default function RoleTemplateModal({ onClose, onSave, saving = false, use
       const updated = { ...prev };
       MODULES_CONFIG.forEach(m => {
         if (m.roleAssignable === false) return;
+        const cur = updated[m.id] || {};
         const subItems = {};
         (m.subItems || []).forEach(s => {
-          subItems[s.id] = { view: true, add: true, edit: true, delete: false };
+          const prevPlat = cur.sub_items?.[s.id]?.platforms;
+          subItems[s.id] = { view: true, add: true, edit: true, delete: false, ...(prevPlat ? { platforms: prevPlat } : {}) };
         });
         updated[m.id] = {
+          ...(cur.platforms ? { platforms: cur.platforms } : {}),
           view: true,
           read: true,
           add: true,
@@ -558,6 +667,9 @@ export default function RoleTemplateModal({ onClose, onSave, saving = false, use
 
     // Prepare clean permissions object
     const finalPermissions = {};
+    const cleanAllowed = cleanPlatformsForSave(permissions.allowed_platforms);
+    if (cleanAllowed) finalPermissions.allowed_platforms = cleanAllowed;
+
     // 1. Global powers
     OPERATIONAL_POWERS.forEach(p => {
       if (permissions[p.key] === true) {
@@ -569,13 +681,15 @@ export default function RoleTemplateModal({ onClose, onSave, saving = false, use
     activeModuleKeys.forEach(modId => {
       const raw = permissions[modId];
       const def = MODULES_CONFIG.find(m => m.id === modId);
+      const cleanModPlatforms = cleanPlatformsForSave(raw.platforms);
       const modPerms = {
         view: true,
         read: true,
         add: raw.add ?? raw.write ?? true,
         write: raw.write ?? raw.add ?? true,
         edit: raw.edit ?? true,
-        delete: raw.delete === true
+        delete: raw.delete === true,
+        ...(cleanModPlatforms ? { platforms: cleanModPlatforms } : {})
       };
 
       if (raw.is_manager) modPerms.is_manager = true;
@@ -585,11 +699,13 @@ export default function RoleTemplateModal({ onClose, onSave, saving = false, use
         def.subItems.forEach(s => {
           const sRaw = raw.sub_items?.[s.id];
           if (sRaw?.view) {
+            const cleanSubPlatforms = cleanPlatformsForSave(sRaw.platforms);
             subItems[s.id] = {
               view: true,
               add: sRaw.add ?? true,
               edit: sRaw.edit ?? true,
-              delete: sRaw.delete === true
+              delete: sRaw.delete === true,
+              ...(cleanSubPlatforms ? { platforms: cleanSubPlatforms } : {})
             };
           }
         });
@@ -635,7 +751,7 @@ export default function RoleTemplateModal({ onClose, onSave, saving = false, use
         aria-modal="true"
         aria-labelledby="add-role-title"
         style={{
-          width: 'min(1160px, 98vw)',
+          width: 'min(1280px, 98vw)',
           height: '92vh',
           maxHeight: '92vh',
           overflow: 'hidden',
@@ -914,6 +1030,13 @@ export default function RoleTemplateModal({ onClose, onSave, saving = false, use
             </div>
           </div>
 
+          {/* Layer 1: Allowed Login Platforms (Web / Windows / Android / iOS) */}
+          <AllowedPlatformsBar
+            allowedPlatforms={permissions.allowed_platforms}
+            onTogglePlatform={handleToggleAllowedPlatform}
+            onAllowAll={handleAllowAllPlatforms}
+          />
+
           {/* Section 3: Granular Module Access Matrix */}
           <div
             style={{
@@ -1074,7 +1197,8 @@ export default function RoleTemplateModal({ onClose, onSave, saving = false, use
                             column.id === 'view' ? '#0284c7' :
                             column.id === 'add' ? '#16a34a' :
                             column.id === 'edit' ? '#d97706' :
-                            column.id === 'delete' ? '#dc2626' : 'var(--text-primary)'
+                            column.id === 'delete' ? '#dc2626' :
+                            column.id === 'platforms' ? '#7c3aed' : 'var(--text-primary)'
                         }}
                       >
                         {column.label}
@@ -1290,6 +1414,15 @@ export default function RoleTemplateModal({ onClose, onSave, saving = false, use
                                     />
                                   )}
                                 </td>
+
+                                {/* PLATFORMS (Web / Win / And / iOS) */}
+                                <td style={{ textAlign: 'center', padding: '0.4rem 0.5rem', borderBottom: '1px solid var(--border-light)' }}>
+                                  <PlatformRowPills
+                                    platforms={mAccess.platforms}
+                                    disabled={locked || !mPerms.view}
+                                    onToggle={(pKey) => handleToggleModulePlatform(module, pKey)}
+                                  />
+                                </td>
                               </tr>
 
                               {/* Special Override Row for Leads / Recruiter */}
@@ -1345,12 +1478,35 @@ export default function RoleTemplateModal({ onClose, onSave, saving = false, use
                                         >
                                           All Delete ON
                                         </button>
+                                        <span style={{ color: 'var(--border-light)' }}>|</span>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleBatchSubItemsPlatform(module, 'all')}
+                                          style={{ padding: '0.15rem 0.45rem', borderRadius: '4px', border: '1px solid #ddd6fe', background: '#f5f3ff', color: '#6d28d9', cursor: 'pointer' }}
+                                        >
+                                          All Platforms
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleBatchSubItemsPlatform(module, 'desktop')}
+                                          style={{ padding: '0.15rem 0.45rem', borderRadius: '4px', border: '1px solid #bfdbfe', background: '#eff6ff', color: '#1d4ed8', cursor: 'pointer' }}
+                                        >
+                                          Desktop Only (Web+Win)
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleBatchSubItemsPlatform(module, 'mobile')}
+                                          style={{ padding: '0.15rem 0.45rem', borderRadius: '4px', border: '1px solid #bbf7d0', background: '#f0fdf4', color: '#15803d', cursor: 'pointer' }}
+                                        >
+                                          Mobile Only (And+iOS)
+                                        </button>
                                       </div>
                                     </td>
                                   </tr>
 
                                   {children.map(sub => {
                                     const subPerms = getSubItemPerms(module.id, sub.id);
+                                    const subRawPlatforms = mAccess?.sub_items?.[sub.id]?.platforms || null;
                                     const isSubViewOnly = sub.id === 'lead_dashboard' || sub.id === 'hourly_work' || module.viewOnly;
 
                                     return (
@@ -1416,6 +1572,14 @@ export default function RoleTemplateModal({ onClose, onSave, saving = false, use
                                               style={{ width: '1rem', height: '1rem', accentColor: '#dc2626', cursor: !subPerms.view ? 'not-allowed' : 'pointer' }}
                                             />
                                           )}
+                                        </td>
+                                        <td style={{ textAlign: 'center', padding: '0.35rem 0.5rem', borderBottom: '1px solid var(--border-light)' }}>
+                                          <PlatformRowPills
+                                            platforms={subRawPlatforms}
+                                            parentPlatforms={mAccess.platforms}
+                                            disabled={locked || !subPerms.view}
+                                            onToggle={(pKey) => handleToggleSubItemPlatform(module.id, sub.id, pKey)}
+                                          />
                                         </td>
                                       </tr>
                                     );

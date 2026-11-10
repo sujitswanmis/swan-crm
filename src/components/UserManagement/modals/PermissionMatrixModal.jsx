@@ -18,6 +18,12 @@ import { ROLE_PRESETS } from '../utils/rolePresets';
 import { INTEGRATION_PAGE_IDS } from '@/config/integrationsConfig';
 import { getSubItemPermissions } from '@/utils/permissionUtils';
 import { WHATSAPP_LOG_VIEW_IDS } from '@/config/whatsappMessageLogsConfig';
+import {
+  AllowedPlatformsBar,
+  PlatformRowPills,
+  togglePlatformKeyInMap,
+  cleanPlatformsForSave
+} from '../components/PlatformAccessPills';
 
 const OPERATIONAL_POWERS = [
   { key: 'can_manage_integrations', label: '🔌 Manage Integrations & API Credentials', desc: 'Allows managing API keys, external connections and Meta lead sync within authorized tenant and branch scope' },
@@ -36,11 +42,12 @@ const OPERATIONAL_POWERS = [
 ];
 
 const TABLE_COLUMNS = [
-  { id: 'page', label: 'Module / Page / Sub-Page / Tab', width: 440, minWidth: 240 },
-  { id: 'view', label: 'VIEW', width: 85, minWidth: 65 },
-  { id: 'add', label: 'ADD', width: 85, minWidth: 65 },
-  { id: 'edit', label: 'EDIT / SAVE', width: 105, minWidth: 80 },
-  { id: 'delete', label: 'DELETE', width: 85, minWidth: 65 }
+  { id: 'page', label: 'Module / Page / Sub-Page / Tab', width: 410, minWidth: 230 },
+  { id: 'view', label: 'VIEW', width: 78, minWidth: 60 },
+  { id: 'add', label: 'ADD', width: 78, minWidth: 60 },
+  { id: 'edit', label: 'EDIT / SAVE', width: 100, minWidth: 80 },
+  { id: 'delete', label: 'DELETE', width: 78, minWidth: 60 },
+  { id: 'platforms', label: 'PLATFORMS (Web / Win / And / iOS)', width: 228, minWidth: 195 }
 ];
 const COLUMN_WIDTHS_KEY = 'crm-permission-matrix-modal-column-widths';
 const COLUMN_COUNT = TABLE_COLUMNS.length;
@@ -373,6 +380,107 @@ export default function PermissionMatrixModal({
     });
   };
 
+  // Layer 1: Allowed Login Platforms (User Global)
+  const handleToggleAllowedPlatform = (platformKey) => {
+    setAccessForm(prev => {
+      const nextMap = togglePlatformKeyInMap(prev.allowed_platforms, platformKey);
+      const next = { ...prev };
+      if (nextMap) next.allowed_platforms = nextMap;
+      else delete next.allowed_platforms;
+      return next;
+    });
+  };
+
+  const handleAllowAllPlatforms = () => {
+    setAccessForm(prev => {
+      const next = { ...prev };
+      delete next.allowed_platforms;
+      return next;
+    });
+  };
+
+  // Layer 2: Module & Sub-Item Row Platforms
+  const handleToggleModulePlatform = (module, platformKey) => {
+    if (module.roleAssignable === false || module.masterAdminOnly === true) return;
+    setAccessForm(prev => {
+      const current = prev[module.id] || {};
+      const nextPlatforms = togglePlatformKeyInMap(current.platforms, platformKey);
+      const updated = {
+        ...current,
+        view: current.view !== false
+      };
+      if (nextPlatforms) updated.platforms = nextPlatforms;
+      else delete updated.platforms;
+      return { ...prev, [module.id]: updated };
+    });
+  };
+
+  const handleToggleSubItemPlatform = (moduleId, subId, platformKey) => {
+    setAccessForm(prev => {
+      const parent = prev[moduleId] || { view: true, read: true, write: true, add: true, edit: true };
+      const currentSubs = parent.sub_items || {};
+      const currentSubPerms = getSubItemPerms(moduleId, subId);
+      const existingRaw = typeof currentSubs[subId] === 'object' ? currentSubs[subId] : {};
+      const nextPlatforms = togglePlatformKeyInMap(existingRaw.platforms, platformKey);
+      const nextSub = {
+        view: currentSubPerms.view !== false,
+        add: currentSubPerms.add,
+        edit: currentSubPerms.edit,
+        delete: currentSubPerms.delete,
+        ...existingRaw
+      };
+      if (nextPlatforms) nextSub.platforms = nextPlatforms;
+      else delete nextSub.platforms;
+      return {
+        ...prev,
+        [moduleId]: {
+          ...parent,
+          view: true,
+          read: true,
+          sub_items: {
+            ...currentSubs,
+            [subId]: nextSub
+          }
+        }
+      };
+    });
+  };
+
+  const handleBatchSubItemsPlatform = (module, mode) => {
+    setAccessForm(prev => {
+      const parent = prev[module.id] || { view: true, read: true, write: true, add: true, edit: true };
+      const currentSubs = parent.sub_items || {};
+      const newSubs = { ...currentSubs };
+      (module.subItems || []).forEach(sub => {
+        const curPerms = getSubItemPerms(module.id, sub.id);
+        const existingRaw = typeof newSubs[sub.id] === 'object' ? newSubs[sub.id] : {
+          view: curPerms.view,
+          add: curPerms.add,
+          edit: curPerms.edit,
+          delete: curPerms.delete
+        };
+        const updatedSub = { ...existingRaw };
+        if (mode === 'all') {
+          delete updatedSub.platforms;
+        } else if (mode === 'mobile') {
+          updatedSub.platforms = { web: false, windows: false, android: true, ios: true };
+        } else if (mode === 'desktop') {
+          updatedSub.platforms = { web: true, windows: true, android: false, ios: false };
+        }
+        newSubs[sub.id] = updatedSub;
+      });
+      return {
+        ...prev,
+        [module.id]: {
+          ...parent,
+          view: true,
+          read: true,
+          sub_items: newSubs
+        }
+      };
+    });
+  };
+
   // Global Powers Toggle
   const handleTogglePower = (key) => {
     setAccessForm(prev => ({
@@ -397,6 +505,7 @@ export default function PermissionMatrixModal({
         delete next.can_import_export;
         delete next.role_template_id;
         delete next.role_template_name;
+        delete next.allowed_platforms;
 
         const roleData = structuredClone(customRole ? customRole.permissions : preset.presetData);
         delete roleData.is_master_admin;
@@ -430,7 +539,8 @@ export default function PermissionMatrixModal({
         const cur = updated[m.id] || {};
         const subItems = {};
         (m.subItems || []).forEach(s => {
-          subItems[s.id] = { view: true, add: false, edit: false, delete: false };
+          const prevPlat = cur.sub_items?.[s.id]?.platforms;
+          subItems[s.id] = { view: true, add: false, edit: false, delete: false, ...(prevPlat ? { platforms: prevPlat } : {}) };
         });
         updated[m.id] = {
           ...cur,
@@ -452,11 +562,14 @@ export default function PermissionMatrixModal({
       const updated = { ...prev };
       MODULES_CONFIG.forEach(m => {
         if (m.roleAssignable === false || m.masterAdminOnly === true) return;
+        const cur = updated[m.id] || {};
         const subItems = {};
         (m.subItems || []).forEach(s => {
-          subItems[s.id] = { view: true, add: true, edit: true, delete: false };
+          const prevPlat = cur.sub_items?.[s.id]?.platforms;
+          subItems[s.id] = { view: true, add: true, edit: true, delete: false, ...(prevPlat ? { platforms: prevPlat } : {}) };
         });
         updated[m.id] = {
+          ...(cur.platforms ? { platforms: cur.platforms } : {}),
           view: true,
           read: true,
           add: true,
@@ -503,6 +616,7 @@ export default function PermissionMatrixModal({
         const next = { ...prev };
         MODULES_CONFIG.forEach(m => { delete next[m.id]; });
         OPERATIONAL_POWERS.forEach(p => { delete next[p.key]; });
+        delete next.allowed_platforms;
         return next;
       });
     }
@@ -510,8 +624,32 @@ export default function PermissionMatrixModal({
 
   const handleSave = async () => {
     setError('');
-    // Auto-sync assigned_steps for leads & recruiter from sub_items if present
+    // Auto-sync assigned_steps & sanitize platform restriction maps
     const updatedForm = { ...accessForm };
+    const cleanAllowed = cleanPlatformsForSave(updatedForm.allowed_platforms);
+    if (cleanAllowed) updatedForm.allowed_platforms = cleanAllowed;
+    else delete updatedForm.allowed_platforms;
+
+    MODULES_CONFIG.forEach(m => {
+      const modEntry = updatedForm[m.id];
+      if (modEntry && typeof modEntry === 'object') {
+        const cleanModPlat = cleanPlatformsForSave(modEntry.platforms);
+        if (cleanModPlat) modEntry.platforms = cleanModPlat;
+        else delete modEntry.platforms;
+
+        if (modEntry.sub_items && typeof modEntry.sub_items === 'object') {
+          Object.keys(modEntry.sub_items).forEach(subId => {
+            const subEntry = modEntry.sub_items[subId];
+            if (subEntry && typeof subEntry === 'object') {
+              const cleanSubPlat = cleanPlatformsForSave(subEntry.platforms);
+              if (cleanSubPlat) subEntry.platforms = cleanSubPlat;
+              else delete subEntry.platforms;
+            }
+          });
+        }
+      }
+    });
+
     if (updatedForm.leads && updatedForm.leads.sub_items) {
       updatedForm.leads.assigned_steps = Object.keys(updatedForm.leads.sub_items).filter(k => updatedForm.leads.sub_items[k]?.view === true);
     }
@@ -546,7 +684,7 @@ export default function PermissionMatrixModal({
         aria-modal="true"
         aria-labelledby="permission-matrix-title"
         style={{
-          width: 'min(1160px, 98vw)',
+          width: 'min(1280px, 98vw)',
           height: '92vh',
           maxHeight: '92vh',
           overflow: 'hidden',
@@ -725,6 +863,13 @@ export default function PermissionMatrixModal({
               })}
             </div>
           </div>
+
+          {/* Layer 1: Allowed Login Platforms (Web / Windows / Android / iOS) */}
+          <AllowedPlatformsBar
+            allowedPlatforms={accessForm.allowed_platforms}
+            onTogglePlatform={handleToggleAllowedPlatform}
+            onAllowAll={handleAllowAllPlatforms}
+          />
 
           {/* Section 2: Granular Module Access Matrix */}
           <div
@@ -925,7 +1070,8 @@ export default function PermissionMatrixModal({
                             column.id === 'view' ? '#0284c7' :
                             column.id === 'add' ? '#16a34a' :
                             column.id === 'edit' ? '#d97706' :
-                            column.id === 'delete' ? '#dc2626' : 'var(--text-primary)'
+                            column.id === 'delete' ? '#dc2626' :
+                            column.id === 'platforms' ? '#7c3aed' : 'var(--text-primary)'
                         }}
                       >
                         {column.label}
@@ -1144,6 +1290,15 @@ export default function PermissionMatrixModal({
                                     />
                                   )}
                                 </td>
+
+                                {/* PLATFORMS (Web / Win / And / iOS) */}
+                                <td style={{ textAlign: 'center', padding: '0.4rem 0.5rem', borderBottom: '1px solid var(--border-light)' }}>
+                                  <PlatformRowPills
+                                    platforms={mAccess.platforms}
+                                    disabled={locked || !mPerms.view}
+                                    onToggle={(pKey) => handleToggleModulePlatform(module, pKey)}
+                                  />
+                                </td>
                               </tr>
 
                               {/* Special Override Row for Leads / Recruiter */}
@@ -1199,12 +1354,35 @@ export default function PermissionMatrixModal({
                                         >
                                           All Delete ON
                                         </button>
+                                        <span style={{ color: 'var(--border-light)' }}>|</span>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleBatchSubItemsPlatform(module, 'all')}
+                                          style={{ padding: '0.15rem 0.45rem', borderRadius: '4px', border: '1px solid #ddd6fe', background: '#f5f3ff', color: '#6d28d9', cursor: 'pointer' }}
+                                        >
+                                          All Platforms
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleBatchSubItemsPlatform(module, 'desktop')}
+                                          style={{ padding: '0.15rem 0.45rem', borderRadius: '4px', border: '1px solid #bfdbfe', background: '#eff6ff', color: '#1d4ed8', cursor: 'pointer' }}
+                                        >
+                                          Desktop Only (Web+Win)
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleBatchSubItemsPlatform(module, 'mobile')}
+                                          style={{ padding: '0.15rem 0.45rem', borderRadius: '4px', border: '1px solid #bbf7d0', background: '#f0fdf4', color: '#15803d', cursor: 'pointer' }}
+                                        >
+                                          Mobile Only (And+iOS)
+                                        </button>
                                       </div>
                                     </td>
                                   </tr>
 
                                   {children.map(sub => {
                                     const subPerms = getSubItemPerms(module.id, sub.id);
+                                    const subRawPlatforms = mAccess?.sub_items?.[sub.id]?.platforms || null;
                                     const isSubViewOnly = sub.id === 'lead_dashboard' || sub.id === 'hourly_work' || module.viewOnly || locked;
                                     const group = groups.find(item => item.id === sub.pageId);
                                     const firstInGroup = group?.subItems[0]?.id === sub.id;
@@ -1273,6 +1451,14 @@ export default function PermissionMatrixModal({
                                               style={{ width: '1rem', height: '1rem', accentColor: '#dc2626', cursor: !subPerms.view ? 'not-allowed' : 'pointer' }}
                                             />
                                           )}
+                                        </td>
+                                        <td style={{ textAlign: 'center', padding: '0.35rem 0.5rem', borderBottom: '1px solid var(--border-light)' }}>
+                                          <PlatformRowPills
+                                            platforms={subRawPlatforms}
+                                            parentPlatforms={mAccess.platforms}
+                                            disabled={locked || !subPerms.view}
+                                            onToggle={(pKey) => handleToggleSubItemPlatform(module.id, sub.id, pKey)}
+                                          />
                                         </td>
                                       </tr>
                                       </React.Fragment>
