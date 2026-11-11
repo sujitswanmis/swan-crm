@@ -7794,8 +7794,10 @@ export default function CRMContainer({
               >
                 <ErrorBoundary>
                   {/* Top Subpage Navigation Bar for Field Force & Forms */}
-                  <div style={{
+                  <div role="navigation" aria-label="Field Force subpages" style={{
                     display: 'flex',
+                    flexShrink: 0,
+                    minHeight: '60px',
                     alignItems: 'center',
                     gap: '8px',
                     padding: '10px 20px',
@@ -7820,7 +7822,10 @@ export default function CRMContainer({
                           key={sub.id}
                           type="button"
                           onClick={() => handleFieldForceSubTabChange(sub.id)}
+                          aria-current={isActive ? 'page' : undefined}
                           style={{
+                            flexShrink: 0,
+                            minHeight: '38px',
                             padding: '6px 14px',
                             borderRadius: '6px',
                             border: isActive ? '1px solid #2563eb' : '1px solid #cbd5e1',
@@ -7870,6 +7875,7 @@ export default function CRMContainer({
                   )}
                   {fieldForceSubTab === 'live_radar' && (
                     <LiveFieldTrackingMap 
+                      presentation="field-force"
                       company={userCompany || 'New Swan Group'} 
                       currentUserRole={userRole} 
                       tenantId={effectiveTenantId}

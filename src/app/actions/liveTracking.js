@@ -23,6 +23,25 @@ function clampBoundedInt(val, min, max, fallback = null) {
 }
 
 /**
+ * Fetches all rows across Supabase PostgREST's 1,000-row per-request limit using `.range()`.
+ * Preserves full-day GPS routes even when stationary heartbeats exceed 1,000 pings/day.
+ */
+async function fetchPaginatedQuery(buildQuery, { pageSize = 1000, maxRows = 15000 } = {}) {
+  const allRows = [];
+  for (let from = 0; from < maxRows; from += pageSize) {
+    const { data, error } = await buildQuery().range(from, from + pageSize - 1);
+    if (error) {
+      return { data: allRows.length > 0 ? allRows : null, error };
+    }
+    if (Array.isArray(data) && data.length > 0) {
+      allRows.push(...data);
+    }
+    if (!data || data.length < pageSize) break;
+  }
+  return { data: allRows, error: null };
+}
+
+/**
  * Record a batch of live GPS pings (from live tracking or offline delta sync)
  */
 export async function recordLocationPingBatch(pings) {
@@ -183,20 +202,22 @@ export async function getEmployee360Route(userId, dateStr) {
     const startOfDay = `${dateStr}T00:00:00.000+05:30`;
     const endOfDay = `${dateStr}T23:59:59.999+05:30`;
 
-    // 1-3b. Fetch GPS breadcrumbs, visits, attendance & mobile session concurrently
+    // 1-3b. Fetch ALL GPS breadcrumbs (paginated past PostgREST 1000-row cap), visits, attendance & session concurrently
     const [
       { data: rawPings, error: pingsErr },
       { data: visits },
       { data: attData },
       { data: userSess }
     ] = await Promise.all([
-      supabase
-        .from('employee_live_locations')
-        .select('latitude, longitude, accuracy_meters, speed_kmh, battery_pct, is_charging, is_moving, is_offline_synced, recorded_at')
-        .eq('user_id', userId)
-        .gte('recorded_at', startOfDay)
-        .lte('recorded_at', endOfDay)
-        .order('recorded_at', { ascending: true }),
+      fetchPaginatedQuery(() =>
+        supabase
+          .from('employee_live_locations')
+          .select('latitude, longitude, accuracy_meters, speed_kmh, battery_pct, is_charging, is_moving, is_offline_synced, recorded_at')
+          .eq('user_id', userId)
+          .gte('recorded_at', startOfDay)
+          .lte('recorded_at', endOfDay)
+          .order('recorded_at', { ascending: true })
+      ),
       supabase
         .from('field_form_submissions')
         .select('*')
@@ -311,7 +332,7 @@ export async function getEmployee360Route(userId, dateStr) {
           const t = p?.recorded_at ? new Date(p.recorded_at).getTime() : NaN;
           if (isNaN(t)) return false;
           if (attInMs != null && !isNaN(attInMs) && t < attInMs - 60000) return false;
-          if (attOutMs != null && !isNaN(attOutMs) && t > attOutMs + 60000) return false;
+          if (attOutMs != null && !isNaN(attOutMs) && t > attOutMs + 10000) return false;
           return true;
         })
       : pings;
@@ -547,17 +568,37 @@ export async function getEmployee360Route(userId, dateStr) {
       return new Date(a.startTime || a.checkInTime) - new Date(b.startTime || b.checkInTime);
     });
 
-    // Coalesce consecutive same-spot stoppages separated only by brief (<10m) micro-jitter / glitch
+    // Coalesce consecutive same-spot stoppages if gap <= 10 mins OR employee never left the 85m compound radius in between
+    const didLeaveCompoundBetween = (lat, lng, tStartMs, tEndMs) => {
+      for (const wp of cleanedRawPings) {
+        const wt = wp?.time ? new Date(wp.time).getTime() : 0;
+        if (wt <= tStartMs || wt >= tEndMs) continue;
+        if (haversineMeters(lat, lng, wp.lat, wp.lng) > 85) return true;
+      }
+      return false;
+    };
+
     const mergedTimeline = [];
     for (const item of timeline) {
+      if (item.type === 'stoppage' && attOutMs != null && !isNaN(attOutMs) && item.endTime && new Date(item.endTime).getTime() > attOutMs) {
+        item.endTime = attRecord.out_time;
+        item.durationMins = Math.max(
+          0,
+          Math.round((new Date(item.endTime).getTime() - new Date(item.startTime).getTime()) / 60000)
+        );
+        if (item.durationMins < 5) continue;
+      }
       const prev = mergedTimeline[mergedTimeline.length - 1];
-      if (
-        prev &&
-        prev.type === 'stoppage' &&
+      const gapMs =
+        prev?.type === 'stoppage' && item.type === 'stoppage'
+          ? new Date(item.startTime).getTime() - new Date(prev.endTime).getTime()
+          : Infinity;
+      const sameSpot =
+        prev?.type === 'stoppage' &&
         item.type === 'stoppage' &&
-        haversineMeters(prev.lat, prev.lng, item.lat, item.lng) <= 65 &&
-        new Date(item.startTime).getTime() - new Date(prev.endTime).getTime() <= 10 * 60 * 1000
-      ) {
+        haversineMeters(prev.lat, prev.lng, item.lat, item.lng) <= 65;
+
+      if (sameSpot && (gapMs <= 10 * 60 * 1000 || !didLeaveCompoundBetween(prev.lat, prev.lng, new Date(prev.endTime).getTime(), new Date(item.startTime).getTime()))) {
         prev.endTime = item.endTime;
         prev.durationMins = Math.max(
           1,
@@ -684,19 +725,22 @@ export async function getNationwideRadarData(company = 'TNT00001', branchCode = 
     const recentThreshold = new Date(Date.now() - 6 * 3600 * 1000).toISOString();
     const isAllCompanies = !company || String(company).toLowerCase() === 'all' || String(company).toLowerCase() === 'all companies';
 
-    let query = supabase
-      .from('employee_live_locations')
-      .select('user_id, latitude, longitude, accuracy_meters, speed_kmh, battery_pct, is_moving, recorded_at, branch_code, company')
-      .gte('recorded_at', recentThreshold)
-      .order('recorded_at', { ascending: false });
+    const buildRadarQuery = () => {
+      let query = supabase
+        .from('employee_live_locations')
+        .select('user_id, latitude, longitude, accuracy_meters, speed_kmh, battery_pct, is_moving, recorded_at, branch_code, company')
+        .gte('recorded_at', recentThreshold)
+        .order('recorded_at', { ascending: false });
 
-    if (!isAllCompanies) {
-      query = query.eq('company', company);
-    }
+      if (!isAllCompanies) {
+        query = query.eq('company', company);
+      }
 
-    if (branchCode) {
-      query = query.eq('branch_code', branchCode);
-    }
+      if (branchCode) {
+        query = query.eq('branch_code', branchCode);
+      }
+      return query;
+    };
 
     const todayIST = new Intl.DateTimeFormat('en-CA', {
       timeZone: 'Asia/Kolkata',
@@ -706,7 +750,7 @@ export async function getNationwideRadarData(company = 'TNT00001', branchCode = 
     }).format(new Date());
 
     const [{ data: rawPings, error }, { data: activeAttendance }] = await Promise.all([
-      query,
+      fetchPaginatedQuery(buildRadarQuery, { maxRows: 10000 }),
       supabase
         .from('attendance_records')
         .select('user_id, email, in_time, out_time, in_location, emp_name, tenant_id')
@@ -1476,7 +1520,16 @@ export async function getDeviceHealthFleetReport(company = 'ALL', branchCode = n
       admin.from('user_roles').select('*').order('emp_name', { ascending: true }),
       admin.from('employee_device_health').select('*').order('last_checked_at', { ascending: false }),
       admin.from('user_sessions').select('user_id, device, ip_address, last_active, is_active').order('last_active', { ascending: false }).limit(800),
-      admin.from('employee_live_locations').select('user_id, recorded_at, battery_pct').gte('recorded_at', startISO).lte('recorded_at', endISO).order('recorded_at', { ascending: false }).limit(2000),
+      fetchPaginatedQuery(
+        () =>
+          admin
+            .from('employee_live_locations')
+            .select('user_id, recorded_at, battery_pct')
+            .gte('recorded_at', startISO)
+            .lte('recorded_at', endISO)
+            .order('recorded_at', { ascending: false }),
+        { maxRows: 10000 }
+      ),
       admin.from('attendance_records').select('user_id, email, attendance_date, in_time, out_time').eq('attendance_date', dayStr)
     ]);
 

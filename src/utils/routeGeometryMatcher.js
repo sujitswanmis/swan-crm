@@ -240,22 +240,53 @@ export function filterRouteNoiseAndCoarseJumps(waypoints) {
   const spikeFree = stripNoisyGpsOutliers(waypoints);
   if (spikeFree.length === 0) return [];
 
-  // 6. Collapse stationary drift within 32m of cluster anchor
+  // 6. Collapse stationary drift (<32m, or <=65m indoor/compound bounce that returns cleanly without real travel)
   const collapsed = [];
   let cluster = [spikeFree[0]];
   let anchor = spikeFree[0];
 
   for (let i = 1; i < spikeFree.length; i++) {
     const cur = spikeFree[i];
-    const distFromAnchor = haversineMeters(anchor.lat, anchor.lng, cur.lat, cur.lng);
+    const curAcc = getAccuracyValue(cur);
     const curSpeed = Number(cur.speed || 0);
-    const staysStationary = distFromAnchor <= 32 && (curSpeed <= 5 || distFromAnchor <= 25);
+    const distFromAnchor = haversineMeters(anchor.lat, anchor.lng, cur.lat, cur.lng);
+
+    let isStationaryCompoundOscillation = false;
+    if (
+      distFromAnchor > 32 &&
+      distFromAnchor <= 65 &&
+      (curSpeed <= 3 || (curAcc != null && curAcc >= 20 && curSpeed <= 12))
+    ) {
+      const curMs = cur.time ? new Date(cur.time).getTime() : 0;
+      let maxLookaheadDist = distFromAnchor;
+      let returnsNearAnchor = false;
+      for (let k = i + 1; k < Math.min(spikeFree.length, i + 5); k++) {
+        const fut = spikeFree[k];
+        const futMs = fut.time ? new Date(fut.time).getTime() : curMs;
+        if (curMs && futMs && futMs - curMs > 5 * 60 * 1000) break;
+        const dFut = haversineMeters(anchor.lat, anchor.lng, fut.lat, fut.lng);
+        if (dFut > maxLookaheadDist) maxLookaheadDist = dFut;
+        if (maxLookaheadDist > 85) break;
+        if (dFut <= 32) {
+          returnsNearAnchor = true;
+          break;
+        }
+      }
+      isStationaryCompoundOscillation = returnsNearAnchor && maxLookaheadDist <= 85;
+    }
+
+    const staysStationary =
+      (distFromAnchor <= 32 && (curSpeed <= 5 || distFromAnchor <= 25)) ||
+      isStationaryCompoundOscillation;
 
     if (staysStationary) {
       cluster.push(cur);
-      const curAcc = getAccuracyValue(cur);
       const anchorAcc = getAccuracyValue(anchor);
-      if (curAcc != null && (anchorAcc == null || curAcc < anchorAcc)) {
+      if (
+        distFromAnchor <= 32 &&
+        curAcc != null &&
+        (anchorAcc == null || curAcc < anchorAcc)
+      ) {
         anchor = cur;
       }
     } else {
@@ -449,9 +480,9 @@ async function snapContinuousTripToRoad(tripPoints) {
     return { points: tripPoints.map(p => ({ ...p, isSnapped: false })), distanceMeters: 0, snapped: false };
   }
 
-  // Preserve crisp indoor/compound arrival stops (offices, factories, client shops) so OSRM
-  // snaps public roads up to the gate instead of routing around back alleys behind the building.
-  const suffixPoints = [];
+  // Preserve final dwell timestamps without pulling the arrival anchor out of OSRM trace
+  // (keeps street-corner road geometry intact instead of drawing a diagonal shortcut across buildings).
+  const trailingDwells = [];
   const endAnchor = movingPts[movingPts.length - 1];
   const endIsStationaryArrival =
     Number(endAnchor?.speed || 0) <= 5 &&
@@ -459,16 +490,16 @@ async function snapContinuousTripToRoad(tripPoints) {
   if (endIsStationaryArrival) {
     while (
       movingPts.length > 3 &&
-      Number(movingPts[movingPts.length - 1]?.speed || 0) <= 10 &&
+      Number(movingPts[movingPts.length - 2]?.speed || 0) <= 5 &&
       haversineMeters(
+        movingPts[movingPts.length - 2].lat,
+        movingPts[movingPts.length - 2].lng,
         movingPts[movingPts.length - 1].lat,
-        movingPts[movingPts.length - 1].lng,
-        endAnchor.lat,
-        endAnchor.lng
-      ) <= 45
+        movingPts[movingPts.length - 1].lng
+      ) <= 15
     ) {
-      const popped = movingPts.pop();
-      suffixPoints.unshift({ ...popped, isSnapped: false });
+      const last = movingPts.pop();
+      trailingDwells.unshift({ ...last, isSnapped: false });
     }
   }
 
@@ -530,18 +561,21 @@ async function snapContinuousTripToRoad(tripPoints) {
   }
 
   const aligned = alignSnappedSegmentToWaypoints(stitchedCoords, movingPts);
-  let suffixEntryMeters = 0;
-  if (suffixPoints.length > 0 && aligned.length > 0) {
-    let prevPt = aligned[aligned.length - 1];
-    for (const sp of suffixPoints) {
-      suffixEntryMeters += haversineMeters(prevPt.lat, prevPt.lng, sp.lat, sp.lng);
-      prevPt = sp;
-    }
-  }
+  const snappedEnd = aligned[aligned.length - 1];
+  const snappedTrailingDwells =
+    snappedEnd && trailingDwells.length > 0
+      ? trailingDwells.map(sp => ({
+          ...sp,
+          lat: snappedEnd.lat,
+          lng: snappedEnd.lng,
+          isSnapped: Boolean(snappedEnd.isSnapped),
+          speed: 0
+        }))
+      : trailingDwells;
 
   return {
-    points: [...prefixPoints, ...aligned, ...suffixPoints],
-    distanceMeters: totalSnappedDist + (suffixEntryMeters <= 120 ? suffixEntryMeters : 0),
+    points: [...prefixPoints, ...aligned, ...snappedTrailingDwells],
+    distanceMeters: totalSnappedDist,
     snapped: true
   };
 }

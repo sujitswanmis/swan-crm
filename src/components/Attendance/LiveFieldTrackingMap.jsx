@@ -19,6 +19,17 @@ import { getTeamMembers } from '@/app/actions/team';
 import useTableColumnResize, { ColumnResizer } from '@/utils/tableColumnResize';
 import StandardTablePagination from '@/components/common/StandardTablePagination';
 import { snapRouteSegmentsToRoad, haversineMeters } from '@/utils/routeGeometryMatcher';
+import {
+  TrackingHeader, TrackingSummary, TrackingActivityPanel, TrackingPositionInfo,
+  TrackingMapToolbar, TrackingRouteDock, TrackingPlaybackControls, TrackingRangeOverview
+} from '@/components/FieldForce/FieldTrackingDashboardUI';
+import trackingStyles from '@/components/FieldForce/LiveTrackingDashboard.module.css';
+import {
+  resolveTrackingDateRange, enumerateTrackingDates, fetchTrackingDay, peekTrackingDay,
+  loadTrackingRange, summarizeTrackingRange, getTrackingOverviewRuns, nextTrackingPlaybackDay
+} from '@/components/FieldForce/trackingDateRanges';
+
+const EMPTY_TRACKING_RANGE_ENTRIES = Object.freeze({});
 
 const isValidExecUuid = (v) => Boolean(v && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(v).trim()));
 
@@ -130,10 +141,283 @@ function splitGoingAndReturnRoute(polyline) {
   };
 }
 
+function collectBlindGapSegments(polyline, splitInfo, filterMode = 'ALL') {
+  if (!Array.isArray(polyline) || polyline.length < 2) return [];
+  const gaps = [];
+  for (let i = 1; i < polyline.length; i++) {
+    const prev = polyline[i - 1];
+    const cur = polyline[i];
+    const leg = splitInfo?.hasReturnTrip && i > splitInfo.turnaroundIdx ? 'RETURN' : 'GOING';
+    if (filterMode !== 'ALL' && leg !== filterMode) continue;
+    const isBlindOffline = Boolean(cur?.isOffline) && !Boolean(cur?.isSnapped);
+    if (isBlindOffline && haversineMeters(prev?.lat, prev?.lng, cur?.lat, cur?.lng) >= 30) {
+      gaps.push({ prev, cur, leg, idx: i });
+    }
+  }
+  return gaps;
+}
+
+function placeRoadDirectionalChevrons(L, targetGroup, coordRuns, {
+  isReturn = false,
+  isEstimated = false,
+  originCoord = null,
+  destCoord = null,
+  turnaroundCoord = null,
+  maxMarkers = 24
+} = {}) {
+  if (!L || !targetGroup || !Array.isArray(coordRuns) || coordRuns.length === 0) return;
+
+  let totalMeters = 0;
+  for (const run of coordRuns) {
+    const pts = run?.coords || [];
+    for (let j = 1; j < pts.length; j++) {
+      totalMeters += haversineMeters(pts[j - 1][0], pts[j - 1][1], pts[j][0], pts[j][1]);
+    }
+  }
+  if (totalMeters < 110) return;
+
+  const spacing = Math.max(130, Math.round(totalMeters / 16));
+  let distSinceArrow = spacing * 0.55;
+  let placedCount = 0;
+  const bgHex = isReturn ? '#ec4899' : isEstimated ? '#9333ea' : '#2563eb';
+  const legLabel = isReturn
+    ? (isEstimated ? 'Return (Estimated Road • GPS Off)' : 'Return (Inward)')
+    : (isEstimated ? 'Going (Estimated Road • GPS Off)' : 'Going (Outward)');
+  const iconEmoji = isReturn ? '🩷' : isEstimated ? '🟣' : '🔵';
+
+  for (const run of coordRuns) {
+    if (placedCount >= maxMarkers) break;
+    const pts = run?.coords || [];
+    for (let j = 1; j < pts.length && placedCount < maxMarkers; j++) {
+      const pA = pts[j - 1];
+      const pB = pts[j];
+      const stepDist = haversineMeters(pA[0], pA[1], pB[0], pB[1]);
+      if (stepDist < 8) continue;
+      distSinceArrow += stepDist;
+      if (distSinceArrow < spacing) continue;
+
+      const midLat = (pA[0] + pB[0]) / 2;
+      const midLng = (pA[1] + pB[1]) / 2;
+      const tooCloseOrigin = originCoord ? haversineMeters(midLat, midLng, originCoord[0], originCoord[1]) < 45 : false;
+      const tooCloseDest = destCoord ? haversineMeters(midLat, midLng, destCoord[0], destCoord[1]) < 45 : false;
+      const tooCloseTurn = turnaroundCoord ? haversineMeters(midLat, midLng, turnaroundCoord[0], turnaroundCoord[1]) < 45 : false;
+      if (tooCloseOrigin || tooCloseDest || tooCloseTurn) continue;
+
+      distSinceArrow = 0;
+      placedCount++;
+      const brng = calculateBearing(pA[0], pA[1], pB[0], pB[1]);
+      const tStamp = run?.times?.[j]
+        ? new Date(run.times[j]).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' })
+        : '';
+      const segSpd = Math.max(0, Math.round(Number(run?.speeds?.[j] ?? run?.speeds?.[j - 1] ?? 0)));
+      const spdText = segSpd > 0 ? ` • ${segSpd} km/h` : '';
+
+      const chevIcon = L.divIcon({
+        className: 'crm-chevron-marker',
+        html: `<div class="crm-chevron-badge" style="width:18px;height:18px;border-radius:50%;background:${bgHex};border:1.5px solid #ffffff;box-shadow:0 2px 6px rgba(15,23,42,0.28);display:flex;align-items:center;justify-content:center;transform:rotate(${Math.round(brng)}deg);"><svg width="10" height="10" viewBox="0 0 24 24" fill="#ffffff"><polygon points="12 3 20 19 12 15 4 19 12 3"/></svg></div>`,
+        iconSize: [18, 18],
+        iconAnchor: [9, 9]
+      });
+      L.marker([midLat, midLng], {
+        icon: chevIcon,
+        zIndexOffset: isReturn ? 780 : 650
+      })
+        .bindTooltip(`${iconEmoji} ${legLabel}${spdText}${tStamp ? ` • ${tStamp}` : ''}`, {
+          direction: 'top',
+          offset: [0, -8]
+        })
+        .addTo(targetGroup);
+    }
+  }
+}
+
+const osrmGapRouteCache = new Map();
+
 const LIVE_OFFLINE_THRESHOLD_SEC = 90; // 1.5 minutes (3 missed ~25s heartbeats => truly offline)
 
 function getTodayISTDateStr(nowMs = Date.now()) {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date(nowMs));
+}
+
+/**
+ * Deterministic fingerprint for loaded route telemetry so unchanged background refreshes skip Leaflet redraws.
+ */
+export function computeRouteSignature(data) {
+  if (!data || typeof data !== 'object') return 'null';
+  const poly = Array.isArray(data.polyline) ? data.polyline : [];
+  const tl = Array.isArray(data.timeline) ? data.timeline : [];
+  const firstPt = poly[0] || {};
+  const lastPt = poly[poly.length - 1] || {};
+  const lastTl = tl[tl.length - 1] || {};
+  const lastPingAt = data.lastPing?.recorded_at || data.lastPing?.time || '';
+  return [
+    data.userId || '',
+    data.date || '',
+    Boolean(data.shiftCompleted),
+    data.punchInTime || '',
+    data.punchOutTime || '',
+    data.totalKm ?? '',
+    data.trackedRoadKm ?? '',
+    data.offlineGapKm ?? '',
+    Boolean(data.isRoadSnapped),
+    poly.length,
+    firstPt.time || '',
+    firstPt.lat != null ? Number(firstPt.lat).toFixed(5) : '',
+    firstPt.lng != null ? Number(firstPt.lng).toFixed(5) : '',
+    lastPt.time || '',
+    lastPt.lat != null ? Number(lastPt.lat).toFixed(5) : '',
+    lastPt.lng != null ? Number(lastPt.lng).toFixed(5) : '',
+    lastPingAt,
+    tl.length,
+    lastTl.type || '',
+    lastTl.startTime || '',
+    lastTl.endTime || ''
+  ].join('|');
+}
+
+/**
+ * Computes edge playback timings so road segments move smoothly while genuine stays (2m to 10h+) hold visibly instead of skipping.
+ */
+export function buildPlaybackEdgeModel(polyline, timeline = []) {
+  const count = Array.isArray(polyline) ? polyline.length : 0;
+  if (count < 2) {
+    return { edges: [], totalDurationSec: 0 };
+  }
+
+  const stoppages = (Array.isArray(timeline) ? timeline : [])
+    .filter(item => item?.type === 'stoppage' && item.startTime && item.endTime)
+    .map((item, idx) => ({
+      id: idx,
+      startMs: new Date(item.startTime).getTime(),
+      endMs: new Date(item.endTime).getTime(),
+      durationMins: Math.max(2, Number(item.durationMins || 0)),
+      lat: item.lat != null ? Number(item.lat) : null,
+      lng: item.lng != null ? Number(item.lng) : null,
+      locationName: item.locationName || null
+    }));
+
+  const rawEdges = [];
+  for (let i = 0; i < count - 1; i++) {
+    const p1 = polyline[i] || {};
+    const p2 = polyline[i + 1] || {};
+    const t1 = p1.time ? new Date(p1.time).getTime() : 0;
+    const t2 = p2.time ? new Date(p2.time).getTime() : t1;
+    const gapMs = Math.max(0, t2 - t1);
+    const distMeters = haversineMeters(p1.lat, p1.lng, p2.lat, p2.lng);
+
+    let matchedStop = null;
+    if (gapMs > 0) {
+      for (const st of stoppages) {
+        const overlapMs = Math.min(t2, st.endMs) - Math.max(t1, st.startMs);
+        const insideWindow = overlapMs >= Math.min(gapMs * 0.45, 45000) || (t1 >= st.startMs - 60000 && t2 <= st.endMs + 60000);
+        if (!insideWindow) continue;
+        const nearStopMarker =
+          st.lat != null && st.lng != null
+            ? haversineMeters(p1.lat, p1.lng, st.lat, st.lng) <= 220 && haversineMeters(p2.lat, p2.lng, st.lat, st.lng) <= 220
+            : distMeters <= 160;
+        if (nearStopMarker || (gapMs >= 120000 && distMeters <= 160)) {
+          matchedStop = st;
+          break;
+        }
+      }
+    }
+
+    const isDirectStay = !matchedStop && gapMs >= 120000 && distMeters <= 160;
+    rawEdges.push({
+      idx: i,
+      t1,
+      t2,
+      gapMs,
+      distMeters,
+      matchedStop,
+      isStopCandidate: Boolean(matchedStop || isDirectStay),
+      isLowSpeedMicro: distMeters <= 80 && Number(p1.speed || 0) <= 4 && Number(p2.speed || 0) <= 4 && gapMs > 0
+    });
+  }
+
+  // Also promote contiguous stationary clusters whose combined stay is >= 2 minutes
+  let runStart = -1;
+  for (let i = 0; i <= rawEdges.length; i++) {
+    const e = rawEdges[i];
+    const inRun = Boolean(e && (e.isStopCandidate || e.isLowSpeedMicro));
+    if (inRun && runStart === -1) {
+      runStart = i;
+    } else if (!inRun && runStart !== -1) {
+      const anchorPt = polyline[runStart];
+      let sumMs = 0;
+      let maxDrift = 0;
+      for (let k = runStart; k < i; k++) {
+        sumMs += rawEdges[k].gapMs;
+        const nextPt = polyline[k + 1];
+        const drift = haversineMeters(anchorPt?.lat, anchorPt?.lng, nextPt?.lat, nextPt?.lng);
+        if (drift > maxDrift) maxDrift = drift;
+      }
+      if (sumMs >= 120000 && maxDrift <= 180) {
+        for (let k = runStart; k < i; k++) rawEdges[k].isDwell = true;
+      }
+      runStart = -1;
+    }
+  }
+  for (const e of rawEdges) {
+    if (e.isStopCandidate) e.isDwell = true;
+  }
+
+  // Group contiguous dwell edges sharing the same stoppage or spatial compound so dwell time is smooth, not additive noise
+  const movingCount = rawEdges.filter(e => !e.isDwell).length;
+  const moveBudgetSec = Math.max(12, Math.min(34, movingCount * 0.34));
+  const moveEdgeSec = Math.max(0.18, Math.min(0.55, moveBudgetSec / Math.max(1, movingCount)));
+
+  const edges = new Array(rawEdges.length);
+  let i = 0;
+  while (i < rawEdges.length) {
+    const cur = rawEdges[i];
+    if (!cur.isDwell) {
+      edges[i] = { isStoppageDwell: false, durationSec: moveEdgeSec };
+      i++;
+      continue;
+    }
+
+    const groupStopId = cur.matchedStop?.id ?? null;
+    const anchorLat = Number(polyline[i]?.lat);
+    const anchorLng = Number(polyline[i]?.lng);
+    let end = i;
+    while (end + 1 < rawEdges.length && rawEdges[end + 1].isDwell) {
+      const nxt = rawEdges[end + 1];
+      if (groupStopId != null || nxt.matchedStop != null) {
+        if ((nxt.matchedStop?.id ?? null) !== groupStopId) break;
+      } else {
+        const pNxtEnd = polyline[end + 2];
+        if (haversineMeters(anchorLat, anchorLng, pNxtEnd?.lat, pNxtEnd?.lng) > 160) break;
+      }
+      end++;
+    }
+
+    const groupStartMs = rawEdges[i].t1;
+    const groupEndMs = rawEdges[end].t2;
+    const rawGroupMs = Math.max(1000, groupEndMs - groupStartMs);
+    const groupDurationMins = cur.matchedStop?.durationMins || Math.max(2, Math.round(rawGroupMs / 60000));
+    // Logarithmic scale: 2-10m holds ~2.0-3.0s; 1h ~4.1s; 10h ~5.5s at 1x speed
+    const totalGroupDwellSec = Math.min(5.5, 1.5 + Math.log10(1 + Math.max(2, groupDurationMins)) * 1.45);
+    const weightSum = rawEdges.slice(i, end + 1).reduce((acc, e) => acc + Math.max(1000, e.gapMs), 0);
+
+    for (let k = i; k <= end; k++) {
+      const edgeShare = Math.max(1000, rawEdges[k].gapMs) / Math.max(1, weightSum);
+      edges[k] = {
+        isStoppageDwell: true,
+        durationSec: Math.max(0.15, totalGroupDwellSec * edgeShare),
+        groupDurationMins,
+        groupStartMs,
+        groupEndMs,
+        anchorLat,
+        anchorLng,
+        locationName: cur.matchedStop?.locationName || null
+      };
+    }
+    i = end + 1;
+  }
+
+  const totalDurationSec = edges.reduce((acc, e) => acc + (e?.durationSec || 0), 0);
+  return { edges, totalDurationSec };
 }
 
 function formatDurationSeconds(totalSeconds) {
@@ -300,13 +584,27 @@ function computeEmployeeLiveDeviceStatus(routeData, selectedDate, nowMs, fallbac
   };
 }
 
-export default function LiveFieldTrackingMap({ company = 'New Swan Group', branchCode = null, currentUserRole = 'ADMIN', tenantId = null, onOpenDeviceHealth = null }) {
+export default function LiveFieldTrackingMap({ company = 'New Swan Group', branchCode = null, currentUserRole = 'ADMIN', tenantId = null, onOpenDeviceHealth = null, presentation = 'legacy' }) {
+  const isFieldForcePresentation = presentation === 'field-force';
+  const [trackingViewMode, setTrackingViewMode] = useState('playback');
+  const [activityExpanded, setActivityExpanded] = useState(false);
+  const [selectedTimelineEvent, setSelectedTimelineEvent] = useState(null);
+  const [routeLoadError, setRouteLoadError] = useState(false);
   const [activeMainTab, setActiveMainTab] = useState('360_PLAYBACK'); // '360_PLAYBACK', 'ALL_INDIA_RADAR', 'CONVEYANCE_VOUCHERS'
 
   // Global Filter State
   const [selectedDate, setSelectedDate] = useState(() => {
     return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
   });
+  const [trackingRange, setTrackingRange] = useState(() => resolveTrackingDateRange('today'));
+  const trackingRangeDates = useMemo(() => enumerateTrackingDates(trackingRange.startDate, trackingRange.endDate), [trackingRange.startDate, trackingRange.endDate]);
+  const hasTrackingRange = isFieldForcePresentation && activeMainTab === '360_PLAYBACK' && trackingRangeDates.length > 1;
+  const [rangeLoadState, setRangeLoadState] = useState({ key: '', entries: EMPTY_TRACKING_RANGE_ENTRIES, completed: 0, loading: false });
+  const [rangeRefreshRequest, setRangeRefreshRequest] = useState({ key: '', nonce: 0 });
+  const [showAllRangeDays, setShowAllRangeDays] = useState(true);
+  const [rangePlaybackActive, setRangePlaybackActive] = useState(false);
+  const rangeNextPlayDayRef = useRef('');
+  const rangePlayedDayRef = useRef('');
   const [selectedCompany, setSelectedCompany] = useState(company || 'New Swan Group');
   const [selectedBranch, setSelectedBranch] = useState(branchCode || '');
 
@@ -345,6 +643,7 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
   });
 
   const [routeData, setRouteData] = useState(null);
+  const routeDataRef = useRef(null);
   const [deviceHealthState, setDeviceHealthState] = useState({ userId: '', summary: null });
   const [loadingRoute, setLoadingRoute] = useState(false);
 
@@ -387,6 +686,7 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
   const routeCacheRef = useRef({});
   const lastRouteFetchMetaRef = useRef({ key: '', at: 0 });
   const routeFetchSeqRef = useRef(0);
+  const rangeKey = `${selectedCompany}|${tenantId || ''}|${selectedUserId}|${trackingRange.startDate}|${trackingRange.endDate}`;
   const lastFitRouteKeyRef = useRef('');
 
   useEffect(() => {
@@ -433,6 +733,11 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
   // Interactive Leaflet Map Refs & Dynamic Trail Refs
   const mapContainerRef = useRef(null);
   const mapInstanceRef = useRef(null);
+  const rangeOverviewGroupRef = useRef(null);
+  const rangeOverviewMapRef = useRef(null);
+  const rangeOverviewDayLayersRef = useRef(new Map());
+  const rangeLastFitKeyRef = useRef('');
+  const rangeSelectDayRef = useRef(null);
   const markersGroupRef = useRef(null);
   const estimateGroupRef = useRef(null);
   const tileLayerRef = useRef(null);
@@ -444,20 +749,25 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
   const lastFrameTimeRef = useRef(null);
   const progressRef = useRef(0);
   const estimateSeqRef = useRef(0);
-  const showEstimateRouteRef = useRef(false);
+  const showEstimateRouteRef = useRef(true);
   const routeSplitInfoRef = useRef({ turnaroundIdx: 0, hasReturnTrip: false, maxDistMeters: 0, returnGainMeters: 0 });
+  const playbackModelRef = useRef({ edges: [], totalDurationSec: 0 });
   const effectiveTripFilterRef = useRef('ALL');
   const [currentTelemetry, setCurrentTelemetry] = useState(null);
   const [leafletReady, setLeafletReady] = useState(false);
   const [mapStyle, setMapStyle] = useState('street');
   const [showMapStyleMenu, setShowMapStyleMenu] = useState(false);
   const [isMapFullscreen, setIsMapFullscreen] = useState(false);
-  const [showEstimateRoute, setShowEstimateRoute] = useState(false);
+  const [showEstimateRoute, setShowEstimateRoute] = useState(true);
   const [loadingEstimate, setLoadingEstimate] = useState(false);
   const [estimateSummary, setEstimateSummary] = useState(null);
   const [routeTripFilter, setRouteTripFilter] = useState('ALL'); // 'ALL' | 'GOING' | 'RETURN'
 
   const routeSplitInfo = useMemo(() => splitGoingAndReturnRoute(routeData?.polyline), [routeData?.polyline]);
+  const playbackModel = useMemo(
+    () => buildPlaybackEdgeModel(routeData?.polyline, routeData?.timeline),
+    [routeData?.polyline, routeData?.timeline]
+  );
   const effectiveTripFilter = routeSplitInfo.hasReturnTrip ? routeTripFilter : 'ALL';
 
   const routeSpeedStats = useMemo(() => {
@@ -493,9 +803,11 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
   }, [routeData?.polyline, routeSplitInfo, effectiveTripFilter]);
 
   useEffect(() => {
+    routeDataRef.current = routeData;
     routeSplitInfoRef.current = routeSplitInfo;
+    playbackModelRef.current = playbackModel;
     effectiveTripFilterRef.current = effectiveTripFilter;
-  }, [routeSplitInfo, effectiveTripFilter]);
+  }, [routeData, routeSplitInfo, playbackModel, effectiveTripFilter]);
 
   // 2. All-India Radar State
   const [radarEmployees, setRadarEmployees] = useState([]);
@@ -666,7 +978,7 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
   const loadEmployeeRoute = useCallback(async (userId, dateStr, { silent = false, forceFresh = false } = {}) => {
     if (!isValidExecUuid(userId)) return;
     const cacheKey = `${userId}_${dateStr}`;
-    const storageKey = `crm_cached_route_v2_${cacheKey}`;
+    const storageKey = `crm_cached_route_v3_${cacheKey}`;
     const todayIST = getTodayISTDateStr();
 
     let cachedRoute = routeCacheRef.current[cacheKey] || null;
@@ -685,10 +997,15 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
 
     let shouldBackgroundRefresh = false;
     if (!forceFresh && cachedRoute) {
-      setRouteData(cachedRoute);
+      if (computeRouteSignature(cachedRoute) !== computeRouteSignature(routeDataRef.current)) {
+        routeDataRef.current = cachedRoute;
+        setRouteData(cachedRoute);
+      }
       setLoadingRoute(false);
       setIsPlaying(false);
+      progressRef.current = 0;
       setPlaybackIndex(0);
+      setCurrentTelemetry(null);
       setLiveNowMs(Date.now());
       if (dateStr === todayIST) {
         const elapsed = Date.now() - (lastRouteFetchMetaRef.current.at || 0);
@@ -707,14 +1024,19 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
     lastRouteFetchMetaRef.current = { key: cacheKey, at: Date.now() };
 
     if (!isSilent) {
+      setRouteLoadError(false);
       setLoadingRoute(true);
       setIsPlaying(false);
+      progressRef.current = 0;
       setPlaybackIndex(0);
+      setCurrentTelemetry(null);
     } else if (shouldBackgroundRefresh) {
       setSyncingRoute(true);
     }
     try {
-      const data = await getEmployee360Route(userId, dateStr);
+      const data = isFieldForcePresentation
+        ? await fetchTrackingDay(userId, dateStr, getEmployee360Route, { forceFresh })
+        : await getEmployee360Route(userId, dateStr);
       if (reqSeq !== routeFetchSeqRef.current) return;
       if (data?.polyline && data.polyline.length >= 2 && !data.routeCleaned && !data.isRoadSnapped) {
         try {
@@ -736,17 +1058,27 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
           try {
             // Keep persisted cache lightweight (<25KB) by omitting rawPolyline
             const { rawPolyline: _omit, ...compactData } = data;
-            const routeKeys = Object.keys(localStorage).filter(k => k.startsWith('crm_cached_route_v2_'));
-            if (routeKeys.length >= 4 && !routeKeys.includes(storageKey)) {
+            Object.keys(localStorage)
+              .filter(k => k.startsWith('crm_cached_route_v2_'))
+              .forEach(oldKey => {
+                if (typeof localStorage.removeItem === 'function') localStorage.removeItem(oldKey);
+              });
+            const routeKeys = Object.keys(localStorage).filter(k => k.startsWith('crm_cached_route_v3_'));
+            if (routeKeys.length >= 4 && !routeKeys.includes(storageKey) && typeof localStorage.removeItem === 'function') {
               localStorage.removeItem(routeKeys[0]);
             }
             localStorage.setItem(storageKey, JSON.stringify(compactData));
           } catch (_) {}
         }
       }
-      setRouteData(data);
+      if (computeRouteSignature(data) !== computeRouteSignature(routeDataRef.current)) {
+        routeDataRef.current = data;
+        setRouteData(data);
+      }
+      setRouteLoadError(false);
       setLiveNowMs(Date.now());
     } catch (err) {
+      if (reqSeq === routeFetchSeqRef.current) setRouteLoadError(true);
       console.error('Failed to load 360 route:', err);
     } finally {
       if (reqSeq === routeFetchSeqRef.current) {
@@ -754,7 +1086,23 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
         setSyncingRoute(false);
       }
     }
-  }, []);
+  }, [isFieldForcePresentation]);
+
+  useEffect(() => {
+    if (!hasTrackingRange || !isValidExecUuid(selectedUserId)) return undefined;
+    const controller = new AbortController();
+    Promise.resolve().then(() => {
+      if (controller.signal.aborted) return;
+      return loadTrackingRange({
+        userId: selectedUserId, dates: trackingRangeDates, fetchDaily: getEmployee360Route,
+        signal: controller.signal, forceFresh: rangeRefreshRequest.key === rangeKey,
+        onProgress: snapshot => setRangeLoadState({ ...snapshot, key: rangeKey })
+      });
+    }).catch(() => {
+      if (!controller.signal.aborted) setRangeLoadState({ key: rangeKey, entries: EMPTY_TRACKING_RANGE_ENTRIES, completed: 0, loading: false });
+    });
+    return () => controller.abort();
+  }, [hasTrackingRange, selectedUserId, trackingRangeDates, rangeKey, rangeRefreshRequest.key, rangeRefreshRequest.nonce]);
 
   const loadVouchers = useCallback(async () => {
     setLoadingVouchers(true);
@@ -778,12 +1126,25 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
     }
   }, [activeMainTab, loadVouchers]);
 
+  const canAutoSyncSelectedRoute = useCallback(() => {
+    const todayIST = getTodayISTDateStr();
+    if (activeMainTab !== '360_PLAYBACK' || !selectedUserId || selectedDate !== todayIST || isPlaying) {
+      return false;
+    }
+    const loaded = routeDataRef.current;
+    const isCompletedShift = Boolean(
+      loaded?.shiftCompleted &&
+      String(loaded?.userId || '') === String(selectedUserId) &&
+      String(loaded?.date || '') === String(selectedDate)
+    );
+    return !isCompletedShift;
+  }, [activeMainTab, selectedUserId, selectedDate, isPlaying]);
+
   useEffect(() => {
     const syncClockAndLiveRoute = () => {
       setLiveNowMs(Date.now());
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
-      const todayIST = getTodayISTDateStr();
-      if (activeMainTab === '360_PLAYBACK' && selectedUserId && selectedDate === todayIST && !isPlaying) {
+      if (canAutoSyncSelectedRoute()) {
         const key = `${selectedUserId}_${selectedDate}`;
         const elapsed = Date.now() - (lastRouteFetchMetaRef.current.at || 0);
         if (lastRouteFetchMetaRef.current.key !== key || elapsed >= 8000) {
@@ -810,7 +1171,7 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
         window.removeEventListener('focus', syncClockAndLiveRoute);
       }
     };
-  }, [activeMainTab, selectedUserId, selectedDate, isPlaying, loadEmployeeRoute, loadRadarAndEmployees]);
+  }, [activeMainTab, selectedUserId, selectedDate, canAutoSyncSelectedRoute, loadEmployeeRoute, loadRadarAndEmployees]);
 
   useEffect(() => {
     if (selectedUserId && activeMainTab === '360_PLAYBACK') {
@@ -821,27 +1182,49 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
   useEffect(() => {
     const autoSync = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
-      const todayIST = getTodayISTDateStr();
-      if (activeMainTab === '360_PLAYBACK' && selectedUserId && selectedDate === todayIST && !isPlaying) {
+      if (canAutoSyncSelectedRoute()) {
         loadEmployeeRoute(selectedUserId, selectedDate, { silent: true, forceFresh: true });
       } else if (activeMainTab === 'ALL_INDIA_RADAR') {
         loadRadarAndEmployees({ silent: true });
       }
     }, 20000);
     return () => clearInterval(autoSync);
-  }, [selectedUserId, selectedDate, activeMainTab, isPlaying, loadEmployeeRoute, loadRadarAndEmployees]);
+  }, [selectedUserId, selectedDate, activeMainTab, canAutoSyncSelectedRoute, loadEmployeeRoute, loadRadarAndEmployees]);
 
   // -------------------------------------------------------------
   // Leaflet Map Engine Setup & Route Rendering
   // -------------------------------------------------------------
   useEffect(() => {
+    const destroyDetachedMap = () => {
+      if (!mapInstanceRef.current) return;
+      try { mapInstanceRef.current.remove(); } catch (_) {}
+      mapInstanceRef.current = null;
+      markersGroupRef.current = null;
+      estimateGroupRef.current = null;
+      tileLayerRef.current = null;
+      runnerMarkerRef.current = null;
+      traveledTrailRef.current = null;
+      lastFitRouteKeyRef.current = '';
+    };
+
+    if (activeMainTab !== '360_PLAYBACK') {
+      destroyDetachedMap();
+      return;
+    }
+
     if (!leafletReady || !mapContainerRef.current || typeof window === 'undefined' || !window.L) return;
 
     if (mapInstanceRef.current) {
-      try {
-        mapInstanceRef.current.invalidateSize();
-      } catch (_) {}
-      return;
+      const attachedContainer = typeof mapInstanceRef.current.getContainer === 'function'
+        ? mapInstanceRef.current.getContainer()
+        : mapContainerRef.current;
+      if (attachedContainer === mapContainerRef.current) {
+        try {
+          mapInstanceRef.current.invalidateSize();
+        } catch (_) {}
+        return;
+      }
+      destroyDetachedMap();
     }
 
     try {
@@ -932,7 +1315,7 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
     } catch (err) {
       console.warn('Tile style switch notice:', err);
     }
-  }, [mapStyle, leafletReady]);
+  }, [mapStyle, leafletReady, activeMainTab]);
 
   // Sync fullscreen state on native fullscreen exit / Escape key and resize Leaflet cleanly
   useEffect(() => {
@@ -1055,17 +1438,7 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
     const poly = data?.polyline || [];
     const split = splitGoingAndReturnRoute(poly);
     const activeFilter = split.hasReturnTrip ? effectiveTripFilter : 'ALL';
-    const blindGaps = [];
-    for (let i = 1; i < poly.length; i++) {
-      const prev = poly[i - 1];
-      const cur = poly[i];
-      const leg = split.hasReturnTrip && i > split.turnaroundIdx ? 'RETURN' : 'GOING';
-      if (activeFilter !== 'ALL' && leg !== activeFilter) continue;
-      const isBlindOffline = Boolean(cur?.isOffline) && !Boolean(cur?.isSnapped);
-      if (isBlindOffline && haversineMeters(prev.lat, prev.lng, cur.lat, cur.lng) >= 30) {
-        blindGaps.push([prev, cur]);
-      }
-    }
+    const blindGaps = collectBlindGapSegments(poly, split, activeFilter);
 
     if (blindGaps.length === 0) {
       setEstimateSummary({ distanceKm: 0, noGaps: true });
@@ -1076,48 +1449,97 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
     setLoadingEstimate(true);
     let totalEstMeters = 0;
     let gapRendered = 0;
+    let hasReturnGap = false;
+    const originCoord = poly[0] ? [Number(poly[0].lat), Number(poly[0].lng)] : null;
+    const destCoord = poly[poly.length - 1] ? [Number(poly[poly.length - 1].lat), Number(poly[poly.length - 1].lng)] : null;
+    const turnaroundCoord = split.hasReturnTrip && poly[split.turnaroundIdx]
+      ? [Number(poly[split.turnaroundIdx].lat), Number(poly[split.turnaroundIdx].lng)]
+      : null;
 
     try {
-      for (const [startPt, endPt] of blindGaps) {
+      for (const { prev: startPt, cur: endPt, leg } of blindGaps) {
         if (seq !== estimateSeqRef.current || !showEstimateRouteRef.current) return;
         const coordStr = `${Number(startPt.lng).toFixed(6)},${Number(startPt.lat).toFixed(6)};${Number(endPt.lng).toFixed(6)},${Number(endPt.lat).toFixed(6)}`;
+        const isRetGap = leg === 'RETURN';
+
         try {
-          const ctrl = new AbortController();
-          const timer = setTimeout(() => ctrl.abort(), 7000);
-          const res = await fetch(
-            `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=full&geometries=geojson&alternatives=true`,
-            { headers: { Accept: 'application/json' }, signal: ctrl.signal }
-          );
-          clearTimeout(timer);
-          if (seq !== estimateSeqRef.current || !showEstimateRouteRef.current) return;
-          if (res.ok) {
-            const json = await res.json();
-            const validRoutes = Array.isArray(json?.routes)
-              ? json.routes.filter(r => Array.isArray(r?.geometry?.coordinates) && r.geometry.coordinates.length >= 2)
-              : [];
-            const route = validRoutes.reduce(
-              (best, r) => (Number(r.distance ?? Infinity) < Number(best?.distance ?? Infinity) ? r : best),
-              validRoutes[0]
+          let cached = osrmGapRouteCache.get(coordStr) || null;
+          if (!cached) {
+            const ctrl = new AbortController();
+            const timer = setTimeout(() => ctrl.abort(), 7000);
+            const res = await fetch(
+              `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=full&geometries=geojson&alternatives=true`,
+              { headers: { Accept: 'application/json' }, signal: ctrl.signal }
             );
-            const roadCoords = route?.geometry?.coordinates;
-            if (json?.code === 'Ok' && Array.isArray(roadCoords) && roadCoords.length >= 2) {
-              const latLngs = roadCoords.map(([lng, lat]) => [lat, lng]);
-              const segEstKm = ((route.distance || 0) / 1000).toFixed(2);
-              totalEstMeters += Number(route.distance || 0);
-              gapRendered++;
-              hideOfflineGapChordForSegment(startPt, endPt);
-              window.L.polyline(latLngs, {
-                color: '#9333ea',
-                weight: 4.5,
-                opacity: 0.9,
-                dashArray: '4, 7',
-                smoothFactor: 0.5,
-                lineJoin: 'round',
-                lineCap: 'round'
-              })
-              .bindPopup(`<b>🟣 Estimated Road Preview (Unverified)</b><br/><span style="color:#64748b;font-size:11px;">Shortest OSRM road suggestion: ~${segEstKm} km<br/>Note: Replaces straight gap chord visually while Preview is ON</span>`)
-              .addTo(group);
+            clearTimeout(timer);
+            if (seq !== estimateSeqRef.current || !showEstimateRouteRef.current) return;
+            if (res.ok) {
+              const json = await res.json();
+              const validRoutes = Array.isArray(json?.routes)
+                ? json.routes.filter(r => Array.isArray(r?.geometry?.coordinates) && r.geometry.coordinates.length >= 2)
+                : [];
+              const route = validRoutes.reduce(
+                (best, r) => (Number(r.distance ?? Infinity) < Number(best?.distance ?? Infinity) ? r : best),
+                validRoutes[0]
+              );
+              const roadCoords = route?.geometry?.coordinates;
+              if (json?.code === 'Ok' && Array.isArray(roadCoords) && roadCoords.length >= 2) {
+                cached = {
+                  latLngs: roadCoords.map(([lng, lat]) => [lat, lng]),
+                  distance: Number(route.distance || 0)
+                };
+                if (osrmGapRouteCache.size >= 100) {
+                  const oldest = osrmGapRouteCache.keys().next().value;
+                  if (oldest !== undefined) osrmGapRouteCache.delete(oldest);
+                }
+                osrmGapRouteCache.set(coordStr, cached);
+              }
             }
+          }
+
+          if (seq !== estimateSeqRef.current || !showEstimateRouteRef.current) return;
+          if (cached?.latLngs?.length >= 2) {
+            const segEstKm = (cached.distance / 1000).toFixed(2);
+            totalEstMeters += cached.distance;
+            gapRendered++;
+            if (isRetGap) hasReturnGap = true;
+            hideOfflineGapChordForSegment(startPt, endPt);
+
+            const lineStyle = isRetGap
+              ? { color: '#ec4899', weight: 4.5, opacity: 0.96, dashArray: '7, 7' }
+              : { color: '#9333ea', weight: 4.5, opacity: 0.9, dashArray: '4, 7' };
+
+            window.L.polyline(cached.latLngs, {
+              color: '#ffffff',
+              weight: 7,
+              opacity: 0.85,
+              smoothFactor: 0.5,
+              lineJoin: 'round',
+              lineCap: 'round'
+            }).addTo(group);
+
+            const gapTimeRange = `${startPt.time ? new Date(startPt.time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }) : '-'} - ${endPt.time ? new Date(endPt.time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }) : '-'}`;
+            window.L.polyline(cached.latLngs, {
+              ...lineStyle,
+              smoothFactor: 0.5,
+              lineJoin: 'round',
+              lineCap: 'round'
+            })
+              .bindPopup(
+                isRetGap
+                  ? `<b>🩷 Return Route (Estimated along Road • GPS Off)</b><br/><span style="color:#64748b;font-size:11px;">Shortest return road path: ~${segEstKm} km<br/>Gap Window: ${gapTimeRange}<br/>Note: Billing stays strictly verified Road KM</span>`
+                  : `<b>🟣 Estimated Road Preview (GPS Off)</b><br/><span style="color:#64748b;font-size:11px;">Shortest OSRM road suggestion: ~${segEstKm} km<br/>Gap Window: ${gapTimeRange}</span>`
+              )
+              .addTo(group);
+
+            placeRoadDirectionalChevrons(window.L, group, [{ coords: cached.latLngs }], {
+              isReturn: isRetGap,
+              isEstimated: true,
+              originCoord,
+              destCoord,
+              turnaroundCoord,
+              maxMarkers: 14
+            });
           }
         } catch (_) {}
       }
@@ -1126,6 +1548,7 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
         setEstimateSummary({
           distanceKm: Number((totalEstMeters / 1000).toFixed(2)),
           segmentCount: gapRendered,
+          hasReturnGap,
           noGaps: gapRendered === 0
         });
       }
@@ -1149,24 +1572,8 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
     }
   }, [routeData, renderEstimatedGapPreview, restoreOfflineGapChords]);
 
-  useEffect(() => {
-    estimateGroupRef.current?.clearLayers();
-    restoreOfflineGapChords();
-    let cancelled = false;
-    if (showEstimateRouteRef.current && routeData?.polyline) {
-      Promise.resolve().then(() => {
-        if (!cancelled && showEstimateRouteRef.current) {
-          renderEstimatedGapPreview(routeData);
-        }
-      });
-    }
-    return () => {
-      cancelled = true;
-    };
-  }, [routeData, renderEstimatedGapPreview, restoreOfflineGapChords]);
-
   // Synchronize runner position, dynamic trail, and telemetry smoothly
-  const updateRunnerPosition = (progress, polyline) => {
+  const updateRunnerPosition = useCallback((progress, polyline) => {
     if (!polyline || polyline.length === 0 || !markersGroupRef.current) return;
 
     const total = polyline.length;
@@ -1178,8 +1585,14 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
     const p1 = polyline[idx];
     const p2 = polyline[nextIdx];
 
-    const lat = Number(p1.lat) + (Number(p2.lat) - Number(p1.lat)) * frac;
-    const lng = Number(p1.lng) + (Number(p2.lng) - Number(p1.lng)) * frac;
+    const edgeInfo = idx < total - 1 ? playbackModelRef.current?.edges?.[idx] : null;
+    const isDwellEdge = Boolean(edgeInfo?.isStoppageDwell);
+    const visualFrac = isDwellEdge ? (frac < 0.94 ? 0 : (frac - 0.94) / 0.06) : frac;
+    const baseLat = isDwellEdge && !isNaN(edgeInfo.anchorLat) ? edgeInfo.anchorLat : Number(p1.lat);
+    const baseLng = isDwellEdge && !isNaN(edgeInfo.anchorLng) ? edgeInfo.anchorLng : Number(p1.lng);
+
+    const lat = baseLat + (Number(p2.lat) - baseLat) * visualFrac;
+    const lng = baseLng + (Number(p2.lng) - baseLng) * visualFrac;
 
     if (isNaN(lat) || isNaN(lng)) return;
 
@@ -1189,10 +1602,22 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
     // Interpolate telemetry time and speed
     const t1 = p1.time ? new Date(p1.time).getTime() : Date.now();
     const t2 = p2.time ? new Date(p2.time).getTime() : t1;
-    const interpTime = new Date(t1 + frac * (t2 - t1)).toISOString();
+    const curMs = t1 + frac * (t2 - t1);
+    const interpTime = new Date(curMs).toISOString();
     const s1 = p1.speed != null ? Number(p1.speed) : 0;
     const s2 = p2.speed != null ? Number(p2.speed) : s1;
-    const interpSpeed = Math.round(s1 + frac * (s2 - s1));
+    const interpSpeed = isDwellEdge ? 0 : Math.round(s1 + frac * (s2 - s1));
+
+    const stoppageDwell = isDwellEdge
+      ? {
+          durationMins: edgeInfo.groupDurationMins,
+          elapsedMins: Math.min(
+            edgeInfo.groupDurationMins,
+            Math.max(0, Math.round((curMs - edgeInfo.groupStartMs) / 60000))
+          ),
+          locationName: edgeInfo.locationName || null
+        }
+      : null;
 
     const isCurrentOffline = Boolean((nextIdx > idx ? p2?.isOffline : p1?.isOffline) ?? p1?.isOffline);
     const splitMeta = routeSplitInfoRef.current;
@@ -1205,19 +1630,24 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
       time: interpTime,
       bearing: brng,
       isOffline: isCurrentOffline,
-      tripPhase: isReturningLeg ? 'RETURN' : 'GOING'
+      tripPhase: isReturningLeg ? 'RETURN' : 'GOING',
+      stoppageDwell
     });
 
     // Update runner marker position
     if (runnerMarkerRef.current) {
       runnerMarkerRef.current.setLatLng([lat, lng]);
 
-      // Rotate vehicle direction arrow smoothly and morph Going (Blue) <-> Return (Magenta) <-> Offline (Orange)
+      // Rotate vehicle direction arrow smoothly and morph Stoppage (Amber) <-> Going (Blue) <-> Return (Magenta) <-> Offline (Orange)
       const rotator = document.getElementById('runner-vehicle-rotator');
       const pulseRing = document.getElementById('runner-pulse-ring');
       if (rotator) {
         rotator.style.transform = `rotate(${Math.round(brng)}deg)`;
-        if (isCurrentOffline) {
+        if (stoppageDwell) {
+          rotator.style.background = 'linear-gradient(135deg, #b45309 0%, #f59e0b 100%)';
+          rotator.style.boxShadow = '0 4px 16px rgba(245,158,11,0.75)';
+          if (pulseRing) pulseRing.style.background = 'rgba(245,158,11,0.34)';
+        } else if (isCurrentOffline) {
           rotator.style.background = 'linear-gradient(135deg, #c2410c 0%, #ea580c 100%)';
           rotator.style.boxShadow = '0 4px 14px rgba(234,88,12,0.75)';
           if (pulseRing) pulseRing.style.background = 'rgba(234,88,12,0.3)';
@@ -1267,15 +1697,15 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
         if (curRun.length >= 2) runs.push(curRun);
         traveledTrailRef.current.setLatLngs(runs);
         traveledTrailRef.current.setStyle({
-          opacity: runs.length > 0 ? 0.95 : 0,
-          color: isCurrentOffline ? '#ea580c' : isReturningLeg ? '#ec4899' : '#2563eb',
-          dashArray: isCurrentOffline ? '8, 6' : isReturningLeg ? '8, 8' : null
+          opacity: runs.length > 0 ? (isReturningLeg ? 0.55 : 0.95) : 0,
+          color: isCurrentOffline ? '#ea580c' : isReturningLeg ? '#db2777' : '#2563eb',
+          dashArray: isCurrentOffline ? '8, 6' : null
         });
       }
     }
-  };
+  }, [isPlaying]);
 
-  // 60 FPS requestAnimationFrame Smooth Road Playback Engine
+  // 60 FPS requestAnimationFrame Smooth Road Playback Engine (honors genuine stoppage dwells)
   useEffect(() => {
     if (!isPlaying || !routeData?.polyline || routeData.polyline.length < 2) {
       if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
@@ -1285,20 +1715,39 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
 
     const poly = routeData.polyline;
     const totalPoints = poly.length;
+    const edges = playbackModelRef.current?.edges || [];
 
     const animate = (now) => {
       if (!lastFrameTimeRef.current) lastFrameTimeRef.current = now;
-      const dt = (now - lastFrameTimeRef.current) / 1000;
+      const dt = Math.min(0.1, Math.max(0, (now - lastFrameTimeRef.current) / 1000));
       lastFrameTimeRef.current = now;
 
-      // Rate of progress: traverse entire route in ~20-30 seconds adjusted by speed
-      const baseDurationSec = Math.max(15, Math.min(45, totalPoints * 0.4));
-      const pointsPerSec = (totalPoints / baseDurationSec) * playbackSpeed;
-      let nextProg = progressRef.current + pointsPerSec * dt;
       const endBoundIdx =
         effectiveTripFilterRef.current === 'GOING' && routeSplitInfoRef.current.hasReturnTrip
           ? routeSplitInfoRef.current.turnaroundIdx
           : totalPoints - 1;
+
+      let remainingDt = dt * playbackSpeed;
+      let nextProg = progressRef.current;
+      let safetySteps = 0;
+
+      while (remainingDt > 0 && nextProg < endBoundIdx && safetySteps < 64) {
+        safetySteps++;
+        const edgeIdx = Math.min(Math.floor(nextProg), Math.max(0, edges.length - 1));
+        const edgeDur = Math.max(0.05, Number(edges[edgeIdx]?.durationSec || 0.3));
+        const edgeBoundary = Math.min(edgeIdx + 1, endBoundIdx);
+        const fracRemaining = edgeBoundary - nextProg;
+        if (fracRemaining <= 0) break;
+        const timeToNextBoundary = fracRemaining * edgeDur;
+
+        if (remainingDt >= timeToNextBoundary) {
+          remainingDt -= timeToNextBoundary;
+          nextProg = edgeBoundary;
+        } else {
+          nextProg += remainingDt / edgeDur;
+          remainingDt = 0;
+        }
+      }
 
       if (nextProg >= endBoundIdx) {
         nextProg = endBoundIdx;
@@ -1322,7 +1771,7 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
     return () => {
       if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
     };
-  }, [isPlaying, playbackSpeed, routeData]);
+  }, [isPlaying, playbackSpeed, routeData, updateRunnerPosition]);
 
   // Update Route Polyline, Directional Chevrons, Turnaround Beacon & Markers on Map
   useEffect(() => {
@@ -1392,69 +1841,18 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
         ];
 
         const drawDirectionalChevrons = (segList, legType) => {
-          let legTotalMeters = 0;
-          segList.forEach(s => {
-            if (s.mode === 'OFFLINE_GAP') return;
-            for (let j = 1; j < s.coords.length; j++) {
-              legTotalMeters += haversineMeters(s.coords[j - 1][0], s.coords[j - 1][1], s.coords[j][0], s.coords[j][1]);
-            }
-          });
-          if (legTotalMeters < 110) return;
-
-          const spacing = Math.max(130, Math.round(legTotalMeters / 16));
-          let distSinceArrow = spacing * 0.55;
-          let placedCount = 0;
           const isRet = legType === 'RETURN';
-          const bgHex = isRet ? '#ec4899' : '#2563eb';
-          const legLabel = isRet ? 'Return (Inward)' : 'Going (Outward)';
           const turnaroundCoord = hasReturnTrip ? coords[turnaroundIdx] : null;
           const originCoord = coords[0];
           const destCoord = coords[coords.length - 1];
-
-          segList.forEach(s => {
-            if (s.mode === 'OFFLINE_GAP' || placedCount >= 24) return;
-            for (let j = 1; j < s.coords.length && placedCount < 24; j++) {
-              const pA = s.coords[j - 1];
-              const pB = s.coords[j];
-              const stepDist = haversineMeters(pA[0], pA[1], pB[0], pB[1]);
-              if (stepDist < 8) continue;
-              distSinceArrow += stepDist;
-              if (distSinceArrow < spacing) continue;
-
-              const midLat = (pA[0] + pB[0]) / 2;
-              const midLng = (pA[1] + pB[1]) / 2;
-              const tooCloseOrigin = haversineMeters(midLat, midLng, originCoord[0], originCoord[1]) < 45;
-              const tooCloseDest = haversineMeters(midLat, midLng, destCoord[0], destCoord[1]) < 45;
-              const tooCloseTurn = turnaroundCoord
-                ? haversineMeters(midLat, midLng, turnaroundCoord[0], turnaroundCoord[1]) < 45
-                : false;
-              if (tooCloseOrigin || tooCloseDest || tooCloseTurn) continue;
-
-              distSinceArrow = 0;
-              placedCount++;
-              const brng = calculateBearing(pA[0], pA[1], pB[0], pB[1]);
-              const tStamp = s.times?.[j]
-                ? new Date(s.times[j]).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' })
-                : '';
-              const segSpd = Math.max(0, Math.round(Number(s.speeds?.[j] ?? s.speeds?.[j - 1] ?? 0)));
-              const spdText = segSpd > 0 ? ` • ${segSpd} km/h` : '';
-
-              const chevIcon = window.L.divIcon({
-                className: 'crm-chevron-marker',
-                html: `<div class="crm-chevron-badge" style="width:18px;height:18px;border-radius:50%;background:${bgHex};border:1.5px solid #ffffff;box-shadow:0 2px 6px rgba(15,23,42,0.28);display:flex;align-items:center;justify-content:center;transform:rotate(${Math.round(brng)}deg);"><svg width="10" height="10" viewBox="0 0 24 24" fill="#ffffff"><polygon points="12 3 20 19 12 15 4 19 12 3"/></svg></div>`,
-                iconSize: [18, 18],
-                iconAnchor: [9, 9]
-              });
-              window.L.marker([midLat, midLng], {
-                icon: chevIcon,
-                zIndexOffset: isRet ? 780 : 650
-              })
-                .bindTooltip(`${isRet ? '🩷' : '🔵'} ${legLabel}${spdText}${tStamp ? ` • ${tStamp}` : ''}`, {
-                  direction: 'top',
-                  offset: [0, -8]
-                })
-                .addTo(markersGroupRef.current);
-            }
+          const nonGapRuns = segList.filter(s => s.mode !== 'OFFLINE_GAP');
+          placeRoadDirectionalChevrons(window.L, markersGroupRef.current, nonGapRuns, {
+            isReturn: isRet,
+            isEstimated: false,
+            originCoord,
+            destCoord,
+            turnaroundCoord,
+            maxMarkers: 24
           });
         };
 
@@ -1486,22 +1884,36 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
               offlineGapLayersRef.current.push({ layer: gapPoly, p1, p2 });
             }
           } else if (seg.mode === 'OFFLINE_ROAD') {
+            if (isReturn) {
+              window.L.polyline(seg.coords, {
+                ...basePolylineOpts,
+                color: '#ffffff',
+                weight: 7,
+                opacity: 0.82
+              }).addTo(markersGroupRef.current);
+            }
             window.L.polyline(seg.coords, {
               ...basePolylineOpts,
               color: isReturn ? '#ec4899' : '#d97706',
-              weight: isReturn ? 4.2 : 5.5,
-              opacity: 0.95,
-              dashArray: isReturn ? '8, 8' : null
+              weight: isReturn ? 4.5 : 5.5,
+              opacity: 0.96,
+              dashArray: isReturn ? '7, 7' : null
             })
             .bindPopup(`<b>${isReturn ? '🩷 Return Offline-Tracked Road' : '🟡 Going Offline-Tracked Road'}</b><br/><span style="color:#64748b;font-size:11px;">Recorded offline via device GPS vault & synced automatically<br/>Time: ${timeRange}${segSpeedHtml}</span>`)
             .addTo(markersGroupRef.current);
           } else if (isReturn) {
             window.L.polyline(seg.coords, {
               ...basePolylineOpts,
+              color: '#ffffff',
+              weight: 7,
+              opacity: 0.82
+            }).addTo(markersGroupRef.current);
+            window.L.polyline(seg.coords, {
+              ...basePolylineOpts,
               color: '#ec4899',
-              weight: 4.2,
+              weight: 4.5,
               opacity: 0.96,
-              dashArray: '8, 8'
+              dashArray: '7, 7'
             })
             .bindPopup(`<b>🩷 Return Route (Inward Tracking)</b><br/><span style="color:#64748b;font-size:11px;">Return journey along road<br/>Time: ${timeRange}${segSpeedHtml}</span>`)
             .addTo(markersGroupRef.current);
@@ -1603,14 +2015,14 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
             .addTo(markersGroupRef.current);
         }
 
-        // 6. Punch Out Marker or End Marker (with hover tooltip + slight offset if exact return to start)
+        // 6. Punch Out Marker or End Marker (with hover tooltip + distinct offset if coinciding with origin)
         const punchOutTimeline = (routeData.timeline || []).find(t => t.type === 'punch_out');
         if (punchOutTimeline && punchOutTimeline.lat && punchOutTimeline.lng) {
           let outLat = Number(punchOutTimeline.lat);
           let outLng = Number(punchOutTimeline.lng);
-          if (haversineMeters(outLat, outLng, coords[0][0], coords[0][1]) < 20) {
-            outLat -= 0.00011;
-            outLng += 0.00011;
+          if (haversineMeters(outLat, outLng, coords[0][0], coords[0][1]) < 25) {
+            outLat -= 0.00018;
+            outLng += 0.00022;
           }
           const outIcon = window.L.divIcon({
             className: 'custom-punchout-marker',
@@ -1747,7 +2159,45 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
         }, 150);
       }
     }
-  }, [routeData, effectiveTripFilter, routeSplitInfo]);
+
+    // Coordinate Estimated Gap Road rendering strictly AFTER offlineGapLayersRef is populated
+    let estCancelled = false;
+    estimateGroupRef.current?.clearLayers();
+    if (showEstimateRouteRef.current && routeData?.polyline) {
+      Promise.resolve().then(() => {
+        if (!estCancelled && showEstimateRouteRef.current) {
+          renderEstimatedGapPreview(routeData);
+        }
+      });
+    } else {
+      restoreOfflineGapChords();
+    }
+
+    return () => {
+      estCancelled = true;
+    };
+  }, [routeData, leafletReady, activeMainTab, effectiveTripFilter, routeSplitInfo, renderEstimatedGapPreview, restoreOfflineGapChords]);
+
+  // Presentation-only latest-position following; route geometry and refresh cadence stay unchanged.
+  useEffect(() => {
+    if (!isFieldForcePresentation || trackingViewMode !== 'latest' || activeMainTab !== '360_PLAYBACK' || !leafletReady) return;
+    if (routeData?.userId !== selectedUserId || routeData?.date !== selectedDate || !routeData?.polyline?.length) return;
+    const frame = requestAnimationFrame(() => {
+      const latestIndex = routeData.polyline.length - 1;
+      progressRef.current = latestIndex;
+      setPlaybackIndex(latestIndex);
+      updateRunnerPosition(latestIndex, routeData.polyline);
+      const ping = routeData.lastPing;
+      const lat = ping?.latitude ?? ping?.lat;
+      const lng = ping?.longitude ?? ping?.lng;
+      if (lat != null && lng != null && Number.isFinite(Number(lat)) && Number.isFinite(Number(lng))) {
+        // Display the actual last GPS coordinate, without changing route points or matching.
+        runnerMarkerRef.current?.setLatLng([Number(lat), Number(lng)]);
+        mapInstanceRef.current?.panTo([Number(lat), Number(lng)]);
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [isFieldForcePresentation, trackingViewMode, activeMainTab, leafletReady, routeData, selectedUserId, selectedDate, updateRunnerPosition]);
 
   // -------------------------------------------------------------
   // All-India State Clustered Counts
@@ -1846,10 +2296,280 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
   const paginatedVouchers = filteredVouchers.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage);
 
   const currentRunnerPoint = routeData?.polyline?.[playbackIndex] || null;
+  const presentationRoute = routeData?.userId === selectedUserId && routeData?.date === selectedDate ? routeData : null;
+  const presentationStatus = useMemo(() => computeEmployeeLiveDeviceStatus(
+    presentationRoute, selectedDate, liveNowMs, selectedEmployee
+  ), [presentationRoute, selectedDate, liveNowMs, selectedEmployee]);
+
+  const cachedRangeEntries = useMemo(() => {
+    if (!hasTrackingRange) return EMPTY_TRACKING_RANGE_ENTRIES;
+    const entries = {};
+    for (const day of trackingRangeDates) {
+      const cached = peekTrackingDay(selectedUserId, day);
+      if (cached) entries[day] = { status: 'success', data: cached };
+    }
+    return entries;
+  }, [hasTrackingRange, trackingRangeDates, selectedUserId]);
+  const rangeEntries = useMemo(() => {
+    if (!hasTrackingRange) return EMPTY_TRACKING_RANGE_ENTRIES;
+    const loaded = { ...cachedRangeEntries, ...(rangeLoadState.key === rangeKey ? rangeLoadState.entries : EMPTY_TRACKING_RANGE_ENTRIES) };
+    if (presentationRoute && trackingRangeDates.includes(presentationRoute.date)) {
+      loaded[presentationRoute.date] = { status: 'success', data: presentationRoute };
+    }
+    return loaded;
+  }, [hasTrackingRange, rangeLoadState, rangeKey, cachedRangeEntries, presentationRoute, trackingRangeDates]);
+  const rangeSummary = useMemo(() => hasTrackingRange ? summarizeTrackingRange(rangeEntries, trackingRangeDates) : null, [hasTrackingRange, rangeEntries, trackingRangeDates]);
+  const rangeStatus = useMemo(() => rangeSummary?.latest ? computeEmployeeLiveDeviceStatus(rangeSummary.latest, rangeSummary.latest.date, liveNowMs) : null, [rangeSummary, liveNowMs]);
+  const rangeIsLoading = hasTrackingRange && (rangeLoadState.key !== rangeKey || rangeLoadState.loading);
+  const rangePendingFocusRef = useRef(null);
+
+  const stopRangePlayback = useCallback(() => {
+    rangeNextPlayDayRef.current = '';
+    rangePlayedDayRef.current = '';
+    setRangePlaybackActive(false);
+  }, []);
+  const handlePresentationEmployee = useCallback((userId) => {
+    stopRangePlayback();
+    setIsPlaying(false);
+    routeFetchSeqRef.current++;
+    setSelectedUserId(userId);
+    setRouteTripFilter('ALL');
+    setSelectedTimelineEvent(null);
+    setTrackingViewMode('playback');
+  }, [stopRangePlayback]);
+  const handleRangeDay = useCallback((day) => {
+    if (!trackingRangeDates.includes(day)) return;
+    stopRangePlayback();
+    setIsPlaying(false);
+    setSelectedDate(day);
+    setRouteTripFilter('ALL');
+    setSelectedTimelineEvent(null);
+    setTrackingViewMode('playback');
+  }, [trackingRangeDates, stopRangePlayback]);
+  useEffect(() => { rangeSelectDayRef.current = handleRangeDay; }, [handleRangeDay]);
+  const handlePresentationDate = useCallback((selection) => {
+    if (!selection?.startDate || !selection?.endDate) return;
+    stopRangePlayback();
+    setIsPlaying(false);
+    routeFetchSeqRef.current++;
+    if (activeMainTab === '360_PLAYBACK') {
+      setTrackingRange(selection);
+      setShowAllRangeDays(true);
+      rangeLastFitKeyRef.current = '';
+    }
+    setSelectedDate(selection.startDate);
+    setRouteTripFilter('ALL');
+    setSelectedTimelineEvent(null);
+    setTrackingViewMode('playback');
+  }, [activeMainTab, stopRangePlayback]);
+  const handlePresentationMainTab = useCallback((tab) => {
+    stopRangePlayback();
+    setIsPlaying(false);
+    setActiveMainTab(tab);
+    if (tab === '360_PLAYBACK' && (selectedDate < trackingRange.startDate || selectedDate > trackingRange.endDate)) setSelectedDate(trackingRange.startDate);
+  }, [stopRangePlayback, selectedDate, trackingRange.startDate, trackingRange.endDate]);
+  const handlePresentationRefresh = useCallback(() => {
+    if (activeMainTab === '360_PLAYBACK' && selectedUserId) {
+      if (hasTrackingRange) setRangeRefreshRequest({ key: rangeKey, nonce: Date.now() });
+      delete routeCacheRef.current[`${selectedUserId}_${selectedDate}`];
+      lastFitRouteKeyRef.current = '';
+      loadEmployeeRoute(selectedUserId, selectedDate, { forceFresh: true });
+      loadRadarAndEmployees({ silent: true });
+    } else if (activeMainTab === 'ALL_INDIA_RADAR') loadRadarAndEmployees();
+    else if (activeMainTab === 'CONVEYANCE_VOUCHERS') loadVouchers();
+  }, [activeMainTab, selectedUserId, selectedDate, hasTrackingRange, rangeKey, loadEmployeeRoute, loadRadarAndEmployees, loadVouchers]);
+  const handlePresentationMode = useCallback((mode) => {
+    stopRangePlayback();
+    setTrackingViewMode(mode);
+    setIsPlaying(false);
+    setSelectedTimelineEvent(null);
+  }, [stopRangePlayback]);
+  const handlePresentationSeek = useCallback((index) => {
+    if (!presentationRoute?.polyline?.length) return;
+    stopRangePlayback();
+    setTrackingViewMode('playback');
+    setSelectedTimelineEvent(null);
+    const next = Math.max(0, Math.min(index, presentationRoute.polyline.length - 1));
+    progressRef.current = next;
+    setPlaybackIndex(next);
+    updateRunnerPosition(next, presentationRoute.polyline);
+  }, [presentationRoute, updateRunnerPosition, stopRangePlayback]);
+  const handlePresentationReset = useCallback(() => {
+    const start = effectiveTripFilter === 'RETURN' && routeSplitInfo.hasReturnTrip ? routeSplitInfo.turnaroundIdx : 0;
+    setIsPlaying(false);
+    handlePresentationSeek(start);
+  }, [effectiveTripFilter, routeSplitInfo, handlePresentationSeek]);
+  const handlePresentationPlay = useCallback(() => {
+    if (rangePlaybackActive) { stopRangePlayback(); setIsPlaying(false); return; }
+    if (!presentationRoute?.polyline || presentationRoute.polyline.length < 2) return;
+    setTrackingViewMode('playback');
+    setSelectedTimelineEvent(null);
+    if (!isPlaying) {
+      const start = effectiveTripFilter === 'RETURN' && routeSplitInfo.hasReturnTrip ? routeSplitInfo.turnaroundIdx : 0;
+      const end = effectiveTripFilter === 'GOING' && routeSplitInfo.hasReturnTrip ? routeSplitInfo.turnaroundIdx : presentationRoute.polyline.length - 1;
+      if (progressRef.current >= end || progressRef.current < start) {
+        progressRef.current = start;
+        setPlaybackIndex(start);
+        updateRunnerPosition(start, presentationRoute.polyline);
+      }
+    }
+    setIsPlaying(value => !value);
+  }, [presentationRoute, isPlaying, effectiveTripFilter, routeSplitInfo, updateRunnerPosition, rangePlaybackActive, stopRangePlayback]);
+  const handlePresentationEvent = useCallback((event, index) => {
+    const lat = Number(event.lat);
+    const lng = Number(event.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+    if (hasTrackingRange && event.trackingDate && event.trackingDate !== selectedDate) {
+      rangePendingFocusRef.current = { date: event.trackingDate, lat, lng };
+      handleRangeDay(event.trackingDate);
+    } else {
+      try { mapInstanceRef.current?.flyTo([lat, lng], Math.max(15, mapInstanceRef.current.getZoom()), { duration: 0.4 }); } catch (_) {}
+    }
+    setSelectedTimelineEvent(index);
+  }, [hasTrackingRange, selectedDate, handleRangeDay]);
+  const handleActivityToggle = useCallback(() => setActivityExpanded(value => !value), []);
+  const handlePresentationTripFilter = useCallback((filter) => {
+    stopRangePlayback();
+    setIsPlaying(false);
+    setTrackingViewMode('playback');
+    setSelectedTimelineEvent(null);
+    handleSelectTripFilter(filter);
+  }, [handleSelectTripFilter, stopRangePlayback]);
+
+
+  const handleToggleRangeDays = useCallback(() => {
+    setShowAllRangeDays(value => !value);
+    rangeLastFitKeyRef.current = '';
+  }, []);
+  const handleFitRange = useCallback(() => {
+    const map = mapInstanceRef.current;
+    if (!map || typeof window === 'undefined' || !window.L) return;
+    const coords = [];
+    for (const date of trackingRangeDates) {
+      for (const point of rangeEntries[date]?.data?.polyline || []) {
+        if (point.lat != null && point.lng != null && Number.isFinite(Number(point.lat)) && Number.isFinite(Number(point.lng))) coords.push([Number(point.lat), Number(point.lng)]);
+      }
+    }
+    try {
+      if (coords.length === 1) map.setView(coords[0], 15);
+      else if (coords.length) map.fitBounds(window.L.latLngBounds(coords), { padding: [45, 45], maxZoom: 16 });
+    } catch (_) {}
+  }, [trackingRangeDates, rangeEntries]);
+  const handlePlayRange = useCallback(() => {
+    if (rangePlaybackActive) { stopRangePlayback(); setIsPlaying(false); return; }
+    const first = trackingRangeDates.find(day => rangeEntries[day]?.data?.polyline?.length > 1);
+    if (!first) return;
+    setRouteTripFilter('ALL');
+    setTrackingViewMode('playback');
+    setSelectedTimelineEvent(null);
+    setIsPlaying(false);
+    setRangePlaybackActive(true);
+    rangePlayedDayRef.current = '';
+    rangeNextPlayDayRef.current = first;
+    setSelectedDate(first);
+  }, [rangePlaybackActive, stopRangePlayback, trackingRangeDates, rangeEntries]);
+
+  // Each day's original playback model runs independently; never interpolate overnight edges.
+  useEffect(() => {
+    if (!hasTrackingRange || !rangePlaybackActive || !leafletReady || loadingRoute) return undefined;
+    const pending = rangeNextPlayDayRef.current;
+    if (pending) {
+      if (pending !== selectedDate || presentationRoute?.date !== pending) return undefined;
+      const frame = requestAnimationFrame(() => {
+        rangeNextPlayDayRef.current = '';
+        rangePlayedDayRef.current = selectedDate;
+        progressRef.current = 0;
+        setPlaybackIndex(0);
+        updateRunnerPosition(0, presentationRoute.polyline);
+        setIsPlaying((presentationRoute.polyline?.length || 0) > 1);
+      });
+      return () => cancelAnimationFrame(frame);
+    }
+    if (isPlaying || rangePlayedDayRef.current !== selectedDate || !presentationRoute) return undefined;
+    if (progressRef.current < (presentationRoute.polyline?.length || 1) - 1) return undefined;
+    const { date: next, waiting } = nextTrackingPlaybackDay(trackingRangeDates, rangeEntries, selectedDate);
+    if (waiting) return undefined;
+    if (!next && rangeIsLoading) return undefined;
+    const frame = requestAnimationFrame(() => {
+      if (!next) stopRangePlayback();
+      else { rangeNextPlayDayRef.current = next; setSelectedDate(next); }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [hasTrackingRange, rangePlaybackActive, leafletReady, loadingRoute, selectedDate, presentationRoute, isPlaying, trackingRangeDates, rangeEntries, rangeIsLoading, updateRunnerPosition, stopRangePlayback]);
+
+  // Retain unchanged day layers while range results arrive, instead of redrawing all 90 days.
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!hasTrackingRange || !showAllRangeDays || !leafletReady || !map || typeof window === 'undefined' || !window.L) {
+      rangeOverviewGroupRef.current?.clearLayers();
+      rangeOverviewMapRef.current?.removeLayer?.(rangeOverviewGroupRef.current);
+      rangeOverviewGroupRef.current = null;
+      rangeOverviewMapRef.current = null;
+      rangeOverviewDayLayersRef.current.clear();
+      return;
+    }
+    const L = window.L;
+    if (rangeOverviewMapRef.current !== map || !rangeOverviewGroupRef.current) {
+      rangeOverviewGroupRef.current = L.layerGroup().addTo(map);
+      rangeOverviewMapRef.current = map;
+      rangeOverviewDayLayersRef.current.clear();
+    }
+    const wanted = new Set(trackingRangeDates.filter(date => date !== selectedDate && rangeEntries[date]?.status === 'success'));
+    for (const [date, cached] of rangeOverviewDayLayersRef.current) {
+      if (!wanted.has(date)) {
+        rangeOverviewGroupRef.current.removeLayer(cached.group);
+        rangeOverviewDayLayersRef.current.delete(date);
+      }
+    }
+    for (const date of wanted) {
+      const data = rangeEntries[date].data;
+      const signature = computeRouteSignature(data);
+      const previous = rangeOverviewDayLayersRef.current.get(date);
+      if (previous?.signature === signature) continue;
+      if (previous) rangeOverviewGroupRef.current.removeLayer(previous.group);
+      const group = L.layerGroup().addTo(rangeOverviewGroupRef.current);
+      const runs = getTrackingOverviewRuns(data, splitGoingAndReturnRoute(data.polyline));
+      for (const run of runs) {
+        const color = run.kind === 'return' ? '#ec4899' : run.kind === 'gap' ? '#ea580c' : run.kind === 'offline' ? '#d97706' : '#2563eb';
+        const line = L.polyline(run.coords, { color, weight: 3, opacity: 0.5, dashArray: run.kind === 'gap' || run.kind === 'return' ? '6, 6' : null })
+          .bindTooltip(`${date} | ${Number(data.totalKm || 0).toFixed(2)} km | Select this day`).addTo(group);
+        line.on?.('click', () => rangeSelectDayRef.current?.(date));
+        line.bringToBack?.();
+      }
+      rangeOverviewDayLayersRef.current.set(date, { signature, group });
+    }
+  }, [hasTrackingRange, showAllRangeDays, leafletReady, selectedDate, trackingRangeDates, rangeEntries, activeMainTab]);
+
+  useEffect(() => {
+    if (!hasTrackingRange || !showAllRangeDays || rangeIsLoading || rangePlaybackActive || isPlaying || !leafletReady || rangeLastFitKeyRef.current === rangeKey) return undefined;
+    const frame = requestAnimationFrame(() => { handleFitRange(); rangeLastFitKeyRef.current = rangeKey; });
+    return () => cancelAnimationFrame(frame);
+  }, [hasTrackingRange, showAllRangeDays, rangeIsLoading, rangePlaybackActive, isPlaying, leafletReady, rangeKey, handleFitRange]);
+
+  useEffect(() => {
+    const focus = rangePendingFocusRef.current;
+    if (!focus || focus.date !== presentationRoute?.date || !leafletReady) return undefined;
+    const frame = requestAnimationFrame(() => {
+      try { mapInstanceRef.current?.flyTo([focus.lat, focus.lng], 16, { duration: 0.4 }); } catch (_) {}
+      rangePendingFocusRef.current = null;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [presentationRoute, leafletReady]);
+
+  useEffect(() => () => {
+    rangeOverviewGroupRef.current?.clearLayers();
+    rangeOverviewMapRef.current?.removeLayer?.(rangeOverviewGroupRef.current);
+    rangeOverviewDayLayersRef.current.clear();
+  }, []);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 'calc(100vh - 120px)', background: 'var(--bg-canvas, #f8fafc)' }}>
+    <div className={isFieldForcePresentation ? trackingStyles.dashboard : undefined} data-map-fullscreen={isFieldForcePresentation && isMapFullscreen ? 'true' : undefined} style={isFieldForcePresentation ? undefined : { display: 'flex', flexDirection: 'column', height: '100%', minHeight: 'calc(100vh - 120px)', background: 'var(--bg-canvas, #f8fafc)' }}>
       {/* Top Header & View Switcher */}
+      {isFieldForcePresentation ? (
+        <TrackingHeader employees={activeEmployeesList} selectedId={selectedUserId} onEmployeeChange={handlePresentationEmployee}
+          date={selectedDate} range={trackingRange} onDateChange={handlePresentationDate} tab={activeMainTab} onTabChange={handlePresentationMainTab}
+          onRefresh={handlePresentationRefresh} busy={loadingRoute || syncingRoute || loadingRadar || loadingVouchers} mode={trackingViewMode} />
+      ) : (
       <div style={{
         background: '#ffffff',
         borderBottom: '1px solid #e2e8f0',
@@ -1984,13 +2704,29 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
           </button>
         </div>
       </div>
+      )}
+      {isFieldForcePresentation && activeMainTab === '360_PLAYBACK' && (
+        <TrackingSummary data={rangeSummary || presentationRoute} status={hasTrackingRange ? rangeStatus : presentationStatus} rangeSummary={rangeSummary} speedStats={!hasTrackingRange && presentationRoute ? routeSpeedStats : null} />
+      )}
+
+      {hasTrackingRange && (
+        <TrackingRangeOverview range={trackingRange} dates={trackingRangeDates} entries={rangeEntries} selectedDate={selectedDate}
+          onDayChange={handleRangeDay} completed={rangeSummary.loadedDays + rangeSummary.failedDays} loading={rangeIsLoading}
+          failed={rangeSummary.failedDays} showAll={showAllRangeDays} onShowAll={handleToggleRangeDays} onFit={handleFitRange}
+          onPlayRange={handlePlayRange} playingRange={rangePlaybackActive} playableDays={rangeSummary.movementDays.length} />
+      )}
 
       {/* ============================================================= */}
       {/* VIEW 1: SINGLE EMPLOYEE 360° ROUTE & PLAYBACK (SCREENSHOT 1)  */}
       {/* ============================================================= */}
       {activeMainTab === '360_PLAYBACK' && (
-        <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+        <div className={isFieldForcePresentation ? trackingStyles.workspace : undefined} style={isFieldForcePresentation ? undefined : { display: 'flex', flex: 1, overflow: 'hidden' }}>
           {/* Left Panel: Employee Selector & Timeline */}
+          {isFieldForcePresentation ? (
+            <TrackingActivityPanel employee={selectedEmployee} data={rangeSummary || presentationRoute} status={presentationStatus} rangeMode={hasTrackingRange}
+              health={selectedDeviceHealth} onOpenHealth={onOpenDeviceHealth} loading={loadingRoute || rangeIsLoading} error={routeLoadError}
+              expanded={activityExpanded} onToggle={handleActivityToggle} onSelectEvent={handlePresentationEvent} selectedEvent={selectedTimelineEvent} />
+          ) : (
           <div style={{
             width: 360,
             background: '#ffffff',
@@ -2513,10 +3249,12 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
               )}
             </div>
           </div>
+          )}
 
           {/* Center Map & Video-Like Animated Playback Slider */}
           <div
             ref={mapFullscreenWrapperRef}
+            className={isFieldForcePresentation ? trackingStyles.mapPanel : undefined}
             style={
               isMapFullscreen
                 ? {
@@ -2529,7 +3267,7 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
                     flexDirection: 'column',
                     background: '#f8fafc'
                   }
-                : {
+                : isFieldForcePresentation ? undefined : {
                     flex: 1,
                     display: 'flex',
                     flexDirection: 'column',
@@ -2560,9 +3298,18 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
               .crm-chevron-badge { animation: crmChevronPop 0.35s ease-out both; transition: filter 0.18s ease, box-shadow 0.18s ease; }
               .crm-chevron-marker:hover .crm-chevron-badge { box-shadow: 0 0 0 3px rgba(255,255,255,0.9), 0 4px 10px rgba(15,23,42,0.35) !important; }
             `}</style>
-            <div style={{ flex: 1, position: 'relative', overflow: 'hidden', minHeight: isMapFullscreen ? 0 : 'calc(100vh - 280px)', height: '100%', width: '100%' }}>
+            <div className={isFieldForcePresentation ? trackingStyles.mapCanvas : undefined} style={isFieldForcePresentation ? undefined : { flex: 1, position: 'relative', overflow: 'hidden', minHeight: isMapFullscreen ? 0 : 'calc(100vh - 280px)', height: '100%', width: '100%' }}>
               {/* Leaflet DOM Container */}
-              <div ref={mapContainerRef} style={{ width: '100%', height: '100%', minHeight: isMapFullscreen ? 0 : 'calc(100vh - 280px)', background: '#e2e8f0', zIndex: 1, position: 'relative' }} />
+              <div ref={mapContainerRef} style={{ width: '100%', height: '100%', minHeight: isMapFullscreen || isFieldForcePresentation ? 0 : 'calc(100vh - 280px)', background: '#e2e8f0', zIndex: 1, position: 'relative' }} />
+
+              {isFieldForcePresentation && (
+                <>
+                  <TrackingPositionInfo mode={trackingViewMode} data={presentationRoute} telemetry={presentationRoute ? currentTelemetry : null} point={presentationRoute?.polyline?.[playbackIndex]} status={presentationStatus} date={selectedDate} onModeChange={handlePresentationMode} />
+                  {leafletReady && <TrackingMapToolbar mapStyle={mapStyle} onStyleChange={setMapStyle} onRecenter={handleRecenterRoute} fullscreen={isMapFullscreen} onFullscreen={handleToggleFullscreen} estimate={showEstimateRoute} onEstimate={handleToggleEstimateRoute} loadingEstimate={loadingEstimate} />}
+                  {presentationRoute?.polyline?.length > 1 && <TrackingRouteDock hasReturn={routeSplitInfo.hasReturnTrip} filter={effectiveTripFilter} onFilter={handlePresentationTripFilter} estimate={showEstimateRoute} summary={estimateSummary} />}
+                  {routeData && !presentationRoute && <div role="status" className={trackingStyles.mapSelectionLoading}>Loading selected employee route...</div>}
+                </>
+              )}
 
               {/* Clean Map Loading Overlay (blocks only on very first cold load with zero cached route) */}
               {(!leafletReady || (loadingRoute && !routeData)) && (
@@ -2602,7 +3349,8 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
               {leafletReady && ((loadingRoute && routeData) || syncingRoute) && (
                 <div style={{
                   position: 'absolute',
-                  top: 14,
+                  top: isFieldForcePresentation ? 'auto' : 14,
+                  bottom: isFieldForcePresentation ? 80 : 'auto',
                   left: '50%',
                   transform: 'translateX(-50%)',
                   zIndex: 560,
@@ -2625,7 +3373,7 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
               )}
 
               {/* Status / No Movement Overlay if empty */}
-              {leafletReady && !loadingRoute && (!routeData?.polyline || routeData.polyline.length === 0) && (
+              {leafletReady && !loadingRoute && (!hasTrackingRange || !showAllRangeDays || !rangeSummary?.movementDays?.length) && (!routeData?.polyline || routeData.polyline.length === 0) && (
                 <div style={{
                   position: 'absolute',
                   top: '50%',
@@ -2651,7 +3399,7 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
               )}
 
               {/* Active on Duty Pill (When Punched In Awaiting Movement) */}
-              {routeData?.polyline && routeData.polyline.length === 1 && (
+              {!isFieldForcePresentation && routeData?.polyline && routeData.polyline.length === 1 && (
                 <div style={{
                   position: 'absolute',
                   top: 14,
@@ -2675,7 +3423,7 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
               )}
 
               {/* Floating Right-Side Map Toolbar: Map Style, Recenter, Fullscreen & Estimate Route Toggle */}
-              {leafletReady && (
+              {!isFieldForcePresentation && leafletReady && (
                 <div style={{
                   position: 'absolute',
                   top: 14,
@@ -2818,7 +3566,7 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
                   {/* 3. See Estimate Route Toggle */}
                   <button
                     type="button"
-                    title={showEstimateRoute ? 'Hide Estimated Road Preview' : 'See Estimated Road Route Across Offline Gaps'}
+                    title={showEstimateRoute ? 'Auto Road Path Across Gaps ON (Click to View Raw Signal Gap Line)' : 'See Estimated Road Route Across Signal Gaps'}
                     onClick={handleToggleEstimateRoute}
                     style={{
                       width: 38,
@@ -2843,36 +3591,8 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
                 </div>
               )}
 
-              {/* Estimate Route Floating Notice Badge (when toggled ON) */}
-              {showEstimateRoute && estimateSummary && (
-                <div style={{
-                  position: 'absolute',
-                  top: 56,
-                  left: 56,
-                  zIndex: 500,
-                  background: 'rgba(250, 245, 255, 0.96)',
-                  padding: '5px 11px',
-                  borderRadius: 8,
-                  border: '1px solid #d8b4fe',
-                  color: '#6b21a8',
-                  fontSize: 11,
-                  fontWeight: 700,
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6
-                }}>
-                  <Route size={13} color="#7e22ce" />
-                  {estimateSummary.noGaps ? (
-                    <span>No Offline Gaps Today • Actual Route Shown</span>
-                  ) : (
-                    <span>Estimated Gap Road: ~{estimateSummary.distanceKm} km (Preview Only)</span>
-                  )}
-                </div>
-              )}
-
               {/* Top Overlay Badge with Speed, Time & Trip Phase */}
-              {routeData?.polyline && routeData.polyline.length > 0 && (
+              {!isFieldForcePresentation && routeData?.polyline && routeData.polyline.length > 0 && (
                 <div style={{ position: 'absolute', top: 12, left: 56, right: 64, maxWidth: 'fit-content', zIndex: 500, background: 'rgba(255,255,255,0.96)', padding: '6px 14px', borderRadius: 8, border: '1px solid #cbd5e1', color: '#0f172a', fontSize: 12, fontWeight: 700, boxShadow: '0 2px 8px rgba(0,0,0,0.1)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <span>🚗 Live Playhead:</span>
                   <span style={{ color: currentTelemetry?.isOffline ? '#ea580c' : currentTelemetry?.tripPhase === 'RETURN' ? '#db2777' : '#2563eb' }}>
@@ -2882,6 +3602,23 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
                   <span>
                     {currentTelemetry?.time ? new Date(currentTelemetry.time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }) : (routeData.polyline[playbackIndex]?.time ? new Date(routeData.polyline[playbackIndex].time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }) : 'Start')}
                   </span>
+                  {currentTelemetry?.stoppageDwell && (
+                    <span style={{
+                      marginLeft: 4,
+                      fontSize: 11,
+                      background: '#fffbeb',
+                      color: '#b45309',
+                      padding: '2px 8px',
+                      borderRadius: 12,
+                      border: '1px solid #fcd34d',
+                      fontWeight: 700,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4
+                    }}>
+                      ⏸️ Stopped {currentTelemetry.stoppageDwell.elapsedMins} / {currentTelemetry.stoppageDwell.durationMins} mins
+                    </span>
+                  )}
                   {routeSplitInfo.hasReturnTrip && (
                     <span style={{
                       marginLeft: 4,
@@ -2921,135 +3658,173 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
                 </div>
               )}
 
-              {/* Bottom-Left Floating Interactive Trip Filter Pill Bar */}
-              {routeData?.polyline && routeData.polyline.length > 1 && (
+              {/* Unified Responsive Bottom Map Dock (prevents Filter & Legend overlap on any viewport width) */}
+              {!isFieldForcePresentation && routeData?.polyline && routeData.polyline.length > 1 && (
                 <div style={{
                   position: 'absolute',
-                  bottom: 16,
+                  bottom: 22,
                   left: 14,
-                  zIndex: 520,
-                  background: 'rgba(255, 255, 255, 0.96)',
-                  backdropFilter: 'blur(6px)',
-                  padding: 4,
-                  borderRadius: 10,
-                  border: '1px solid #cbd5e1',
-                  boxShadow: '0 4px 14px rgba(15,23,42,0.12)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 4
-                }}>
-                  {routeSplitInfo.hasReturnTrip ? (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => handleSelectTripFilter('ALL')}
-                        style={{
-                          padding: '5px 10px',
-                          borderRadius: 7,
-                          border: 'none',
-                          background: effectiveTripFilter === 'ALL' ? '#0f172a' : 'transparent',
-                          color: effectiveTripFilter === 'ALL' ? '#ffffff' : '#475569',
-                          fontSize: 11,
-                          fontWeight: 700,
-                          cursor: 'pointer',
-                          transition: 'all 0.18s ease'
-                        }}
-                      >
-                        All Routes
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleSelectTripFilter('GOING')}
-                        style={{
-                          padding: '5px 10px',
-                          borderRadius: 7,
-                          border: 'none',
-                          background: effectiveTripFilter === 'GOING' ? '#2563eb' : 'transparent',
-                          color: effectiveTripFilter === 'GOING' ? '#ffffff' : '#1e40af',
-                          fontSize: 11,
-                          fontWeight: 700,
-                          cursor: 'pointer',
-                          transition: 'all 0.18s ease'
-                        }}
-                      >
-                        Going Only (━━➤)
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleSelectTripFilter('RETURN')}
-                        style={{
-                          padding: '5px 10px',
-                          borderRadius: 7,
-                          border: 'none',
-                          background: effectiveTripFilter === 'RETURN' ? '#ec4899' : 'transparent',
-                          color: effectiveTripFilter === 'RETURN' ? '#ffffff' : '#be185d',
-                          fontSize: 11,
-                          fontWeight: 700,
-                          cursor: 'pointer',
-                          transition: 'all 0.18s ease'
-                        }}
-                      >
-                        Return Only (╍╍◀)
-                      </button>
-                    </>
-                  ) : (
-                    <div style={{ padding: '4px 10px', fontSize: 11, fontWeight: 700, color: '#1d4ed8', display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span style={{ width: 14, height: 3, background: '#2563eb', borderRadius: 2, display: 'inline-block' }}></span>
-                      <span>Single Outward Route (No Return Yet)</span>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Route Status Legend Overlay */}
-              {routeData?.polyline && routeData.polyline.length > 1 && (
-                <div style={{
-                  position: 'absolute',
-                  bottom: 16,
                   right: 14,
-                  zIndex: 500,
-                  background: 'rgba(255, 255, 255, 0.96)',
-                  backdropFilter: 'blur(4px)',
-                  padding: '6px 12px',
-                  borderRadius: 8,
-                  border: '1px solid #cbd5e1',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                  zIndex: 520,
                   display: 'flex',
-                  alignItems: 'center',
-                  gap: 12,
-                  fontSize: 11,
-                  fontWeight: 600,
-                  flexWrap: 'wrap'
+                  alignItems: 'flex-end',
+                  justifyContent: 'space-between',
+                  gap: 8,
+                  flexWrap: 'wrap',
+                  pointerEvents: 'none'
                 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <span style={{ width: 14, height: 4, background: '#2563eb', borderRadius: 2, display: 'inline-block' }}></span>
-                    <span style={{ color: '#1e293b' }}>{routeSplitInfo.hasReturnTrip ? 'Going (Outward)' : 'Live Online'}</span>
-                  </div>
-                  {routeSplitInfo.hasReturnTrip && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                      <span style={{ width: 14, height: 0, borderTop: '3px dashed #ec4899', display: 'inline-block' }}></span>
-                      <span style={{ color: '#be185d' }}>Return (Inward)</span>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 6, pointerEvents: 'auto' }}>
+                    {/* Estimate Route Floating Notice Badge (only shown when offline gaps exist) */}
+                    {showEstimateRoute && estimateSummary && !estimateSummary.noGaps && (
+                      <div style={{
+                        background: estimateSummary.hasReturnGap ? 'rgba(253, 242, 248, 0.96)' : 'rgba(250, 245, 255, 0.96)',
+                        padding: '4px 10px',
+                        borderRadius: 8,
+                        border: estimateSummary.hasReturnGap ? '1px solid #fbcfe8' : '1px solid #d8b4fe',
+                        color: estimateSummary.hasReturnGap ? '#be185d' : '#6b21a8',
+                        fontSize: 10.5,
+                        fontWeight: 700,
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6
+                      }}>
+                        <Route size={12} color={estimateSummary.hasReturnGap ? '#be185d' : '#7e22ce'} />
+                        <span>
+                          {estimateSummary.hasReturnGap
+                            ? `Est. Return Road: ~${estimateSummary.distanceKm} km (GPS Off)`
+                            : `Est. Gap Road: ~${estimateSummary.distanceKm} km (GPS Off)`}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Interactive Trip Filter Pill Bar */}
+                    <div style={{
+                      background: 'rgba(255, 255, 255, 0.96)',
+                      backdropFilter: 'blur(6px)',
+                      padding: 4,
+                      borderRadius: 10,
+                      border: '1px solid #cbd5e1',
+                      boxShadow: '0 4px 14px rgba(15,23,42,0.12)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 4
+                    }}>
+                      {routeSplitInfo.hasReturnTrip ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleSelectTripFilter('ALL')}
+                            style={{
+                              padding: '5px 10px',
+                              borderRadius: 7,
+                              border: 'none',
+                              background: effectiveTripFilter === 'ALL' ? '#0f172a' : 'transparent',
+                              color: effectiveTripFilter === 'ALL' ? '#ffffff' : '#475569',
+                              fontSize: 11,
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              transition: 'all 0.18s ease'
+                            }}
+                          >
+                            All Routes
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSelectTripFilter('GOING')}
+                            style={{
+                              padding: '5px 10px',
+                              borderRadius: 7,
+                              border: 'none',
+                              background: effectiveTripFilter === 'GOING' ? '#2563eb' : 'transparent',
+                              color: effectiveTripFilter === 'GOING' ? '#ffffff' : '#1e40af',
+                              fontSize: 11,
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              transition: 'all 0.18s ease'
+                            }}
+                          >
+                            Going Only (━━➤)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSelectTripFilter('RETURN')}
+                            style={{
+                              padding: '5px 10px',
+                              borderRadius: 7,
+                              border: 'none',
+                              background: effectiveTripFilter === 'RETURN' ? '#ec4899' : 'transparent',
+                              color: effectiveTripFilter === 'RETURN' ? '#ffffff' : '#be185d',
+                              fontSize: 11,
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              transition: 'all 0.18s ease'
+                            }}
+                          >
+                            Return Only (╍╍◀)
+                          </button>
+                        </>
+                      ) : (
+                        <div style={{ padding: '4px 10px', fontSize: 11, fontWeight: 700, color: '#1d4ed8', display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ width: 14, height: 3, background: '#2563eb', borderRadius: 2, display: 'inline-block' }}></span>
+                          <span>Single Outward Route (No Return Yet)</span>
+                        </div>
+                      )}
                     </div>
-                  )}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <span style={{ width: 14, height: 4, background: '#d97706', borderRadius: 2, display: 'inline-block' }}></span>
-                    <span style={{ color: '#1e293b' }}>Offline Recorded</span>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <span style={{ width: 14, height: 0, borderTop: '3px dashed #ea580c', display: 'inline-block' }}></span>
-                    <span style={{ color: '#1e293b' }}>Signal Lost Gap</span>
-                  </div>
-                  {showEstimateRoute && (
+
+                  {/* Route Status Legend Overlay */}
+                  <div style={{
+                    pointerEvents: 'auto',
+                    background: 'rgba(255, 255, 255, 0.96)',
+                    backdropFilter: 'blur(4px)',
+                    padding: '6px 12px',
+                    borderRadius: 8,
+                    border: '1px solid #cbd5e1',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    fontSize: 11,
+                    fontWeight: 600,
+                    flexWrap: 'wrap'
+                  }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                      <span style={{ width: 14, height: 0, borderTop: '3px dotted #9333ea', display: 'inline-block' }}></span>
-                      <span style={{ color: '#6b21a8' }}>Estimated Road</span>
+                      <span style={{ width: 14, height: 4, background: '#2563eb', borderRadius: 2, display: 'inline-block' }}></span>
+                      <span style={{ color: '#1e293b' }}>{routeSplitInfo.hasReturnTrip ? 'Going (Outward)' : 'Live Online'}</span>
                     </div>
-                  )}
+                    {routeSplitInfo.hasReturnTrip && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <span style={{ width: 14, height: 0, borderTop: '3px dashed #ec4899', display: 'inline-block' }}></span>
+                        <span style={{ color: '#be185d' }}>Return (Inward)</span>
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <span style={{ width: 14, height: 4, background: '#d97706', borderRadius: 2, display: 'inline-block' }}></span>
+                      <span style={{ color: '#1e293b' }}>Offline Recorded</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <span style={{ width: 14, height: 0, borderTop: '3px dashed #ea580c', display: 'inline-block' }}></span>
+                      <span style={{ color: '#1e293b' }}>Signal Lost Gap</span>
+                    </div>
+                    {showEstimateRoute && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <span style={{ width: 14, height: 0, borderTop: '3px dotted #9333ea', display: 'inline-block' }}></span>
+                        <span style={{ color: '#6b21a8' }}>Estimated Road</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
 
             {/* Video-Like Animated Playback Controls Bottom Bar */}
+            {isFieldForcePresentation ? (
+              <TrackingPlaybackControls playing={isPlaying || rangePlaybackActive} speed={playbackSpeed} index={presentationRoute ? playbackIndex : 0}
+                total={presentationRoute?.polyline?.length || 0} time={presentationRoute ? currentTelemetry?.time || currentRunnerPoint?.time : null}
+                endTime={presentationRoute?.polyline?.[presentationRoute.polyline.length - 1]?.time}
+                onToggle={handlePresentationPlay} onReset={handlePresentationReset} onSeek={handlePresentationSeek} onSpeed={setPlaybackSpeed} />
+            ) : (
             <div style={{
               background: '#ffffff',
               borderTop: '1px solid #e2e8f0',
@@ -3120,7 +3895,9 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
               {/* Progress Slider */}
               <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 10 }}>
                 <span style={{ fontSize: 11, color: '#64748b', minWidth: 45, fontWeight: 600 }}>
-                  {routeData?.polyline?.[playbackIndex]?.time ? new Date(routeData.polyline[playbackIndex].time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' }) : '00:00'}
+                  {(currentTelemetry?.time || routeData?.polyline?.[playbackIndex]?.time)
+                    ? new Date(currentTelemetry?.time || routeData.polyline[playbackIndex].time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' })
+                    : '00:00'}
                 </span>
 
                 <input
@@ -3167,6 +3944,7 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
                 ))}
               </div>
             </div>
+            )}
           </div>
         </div>
       )}
