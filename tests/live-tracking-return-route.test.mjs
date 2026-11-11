@@ -21,6 +21,7 @@ async function compile(file) {
 const mapCode = await compile('src/components/Attendance/LiveFieldTrackingMap.jsx');
 const matcherCode = await compile('src/utils/routeGeometryMatcher.js');
 const rangeCode = await compile('src/components/FieldForce/trackingDateRanges.js');
+const branchAccessCode = await compile('src/utils/branchAccess.js');
 const icons = new Proxy({}, { get: () => () => null });
 
 function loadExports(code, dependencies, extraGlobals = {}) {
@@ -286,7 +287,8 @@ async function setupTrackingHarness({ initialStorageEntries = {}, attachLeafletO
     '@/components/FieldForce/FieldTrackingDashboardUI': Object.fromEntries(['TrackingHeader', 'TrackingSummary', 'TrackingActivityPanel', 'TrackingPositionInfo', 'TrackingMapToolbar', 'TrackingRouteDock', 'TrackingPlaybackControls', 'TrackingRangeOverview'].map(name => [name, name])),
     '@/components/FieldForce/LiveTrackingDashboard.module.css': {},
     '@/components/FieldForce/trackingDateRanges': rangeLoaded.exports,
-    '@/utils/routeGeometryMatcher': matcherMod
+    '@/utils/routeGeometryMatcher': matcherMod,
+    '@/utils/branchAccess': loadExports(branchAccessCode, {}).exports
   }, {
     window: mockWindow,
     document: mockDocument,

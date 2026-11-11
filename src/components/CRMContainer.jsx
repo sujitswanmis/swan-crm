@@ -7739,6 +7739,8 @@ export default function CRMContainer({
                     userCompany={userCompany}
                     tenantId={effectiveTenantId}
                     isMasterAdmin={isMasterAdmin}
+                    branchAccess={userBranchAccess}
+                    adminCompanyFilter={adminCompanyFilter}
                   />
                 </ErrorBoundary>
               </KeepAliveTab>
@@ -7854,6 +7856,7 @@ export default function CRMContainer({
                       userEmail={userEmail}
                       company={userCompany || 'New Swan Group'} 
                       tenantId={effectiveTenantId}
+                      branchAccess={userBranchAccess}
                       onNavigateToAttendance={() => {
                         setActiveTab('attendance');
                         setAttendanceSubTab('my_attendance');
@@ -7865,6 +7868,8 @@ export default function CRMContainer({
                       currentUserId={userId} 
                       company={userCompany || 'New Swan Group'} 
                       tenantId={effectiveTenantId}
+                      branchAccess={userBranchAccess}
+                      adminCompanyFilter={adminCompanyFilter}
                     />
                   )}
                   {fieldForceSubTab === 'form_studio' && (
@@ -7879,6 +7884,8 @@ export default function CRMContainer({
                       company={userCompany || 'New Swan Group'} 
                       currentUserRole={userRole} 
                       tenantId={effectiveTenantId}
+                      branchAccess={userBranchAccess}
+                      adminCompanyFilter={adminCompanyFilter}
                       onOpenDeviceHealth={() => handleFieldForceSubTabChange('device_health')}
                     />
                   )}
@@ -7888,6 +7895,7 @@ export default function CRMContainer({
                       tenantId={effectiveTenantId}
                       userRole={userRole}
                       isMasterAdmin={isMasterAdmin}
+                      branchAccess={userBranchAccess}
                       onInspectEmployeeRoute={(row) => {
                         if (row?.userId && typeof window !== 'undefined') {
                           try {
@@ -8061,6 +8069,7 @@ export default function CRMContainer({
                     moduleAccess={moduleAccess}
                     userId={userId}
                     userEmail={userEmail}
+                    branchAccess={userBranchAccess}
                     currentUserCompany={(() => {
                       const compLower = String(userCompany || '').toLowerCase().trim();
                       if (userCompany && !SWAN_COMPANIES.includes(compLower)) {
@@ -8109,6 +8118,8 @@ export default function CRMContainer({
                     tenantId={effectiveTenantId}
                     userName={userName}
                     userEmail={userEmail}
+                    branchAccess={userBranchAccess}
+                    adminCompanyFilter={adminCompanyFilter}
                   />
                 </ErrorBoundary>
               </KeepAliveTab>
@@ -8129,6 +8140,8 @@ export default function CRMContainer({
                     tenantId={effectiveTenantId}
                     userName={userName}
                     userId={userId}
+                    branchAccess={userBranchAccess}
+                    adminCompanyFilter={adminCompanyFilter}
                   />
                 </ErrorBoundary>
               </KeepAliveTab>

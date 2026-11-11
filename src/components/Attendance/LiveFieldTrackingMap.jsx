@@ -19,6 +19,7 @@ import { getTeamMembers } from '@/app/actions/team';
 import useTableColumnResize, { ColumnResizer } from '@/utils/tableColumnResize';
 import StandardTablePagination from '@/components/common/StandardTablePagination';
 import { snapRouteSegmentsToRoad, haversineMeters } from '@/utils/routeGeometryMatcher';
+import { getUserBranchAccess, matchesUserBranchMembership } from '@/utils/branchAccess';
 import {
   TrackingHeader, TrackingSummary, TrackingActivityPanel, TrackingPositionInfo,
   TrackingMapToolbar, TrackingRouteDock, TrackingPlaybackControls, TrackingRangeOverview
@@ -584,8 +585,12 @@ function computeEmployeeLiveDeviceStatus(routeData, selectedDate, nowMs, fallbac
   };
 }
 
-export default function LiveFieldTrackingMap({ company = 'New Swan Group', branchCode = null, currentUserRole = 'ADMIN', tenantId = null, onOpenDeviceHealth = null, presentation = 'legacy' }) {
+export default function LiveFieldTrackingMap({ company = 'New Swan Group', branchCode = null, currentUserRole = 'ADMIN', tenantId = null, onOpenDeviceHealth = null, presentation = 'legacy', branchAccess = null, adminCompanyFilter = 'All' }) {
   const isFieldForcePresentation = presentation === 'field-force';
+  const effectiveBranchAccess = useMemo(() => {
+    if (branchAccess && typeof branchAccess === 'object') return branchAccess;
+    return getUserBranchAccess({ userCompany: company, userRole: currentUserRole }, tenantId);
+  }, [branchAccess, company, currentUserRole, tenantId]);
   const [trackingViewMode, setTrackingViewMode] = useState('playback');
   const [activityExpanded, setActivityExpanded] = useState(false);
   const [selectedTimelineEvent, setSelectedTimelineEvent] = useState(null);
@@ -607,6 +612,15 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
   const rangePlayedDayRef = useRef('');
   const [selectedCompany, setSelectedCompany] = useState(company || 'New Swan Group');
   const [selectedBranch, setSelectedBranch] = useState(branchCode || '');
+  const branchScopePayload = useMemo(() => ({
+    scope: effectiveBranchAccess?.scope || 'SINGLE',
+    isAllBranches: Boolean(effectiveBranchAccess?.isAllBranches),
+    allowedCompanies: effectiveBranchAccess?.allowedCompanies || [],
+    allowedBranchNames: effectiveBranchAccess?.allowedBranchNames || [],
+    allowedBranchCodes: effectiveBranchAccess?.allowedBranchCodes || [],
+    selectedFilter: adminCompanyFilter || selectedBranch || 'All'
+  }), [effectiveBranchAccess, adminCompanyFilter, selectedBranch]);
+  const cacheNamespace = `${company || 'New Swan Group'}_${effectiveBranchAccess?.scope || 'SINGLE'}_${adminCompanyFilter || 'All'}`;
 
   useEffect(() => {
     if (company) setSelectedCompany(company);
@@ -616,7 +630,7 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
   const [activeEmployeesList, setActiveEmployeesList] = useState(() => {
     if (typeof window !== 'undefined') {
       try {
-        const cached = localStorage.getItem(`crm_cached_field_executives_${company || 'New Swan Group'}`);
+        const cached = localStorage.getItem(`crm_cached_field_executives_${cacheNamespace}`);
         if (cached) {
           const parsed = JSON.parse(cached);
           if (Array.isArray(parsed) && parsed.length > 0) return parsed;
@@ -901,17 +915,22 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
     try {
       const [radarData, allMembers] = await Promise.all([
         getNationwideRadarData(selectedCompany, selectedBranch || null),
-        getTeamMembers(selectedCompany, tenantId)
+        getTeamMembers(selectedCompany, tenantId, branchScopePayload)
       ]);
-      setRadarEmployees(radarData || []);
 
-      // Build active employees list strictly for genuine, approved active employees of this tenant
+      // Build active employees list strictly for genuine, approved active employees of this tenant & assigned branches
+      const shouldBranchFilter = !effectiveBranchAccess?.isAllBranches || (adminCompanyFilter && String(adminCompanyFilter).toLowerCase() !== 'all');
+      const activeHeaderFilter = adminCompanyFilter && String(adminCompanyFilter).toLowerCase() !== 'all'
+        ? adminCompanyFilter
+        : (selectedBranch || 'All');
+
       const rawList = (allMembers && allMembers.length > 0) ? allMembers : (radarData || []);
       const filteredMembers = rawList.filter(m => {
         const role = String(m.role || '').toLowerCase();
         if (role === 'customer') return false;
         if (m.emp_status && String(m.emp_status).toLowerCase() !== 'active') return false;
         if (m.is_approved === false) return false;
+        if (shouldBranchFilter && !matchesUserBranchMembership(m, effectiveBranchAccess, activeHeaderFilter)) return false;
         return true;
       });
 
@@ -932,6 +951,12 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
           };
         });
 
+      const allowedIds = new Set(combined.map(c => c.user_id));
+      const scopedRadarData = shouldBranchFilter
+        ? (radarData || []).filter(r => allowedIds.has(String(r.user_id || '').trim()))
+        : (radarData || []);
+      setRadarEmployees(scopedRadarData);
+
       // Sort: Truly live online (<=90s) first, then recent pings descending, then alphabetically
       combined.sort((a, b) => {
         const aTime = a.last_ping ? new Date(a.last_ping).getTime() : 0;
@@ -948,7 +973,7 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
       setLiveNowMs(nowMs);
       if (typeof window !== 'undefined' && combined.length > 0) {
         try {
-          localStorage.setItem(`crm_cached_field_executives_${selectedCompany}`, JSON.stringify(combined));
+          localStorage.setItem(`crm_cached_field_executives_${cacheNamespace}`, JSON.stringify(combined));
         } catch (_) {}
       }
 
@@ -967,13 +992,15 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
           }
           return finalId || '';
         });
+      } else {
+        setSelectedUserId('');
       }
     } catch (err) {
       console.error('Failed to load radar data:', err);
     } finally {
       if (!silent) setLoadingRadar(false);
     }
-  }, [selectedCompany, selectedBranch, tenantId]);
+  }, [selectedCompany, selectedBranch, tenantId, branchScopePayload, effectiveBranchAccess, adminCompanyFilter, cacheNamespace]);
 
   const loadEmployeeRoute = useCallback(async (userId, dateStr, { silent = false, forceFresh = false } = {}) => {
     if (!isValidExecUuid(userId)) return;
@@ -2287,10 +2314,19 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
   };
 
   // Pagination for Vouchers Table
-  const filteredVouchers = vouchers.filter(v =>
-    v.employee_name?.toLowerCase().includes(voucherSearch.toLowerCase()) ||
-    v.phone?.includes(voucherSearch)
-  );
+  const allowedVoucherUserIds = useMemo(() => (
+    new Set(activeEmployeesList.map(e => String(e.user_id || '').trim()).filter(Boolean))
+  ), [activeEmployeesList]);
+  const shouldRestrictVouchers = !effectiveBranchAccess?.isAllBranches || (adminCompanyFilter && String(adminCompanyFilter).toLowerCase() !== 'all');
+  const filteredVouchers = vouchers.filter(v => {
+    if (shouldRestrictVouchers && v.user_id && !allowedVoucherUserIds.has(String(v.user_id).trim())) {
+      return false;
+    }
+    return (
+      v.employee_name?.toLowerCase().includes(voucherSearch.toLowerCase()) ||
+      v.phone?.includes(voucherSearch)
+    );
+  });
   const totalRecords = filteredVouchers.length;
   const totalPages = Math.ceil(totalRecords / rowsPerPage) || 1;
   const paginatedVouchers = filteredVouchers.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage);

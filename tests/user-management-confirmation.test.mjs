@@ -20,7 +20,22 @@ async function compile(file) {
 
 const containerCode = await compile('src/components/UserManagement/UserManagementContainer.jsx');
 const modalCode = await compile('src/components/UserManagement/modals/ConfirmActionModal.jsx');
+const branchAccessCode = await compile('src/utils/branchAccess.js');
 const icons = new Proxy({}, { get: () => () => null });
+
+function loadAll(code, dependencies = {}, globals = {}) {
+  const loadedModule = { exports: {} };
+  vm.runInNewContext(code, {
+    module: loadedModule, exports: loadedModule.exports,
+    require: name => {
+      if (!Object.hasOwn(dependencies, name)) throw new Error(`Unexpected dependency: ${name}`);
+      return dependencies[name];
+    },
+    console, setTimeout: () => 0,
+    ...globals
+  });
+  return loadedModule.exports;
+}
 
 function load(code, dependencies, globals = {}) {
   const loadedModule = { exports: {} };
@@ -130,7 +145,8 @@ function containerHarness({ gate, fail = false, broadcastFails = false } = {}) {
     '@/utils/permissionUtils': { filterVisibleSubTabs: (_a, _r, _m, tabs) => tabs || [], getSubItemPermissions: () => ({}), checkIsMasterAdmin: () => false },
     '@/config/modulesConfig': { MODULES_CONFIG: [] },
     './utils/rolePresets': { ROLE_PRESETS: [] },
-    './utils/userManagementUtils': { DEFAULT_DEPARTMENTS: [] }
+    './utils/userManagementUtils': { DEFAULT_DEPARTMENTS: [] },
+    '@/utils/branchAccess': loadAll(branchAccessCode, {}, {})
   };
   for (const [name, component] of Object.entries(stubs)) {
     dependencies[`./${name.endsWith('Tab') ? 'tabs' : 'modals'}/${name}`] = component;

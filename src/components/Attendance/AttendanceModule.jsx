@@ -51,6 +51,7 @@ import { getCurrentGPSLocation, calculateDistanceMeters } from '@/utils/geoAtten
 import { enqueueOfflineAction, canPerformOfflineAction } from '@/utils/offlineSync';
 import { useTableColumnResize, ColumnResizer } from '@/utils/tableColumnResize';
 import { filterVisibleSubTabs, getSubItemPermissions } from '@/utils/permissionUtils';
+import { getUserBranchAccess, matchesCompanyToken } from '@/utils/branchAccess';
 import LiveFieldTrackingMap from './LiveFieldTrackingMap';
 
 const ALL_ATTENDANCE_TABS = [
@@ -314,7 +315,9 @@ export default function AttendanceModule({
   onSubTabChange = null,
   userCompany = '',
   tenantId = null,
-  isMasterAdmin = false
+  isMasterAdmin = false,
+  branchAccess = null,
+  adminCompanyFilter = 'All'
 }) {
   const isAdmin = userRole === 'admin' || userRole === 'Admin';
   const isHodOrManager = isAdmin || userRole === 'manager' || userRole === 'hod' || moduleAccess?.attendance?.is_manager === true;
@@ -385,6 +388,40 @@ export default function AttendanceModule({
     }
   };
   const [availablePolicyBranches, setAvailablePolicyBranches] = useState([]);
+
+  const effectiveBranchAccess = useMemo(() => {
+    if (branchAccess && typeof branchAccess === 'object') return branchAccess;
+    return getUserBranchAccess({ userCompany, moduleAccess, userRole, isMasterAdmin }, effectiveTenantId);
+  }, [branchAccess, userCompany, userRole, moduleAccess, isMasterAdmin, effectiveTenantId]);
+
+  const activeBranchScope = useMemo(() => ({
+    scope: effectiveBranchAccess?.scope || 'SINGLE',
+    isAllBranches: Boolean(effectiveBranchAccess?.isAllBranches),
+    allowedCompanies: effectiveBranchAccess?.allowedCompanies || [],
+    allowedBranchNames: effectiveBranchAccess?.allowedBranchNames || [],
+    allowedBranchCodes: effectiveBranchAccess?.allowedBranchCodes || [],
+    selectedFilter: adminCompanyFilter || 'All'
+  }), [effectiveBranchAccess, adminCompanyFilter]);
+
+  const scopedPolicyBranches = useMemo(() => {
+    if (!Array.isArray(availablePolicyBranches)) return [];
+    if (effectiveBranchAccess?.isAllBranches || isAdmin || isMasterAdmin) return availablePolicyBranches;
+    const allowedTokens = effectiveBranchAccess?.allowedCompanies || [];
+    const allowedNames = (effectiveBranchAccess?.allowedBranchNames || []).map(n => n.toLowerCase());
+    const allowedCodes = (effectiveBranchAccess?.allowedBranchCodes || []).map(c => c.toLowerCase());
+    if (allowedTokens.length === 0 && allowedNames.length === 0 && allowedCodes.length === 0) {
+      return availablePolicyBranches;
+    }
+    return availablePolicyBranches.filter((b) => {
+      const bName = typeof b === 'string' ? b : (b?.name || b?.branch_name || b?.code || '');
+      const bCode = typeof b === 'string' ? '' : (b?.branch_code || '');
+      const bCustom = typeof b === 'string' ? '' : (b?.custom_code || b?.company || '');
+      if (bCustom && matchesCompanyToken(bCustom, allowedTokens)) return true;
+      if (bName && (allowedNames.includes(bName.toLowerCase()) || matchesCompanyToken(bName, allowedTokens))) return true;
+      if (bCode && (allowedCodes.includes(bCode.toLowerCase()) || matchesCompanyToken(bCode, allowedTokens))) return true;
+      return false;
+    });
+  }, [availablePolicyBranches, effectiveBranchAccess, isAdmin, isMasterAdmin]);
   const [tenantShiftPolicy, setTenantShiftPolicy] = useState(null);
   const [loadingShiftPolicy, setLoadingShiftPolicy] = useState(false);
   const [activeShiftIndex, setActiveShiftIndex] = useState(0);
@@ -1191,7 +1228,7 @@ export default function AttendanceModule({
     setLoadingHodLeaves(true);
     setHodLeavesError(null);
     try {
-      const res = await getHodPendingLeaveRequests({ tenantId: effectiveTenantId, userCompany });
+      const res = await getHodPendingLeaveRequests({ tenantId: effectiveTenantId, userCompany, branchScope: activeBranchScope });
       if (scope !== attendanceScopeRef.current) return;
       if (res?.success && res.data) {
         setHodLeaveRequests(res.data);
@@ -1215,7 +1252,8 @@ export default function AttendanceModule({
         tenantId: effectiveTenantId,
         userCompany,
         department: leaveReportDept,
-        year: matrixYear
+        year: matrixYear,
+        branchScope: activeBranchScope
       });
       if (res?.success && res.data) {
         setTeamLeaveReportData(res.data);
@@ -1803,7 +1841,8 @@ export default function AttendanceModule({
         userRole,
         statusFilter: 'ALL',
         tenantId: effectiveTenantId,
-        company: userCompany
+        company: userCompany,
+        branchScope: activeBranchScope
       });
       if (res.success) {
         setHodRequests(res.allRequests || res.requests || []);
@@ -1827,7 +1866,8 @@ export default function AttendanceModule({
         endDate: teamEndDate,
         department: teamMasterDepartment,
         tenantId: effectiveTenantId,
-        company: userCompany
+        company: userCompany,
+        branchScope: activeBranchScope
       });
       if (res.success) {
         setTeamMasterData({
@@ -1853,7 +1893,8 @@ export default function AttendanceModule({
         department: teamMasterDepartment,
         tenantId: effectiveTenantId,
         company: userCompany,
-        adjustLeaves: adjustLeavesInReport
+        adjustLeaves: adjustLeavesInReport,
+        branchScope: activeBranchScope
       });
       if (res.success) {
         setMonthlyMatrixData(res);
@@ -1886,7 +1927,7 @@ export default function AttendanceModule({
       fetchHodLeaves();
       fetchTeamLeaveReport();
     }
-  }, [userEmail, historyYear, historyMonth, effectiveTenantId, userCompany, attendanceDate]);
+  }, [userEmail, historyYear, historyMonth, effectiveTenantId, userCompany, attendanceDate, adminCompanyFilter, effectiveBranchAccess?.scope]);
 
   useEffect(() => {
     if (activeTab === 'monthly_logs') {
@@ -1906,7 +1947,7 @@ export default function AttendanceModule({
         fetchTeamMonthlyMatrix();
       }
     }
-  }, [activeTab, teamReportView, teamDatePreset, teamStartDate, teamEndDate, teamMasterDepartment, matrixYear, matrixMonth, effectiveTenantId, userCompany, adjustLeavesInReport, leaveReportDept]);
+  }, [activeTab, teamReportView, teamDatePreset, teamStartDate, teamEndDate, teamMasterDepartment, matrixYear, matrixMonth, effectiveTenantId, userCompany, adjustLeavesInReport, leaveReportDept, adminCompanyFilter, effectiveBranchAccess?.scope]);
 
   // Handle Punch In click — instant 1-click reaction, show confirm popup first
   const handlePunchIn = () => {
@@ -6328,8 +6369,10 @@ export default function AttendanceModule({
                   }}
                   title="Select Branch / Plant"
                 >
-                  <option value="All Branches">All Branches (Default)</option>
-                  {availablePolicyBranches.map((b) => {
+                  {(effectiveBranchAccess?.isAllBranches || isAdmin || isMasterAdmin || scopedPolicyBranches.length > 1) && (
+                    <option value="All Branches">All Branches (Default)</option>
+                  )}
+                  {scopedPolicyBranches.map((b) => {
                     const bName = typeof b === 'string' ? b : (b.name || b.branch_name || b.code);
                     const bCode = b?.branch_code || b?.id || '';
                     return (
@@ -7924,6 +7967,8 @@ export default function AttendanceModule({
             branchCode={selectedShiftPolicyBranch !== 'All Branches' ? selectedShiftPolicyBranch : null}
             currentUserRole={userRole}
             tenantId={effectiveTenantId}
+            branchAccess={effectiveBranchAccess}
+            adminCompanyFilter={adminCompanyFilter}
           />
         </div>
       )}
@@ -8035,8 +8080,10 @@ export default function AttendanceModule({
                   }}
                   title="Select Branch / Plant"
                 >
-                  <option value="All Branches">All Branches (Default)</option>
-                  {availablePolicyBranches.map((b) => {
+                  {(effectiveBranchAccess?.isAllBranches || isAdmin || isMasterAdmin || scopedPolicyBranches.length > 1) && (
+                    <option value="All Branches">All Branches (Default)</option>
+                  )}
+                  {scopedPolicyBranches.map((b) => {
                     const bName = typeof b === 'string' ? b : (b.name || b.branch_name || b.code);
                     const bCode = b?.branch_code || b?.id || '';
                     return (
@@ -8584,8 +8631,10 @@ export default function AttendanceModule({
                         outline: 'none'
                       }}
                     >
-                      <option value="All Branches">All Branches (Company-wide Default)</option>
-                      {availablePolicyBranches.map((b) => {
+                      {(effectiveBranchAccess?.isAllBranches || isAdmin || isMasterAdmin || scopedPolicyBranches.length > 1) && (
+                        <option value="All Branches">All Branches (Company-wide Default)</option>
+                      )}
+                      {scopedPolicyBranches.map((b) => {
                         const bName = typeof b === 'string' ? b : (b.name || b.branch_name || b.code);
                         const bCode = b?.branch_code || b?.id || '';
                         return (

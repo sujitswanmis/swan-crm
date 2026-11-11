@@ -68,14 +68,25 @@ export function matchesCompanyToken(targetCompany, allowedTokens = []) {
 /**
  * Resolve normalized multi-branch access for a signed-in or inspected user row.
  */
-export function getUserBranchAccess({
-  userCompany = '',
-  userBranchName = '',
-  moduleAccess = {},
-  userRole = '',
-  isMasterAdmin = false,
-  isSwanWorkspace = false
-} = {}) {
+export function getUserBranchAccess(params = {}, tenantHint = null) {
+  const opts = params && typeof params === 'object' ? params : {};
+  const userCompany = opts.userCompany ?? opts.company ?? '';
+  const userBranchName = opts.userBranchName ?? opts.branch_name ?? '';
+  const moduleAccess = opts.moduleAccess ?? opts.module_access ?? {};
+  const userRole = opts.userRole ?? opts.role ?? '';
+  const isMasterAdmin = Boolean(
+    opts.isMasterAdmin ||
+    moduleAccess?.is_master_admin === true ||
+    String(userRole || '').trim().toLowerCase().includes('master')
+  );
+  const rawTenant = String(tenantHint || opts.tenant_id || opts.tenantId || moduleAccess?._tenantId || '').trim();
+  const compLower = String(userCompany || '').trim().toLowerCase();
+  const isSwanWorkspace = Boolean(
+    opts.isSwanWorkspace ||
+    rawTenant === '00000000-0000-0000-0000-000000000001' ||
+    rawTenant.toUpperCase() === 'TNT00002' ||
+    SWAN_WORKSPACE_COMPANIES.includes(compLower)
+  );
   const roleLower = String(userRole || '').trim().toLowerCase();
   const isAdminUser = Boolean(
     isMasterAdmin ||
@@ -229,4 +240,105 @@ export function evaluateLeadCompanyScope(leadCompany, {
   }
 
   return { inCompanyScope: true, allowDirectAssignment: true };
+}
+
+/**
+ * Shared Entity Branch Filter (Parties, S00 Transfers, Channel Ops Orders/Followups/Complaints, Check-In Entities)
+ */
+export function matchesEntityBranchScope(entityCompany, branchAccess = null, activeHeaderFilter = 'All') {
+  const cleanFilter = String(activeHeaderFilter || '').trim();
+  const hasHeaderFilter = Boolean(cleanFilter && cleanFilter.toLowerCase() !== 'all' && cleanFilter.toLowerCase() !== 'all companies');
+
+  if (!branchAccess) {
+    if (!hasHeaderFilter) return true;
+    return matchesCompanyToken(entityCompany, expandCompanyAliases(cleanFilter));
+  }
+
+  if (branchAccess.isAllBranches) {
+    if (hasHeaderFilter) {
+      return matchesCompanyToken(entityCompany, expandCompanyAliases(cleanFilter));
+    }
+    return branchAccess.matchesLeadCompany ? branchAccess.matchesLeadCompany(entityCompany) : true;
+  }
+
+  if (hasHeaderFilter && matchesCompanyToken(cleanFilter, branchAccess.allowedCompanies || [])) {
+    return matchesCompanyToken(entityCompany, expandCompanyAliases(cleanFilter));
+  }
+
+  return branchAccess.matchesLeadCompany ? branchAccess.matchesLeadCompany(entityCompany) : true;
+}
+
+/**
+ * Shared Employee Membership Matcher (Attendance Team Report, Regularization/Leave Approvals, Field Force, User Directory)
+ */
+export function matchesUserBranchMembership(employeeRow, branchAccess = null, activeHeaderFilter = 'All') {
+  if (!employeeRow) return false;
+  const cleanFilter = String(activeHeaderFilter || '').trim();
+  const hasHeaderFilter = Boolean(cleanFilter && cleanFilter.toLowerCase() !== 'all' && cleanFilter.toLowerCase() !== 'all companies');
+
+  const ma = employeeRow.module_access || {};
+  const empScope = String(employeeRow.assigned_branch_scope || ma.assigned_branch_scope || '').trim().toUpperCase();
+  const rawTokens = [
+    employeeRow.company,
+    employeeRow.company_name,
+    ...(Array.isArray(employeeRow.assigned_branches) ? employeeRow.assigned_branches : []),
+    ...(Array.isArray(ma.assigned_branches) ? ma.assigned_branches : [])
+  ].map(v => String(v || '').trim()).filter(Boolean);
+
+  const rawNamesAndCodes = [
+    employeeRow.branch_name,
+    employeeRow.branch_code,
+    ma.branch_name,
+    ...(Array.isArray(employeeRow.assigned_branch_names) ? employeeRow.assigned_branch_names : []),
+    ...(Array.isArray(ma.assigned_branch_names) ? ma.assigned_branch_names : []),
+    ...(Array.isArray(employeeRow.assigned_branch_codes) ? employeeRow.assigned_branch_codes : []),
+    ...(Array.isArray(ma.assigned_branch_codes) ? ma.assigned_branch_codes : [])
+  ].map(v => String(v || '').trim()).filter(Boolean);
+
+  const empHasAll = empScope === 'ALL' || rawTokens.some(t => t.toUpperCase() === 'ALL');
+
+  // Determine effective allowed tokens & names to test against
+  let targetCompanies = null;
+  let targetNames = [];
+
+  if (!branchAccess || branchAccess.isAllBranches) {
+    if (!hasHeaderFilter) return true;
+    targetCompanies = expandCompanyAliases(cleanFilter);
+  } else {
+    if (hasHeaderFilter && matchesCompanyToken(cleanFilter, branchAccess.allowedCompanies || [])) {
+      targetCompanies = expandCompanyAliases(cleanFilter);
+    } else {
+      targetCompanies = branchAccess.allowedCompanies || [];
+      targetNames = [
+        ...(Array.isArray(branchAccess.allowedBranchNames) ? branchAccess.allowedBranchNames : []),
+        ...(Array.isArray(branchAccess.allowedBranchCodes) ? branchAccess.allowedBranchCodes : [])
+      ].map(v => String(v || '').trim().toLowerCase()).filter(Boolean);
+    }
+  }
+
+  if (empHasAll) return true;
+  if (!targetCompanies || targetCompanies.length === 0) return true;
+
+  if (rawTokens.some(tok => matchesCompanyToken(tok, targetCompanies))) {
+    return true;
+  }
+
+  if (targetNames.length > 0 && rawNamesAndCodes.some(n => targetNames.includes(n.toLowerCase()))) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Helper to return normalized Company/Branch dropdown options based on branchAccess.
+ */
+export function getScopedBranchFilterOptions(branchAccess = null, fallbackOptions = ['NSMLR', 'NSTLP']) {
+  if (!branchAccess) return fallbackOptions;
+  const opts = Array.isArray(branchAccess.displayFilterOptions)
+    ? branchAccess.displayFilterOptions.filter(Boolean)
+    : [];
+  if (opts.length > 0) return opts;
+  if (branchAccess.isAllBranches) return fallbackOptions;
+  return branchAccess.primaryCompany ? [branchAccess.primaryCompany] : [];
 }

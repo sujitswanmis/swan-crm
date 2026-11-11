@@ -10,7 +10,7 @@ import { getTenantBranches, resolveKnownTenant } from '@/app/actions/tenantBranc
 import { getTenantAttendancePolicy } from '@/app/actions/attendance';
 import { getAllTenantsWithSubscriptions } from '@/app/actions/saasSubscription';
 import { getTeamMembers } from '@/app/actions/team';
-import { resolveCompanyTokenForBranch } from '@/utils/branchAccess';
+import { resolveCompanyTokenForBranch, matchesCompanyToken } from '@/utils/branchAccess';
 
 function getTenantPlaceholderEmail(tenantInfo) {
   const name = String(tenantInfo?.companyName || '').toLowerCase();
@@ -255,6 +255,7 @@ export default function AddEditUserModal({
   currentUserCompany = '',
   tenantId = null,
   isMasterAdmin = false,
+  branchAccess = null,
   saving = false
 }) {
   const isEdit = Boolean(user);
@@ -262,6 +263,23 @@ export default function AddEditUserModal({
   const [availableTenants, setAvailableTenants] = useState([]);
   const [resolvedTenant, setResolvedTenant] = useState({ tenantId: tenantId || '', tenantCode: '', companyName: currentUserCompany || '' });
   const [availableBranches, setAvailableBranches] = useState([]);
+  const canGrantAllBranches = Boolean(isMasterAdmin || !branchAccess || branchAccess.isAllBranches);
+  const scopedAvailableBranches = useMemo(() => {
+    if (canGrantAllBranches || !Array.isArray(availableBranches)) return availableBranches;
+    const allowedTokens = branchAccess?.allowedCompanies || [];
+    const allowedNames = (branchAccess?.allowedBranchNames || []).map(n => n.toLowerCase());
+    const allowedCodes = (branchAccess?.allowedBranchCodes || []).map(c => c.toLowerCase());
+    if (allowedTokens.length === 0 && allowedNames.length === 0 && allowedCodes.length === 0) return availableBranches;
+    return availableBranches.filter((b) => {
+      const bName = String(b?.branch_name || b?.name || '').trim().toLowerCase();
+      const bCode = String(b?.branch_code || '').trim().toLowerCase();
+      const bCustom = String(b?.custom_code || '').trim();
+      if (bCustom && matchesCompanyToken(bCustom, allowedTokens)) return true;
+      if (bName && (allowedNames.includes(bName) || matchesCompanyToken(bName, allowedTokens))) return true;
+      if (bCode && (allowedCodes.includes(bCode) || matchesCompanyToken(bCode, allowedTokens))) return true;
+      return false;
+    });
+  }, [availableBranches, canGrantAllBranches, branchAccess]);
   const [availableShifts, setAvailableShifts] = useState([]);
   const [tenantEmployeesByTenant, setTenantEmployeesByTenant] = useState({});
   const [customBranchNameInput, setCustomBranchNameInput] = useState(false);
@@ -1297,7 +1315,7 @@ export default function AddEditUserModal({
                     )}
 
                     {/* Branch Selector Dropdown (supports 1, 2+, or All Branches) */}
-                    {availableBranches.length > 0 && (
+                    {scopedAvailableBranches.length > 0 && (
                       <div style={{ position: 'relative' }}>
                         <Building size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
                         <select
@@ -1330,12 +1348,14 @@ export default function AddEditUserModal({
                               ? 'Switch to specific branch...'
                               : branchChips.length > 0
                                 ? `+ Add / toggle branch (${branchChips.length} selected)...`
-                                : '-- Select Branch or All Branches --'}
+                                : (canGrantAllBranches ? '-- Select Branch or All Branches --' : '-- Select Assigned Branch --')}
                           </option>
-                          <option value="__ALL__">
-                            {isAllBranchesSelected ? '✓ ' : ''}All Branches (Full Tenant Access)
-                          </option>
-                          {availableBranches.map(br => {
+                          {canGrantAllBranches && (
+                            <option value="__ALL__">
+                              {isAllBranchesSelected ? '✓ ' : ''}All Branches (Full Tenant Access)
+                            </option>
+                          )}
+                          {scopedAvailableBranches.map(br => {
                             const brKey = String(br.branch_code || br.branch_name).toLowerCase();
                             const isAdded = !isAllBranchesSelected && branchChips.some(c => c.key === brKey);
                             return (

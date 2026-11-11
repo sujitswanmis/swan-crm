@@ -38,6 +38,7 @@ import { INDIAN_STATE_DISTRICTS, ALL_INDIAN_STATES } from '@/config/indianStateD
 import StageDataTable from './StageDataTable';
 import StageConfigModal, { B2B_OPERATIONAL_STATUSES } from './StageConfigModal';
 import PartyMasterDashboard from './PartyMasterDashboard';
+import { getUserBranchAccess, matchesEntityBranchScope, getScopedBranchFilterOptions } from '@/utils/branchAccess';
 import EndCustomerMasterModule from '../Orders/EndCustomerMasterModule';
 import MaskedPhoneDisplay from '../common/MaskedPhoneDisplay';
 import { PRODUCT_GROUPS } from '@/config/productCatalog';
@@ -210,7 +211,9 @@ export default function PartyMasterModule({
   userCompany = '',
   tenantId = null,
   userName = '',
-  userEmail = ''
+  userEmail = '',
+  branchAccess = null,
+  adminCompanyFilter = 'All'
 }) {
   const effectiveUserName = userName || 'Admin';
   const effectiveTenantId = useMemo(() => {
@@ -222,6 +225,25 @@ export default function PartyMasterModule({
     if (comp.includes('testing')) return '922d3e72-6588-457f-a562-4f1bdbf10d98';
     return tenantId || '00000000-0000-0000-0000-000000000001';
   }, [tenantId, userCompany]);
+
+  const isSwanWorkspace = effectiveTenantId === '00000000-0000-0000-0000-000000000001';
+  const effectiveBranchAccess = useMemo(() => {
+    if (branchAccess && typeof branchAccess === 'object') return branchAccess;
+    return getUserBranchAccess({ userCompany, moduleAccess, userRole, isSwanWorkspace }, effectiveTenantId);
+  }, [branchAccess, userCompany, moduleAccess, userRole, isSwanWorkspace, effectiveTenantId]);
+
+  const scopedCompanyOptions = useMemo(() => (
+    getScopedBranchFilterOptions(effectiveBranchAccess, isSwanWorkspace ? ['NSMLR', 'NSTLP'] : [])
+  ), [effectiveBranchAccess, isSwanWorkspace]);
+
+  const defaultCompanyToken = scopedCompanyOptions[0] || effectiveBranchAccess?.primaryCompany || (isSwanWorkspace ? 'NSMLR' : '');
+
+  const matchesPartyBranch = useCallback((item) => {
+    const rawCompany = item?.our_company || item?.party?.our_company || item?.lead?.our_company || '';
+    const companyToken = rawCompany || (isSwanWorkspace ? 'NSMLR' : '');
+    if (!companyToken) return true;
+    return matchesEntityBranchScope(companyToken, effectiveBranchAccess, adminCompanyFilter);
+  }, [effectiveBranchAccess, adminCompanyFilter, isSwanWorkspace]);
 
   const [activeTab, setActiveTab] = useState(() => {
     const raw = activeSubTab || initialSubTab || 'dashboard';
@@ -303,7 +325,9 @@ export default function PartyMasterModule({
   useEffect(() => { activeTabRef.current = activeTab; }, [activeTab]);
   const [dataContext, setDataContext] = useState(contextKey);
   const [partyRows, setParties] = useState([]);
-  const parties = dataContext === contextKey ? partyRows : [];
+  const parties = useMemo(() => (
+    (dataContext === contextKey ? partyRows : []).filter(matchesPartyBranch)
+  ), [dataContext, contextKey, partyRows, matchesPartyBranch]);
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -325,7 +349,7 @@ export default function PartyMasterModule({
 
   // S00 Form State (With All Specific Contact Fields)
   const [s00Form, setS00Form] = useState({
-    our_company: 'NSMLR',
+    our_company: defaultCompanyToken || 'NSMLR',
     party_type: 'Dealer',
     firm_name: '',
     legal_name: '',
@@ -455,7 +479,10 @@ export default function PartyMasterModule({
   const [s05Districts, setS05Districts] = useState(INDIAN_STATE_DISTRICTS['Punjab'] || []);
 
   // Transferred Leads from Stage 07 & S08 Activation states
-  const [transferredLeads, setTransferredLeads] = useState([]);
+  const [rawTransferredLeads, setTransferredLeads] = useState([]);
+  const transferredLeads = useMemo(() => (
+    rawTransferredLeads.filter(matchesPartyBranch)
+  ), [rawTransferredLeads, matchesPartyBranch]);
   const [loadingTransfers, setLoadingTransfers] = useState(false);
   const [s08ActivationStatus, setS08ActivationStatus] = useState('Active');
   const [s08SubStage, setS08SubStage] = useState('Regular (Credit Allowed)');
@@ -1534,7 +1561,7 @@ export default function PartyMasterModule({
     setWizardStep('S00');
     setS00ContactTab('biz');
     setS00Form({
-      our_company: 'NSMLR',
+      our_company: defaultCompanyToken || 'NSMLR',
       party_type: 'Dealer',
       firm_name: '',
       legal_name: '',
@@ -2603,9 +2630,12 @@ export default function PartyMasterModule({
                 onChange={e => { setAllStageCompanyFilter(e.target.value); setAllStageCurrentPage(1); }}
                 style={{ padding: '0.5rem 0.75rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.82rem' }}
               >
-                <option value="ALL">All Companies</option>
-                <option value="NSMLR">NSMLR</option>
-                <option value="NSTLP">NSTLP</option>
+                {(effectiveBranchAccess.isAllBranches || scopedCompanyOptions.length > 1) && (
+                  <option value="ALL">{effectiveBranchAccess.isAllBranches ? 'All Companies' : 'All Assigned Branches'}</option>
+                )}
+                {scopedCompanyOptions.map(opt => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
               </select>
 
               <select
@@ -4034,9 +4064,12 @@ export default function PartyMasterModule({
                 onChange={e => { setCompanyFilter(e.target.value); setReportCurrentPage(1); }}
                 style={{ padding: '0.5rem 0.75rem', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.82rem' }}
               >
-                <option value="ALL">All Companies</option>
-                <option value="NSMLR">NSMLR</option>
-                <option value="NSTLP">NSTLP</option>
+                {(effectiveBranchAccess.isAllBranches || scopedCompanyOptions.length > 1) && (
+                  <option value="ALL">{effectiveBranchAccess.isAllBranches ? 'All Companies' : 'All Assigned Branches'}</option>
+                )}
+                {scopedCompanyOptions.map(opt => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
               </select>
 
               {/* Tier Filter */}

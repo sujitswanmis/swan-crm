@@ -1426,6 +1426,9 @@ export async function getDeviceHealthFleetReport(company = 'ALL', branchCode = n
     const { resolveKnownTenant, getTenantBranches } = await import('@/app/actions/tenantBranches');
     const { classifyDeviceHealth, HEALTH_STATUS_META, DEVICE_HEALTH_STATUS } = await import('@/config/appReleaseConfig');
     const { parseBrowserAndOsDetails, PLATFORM_LABELS } = await import('@/utils/platformDetection');
+    const { getUserBranchAccess, matchesUserBranchMembership, matchesCompanyToken } = !isMasterCaller
+      ? await import('@/utils/branchAccess')
+      : { getUserBranchAccess: null, matchesUserBranchMembership: null, matchesCompanyToken: null };
 
     // Load dynamic tenant catalog from public.tenants (no hardcoded tenant lock-in)
     const { data: dbTenants } = await admin
@@ -1490,10 +1493,29 @@ export async function getDeviceHealthFleetReport(company = 'ALL', branchCode = n
     const availableTenants = isMasterCaller ? tenantCatalog : [callerOwnTenant];
 
     // Load branches strictly for the active selected tenant (when specific tenant is scoped)
+    const callerBranchAccess = isMasterCaller ? null : getUserBranchAccess(callerRole, callerOwnTenant?.tenantId);
+    const shouldRestrictCallerBranches = Boolean(callerBranchAccess && !callerBranchAccess.isAllBranches);
+
     let activeBranches = [];
     if (targetTenantObj && targetTenantCode !== 'ALL') {
       const brRes = await getTenantBranches(targetTenantObj.tenantId || targetTenantObj.tenantCode);
-      activeBranches = Array.isArray(brRes?.branches) ? brRes.branches : [];
+      const rawBranches = Array.isArray(brRes?.branches) ? brRes.branches : [];
+      if (shouldRestrictCallerBranches) {
+        const allowedTokens = callerBranchAccess.allowedCompanies || [];
+        const allowedNames = (callerBranchAccess.allowedBranchNames || []).map((n) => n.toLowerCase());
+        const allowedCodes = (callerBranchAccess.allowedBranchCodes || []).map((c) => c.toLowerCase());
+        activeBranches = rawBranches.filter((b) => {
+          const bName = String(b?.branch_name || b?.name || '').trim().toLowerCase();
+          const bCode = String(b?.branch_code || b?.id || '').trim().toLowerCase();
+          const bCustom = String(b?.custom_code || '').trim();
+          if (bCustom && matchesCompanyToken(bCustom, allowedTokens)) return true;
+          if (bName && (allowedNames.includes(bName) || matchesCompanyToken(bName, allowedTokens))) return true;
+          if (bCode && (allowedCodes.includes(bCode) || matchesCompanyToken(bCode, allowedTokens))) return true;
+          return false;
+        });
+      } else {
+        activeBranches = rawBranches;
+      }
     }
 
     const policyRes = await getAppReleasePolicy();
@@ -1676,6 +1698,10 @@ export async function getDeviceHealthFleetReport(company = 'ALL', branchCode = n
       if (['inactive', 'in_active', 'terminated', 'resigned', 'trash', 'draft'].includes(empStatus)) continue;
       if (emp?.is_approved !== true) continue;
       if (String(emp?.role || '').toLowerCase() === 'customer') continue;
+
+      if (shouldRestrictCallerBranches && !matchesUserBranchMembership(emp, callerBranchAccess, branchCode || 'All')) {
+        continue;
+      }
 
       const uid = String(emp?.user_id || emp?.id || '').trim();
       if (!uid) continue;

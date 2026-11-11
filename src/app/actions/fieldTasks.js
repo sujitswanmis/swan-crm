@@ -3,9 +3,33 @@
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { createClient as createServerAuthClient } from '@/utils/supabase/server';
 import { logAuditAction } from '@/app/actions/audit';
+import { resolveDbTenantUuid } from '@/app/actions/partyMaster';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isUuid = (val) => Boolean(val && UUID_REGEX.test(String(val).trim()));
+
+const SWAN_OUR_COMPANIES = ['NSMLR', 'NSTLP', 'NSTL', 'New Swan Group', 'Swan Agro', 'NSE-1', 'NSE-2', 'NSE-6', 'NSCPL', 'NSACPL', ''];
+const SWAN_COMPANY_MATCHERS = new Set(['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl', 'tnt00001']);
+const PLACEHOLDER_VALUES = new Set(['', 'n/a', 'na', 'null', 'undefined', 'none', '-', '--']);
+
+function cleanFieldText(value) {
+  const str = String(value ?? '').trim();
+  return PLACEHOLDER_VALUES.has(str.toLowerCase()) ? '' : str;
+}
+
+function dedupeAddressParts(parts = []) {
+  const seen = new Set();
+  const out = [];
+  for (const part of parts) {
+    const clean = cleanFieldText(part);
+    if (!clean) continue;
+    const key = clean.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(clean);
+  }
+  return out.join(', ');
+}
 
 function getAdminClient() {
   return createSupabaseClient(
@@ -201,7 +225,10 @@ export async function getTodayUserAttendanceStatus(userId, userEmail = '') {
       query = query.ilike('email', cleanEmail);
     }
 
-    const { data, error } = await query.maybeSingle();
+    const { data, error } = await query
+      .order('in_time', { ascending: false })
+      .limit(1)
+      .maybeSingle();
     if (error || !data) {
       return { isPunchedIn: false, isPunchedOut: false, record: null, todayIST };
     }
@@ -668,23 +695,53 @@ export async function performCheckOutWithOutput(payload) {
 /**
  * Fast search of existing CRM entities (Leads, Parties, Orders) for 1-click Field Check-In
  */
-export async function getModuleEntitiesForCheckIn({ company = 'TNT00001', moduleType = 'LEAD_DATA', search = '', limit = 40 } = {}) {
+export async function getModuleEntitiesForCheckIn({ company = 'TNT00001', tenantId = null, allowedCompanies = null, moduleType = 'LEAD_DATA', search = '', limit = 40 } = {}) {
   const supabase = getAdminClient();
   try {
     const trimmed = (search || '').trim();
+    const cleanCompany = String(company || '').trim();
+    const lowerCompany = cleanCompany.toLowerCase();
+    const hasAllowedOverride = Array.isArray(allowedCompanies) && allowedCompanies.length > 0;
+    const branchUtils = hasAllowedOverride ? await import('@/utils/branchAccess') : null;
+    const expandedAllowed = hasAllowedOverride
+      ? Array.from(new Set(allowedCompanies.flatMap(branchUtils.expandCompanyAliases).map(v => cleanFieldText(v)).filter(Boolean)))
+      : [];
+    const isAllCompaniesScope = !hasAllowedOverride && (!cleanCompany || lowerCompany === 'all' || lowerCompany === 'all companies');
+    const isSwanGroupScope = !hasAllowedOverride && SWAN_COMPANY_MATCHERS.has(lowerCompany);
 
     if (moduleType === 'LEAD_DATA') {
-      let query = supabase
-        .from('leads')
-        .select('id, name, company, phone, status, address, city_name, district_name, created_at')
-        .order('created_at', { ascending: false })
-        .limit(limit);
+      const buildLeadQuery = (useTenantIdFallback = false) => {
+        let q = supabase
+          .from('leads')
+          .select('id, name, company, our_company, tenant_id, phone, status, address, city_name, district_name, created_at')
+          .order('created_at', { ascending: false })
+          .limit(limit);
 
-      if (trimmed) {
-        query = query.or(`company.ilike.%${trimmed}%,name.ilike.%${trimmed}%,phone.ilike.%${trimmed}%,city_name.ilike.%${trimmed}%,district_name.ilike.%${trimmed}%`);
+        if (useTenantIdFallback && isUuid(tenantId)) {
+          q = q.eq('tenant_id', String(tenantId).trim());
+        } else if (expandedAllowed.length > 0) {
+          q = q.in('our_company', expandedAllowed);
+        } else if (!isAllCompaniesScope) {
+          q = isSwanGroupScope
+            ? q.in('our_company', SWAN_OUR_COMPANIES)
+            : q.eq('our_company', cleanCompany);
+        } else if (isUuid(tenantId)) {
+          q = q.eq('tenant_id', String(tenantId).trim());
+        }
+
+        if (trimmed) {
+          q = q.or(`company.ilike.%${trimmed}%,name.ilike.%${trimmed}%,phone.ilike.%${trimmed}%,city_name.ilike.%${trimmed}%,district_name.ilike.%${trimmed}%`);
+        }
+        return q;
+      };
+
+      let { data, error } = await buildLeadQuery(false);
+      if (!error && (!data || data.length === 0) && !hasAllowedOverride && !isAllCompaniesScope && isUuid(tenantId)) {
+        const fb = await buildLeadQuery(true);
+        if (!fb.error && Array.isArray(fb.data) && fb.data.length > 0) {
+          data = fb.data;
+        }
       }
-
-      const { data, error } = await query;
       if (error) {
         console.error('Error fetching leads for check-in:', error);
         return [];
@@ -693,10 +750,10 @@ export async function getModuleEntitiesForCheckIn({ company = 'TNT00001', module
       return (data || []).map(l => ({
         id: l.id,
         lead_id: l.id,
-        party_name: l.company || l.name || 'Unnamed Lead',
-        party_phone: l.phone || '',
-        party_address: [l.address, l.city_name, l.district_name].filter(Boolean).join(', ') || 'Address not specified',
-        current_stage: l.status || '01 - New Lead',
+        party_name: cleanFieldText(l.company) || cleanFieldText(l.name) || 'Unnamed Lead',
+        party_phone: cleanFieldText(l.phone),
+        party_address: dedupeAddressParts([l.address, l.city_name, l.district_name]) || 'Address unavailable',
+        current_stage: cleanFieldText(l.status) || null,
         party_lat: null,
         party_lng: null,
         module_source: 'LEAD_DATA'
@@ -704,43 +761,89 @@ export async function getModuleEntitiesForCheckIn({ company = 'TNT00001', module
     }
 
     if (moduleType === 'PARTY_MASTER') {
-      let query = supabase
-        .from('party_master')
-        .select('id, firm_name, legal_name, trade_name, primary_mobile, party_status, created_at')
-        .order('created_at', { ascending: false })
-        .limit(limit);
+      const resolvedTenantId = (!isAllCompaniesScope || isUuid(tenantId))
+        ? await resolveDbTenantUuid(tenantId || cleanCompany)
+        : null;
 
-      if (trimmed) {
-        query = query.or(`firm_name.ilike.%${trimmed}%,legal_name.ilike.%${trimmed}%,trade_name.ilike.%${trimmed}%,primary_mobile.ilike.%${trimmed}%`);
+      const buildPartyQuery = (withAddresses) => {
+        let q = supabase
+          .from('party_master')
+          .select(
+            withAddresses
+              ? 'id, firm_name, legal_name, trade_name, primary_mobile, party_status, business_nature, created_at, party_addresses(address_line_1, city, state)'
+              : 'id, firm_name, legal_name, trade_name, primary_mobile, party_status, business_nature, created_at'
+          )
+          .order('created_at', { ascending: false })
+          .limit(expandedAllowed.length > 0 ? Math.max(limit * 3, 120) : limit);
+
+        if (resolvedTenantId) {
+          q = q.eq('tenant_id', resolvedTenantId);
+        }
+        if (trimmed) {
+          q = q.or(`firm_name.ilike.%${trimmed}%,legal_name.ilike.%${trimmed}%,trade_name.ilike.%${trimmed}%,primary_mobile.ilike.%${trimmed}%`);
+        }
+        return q;
+      };
+
+      let { data, error } = await buildPartyQuery(true);
+      if (error) {
+        const fallback = await buildPartyQuery(false);
+        data = fallback.data;
+        error = fallback.error;
       }
-
-      const { data, error } = await query;
       if (error) {
         console.error('Error fetching party_master for check-in:', error);
         return [];
       }
 
-      return (data || []).map(p => ({
-        id: p.id,
-        customer_id: p.id,
-        party_name: p.firm_name || p.legal_name || p.trade_name || 'Unnamed Party',
-        party_phone: p.primary_mobile || '',
-        party_address: 'Registered Party Customer',
-        current_stage: p.party_status || 'Existing Customer',
-        party_lat: null,
-        party_lng: null,
-        module_source: 'PARTY_MASTER'
-      }));
+      const isSwanTenant = !resolvedTenantId || resolvedTenantId === '00000000-0000-0000-0000-000000000001';
+      const scopedParties = (expandedAllowed.length > 0 && isSwanTenant)
+        ? (data || []).filter((p) => {
+            let metaComp = '';
+            try {
+              const raw = p.business_nature;
+              if (raw && typeof raw === 'string' && raw.trim().startsWith('{')) {
+                metaComp = JSON.parse(raw)?.our_company || '';
+              } else if (raw && typeof raw === 'object') {
+                metaComp = raw.our_company || '';
+              }
+            } catch {}
+            return branchUtils.matchesCompanyToken(metaComp || 'NSMLR', expandedAllowed);
+          }).slice(0, limit)
+        : (data || []).slice(0, limit);
+
+      return scopedParties.map(p => {
+        const primaryAddr = Array.isArray(p.party_addresses) ? p.party_addresses[0] : null;
+        const resolvedAddr = primaryAddr
+          ? dedupeAddressParts([primaryAddr.address_line_1, primaryAddr.city, primaryAddr.state])
+          : '';
+        return {
+          id: p.id,
+          customer_id: p.id,
+          party_name: cleanFieldText(p.firm_name) || cleanFieldText(p.legal_name) || cleanFieldText(p.trade_name) || 'Unnamed Party',
+          party_phone: cleanFieldText(p.primary_mobile),
+          party_address: resolvedAddr || 'Registered Customer',
+          current_stage: cleanFieldText(p.party_status) || null,
+          party_lat: null,
+          party_lng: null,
+          module_source: 'PARTY_MASTER'
+        };
+      });
     }
 
     // Default: Check assigned field tasks
     let taskQuery = supabase
       .from('field_tasks')
       .select('*')
-      .eq('company', company)
       .in('status', ['PENDING', 'SCHEDULED', 'IN_PROGRESS'])
       .order('scheduled_start_time', { ascending: true })
       .limit(limit);
+
+    if (expandedAllowed.length > 0) {
+      taskQuery = taskQuery.in('company', expandedAllowed);
+    } else if (!isAllCompaniesScope) {
+      taskQuery = taskQuery.eq('company', cleanCompany);
+    }
 
     if (trimmed) {
       taskQuery = taskQuery.or(`party_name.ilike.%${trimmed}%,party_phone.ilike.%${trimmed}%`);
@@ -754,10 +857,10 @@ export async function getModuleEntitiesForCheckIn({ company = 'TNT00001', module
       task_id: t.id,
       lead_id: t.lead_id,
       customer_id: t.customer_id,
-      party_name: t.party_name,
-      party_phone: t.party_phone || '',
-      party_address: t.party_address || '',
-      current_stage: t.task_type || 'Assigned Task',
+      party_name: cleanFieldText(t.party_name) || 'Assigned Visit',
+      party_phone: cleanFieldText(t.party_phone),
+      party_address: cleanFieldText(t.party_address),
+      current_stage: cleanFieldText(t.task_type) || null,
       party_lat: t.party_lat,
       party_lng: t.party_lng,
       module_source: 'FIELD_TASK'

@@ -6,7 +6,15 @@ import { getTenantCustomForms } from '@/app/actions/fieldFormStudio';
 import { createFieldTask, getFieldTasksForUser } from '@/app/actions/fieldTasks';
 import { getTeamMembers } from '@/app/actions/team';
 
-export default function FieldTaskManager({ company = 'TNT00001', branchCode = null, currentUser = null }) {
+export default function FieldTaskManager({
+  company = 'TNT00001',
+  branchCode = null,
+  currentUser = null,
+  currentUserId = null,
+  tenantId = null,
+  branchAccess = null,
+  adminCompanyFilter = 'All'
+}) {
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
@@ -32,9 +40,19 @@ export default function FieldTaskManager({ company = 'TNT00001', branchCode = nu
     const init = async () => {
       setLoading(true);
       try {
+        const branchScope = branchAccess
+          ? {
+              scope: branchAccess.scope,
+              isAllBranches: branchAccess.isAllBranches,
+              allowedCompanies: branchAccess.allowedCompanies,
+              allowedBranchNames: branchAccess.allowedBranchNames,
+              allowedBranchCodes: branchAccess.allowedBranchCodes,
+              selectedFilter: adminCompanyFilter || 'All'
+            }
+          : (adminCompanyFilter && adminCompanyFilter !== 'All' ? { selectedFilter: adminCompanyFilter } : null);
         const [formsData, membersData] = await Promise.all([
           getTenantCustomForms(company),
-          getTeamMembers(company)
+          getTeamMembers(company, tenantId, branchScope)
         ]);
         setForms(formsData || []);
         setTeamMembers(membersData || []);
@@ -45,7 +63,7 @@ export default function FieldTaskManager({ company = 'TNT00001', branchCode = nu
       }
     };
     init();
-  }, [company]);
+  }, [company, tenantId, branchAccess, adminCompanyFilter]);
 
   const handleTaskTypeChange = (formId) => {
     setSelectedTaskType(formId);
@@ -75,7 +93,7 @@ export default function FieldTaskManager({ company = 'TNT00001', branchCode = nu
         party_name: customerName,
         party_phone: customerPhone,
         party_address: customerAddress,
-        assigned_by_user_id: currentUser?.id || null,
+        assigned_by_user_id: currentUser?.id || currentUserId || null,
         assigned_to_user_id: assignedEmployeeId,
         priority,
         scheduled_start_time: startTime || new Date().toISOString(),
@@ -228,9 +246,14 @@ export default function FieldTaskManager({ company = 'TNT00001', branchCode = nu
                   required
                 >
                   <option value="">-- Select Field Person --</option>
-                  {teamMembers.map(m => (
-                    <option key={m.id} value={m.id}>{m.name || m.email} ({m.role || 'Field Staff'})</option>
-                  ))}
+                  {teamMembers.map(m => {
+                    const memberId = m.user_id || m.id;
+                    return (
+                      <option key={memberId} value={memberId}>
+                        {m.emp_name || m.name || m.email} ({m.role || 'Field Staff'})
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
             </div>

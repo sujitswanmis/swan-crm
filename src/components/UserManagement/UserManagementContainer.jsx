@@ -37,6 +37,7 @@ import { DEFAULT_DEPARTMENTS } from './utils/userManagementUtils';
 import { filterVisibleSubTabs, getSubItemPermissions } from '@/utils/permissionUtils';
 import { MODULES_CONFIG } from '@/config/modulesConfig';
 import { ROLE_PRESETS } from './utils/rolePresets';
+import { getUserBranchAccess, matchesUserBranchMembership } from '@/utils/branchAccess';
 
 const USER_MANAGEMENT_TABS = [
   { id: 'user_manage', label: 'User Manage', icon: Users },
@@ -61,13 +62,33 @@ export default function UserManagementContainer({
   userId = null,
   userEmail = null,
   userRole = '',
-  moduleAccess = {}
+  moduleAccess = {},
+  branchAccess = null
 }) {
   const visibleSubpages = useMemo(() => {
     return filterVisibleSubTabs(moduleAccess, userRole, 'user_management_new', USER_MANAGEMENT_TABS);
   }, [moduleAccess, userRole]);
 
-  const [users, setUsers] = useState(initialUsers || []);
+  const effectiveBranchAccess = useMemo(() => {
+    if (branchAccess && typeof branchAccess === 'object') return branchAccess;
+    return getUserBranchAccess({ userCompany: currentUserCompany, moduleAccess, userRole, isMasterAdmin }, tenantId);
+  }, [branchAccess, currentUserCompany, userRole, moduleAccess, isMasterAdmin, tenantId]);
+
+  const canSeeAllBranches = Boolean(
+    isAdmin ||
+    isMasterAdmin ||
+    (userEmail && userEmail.toLowerCase().trim() === 'supujacreations@gmail.com') ||
+    moduleAccess?.is_master_admin === true ||
+    effectiveBranchAccess?.isAllBranches
+  );
+  const activeBranchScope = useMemo(() => (
+    canSeeAllBranches ? null : effectiveBranchAccess
+  ), [canSeeAllBranches, effectiveBranchAccess]);
+
+  const [rawUsers, setUsers] = useState(initialUsers || []);
+  const users = useMemo(() => (
+    !activeBranchScope ? rawUsers : (rawUsers || []).filter(u => matchesUserBranchMembership(u, activeBranchScope))
+  ), [rawUsers, activeBranchScope]);
   const [loading, setLoading] = useState(!initialUsers || initialUsers.length === 0);
   const [activeTab, setActiveTab] = useState(() => {
     const nextTab = normalizeSubTab(activeSubTab);
@@ -417,7 +438,7 @@ export default function UserManagementContainer({
   const fetchUsers = useCallback(async (showLoader = true) => {
     if (showLoader) setLoading(true);
     try {
-      const data = await getTeamMembers(currentUserCompany, tenantId);
+      const data = await getTeamMembers(currentUserCompany, tenantId, activeBranchScope);
       setUsers(data || []);
     } catch (err) {
       console.error('Error fetching users:', err);
@@ -425,7 +446,7 @@ export default function UserManagementContainer({
     } finally {
       if (showLoader) setLoading(false);
     }
-  }, [currentUserCompany, tenantId]);
+  }, [currentUserCompany, tenantId, activeBranchScope]);
 
   // Fetch departments
   const fetchDepartments = useCallback(async () => {
@@ -1025,6 +1046,7 @@ export default function UserManagementContainer({
         currentUserCompany={currentUserCompany}
         tenantId={tenantId}
         isMasterAdmin={effectiveIsMasterAdmin}
+        branchAccess={effectiveBranchAccess}
         saving={savingAddEdit}
       />
 

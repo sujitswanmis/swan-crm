@@ -95,7 +95,7 @@ function extractBranchModuleMetadata(details = {}, prevAccess = {}) {
   return patch;
 }
 
-export async function getTeamMembers(requesterCompany = null, tenantId = null) {
+export async function getTeamMembers(requesterCompany = null, tenantId = null, branchScope = null) {
   const adminClient = getAdminClient();
   const { data, error } = await adminClient
     .from('user_roles')
@@ -109,6 +109,11 @@ export async function getTeamMembers(requesterCompany = null, tenantId = null) {
 
   const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl', 'tnt00002'];
   const reqLower = String(requesterCompany || '').toLowerCase().trim();
+  const hasExplicitBranchScope = Boolean(
+    branchScope &&
+    typeof branchScope === 'object' &&
+    (!branchScope.isAllBranches || (branchScope.selectedFilter && String(branchScope.selectedFilter).toLowerCase() !== 'all'))
+  );
 
   // Handle Standard Tenant Codes or Company passed as requesterCompany
   if (reqLower === 'tnt00002' || reqLower === 'all' || reqLower === 'all companies' || !reqLower) {
@@ -139,6 +144,10 @@ export async function getTeamMembers(requesterCompany = null, tenantId = null) {
     }
   }
 
+  const { matchesUserBranchMembership } = hasExplicitBranchScope
+    ? await import('@/utils/branchAccess')
+    : { matchesUserBranchMembership: null };
+
   const scopedData = (data || []).filter(u => {
     const userComp = String(u.company || '').toLowerCase().trim();
     const uEmail = String(u.email || '').toLowerCase().trim();
@@ -154,6 +163,9 @@ export async function getTeamMembers(requesterCompany = null, tenantId = null) {
     // If tenantId was provided and resolved to a non-default tenant
     if (tenantId && tenantId !== '00000000-0000-0000-0000-000000000001') {
       if (uTenant !== tenantId) return false;
+      if (hasExplicitBranchScope) {
+        return matchesUserBranchMembership(u, branchScope, branchScope.selectedFilter || 'All');
+      }
       if (reqLower === 'all' || reqLower === 'all companies' || !reqLower) return true;
       if (tenantAdminEmail && (uEmail === tenantAdminEmail || uOfficialEmail === tenantAdminEmail)) return true;
       if (tenantName && userComp === tenantName) return true;
@@ -166,6 +178,9 @@ export async function getTeamMembers(requesterCompany = null, tenantId = null) {
       // New Swan Group: strictly return New Swan Group members (00000000-0000-0000-0000-000000000001)
       // ABSOLUTE ZERO LEAKAGE: Exclude separate client tenants (SuPuja Creations, Testing NSG, etc.)
       if (uTenant !== '00000000-0000-0000-0000-000000000001') return false;
+      if (hasExplicitBranchScope) {
+        return matchesUserBranchMembership(u, branchScope, branchScope.selectedFilter || 'All');
+      }
       if (reqLower === 'all' || reqLower === 'all companies' || !reqLower) return true;
       const scope = String(u.module_access?.assigned_branch_scope || '').toUpperCase();
       const extraBranches = Array.isArray(u.module_access?.assigned_branches)
@@ -176,6 +191,9 @@ export async function getTeamMembers(requesterCompany = null, tenantId = null) {
     }
 
     // Client workspace (e.g. SuPuja Creations, Testing New Swan Group): strictly return users of that company
+    if (hasExplicitBranchScope) {
+      return (uTenant === tenantId || userComp === reqLower) && matchesUserBranchMembership(u, branchScope, branchScope.selectedFilter || 'All');
+    }
     return uTenant === tenantId || userComp === reqLower;
   });
 

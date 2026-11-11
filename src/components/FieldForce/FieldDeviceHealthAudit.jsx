@@ -130,6 +130,7 @@ export default function FieldDeviceHealthAudit({
   tenantId = null,
   userRole = 'ADMIN',
   isMasterAdmin = false,
+  branchAccess = null,
   onInspectEmployeeRoute = null
 }) {
   const [selectedTenantCode, setSelectedTenantCode] = useState(isMasterAdmin ? 'ALL' : '');
@@ -667,15 +668,19 @@ export default function FieldDeviceHealthAudit({
           )}
 
           <select
-            value={selectedBranch}
+            value={(!isMasterScope && branchAccess && !branchAccess.isAllBranches && branches.length === 1 && selectedBranch === 'ALL') ? (branches[0]?.branch_code || branches[0]?.id || 'ALL') : selectedBranch}
             onChange={(e) => { setSelectedBranch(e.target.value); setCurrentPage(1); setLoading(true); }}
             disabled={(isMasterScope && (!selectedTenantCode || selectedTenantCode === 'ALL')) || branches.length === 0}
             style={{ padding: '7px 10px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12, fontWeight: 600, background: '#f8fafc', minWidth: 230 }}
             title="Filter by Branch / Plant of Active Tenant"
           >
-            <option value="ALL">
-              All Branches ({isMasterScope && (!selectedTenantCode || selectedTenantCode === 'ALL') ? 'Select Tenant First' : branches.length})
-            </option>
+            {(isMasterScope || !branchAccess || branchAccess.isAllBranches || branches.length > 1) && (
+              <option value="ALL">
+                {!isMasterScope && branchAccess && !branchAccess.isAllBranches
+                  ? `All Assigned Branches (${branches.length})`
+                  : `All Branches (${isMasterScope && (!selectedTenantCode || selectedTenantCode === 'ALL') ? 'Select Tenant First' : branches.length})`}
+              </option>
+            )}
             {branches.map((b) => {
               const code = b.branch_code || b.id || b.code;
               const name = b.branch_name || b.name || code;

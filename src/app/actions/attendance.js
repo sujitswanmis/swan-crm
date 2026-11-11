@@ -725,6 +725,26 @@ function matchesCompany(userComp, targetCompany) {
   return uComp === target || uComp.includes(target);
 }
 
+/**
+ * Unified Multi-Branch / All-Branch Membership Filter for Employees
+ */
+function matchesEmployeeBranchFilter(userRow, company = '', branchScope = null, matchMembership = null) {
+  if (branchScope && typeof branchScope === 'object') {
+    const selectedFilter = branchScope.selectedFilter || 'All';
+    const isAll = branchScope.scope === 'ALL' || branchScope.isAllBranches;
+    if (isAll && String(selectedFilter).toLowerCase() === 'all') {
+      return (company && String(company).toLowerCase() !== 'all')
+        ? matchesCompany(userRow?.company, company)
+        : true;
+    }
+    return matchMembership ? matchMembership(userRow, branchScope, selectedFilter) : true;
+  }
+  if (company && String(company).toLowerCase() !== 'all') {
+    return matchesCompany(userRow?.company, company);
+  }
+  return true;
+}
+
 // Helper to read JSON fallback data
 async function getFallbackData() {
   try {
@@ -837,7 +857,7 @@ function leaveServiceError(error) {
   return 'Leave service is unavailable. Please retry.';
 }
 
-async function getLeaveContext({ tenantId = null, userCompany = '' } = {}) {
+async function getLeaveContext({ tenantId = null, userCompany = '', branchScope = null } = {}) {
   const session = await createSessionClient();
   const { data: { user } = {}, error } = await session.auth.getUser();
   if (error || !user) throw new Error('Please sign in again.');
@@ -854,7 +874,7 @@ async function getLeaveContext({ tenantId = null, userCompany = '' } = {}) {
   if (selectedTenant !== actorTenant && !canSelectWorkspace) throw new Error('This workspace is not permitted.');
   const email = leaveEmail(actor.email || user.email);
   if (!email) throw new Error('Employee email is unavailable.');
-  return { db, actor, email, tenantId: selectedTenant, isAdmin,
+  return { db, actor, email, tenantId: selectedTenant, isAdmin, userCompany, branchScope,
     canManage: isAdmin || actor.module_access?.attendance?.view !== false
       && (['hod', 'manager'].includes(role) || actor.module_access?.attendance?.is_manager === true) };
 }
@@ -864,9 +884,20 @@ async function getLeaveTeam(context) {
   const { data: users, error } = await context.db.from('user_roles').select('*');
   if (error || !Array.isArray(users)) throw new Error('Employee team is unavailable.');
   const eligible = users.filter(employee => leaveProfileActive(employee) && leaveTenant(employee) === context.tenantId);
-  if (context.isAdmin) return eligible;
+  const needsBranchUtils = !context.isAdmin || Boolean(context.branchScope && typeof context.branchScope === 'object');
+  const { getUserBranchAccess, matchesUserBranchMembership } = needsBranchUtils
+    ? await import('@/utils/branchAccess')
+    : { getUserBranchAccess: null, matchesUserBranchMembership: null };
+  const actorBranchAccess = (context.isAdmin || !getUserBranchAccess) ? null : getUserBranchAccess(context.actor, context.tenantId);
+  const effectiveScope = (!context.isAdmin && actorBranchAccess && !actorBranchAccess.isAllBranches)
+    ? { ...actorBranchAccess, selectedFilter: context.branchScope?.selectedFilter || 'All' }
+    : context.branchScope;
+  const branchScoped = effectiveScope
+    ? eligible.filter(employee => matchesEmployeeBranchFilter(employee, '', effectiveScope, matchesUserBranchMembership))
+    : eligible;
+  if (context.isAdmin) return branchScoped;
   return String(context.actor.role).toLowerCase() === 'hod'
-    ? getHodTeam(eligible, context.actor) : getReportingTeam(eligible, context.actor);
+    ? getHodTeam(branchScoped, context.actor) : getReportingTeam(branchScoped, context.actor);
 }
 
 async function readLeaveData(tenantId, { email = null, emails = null } = {}) {
@@ -1990,7 +2021,8 @@ export async function getHodPendingRequests({
   statusFilter = 'ALL',
   departmentFilter = '',
   tenantId = DEFAULT_TENANT_ID,
-  company = ''
+  company = '',
+  branchScope = null
 }) {
   tenantId = resolveTenantId(tenantId, company);
   const adminClient = getAdminClient();
@@ -1998,13 +2030,18 @@ export async function getHodPendingRequests({
 
   // Resolve allowed employee emails by company / branch filter if specified
   let allowedEmails = null;
-  if (company && company.toLowerCase() !== 'all') {
+  const shouldFilterBranch = (company && company.toLowerCase() !== 'all')
+    || (branchScope && typeof branchScope === 'object' && (!branchScope.isAllBranches || (branchScope.selectedFilter && String(branchScope.selectedFilter).toLowerCase() !== 'all')));
+  if (shouldFilterBranch) {
     try {
+      const { matchesUserBranchMembership } = (branchScope && typeof branchScope === 'object')
+        ? await import('@/utils/branchAccess')
+        : { matchesUserBranchMembership: null };
       const { data: uData } = await adminClient
         .from('user_roles')
-        .select('email, company');
+        .select('email, company, module_access');
       if (uData && Array.isArray(uData)) {
-        const matchingUsers = uData.filter(u => matchesCompany(u.company, company));
+        const matchingUsers = uData.filter(u => matchesEmployeeBranchFilter(u, company, branchScope, matchesUserBranchMembership));
         allowedEmails = new Set(matchingUsers.map(u => (u.email || '').toLowerCase().trim()));
       }
     } catch {}
@@ -2456,7 +2493,8 @@ export async function getTeamAttendanceMaster({
   endDate = '',
   department = '',
   tenantId = DEFAULT_TENANT_ID,
-  company = ''
+  company = '',
+  branchScope = null
 }) {
   tenantId = resolveTenantId(tenantId, company);
   const adminClient = getAdminClient();
@@ -2468,14 +2506,14 @@ export async function getTeamAttendanceMaster({
   const effectiveEnd = endDate || date;
 
   try {
+    const { matchesUserBranchMembership } = (branchScope && typeof branchScope === 'object')
+      ? await import('@/utils/branchAccess')
+      : { matchesUserBranchMembership: null };
     const { data: usersData, error: uErr } = await adminClient
       .from('user_roles')
       .select('user_id, emp_name, email, emp_id, emp_department, module_access, created_at, is_approved, role, company');
     if (!uErr && Array.isArray(usersData)) {
-      let filteredUsers = usersData;
-      if (company && company !== 'all') {
-        filteredUsers = usersData.filter(u => matchesCompany(u.company, company));
-      }
+      const filteredUsers = usersData.filter(u => matchesEmployeeBranchFilter(u, company, branchScope, matchesUserBranchMembership));
 
       allUsers = filteredUsers
         .filter(u => {
@@ -2805,7 +2843,8 @@ export async function getTeamMonthlyMatrix({
   tenantId = DEFAULT_TENANT_ID,
   company = '',
   periodType = 'FULL_MONTH',
-  adjustLeaves = true
+  adjustLeaves = true,
+  branchScope = null
 }) {
   const adminClient = getAdminClient();
   const targetYear = parseInt(year, 10);
@@ -2818,14 +2857,14 @@ export async function getTeamMonthlyMatrix({
 
   let allUsers = [];
   try {
+    const { matchesUserBranchMembership } = (branchScope && typeof branchScope === 'object')
+      ? await import('@/utils/branchAccess')
+      : { matchesUserBranchMembership: null };
     const { data: usersData, error: uErr } = await adminClient
       .from('user_roles')
       .select('user_id, emp_name, email, emp_id, emp_department, module_access, created_at, is_approved, role, company, salary_amount');
     if (!uErr && Array.isArray(usersData)) {
-      let filteredUsers = usersData;
-      if (company && company !== 'all') {
-        filteredUsers = usersData.filter(u => matchesCompany(u.company, company));
-      }
+      const filteredUsers = usersData.filter(u => matchesEmployeeBranchFilter(u, company, branchScope, matchesUserBranchMembership));
 
       allUsers = filteredUsers
         .filter(u => {
@@ -3657,9 +3696,9 @@ export async function getMyLeaveRequests({ email, tenantId = null, userCompany =
 }
 
 /** HOD/managers see their mapped team; admins see the permitted workspace. */
-export async function getHodPendingLeaveRequests({ tenantId = null, userCompany = '', department = 'All' } = {}) {
+export async function getHodPendingLeaveRequests({ tenantId = null, userCompany = '', department = 'All', branchScope = null } = {}) {
   try {
-    const context = await getLeaveContext({ tenantId, userCompany });
+    const context = await getLeaveContext({ tenantId, userCompany, branchScope });
     const team = (await getLeaveTeam(context)).filter(employee => department === 'All'
       || (employee.emp_department || employee.department) === department);
     const snapshot = await readLeaveData(context.tenantId, { emails: team.map(employee => employee.email) });
@@ -3951,9 +3990,9 @@ export async function getAllTenantLeavePolicies() {
 /**
  * 21. Get Comprehensive Team Leave Report & Balances Ledger (Admin / HOD)
  */
-export async function getTeamLeaveReport({ tenantId = null, userCompany = '', department = 'All', year = null }) {
+export async function getTeamLeaveReport({ tenantId = null, userCompany = '', department = 'All', year = null, branchScope = null }) {
   try {
-    const context = await getLeaveContext({ tenantId, userCompany });
+    const context = await getLeaveContext({ tenantId, userCompany, branchScope });
     const targetYear = Number(year) || getIstDateParts().year;
     const team = (await getLeaveTeam(context)).filter(employee => department === 'All'
       || (employee.emp_department || employee.department) === department);

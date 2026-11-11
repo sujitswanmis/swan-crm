@@ -10,6 +10,7 @@ import {
   invalidatePartyWorkspace, PARTY_WORKSPACE_UPDATED
 } from '@/utils/partyWorkspaceCache';
 import { filterVisibleSubTabs, getSubItemPermissions } from '@/utils/permissionUtils';
+import { getUserBranchAccess, matchesEntityBranchScope } from '@/utils/branchAccess';
 
 import DailyFollowupQueueTable from '../Orders/DailyFollowupQueueTable';
 import OrderFrequencyMasterTable from '../Orders/OrderFrequencyMasterTable';
@@ -82,9 +83,20 @@ export default function ChannelOperationsModule({
   userCompany,
   tenantId,
   userName,
-  userId
+  userId,
+  branchAccess = null,
+  adminCompanyFilter = 'All'
 }) {
   const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
+  const effectiveBranchAccess = useMemo(() => {
+    if (branchAccess && typeof branchAccess === 'object') return branchAccess;
+    return getUserBranchAccess({
+      userCompany,
+      moduleAccess,
+      userRole,
+      isSwanWorkspace: effectiveTenantId === '00000000-0000-0000-0000-000000000001'
+    }, effectiveTenantId);
+  }, [branchAccess, userCompany, moduleAccess, userRole, effectiveTenantId]);
 
   const visibleTabs = useMemo(() => {
     return filterVisibleSubTabs(moduleAccess, userRole, 'channel_ops', OPERATIONS_TABS);
@@ -128,11 +140,19 @@ export default function ChannelOperationsModule({
   const requestRef = useRef(0);
   const [datasets, setDatasets] = useState({ context: contextKey, values: {} });
   const values = datasets.context === contextKey ? datasets.values : {};
-  const parties = values.complaints || [];
-  const schedules = values.frequency_rules || [];
-  const dailyQueue = values.order_followup || [];
-  const pipelineOrders = values.order_pipeline || [];
-  const deliveredOrders = values.order_feedback || [];
+  const isSwanWorkspace = effectiveTenantId === '00000000-0000-0000-0000-000000000001';
+  const matchesBranchItem = useCallback((row) => {
+    const rawCompany = row?.our_company || row?.party?.our_company || row?.lead?.our_company || row?.company || '';
+    const companyToken = rawCompany || (isSwanWorkspace ? 'NSMLR' : '');
+    if (!companyToken) return true;
+    return matchesEntityBranchScope(companyToken, effectiveBranchAccess, adminCompanyFilter);
+  }, [effectiveBranchAccess, adminCompanyFilter, isSwanWorkspace]);
+
+  const parties = useMemo(() => (values.complaints || []).filter(matchesBranchItem), [values.complaints, matchesBranchItem]);
+  const schedules = useMemo(() => (values.frequency_rules || []).filter(matchesBranchItem), [values.frequency_rules, matchesBranchItem]);
+  const dailyQueue = useMemo(() => (values.order_followup || []).filter(matchesBranchItem), [values.order_followup, matchesBranchItem]);
+  const pipelineOrders = useMemo(() => (values.order_pipeline || []).filter(matchesBranchItem), [values.order_pipeline, matchesBranchItem]);
+  const deliveredOrders = useMemo(() => (values.order_feedback || []).filter(matchesBranchItem), [values.order_feedback, matchesBranchItem]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
 
