@@ -16,6 +16,47 @@ const getAdminClient = () => {
   );
 };
 
+const isUuidStr = (v) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(v || '').trim());
+
+async function resolveEmployeeTenantId(adminClient, details = {}, existingTenantId = null) {
+  const candidates = [details.tenant_id, existingTenantId].filter(Boolean);
+  for (const cand of candidates) {
+    if (isUuidStr(cand)) return String(cand).trim();
+  }
+  const compLower = String(details.company || details.tenant_id || '').toLowerCase().trim();
+  if (compLower === 'tnt00001' || compLower.includes('supuja')) return '0a37b8e8-1c28-4e19-8891-951fc3f8f8af';
+  if (compLower === 'tnt00003' || compLower.includes('testing')) return '922d3e72-6588-457f-a562-4f1bdbf10d98';
+  if (compLower === 'tnt00002' || ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl'].includes(compLower)) {
+    return '00000000-0000-0000-0000-000000000001';
+  }
+  if (compLower && adminClient) {
+    try {
+      const { data: tenantRow } = await adminClient
+        .from('tenants')
+        .select('id')
+        .or(`tenant_code.ilike.${compLower},name.ilike.${compLower}`)
+        .limit(1)
+        .maybeSingle();
+      if (tenantRow?.id && isUuidStr(tenantRow.id)) return tenantRow.id;
+    } catch (_) {}
+  }
+  return '00000000-0000-0000-0000-000000000001';
+}
+
+function resolveFieldTrackingFields(details = {}) {
+  const trackingPolicy = details.tracking_policy || undefined;
+  const vehicleType = details.vehicle_type || undefined;
+  let conveyanceRate;
+  if (vehicleType === 'NONE') {
+    conveyanceRate = (details.conveyance_rate_per_km !== undefined && details.conveyance_rate_per_km !== '' && details.conveyance_rate_per_km !== null)
+      ? Number(details.conveyance_rate_per_km)
+      : 0;
+  } else if (details.conveyance_rate_per_km !== undefined && details.conveyance_rate_per_km !== '' && details.conveyance_rate_per_km !== null) {
+    conveyanceRate = Number(details.conveyance_rate_per_km);
+  }
+  return { trackingPolicy, vehicleType, conveyanceRate };
+}
+
 export async function getTeamMembers(requesterCompany = null, tenantId = null) {
   const adminClient = getAdminClient();
   const { data, error } = await adminClient
@@ -96,19 +137,28 @@ export async function getTeamMembers(requesterCompany = null, tenantId = null) {
   });
 
   const finalData = scopedData;
-  return finalData.map(u => ({
-    ...u,
-    emp_status: u.emp_status || (u.module_access && u.module_access.emp_status) || 'Active',
-    emp_sub_department: u.emp_sub_department || (u.module_access && u.module_access.emp_sub_department) || '',
-    emp_alt_mobile: u.emp_alt_mobile || (u.module_access && u.module_access.emp_alt_mobile) || '',
-    work_location_type: u.work_location_type || (u.module_access && u.module_access.work_location_type) || '',
-    work_location_name: u.work_location_name || (u.module_access && u.module_access.work_location_name) || '',
-    assigned_shift: u.assigned_shift || (u.module_access && u.module_access.assigned_shift) || null,
-    salary_amount: (u.salary_amount !== null && u.salary_amount !== undefined) ? u.salary_amount : ((u.module_access && u.module_access.salary_amount !== undefined) ? u.module_access.salary_amount : null),
-    ...getReportingFields(u),
-    can_self_reset_password: u.can_self_reset_password === true || (u.module_access && u.module_access.can_self_reset_password === true),
-    can_import_export: u.can_import_export === true || (u.module_access && u.module_access.can_import_export === true)
-  }));
+  return finalData.map(u => {
+    const resolvedVehicle = u.vehicle_type || u.module_access?.vehicle_type || 'BIKE';
+    return {
+      ...u,
+      tenant_id: u.tenant_id || u.module_access?._tenantId || null,
+      emp_status: u.emp_status || (u.module_access && u.module_access.emp_status) || 'Active',
+      emp_sub_department: u.emp_sub_department || (u.module_access && u.module_access.emp_sub_department) || '',
+      emp_alt_mobile: u.emp_alt_mobile || (u.module_access && u.module_access.emp_alt_mobile) || '',
+      company_name: u.company_name || u.company || (u.module_access && u.module_access.company_name) || '',
+      branch_name: u.branch_name || (u.module_access && u.module_access.branch_name) || '',
+      work_location_type: u.work_location_type || (u.module_access && u.module_access.work_location_type) || '',
+      work_location_name: u.work_location_name || (u.module_access && u.module_access.work_location_name) || '',
+      assigned_shift: u.assigned_shift || (u.module_access && u.module_access.assigned_shift) || null,
+      salary_amount: (u.salary_amount !== null && u.salary_amount !== undefined) ? u.salary_amount : ((u.module_access && u.module_access.salary_amount !== undefined) ? u.module_access.salary_amount : null),
+      tracking_policy: u.tracking_policy || (u.module_access && u.module_access.tracking_policy) || 'PUNCH_ONLY',
+      vehicle_type: resolvedVehicle,
+      conveyance_rate_per_km: u.conveyance_rate_per_km ?? u.module_access?.conveyance_rate_per_km ?? (resolvedVehicle === 'NONE' ? 0 : 4.50),
+      ...getReportingFields(u),
+      can_self_reset_password: u.can_self_reset_password === true || (u.module_access && u.module_access.can_self_reset_password === true),
+      can_import_export: u.can_import_export === true || (u.module_access && u.module_access.can_import_export === true)
+    };
+  });
 }
 
 export async function getRecruitersList(company = null) {
@@ -218,7 +268,7 @@ export async function registerEmployeeDetails(userId, email, details) {
   // First check if the user already exists (e.g. created by auth trigger)
   const { data: existingUser } = await adminClient
     .from('user_roles')
-    .select('role, is_approved, emp_id')
+    .select('role, is_approved, emp_id, tenant_id')
     .eq('user_id', userId)
     .single();
 
@@ -236,7 +286,8 @@ export async function registerEmployeeDetails(userId, email, details) {
     }
   }
 
-  let targetTenantId = details.tenant_id || existingUser?.tenant_id || '00000000-0000-0000-0000-000000000001';
+  let targetTenantId = await resolveEmployeeTenantId(adminClient, details, existingUser?.tenant_id);
+  const { trackingPolicy, vehicleType, conveyanceRate } = resolveFieldTrackingFields(details);
 
   // SaaS Seat Limit Enforcement (Master Production New Swan Group is always exempt)
   if (!isCustomer && targetTenantId !== '00000000-0000-0000-0000-000000000001') {
@@ -284,6 +335,7 @@ export async function registerEmployeeDetails(userId, email, details) {
   if (existingUser) {
     // Just update the details, do NOT overwrite role or is_approved UNLESS they are a customer
     const updatePayload = {
+      tenant_id: targetTenantId,
       emp_id: resolvedEmpId || (isCustomer ? 'CUSTOMER' : undefined),
       emp_name: details.emp_name,
       emp_department: details.emp_department || (isCustomer ? 'Customer Support' : undefined),
@@ -292,13 +344,18 @@ export async function registerEmployeeDetails(userId, email, details) {
       emp_mobile: details.emp_mobile,
       emp_alt_mobile: details.emp_alt_mobile || '',
       company: details.company || (isCustomer ? 'Public' : undefined),
+      company_name: details.company_name || details.company || (isCustomer ? 'Public' : undefined),
+      ...(details.branch_name !== undefined ? { branch_name: details.branch_name || '' } : {}),
       work_location_type: details.work_location_type || '',
       work_location_name: details.work_location_name || '',
       emp_official_mail_id: details.emp_official_mail_id || email,
       emp_status: details.emp_status || 'Active',
       primary_reporting_person: details.primary_reporting_person || '',
       secondary_reporting_person: details.secondary_reporting_person || '',
-      hod_person: details.hod_person || ''
+      hod_person: details.hod_person || '',
+      ...(trackingPolicy !== undefined ? { tracking_policy: trackingPolicy } : {}),
+      ...(vehicleType !== undefined ? { vehicle_type: vehicleType } : {}),
+      ...(conveyanceRate !== undefined ? { conveyance_rate_per_km: conveyanceRate } : {})
     };
 
     if (isCustomer) {
@@ -315,6 +372,12 @@ export async function registerEmployeeDetails(userId, email, details) {
 
     if (error) {
       // Fallback: save extra fields inside module_access JSON if columns are not present
+      delete updatePayload.tenant_id;
+      delete updatePayload.company_name;
+      delete updatePayload.branch_name;
+      delete updatePayload.tracking_policy;
+      delete updatePayload.vehicle_type;
+      delete updatePayload.conveyance_rate_per_km;
       delete updatePayload.emp_status;
       delete updatePayload.emp_sub_department;
       delete updatePayload.emp_alt_mobile;
@@ -329,9 +392,12 @@ export async function registerEmployeeDetails(userId, email, details) {
         .select('module_access')
         .eq('user_id', userId)
         .single();
+      const prevAccess = userData?.module_access || {};
       updatePayload.module_access = { 
-        ...(userData?.module_access || {}), 
+        ...prevAccess, 
         _tenantId: targetTenantId,
+        company_name: details.company_name || details.company || prevAccess.company_name || '',
+        branch_name: details.branch_name !== undefined ? (details.branch_name || '') : (prevAccess.branch_name || ''),
         emp_status: details.emp_status || 'Active',
         emp_sub_department: details.emp_sub_department || '',
         emp_alt_mobile: details.emp_alt_mobile || '',
@@ -339,7 +405,10 @@ export async function registerEmployeeDetails(userId, email, details) {
         work_location_name: details.work_location_name || '',
         primary_reporting_person: details.primary_reporting_person || '',
         secondary_reporting_person: details.secondary_reporting_person || '',
-        hod_person: details.hod_person || ''
+        hod_person: details.hod_person || '',
+        ...(trackingPolicy !== undefined ? { tracking_policy: trackingPolicy } : {}),
+        ...(vehicleType !== undefined ? { vehicle_type: vehicleType } : {}),
+        ...(conveyanceRate !== undefined ? { conveyance_rate_per_km: conveyanceRate } : {})
       };
       const { error: fallbackErr } = await adminClient
         .from('user_roles')
@@ -349,8 +418,13 @@ export async function registerEmployeeDetails(userId, email, details) {
     }
   } else {
     // Insert new user
+    const resolvedVehicle = vehicleType || 'BIKE';
+    const resolvedRate = conveyanceRate !== undefined ? conveyanceRate : (resolvedVehicle === 'NONE' ? 0 : 4.50);
+    const resolvedPolicy = trackingPolicy || 'PUNCH_ONLY';
+
     const insertPayload = {
       user_id: userId,
+      tenant_id: targetTenantId,
       email: email,
       role: isCustomer ? 'customer' : 'agent',
       is_approved: isCustomer ? true : false, // Auto-approve customers
@@ -362,6 +436,8 @@ export async function registerEmployeeDetails(userId, email, details) {
       emp_mobile: details.emp_mobile,
       emp_alt_mobile: details.emp_alt_mobile || '',
       company: details.company || (isCustomer ? 'Public' : ''),
+      company_name: details.company_name || details.company || (isCustomer ? 'Public' : ''),
+      branch_name: details.branch_name || '',
       work_location_type: details.work_location_type || '',
       work_location_name: details.work_location_name || '',
       emp_official_mail_id: details.emp_official_mail_id || email,
@@ -371,11 +447,16 @@ export async function registerEmployeeDetails(userId, email, details) {
       hod_person: details.hod_person || '',
       assigned_shift: details.assigned_shift || null,
       salary_amount: details.salary_amount !== undefined && details.salary_amount !== '' && details.salary_amount !== null ? Number(details.salary_amount) : null,
+      tracking_policy: resolvedPolicy,
+      vehicle_type: resolvedVehicle,
+      conveyance_rate_per_km: resolvedRate,
       can_read: isCustomer ? false : true,
       can_write: isCustomer ? false : true,
       can_import_export: false,
       module_access: {
         _tenantId: targetTenantId,
+        company_name: details.company_name || details.company || (isCustomer ? 'Public' : ''),
+        branch_name: details.branch_name || '',
         emp_status: details.emp_status || 'Active',
         emp_sub_department: details.emp_sub_department || '',
         emp_alt_mobile: details.emp_alt_mobile || '',
@@ -385,13 +466,21 @@ export async function registerEmployeeDetails(userId, email, details) {
         secondary_reporting_person: details.secondary_reporting_person || '',
         hod_person: details.hod_person || '',
         assigned_shift: details.assigned_shift || null,
-        salary_amount: details.salary_amount !== undefined && details.salary_amount !== '' && details.salary_amount !== null ? Number(details.salary_amount) : null
+        salary_amount: details.salary_amount !== undefined && details.salary_amount !== '' && details.salary_amount !== null ? Number(details.salary_amount) : null,
+        tracking_policy: resolvedPolicy,
+        vehicle_type: resolvedVehicle,
+        conveyance_rate_per_km: resolvedRate
       }
     };
 
     let { error } = await adminClient.from('user_roles').insert(insertPayload);
     if (error) {
       delete insertPayload.tenant_id;
+      delete insertPayload.company_name;
+      delete insertPayload.branch_name;
+      delete insertPayload.tracking_policy;
+      delete insertPayload.vehicle_type;
+      delete insertPayload.conveyance_rate_per_km;
       delete insertPayload.emp_status;
       delete insertPayload.emp_sub_department;
       delete insertPayload.emp_alt_mobile;
@@ -433,6 +522,8 @@ export async function updateEmployeeDetailsAdmin(userId, details) {
     }
   }
 
+  const { trackingPolicy, vehicleType, conveyanceRate } = resolveFieldTrackingFields(details);
+
   const updateData = {
     emp_id: details.emp_id,
     emp_name: details.emp_name,
@@ -448,6 +539,30 @@ export async function updateEmployeeDetailsAdmin(userId, details) {
     secondary_reporting_person: details.secondary_reporting_person || '',
     hod_person: details.hod_person || ''
   };
+
+  if (details.tenant_id && isUuidStr(details.tenant_id)) {
+    updateData.tenant_id = String(details.tenant_id).trim();
+  }
+
+  if (details.company_name !== undefined || details.company !== undefined) {
+    updateData.company_name = details.company_name || details.company || '';
+  }
+
+  if (details.branch_name !== undefined) {
+    updateData.branch_name = details.branch_name || '';
+  }
+
+  if (trackingPolicy !== undefined) {
+    updateData.tracking_policy = trackingPolicy;
+  }
+
+  if (vehicleType !== undefined) {
+    updateData.vehicle_type = vehicleType;
+  }
+
+  if (conveyanceRate !== undefined) {
+    updateData.conveyance_rate_per_km = conveyanceRate;
+  }
 
   if (details.assigned_shift !== undefined) {
     updateData.assigned_shift = details.assigned_shift || null;
@@ -476,6 +591,12 @@ export async function updateEmployeeDetailsAdmin(userId, details) {
     .eq('user_id', userId);
 
   if (error) {
+    delete updateData.tenant_id;
+    delete updateData.company_name;
+    delete updateData.branch_name;
+    delete updateData.tracking_policy;
+    delete updateData.vehicle_type;
+    delete updateData.conveyance_rate_per_km;
     delete updateData.emp_status;
     delete updateData.can_self_reset_password;
     delete updateData.emp_sub_department;
@@ -497,6 +618,9 @@ export async function updateEmployeeDetailsAdmin(userId, details) {
     const currentAccess = userData?.module_access || {};
     updateData.module_access = { 
       ...currentAccess, 
+      ...(details.tenant_id && isUuidStr(details.tenant_id) ? { _tenantId: String(details.tenant_id).trim() } : {}),
+      ...(details.branch_name !== undefined ? { branch_name: details.branch_name || '' } : {}),
+      ...(details.company_name !== undefined || details.company !== undefined ? { company_name: details.company_name || details.company || '' } : {}),
       emp_status: details.emp_status || 'Active',
       can_self_reset_password: details.can_self_reset_password !== undefined ? Boolean(details.can_self_reset_password) : (currentAccess.can_self_reset_password === true),
       emp_sub_department: details.emp_sub_department || '',
@@ -507,7 +631,10 @@ export async function updateEmployeeDetailsAdmin(userId, details) {
       secondary_reporting_person: details.secondary_reporting_person || '',
       hod_person: details.hod_person || '',
       assigned_shift: details.assigned_shift !== undefined ? (details.assigned_shift || null) : (currentAccess.assigned_shift || null),
-      salary_amount: details.salary_amount !== undefined ? (details.salary_amount !== '' && details.salary_amount !== null ? Number(details.salary_amount) : null) : (currentAccess.salary_amount !== undefined ? currentAccess.salary_amount : null)
+      salary_amount: details.salary_amount !== undefined ? (details.salary_amount !== '' && details.salary_amount !== null ? Number(details.salary_amount) : null) : (currentAccess.salary_amount !== undefined ? currentAccess.salary_amount : null),
+      ...(trackingPolicy !== undefined ? { tracking_policy: trackingPolicy } : {}),
+      ...(vehicleType !== undefined ? { vehicle_type: vehicleType } : {}),
+      ...(conveyanceRate !== undefined ? { conveyance_rate_per_km: conveyanceRate } : {})
     };
 
     const { error: fallbackErr } = await adminClient

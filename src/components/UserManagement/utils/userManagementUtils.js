@@ -26,13 +26,17 @@ export const DESIGNATIONS = [
 ];
 
 export const WORK_LOCATION_TYPES = [
+  'Headquarters',
+  'Branch Office',
+  'Factory / Plant',
+  'Warehouse / Godown',
+  'Sales Territory',
+  'Field-Based',
+  'Hybrid',
   'Primary',
   'Secondary',
   'Regional',
   'Territorial',
-  'Field-Based',
-  'Headquarters',
-  'Hybrid',
   'Temporary',
   'Group-Level',
   'National',

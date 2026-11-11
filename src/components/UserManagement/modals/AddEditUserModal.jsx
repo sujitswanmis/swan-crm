@@ -1,13 +1,95 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { X, User, Phone, Mail, Building, MapPin, Shield, Key, Eye, EyeOff, Save, Loader2, CheckCircle2, AlertCircle, Users, FileText } from 'lucide-react';
 import SearchableEmployeeSelect from '@/components/common/SearchableEmployeeSelect';
 import { getReportingEmail, getReportingFields } from '@/utils/reportingHierarchy';
 import { DEFAULT_DEPARTMENTS, DESIGNATIONS, WORK_LOCATION_TYPES, EMP_STATUS_OPTIONS } from '../utils/userManagementUtils';
 import { ROLE_PRESETS } from '../utils/rolePresets';
-import { getTenantBranches } from '@/app/actions/tenantBranches';
+import { getTenantBranches, resolveKnownTenant } from '@/app/actions/tenantBranches';
 import { getTenantAttendancePolicy } from '@/app/actions/attendance';
+import { getAllTenantsWithSubscriptions } from '@/app/actions/saasSubscription';
+import { getTeamMembers } from '@/app/actions/team';
+
+const DEFAULT_BRANCH_COMPANY_CODES = new Set(['HQ', 'HQ-MAIN-01', 'SUPUJA_CREATIONS', 'NSG']);
+
+function resolveCompanyForBranch(branch, tenantCompanyName = '') {
+  const customCode = String(branch?.custom_code || '').trim();
+  if (customCode && !DEFAULT_BRANCH_COMPANY_CODES.has(customCode.toUpperCase())) {
+    return customCode;
+  }
+  return tenantCompanyName || branch?.company || '';
+}
+
+function getTenantPlaceholderEmail(tenantInfo) {
+  const name = String(tenantInfo?.companyName || '').toLowerCase();
+  if (name.includes('new swan')) return 'e.g. name@newswangroup.com';
+  return 'e.g. name@company.com';
+}
+
+function buildInitialFormData(user, departments, tenantId, currentUserCompany) {
+  const initTenantId = user?.tenant_id || user?.module_access?._tenantId || tenantId || '';
+  const initCompany = user?.company || currentUserCompany || '';
+  if (user) {
+    const uVehicle = user.vehicle_type || user.module_access?.vehicle_type || 'BIKE';
+    const uRate = user.conveyance_rate_per_km ?? user.module_access?.conveyance_rate_per_km ?? (uVehicle === 'NONE' ? 0 : 4.50);
+    return {
+      tenant_id: initTenantId,
+      emp_id: user.emp_id || '',
+      emp_status: user.emp_status || (user.module_access?.emp_status) || 'Active',
+      emp_name: user.emp_name || '',
+      emp_department: user.emp_department || '',
+      emp_sub_department: user.emp_sub_department || (user.module_access?.emp_sub_department) || '',
+      emp_designation: user.emp_designation || '',
+      role: user.role || 'agent',
+      role_template_id: user.module_access?.role_template_id || '',
+      role_preset_key: user.module_access?.role_preset_key || (user.role?.toLowerCase() === 'admin' ? 'admin' : (user.role?.toLowerCase() === 'crm' ? 'crm' : (user.role?.toLowerCase() === 'telecaller' ? 'telecaller' : ''))),
+      company: initCompany,
+      branch_name: user.branch_name || (user.module_access?.branch_name) || '',
+      work_location_type: user.work_location_type || (user.module_access?.work_location_type) || 'Headquarters',
+      work_location_name: user.work_location_name || (user.module_access?.work_location_name) || '',
+      assigned_shift: user.assigned_shift || (user.module_access?.assigned_shift) || '',
+      salary_amount: (user.salary_amount !== null && user.salary_amount !== undefined) ? user.salary_amount : ((user.module_access && user.module_access.salary_amount !== undefined) ? user.module_access.salary_amount : ''),
+      emp_mobile: user.emp_mobile || '',
+      emp_alt_mobile: user.emp_alt_mobile || (user.module_access?.emp_alt_mobile) || '',
+      email: user.email || '',
+      password: '',
+      tracking_policy: user.tracking_policy || user.module_access?.tracking_policy || 'PUNCH_ONLY',
+      vehicle_type: uVehicle,
+      conveyance_rate_per_km: uRate,
+      ...getReportingFields(user),
+      can_self_reset_password: user.can_self_reset_password === true || (user.module_access?.can_self_reset_password === true)
+    };
+  }
+  return {
+    tenant_id: initTenantId,
+    emp_id: '',
+    emp_status: 'Active',
+    emp_name: '',
+    emp_department: departments[0] || 'Sales',
+    emp_sub_department: '',
+    emp_designation: 'Sales Executive',
+    role: 'agent',
+    role_template_id: '',
+    company: currentUserCompany || '',
+    branch_name: '',
+    work_location_type: 'Headquarters',
+    work_location_name: '',
+    assigned_shift: '',
+    salary_amount: '',
+    emp_mobile: '',
+    emp_alt_mobile: '',
+    email: '',
+    password: '',
+    tracking_policy: 'PUNCH_ONLY',
+    vehicle_type: 'BIKE',
+    conveyance_rate_per_km: 4.50,
+    primary_reporting_person: '',
+    secondary_reporting_person: '',
+    hod_person: '',
+    can_self_reset_password: true
+  };
+}
 
 export default function AddEditUserModal({
   isOpen,
@@ -18,137 +100,234 @@ export default function AddEditUserModal({
   departments = DEFAULT_DEPARTMENTS,
   allEmployees = [],
   roleTemplates = [],
+  currentUserCompany = '',
+  tenantId = null,
+  isMasterAdmin = false,
   saving = false
 }) {
   const isEdit = Boolean(user);
   const [activeStep, setActiveStep] = useState('personal'); // 'personal' | 'job' | 'reporting' | 'auth'
+  const [availableTenants, setAvailableTenants] = useState([]);
+  const [resolvedTenant, setResolvedTenant] = useState({ tenantId: tenantId || '', tenantCode: '', companyName: currentUserCompany || '' });
   const [availableBranches, setAvailableBranches] = useState([]);
   const [availableShifts, setAvailableShifts] = useState([]);
-  const [customBranchInput, setCustomBranchInput] = useState(false);
-  
-  const [formData, setFormData] = useState({
-    emp_id: '',
-    emp_status: 'Active',
-    emp_name: '',
-    emp_department: '',
-    emp_sub_department: '',
-    emp_designation: '',
-    role: 'agent',
-    role_template_id: '',
-    company: 'SuPuja Creations',
-    work_location_type: 'Headquarters',
-    work_location_name: '',
-    assigned_shift: '',
-    salary_amount: '',
-    emp_mobile: '',
-    emp_alt_mobile: '',
-    email: '',
-    password: '',
-    primary_reporting_person: '',
-    secondary_reporting_person: '',
-    hod_person: '',
-    can_self_reset_password: true
-  });
+  const [tenantEmployeesByTenant, setTenantEmployeesByTenant] = useState({});
+  const [customBranchNameInput, setCustomBranchNameInput] = useState(false);
+  const [customLocationInput, setCustomLocationInput] = useState(false);
+
+  const [formData, setFormData] = useState(() => buildInitialFormData(user, departments, tenantId, currentUserCompany));
 
   const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
+  // Reset form state asynchronously via microtask when modal opens or user changes
   useEffect(() => {
-    if (user) {
-      setFormData({
-        emp_id: user.emp_id || '',
-        emp_status: user.emp_status || (user.module_access?.emp_status) || 'Active',
-        emp_name: user.emp_name || '',
-        emp_department: user.emp_department || '',
-        emp_sub_department: user.emp_sub_department || (user.module_access?.emp_sub_department) || '',
-        emp_designation: user.emp_designation || '',
-        role: user.role || 'agent',
-        role_template_id: user.module_access?.role_template_id || '',
-        role_preset_key: user.module_access?.role_preset_key || (user.role?.toLowerCase() === 'admin' ? 'admin' : (user.role?.toLowerCase() === 'crm' ? 'crm' : (user.role?.toLowerCase() === 'telecaller' ? 'telecaller' : ''))),
-        company: user.company || 'SuPuja Creations',
-        work_location_type: user.work_location_type || (user.module_access?.work_location_type) || 'Headquarters',
-        work_location_name: user.work_location_name || (user.module_access?.work_location_name) || '',
-        assigned_shift: user.assigned_shift || (user.module_access?.assigned_shift) || '',
-        salary_amount: (user.salary_amount !== null && user.salary_amount !== undefined) ? user.salary_amount : ((user.module_access && user.module_access.salary_amount !== undefined) ? user.module_access.salary_amount : ''),
-        emp_mobile: user.emp_mobile || '',
-        emp_alt_mobile: user.emp_alt_mobile || (user.module_access?.emp_alt_mobile) || '',
-        email: user.email || '',
-        password: '',
-        tracking_policy: user.tracking_policy || 'PUNCH_ONLY',
-        vehicle_type: user.vehicle_type || 'BIKE',
-        conveyance_rate_per_km: user.conveyance_rate_per_km !== undefined ? user.conveyance_rate_per_km : 4.50,
-        ...getReportingFields(user),
-        can_self_reset_password: user.can_self_reset_password === true || (user.module_access?.can_self_reset_password === true)
-      });
-    } else {
-      setFormData({
-        emp_id: '',
-        emp_status: 'Active',
-        emp_name: '',
-        emp_department: departments[0] || 'Sales',
-        emp_sub_department: '',
-        emp_designation: 'Sales Executive',
-        role: 'agent',
-        role_template_id: '',
-        company: 'SuPuja Creations',
-        work_location_type: 'Headquarters',
-        work_location_name: '',
-        assigned_shift: '',
-        salary_amount: '',
-        emp_mobile: '',
-        emp_alt_mobile: '',
-        email: '',
-        password: '',
-        tracking_policy: 'PUNCH_ONLY',
-        vehicle_type: 'BIKE',
-        conveyance_rate_per_km: 4.50,
-        primary_reporting_person: '',
-        secondary_reporting_person: '',
-        hod_person: '',
-        can_self_reset_password: true
-      });
-    }
-    setActiveStep('personal');
-    setErrorMsg('');
-  }, [user, isOpen, departments]);
-
-  useEffect(() => {
+    if (!isOpen) return;
     let isMounted = true;
-    if (isOpen) {
-      getTenantBranches(formData.company || 'Swan Hosting').then(res => {
-        if (isMounted && res.success && Array.isArray(res.branches)) {
-          setAvailableBranches(res.branches);
-        }
-      }).catch(() => {});
+
+    const initTenantIdSync = user?.tenant_id || user?.module_access?._tenantId || tenantId || '';
+    const initCompanySync = user?.company || currentUserCompany || '';
+    const initialState = buildInitialFormData(user, departments, tenantId, currentUserCompany);
+
+    Promise.resolve().then(() => {
+      if (!isMounted) return;
+      setCustomBranchNameInput(false);
+      setCustomLocationInput(false);
+      setActiveStep('personal');
+      setErrorMsg('');
+      setFormData(initialState);
+    });
+
+    const seedTenantKey = initTenantIdSync || initCompanySync;
+    if (seedTenantKey) {
+      resolveKnownTenant(seedTenantKey)
+        .then(known => {
+          if (!isMounted || !known) return;
+          setResolvedTenant(prev => ({
+            tenantId: initTenantIdSync || known.tenantId || prev.tenantId,
+            tenantCode: known.tenantCode || prev.tenantCode,
+            companyName: known.companyName || currentUserCompany || prev.companyName
+          }));
+          setFormData(prev => ({
+            ...prev,
+            tenant_id: prev.tenant_id || known.tenantId || '',
+            company: prev.company || known.companyName || ''
+          }));
+        })
+        .catch(() => {});
     }
+
     return () => { isMounted = false; };
-  }, [isOpen, formData.company]);
+  }, [user, isOpen, departments, tenantId, currentUserCompany]);
 
-  // Load tenant/branch attendance shifts dynamically
+  // Load tenants catalog for Master Admin tenant selector
   useEffect(() => {
     let isMounted = true;
-    if (isOpen && formData.company) {
-      getTenantAttendancePolicy(null, formData.company, formData.work_location_name || '').then(res => {
-        if (isMounted && res?.success && res.data) {
-          const pol = res.data;
-          let shifts = [];
-          if (Array.isArray(pol.shifts) && pol.shifts.length > 0) {
-            shifts = pol.shifts;
-          } else if (pol.shift_name) {
-            shifts = [{
-              id: 'shift_default',
-              shift_name: pol.shift_name,
-              start_time: pol.start_time || '09:00',
-              end_time: pol.end_time || '18:30',
-              is_default: true
-            }];
+    if (isOpen && isMasterAdmin) {
+      getAllTenantsWithSubscriptions()
+        .then(res => {
+          if (isMounted && res?.success && Array.isArray(res.tenants)) {
+            setAvailableTenants(res.tenants);
           }
-          setAvailableShifts(shifts);
-        }
-      }).catch(() => {});
+        })
+        .catch(() => {});
     }
     return () => { isMounted = false; };
-  }, [isOpen, formData.company, formData.work_location_name]);
+  }, [isOpen, isMasterAdmin]);
+
+  // Load branches strictly for the active tenant (never falling back to 'Swan Hosting')
+  const activeTenantLookupKey = formData.tenant_id || user?.company || currentUserCompany || '';
+  useEffect(() => {
+    let isMounted = true;
+    if (!isOpen || !activeTenantLookupKey) return;
+
+    getTenantBranches(activeTenantLookupKey)
+      .then(res => {
+        if (!isMounted) return;
+        const rawBranches = res?.success && Array.isArray(res.branches) ? res.branches : [];
+        const activeList = rawBranches.filter(b => b?.is_active !== false);
+        setAvailableBranches(activeList);
+
+        const tenantMeta = res?.tenant || {};
+        if (tenantMeta.tenantId || tenantMeta.tenantCode || tenantMeta.companyName) {
+          setResolvedTenant(prev => ({
+            tenantId: tenantMeta.tenantId || prev.tenantId,
+            tenantCode: tenantMeta.tenantCode || prev.tenantCode,
+            companyName: tenantMeta.companyName || prev.companyName
+          }));
+        }
+
+        if (user) {
+          const curBranchName = String(user.branch_name || user.module_access?.branch_name || '').trim();
+          const curComp = String(user.company || '').trim();
+          const curLocName = String(user.work_location_name || user.module_access?.work_location_name || '').trim();
+
+          let resolvedBranchName = curBranchName;
+          let enableCustomBranch = false;
+
+          if (curBranchName) {
+            if (!activeList.some(b => b.branch_name === curBranchName)) {
+              enableCustomBranch = true;
+            }
+          } else if (curComp) {
+            const matchedByCode = activeList.find(
+              b => String(b.custom_code || '').trim().toLowerCase() === curComp.toLowerCase() ||
+                   String(b.branch_name || '').trim().toLowerCase() === curComp.toLowerCase()
+            );
+            if (matchedByCode) {
+              resolvedBranchName = matchedByCode.branch_name;
+            } else if (tenantMeta.companyName && curComp.toLowerCase() !== tenantMeta.companyName.toLowerCase()) {
+              resolvedBranchName = curComp;
+              enableCustomBranch = true;
+            }
+          }
+
+          if (enableCustomBranch) setCustomBranchNameInput(true);
+          if (curLocName && !activeList.some(b => b.branch_name === curLocName)) {
+            setCustomLocationInput(true);
+          }
+
+          setFormData(prev => ({
+            ...prev,
+            tenant_id: prev.tenant_id || tenantMeta.tenantId || '',
+            company: prev.company || tenantMeta.companyName || '',
+            branch_name: prev.branch_name || resolvedBranchName || ''
+          }));
+        } else {
+          setFormData(prev => {
+            const next = { ...prev };
+            let updated = false;
+            if (!next.tenant_id && tenantMeta.tenantId) {
+              next.tenant_id = tenantMeta.tenantId;
+              updated = true;
+            }
+            if (!next.company && tenantMeta.companyName) {
+              next.company = tenantMeta.companyName;
+              updated = true;
+            }
+            const curCompLower = String(currentUserCompany || '').trim().toLowerCase();
+            if (!next.branch_name && curCompLower && curCompLower !== String(tenantMeta.companyName || '').trim().toLowerCase()) {
+              const matchedCur = activeList.find(
+                b => String(b.custom_code || '').trim().toLowerCase() === curCompLower ||
+                     String(b.branch_name || '').trim().toLowerCase() === curCompLower ||
+                     String(b.branch_code || '').trim().toLowerCase() === curCompLower
+              );
+              if (matchedCur) {
+                next.branch_name = matchedCur.branch_name;
+                next.company = resolveCompanyForBranch(matchedCur, tenantMeta.companyName);
+                if (matchedCur.location_type) next.work_location_type = matchedCur.location_type;
+                if (!next.work_location_name) next.work_location_name = matchedCur.branch_name;
+                updated = true;
+              }
+            }
+            return updated ? next : prev;
+          });
+        }
+      })
+      .catch(() => {});
+
+    return () => { isMounted = false; };
+  }, [isOpen, activeTenantLookupKey, user, currentUserCompany]);
+
+  // If Master Admin switches to a different tenant inside the modal, fetch reporting employees for that tenant
+  useEffect(() => {
+    let isMounted = true;
+    const chosenTenantId = formData.tenant_id || '';
+    if (!isOpen || !isMasterAdmin || !chosenTenantId || (tenantId && chosenTenantId === tenantId)) {
+      return;
+    }
+    if (Array.isArray(tenantEmployeesByTenant[chosenTenantId])) {
+      return;
+    }
+    getTeamMembers(resolvedTenant.companyName || formData.company || '', chosenTenantId)
+      .then(list => {
+        if (isMounted && Array.isArray(list)) {
+          setTenantEmployeesByTenant(prev => ({ ...prev, [chosenTenantId]: list }));
+        }
+      })
+      .catch(() => {});
+    return () => { isMounted = false; };
+  }, [isOpen, isMasterAdmin, formData.tenant_id, formData.company, resolvedTenant.companyName, tenantId, tenantEmployeesByTenant]);
+
+  const effectiveEmployees = useMemo(() => {
+    const chosenTenantId = formData.tenant_id || '';
+    if (isMasterAdmin && chosenTenantId && chosenTenantId !== tenantId && Array.isArray(tenantEmployeesByTenant[chosenTenantId])) {
+      return tenantEmployeesByTenant[chosenTenantId];
+    }
+    return allEmployees;
+  }, [isMasterAdmin, formData.tenant_id, tenantId, tenantEmployeesByTenant, allEmployees]);
+
+  // Load tenant/branch attendance shifts dynamically using active tenant + branch
+  const shiftLookupTenantId = formData.tenant_id || resolvedTenant.tenantId || tenantId || null;
+  const shiftLookupCompany = formData.company || resolvedTenant.companyName || currentUserCompany || '';
+  const shiftLookupBranch = formData.branch_name || formData.work_location_name || '';
+
+  useEffect(() => {
+    let isMounted = true;
+    if (isOpen && (shiftLookupTenantId || shiftLookupCompany)) {
+      getTenantAttendancePolicy(shiftLookupTenantId, shiftLookupCompany, shiftLookupBranch)
+        .then(res => {
+          if (isMounted && res?.success && res.data) {
+            const pol = res.data;
+            let shifts = [];
+            if (Array.isArray(pol.shifts) && pol.shifts.length > 0) {
+              shifts = pol.shifts;
+            } else if (pol.shift_name) {
+              shifts = [{
+                id: 'shift_default',
+                shift_name: pol.shift_name,
+                start_time: pol.start_time || '09:00',
+                end_time: pol.end_time || '18:30',
+                is_default: true
+              }];
+            }
+            setAvailableShifts(shifts);
+          }
+        })
+        .catch(() => {});
+    }
+    return () => { isMounted = false; };
+  }, [isOpen, shiftLookupTenantId, shiftLookupCompany, shiftLookupBranch]);
 
   if (!isOpen) return null;
 
@@ -175,8 +354,19 @@ export default function AddEditUserModal({
       return;
     }
 
+    const resolvedTenantId = formData.tenant_id || resolvedTenant.tenantId || tenantId || '';
+    const resolvedCompany = formData.company || resolvedTenant.companyName || currentUserCompany || '';
+    const resolvedVehicle = formData.vehicle_type || 'BIKE';
+    const resolvedConveyance = resolvedVehicle === 'NONE'
+      ? 0
+      : (formData.conveyance_rate_per_km ?? 4.50);
+
     const payload = {
       ...formData,
+      tenant_id: resolvedTenantId,
+      company: resolvedCompany,
+      vehicle_type: resolvedVehicle,
+      conveyance_rate_per_km: resolvedConveyance,
       emp_id: formData.emp_id?.trim() || (isEdit ? (user?.emp_id || '') : `EMP-${Date.now().toString().slice(-5)}`)
     };
 
@@ -193,6 +383,9 @@ export default function AddEditUserModal({
     const fallbackPassword = formData.password || 'DraftPass@123';
     onSaveDraft({
       ...formData,
+      tenant_id: formData.tenant_id || resolvedTenant.tenantId || tenantId || '',
+      company: formData.company || resolvedTenant.companyName || currentUserCompany || '',
+      conveyance_rate_per_km: formData.vehicle_type === 'NONE' ? 0 : (formData.conveyance_rate_per_km ?? 4.50),
       emp_id: fallbackId,
       email: fallbackEmail,
       password: fallbackPassword,
@@ -373,7 +566,7 @@ export default function AddEditUserModal({
                         required
                         value={formData.email}
                         onChange={e => handleChange('email', e.target.value)}
-                        placeholder="e.g. rahul@supujacreations.com"
+                        placeholder={getTenantPlaceholderEmail(resolvedTenant)}
                         style={{
                           width: '100%',
                           padding: '0.55rem 0.75rem 0.55rem 2.2rem',
@@ -434,37 +627,82 @@ export default function AddEditUserModal({
                       />
                     </div>
                   </div>
-
-                  <div style={{ gridColumn: 'span 2' }}>
-                    <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, marginBottom: '0.35rem', color: 'var(--text-primary)' }}>
-                      Company Name
-                    </label>
-                    <div style={{ position: 'relative' }}>
-                      <Building size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
-                      <input
-                        type="text"
-                        value={formData.company}
-                        onChange={e => handleChange('company', e.target.value)}
-                        placeholder="SuPuja Creations"
-                        style={{
-                          width: '100%',
-                          padding: '0.55rem 0.75rem 0.55rem 2.2rem',
-                          borderRadius: '8px',
-                          border: '1px solid var(--border-light)',
-                          backgroundColor: 'var(--bg-surface)',
-                          color: 'var(--text-primary)',
-                          fontSize: '0.85rem'
-                        }}
-                      />
-                    </div>
-                  </div>
                 </div>
               </div>
             )}
 
             {/* Step 2: Job & Location */}
             {activeStep === 'job' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
+                {/* Tenant Workspace Bar (Never exposes raw UUID) */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '0.75rem',
+                  flexWrap: 'wrap',
+                  padding: '0.6rem 0.85rem',
+                  borderRadius: '10px',
+                  backgroundColor: 'var(--bg-primary, #f8fafc)',
+                  border: '1px solid var(--border-light)'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                    <Building size={15} style={{ color: 'var(--primary-color, #2563eb)' }} />
+                    <span>Organization / Tenant Workspace</span>
+                  </div>
+                  {isMasterAdmin && availableTenants.length > 0 ? (
+                    <select
+                      value={formData.tenant_id || resolvedTenant.tenantId || ''}
+                      onChange={e => {
+                        const nextTid = e.target.value;
+                        const matchedT = availableTenants.find(t => t.id === nextTid);
+                        const tName = matchedT?.name || '';
+                        const tCode = matchedT?.tenant_code || '';
+                        setResolvedTenant({ tenantId: nextTid, tenantCode: tCode, companyName: tName });
+                        setCustomBranchNameInput(false);
+                        setCustomLocationInput(false);
+                        setFormData(prev => ({
+                          ...prev,
+                          tenant_id: nextTid,
+                          company: tName,
+                          branch_name: '',
+                          work_location_name: '',
+                          assigned_shift: ''
+                        }));
+                      }}
+                      style={{
+                        padding: '0.4rem 0.75rem',
+                        borderRadius: '7px',
+                        border: '1px solid var(--border-light)',
+                        backgroundColor: 'var(--bg-surface)',
+                        color: 'var(--text-primary)',
+                        fontSize: '0.82rem',
+                        fontWeight: 600,
+                        minWidth: '220px'
+                      }}
+                    >
+                      {availableTenants.map(t => (
+                        <option key={t.id} value={t.id}>
+                          {t.tenant_code ? `${t.tenant_code} · ` : ''}{t.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span style={{
+                      fontSize: '0.78rem',
+                      fontWeight: 700,
+                      color: '#1e40af',
+                      backgroundColor: '#eff6ff',
+                      border: '1px solid #bfdbfe',
+                      padding: '0.25rem 0.65rem',
+                      borderRadius: '999px'
+                    }}>
+                      {resolvedTenant.tenantCode ? `${resolvedTenant.tenantCode} · ` : ''}
+                      {resolvedTenant.companyName || currentUserCompany || formData.company || 'Current Workspace'}
+                    </span>
+                  )}
+                </div>
+
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
                   <div>
                     <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, marginBottom: '0.35rem', color: 'var(--text-primary)' }}>
@@ -658,6 +896,89 @@ export default function AddEditUserModal({
                   </div>
 
                   <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                      <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
+                        Branch Name
+                      </label>
+                      {availableBranches.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setCustomBranchNameInput(!customBranchNameInput)}
+                          style={{ background: 'none', border: 'none', color: 'var(--accent-color)', fontSize: '0.72rem', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                        >
+                          {customBranchNameInput ? '← Select Branch List' : '+ Type Custom'}
+                        </button>
+                      )}
+                    </div>
+                    <div style={{ position: 'relative' }}>
+                      <Building size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
+                      {!customBranchNameInput && availableBranches.length > 0 ? (
+                        <select
+                          value={formData.branch_name || ''}
+                          onChange={e => {
+                            const val = e.target.value;
+                            if (val === '__custom__') {
+                              setCustomBranchNameInput(true);
+                              return;
+                            }
+                            const matched = availableBranches.find(b => b.branch_name === val);
+                            setFormData(prev => ({
+                              ...prev,
+                              branch_name: val,
+                              company: matched
+                                ? resolveCompanyForBranch(matched, resolvedTenant.companyName || currentUserCompany)
+                                : (resolvedTenant.companyName || currentUserCompany || prev.company),
+                              ...(matched?.location_type ? { work_location_type: matched.location_type } : {}),
+                              ...(val ? { work_location_name: val } : {})
+                            }));
+                            if (val) setCustomLocationInput(false);
+                          }}
+                          style={{
+                            width: '100%',
+                            padding: '0.55rem 0.75rem 0.55rem 2.2rem',
+                            borderRadius: '8px',
+                            border: '1px solid var(--border-light)',
+                            backgroundColor: 'var(--bg-surface)',
+                            color: 'var(--text-primary)',
+                            fontSize: '0.85rem'
+                          }}
+                        >
+                          <option value="">-- Select Branch Name --</option>
+                          {availableBranches.map(br => (
+                            <option key={br.id || br.branch_code} value={br.branch_name}>
+                              {br.custom_code ? `${br.custom_code} · ` : ''}{br.branch_name} ({br.branch_code})
+                            </option>
+                          ))}
+                          <option value="__custom__">+ Enter Custom Branch Name...</option>
+                        </select>
+                      ) : (
+                        <input
+                          type="text"
+                          value={formData.branch_name || ''}
+                          onChange={e => {
+                            const val = e.target.value;
+                            setFormData(prev => ({
+                              ...prev,
+                              branch_name: val,
+                              company: val.trim() || resolvedTenant.companyName || currentUserCompany || prev.company
+                            }));
+                          }}
+                          placeholder="e.g. NSMLR / Branch / Unit Name"
+                          style={{
+                            width: '100%',
+                            padding: '0.55rem 0.75rem 0.55rem 2.2rem',
+                            borderRadius: '8px',
+                            border: '1px solid var(--border-light)',
+                            backgroundColor: 'var(--bg-surface)',
+                            color: 'var(--text-primary)',
+                            fontSize: '0.85rem'
+                          }}
+                        />
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
                     <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, marginBottom: '0.35rem', color: 'var(--text-primary)' }}>
                       Work Location Type
                     </label>
@@ -677,10 +998,13 @@ export default function AddEditUserModal({
                       {WORK_LOCATION_TYPES.map(l => (
                         <option key={l} value={l}>{l}</option>
                       ))}
+                      {formData.work_location_type && !WORK_LOCATION_TYPES.includes(formData.work_location_type) && (
+                        <option value={formData.work_location_type}>{formData.work_location_type}</option>
+                      )}
                     </select>
                   </div>
 
-                  <div style={{ gridColumn: 'span 2' }}>
+                  <div style={{ gridColumn: '1 / -1' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
                       <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
                         Location / Branch / Plant Name
@@ -688,22 +1012,22 @@ export default function AddEditUserModal({
                       {availableBranches.length > 0 && (
                         <button
                           type="button"
-                          onClick={() => setCustomBranchInput(!customBranchInput)}
+                          onClick={() => setCustomLocationInput(!customLocationInput)}
                           style={{ background: 'none', border: 'none', color: 'var(--accent-color)', fontSize: '0.72rem', fontWeight: 600, cursor: 'pointer', padding: 0 }}
                         >
-                          {customBranchInput ? '← Select from Created Branches' : '+ Type Custom Location'}
+                          {customLocationInput ? '← Select from Created Branches' : '+ Type Custom Location'}
                         </button>
                       )}
                     </div>
                     <div style={{ position: 'relative' }}>
                       <MapPin size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
-                      {!customBranchInput && availableBranches.length > 0 ? (
+                      {!customLocationInput && availableBranches.length > 0 ? (
                         <select
-                          value={formData.work_location_name}
+                          value={formData.work_location_name || ''}
                           onChange={e => {
                             const val = e.target.value;
                             if (val === '__custom__') {
-                              setCustomBranchInput(true);
+                              setCustomLocationInput(true);
                             } else {
                               handleChange('work_location_name', val);
                               const matched = availableBranches.find(b => b.branch_name === val);
@@ -733,9 +1057,9 @@ export default function AddEditUserModal({
                       ) : (
                         <input
                           type="text"
-                          value={formData.work_location_name}
+                          value={formData.work_location_name || ''}
                           onChange={e => handleChange('work_location_name', e.target.value)}
-                          placeholder="e.g. Head Office Delhi / Factory Unit 1"
+                          placeholder="e.g. Head Office / Factory Unit 1 / Field Territory"
                           style={{
                             width: '100%',
                             padding: '0.55rem 0.75rem 0.55rem 2.2rem',
@@ -821,7 +1145,7 @@ export default function AddEditUserModal({
                   </div>
 
                   {/* Attendance & Field Tracking Policy */}
-                  <div style={{ padding: '0.85rem', background: 'var(--bg-canvas, #f8fafc)', borderRadius: '10px', border: '1px solid var(--border-light)', marginTop: '0.5rem' }}>
+                  <div style={{ gridColumn: '1 / -1', padding: '0.85rem', background: 'var(--bg-canvas, #f8fafc)', borderRadius: '10px', border: '1px solid var(--border-light)', marginTop: '0.25rem' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
                       <label style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)' }}>
                         📍 Attendance & Field GPS Policy
@@ -878,7 +1202,7 @@ export default function AddEditUserModal({
                     </div>
 
                     {formData.tracking_policy === 'LIVE_TRACKING' && (
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem', marginTop: '0.4rem', paddingTop: '0.4rem', borderTop: '1px dashed var(--border-light)' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem', marginTop: '0.4rem', paddingTop: '0.5rem', borderTop: '1px dashed var(--border-light)' }}>
                         <div>
                           <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 600, marginBottom: '0.2rem', color: 'var(--text-secondary)' }}>
                             Vehicle Type
@@ -888,12 +1212,14 @@ export default function AddEditUserModal({
                             onChange={e => {
                               const v = e.target.value;
                               handleChange('vehicle_type', v);
-                              if (v === 'BIKE') handleChange('conveyance_rate_per_km', 4.50);
+                              if (v === 'NONE') handleChange('conveyance_rate_per_km', 0);
+                              else if (v === 'BIKE') handleChange('conveyance_rate_per_km', 4.50);
                               else if (v === 'CAR') handleChange('conveyance_rate_per_km', 9.00);
                               else handleChange('conveyance_rate_per_km', 2.50);
                             }}
-                            style={{ width: '100%', padding: '0.4rem 0.6rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.8rem' }}
+                            style={{ width: '100%', padding: '0.45rem 0.6rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.8rem', backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)' }}
                           >
+                            <option value="NONE">None / No Vehicle (₹0/KM)</option>
                             <option value="BIKE">Bike / Two Wheeler (₹4.50/KM)</option>
                             <option value="CAR">Car / Four Wheeler (₹9.00/KM)</option>
                             <option value="PUBLIC_TRANSPORT">Public Transport (₹2.50/KM)</option>
@@ -906,10 +1232,21 @@ export default function AddEditUserModal({
                           </label>
                           <input
                             type="number"
+                            min="0"
                             step="0.25"
-                            value={formData.conveyance_rate_per_km || 4.50}
+                            disabled={formData.vehicle_type === 'NONE'}
+                            value={formData.conveyance_rate_per_km ?? (formData.vehicle_type === 'NONE' ? 0 : 4.50)}
                             onChange={e => handleChange('conveyance_rate_per_km', Number(e.target.value))}
-                            style={{ width: '100%', padding: '0.4rem 0.6rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.8rem', boxSizing: 'border-box' }}
+                            style={{
+                              width: '100%',
+                              padding: '0.45rem 0.6rem',
+                              borderRadius: '6px',
+                              border: '1px solid var(--border-light)',
+                              fontSize: '0.8rem',
+                              boxSizing: 'border-box',
+                              backgroundColor: formData.vehicle_type === 'NONE' ? '#f1f5f9' : 'var(--bg-surface)',
+                              color: formData.vehicle_type === 'NONE' ? '#64748b' : 'var(--text-primary)'
+                            }}
                           />
                         </div>
                       </div>
@@ -932,9 +1269,9 @@ export default function AddEditUserModal({
                       Primary Reporting Manager (Daily Work / Tasks)
                     </label>
                     <SearchableEmployeeSelect
-                      employees={allEmployees}
+                      employees={effectiveEmployees}
                       selectedEmail={formData.primary_reporting_person}
-                      onSelect={(employee) => handleChange('primary_reporting_person', getReportingEmail(employee, allEmployees))}
+                      onSelect={(employee) => handleChange('primary_reporting_person', getReportingEmail(employee, effectiveEmployees))}
                       placeholder="Select Primary Reporting Manager..."
                       allowAllStaff={false}
                     />
@@ -945,9 +1282,9 @@ export default function AddEditUserModal({
                       Secondary Reporting Manager (Backup / Operational)
                     </label>
                     <SearchableEmployeeSelect
-                      employees={allEmployees}
+                      employees={effectiveEmployees}
                       selectedEmail={formData.secondary_reporting_person}
-                      onSelect={(employee) => handleChange('secondary_reporting_person', getReportingEmail(employee, allEmployees))}
+                      onSelect={(employee) => handleChange('secondary_reporting_person', getReportingEmail(employee, effectiveEmployees))}
                       placeholder="Select Secondary Manager (Optional)..."
                       allowAllStaff={false}
                     />
@@ -958,9 +1295,9 @@ export default function AddEditUserModal({
                       Head of Department (HOD) - For Attendance & Leave Approvals
                     </label>
                     <SearchableEmployeeSelect
-                      employees={allEmployees}
+                      employees={effectiveEmployees}
                       selectedEmail={formData.hod_person}
-                      onSelect={(employee) => handleChange('hod_person', getReportingEmail(employee, allEmployees))}
+                      onSelect={(employee) => handleChange('hod_person', getReportingEmail(employee, effectiveEmployees))}
                       placeholder="Select Department HOD..."
                       allowAllStaff={false}
                     />

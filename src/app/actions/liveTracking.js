@@ -832,13 +832,14 @@ export async function getDailyConveyanceVouchers(company = 'TNT00001', branchCod
 
     return (summaries || []).map(s => {
       const u = userDetailsMap.get(s.user_id) || {};
+      const resolvedVehicle = s.vehicle_type || u.vehicle_type || 'BIKE';
       return {
         ...s,
         employee_name: u.emp_name || u.email || 'Field Person',
         phone: u.emp_mobile || '',
         role: u.role || 'Sales Executive',
-        vehicle_type: s.vehicle_type || u.vehicle_type || 'BIKE',
-        conveyance_rate_per_km: s.conveyance_rate_per_km || u.conveyance_rate_per_km || 4.50
+        vehicle_type: resolvedVehicle,
+        conveyance_rate_per_km: s.conveyance_rate_per_km ?? u.conveyance_rate_per_km ?? (resolvedVehicle === 'NONE' ? 0 : 4.50)
       };
     });
   } catch (err) {

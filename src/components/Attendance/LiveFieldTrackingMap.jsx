@@ -3408,15 +3408,15 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
                         </td>
                         <td style={{ padding: '10px 14px', color: '#334155' }}>{v.date}</td>
                         <td style={{ padding: '10px 14px' }}>
-                          <span style={{ background: '#eff6ff', color: '#1d4ed8', padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 700 }}>
-                            {v.vehicle_type}
+                          <span style={{ background: v.vehicle_type === 'NONE' ? '#f1f5f9' : '#eff6ff', color: v.vehicle_type === 'NONE' ? '#475569' : '#1d4ed8', padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 700 }}>
+                            {v.vehicle_type === 'NONE' ? 'None' : v.vehicle_type}
                           </span>
                         </td>
                         <td style={{ padding: '10px 14px', fontWeight: 700, color: '#0f172a' }}>{v.total_km} km</td>
                         <td style={{ padding: '10px 14px', color: '#16a34a', fontWeight: 600 }}>{v.physical_visits_count || 0}</td>
-                        <td style={{ padding: '10px 14px' }}>₹{v.conveyance_rate_per_km}</td>
+                        <td style={{ padding: '10px 14px' }}>₹{v.conveyance_rate_per_km ?? 0}</td>
                         <td style={{ padding: '10px 14px', fontWeight: 800, color: '#047857' }}>
-                          ₹{v.total_conveyance_amount || ((v.total_km * v.conveyance_rate_per_km) + (v.daily_allowance || 150)).toFixed(2)}
+                          ₹{v.total_conveyance_amount ?? (((v.total_km || 0) * (v.conveyance_rate_per_km ?? 0)) + (v.daily_allowance ?? (v.vehicle_type === 'NONE' ? 0 : 150))).toFixed(2)}
                         </td>
                         <td style={{ padding: '10px 14px' }}>
                           <span style={{

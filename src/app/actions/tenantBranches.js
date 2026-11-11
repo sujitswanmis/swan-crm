@@ -172,11 +172,19 @@ export async function getTenantBranches(companyOrTenantId = 'Default') {
     try {
       const admin = getAdminClient();
       if (admin) {
-        // If key is a UUID that wasn't hardcoded above, look up tenant details from DB
+        // If key wasn't hardcoded above, look up tenant details from DB (supports new/upcoming tenants TNT00004+)
         const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-        if (!resolvedTenantCode && UUID_REGEX.test(rawKey)) {
+        if ((!resolvedTenantCode || !resolvedTenantId) && rawKey && rawKey !== 'Default') {
           try {
-            const { data: tData } = await admin.from('tenants').select('id, name, tenant_code').eq('id', rawKey).maybeSingle();
+            let tQuery = admin.from('tenants').select('id, name, tenant_code').limit(1);
+            if (UUID_REGEX.test(rawKey)) {
+              tQuery = tQuery.eq('id', rawKey);
+            } else if (/^TNT\d+$/i.test(rawKey)) {
+              tQuery = tQuery.ilike('tenant_code', rawKey);
+            } else {
+              tQuery = tQuery.ilike('name', rawKey);
+            }
+            const { data: tData } = await tQuery.maybeSingle();
             if (tData) {
               key = tData.name || key;
               resolvedTenantCode = tData.tenant_code || resolvedTenantCode;
@@ -267,7 +275,12 @@ export async function getTenantBranches(companyOrTenantId = 'Default') {
 
     return {
       success: true,
-      branches: finalBranches
+      branches: finalBranches,
+      tenant: {
+        tenantId: resolvedTenantId || finalBranches[0]?.tenant_id || null,
+        tenantCode: resolvedTenantCode || finalBranches[0]?.tenant_code || null,
+        companyName: key
+      }
     };
   } catch (err) {
     console.error('getTenantBranches error:', err);

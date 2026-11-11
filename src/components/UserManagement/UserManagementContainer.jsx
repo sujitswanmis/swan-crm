@@ -474,7 +474,12 @@ export default function UserManagementContainer({
       const { role, role_template_id, role_preset_key, ...profileData } = formData;
       if (addEditModal.user) {
         // Edit Mode
-        const res = await updateEmployeeDetailsAdmin(addEditModal.user.user_id, profileData);
+        const editPayload = {
+          ...profileData,
+          tenant_id: profileData.tenant_id || addEditModal.user.tenant_id || tenantId || null,
+          company: profileData.company || addEditModal.user.company || currentUserCompany || ''
+        };
+        const res = await updateEmployeeDetailsAdmin(addEditModal.user.user_id, editPayload);
         if (res && res.success) {
           if (role && role !== addEditModal.user.role) {
             try { await updateUserRole(addEditModal.user.user_id, role); } catch (e) { console.warn('Role update notice:', e); }
@@ -519,7 +524,13 @@ export default function UserManagementContainer({
       } else {
         // Add Mode
         const { email, password, ...details } = formData;
-        const res = await createAccountAdmin(email, password, { ...details, role: role || 'agent' });
+        const addPayload = {
+          ...details,
+          tenant_id: details.tenant_id || tenantId || null,
+          company: details.company || currentUserCompany || '',
+          role: role || 'agent'
+        };
+        const res = await createAccountAdmin(email, password, addPayload);
         if (res && res.success) {
           const newUserId = res.userId;
           if (newUserId) {
@@ -680,7 +691,8 @@ export default function UserManagementContainer({
         emp_id: fallbackId,
         emp_status: 'Draft',
         emp_name: draftData.emp_name || 'Draft Employee',
-        company: draftData.company || currentUserCompany || 'SuPuja Creations'
+        tenant_id: draftData.tenant_id || tenantId || null,
+        company: draftData.company || currentUserCompany || ''
       };
 
       const res = await createAccountAdmin(fallbackEmail, fallbackPassword, payload);
@@ -796,7 +808,7 @@ export default function UserManagementContainer({
       `"${u.emp_designation || ''}"`,
       `"${u.emp_mobile || ''}"`,
       `"${u.emp_alt_mobile || ''}"`,
-      `"${u.company || 'SuPuja Creations'}"`,
+      `"${u.company || currentUserCompany || ''}"`,
       `"${u.work_location_type || 'Headquarters'}"`,
       `"${u.work_location_name || ''}"`,
       `"${u.primary_reporting_person || ''}"`,
@@ -1000,6 +1012,9 @@ export default function UserManagementContainer({
         departments={departments}
         allEmployees={users}
         roleTemplates={roleTemplates}
+        currentUserCompany={currentUserCompany}
+        tenantId={tenantId}
+        isMasterAdmin={effectiveIsMasterAdmin}
         saving={savingAddEdit}
       />
 
