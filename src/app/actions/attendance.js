@@ -1085,6 +1085,31 @@ async function getAttendancePolicyForUserScope(tenantId, userCompany, primaryBra
   };
 }
 
+async function getUserRoleAttendanceProfile(adminClient, normalizedEmail) {
+  if (!adminClient || !normalizedEmail) return null;
+  try {
+    const { data, error } = await adminClient
+      .from('user_roles')
+      .select('emp_id, emp_name, emp_department, company, tenant_id, branch_name, assigned_shift, module_access')
+      .ilike('email', normalizedEmail)
+      .limit(1)
+      .maybeSingle();
+
+    if (!error) return data || null;
+
+    if (error.code === '42703' || String(error.message || '').includes('does not exist')) {
+      const { data: fallbackRow } = await adminClient
+        .from('user_roles')
+        .select('*')
+        .ilike('email', normalizedEmail)
+        .limit(1)
+        .maybeSingle();
+      return fallbackRow || null;
+    }
+  } catch {}
+  return null;
+}
+
 /**
  * 2. Punch In (Strict 1-Time Punch In per day)
  */
@@ -1175,26 +1200,25 @@ export async function punchIn({
   let assignedShiftFromDb = null;
   let employeeBranchFromDb = '';
   let employeeModuleAccess = null;
+  let roleCompanyFromDb = '';
+  let roleTenantFromDb = null;
 
-  try {
-    const { data: userRole } = await adminClient
-      .from('user_roles')
-      .select('emp_id, emp_name, emp_department, assigned_shift, branch_name, company_name, module_access')
-      .ilike('email', normalizedEmail)
-      .maybeSingle();
-
-    if (userRole) {
-      if (!resolvedEmpCode) resolvedEmpCode = userRole.emp_id || '';
-      if (!resolvedDepartment) resolvedDepartment = userRole.emp_department || 'General';
-      if (!resolvedEmpName || resolvedEmpName === email.split('@')[0]) resolvedEmpName = userRole.emp_name || resolvedEmpName;
-      if (userRole.assigned_shift) assignedShiftFromDb = userRole.assigned_shift;
-      if (userRole.branch_name) employeeBranchFromDb = userRole.branch_name;
-      if (userRole.module_access) employeeModuleAccess = userRole.module_access;
+  const userRole = await getUserRoleAttendanceProfile(adminClient, normalizedEmail);
+  if (userRole) {
+    if (!resolvedEmpCode) resolvedEmpCode = userRole.emp_id || '';
+    if (!resolvedDepartment) resolvedDepartment = userRole.emp_department || 'General';
+    if (!resolvedEmpName || resolvedEmpName === email.split('@')[0]) resolvedEmpName = userRole.emp_name || resolvedEmpName;
+    if (userRole.assigned_shift) assignedShiftFromDb = userRole.assigned_shift;
+    if (userRole.branch_name || userRole.module_access?.branch_name) {
+      employeeBranchFromDb = userRole.branch_name || userRole.module_access?.branch_name || '';
     }
-  } catch {}
+    if (userRole.module_access) employeeModuleAccess = userRole.module_access;
+    roleCompanyFromDb = userRole.company || userRole.module_access?.company_name || '';
+    roleTenantFromDb = userRole.tenant_id || userRole.module_access?._tenantId || null;
+  }
 
-  const effectiveCompany = userCompany || '';
-  const effectiveTenant = resolveTenantId(tenantId, effectiveCompany);
+  const effectiveCompany = userCompany || roleCompanyFromDb || '';
+  const effectiveTenant = resolveTenantId(tenantId || roleTenantFromDb, effectiveCompany);
   const policyRes = await getAttendancePolicyForUserScope(effectiveTenant, effectiveCompany, employeeBranchFromDb, employeeModuleAccess);
   const tenantPolicy = policyRes?.data || null;
 
@@ -1463,17 +1487,15 @@ export async function punchOut({
   let effectiveCompany = userCompany || existing.company_name || '';
   let employeeBranch = existing.branch_name || '';
   let employeeModuleAccess = null;
-  try {
-    const { data: uRole } = await adminClient
-      .from('user_roles')
-      .select('company_name, tenant_id, branch_name, module_access')
-      .ilike('email', normalizedEmail)
-      .maybeSingle();
-    if (uRole?.company_name && !effectiveCompany) effectiveCompany = uRole.company_name;
-    if (uRole?.branch_name && !employeeBranch) employeeBranch = uRole.branch_name;
-    if (uRole?.module_access) employeeModuleAccess = uRole.module_access;
-  } catch {}
-  const effectiveTenant = resolveTenantId(tenantId, effectiveCompany);
+  const uRole = await getUserRoleAttendanceProfile(adminClient, normalizedEmail);
+  if (uRole) {
+    const roleComp = uRole.company || uRole.module_access?.company_name || '';
+    const roleBranch = uRole.branch_name || uRole.module_access?.branch_name || '';
+    if (roleComp && !effectiveCompany) effectiveCompany = roleComp;
+    if (roleBranch && !employeeBranch) employeeBranch = roleBranch;
+    if (uRole.module_access) employeeModuleAccess = uRole.module_access;
+  }
+  const effectiveTenant = resolveTenantId(tenantId || uRole?.tenant_id || uRole?.module_access?._tenantId, effectiveCompany);
   const policyRes = await getAttendancePolicyForUserScope(effectiveTenant, effectiveCompany, employeeBranch, employeeModuleAccess);
   const tenantPolicy = policyRes?.data || null;
 
@@ -1565,20 +1587,10 @@ export async function punchOut({
   let resolvedOutDept = existing.department || '';
   let resolvedOutEmpName = existing.emp_name || empName || '';
 
-  if (!resolvedOutEmpCode || !resolvedOutDept || resolvedOutDept === 'General') {
-    try {
-      const { data: userRole } = await adminClient
-        .from('user_roles')
-        .select('emp_id, emp_name, emp_department')
-        .ilike('email', normalizedEmail)
-        .maybeSingle();
-
-      if (userRole) {
-        if (!resolvedOutEmpCode) resolvedOutEmpCode = userRole.emp_id || '';
-        if (!resolvedOutDept || resolvedOutDept === 'General') resolvedOutDept = userRole.emp_department || 'General';
-        if (!resolvedOutEmpName) resolvedOutEmpName = userRole.emp_name || '';
-      }
-    } catch {}
+  if ((!resolvedOutEmpCode || !resolvedOutDept || resolvedOutDept === 'General') && uRole) {
+    if (!resolvedOutEmpCode) resolvedOutEmpCode = uRole.emp_id || '';
+    if (!resolvedOutDept || resolvedOutDept === 'General') resolvedOutDept = uRole.emp_department || 'General';
+    if (!resolvedOutEmpName) resolvedOutEmpName = uRole.emp_name || '';
   }
 
   const punchOutRecord = {

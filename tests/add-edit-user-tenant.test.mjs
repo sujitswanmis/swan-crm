@@ -21,6 +21,7 @@ async function compile(file) {
 const modalCode = await compile('src/components/UserManagement/modals/AddEditUserModal.jsx');
 const teamCode = await compile('src/app/actions/team.js');
 const branchAccessCode = await compile('src/utils/branchAccess.js');
+const attendanceCode = await compile('src/app/actions/attendance.js');
 const icons = new Proxy({}, { get: () => () => null });
 
 function loadDefault(code, dependencies) {
@@ -53,7 +54,7 @@ function loadExports(code, dependencies) {
     Buffer,
     URL,
     fetch: async () => ({ ok: true, json: async () => ({}) }),
-    process: { env: { NEXT_PUBLIC_SUPABASE_URL: 'https://example.invalid', SUPABASE_SERVICE_ROLE_KEY: 'key' } }
+    process: { cwd: () => '.', env: { NEXT_PUBLIC_SUPABASE_URL: 'https://example.invalid', SUPABASE_SERVICE_ROLE_KEY: 'key' } }
   });
   return loadedModule.exports;
 }
@@ -546,5 +547,143 @@ test('team.js preserves assigned_branch_scope and assigned_branches during role 
   assert.deepEqual(writes[0].module_access.assigned_branches, ['NSMLR', 'NSTLP']);
   assert.equal(writes[0].module_access._tenantId, '00000000-0000-0000-0000-000000000001');
 });
+
+test('attendance.js punchIn and punchOut avoid missing user_roles.company_name and fall back cleanly on 42703', async () => {
+  const pathMod = await import('node:path');
+  const cryptoMod = await import('node:crypto');
+  const attendanceUtils = await import('../src/utils/attendanceUtils.js');
+
+  const userRoleSelects = [];
+  const attendanceRows = [];
+
+  const fakeDb = {
+    from(table) {
+      let operation = 'select';
+      let selectedCols = '*';
+      let payload = null;
+      const eqFilters = {};
+      const query = {
+        select(cols) { selectedCols = cols; return query; },
+        eq(col, val) { eqFilters[col] = val; return query; },
+        is() { return query; },
+        ilike() { return query; },
+        gte() { return query; },
+        lte() { return query; },
+        order() { return query; },
+        limit() { return query; },
+        single() {
+          if (table === 'attendance_records') {
+            if (operation === 'upsert') {
+              attendanceRows.push(payload);
+              return Promise.resolve({ data: { ...payload }, error: null });
+            }
+            if (operation === 'update' && attendanceRows[0]) {
+              Object.assign(attendanceRows[0], payload);
+              return Promise.resolve({ data: { ...attendanceRows[0] }, error: null });
+            }
+          }
+          return Promise.resolve({ data: attendanceRows[0] ? { ...attendanceRows[0] } : null, error: null });
+        },
+        maybeSingle() {
+          if (table === 'attendance_records') {
+            if (operation === 'upsert') {
+              attendanceRows.push(payload);
+              return Promise.resolve({ data: { ...payload }, error: null });
+            }
+            if (operation === 'update' && attendanceRows[0]) {
+              Object.assign(attendanceRows[0], payload);
+              return Promise.resolve({ data: { ...attendanceRows[0] }, error: null });
+            }
+          }
+          if (table === 'user_roles') {
+            userRoleSelects.push(selectedCols);
+            // Simulate older DB schema missing branch_name/assigned_shift, firing 42703 on explicit select
+            if (selectedCols !== '*') {
+              return Promise.resolve({ data: null, error: { code: '42703', message: 'column user_roles.branch_name does not exist' } });
+            }
+            return Promise.resolve({
+              data: {
+                emp_id: 'EMP-99',
+                emp_name: 'Riya',
+                emp_department: 'Sales',
+                company: 'NSMLR',
+                tenant_id: '00000000-0000-0000-0000-000000000001',
+                module_access: { branch_name: 'New Swan Multitech Limited Raian', assigned_branch_scope: 'SINGLE' }
+              },
+              error: null
+            });
+          }
+          if (table === 'attendance_records') {
+            const existing = attendanceRows.find(r => r.email === eqFilters.email || r.attendance_date === eqFilters.attendance_date) || null;
+            return Promise.resolve({ data: existing ? { ...existing } : null, error: null });
+          }
+          return Promise.resolve({ data: null, error: null });
+        },
+        upsert(row) {
+          operation = 'upsert';
+          payload = { ...row };
+          return query;
+        },
+        update(row) {
+          operation = 'update';
+          payload = { ...row };
+          return query;
+        },
+        then(resolve, reject) {
+          return Promise.resolve().then(() => {
+            if (table === 'attendance_records') {
+              if (operation === 'upsert') {
+                attendanceRows.push(payload);
+                return { data: { ...payload }, error: null };
+              }
+              if (operation === 'update' && attendanceRows[0]) {
+                Object.assign(attendanceRows[0], payload);
+                return { data: { ...attendanceRows[0] }, error: null };
+              }
+              return { data: [...attendanceRows], error: null };
+            }
+            return { data: null, error: null };
+          }).then(resolve, reject);
+        }
+      };
+      return query;
+    }
+  };
+
+  const attendance = loadExports(attendanceCode, {
+    '@supabase/supabase-js': { createClient: () => fakeDb },
+    '@/utils/supabase/server': {},
+    '@/utils/reportingHierarchy': {},
+    './audit': { logAuditAction: async () => ({}) },
+    '@/utils/attendanceUtils': attendanceUtils,
+    '@/utils/geoAttendance': { calculateDistanceMeters: () => 0 },
+    'fs/promises': {
+      readFile: async () => JSON.stringify({ records: [], requests: [] }),
+      mkdir: async () => {},
+      writeFile: async () => {}
+    },
+    path: pathMod.default,
+    crypto: cryptoMod.default
+  });
+
+  const inRes = await attendance.punchIn({
+    email: 'riya@newswangroup.com',
+    tenantId: '00000000-0000-0000-0000-000000000001'
+  });
+  assert.equal(inRes.success, true);
+  assert.equal(inRes.data.emp_code, 'EMP-99');
+  assert.equal(inRes.data.department, 'Sales');
+
+  const outRes = await attendance.punchOut({
+    email: 'riya@newswangroup.com',
+    tenantId: '00000000-0000-0000-0000-000000000001'
+  });
+  assert.equal(outRes.success, true);
+  assert.equal(outRes.data.emp_code, 'EMP-99');
+
+  assert.equal(userRoleSelects.some(s => String(s).includes('company_name')), false, 'user_roles query must never select company_name');
+  assert.equal(userRoleSelects.includes('*'), true, '42703 on explicit columns must fall back to select(*)');
+});
+
 
 
