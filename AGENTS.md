@@ -16,6 +16,28 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - **Explicit User Approval Required**: The AI assistant MUST NEVER edit or create code files (`replace_file_content`, `write_to_file`, etc.) before sharing this plan and receiving explicit approval/confirmation from the user (e.g., "haan karo", "proceed", "okay", "approved").
 - **No Silent Updates**: Never make assumptions, speculative edits, or silent modifications without user sign-off.
 
+# Mandatory Universal Module Lock & Blast-Radius Isolation Rule (All Modules Locked By Default)
+- **Every CRM Module Is Strictly Locked by Default**: ALL existing modules, sub-modules, pages, APIs, actions, and shared infrastructure across the codebase are **PERMANENTLY LOCKED** (with the same strict protection as CRM Softphone `v2.16`). No AI agent, assistant, or automated tool may touch, edit, refactor, optimize, rename, or "clean up" ANY locked module without **explicit user authorization targeting that specific module AND approval of an exact file whitelist**.
+- **Protected Locked Module Registry (Zero Touch Unless Explicitly Unlocked)**:
+  - **Auth, Shell & Sync**: Login (`src/app/login`), Global Layout, Sidebar/Router Shell (`CRMContainer.jsx`), Session Tracker (`SessionExpiryTracker.jsx`), LocalDB / Offline Sync (`offlineSync.js`), Desktop/Android/iOS wrappers.
+  - **Sales & CRM Core**: `registration`, `report`, `leads` (Lead Data, Stages, `LeadTable.jsx`, `LeadProfilePanel.jsx`, `LeadDashboard.jsx`), `party` (Party Master & End Customers), `channel_ops` (Daily Order Follow-up / Pipeline / Feedback / Complaints), `location_master`.
+  - **Call Center & Telephony (Golden Locked)**: `GlobalSoftphoneWidget` (`v2.16`), `ActiveCallPanel`, `callcenter`, `calladmin`, `aicallcenter`, all Plivo routes/helpers (`src/app/api/plivo/`, `src/lib/plivo*`, `telephonyConfig.js`).
+  - **HR & Field Operations**: `attendance` (Punch Station, Monthly Logs, Regularization, Leaves, HOD Approvals, Team Report, Live Field Tracking & Radar, Shift Rules, Leave Policy, Geofencing), `field_force` (Mobile App, Task Manager, Form Studio, Live GPS & Playback, Device Health), `recruiter`, `joining`.
+  - **Productivity, Workflows & AI**: `analytics`, `checklist`, `delegation`, `workplace` / `workflow`, `new_swan_ai`, `aiadmin`, `aiknowledgebase`.
+  - **Purchase / ERP**: `mrp`, `mrp_against`.
+  - **User & SaaS Governance**: `user_management_new` (User Manage, Roles & Permissions, Org Hierarchy, Active Sessions, Audit Logs), `team`, `public_users`, `saasSubscription` / `SuperAdminSaasPanel`.
+  - **Communication & Master Config**: `whatsapp_official`, `whatsapp_unofficial`, `sms_config`, `rcs_config`, `email_config`, `admin_message_config`, `config_master`, `offline_rule`, `settings`, `modulesConfig.jsx`, `permissionUtils.js`, `rolePresets.js`, Supabase `migrations/` & `src/config/*.json`.
+- **Mandatory Scope Gate in Every Plan**: Before modifying anything, the AI MUST explicitly state in the pre-implementation plan:
+  1. **Unlocked Target Module(s)**: Only the specific module(s) requested by the user (or explicitly naming any new standalone module being created).
+  2. **All Other Modules**: Explicit guarantee — **`ALL OTHER MODULES REMAIN LOCKED (ZERO TOUCH)`**.
+  3. **Exact Approved File Whitelist**: Once approved, the AI MUST NOT edit or create ANY file outside that approved list. If investigation reveals another file is needed, STOP, report why, and get fresh approval first.
+- **Shared File & Common Utility Blast-Radius Protection**: When an unlocked module legitimately requires wiring into a shared file (e.g. `CRMContainer.jsx`, `modulesConfig.jsx`, `permissionUtils.js`, `rolePresets.js`, `offlineSync.js`, `team.js`, `StandardTablePagination.jsx`, `DateRangePicker.jsx`, global CSS/layout, or shared DB helpers):
+  - **Zero Mutation of Existing Behavior**: NEVER alter, rename, remove, or change defaults/signatures/return formats/state keys/event names/permissions/CSS rules used by existing locked modules.
+  - **Additive & Isolated Wiring Only**: Add only opt-in props (preserving existing defaults) or append a standalone entry for the unlocked module without touching neighboring module entries or logic.
+  - **Shared Bug Rule**: If a bug or side effect is discovered inside a locked module or shared helper affecting other modules, DO NOT silently modify the locked module — STOP and ask the user for separate explicit unlock approval.
+- **No Unrelated "Boy Scout" Cleanups**: Even if the AI spots unused imports, lint warnings, formatting issues, or potential improvements inside locked modules or unrelated functions of a file, NEVER modify them. Mention them separately without editing.
+- **Mandatory Pre-Commit Diff Verification**: Before reporting completion or committing, the AI MUST inspect `git diff --name-only` (and actual hunks of every changed file) to prove that zero locked modules or unapproved files were modified. Any unintended edit must be reverted cleanly before proceeding.
+
 # Workspace Deployment Rules
 - **Strict Realtime Version Verification**: NEVER guess, remember, or assume the version number from previous chat history. ALWAYS read the current on-disk `package.json` file using `view_file` AND check `git log -n 1` right before bumping. Always increment strictly by +1 from the CURRENT disk/git version (e.g. if current disk is `1.0.370`, the next version MUST be `1.0.371`). NEVER downgrade, overwrite, or use an older version series.
 - **Verification First**: Always run `npm run build` or local check commands to verify correctness before committing.
