@@ -15,15 +15,15 @@ import {
   AlertTriangle,
   WifiOff,
   SlidersHorizontal,
-  ExternalLink
+  ExternalLink,
+  Building2
 } from 'lucide-react';
 import {
   getDeviceHealthFleetReport,
   updateAppReleasePolicy
 } from '@/app/actions/liveTracking';
 import {
-  resolveKnownTenant,
-  getTenantBranches
+  resolveKnownTenant
 } from '@/app/actions/tenantBranches';
 import useTableColumnResize, { ColumnResizer } from '@/utils/tableColumnResize';
 import StandardTablePagination from '@/components/common/StandardTablePagination';
@@ -51,13 +51,6 @@ const MIN_TABLE_WIDTHS = {
   lastChecked: 120,
   actions: 140
 };
-
-const TENANT_OPTIONS = [
-  { code: 'ALL', label: 'All Companies (All Tenants)' },
-  { code: 'TNT00001', label: 'TNT00001 — SuPuja Creations' },
-  { code: 'TNT00002', label: 'TNT00002 — New Swan Group' },
-  { code: 'TNT00003', label: 'TNT00003 — Testing New Swan Group' }
-];
 
 const STATUS_FILTER_TABS = [
   { id: 'ALL', label: 'All Staff' },
@@ -134,12 +127,15 @@ function renderLocationModeBadge(mode) {
 
 export default function FieldDeviceHealthAudit({
   company = 'TNT00001',
+  tenantId = null,
   userRole = 'ADMIN',
   isMasterAdmin = false,
   onInspectEmployeeRoute = null
 }) {
-  const [selectedTenantCode, setSelectedTenantCode] = useState('ALL');
+  const [selectedTenantCode, setSelectedTenantCode] = useState(isMasterAdmin ? 'ALL' : '');
   const [selectedBranch, setSelectedBranch] = useState('ALL');
+  const [availableTenants, setAvailableTenants] = useState([]);
+  const [isMasterScope, setIsMasterScope] = useState(Boolean(isMasterAdmin));
   const [branches, setBranches] = useState([]);
   const [rows, setRows] = useState([]);
   const [summaryCounts, setSummaryCounts] = useState({
@@ -189,44 +185,18 @@ export default function FieldDeviceHealthAudit({
     let active = true;
     const initTenant = async () => {
       try {
-        if (isMasterAdmin) {
-          if (active) setSelectedTenantCode('ALL');
-          return;
-        }
-        const resolved = await resolveKnownTenant(company || 'TNT00001');
+        if (isMasterAdmin) return;
+        const resolved = await resolveKnownTenant(tenantId || company || 'TNT00001');
         if (active && resolved?.tenantCode) {
-          setSelectedTenantCode(resolved.tenantCode);
+          setSelectedTenantCode((prev) => prev || resolved.tenantCode);
         }
       } catch {
-        // Keep ALL / default cleanly
+        // Handled server-side via caller role tenant lock
       }
     };
     initTenant();
     return () => { active = false; };
-  }, [company, isMasterAdmin]);
-
-  useEffect(() => {
-    let active = true;
-    const loadBranches = async () => {
-      if (!selectedTenantCode || selectedTenantCode === 'ALL') {
-        setBranches([]);
-        setSelectedBranch('ALL');
-        return;
-      }
-      try {
-        const res = await getTenantBranches(selectedTenantCode);
-        if (active) {
-          const list = Array.isArray(res?.branches) ? res.branches : Array.isArray(res) ? res : [];
-          setBranches(list);
-          setSelectedBranch('ALL');
-        }
-      } catch {
-        if (active) setBranches([]);
-      }
-    };
-    loadBranches();
-    return () => { active = false; };
-  }, [selectedTenantCode]);
+  }, [company, tenantId, isMasterAdmin]);
 
   useEffect(() => {
     const syncNav = () => {
@@ -248,6 +218,12 @@ export default function FieldDeviceHealthAudit({
       return;
     }
     setRows(res.rows || []);
+    if (Array.isArray(res.availableTenants)) setAvailableTenants(res.availableTenants);
+    if (typeof res.isMasterScope === 'boolean') setIsMasterScope(res.isMasterScope);
+    if (Array.isArray(res.availableBranches)) setBranches(res.availableBranches);
+    if (res.activeTenantCode && !res.isMasterScope) {
+      setSelectedTenantCode(res.activeTenantCode);
+    }
     if (res.summaryCounts) setSummaryCounts(res.summaryCounts);
     if (res.policy) {
       setPolicy(res.policy);
@@ -261,11 +237,18 @@ export default function FieldDeviceHealthAudit({
     }
   }, []);
 
+  const resolveScopeTarget = useCallback(() => {
+    if (isMasterAdmin || isMasterScope) {
+      return selectedTenantCode || 'ALL';
+    }
+    return selectedTenantCode || tenantId || company || '';
+  }, [isMasterAdmin, isMasterScope, selectedTenantCode, tenantId, company]);
+
   const fetchFleetAudit = useCallback(async () => {
     setLoading(true);
     setErrorMsg('');
     try {
-      const targetCompany = selectedTenantCode === 'ALL' ? 'ALL' : selectedTenantCode;
+      const targetCompany = resolveScopeTarget();
       const targetBranch = selectedBranch === 'ALL' ? null : selectedBranch;
       const res = await getDeviceHealthFleetReport(targetCompany, targetBranch);
       applyFleetResponse(res);
@@ -274,11 +257,11 @@ export default function FieldDeviceHealthAudit({
     } finally {
       setLoading(false);
     }
-  }, [selectedTenantCode, selectedBranch, applyFleetResponse]);
+  }, [resolveScopeTarget, selectedBranch, applyFleetResponse]);
 
   useEffect(() => {
     let active = true;
-    const targetCompany = selectedTenantCode === 'ALL' ? 'ALL' : selectedTenantCode;
+    const targetCompany = resolveScopeTarget();
     const targetBranch = selectedBranch === 'ALL' ? null : selectedBranch;
     getDeviceHealthFleetReport(targetCompany, targetBranch)
       .then((res) => {
@@ -293,7 +276,7 @@ export default function FieldDeviceHealthAudit({
         if (active) setLoading(false);
       });
     return () => { active = false; };
-  }, [selectedTenantCode, selectedBranch, applyFleetResponse]);
+  }, [resolveScopeTarget, selectedBranch, applyFleetResponse]);
 
   const filteredRows = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -638,29 +621,68 @@ export default function FieldDeviceHealthAudit({
         gap: 10
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <select
-            value={selectedTenantCode}
-            onChange={(e) => { setSelectedTenantCode(e.target.value); setCurrentPage(1); setLoading(true); }}
-            style={{ padding: '7px 10px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12, fontWeight: 600, background: '#f8fafc', minWidth: 230 }}
-          >
-            {TENANT_OPTIONS.map((t) => (
-              <option key={t.code} value={t.code}>{t.label}</option>
-            ))}
-          </select>
+          {isMasterScope ? (
+            <select
+              value={selectedTenantCode || 'ALL'}
+              onChange={(e) => {
+                setSelectedTenantCode(e.target.value);
+                setSelectedBranch('ALL');
+                setCurrentPage(1);
+                setLoading(true);
+              }}
+              style={{ padding: '7px 10px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12, fontWeight: 600, background: '#f8fafc', minWidth: 230 }}
+              title="Select Tenant / Company (MasterAdmin)"
+            >
+              <option value="ALL">All Tenants (Master Overview)</option>
+              {availableTenants.map((t) => (
+                <option key={t.tenantCode} value={t.tenantCode}>
+                  {t.tenantCode} — {t.companyName}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '7px 12px',
+                borderRadius: 8,
+                border: '1px solid #cbd5e1',
+                background: '#f8fafc',
+                fontSize: 12,
+                fontWeight: 700,
+                color: '#1e293b',
+                minWidth: 210
+              }}
+              title="Locked to your Tenant Workspace"
+            >
+              <Building2 size={14} color="#2563eb" />
+              <span>
+                {availableTenants[0]
+                  ? `${availableTenants[0].tenantCode} — ${availableTenants[0].companyName}`
+                  : (selectedTenantCode || 'Workspace Tenant')}
+              </span>
+            </div>
+          )}
 
           <select
             value={selectedBranch}
             onChange={(e) => { setSelectedBranch(e.target.value); setCurrentPage(1); setLoading(true); }}
-            disabled={selectedTenantCode === 'ALL' || branches.length === 0}
-            style={{ padding: '7px 10px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12, fontWeight: 600, background: '#f8fafc', minWidth: 200 }}
+            disabled={(isMasterScope && (!selectedTenantCode || selectedTenantCode === 'ALL')) || branches.length === 0}
+            style={{ padding: '7px 10px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12, fontWeight: 600, background: '#f8fafc', minWidth: 230 }}
+            title="Filter by Branch / Plant of Active Tenant"
           >
-            <option value="ALL">All Branches ({selectedTenantCode === 'ALL' ? 'Select Company First' : branches.length})</option>
+            <option value="ALL">
+              All Branches ({isMasterScope && (!selectedTenantCode || selectedTenantCode === 'ALL') ? 'Select Tenant First' : branches.length})
+            </option>
             {branches.map((b) => {
-              const code = b.id || b.branch_code || b.code;
-              const name = b.name || b.branch_name || code;
+              const code = b.branch_code || b.id || b.code;
+              const name = b.branch_name || b.name || code;
+              const shortTag = b.custom_code || b.legacy_code;
               return (
                 <option key={code} value={code}>
-                  {code} — {name}
+                  {code} — {name}{shortTag ? ` (${shortTag})` : ''}
                 </option>
               );
             })}

@@ -7864,6 +7864,7 @@ export default function CRMContainer({
                   {fieldForceSubTab === 'device_health' && getSubItemPermissions(moduleAccess, userRole, 'field_force', 'device_health').view && (
                     <FieldDeviceHealthAudit
                       company={userCompany || 'New Swan Group'}
+                      tenantId={effectiveTenantId}
                       userRole={userRole}
                       isMasterAdmin={isMasterAdmin}
                       onInspectEmployeeRoute={(row) => {

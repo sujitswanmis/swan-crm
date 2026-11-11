@@ -1119,11 +1119,11 @@ export async function reportEmployeeDeviceHealth(snapshot = {}) {
       try {
         const { data: roleRow } = await admin
           .from('user_roles')
-          .select('branch_code, tenant_id, company')
+          .select('tenant_id, company, branch_name, work_location_name, module_access')
           .eq('user_id', effectiveUserId)
           .limit(1)
           .maybeSingle();
-        if (roleRow?.branch_code) branchCode = roleRow.branch_code;
+        branchCode = roleRow?.module_access?.branch_code || roleRow?.branch_name || roleRow?.work_location_name || null;
       } catch {
         // Non-blocking lookup
       }
@@ -1334,43 +1334,147 @@ export async function getDeviceHealthFleetReport(company = 'ALL', branchCode = n
 
     const { data: callerRows } = await admin
       .from('user_roles')
-      .select('role, module_access')
+      .select('role, company, tenant_id, email, branch_name, work_location_name, module_access')
       .eq('user_id', user.id)
       .limit(1);
     const callerRole = callerRows?.[0];
     const callerLower = String(callerRole?.role || '').trim().toLowerCase();
-    const canViewFleet =
-      ['masteradmin', 'master_admin', 'admin', 'superadmin', 'hr', 'manager', 'hod'].includes(callerLower) ||
+    const isMasterCaller =
+      callerLower === 'masteradmin' ||
+      callerLower === 'master_admin' ||
       callerRole?.module_access?.is_master_admin === true ||
+      String(user.email || '').trim().toLowerCase() === 'supujacreations@gmail.com';
+
+    const canViewFleet =
+      isMasterCaller ||
+      ['admin', 'superadmin', 'hr', 'manager', 'hod'].includes(callerLower) ||
       callerRole?.module_access?.field_force?.is_manager === true;
 
     if (!canViewFleet) {
       return { success: false, error: 'Forbidden: supervisory access required', rows: [] };
     }
 
-    const { resolveKnownTenant } = await import('@/app/actions/tenantBranches');
+    const { resolveKnownTenant, getTenantBranches } = await import('@/app/actions/tenantBranches');
     const { classifyDeviceHealth, HEALTH_STATUS_META, DEVICE_HEALTH_STATUS } = await import('@/config/appReleaseConfig');
     const { parseBrowserAndOsDetails, PLATFORM_LABELS } = await import('@/utils/platformDetection');
 
+    // Load dynamic tenant catalog from public.tenants (no hardcoded tenant lock-in)
+    const { data: dbTenants } = await admin
+      .from('tenants')
+      .select('id, tenant_code, name, status')
+      .order('tenant_code', { ascending: true });
+
+    const tenantCatalog = Array.isArray(dbTenants) && dbTenants.length > 0
+      ? dbTenants.map((t) => ({
+          tenantId: t.id,
+          tenantCode: String(t.tenant_code || '').toUpperCase().trim(),
+          companyName: t.name || t.tenant_code
+        }))
+      : [
+          { tenantId: '0a37b8e8-1c28-4e19-8891-951fc3f8f8af', tenantCode: 'TNT00001', companyName: 'SuPuja Creations' },
+          { tenantId: '00000000-0000-0000-0000-000000000001', tenantCode: 'TNT00002', companyName: 'New Swan Group' },
+          { tenantId: '922d3e72-6588-457f-a562-4f1bdbf10d98', tenantCode: 'TNT00003', companyName: 'Testing New Swan Group' }
+        ];
+
+    const findTenantFromCatalog = async (tid, comp) => {
+      const cleanTid = String(tid || '').trim().toLowerCase();
+      const cleanComp = String(comp || '').trim().toLowerCase();
+      if (cleanTid) {
+        const byId = tenantCatalog.find((t) => String(t.tenantId || '').toLowerCase() === cleanTid || String(t.tenantCode || '').toLowerCase() === cleanTid);
+        if (byId) return byId;
+      }
+      if (cleanComp) {
+        const byCodeOrName = tenantCatalog.find(
+          (t) => String(t.tenantCode || '').toLowerCase() === cleanComp || String(t.companyName || '').toLowerCase() === cleanComp
+        );
+        if (byCodeOrName) return byCodeOrName;
+      }
+      const fallbackTid = cleanTid ? await resolveKnownTenant(tid) : null;
+      if (fallbackTid?.tenantCode) {
+        return tenantCatalog.find((t) => t.tenantCode === fallbackTid.tenantCode) || fallbackTid;
+      }
+      const fallbackComp = cleanComp ? await resolveKnownTenant(comp) : null;
+      if (fallbackComp?.tenantCode) {
+        return tenantCatalog.find((t) => t.tenantCode === fallbackComp.tenantCode) || fallbackComp;
+      }
+      return null;
+    };
+
+    // Enforce multi-tenant scope: non-MasterAdmin callers can ONLY inspect their own tenant!
+    const callerOwnTenant =
+      (await findTenantFromCatalog(callerRole?.tenant_id, callerRole?.company)) ||
+      tenantCatalog[0];
+
+    let targetTenantCode = 'ALL';
+    let targetTenantObj = null;
+    if (!isMasterCaller) {
+      targetTenantObj = callerOwnTenant;
+      targetTenantCode = callerOwnTenant.tenantCode;
+    } else {
+      const requested = String(company || 'ALL').trim();
+      if (requested && requested.toUpperCase() !== 'ALL' && requested.toLowerCase() !== 'all companies') {
+        targetTenantObj = await findTenantFromCatalog(requested, requested);
+        targetTenantCode = targetTenantObj?.tenantCode || requested.toUpperCase();
+      }
+    }
+
+    const availableTenants = isMasterCaller ? tenantCatalog : [callerOwnTenant];
+
+    // Load branches strictly for the active selected tenant (when specific tenant is scoped)
+    let activeBranches = [];
+    if (targetTenantObj && targetTenantCode !== 'ALL') {
+      const brRes = await getTenantBranches(targetTenantObj.tenantId || targetTenantObj.tenantCode);
+      activeBranches = Array.isArray(brRes?.branches) ? brRes.branches : [];
+    }
+
     const policyRes = await getAppReleasePolicy();
     const policy = policyRes.policy;
-    const companyFilter = await buildCompanyMatchAliases(company);
+    const companyFilter = targetTenantCode === 'ALL'
+      ? { isAll: true, aliases: [] }
+      : await buildCompanyMatchAliases(targetTenantObj?.tenantCode || targetTenantCode);
+    if (!companyFilter.isAll && targetTenantObj) {
+      if (targetTenantObj.tenantId) companyFilter.aliases.push(String(targetTenantObj.tenantId).toLowerCase());
+      if (targetTenantObj.tenantCode) companyFilter.aliases.push(String(targetTenantObj.tenantCode).toLowerCase());
+      if (targetTenantObj.companyName) companyFilter.aliases.push(String(targetTenantObj.companyName).toLowerCase());
+    }
+
     const { dayStr, startISO, endISO } = getISTDayWindowISO();
 
-    // Parallel non-blocking reads
+    // Parallel non-blocking reads (`user_roles` uses `emp_name`, not `name`)
     const [
-      { data: roleRows },
+      { data: roleRows, error: roleErr },
       healthDbRes,
       { data: sessionRows },
       { data: pingRows },
       { data: attRows }
     ] = await Promise.all([
-      admin.from('user_roles').select('*').order('name', { ascending: true }),
+      admin.from('user_roles').select('*').order('emp_name', { ascending: true }),
       admin.from('employee_device_health').select('*').order('last_checked_at', { ascending: false }),
       admin.from('user_sessions').select('user_id, device, ip_address, last_active, is_active').order('last_active', { ascending: false }).limit(800),
       admin.from('employee_location_pings').select('user_id, recorded_at, battery_pct').gte('recorded_at', startISO).lte('recorded_at', endISO).order('recorded_at', { ascending: false }).limit(2000),
       admin.from('attendance_logs').select('user_id, attendance_date, in_time, out_time').eq('attendance_date', dayStr)
     ]);
+
+    if (roleErr) {
+      console.error('[getDeviceHealthFleetReport] user_roles error:', roleErr);
+    }
+
+    // Load branch lookup cache per tenant code when MasterAdmin views ALL tenants
+    const branchCacheByTenant = new Map();
+    if (targetTenantCode !== 'ALL') {
+      branchCacheByTenant.set(targetTenantCode, activeBranches);
+    } else {
+      await Promise.all(
+        availableTenants.map(async (t) => {
+          try {
+            const brRes = await getTenantBranches(t.tenantId || t.tenantCode);
+            branchCacheByTenant.set(t.tenantCode, Array.isArray(brRes?.branches) ? brRes.branches : []);
+          } catch {
+            branchCacheByTenant.set(t.tenantCode, []);
+          }
+        })
+      );
+    }
 
     const paths = await resolveHealthStorePaths();
     const jsonStore = await readJsonFileSafe(paths.primary, paths.tmp, {});
@@ -1418,23 +1522,89 @@ export async function getDeviceHealthFleetReport(company = 'ALL', branchCode = n
       const comp = String(emp?.company || '').trim();
       const key = `${tid}::${comp}`;
       if (tenantResolveCache.has(key)) return tenantResolveCache.get(key);
-      let res = tid ? await resolveKnownTenant(tid) : null;
-      if (!res?.tenantCode && comp) res = await resolveKnownTenant(comp);
-      if (!res?.tenantCode) res = { tenantCode: 'TNT00001', companyName: comp || 'SuPuja Creations', tenantId: null };
-      tenantResolveCache.set(key, res);
-      return res;
+      const matched = (await findTenantFromCatalog(tid, comp)) || tenantCatalog[0];
+      tenantResolveCache.set(key, matched);
+      return matched;
     };
+
+    const resolveEmployeeBranchMatch = (emp, tenantCode, branchesList) => {
+      const rawCandidates = [
+        emp?.module_access?.branch_code,
+        emp?.branch_name,
+        emp?.work_location_name,
+        emp?.company
+      ]
+        .map((v) => String(v || '').trim())
+        .filter(Boolean);
+
+      for (const branch of branchesList || []) {
+        const branchAliases = [
+          branch?.branch_code,
+          branch?.id,
+          branch?.custom_code,
+          branch?.legacy_code,
+          branch?.branch_name
+        ]
+          .map((v) => String(v || '').trim().toLowerCase())
+          .filter(Boolean);
+
+        const hit = rawCandidates.some((cand) => branchAliases.includes(cand.toLowerCase()));
+        if (hit) {
+          const code = branch.branch_code || branch.id;
+          const shortTag = branch.custom_code || branch.legacy_code || '';
+          return {
+            branchCode: code,
+            displayLabel: shortTag ? `${code} (${shortTag})` : code,
+            branchAliases
+          };
+        }
+      }
+
+      const defaultCode = branchesList?.[0]?.branch_code || branchesList?.[0]?.id || `${tenantCode}-B0001`;
+      const unitHint = String(emp?.company || '').trim();
+      const isGenericTenantName = tenantCatalog.some((t) => t.companyName.toLowerCase() === unitHint.toLowerCase());
+      return {
+        branchCode: defaultCode,
+        displayLabel: unitHint && !isGenericTenantName ? `${defaultCode} (${unitHint})` : defaultCode,
+        branchAliases: [defaultCode.toLowerCase(), ...rawCandidates.map((c) => c.toLowerCase())]
+      };
+    };
+
+    const selectedBranchObj =
+      branchCode && branchCode !== 'ALL'
+        ? activeBranches.find(
+            (b) =>
+              String(b.branch_code || b.id || '').toLowerCase() === String(branchCode).toLowerCase() ||
+              String(b.custom_code || '').toLowerCase() === String(branchCode).toLowerCase()
+          )
+        : null;
+    const selectedBranchAliases = selectedBranchObj
+      ? [
+          selectedBranchObj.branch_code,
+          selectedBranchObj.id,
+          selectedBranchObj.custom_code,
+          selectedBranchObj.legacy_code,
+          selectedBranchObj.branch_name
+        ]
+          .map((v) => String(v || '').trim().toLowerCase())
+          .filter(Boolean)
+      : branchCode && branchCode !== 'ALL'
+        ? [String(branchCode).trim().toLowerCase()]
+        : [];
 
     const rows = [];
     for (const emp of roleRows || []) {
-      if (emp?.is_active === false) continue;
+      const empStatus = String(emp?.emp_status || emp?.module_access?.emp_status || 'Active').toLowerCase();
+      if (['inactive', 'in_active', 'terminated', 'resigned', 'trash', 'draft'].includes(empStatus)) continue;
+      if (emp?.is_approved !== true) continue;
+      if (String(emp?.role || '').toLowerCase() === 'customer') continue;
+
       const uid = String(emp?.user_id || emp?.id || '').trim();
       if (!uid) continue;
 
       const resolvedEmpTenant = await resolveEmployeeTenantCached(emp);
       const tenantCode = resolvedEmpTenant?.tenantCode || 'TNT00001';
       const companyName = resolvedEmpTenant?.companyName || emp?.company || 'SuPuja Creations';
-      const empBranch = emp?.branch_code || emp?.module_access?.branch_code || '';
 
       if (!companyFilter.isAll) {
         const empCompLower = String(emp?.company || '').trim().toLowerCase();
@@ -1447,8 +1617,14 @@ export async function getDeviceHealthFleetReport(company = 'ALL', branchCode = n
         if (!matchesTenant) continue;
       }
 
-      if (branchCode && branchCode !== 'ALL' && empBranch !== branchCode) {
-        continue;
+      const tBranches = branchCacheByTenant.get(tenantCode) || [];
+      const resolvedBranch = resolveEmployeeBranchMatch(emp, tenantCode, tBranches);
+
+      if (selectedBranchAliases.length > 0) {
+        const branchHit =
+          selectedBranchAliases.includes(String(resolvedBranch.branchCode || '').toLowerCase()) ||
+          resolvedBranch.branchAliases.some((a) => selectedBranchAliases.includes(a));
+        if (!branchHit) continue;
       }
 
       let healthRecord = healthByUser.get(uid) || null;
@@ -1483,13 +1659,13 @@ export async function getDeviceHealthFleetReport(company = 'ALL', branchCode = n
 
       rows.push({
         userId: uid,
-        employeeName: emp?.name || emp?.email || 'Unknown',
-        phone: emp?.phone || '',
-        email: emp?.email || '',
+        employeeName: String(emp?.emp_name || emp?.name || emp?.email || 'Unknown').trim(),
+        phone: emp?.emp_mobile || emp?.emp_alt_mobile || emp?.phone || '',
+        email: emp?.email || emp?.emp_official_mail_id || '',
         role: emp?.role || 'employee',
         tenantCode,
         companyName,
-        branchCode: empBranch || `${tenantCode}-HQ`,
+        branchCode: resolvedBranch.displayLabel,
         status: evaluation.status,
         statusLabel: statusMeta.label,
         statusShortLabel: statusMeta.shortLabel,
@@ -1535,7 +1711,17 @@ export async function getDeviceHealthFleetReport(company = 'ALL', branchCode = n
       offline: rows.filter((r) => r.status === DEVICE_HEALTH_STATUS.OFFLINE).length
     };
 
-    return { success: true, rows, summaryCounts, policy, generatedAtIST: new Date().toISOString() };
+    return {
+      success: true,
+      rows,
+      summaryCounts,
+      policy,
+      isMasterScope: isMasterCaller,
+      activeTenantCode: targetTenantCode,
+      availableTenants,
+      availableBranches: activeBranches,
+      generatedAtIST: new Date().toISOString()
+    };
   } catch (err) {
     console.error('[getDeviceHealthFleetReport] Error:', err);
     return { success: false, error: err?.message || 'Failed to generate device health report', rows: [] };
