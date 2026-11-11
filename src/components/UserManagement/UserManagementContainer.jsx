@@ -555,6 +555,16 @@ export default function UserManagementContainer({
                     }
                   });
                   const nextAccess = {
+                    ...(addPayload.tenant_id ? { _tenantId: addPayload.tenant_id } : {}),
+                    company_name: addPayload.company || '',
+                    branch_name: addPayload.branch_name || '',
+                    assigned_branch_scope: addPayload.assigned_branch_scope || 'SINGLE',
+                    assigned_branches: Array.isArray(addPayload.assigned_branches) ? addPayload.assigned_branches : [],
+                    assigned_branch_names: Array.isArray(addPayload.assigned_branch_names) ? addPayload.assigned_branch_names : [],
+                    assigned_branch_codes: Array.isArray(addPayload.assigned_branch_codes) ? addPayload.assigned_branch_codes : [],
+                    tracking_policy: addPayload.tracking_policy || 'PUNCH_ONLY',
+                    vehicle_type: addPayload.vehicle_type || 'BIKE',
+                    conveyance_rate_per_km: addPayload.conveyance_rate_per_km ?? 4.5,
                     ...roleData,
                     role_preset_key: preset.key,
                     role_preset_name: preset.name

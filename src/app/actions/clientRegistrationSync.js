@@ -3,6 +3,7 @@
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { logAuditAction } from '@/app/actions/audit';
 import { createPartyMaster, resolveDbTenantUuid } from '@/app/actions/partyMaster';
+import { expandCompanyAliases } from '@/utils/branchAccess';
 
 const getAdminClient = () => {
   return createSupabaseClient(
@@ -169,12 +170,15 @@ const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro',
  * 2. Get list of all drafts for current tenant/user
  * Supports Tarika A (personal drafts) and Tarika B (common pool via canViewAll)
  */
-export async function getClientRegistrationDrafts(userCompany = '', currentUser = '', canViewAll = false) {
+export async function getClientRegistrationDrafts(userCompany = '', currentUser = '', canViewAll = false, allowedCompanies = null) {
   try {
     const adminClient = getAdminClient();
     let allDrafts = [];
     let page = 0;
     const pageSize = 1000;
+    const explicitAllowed = Array.isArray(allowedCompanies)
+      ? Array.from(new Set(allowedCompanies.flatMap(c => expandCompanyAliases(c)).filter(c => c !== '')))
+      : [];
 
     while (true) {
       let query = adminClient
@@ -192,6 +196,10 @@ export async function getClientRegistrationDrafts(userCompany = '', currentUser 
         } else {
           query = query.eq('our_company', userCompany);
         }
+      } else if (explicitAllowed.length > 0) {
+        query = explicitAllowed.length === 1
+          ? query.eq('our_company', explicitAllowed[0])
+          : query.in('our_company', explicitAllowed);
       }
 
       if (!canViewAll && currentUser && currentUser.trim() !== '') {

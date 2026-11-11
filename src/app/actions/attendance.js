@@ -1036,6 +1036,55 @@ export async function getTodayAttendance(userEmail, userId, tenantId = DEFAULT_T
   }
 }
 
+async function getAttendancePolicyForUserScope(tenantId, userCompany, primaryBranch = '', moduleAccess = null) {
+  const ma = moduleAccess || {};
+  const scope = String(ma.assigned_branch_scope || '').trim().toUpperCase();
+  const rawTokens = Array.isArray(ma.assigned_branches) ? ma.assigned_branches : [];
+  const rawNames = Array.isArray(ma.assigned_branch_names)
+    ? ma.assigned_branch_names.map(b => String(b || '').trim()).filter(b => b && b.toLowerCase() !== 'all branches')
+    : [];
+
+  const isAllScope = scope === 'ALL' || rawTokens.some(b => String(b || '').trim().toUpperCase() === 'ALL');
+  if (isAllScope) {
+    return getTenantAttendancePolicy(tenantId, userCompany, 'All Branches');
+  }
+
+  const branchNames = Array.from(new Set([primaryBranch, ...rawNames].map(b => String(b || '').trim()).filter(Boolean)));
+  if (branchNames.length <= 1) {
+    return getTenantAttendancePolicy(tenantId, userCompany, branchNames[0] || primaryBranch || '');
+  }
+
+  const results = await Promise.all(
+    branchNames.map(bn => getTenantAttendancePolicy(tenantId, userCompany, bn))
+  );
+  const policies = results.map(r => r?.data).filter(Boolean);
+  if (policies.length === 0) {
+    return getTenantAttendancePolicy(tenantId, userCompany, primaryBranch || '');
+  }
+
+  const locMap = new Map();
+  for (const pol of policies) {
+    if (!Array.isArray(pol.geofence_locations)) continue;
+    for (const loc of pol.geofence_locations) {
+      if (!loc) continue;
+      const key = loc.id || `${loc.name || ''}:${loc.latitude || ''}:${loc.longitude || ''}`;
+      if (!locMap.has(key)) {
+        locMap.set(key, { ...loc, branch_name: loc.branch_name || pol.branch_name || '' });
+      }
+    }
+  }
+
+  const base = policies[0];
+  return {
+    success: true,
+    data: {
+      ...base,
+      enable_geofence: policies.some(p => Boolean(p.enable_geofence)),
+      geofence_locations: Array.from(locMap.values())
+    }
+  };
+}
+
 /**
  * 2. Punch In (Strict 1-Time Punch In per day)
  */
@@ -1125,11 +1174,12 @@ export async function punchIn({
   let resolvedEmpName = empName || email.split('@')[0];
   let assignedShiftFromDb = null;
   let employeeBranchFromDb = '';
+  let employeeModuleAccess = null;
 
   try {
     const { data: userRole } = await adminClient
       .from('user_roles')
-      .select('emp_id, emp_name, emp_department, assigned_shift, branch_name, company_name')
+      .select('emp_id, emp_name, emp_department, assigned_shift, branch_name, company_name, module_access')
       .ilike('email', normalizedEmail)
       .maybeSingle();
 
@@ -1139,12 +1189,13 @@ export async function punchIn({
       if (!resolvedEmpName || resolvedEmpName === email.split('@')[0]) resolvedEmpName = userRole.emp_name || resolvedEmpName;
       if (userRole.assigned_shift) assignedShiftFromDb = userRole.assigned_shift;
       if (userRole.branch_name) employeeBranchFromDb = userRole.branch_name;
+      if (userRole.module_access) employeeModuleAccess = userRole.module_access;
     }
   } catch {}
 
   const effectiveCompany = userCompany || '';
   const effectiveTenant = resolveTenantId(tenantId, effectiveCompany);
-  const policyRes = await getTenantAttendancePolicy(effectiveTenant, effectiveCompany, employeeBranchFromDb);
+  const policyRes = await getAttendancePolicyForUserScope(effectiveTenant, effectiveCompany, employeeBranchFromDb, employeeModuleAccess);
   const tenantPolicy = policyRes?.data || null;
 
   // 1. Mandatory GPS Permission Check (ON / OFF / AUTO)
@@ -1411,17 +1462,19 @@ export async function punchOut({
 
   let effectiveCompany = userCompany || existing.company_name || '';
   let employeeBranch = existing.branch_name || '';
+  let employeeModuleAccess = null;
   try {
     const { data: uRole } = await adminClient
       .from('user_roles')
-      .select('company_name, tenant_id, branch_name')
+      .select('company_name, tenant_id, branch_name, module_access')
       .ilike('email', normalizedEmail)
       .maybeSingle();
     if (uRole?.company_name && !effectiveCompany) effectiveCompany = uRole.company_name;
     if (uRole?.branch_name && !employeeBranch) employeeBranch = uRole.branch_name;
+    if (uRole?.module_access) employeeModuleAccess = uRole.module_access;
   } catch {}
   const effectiveTenant = resolveTenantId(tenantId, effectiveCompany);
-  const policyRes = await getTenantAttendancePolicy(effectiveTenant, effectiveCompany, employeeBranch);
+  const policyRes = await getAttendancePolicyForUserScope(effectiveTenant, effectiveCompany, employeeBranch, employeeModuleAccess);
   const tenantPolicy = policyRes?.data || null;
 
   // 1. Mandatory GPS Permission Check (ON / OFF / AUTO)

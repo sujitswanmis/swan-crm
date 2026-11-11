@@ -57,6 +57,44 @@ function resolveFieldTrackingFields(details = {}) {
   return { trackingPolicy, vehicleType, conveyanceRate };
 }
 
+const PRESERVED_ACCESS_METADATA_KEYS = [
+  '_tenantId',
+  'assigned_branch_scope',
+  'assigned_branches',
+  'assigned_branch_names',
+  'assigned_branch_codes',
+  'branch_name',
+  'company_name',
+  'tracking_policy',
+  'vehicle_type',
+  'conveyance_rate_per_km'
+];
+
+function extractBranchModuleMetadata(details = {}, prevAccess = {}) {
+  const patch = {};
+  if (details.assigned_branch_scope !== undefined) {
+    patch.assigned_branch_scope = details.assigned_branch_scope || 'SINGLE';
+  } else if (prevAccess.assigned_branch_scope) {
+    patch.assigned_branch_scope = prevAccess.assigned_branch_scope;
+  }
+  if (Array.isArray(details.assigned_branches)) {
+    patch.assigned_branches = details.assigned_branches.map(b => String(b || '').trim()).filter(Boolean);
+  } else if (Array.isArray(prevAccess.assigned_branches)) {
+    patch.assigned_branches = prevAccess.assigned_branches;
+  }
+  if (Array.isArray(details.assigned_branch_names)) {
+    patch.assigned_branch_names = details.assigned_branch_names.map(b => String(b || '').trim()).filter(Boolean);
+  } else if (Array.isArray(prevAccess.assigned_branch_names)) {
+    patch.assigned_branch_names = prevAccess.assigned_branch_names;
+  }
+  if (Array.isArray(details.assigned_branch_codes)) {
+    patch.assigned_branch_codes = details.assigned_branch_codes.map(b => String(b || '').trim()).filter(Boolean);
+  } else if (Array.isArray(prevAccess.assigned_branch_codes)) {
+    patch.assigned_branch_codes = prevAccess.assigned_branch_codes;
+  }
+  return patch;
+}
+
 export async function getTeamMembers(requesterCompany = null, tenantId = null) {
   const adminClient = getAdminClient();
   const { data, error } = await adminClient
@@ -129,6 +167,11 @@ export async function getTeamMembers(requesterCompany = null, tenantId = null) {
       // ABSOLUTE ZERO LEAKAGE: Exclude separate client tenants (SuPuja Creations, Testing NSG, etc.)
       if (uTenant !== '00000000-0000-0000-0000-000000000001') return false;
       if (reqLower === 'all' || reqLower === 'all companies' || !reqLower) return true;
+      const scope = String(u.module_access?.assigned_branch_scope || '').toUpperCase();
+      const extraBranches = Array.isArray(u.module_access?.assigned_branches)
+        ? u.module_access.assigned_branches.map(b => String(b || '').toLowerCase().trim())
+        : [];
+      if (scope === 'ALL' || extraBranches.includes('all') || extraBranches.includes(reqLower)) return true;
       return SWAN_COMPANIES.includes(userComp) || !userComp || userComp === reqLower;
     }
 
@@ -139,6 +182,7 @@ export async function getTeamMembers(requesterCompany = null, tenantId = null) {
   const finalData = scopedData;
   return finalData.map(u => {
     const resolvedVehicle = u.vehicle_type || u.module_access?.vehicle_type || 'BIKE';
+    const branchMeta = extractBranchModuleMetadata({}, u.module_access || {});
     return {
       ...u,
       tenant_id: u.tenant_id || u.module_access?._tenantId || null,
@@ -147,6 +191,10 @@ export async function getTeamMembers(requesterCompany = null, tenantId = null) {
       emp_alt_mobile: u.emp_alt_mobile || (u.module_access && u.module_access.emp_alt_mobile) || '',
       company_name: u.company_name || u.company || (u.module_access && u.module_access.company_name) || '',
       branch_name: u.branch_name || (u.module_access && u.module_access.branch_name) || '',
+      assigned_branch_scope: branchMeta.assigned_branch_scope || 'SINGLE',
+      assigned_branches: branchMeta.assigned_branches || [],
+      assigned_branch_names: branchMeta.assigned_branch_names || [],
+      assigned_branch_codes: branchMeta.assigned_branch_codes || [],
       work_location_type: u.work_location_type || (u.module_access && u.module_access.work_location_type) || '',
       work_location_name: u.work_location_name || (u.module_access && u.module_access.work_location_name) || '',
       assigned_shift: u.assigned_shift || (u.module_access && u.module_access.assigned_shift) || null,
@@ -268,7 +316,7 @@ export async function registerEmployeeDetails(userId, email, details) {
   // First check if the user already exists (e.g. created by auth trigger)
   const { data: existingUser } = await adminClient
     .from('user_roles')
-    .select('role, is_approved, emp_id, tenant_id')
+    .select('role, is_approved, emp_id, tenant_id, module_access')
     .eq('user_id', userId)
     .single();
 
@@ -334,6 +382,19 @@ export async function registerEmployeeDetails(userId, email, details) {
 
   if (existingUser) {
     // Just update the details, do NOT overwrite role or is_approved UNLESS they are a customer
+    const prevExistingAccess = existingUser.module_access || {};
+    const branchModuleMeta = extractBranchModuleMetadata(details, prevExistingAccess);
+    const mergedExistingAccess = {
+      ...prevExistingAccess,
+      _tenantId: targetTenantId,
+      company_name: details.company_name || details.company || prevExistingAccess.company_name || '',
+      ...(details.branch_name !== undefined ? { branch_name: details.branch_name || '' } : {}),
+      ...branchModuleMeta,
+      ...(trackingPolicy !== undefined ? { tracking_policy: trackingPolicy } : {}),
+      ...(vehicleType !== undefined ? { vehicle_type: vehicleType } : {}),
+      ...(conveyanceRate !== undefined ? { conveyance_rate_per_km: conveyanceRate } : {})
+    };
+
     const updatePayload = {
       tenant_id: targetTenantId,
       emp_id: resolvedEmpId || (isCustomer ? 'CUSTOMER' : undefined),
@@ -353,6 +414,7 @@ export async function registerEmployeeDetails(userId, email, details) {
       primary_reporting_person: details.primary_reporting_person || '',
       secondary_reporting_person: details.secondary_reporting_person || '',
       hod_person: details.hod_person || '',
+      module_access: mergedExistingAccess,
       ...(trackingPolicy !== undefined ? { tracking_policy: trackingPolicy } : {}),
       ...(vehicleType !== undefined ? { vehicle_type: vehicleType } : {}),
       ...(conveyanceRate !== undefined ? { conveyance_rate_per_km: conveyanceRate } : {})
@@ -387,17 +449,8 @@ export async function registerEmployeeDetails(userId, email, details) {
       delete updatePayload.secondary_reporting_person;
       delete updatePayload.hod_person;
 
-      const { data: userData } = await adminClient
-        .from('user_roles')
-        .select('module_access')
-        .eq('user_id', userId)
-        .single();
-      const prevAccess = userData?.module_access || {};
       updatePayload.module_access = { 
-        ...prevAccess, 
-        _tenantId: targetTenantId,
-        company_name: details.company_name || details.company || prevAccess.company_name || '',
-        branch_name: details.branch_name !== undefined ? (details.branch_name || '') : (prevAccess.branch_name || ''),
+        ...mergedExistingAccess,
         emp_status: details.emp_status || 'Active',
         emp_sub_department: details.emp_sub_department || '',
         emp_alt_mobile: details.emp_alt_mobile || '',
@@ -405,10 +458,7 @@ export async function registerEmployeeDetails(userId, email, details) {
         work_location_name: details.work_location_name || '',
         primary_reporting_person: details.primary_reporting_person || '',
         secondary_reporting_person: details.secondary_reporting_person || '',
-        hod_person: details.hod_person || '',
-        ...(trackingPolicy !== undefined ? { tracking_policy: trackingPolicy } : {}),
-        ...(vehicleType !== undefined ? { vehicle_type: vehicleType } : {}),
-        ...(conveyanceRate !== undefined ? { conveyance_rate_per_km: conveyanceRate } : {})
+        hod_person: details.hod_person || ''
       };
       const { error: fallbackErr } = await adminClient
         .from('user_roles')
@@ -421,6 +471,7 @@ export async function registerEmployeeDetails(userId, email, details) {
     const resolvedVehicle = vehicleType || 'BIKE';
     const resolvedRate = conveyanceRate !== undefined ? conveyanceRate : (resolvedVehicle === 'NONE' ? 0 : 4.50);
     const resolvedPolicy = trackingPolicy || 'PUNCH_ONLY';
+    const branchModuleMeta = extractBranchModuleMetadata(details, {});
 
     const insertPayload = {
       user_id: userId,
@@ -457,6 +508,7 @@ export async function registerEmployeeDetails(userId, email, details) {
         _tenantId: targetTenantId,
         company_name: details.company_name || details.company || (isCustomer ? 'Public' : ''),
         branch_name: details.branch_name || '',
+        ...branchModuleMeta,
         emp_status: details.emp_status || 'Active',
         emp_sub_department: details.emp_sub_department || '',
         emp_alt_mobile: details.emp_alt_mobile || '',
@@ -503,10 +555,15 @@ export async function updateEmployeeDetailsAdmin(userId, details) {
   details = { ...details, ...getReportingFields(details) };
   const adminClient = getAdminClient();
 
+  let currentAuth = null;
+  try {
+    const { data } = await adminClient.from('user_roles').select('email, module_access').eq('user_id', userId).maybeSingle();
+    currentAuth = data;
+  } catch (_) {}
+
   // If email is provided and is different, update it in auth.users
   if (details.email) {
     try {
-      const { data: currentAuth } = await adminClient.from('user_roles').select('email').eq('user_id', userId).maybeSingle();
       if (!currentAuth?.email || currentAuth.email.toLowerCase() !== details.email.toLowerCase()) {
         const { error: authError } = await adminClient.auth.admin.updateUserById(userId, {
           email: details.email,
@@ -523,6 +580,22 @@ export async function updateEmployeeDetailsAdmin(userId, details) {
   }
 
   const { trackingPolicy, vehicleType, conveyanceRate } = resolveFieldTrackingFields(details);
+  const existingAccess = currentAuth?.module_access || {};
+  const hasBranchScopePatch =
+    details.assigned_branch_scope !== undefined ||
+    Array.isArray(details.assigned_branches) ||
+    Array.isArray(details.assigned_branch_names) ||
+    Array.isArray(details.assigned_branch_codes);
+  const mergedAccess = {
+    ...existingAccess,
+    ...(details.tenant_id && isUuidStr(details.tenant_id) ? { _tenantId: String(details.tenant_id).trim() } : {}),
+    ...(details.branch_name !== undefined ? { branch_name: details.branch_name || '' } : {}),
+    ...(details.company_name !== undefined || details.company !== undefined ? { company_name: details.company_name || details.company || '' } : {}),
+    ...extractBranchModuleMetadata(details, existingAccess),
+    ...(trackingPolicy !== undefined ? { tracking_policy: trackingPolicy } : {}),
+    ...(vehicleType !== undefined ? { vehicle_type: vehicleType } : {}),
+    ...(conveyanceRate !== undefined ? { conveyance_rate_per_km: conveyanceRate } : {})
+  };
 
   const updateData = {
     emp_id: details.emp_id,
@@ -539,6 +612,10 @@ export async function updateEmployeeDetailsAdmin(userId, details) {
     secondary_reporting_person: details.secondary_reporting_person || '',
     hod_person: details.hod_person || ''
   };
+
+  if (hasBranchScopePatch || details.branch_name !== undefined || trackingPolicy !== undefined) {
+    updateData.module_access = mergedAccess;
+  }
 
   if (details.tenant_id && isUuidStr(details.tenant_id)) {
     updateData.tenant_id = String(details.tenant_id).trim();
@@ -609,18 +686,12 @@ export async function updateEmployeeDetailsAdmin(userId, details) {
     delete updateData.assigned_shift;
     delete updateData.salary_amount;
 
-    const { data: userData } = await adminClient
-      .from('user_roles')
-      .select('module_access')
-      .eq('user_id', userId)
-      .single();
-
-    const currentAccess = userData?.module_access || {};
+    const currentAccess = Object.keys(existingAccess).length > 0
+      ? existingAccess
+      : ((await adminClient.from('user_roles').select('module_access').eq('user_id', userId).single())?.data?.module_access || {});
     updateData.module_access = { 
       ...currentAccess, 
-      ...(details.tenant_id && isUuidStr(details.tenant_id) ? { _tenantId: String(details.tenant_id).trim() } : {}),
-      ...(details.branch_name !== undefined ? { branch_name: details.branch_name || '' } : {}),
-      ...(details.company_name !== undefined || details.company !== undefined ? { company_name: details.company_name || details.company || '' } : {}),
+      ...mergedAccess,
       emp_status: details.emp_status || 'Active',
       can_self_reset_password: details.can_self_reset_password !== undefined ? Boolean(details.can_self_reset_password) : (currentAccess.can_self_reset_password === true),
       emp_sub_department: details.emp_sub_department || '',
@@ -631,10 +702,7 @@ export async function updateEmployeeDetailsAdmin(userId, details) {
       secondary_reporting_person: details.secondary_reporting_person || '',
       hod_person: details.hod_person || '',
       assigned_shift: details.assigned_shift !== undefined ? (details.assigned_shift || null) : (currentAccess.assigned_shift || null),
-      salary_amount: details.salary_amount !== undefined ? (details.salary_amount !== '' && details.salary_amount !== null ? Number(details.salary_amount) : null) : (currentAccess.salary_amount !== undefined ? currentAccess.salary_amount : null),
-      ...(trackingPolicy !== undefined ? { tracking_policy: trackingPolicy } : {}),
-      ...(vehicleType !== undefined ? { vehicle_type: vehicleType } : {}),
-      ...(conveyanceRate !== undefined ? { conveyance_rate_per_km: conveyanceRate } : {})
+      salary_amount: details.salary_amount !== undefined ? (details.salary_amount !== '' && details.salary_amount !== null ? Number(details.salary_amount) : null) : (currentAccess.salary_amount !== undefined ? currentAccess.salary_amount : null)
     };
 
     const { error: fallbackErr } = await adminClient
@@ -689,11 +757,22 @@ export async function updateEmpStatus(userId, empStatus) {
 
 export async function updateModuleAccess(userId, accessData) {
   const adminClient = getAdminClient();
-  
+
+  let mergedAccess = { ...(accessData || {}) };
+  try {
+    const { data: existingRow } = await adminClient.from('user_roles').select('module_access').eq('user_id', userId).maybeSingle();
+    const prevAccess = existingRow?.module_access || {};
+    for (const metaKey of PRESERVED_ACCESS_METADATA_KEYS) {
+      if (mergedAccess[metaKey] === undefined && prevAccess[metaKey] !== undefined) {
+        mergedAccess[metaKey] = prevAccess[metaKey];
+      }
+    }
+  } catch (_) {}
+
   const updatePayload = { 
-    module_access: accessData,
-    can_self_reset_password: accessData.can_self_reset_password === true,
-    can_import_export: accessData.can_import_export === true
+    module_access: mergedAccess,
+    can_self_reset_password: mergedAccess.can_self_reset_password === true,
+    can_import_export: mergedAccess.can_import_export === true
   };
 
   let { error } = await adminClient
@@ -705,7 +784,7 @@ export async function updateModuleAccess(userId, accessData) {
     // Fallback if specific columns don't exist
     const res = await adminClient
       .from('user_roles')
-      .update({ module_access: accessData })
+      .update({ module_access: mergedAccess })
       .eq('user_id', userId);
     error = res.error;
   }
@@ -722,7 +801,7 @@ export async function updateModuleAccess(userId, accessData) {
     console.error('Audit Log failed', e);
   }
 
-  return { success: true };
+  return { success: true, moduleAccess: mergedAccess };
 }
 
 export async function createAccountAdmin(emailOrData, maybePassword, maybeDetails) {

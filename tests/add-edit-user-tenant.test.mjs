@@ -20,6 +20,7 @@ async function compile(file) {
 
 const modalCode = await compile('src/components/UserManagement/modals/AddEditUserModal.jsx');
 const teamCode = await compile('src/app/actions/team.js');
+const branchAccessCode = await compile('src/utils/branchAccess.js');
 const icons = new Proxy({}, { get: () => () => null });
 
 function loadDefault(code, dependencies) {
@@ -68,7 +69,7 @@ function text(tree) {
   return tree && typeof tree === 'object' ? text(tree.props?.children) : '';
 }
 
-function createModalHarness({ tenantId = '00000000-0000-0000-0000-000000000001', currentUserCompany = 'New Swan Group', isMasterAdmin = false, user = null } = {}) {
+function createModalHarness({ tenantId = '00000000-0000-0000-0000-000000000001', currentUserCompany = 'New Swan Group', isMasterAdmin = false, user = null, onSave = () => {} } = {}) {
   const states = [];
   const effects = [];
   let cursor = 0;
@@ -101,11 +102,14 @@ function createModalHarness({ tenantId = '00000000-0000-0000-0000-000000000001',
     { id: 'TNT00002-B0003', company: 'New Swan Group', tenant_id: '00000000-0000-0000-0000-000000000001', tenant_code: 'TNT00002', branch_code: 'TNT00002-B0003', custom_code: 'NSTLP', branch_name: 'New Swan Technologies Limited Paharuwal', location_type: 'Factory / Plant', is_active: true }
   ];
 
+  const branchAccessModule = loadExports(branchAccessCode, {});
+
   const Modal = loadDefault(modalCode, {
     react,
     'lucide-react': icons,
     '@/components/common/SearchableEmployeeSelect': () => null,
     '@/utils/reportingHierarchy': { getReportingEmail: () => '', getReportingFields: () => ({}) },
+    '@/utils/branchAccess': branchAccessModule,
     '../utils/userManagementUtils': {
       DEFAULT_DEPARTMENTS: ['Sales', 'Human Resource'],
       DESIGNATIONS: ['Sales Executive'],
@@ -153,7 +157,7 @@ function createModalHarness({ tenantId = '00000000-0000-0000-0000-000000000001',
     const tree = Modal({
       isOpen: true,
       onClose: () => {},
-      onSave: () => {},
+      onSave,
       user,
       currentUserCompany,
       tenantId,
@@ -347,12 +351,200 @@ test('Edit Mode preserves custom location input visibility and maps legacy NSMLR
   const customLocInput = nodes(tree).find(n => n.type === 'input' && n.props.value === 'Delhi Field Territory');
   assert.ok(customLocInput, 'Custom work_location_name must render automatically as editable input in Edit Mode');
 
-  const branchSelect = nodes(tree).find(n => n.type === 'select' && n.props.value === 'New Swan Multitech Limited Raian');
-  assert.ok(branchSelect, 'Legacy NSMLR company should auto-match branch dropdown');
+  const removePrimaryChip = nodes(tree).find(n => n.type === 'button' && n.props['aria-label'] === 'Remove New Swan Multitech Limited Raian');
+  assert.ok(removePrimaryChip, 'Legacy NSMLR company should hydrate into a removable Branch Name chip');
 
   const rateInput = nodes(tree).find(n => n.type === 'input' && n.props.type === 'number' && n.props.step === '0.25');
   assert.ok(rateInput);
   assert.equal(rateInput.props.value, 0);
   assert.equal(rateInput.props.disabled, true);
 });
+
+test('Branch Name chip multi-select supports 2 branches, All Branches, and Primary promotion + save payload', async () => {
+  const savedPayloads = [];
+  const harness = createModalHarness({
+    user: {
+      user_id: 'emp-multi',
+      emp_name: 'Aman',
+      email: 'aman@newswangroup.com',
+      company: 'NSMLR',
+      branch_name: 'New Swan Multitech Limited Raian',
+      tenant_id: '00000000-0000-0000-0000-000000000001',
+      module_access: {}
+    },
+    onSave: payload => savedPayloads.push(payload)
+  });
+
+  let tree = harness.render();
+  await harness.flushEffects();
+  tree = harness.render();
+
+  const stepBtns = nodes(tree).filter(n => n.type === 'button' && text(n).includes('2. Job & Location'));
+  stepBtns[0].props.onClick();
+  tree = harness.render();
+
+  // Dropdown is the one containing __ALL__ option
+  const branchSelect = nodes(tree).find(n =>
+    n.type === 'select' && nodes(n).some(o => o.type === 'option' && o.props.value === '__ALL__')
+  );
+  assert.ok(branchSelect, 'Branch Name selector dropdown must offer All Branches & branch chips');
+
+  // Add second branch: NSTLP
+  branchSelect.props.onChange({ target: { value: 'New Swan Technologies Limited Paharuwal' } });
+  tree = harness.render();
+
+  assert.equal(text(tree).includes('Primary ·'), true, 'Multiple selected branches must tag first chip as Primary');
+  assert.equal(text(tree).includes('Multi-branch enabled (2 branches)'), true);
+
+  // Save and verify MULTI payload
+  const formNode = nodes(tree).find(n => n.type === 'form');
+  formNode.props.onSubmit({ preventDefault: () => {} });
+  const multiSaved = JSON.parse(JSON.stringify(savedPayloads[0]));
+  assert.equal(savedPayloads.length, 1);
+  assert.equal(multiSaved.assigned_branch_scope, 'MULTI');
+  assert.deepEqual(multiSaved.assigned_branches, ['NSMLR', 'NSTLP']);
+  assert.deepEqual(multiSaved.assigned_branch_names, [
+    'New Swan Multitech Limited Raian',
+    'New Swan Technologies Limited Paharuwal'
+  ]);
+  assert.deepEqual(multiSaved.assigned_branch_codes, ['TNT00002-B0002', 'TNT00002-B0003']);
+
+  // Now switch to All Branches (re-query form from refreshed tree)
+  branchSelect.props.onChange({ target: { value: '__ALL__' } });
+  tree = harness.render();
+  assert.equal(text(tree).includes('All Branches (Full Tenant Access)'), true);
+
+  const allBranchesForm = nodes(tree).find(n => n.type === 'form');
+  allBranchesForm.props.onSubmit({ preventDefault: () => {} });
+  const allSaved = JSON.parse(JSON.stringify(savedPayloads[1]));
+  assert.equal(savedPayloads.length, 2);
+  assert.equal(allSaved.assigned_branch_scope, 'ALL');
+  assert.deepEqual(allSaved.assigned_branches, ['ALL']);
+});
+
+test('branchAccess.js enforces single, multi, and ALL scope while ignoring misleading preset can_view_all_companies flag', () => {
+  const { getUserBranchAccess, evaluateLeadCompanyScope } = loadExports(branchAccessCode, {});
+
+  // 1. Single-branch preset that sets can_view_all_companies: true MUST remain SINGLE!
+  const singleAccess = getUserBranchAccess({
+    moduleAccess: {
+      can_view_all_companies: true,
+      branch_name: 'New Swan Multitech Limited Raian'
+    },
+    userCompany: 'NSMLR',
+    userRole: 'agent',
+    isSwanWorkspace: true
+  });
+  assert.equal(singleAccess.scope, 'SINGLE');
+  assert.equal(singleAccess.isAllBranches, false);
+  assert.equal(singleAccess.matchesLeadCompany('NSMLR'), true);
+  assert.equal(singleAccess.matchesLeadCompany('NSTLP'), false);
+
+  // 2. Explicit 2-branch assignment inside New Swan Group
+  const multiAccess = getUserBranchAccess({
+    moduleAccess: {
+      assigned_branch_scope: 'MULTI',
+      assigned_branches: ['NSMLR', 'NSTLP'],
+      assigned_branch_names: ['New Swan Multitech Limited Raian', 'New Swan Technologies Limited Paharuwal']
+    },
+    userCompany: 'NSMLR',
+    userRole: 'agent',
+    isSwanWorkspace: true
+  });
+  assert.equal(multiAccess.scope, 'MULTI');
+  assert.equal(multiAccess.isMultiBranch, true);
+  assert.equal(multiAccess.isAllBranches, false);
+  assert.equal(multiAccess.matchesLeadCompany('NSMLR'), true);
+  assert.equal(multiAccess.matchesLeadCompany('NSTL'), true);
+  assert.equal(multiAccess.matchesLeadCompany('SuPuja Creations'), false);
+
+  // Filtering header to NSTLP hides NSMLR
+  const nsmlrScoped = evaluateLeadCompanyScope('NSMLR', {
+    isSwanWorkspace: true,
+    userCompany: 'NSMLR',
+    adminCompanyFilter: 'NSTLP',
+    userBranchAccess: multiAccess,
+    isAdmin: false
+  });
+  assert.equal(nsmlrScoped.inCompanyScope, false);
+
+  // 3. Explicit ALL assignment for non-admin staff inside tenant
+  const allAccess = getUserBranchAccess({
+    moduleAccess: {
+      assigned_branch_scope: 'ALL',
+      assigned_branches: ['ALL']
+    },
+    userCompany: 'NSMLR',
+    userRole: 'agent',
+    isSwanWorkspace: true
+  });
+  assert.equal(allAccess.scope, 'ALL');
+  assert.equal(allAccess.isAllBranches, true);
+  assert.equal(allAccess.matchesLeadCompany('NSMLR'), true);
+  assert.equal(allAccess.matchesLeadCompany('NSTLP'), true);
+  assert.equal(allAccess.matchesLeadCompany('SuPuja Creations'), false);
+
+  // 4. Client tenant isolation: SuPuja staff stays locked to SuPuja even with ALL scope
+  const clientAll = getUserBranchAccess({
+    moduleAccess: { assigned_branch_scope: 'ALL', assigned_branches: ['ALL'] },
+    userCompany: 'SuPuja Creations',
+    userRole: 'agent',
+    isSwanWorkspace: false
+  });
+  assert.equal(clientAll.matchesLeadCompany('SuPuja Creations'), true);
+  assert.equal(clientAll.matchesLeadCompany('NSMLR'), false);
+});
+
+test('team.js preserves assigned_branch_scope and assigned_branches during role preset module_access updates', async () => {
+  const writes = [];
+  const existingAccess = {
+    assigned_branch_scope: 'MULTI',
+    assigned_branches: ['NSMLR', 'NSTLP'],
+    assigned_branch_names: ['New Swan Multitech Limited Raian', 'New Swan Technologies Limited Paharuwal'],
+    assigned_branch_codes: ['TNT00002-B0002', 'TNT00002-B0003'],
+    _tenantId: '00000000-0000-0000-0000-000000000001'
+  };
+  const fakeDb = {
+    from() {
+      const query = {
+        select() { return query; },
+        eq() { return query; },
+        single() {
+          return Promise.resolve({ data: { role: 'agent', module_access: existingAccess }, error: null });
+        },
+        maybeSingle() {
+          return Promise.resolve({ data: { emp_name: 'Multi User', email: 'multi@newswangroup.com', role: 'agent', module_access: existingAccess }, error: null });
+        },
+        update(val) {
+          return {
+            eq() {
+              writes.push(val);
+              return Promise.resolve({ error: null });
+            }
+          };
+        }
+      };
+      return query;
+    }
+  };
+
+  const team = loadExports(teamCode, {
+    '@supabase/supabase-js': { createClient: () => fakeDb },
+    '@/utils/supabase/server': { createClient: async () => fakeDb },
+    './adminMessageConfig': { sendAdminAccountEmailOtp: async () => ({}) },
+    './audit': { logAuditAction: async () => ({}) },
+    '@/lib/impersonateStore': { saveImpersonateToken: async () => ({}) },
+    '@/utils/reportingHierarchy': { getReportingFields: d => d },
+    '@/app/api/plivo/phone-number': { normalizeIndianPhoneNumber: x => x },
+    '@/utils/permissionUtils': { getSubItemPermissions: () => ({}) }
+  });
+
+  const res = await team.updateModuleAccess('u1', { can_view_all_companies: true, role_preset_key: 'sales_coord' });
+  assert.equal(res.success, true);
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].module_access.assigned_branch_scope, 'MULTI');
+  assert.deepEqual(writes[0].module_access.assigned_branches, ['NSMLR', 'NSTLP']);
+  assert.equal(writes[0].module_access._tenantId, '00000000-0000-0000-0000-000000000001');
+});
+
 

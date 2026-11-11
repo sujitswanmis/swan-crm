@@ -19,6 +19,7 @@ import {
   submitClientRegistrationAndSync 
 } from '@/app/actions/clientRegistrationSync';
 import { getTenantBranches } from '@/app/actions/tenantBranches';
+import { getUserBranchAccess, matchesCompanyToken } from '@/utils/branchAccess';
 
 const IMPORT_FIELDS = [
   { key: 'lead_date', label: 'Lead Date', standardHeaders: ['Lead Date', 'leaddate', 'date'] },
@@ -488,7 +489,8 @@ export default function ClientRegistration({
   moduleAccess = null,
   userRole = '',
   userName = '',
-  adminCompanyFilter = 'All'
+  adminCompanyFilter = 'All',
+  branchAccess = null
 }) {
   const supabase = createClient();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -521,6 +523,15 @@ export default function ClientRegistration({
 
   const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl'];
   const isSwanWorkspace = !userCompany || SWAN_COMPANIES.includes(String(userCompany).toLowerCase().trim());
+  const effectiveBranchAccess = useMemo(() => (
+    branchAccess || getUserBranchAccess({
+      moduleAccess,
+      userCompany,
+      userBranchName: moduleAccess?.branch_name || '',
+      userRole,
+      isSwanWorkspace
+    })
+  ), [branchAccess, moduleAccess, userCompany, userRole, isSwanWorkspace]);
   const defaultWorkspaceCompany = (() => {
     if (isSwanWorkspace) {
       if (userCompany && userCompany.toUpperCase() === 'NSTLP') return 'NSTLP';
@@ -813,10 +824,17 @@ export default function ClientRegistration({
   const loadDrafts = async () => {
     setIsLoadingDrafts(true);
     try {
-      const effectiveFilter = adminCompanyFilter && adminCompanyFilter.toLowerCase() !== 'all' 
-        ? adminCompanyFilter 
-        : (userCompany || 'New Swan Group');
-      const res = await getClientRegistrationDrafts(effectiveFilter, currentActor, canViewAllDrafts);
+      let res;
+      if (adminCompanyFilter && adminCompanyFilter.toLowerCase() !== 'all') {
+        res = await getClientRegistrationDrafts(adminCompanyFilter, currentActor, canViewAllDrafts);
+      } else if (effectiveBranchAccess.isAllBranches) {
+        const allTarget = isSwanWorkspace ? 'New Swan Group' : (userCompany || 'All');
+        res = await getClientRegistrationDrafts(allTarget, currentActor, canViewAllDrafts);
+      } else if (effectiveBranchAccess.isMultiBranch && effectiveBranchAccess.allowedCompanies.length > 0) {
+        res = await getClientRegistrationDrafts('All', currentActor, canViewAllDrafts, effectiveBranchAccess.allowedCompanies);
+      } else {
+        res = await getClientRegistrationDrafts(userCompany || 'New Swan Group', currentActor, canViewAllDrafts);
+      }
       if (res && res.success) {
         setDraftsList(res.drafts || []);
       }
@@ -829,7 +847,7 @@ export default function ClientRegistration({
 
   useEffect(() => {
     loadDrafts();
-  }, [userCompany, adminCompanyFilter, currentActor, canViewAllDrafts]);
+  }, [userCompany, adminCompanyFilter, currentActor, canViewAllDrafts, effectiveBranchAccess]);
 
   // Filtered drafts based on search and user filter
   const filteredDraftsList = useMemo(() => {
@@ -2959,34 +2977,46 @@ export default function ClientRegistration({
                     >
                       <option value="">-- Select Company / Branch --</option>
                       {availableBranches.length > 0 ? (
-                        availableBranches
-                          .filter(br => {
+                        (() => {
+                          const baseBranches = availableBranches.filter(br => {
                             if (isSwanWorkspace) {
                               const isHq = br.legacy_code === 'NEW_SWAN_GROUP' || br.location_type === 'Headquarters';
                               return !isHq;
                             }
                             return true;
-                          })
-                          .sort((a, b) => {
-                            const nameA = String(a.legacy_code || a.branch_name || '');
-                            const nameB = String(b.legacy_code || b.branch_name || '');
-                            if (nameA.includes('NSMLR')) return -1;
-                            if (nameB.includes('NSMLR')) return 1;
-                            return nameA.localeCompare(nameB);
-                          })
-                          .map(br => {
-                            const cleanName = (br.legacy_code && ['NSMLR', 'NSTLP', 'NSTL'].includes(br.legacy_code))
-                              ? (br.legacy_code === 'NSTL' ? 'NSTLP' : br.legacy_code)
-                              : (br.branch_name?.toLowerCase().includes('supuja') ? 'SuPuja Creations' : (br.branch_name || br.company));
-                            const optVal = cleanName;
-                            const isAdminUser = userRole === 'admin' || userRole === 'Admin' || userRole === 'master_admin';
-                            const optLabel = isAdminUser && br.branch_code ? `${cleanName} (${br.branch_code})` : cleanName;
-                            return (
-                              <option key={br.id || br.branch_code} value={optVal}>
-                                {optLabel}
-                              </option>
-                            );
-                          })
+                          });
+                          const scopedBranches = (!effectiveBranchAccess.isAllBranches && effectiveBranchAccess.allowedCompanies.length > 0)
+                            ? baseBranches.filter(br => {
+                                const cleanName = (br.legacy_code && ['NSMLR', 'NSTLP', 'NSTL'].includes(br.legacy_code))
+                                  ? (br.legacy_code === 'NSTL' ? 'NSTLP' : br.legacy_code)
+                                  : (br.branch_name?.toLowerCase().includes('supuja') ? 'SuPuja Creations' : (br.branch_name || br.company));
+                                return matchesCompanyToken(cleanName, effectiveBranchAccess.allowedCompanies) ||
+                                  matchesCompanyToken(br.custom_code, effectiveBranchAccess.allowedCompanies);
+                              })
+                            : baseBranches;
+                          const displayBranches = scopedBranches.length > 0 ? scopedBranches : baseBranches;
+                          return displayBranches
+                            .sort((a, b) => {
+                              const nameA = String(a.legacy_code || a.branch_name || '');
+                              const nameB = String(b.legacy_code || b.branch_name || '');
+                              if (nameA.includes('NSMLR')) return -1;
+                              if (nameB.includes('NSMLR')) return 1;
+                              return nameA.localeCompare(nameB);
+                            })
+                            .map(br => {
+                              const cleanName = (br.legacy_code && ['NSMLR', 'NSTLP', 'NSTL'].includes(br.legacy_code))
+                                ? (br.legacy_code === 'NSTL' ? 'NSTLP' : br.legacy_code)
+                                : (br.branch_name?.toLowerCase().includes('supuja') ? 'SuPuja Creations' : (br.branch_name || br.company));
+                              const optVal = cleanName;
+                              const isAdminUser = userRole === 'admin' || userRole === 'Admin' || userRole === 'master_admin';
+                              const optLabel = isAdminUser && br.branch_code ? `${cleanName} (${br.branch_code})` : cleanName;
+                              return (
+                                <option key={br.id || br.branch_code} value={optVal}>
+                                  {optLabel}
+                                </option>
+                              );
+                            });
+                        })()
                       ) : (
                         isSwanWorkspace ? (
                           <>

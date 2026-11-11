@@ -45,6 +45,7 @@ import {
 import { sameLeadList } from '@/utils/sameLeadList';
 import { getReportingTeam, getLeadAssignees, isLeadInAssignmentScope, getLeadStageKey, getLeadStageAccess } from '@/utils/reportingHierarchy';
 import { isCompleteLeadCache, matchesLeadCacheContext, mergeLeadCacheForDisplay } from '@/utils/leadCachePolicy';
+import { getUserBranchAccess, evaluateLeadCompanyScope, matchesCompanyToken } from '@/utils/branchAccess';
 
 const OfflineBlockScreen = dynamic(() => import('./Offline/OfflineBlockScreen'));
 const AnalyticsDashboard = dynamic(() => import('@/components/AnalyticsDashboard'), { loading: () => <WorkspaceSkeleton variant="analytics" /> });
@@ -428,6 +429,18 @@ export default function CRMContainer({
   const isSwanWorkspace = useMemo(() => {
     return !userCompany || SWAN_COMPANIES.includes(String(userCompany).toLowerCase().trim()) || (userEmail && userEmail.toLowerCase().endsWith('@newswangroup.com'));
   }, [userCompany, userEmail]);
+  const userBranchAccess = useMemo(() => getUserBranchAccess({
+    moduleAccess,
+    userCompany,
+    userBranchName: moduleAccess?.branch_name || '',
+    userRole,
+    isMasterAdmin,
+    isSwanWorkspace
+  }), [moduleAccess, userCompany, userRole, isMasterAdmin, isSwanWorkspace]);
+  const branchScopeKey = JSON.stringify({
+    scope: userBranchAccess.scope,
+    allowed: userBranchAccess.allowedCompanies
+  });
   const effectiveTenantEntitlements = tenantEntitlements || moduleAccess?._tenantEntitlements || null;
   const effectiveTenantId = tenantId || moduleAccess?._tenantId || null;
   const isCallingEntitled = isFeatureEntitled('callcenter', effectiveTenantEntitlements, effectiveTenantId);
@@ -616,19 +629,23 @@ export default function CRMContainer({
   const leadAssigneeScopeKey = JSON.stringify(reportingLeadAssignees);
   const leadAssigneeScope = useMemo(() => new Set(JSON.parse(leadAssigneeScopeKey)), [leadAssigneeScopeKey]);
   const [adminCompanyFilter, setAdminCompanyFilter] = useState(() => {
-    const compLower = String(userCompany || '').toLowerCase().trim();
-    if (userCompany && !SWAN_COMPANIES.includes(compLower)) {
+    if (!isSwanWorkspace && !userBranchAccess.isMultiBranch && userCompany) {
       return userCompany;
     }
     return 'All';
   });
 
   useEffect(() => {
-    const compLower = String(userCompany || '').toLowerCase().trim();
-    if (userCompany && !SWAN_COMPANIES.includes(compLower) && adminCompanyFilter !== userCompany) {
+    if (!isSwanWorkspace && !userBranchAccess.isMultiBranch && userCompany && adminCompanyFilter !== userCompany) {
       setAdminCompanyFilter(userCompany);
+      return;
     }
-  }, [userCompany, adminCompanyFilter]);
+    if (!userBranchAccess.isAllBranches && userBranchAccess.isMultiBranch && adminCompanyFilter !== 'All') {
+      if (!matchesCompanyToken(adminCompanyFilter, userBranchAccess.allowedCompanies)) {
+        setAdminCompanyFilter('All');
+      }
+    }
+  }, [userCompany, adminCompanyFilter, isSwanWorkspace, userBranchAccess]);
   const [messageMenuExpanded, setMessageMenuExpanded] = useState(false);
   const [aiMenuExpanded, setAiMenuExpanded] = useState(false);
   const [attendanceMenuExpanded, setAttendanceMenuExpanded] = useState(false);
@@ -1904,13 +1921,16 @@ export default function CRMContainer({
         // ⚡ PERF FIX & MULTI-TENANT ISOLATION:
         // Client tenants (e.g. SuPuja Creations) only download their own workspace leads.
         // New Swan Group admins download New Swan entities; agents download assigned + open leads.
+        const _scope = JSON.parse(branchScopeKey);
+        const _isAllBranchesUser = _scope.scope === 'ALL';
+        const _allowedLeadCompanies = Array.isArray(_scope.allowed) ? _scope.allowed : [];
         const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl'];
         const _isSwanWorkspace = !userCompany || SWAN_COMPANIES.includes(String(userCompany).toLowerCase().trim()) || (userEmail && userEmail.toLowerCase().endsWith('@newswangroup.com'));
 
         const _isAdminUser = userRole === 'admin' || userRole === 'Admin';
         const _isPrivilegedUser = _isAdminUser || Boolean(moduleAccess?.leads?.is_manager) || Boolean(globalRolePermissions?.viewAll);
-        const _agentCompanyFilter = (!_isAdminUser && userCompany && userCompany.trim() !== '')
-          ? userCompany.trim()
+        const _agentCompanyFilter = (!_isAdminUser && !_isAllBranchesUser && _allowedLeadCompanies.length > 0)
+          ? _allowedLeadCompanies
           : null;
         const _agentAssignees = (!_isPrivilegedUser && (userId || userName))
           ? JSON.parse(leadAssigneeScopeKey)
@@ -1918,18 +1938,19 @@ export default function CRMContainer({
 
         const applyLeadScope = (query) => {
           let q = query;
-          if (!_isSwanWorkspace && userCompany && userCompany.trim() !== '') {
+          if (!_isSwanWorkspace && _scope.scope === 'MULTI' && _allowedLeadCompanies.length > 1) {
+            q = q.in('our_company', _allowedLeadCompanies);
+          } else if (!_isSwanWorkspace && userCompany && userCompany.trim() !== '') {
             // Strict client workspace isolation (e.g. SuPuja Creations, Testing New Swan Group)
             q = q.eq('our_company', userCompany.trim());
-          } else if (_agentCompanyFilter) {
-            if (_agentCompanyFilter === 'NSTL' || _agentCompanyFilter === 'NSTLP') {
-              q = q.in('our_company', ['NSTL', 'NSTLP']);
-            } else {
-              q = q.eq('our_company', _agentCompanyFilter);
-            }
-          } else if (_isAdminUser && _isSwanWorkspace) {
-            // New Swan Group admins strictly download New Swan Group branches/records
-            q = q.in('our_company', ['NSMLR', 'NSTLP', 'NSTL', '']);
+          } else if (_agentCompanyFilter && _agentCompanyFilter.length > 0) {
+            q = _agentCompanyFilter.length === 1
+              ? q.eq('our_company', _agentCompanyFilter[0])
+              : q.in('our_company', _agentCompanyFilter);
+          } else if ((_isAdminUser || _isAllBranchesUser) && _isSwanWorkspace) {
+            // New Swan Group admins & All-Branches staff strictly download New Swan Group branches/records
+            const swanCompanies = _allowedLeadCompanies.length > 0 ? _allowedLeadCompanies : ['NSMLR', 'NSTLP', 'NSTL', ''];
+            q = q.in('our_company', swanCompanies);
           }
           if (_agentAssignees && _agentAssignees.length > 0) {
             const orParts = ['assigned_to.is.null'];
@@ -2036,8 +2057,12 @@ export default function CRMContainer({
               .from('leads')
               .select('*')
               .in('assigned_to', assignees);
-            if (_agentCompanyFilter) {
-              assignedQuery = assignedQuery.eq('our_company', _agentCompanyFilter);
+            if (!_isSwanWorkspace && _scope.scope !== 'MULTI' && userCompany && userCompany.trim() !== '') {
+              assignedQuery = assignedQuery.eq('our_company', userCompany.trim());
+            } else if (_agentCompanyFilter && _agentCompanyFilter.length > 0) {
+              assignedQuery = _agentCompanyFilter.length === 1
+                ? assignedQuery.eq('our_company', _agentCompanyFilter[0])
+                : assignedQuery.in('our_company', _agentCompanyFilter);
             }
             const { data, error } = await assignedQuery
               .order('created_at', { ascending: false })
@@ -2631,7 +2656,7 @@ export default function CRMContainer({
       window.removeEventListener('crm_leads_imported', handleLeadsImported);
       window.removeEventListener('crm_force_full_sync', handleForceFullSync);
     };
-  }, [hasLeadsAccess, userId, userCompany, userName, userRole, leadAssigneeScopeKey, moduleAccess?.leads?.is_manager, globalRolePermissions?.viewAll]);
+  }, [hasLeadsAccess, userId, userCompany, userName, userRole, leadAssigneeScopeKey, branchScopeKey, moduleAccess?.leads?.is_manager, globalRolePermissions?.viewAll]);
 
   const handleOfflineSyncComplete = React.useCallback(() => {
     if (loadLeadsRef.current) {
@@ -2651,35 +2676,21 @@ export default function CRMContainer({
     // Exclude unconfirmed/incomplete drafts from operational CRM leads
     let preFilteredLeads = (rawLeads || []).filter(l => l && l.status !== 'DRAFT');
     
-    // 1. Apply Company Filter & Multi-Tenant Workspace Boundary
-    if (!isSwanWorkspace && userCompany && userCompany.trim() !== '') {
-      // Client Workspace (e.g. SuPuja Creations, Testing New Swan Group): strictly own company
-      preFilteredLeads = rawLeads.filter(l => String(l.our_company || '').trim().toLowerCase() === String(userCompany).trim().toLowerCase());
-    } else if (userRole === 'admin' || userRole === 'Admin') {
-      if (adminCompanyFilter !== 'All') {
-        preFilteredLeads = rawLeads.filter(l => {
-          if (adminCompanyFilter === 'NSTL' || adminCompanyFilter === 'NSTLP') {
-            return l.our_company === 'NSTL' || l.our_company === 'NSTLP';
-          }
-          return l.our_company === adminCompanyFilter;
-        });
-      } else {
-        preFilteredLeads = rawLeads.filter(l => ['NSMLR', 'NSTLP', 'NSTL', ''].includes(l.our_company || ''));
-      }
-    } else {
-      // Regular Agents only see their assigned company's leads OR leads assigned directly to them
-      if (userCompany) {
-         preFilteredLeads = rawLeads.filter(l => {
-           const matchComp = (userCompany === 'NSTL' || userCompany === 'NSTLP')
-             ? (l.our_company === 'NSTL' || l.our_company === 'NSTLP')
-             : l.our_company === userCompany;
-            return matchComp || leadAssigneeScope.has(l.assigned_to);
-         });
-      }
-    }
+    // 1. Apply Company Filter & Multi-Tenant Workspace Boundary (single / multi / all branches)
+    const isAdminUser = userRole === 'admin' || userRole === 'Admin';
+    preFilteredLeads = rawLeads.filter(l => {
+      const { inCompanyScope, allowDirectAssignment } = evaluateLeadCompanyScope(l.our_company, {
+        isSwanWorkspace,
+        userCompany,
+        adminCompanyFilter,
+        userBranchAccess,
+        isAdmin: isAdminUser
+      });
+      return inCompanyScope || (allowDirectAssignment && leadAssigneeScope.has(l.assigned_to));
+    });
     
     // 2. Admins always see everything (within their chosen company)
-    if (userRole === 'admin' || userRole === 'Admin') {
+    if (isAdminUser) {
       updateLeadsIfChanged(preFilteredLeads);
       return;
     }
@@ -2710,7 +2721,7 @@ export default function CRMContainer({
       // If view is true but no steps assigned, they see nothing
       updateLeadsIfChanged([]);
     }
-  }, [rawLeads, loadingLeads, moduleAccess, userRole, adminCompanyFilter, userCompany, userId, userName, globalRolePermissions, leadAssigneeScope, isSwanWorkspace]);
+  }, [rawLeads, loadingLeads, moduleAccess, userRole, adminCompanyFilter, userCompany, userId, userName, globalRolePermissions, leadAssigneeScope, isSwanWorkspace, userBranchAccess]);
 
   // Handle local updates from child components so background fetches don't overwrite them
   const handleLeadsChange = useCallback((updatedFilteredLeads) => {
@@ -2748,19 +2759,17 @@ export default function CRMContainer({
     setLeads(prevLeads => {
       const isVisibleUpdate = lead => {
         const admin = userRole === 'admin' || userRole === 'Admin';
-        if (!isSwanWorkspace && userCompany) {
-          return String(lead.our_company || '').trim().toLowerCase() === String(userCompany).trim().toLowerCase();
+        const { inCompanyScope, allowDirectAssignment } = evaluateLeadCompanyScope(lead.our_company, {
+          isSwanWorkspace,
+          userCompany,
+          adminCompanyFilter,
+          userBranchAccess,
+          isAdmin: admin
+        });
+        if (!inCompanyScope && !(allowDirectAssignment && leadAssigneeScope.has(lead.assigned_to))) {
+          return false;
         }
-        if (admin) {
-          if (adminCompanyFilter !== 'All') {
-            return (adminCompanyFilter === 'NSTL' || adminCompanyFilter === 'NSTLP')
-              ? ['NSTL', 'NSTLP'].includes(lead.our_company) : lead.our_company === adminCompanyFilter;
-          }
-          return ['NSMLR', 'NSTLP', 'NSTL', ''].includes(lead.our_company || '');
-        }
-        const companyMatches = !userCompany || (['NSTL', 'NSTLP'].includes(userCompany)
-          ? ['NSTL', 'NSTLP'].includes(lead.our_company) : lead.our_company === userCompany);
-        if (!companyMatches && !leadAssigneeScope.has(lead.assigned_to)) return false;
+        if (admin) return true;
         if (moduleAccess?.leads?.is_manager || globalRolePermissions?.viewAll) return true;
         return isLeadInAssignmentScope(lead, leadAssigneeScope) &&
           getLeadStageAccess({ role: userRole, module_access: moduleAccess }, lead.status).view;
@@ -2779,7 +2788,7 @@ export default function CRMContainer({
       }
       return brandNew.length > 0 ? [...brandNew, ...updatedExisting] : updatedExisting;
     });
-  }, [userRole, adminCompanyFilter, userCompany, moduleAccess, globalRolePermissions, leadAssigneeScope, isSwanWorkspace]);
+  }, [userRole, adminCompanyFilter, userCompany, moduleAccess, globalRolePermissions, leadAssigneeScope, isSwanWorkspace, userBranchAccess]);
 
   const [currentTime] = useState(() => Date.now());
   React.useLayoutEffect(() => {
@@ -6196,24 +6205,30 @@ export default function CRMContainer({
               <Search size={16} />
             </button>
 
-            {/* Admin Company Filter */}
-            {(userRole === 'admin' || userRole === 'Admin') && (
+            {/* Admin / Multi-Branch Company Filter */}
+            {(userRole === 'admin' || userRole === 'Admin' || userBranchAccess.isAllBranches || userBranchAccess.isMultiBranch) && (
               <div className="desktop-only" style={{ display: 'flex', alignItems: 'center', marginRight: '0.25rem', flexShrink: 0 }}>
                 <select 
                   value={adminCompanyFilter} 
                   onChange={(e) => setAdminCompanyFilter(e.target.value)}
-                  title="Filter by Company: NSMLR & NSTLP"
+                  title="Filter by Assigned Branches / Companies"
                   style={{ padding: '0.38rem 0.65rem', borderRadius: '8px', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: 600, outline: 'none', cursor: 'pointer', flexShrink: 0 }}
                 >
                   {(() => {
-                    if (!isSwanWorkspace && userCompany) {
+                    if (!isSwanWorkspace && !userBranchAccess.isMultiBranch && userCompany) {
                       return <option value={userCompany}>{userCompany}</option>;
                     }
+                    const opts = userBranchAccess.displayFilterOptions.length > 0
+                      ? userBranchAccess.displayFilterOptions
+                      : ['NSMLR', 'NSTLP'];
                     return (
                       <>
-                        <option value="All">🏢 All Companies</option>
-                        <option value="NSMLR">NSMLR</option>
-                        <option value="NSTLP">NSTLP</option>
+                        <option value="All">
+                          {userBranchAccess.isAllBranches ? '🏢 All Companies' : `🏢 All Assigned (${opts.length})`}
+                        </option>
+                        {opts.map(opt => (
+                          <option key={opt} value={opt}>{opt}</option>
+                        ))}
                       </>
                     );
                   })()}
@@ -7898,6 +7913,7 @@ export default function CRMContainer({
                     teamMembers={teamMembers}
                     userCompany={userCompany}
                     adminCompanyFilter={adminCompanyFilter}
+                    branchAccess={userBranchAccess}
                     moduleAccess={moduleAccess}
                     userRole={userRole}
                     userName={userName}

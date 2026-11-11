@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, User, Phone, Mail, Building, MapPin, Shield, Key, Eye, EyeOff, Save, Loader2, CheckCircle2, AlertCircle, Users, FileText } from 'lucide-react';
+import { X, User, Phone, Mail, Building, MapPin, Shield, Key, Eye, EyeOff, Save, Loader2, CheckCircle2, AlertCircle, Users, FileText, Globe, Plus, Star } from 'lucide-react';
 import SearchableEmployeeSelect from '@/components/common/SearchableEmployeeSelect';
 import { getReportingEmail, getReportingFields } from '@/utils/reportingHierarchy';
 import { DEFAULT_DEPARTMENTS, DESIGNATIONS, WORK_LOCATION_TYPES, EMP_STATUS_OPTIONS } from '../utils/userManagementUtils';
@@ -10,21 +10,40 @@ import { getTenantBranches, resolveKnownTenant } from '@/app/actions/tenantBranc
 import { getTenantAttendancePolicy } from '@/app/actions/attendance';
 import { getAllTenantsWithSubscriptions } from '@/app/actions/saasSubscription';
 import { getTeamMembers } from '@/app/actions/team';
-
-const DEFAULT_BRANCH_COMPANY_CODES = new Set(['HQ', 'HQ-MAIN-01', 'SUPUJA_CREATIONS', 'NSG']);
-
-function resolveCompanyForBranch(branch, tenantCompanyName = '') {
-  const customCode = String(branch?.custom_code || '').trim();
-  if (customCode && !DEFAULT_BRANCH_COMPANY_CODES.has(customCode.toUpperCase())) {
-    return customCode;
-  }
-  return tenantCompanyName || branch?.company || '';
-}
+import { resolveCompanyTokenForBranch } from '@/utils/branchAccess';
 
 function getTenantPlaceholderEmail(tenantInfo) {
   const name = String(tenantInfo?.companyName || '').toLowerCase();
   if (name.includes('new swan')) return 'e.g. name@newswangroup.com';
   return 'e.g. name@company.com';
+}
+
+function resolveInitialBranchArrays(user, initCompany) {
+  const ma = user?.module_access || {};
+  const rawScope = String(ma.assigned_branch_scope || '').trim().toUpperCase();
+  const rawBranches = Array.isArray(ma.assigned_branches) ? ma.assigned_branches.map(b => String(b || '').trim()).filter(Boolean) : [];
+  const rawNames = Array.isArray(ma.assigned_branch_names) ? ma.assigned_branch_names.map(b => String(b || '').trim()).filter(Boolean) : [];
+  const rawCodes = Array.isArray(ma.assigned_branch_codes) ? ma.assigned_branch_codes.map(b => String(b || '').trim()).filter(Boolean) : [];
+
+  if (rawScope === 'ALL' || rawBranches.some(b => b.toUpperCase() === 'ALL')) {
+    return {
+      assigned_branch_scope: 'ALL',
+      assigned_branches: ['ALL'],
+      assigned_branch_names: ['All Branches'],
+      assigned_branch_codes: ['ALL']
+    };
+  }
+
+  const branchName = user?.branch_name || ma.branch_name || '';
+  const names = rawNames.length > 0 ? rawNames : (branchName ? [branchName] : []);
+  const branches = rawBranches.length > 0 ? rawBranches : (initCompany ? [initCompany] : []);
+
+  return {
+    assigned_branch_scope: (names.length > 1 || branches.length > 1 || rawScope === 'MULTI') ? 'MULTI' : 'SINGLE',
+    assigned_branches: branches,
+    assigned_branch_names: names,
+    assigned_branch_codes: rawCodes
+  };
 }
 
 function buildInitialFormData(user, departments, tenantId, currentUserCompany) {
@@ -33,6 +52,7 @@ function buildInitialFormData(user, departments, tenantId, currentUserCompany) {
   if (user) {
     const uVehicle = user.vehicle_type || user.module_access?.vehicle_type || 'BIKE';
     const uRate = user.conveyance_rate_per_km ?? user.module_access?.conveyance_rate_per_km ?? (uVehicle === 'NONE' ? 0 : 4.50);
+    const branchArrays = resolveInitialBranchArrays(user, initCompany);
     return {
       tenant_id: initTenantId,
       emp_id: user.emp_id || '',
@@ -46,6 +66,7 @@ function buildInitialFormData(user, departments, tenantId, currentUserCompany) {
       role_preset_key: user.module_access?.role_preset_key || (user.role?.toLowerCase() === 'admin' ? 'admin' : (user.role?.toLowerCase() === 'crm' ? 'crm' : (user.role?.toLowerCase() === 'telecaller' ? 'telecaller' : ''))),
       company: initCompany,
       branch_name: user.branch_name || (user.module_access?.branch_name) || '',
+      ...branchArrays,
       work_location_type: user.work_location_type || (user.module_access?.work_location_type) || 'Headquarters',
       work_location_name: user.work_location_name || (user.module_access?.work_location_name) || '',
       assigned_shift: user.assigned_shift || (user.module_access?.assigned_shift) || '',
@@ -73,6 +94,10 @@ function buildInitialFormData(user, departments, tenantId, currentUserCompany) {
     role_template_id: '',
     company: currentUserCompany || '',
     branch_name: '',
+    assigned_branch_scope: 'SINGLE',
+    assigned_branches: [],
+    assigned_branch_names: [],
+    assigned_branch_codes: [],
     work_location_type: 'Headquarters',
     work_location_name: '',
     assigned_shift: '',
@@ -89,6 +114,133 @@ function buildInitialFormData(user, departments, tenantId, currentUserCompany) {
     hod_person: '',
     can_self_reset_password: true
   };
+}
+
+function buildBranchChipList(formData, availableBranches = [], tenantCompanyName = '') {
+  if (formData.assigned_branch_scope === 'ALL' || (formData.assigned_branches || []).includes('ALL')) {
+    return [];
+  }
+  const names = Array.isArray(formData.assigned_branch_names) ? formData.assigned_branch_names : [];
+  const tokens = Array.isArray(formData.assigned_branches) ? formData.assigned_branches : [];
+  const chips = [];
+  const seenKeys = new Set();
+
+  const pushMatched = (matched, fallbackLabel = '') => {
+    if (matched) {
+      const key = String(matched.branch_code || matched.branch_name).toLowerCase();
+      if (seenKeys.has(key)) return;
+      seenKeys.add(key);
+      chips.push({
+        key,
+        branchName: matched.branch_name,
+        branchCode: matched.branch_code || '',
+        customCode: matched.custom_code || '',
+        companyToken: resolveCompanyTokenForBranch(matched, tenantCompanyName),
+        locationType: matched.location_type || ''
+      });
+    } else if (fallbackLabel) {
+      const clean = String(fallbackLabel).trim();
+      const key = clean.toLowerCase();
+      if (!clean || seenKeys.has(key)) return;
+      seenKeys.add(key);
+      chips.push({
+        key,
+        branchName: clean,
+        branchCode: '',
+        customCode: '',
+        companyToken: clean,
+        locationType: ''
+      });
+    }
+  };
+
+  for (const name of names) {
+    const matched = availableBranches.find(b => b.branch_name.toLowerCase() === String(name).trim().toLowerCase());
+    pushMatched(matched, name);
+  }
+  for (const tok of tokens) {
+    const cleanTok = String(tok || '').trim();
+    if (!cleanTok || (tenantCompanyName && cleanTok.toLowerCase() === tenantCompanyName.toLowerCase() && names.length > 0)) continue;
+    const matched = availableBranches.find(
+      b => String(b.custom_code || '').trim().toLowerCase() === cleanTok.toLowerCase() ||
+           String(b.branch_name || '').trim().toLowerCase() === cleanTok.toLowerCase() ||
+           String(b.branch_code || '').trim().toLowerCase() === cleanTok.toLowerCase()
+    );
+    if (matched) {
+      pushMatched(matched);
+    } else if (names.length === 0) {
+      pushMatched(null, cleanTok);
+    }
+  }
+  if (chips.length === 0 && formData.branch_name) {
+    const matched = availableBranches.find(b => b.branch_name === formData.branch_name);
+    pushMatched(matched, formData.branch_name);
+  }
+  return chips;
+}
+
+function mergeChipsIntoFormState(prev, nextChips, tenantCompanyName = '') {
+  if (!Array.isArray(nextChips) || nextChips.length === 0) {
+    const resetLoc = prev.work_location_name === prev.branch_name;
+    return {
+      ...prev,
+      branch_name: '',
+      assigned_branch_scope: 'SINGLE',
+      assigned_branches: [],
+      assigned_branch_names: [],
+      assigned_branch_codes: [],
+      company: tenantCompanyName || prev.company || '',
+      ...(resetLoc ? { work_location_name: '' } : {})
+    };
+  }
+
+  const primary = nextChips[0];
+  const names = nextChips.map(c => c.branchName).filter(Boolean);
+  const tokens = Array.from(new Set(nextChips.map(c => c.companyToken).filter(Boolean)));
+  const codes = Array.from(new Set(nextChips.map(c => c.branchCode).filter(Boolean)));
+  const shouldSyncLoc = !prev.work_location_name || prev.work_location_name === prev.branch_name || prev.work_location_name === 'All Branches';
+
+  return {
+    ...prev,
+    branch_name: primary.branchName,
+    assigned_branch_scope: nextChips.length > 1 ? 'MULTI' : 'SINGLE',
+    assigned_branches: tokens,
+    assigned_branch_names: names,
+    assigned_branch_codes: codes,
+    company: primary.companyToken || tenantCompanyName || prev.company || '',
+    ...(primary.locationType ? { work_location_type: primary.locationType } : {}),
+    ...(shouldSyncLoc ? { work_location_name: primary.branchName } : {})
+  };
+}
+
+function commitPendingCustomBranch(baseData, customDraft, availableBranches = [], tenantCompanyName = '') {
+  const clean = String(customDraft || '').trim();
+  if (!clean) return baseData;
+  const matched = availableBranches.find(
+    b => String(b.custom_code || '').trim().toLowerCase() === clean.toLowerCase() ||
+         String(b.branch_name || '').trim().toLowerCase() === clean.toLowerCase() ||
+         String(b.branch_code || '').trim().toLowerCase() === clean.toLowerCase()
+  );
+  const existingChips = buildBranchChipList(baseData, availableBranches, tenantCompanyName);
+  const newChip = matched
+    ? {
+        key: String(matched.branch_code || matched.branch_name).toLowerCase(),
+        branchName: matched.branch_name,
+        branchCode: matched.branch_code || '',
+        customCode: matched.custom_code || '',
+        companyToken: resolveCompanyTokenForBranch(matched, tenantCompanyName),
+        locationType: matched.location_type || ''
+      }
+    : {
+        key: clean.toLowerCase(),
+        branchName: clean,
+        branchCode: '',
+        customCode: '',
+        companyToken: clean,
+        locationType: ''
+      };
+  if (existingChips.some(c => c.key === newChip.key)) return baseData;
+  return mergeChipsIntoFormState(baseData, [...existingChips, newChip], tenantCompanyName);
 }
 
 export default function AddEditUserModal({
@@ -113,6 +265,7 @@ export default function AddEditUserModal({
   const [availableShifts, setAvailableShifts] = useState([]);
   const [tenantEmployeesByTenant, setTenantEmployeesByTenant] = useState({});
   const [customBranchNameInput, setCustomBranchNameInput] = useState(false);
+  const [customBranchDraft, setCustomBranchDraft] = useState('');
   const [customLocationInput, setCustomLocationInput] = useState(false);
 
   const [formData, setFormData] = useState(() => buildInitialFormData(user, departments, tenantId, currentUserCompany));
@@ -132,6 +285,7 @@ export default function AddEditUserModal({
     Promise.resolve().then(() => {
       if (!isMounted) return;
       setCustomBranchNameInput(false);
+      setCustomBranchDraft('');
       setCustomLocationInput(false);
       setActiveStep('personal');
       setErrorMsg('');
@@ -198,41 +352,56 @@ export default function AddEditUserModal({
         }
 
         if (user) {
-          const curBranchName = String(user.branch_name || user.module_access?.branch_name || '').trim();
+          const ma = user.module_access || {};
+          const curBranchName = String(user.branch_name || ma.branch_name || '').trim();
           const curComp = String(user.company || '').trim();
-          const curLocName = String(user.work_location_name || user.module_access?.work_location_name || '').trim();
+          const curLocName = String(user.work_location_name || ma.work_location_name || '').trim();
+          const isExplicitAll = ma.assigned_branch_scope === 'ALL' || (Array.isArray(ma.assigned_branches) && ma.assigned_branches.some(b => String(b).toUpperCase() === 'ALL'));
 
-          let resolvedBranchName = curBranchName;
-          let enableCustomBranch = false;
+          let resolvedBranchName = isExplicitAll ? 'All Branches' : curBranchName;
 
-          if (curBranchName) {
-            if (!activeList.some(b => b.branch_name === curBranchName)) {
-              enableCustomBranch = true;
-            }
-          } else if (curComp) {
+          if (!isExplicitAll && !curBranchName && curComp) {
             const matchedByCode = activeList.find(
               b => String(b.custom_code || '').trim().toLowerCase() === curComp.toLowerCase() ||
-                   String(b.branch_name || '').trim().toLowerCase() === curComp.toLowerCase()
+                   String(b.branch_name || '').trim().toLowerCase() === curComp.toLowerCase() ||
+                   String(b.branch_code || '').trim().toLowerCase() === curComp.toLowerCase()
             );
             if (matchedByCode) {
               resolvedBranchName = matchedByCode.branch_name;
             } else if (tenantMeta.companyName && curComp.toLowerCase() !== tenantMeta.companyName.toLowerCase()) {
               resolvedBranchName = curComp;
-              enableCustomBranch = true;
             }
           }
 
-          if (enableCustomBranch) setCustomBranchNameInput(true);
-          if (curLocName && !activeList.some(b => b.branch_name === curLocName)) {
+          if (curLocName && curLocName !== 'All Branches' && !activeList.some(b => b.branch_name === curLocName)) {
             setCustomLocationInput(true);
           }
 
-          setFormData(prev => ({
-            ...prev,
-            tenant_id: prev.tenant_id || tenantMeta.tenantId || '',
-            company: prev.company || tenantMeta.companyName || '',
-            branch_name: prev.branch_name || resolvedBranchName || ''
-          }));
+          setFormData(prev => {
+            const next = {
+              ...prev,
+              tenant_id: prev.tenant_id || tenantMeta.tenantId || '',
+              company: prev.company || tenantMeta.companyName || '',
+              branch_name: prev.branch_name || resolvedBranchName || ''
+            };
+            if (!isExplicitAll && activeList.length > 0 && (next.assigned_branch_names || []).length === 0 && next.branch_name) {
+              const matchedCur = activeList.find(
+                b => b.branch_name.toLowerCase() === next.branch_name.toLowerCase() ||
+                     String(b.custom_code || '').trim().toLowerCase() === next.branch_name.toLowerCase() ||
+                     String(b.branch_code || '').trim().toLowerCase() === next.branch_name.toLowerCase()
+              );
+              if (matchedCur) {
+                const tok = resolveCompanyTokenForBranch(matchedCur, tenantMeta.companyName);
+                next.branch_name = matchedCur.branch_name;
+                next.assigned_branch_names = [matchedCur.branch_name];
+                next.assigned_branches = [tok];
+                next.assigned_branch_codes = matchedCur.branch_code ? [matchedCur.branch_code] : [];
+              } else {
+                next.assigned_branch_names = [next.branch_name];
+              }
+            }
+            return next;
+          });
         } else {
           setFormData(prev => {
             const next = { ...prev };
@@ -253,8 +422,13 @@ export default function AddEditUserModal({
                      String(b.branch_code || '').trim().toLowerCase() === curCompLower
               );
               if (matchedCur) {
+                const companyToken = resolveCompanyTokenForBranch(matchedCur, tenantMeta.companyName);
                 next.branch_name = matchedCur.branch_name;
-                next.company = resolveCompanyForBranch(matchedCur, tenantMeta.companyName);
+                next.company = companyToken;
+                next.assigned_branch_scope = 'SINGLE';
+                next.assigned_branches = [companyToken];
+                next.assigned_branch_names = [matchedCur.branch_name];
+                next.assigned_branch_codes = matchedCur.branch_code ? [matchedCur.branch_code] : [];
                 if (matchedCur.location_type) next.work_location_type = matchedCur.location_type;
                 if (!next.work_location_name) next.work_location_name = matchedCur.branch_name;
                 updated = true;
@@ -298,9 +472,12 @@ export default function AddEditUserModal({
   }, [isMasterAdmin, formData.tenant_id, tenantId, tenantEmployeesByTenant, allEmployees]);
 
   // Load tenant/branch attendance shifts dynamically using active tenant + branch
+  const activeTenantCompanyName = resolvedTenant.companyName || currentUserCompany || '';
   const shiftLookupTenantId = formData.tenant_id || resolvedTenant.tenantId || tenantId || null;
-  const shiftLookupCompany = formData.company || resolvedTenant.companyName || currentUserCompany || '';
-  const shiftLookupBranch = formData.branch_name || formData.work_location_name || '';
+  const shiftLookupCompany = formData.company || activeTenantCompanyName || '';
+  const shiftLookupBranch = formData.branch_name && formData.branch_name !== 'All Branches'
+    ? formData.branch_name
+    : (formData.work_location_name && formData.work_location_name !== 'All Branches' ? formData.work_location_name : '');
 
   useEffect(() => {
     let isMounted = true;
@@ -329,11 +506,114 @@ export default function AddEditUserModal({
     return () => { isMounted = false; };
   }, [isOpen, shiftLookupTenantId, shiftLookupCompany, shiftLookupBranch]);
 
+  const branchChips = useMemo(
+    () => buildBranchChipList(formData, availableBranches, activeTenantCompanyName),
+    [formData, availableBranches, activeTenantCompanyName]
+  );
+
   if (!isOpen) return null;
 
   const handleChange = (field, val) => {
     setFormData(prev => ({ ...prev, [field]: val }));
     if (errorMsg) setErrorMsg('');
+  };
+
+  const isAllBranchesSelected = formData.assigned_branch_scope === 'ALL' ||
+    (Array.isArray(formData.assigned_branches) && formData.assigned_branches.some(b => String(b).toUpperCase() === 'ALL'));
+
+  const handleSelectAllBranches = () => {
+    setCustomBranchNameInput(false);
+    setCustomBranchDraft('');
+    setFormData(prev => ({
+      ...prev,
+      branch_name: 'All Branches',
+      assigned_branch_scope: 'ALL',
+      assigned_branches: ['ALL'],
+      assigned_branch_names: ['All Branches'],
+      assigned_branch_codes: ['ALL'],
+      company: activeTenantCompanyName || prev.company || '',
+      work_location_name: prev.work_location_name || 'All Branches'
+    }));
+  };
+
+  const handleClearAllBranches = () => {
+    setFormData(prev => ({
+      ...prev,
+      branch_name: '',
+      assigned_branch_scope: 'SINGLE',
+      assigned_branches: [],
+      assigned_branch_names: [],
+      assigned_branch_codes: [],
+      company: activeTenantCompanyName || prev.company || '',
+      ...(prev.work_location_name === 'All Branches' ? { work_location_name: '' } : {})
+    }));
+  };
+
+  const handleToggleBranchFromList = (branchName) => {
+    const matched = availableBranches.find(b => b.branch_name === branchName);
+    if (!matched) return;
+    const chipKey = String(matched.branch_code || matched.branch_name).toLowerCase();
+    const exists = !isAllBranchesSelected && branchChips.some(c => c.key === chipKey);
+    const nextChips = exists
+      ? branchChips.filter(c => c.key !== chipKey)
+      : [
+          ...(isAllBranchesSelected ? [] : branchChips),
+          {
+            key: chipKey,
+            branchName: matched.branch_name,
+            branchCode: matched.branch_code || '',
+            customCode: matched.custom_code || '',
+            companyToken: resolveCompanyTokenForBranch(matched, activeTenantCompanyName),
+            locationType: matched.location_type || ''
+          }
+        ];
+    if (matched && !exists) setCustomLocationInput(false);
+    setFormData(prev => mergeChipsIntoFormState(prev, nextChips, activeTenantCompanyName));
+  };
+
+  const handleAddCustomBranchChip = () => {
+    const clean = customBranchDraft.trim();
+    if (!clean) return;
+    setFormData(prev => {
+      const base = isAllBranchesSelected
+        ? { ...prev, branch_name: '', assigned_branch_scope: 'SINGLE', assigned_branches: [], assigned_branch_names: [], assigned_branch_codes: [] }
+        : prev;
+      return commitPendingCustomBranch(base, clean, availableBranches, activeTenantCompanyName);
+    });
+    setCustomBranchDraft('');
+  };
+
+  const handleRemoveBranchChip = (chipKey) => {
+    const nextChips = branchChips.filter(c => c.key !== chipKey);
+    setFormData(prev => mergeChipsIntoFormState(prev, nextChips, activeTenantCompanyName));
+  };
+
+  const handlePromotePrimaryChip = (chipKey) => {
+    const targetChip = branchChips.find(c => c.key === chipKey);
+    if (!targetChip) return;
+    const reordered = [targetChip, ...branchChips.filter(c => c.key !== chipKey)];
+    setFormData(prev => mergeChipsIntoFormState(prev, reordered, activeTenantCompanyName));
+  };
+
+  const buildFinalBranchPayload = (draftText) => {
+    const base = isAllBranchesSelected
+      ? {
+          ...formData,
+          branch_name: 'All Branches',
+          assigned_branch_scope: 'ALL',
+          assigned_branches: ['ALL'],
+          assigned_branch_names: ['All Branches'],
+          assigned_branch_codes: ['ALL'],
+          company: formData.company || activeTenantCompanyName || ''
+        }
+      : mergeChipsIntoFormState(formData, branchChips, activeTenantCompanyName);
+    if (customBranchNameInput && String(draftText || '').trim()) {
+      const prepared = base.assigned_branch_scope === 'ALL'
+        ? { ...base, branch_name: '', assigned_branch_scope: 'SINGLE', assigned_branches: [], assigned_branch_names: [], assigned_branch_codes: [] }
+        : base;
+      return commitPendingCustomBranch(prepared, draftText, availableBranches, activeTenantCompanyName);
+    }
+    return base;
   };
 
   const handleSubmit = (e) => {
@@ -354,20 +634,21 @@ export default function AddEditUserModal({
       return;
     }
 
-    const resolvedTenantId = formData.tenant_id || resolvedTenant.tenantId || tenantId || '';
-    const resolvedCompany = formData.company || resolvedTenant.companyName || currentUserCompany || '';
-    const resolvedVehicle = formData.vehicle_type || 'BIKE';
+    const syncedData = buildFinalBranchPayload(customBranchDraft);
+    const resolvedTenantId = syncedData.tenant_id || resolvedTenant.tenantId || tenantId || '';
+    const resolvedCompany = syncedData.company || activeTenantCompanyName || '';
+    const resolvedVehicle = syncedData.vehicle_type || 'BIKE';
     const resolvedConveyance = resolvedVehicle === 'NONE'
       ? 0
-      : (formData.conveyance_rate_per_km ?? 4.50);
+      : (syncedData.conveyance_rate_per_km ?? 4.50);
 
     const payload = {
-      ...formData,
+      ...syncedData,
       tenant_id: resolvedTenantId,
       company: resolvedCompany,
       vehicle_type: resolvedVehicle,
       conveyance_rate_per_km: resolvedConveyance,
-      emp_id: formData.emp_id?.trim() || (isEdit ? (user?.emp_id || '') : `EMP-${Date.now().toString().slice(-5)}`)
+      emp_id: syncedData.emp_id?.trim() || (isEdit ? (user?.emp_id || '') : `EMP-${Date.now().toString().slice(-5)}`)
     };
 
     onSave(payload);
@@ -378,19 +659,20 @@ export default function AddEditUserModal({
       setErrorMsg('Please enter at least an Emp Name, Email, or Emp ID to save as Draft.');
       return;
     }
-    const fallbackId = formData.emp_id?.trim() || `DRAFT-${Date.now().toString().slice(-6)}`;
-    const fallbackEmail = formData.email?.trim() || `${fallbackId.toLowerCase()}@draft.local`;
-    const fallbackPassword = formData.password || 'DraftPass@123';
+    const syncedData = buildFinalBranchPayload(customBranchDraft);
+    const fallbackId = syncedData.emp_id?.trim() || `DRAFT-${Date.now().toString().slice(-6)}`;
+    const fallbackEmail = syncedData.email?.trim() || `${fallbackId.toLowerCase()}@draft.local`;
+    const fallbackPassword = syncedData.password || 'DraftPass@123';
     onSaveDraft({
-      ...formData,
-      tenant_id: formData.tenant_id || resolvedTenant.tenantId || tenantId || '',
-      company: formData.company || resolvedTenant.companyName || currentUserCompany || '',
-      conveyance_rate_per_km: formData.vehicle_type === 'NONE' ? 0 : (formData.conveyance_rate_per_km ?? 4.50),
+      ...syncedData,
+      tenant_id: syncedData.tenant_id || resolvedTenant.tenantId || tenantId || '',
+      company: syncedData.company || activeTenantCompanyName || '',
+      conveyance_rate_per_km: syncedData.vehicle_type === 'NONE' ? 0 : (syncedData.conveyance_rate_per_km ?? 4.50),
       emp_id: fallbackId,
       email: fallbackEmail,
       password: fallbackPassword,
       emp_status: 'Draft',
-      emp_name: formData.emp_name?.trim() || 'Draft Employee'
+      emp_name: syncedData.emp_name?.trim() || 'Draft Employee'
     });
   };
 
@@ -660,12 +942,17 @@ export default function AddEditUserModal({
                         const tCode = matchedT?.tenant_code || '';
                         setResolvedTenant({ tenantId: nextTid, tenantCode: tCode, companyName: tName });
                         setCustomBranchNameInput(false);
+                        setCustomBranchDraft('');
                         setCustomLocationInput(false);
                         setFormData(prev => ({
                           ...prev,
                           tenant_id: nextTid,
                           company: tName,
                           branch_name: '',
+                          assigned_branch_scope: 'SINGLE',
+                          assigned_branches: [],
+                          assigned_branch_names: [],
+                          assigned_branch_codes: [],
                           work_location_name: '',
                           assigned_shift: ''
                         }));
@@ -896,42 +1183,137 @@ export default function AddEditUserModal({
                   </div>
 
                   <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem', gap: '0.5rem' }}>
                       <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
                         Branch Name
                       </label>
                       {availableBranches.length > 0 && (
                         <button
                           type="button"
-                          onClick={() => setCustomBranchNameInput(!customBranchNameInput)}
+                          onClick={() => {
+                            setCustomBranchNameInput(v => !v);
+                            setCustomBranchDraft('');
+                          }}
                           style={{ background: 'none', border: 'none', color: 'var(--accent-color)', fontSize: '0.72rem', fontWeight: 600, cursor: 'pointer', padding: 0 }}
                         >
-                          {customBranchNameInput ? '← Select Branch List' : '+ Type Custom'}
+                          {customBranchNameInput ? 'Done Custom' : '+ Type Custom'}
                         </button>
                       )}
                     </div>
-                    <div style={{ position: 'relative' }}>
-                      <Building size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
-                      {!customBranchNameInput && availableBranches.length > 0 ? (
+
+                    {/* Selected Branch Chips (Single / Multi / All Branches) */}
+                    {(isAllBranchesSelected || branchChips.length > 0) && (
+                      <div style={{
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        gap: '0.35rem',
+                        marginBottom: '0.45rem',
+                        padding: '0.45rem',
+                        borderRadius: '8px',
+                        border: '1px solid var(--border-light)',
+                        backgroundColor: 'var(--bg-primary, #f8fafc)'
+                      }}>
+                        {isAllBranchesSelected ? (
+                          <span style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.35rem',
+                            padding: '0.22rem 0.55rem',
+                            borderRadius: '9999px',
+                            backgroundColor: 'rgba(37, 99, 235, 0.12)',
+                            color: '#1d4ed8',
+                            border: '1px solid rgba(37, 99, 235, 0.28)',
+                            fontSize: '0.75rem',
+                            fontWeight: 600
+                          }}>
+                            <Globe size={12} />
+                            <span>All Branches (Full Tenant Access)</span>
+                            <button
+                              type="button"
+                              onClick={handleClearAllBranches}
+                              aria-label="Remove All Branches"
+                              style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'inherit', display: 'inline-flex', alignItems: 'center' }}
+                            >
+                              <X size={12} />
+                            </button>
+                          </span>
+                        ) : (
+                          branchChips.map((chip, idx) => {
+                            const isPrimaryChip = idx === 0;
+                            const showPrimaryTag = branchChips.length > 1 && isPrimaryChip;
+                            return (
+                              <span
+                                key={chip.key}
+                                title={
+                                  branchChips.length > 1 && !isPrimaryChip
+                                    ? `Click to set "${chip.branchName}" as Primary branch`
+                                    : `${chip.branchName}${chip.branchCode ? ` (${chip.branchCode})` : ''}`
+                                }
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.3rem',
+                                  padding: '0.2rem 0.5rem',
+                                  borderRadius: '9999px',
+                                  backgroundColor: isPrimaryChip ? 'rgba(16, 185, 129, 0.12)' : 'rgba(59, 130, 246, 0.1)',
+                                  color: isPrimaryChip ? '#047857' : 'var(--text-primary)',
+                                  border: `1px solid ${isPrimaryChip ? 'rgba(16, 185, 129, 0.3)' : 'rgba(59, 130, 246, 0.25)'}`,
+                                  fontSize: '0.74rem',
+                                  fontWeight: 600,
+                                  maxWidth: '100%'
+                                }}
+                              >
+                                {showPrimaryTag && (
+                                  <span style={{ fontSize: '0.64rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em', color: '#059669' }}>
+                                    Primary ·
+                                  </span>
+                                )}
+                                {branchChips.length > 1 && !isPrimaryChip && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handlePromotePrimaryChip(chip.key)}
+                                    title="Set as Primary Branch"
+                                    style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--text-secondary)', display: 'inline-flex', alignItems: 'center' }}
+                                  >
+                                    <Star size={11} />
+                                  </button>
+                                )}
+                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {chip.customCode ? `${chip.customCode} · ` : ''}{chip.branchName}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveBranchChip(chip.key)}
+                                  aria-label={`Remove ${chip.branchName}`}
+                                  style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'inherit', display: 'inline-flex', alignItems: 'center', opacity: 0.8 }}
+                                >
+                                  <X size={12} />
+                                </button>
+                              </span>
+                            );
+                          })
+                        )}
+                      </div>
+                    )}
+
+                    {/* Branch Selector Dropdown (supports 1, 2+, or All Branches) */}
+                    {availableBranches.length > 0 && (
+                      <div style={{ position: 'relative' }}>
+                        <Building size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
                         <select
-                          value={formData.branch_name || ''}
+                          value=""
                           onChange={e => {
                             const val = e.target.value;
+                            if (!val) return;
+                            if (val === '__ALL__') {
+                              handleSelectAllBranches();
+                              return;
+                            }
                             if (val === '__custom__') {
                               setCustomBranchNameInput(true);
                               return;
                             }
-                            const matched = availableBranches.find(b => b.branch_name === val);
-                            setFormData(prev => ({
-                              ...prev,
-                              branch_name: val,
-                              company: matched
-                                ? resolveCompanyForBranch(matched, resolvedTenant.companyName || currentUserCompany)
-                                : (resolvedTenant.companyName || currentUserCompany || prev.company),
-                              ...(matched?.location_type ? { work_location_type: matched.location_type } : {}),
-                              ...(val ? { work_location_name: val } : {})
-                            }));
-                            if (val) setCustomLocationInput(false);
+                            handleToggleBranchFromList(val);
                           }}
                           style={{
                             width: '100%',
@@ -940,42 +1322,90 @@ export default function AddEditUserModal({
                             border: '1px solid var(--border-light)',
                             backgroundColor: 'var(--bg-surface)',
                             color: 'var(--text-primary)',
-                            fontSize: '0.85rem'
+                            fontSize: '0.84rem'
                           }}
                         >
-                          <option value="">-- Select Branch Name --</option>
-                          {availableBranches.map(br => (
-                            <option key={br.id || br.branch_code} value={br.branch_name}>
-                              {br.custom_code ? `${br.custom_code} · ` : ''}{br.branch_name} ({br.branch_code})
-                            </option>
-                          ))}
-                          <option value="__custom__">+ Enter Custom Branch Name...</option>
+                          <option value="">
+                            {isAllBranchesSelected
+                              ? 'Switch to specific branch...'
+                              : branchChips.length > 0
+                                ? `+ Add / toggle branch (${branchChips.length} selected)...`
+                                : '-- Select Branch or All Branches --'}
+                          </option>
+                          <option value="__ALL__">
+                            {isAllBranchesSelected ? '✓ ' : ''}All Branches (Full Tenant Access)
+                          </option>
+                          {availableBranches.map(br => {
+                            const brKey = String(br.branch_code || br.branch_name).toLowerCase();
+                            const isAdded = !isAllBranchesSelected && branchChips.some(c => c.key === brKey);
+                            return (
+                              <option key={br.id || br.branch_code} value={br.branch_name}>
+                                {isAdded ? '✓ ' : ''}{br.custom_code ? `${br.custom_code} · ` : ''}{br.branch_name} ({br.branch_code}){isAdded ? ' (Remove)' : ''}
+                              </option>
+                            );
+                          })}
+                          <option value="__custom__">+ Add Custom Branch Chip...</option>
                         </select>
-                      ) : (
-                        <input
-                          type="text"
-                          value={formData.branch_name || ''}
-                          onChange={e => {
-                            const val = e.target.value;
-                            setFormData(prev => ({
-                              ...prev,
-                              branch_name: val,
-                              company: val.trim() || resolvedTenant.companyName || currentUserCompany || prev.company
-                            }));
-                          }}
-                          placeholder="e.g. NSMLR / Branch / Unit Name"
+                      </div>
+                    )}
+
+                    {/* Custom Branch Chip Adder (when + Type Custom clicked or tenant has no configured branches) */}
+                    {(customBranchNameInput || availableBranches.length === 0) && (
+                      <div style={{ display: 'flex', gap: '0.4rem', marginTop: availableBranches.length > 0 ? '0.4rem' : 0 }}>
+                        <div style={{ position: 'relative', flex: 1 }}>
+                          <Building size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
+                          <input
+                            type="text"
+                            value={customBranchDraft}
+                            onChange={e => setCustomBranchDraft(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleAddCustomBranchChip();
+                              }
+                            }}
+                            placeholder="Type branch / unit & press Add"
+                            style={{
+                              width: '100%',
+                              padding: '0.5rem 0.7rem 0.5rem 2.1rem',
+                              borderRadius: '8px',
+                              border: '1px solid var(--border-light)',
+                              backgroundColor: 'var(--bg-surface)',
+                              color: 'var(--text-primary)',
+                              fontSize: '0.83rem'
+                            }}
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleAddCustomBranchChip}
+                          disabled={!customBranchDraft.trim()}
                           style={{
-                            width: '100%',
-                            padding: '0.55rem 0.75rem 0.55rem 2.2rem',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.25rem',
+                            padding: '0 0.75rem',
                             borderRadius: '8px',
                             border: '1px solid var(--border-light)',
-                            backgroundColor: 'var(--bg-surface)',
-                            color: 'var(--text-primary)',
-                            fontSize: '0.85rem'
+                            backgroundColor: customBranchDraft.trim() ? 'var(--accent-color, #2563eb)' : 'var(--bg-surface)',
+                            color: customBranchDraft.trim() ? '#ffffff' : 'var(--text-secondary)',
+                            fontSize: '0.78rem',
+                            fontWeight: 600,
+                            cursor: customBranchDraft.trim() ? 'pointer' : 'not-allowed'
                           }}
-                        />
-                      )}
-                    </div>
+                        >
+                          <Plus size={14} /> Add
+                        </button>
+                      </div>
+                    )}
+
+                    {(isAllBranchesSelected || branchChips.length > 1) && (
+                      <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '0.3rem', lineHeight: 1.35 }}>
+                        {isAllBranchesSelected
+                          ? 'User can view & manage data across every branch in this organization.'
+                          : `Multi-branch enabled (${branchChips.length} branches). Primary chip sets the default branch.`}
+                      </div>
+                    )}
                   </div>
 
                   <div>

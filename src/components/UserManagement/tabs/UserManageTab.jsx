@@ -330,7 +330,14 @@ export default function UserManageTab({
         const subDept = (u.emp_sub_department || '').toLowerCase();
         const desig = (u.emp_designation || '').toLowerCase();
         const roleName = (roleTemplates.find(rt => rt.id === (u.role_template_id || u.module_access?.role_template_id))?.name || u.role || '').toLowerCase();
-        return name.includes(q) || email.includes(q) || empId.includes(q) || mobile.includes(q) || dept.includes(q) || subDept.includes(q) || desig.includes(q) || roleName.includes(q);
+        const branchSearch = [
+          u.company,
+          u.branch_name,
+          u.work_location_name,
+          ...(Array.isArray(u.module_access?.assigned_branches) ? u.module_access.assigned_branches : []),
+          ...(Array.isArray(u.module_access?.assigned_branch_names) ? u.module_access.assigned_branch_names : [])
+        ].filter(Boolean).join(' ').toLowerCase();
+        return name.includes(q) || email.includes(q) || empId.includes(q) || mobile.includes(q) || dept.includes(q) || subDept.includes(q) || desig.includes(q) || roleName.includes(q) || branchSearch.includes(q);
       });
     }
 
@@ -551,19 +558,69 @@ export default function UserManageTab({
           </td>
         );
 
-      case 'location':
+      case 'location': {
+        const ma = u.module_access || {};
+        const scope = String(u.assigned_branch_scope || ma.assigned_branch_scope || '').toUpperCase();
+        const assignedNames = Array.isArray(u.assigned_branch_names || ma.assigned_branch_names)
+          ? (u.assigned_branch_names || ma.assigned_branch_names).filter(Boolean)
+          : [];
+        const assignedTokens = Array.isArray(u.assigned_branches || ma.assigned_branches)
+          ? (u.assigned_branches || ma.assigned_branches).filter(Boolean)
+          : [];
+        const isAllBranches = scope === 'ALL' || assignedTokens.some(b => String(b).toUpperCase() === 'ALL');
+        const branchLabels = assignedNames.length > 0 ? assignedNames : assignedTokens;
         return (
           <td key="location" style={{ padding: '0.75rem 1rem', verticalAlign: 'top' }}>
             <div style={{ fontSize: '0.78rem', color: 'var(--text-primary)', fontWeight: 500, whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }}>
               {u.work_location_name || u.work_location_type || 'Headquarters'}
             </div>
-            {u.company && (
+            {isAllBranches ? (
+              <div style={{ marginTop: '0.2rem' }}>
+                <span
+                  title="Access across all tenant branches"
+                  style={{
+                    display: 'inline-block',
+                    fontSize: '0.68rem',
+                    fontWeight: 700,
+                    padding: '0.1rem 0.45rem',
+                    borderRadius: '9999px',
+                    backgroundColor: 'rgba(37, 99, 235, 0.12)',
+                    color: '#1d4ed8',
+                    border: '1px solid rgba(37, 99, 235, 0.25)'
+                  }}
+                >
+                  All Branches
+                </span>
+              </div>
+            ) : branchLabels.length > 1 ? (
+              <div
+                title={branchLabels.join(' · ')}
+                style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.25rem', marginTop: '0.18rem' }}
+              >
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }}>
+                  {u.company || branchLabels[0]}
+                </span>
+                <span style={{
+                  display: 'inline-block',
+                  fontSize: '0.66rem',
+                  fontWeight: 700,
+                  padding: '0.08rem 0.4rem',
+                  borderRadius: '9999px',
+                  backgroundColor: 'rgba(16, 185, 129, 0.12)',
+                  color: '#047857',
+                  border: '1px solid rgba(16, 185, 129, 0.28)'
+                }}>
+                  +{branchLabels.length - 1} more
+                </span>
+              </div>
+            ) : u.company ? (
               <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.1rem', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }}>
                 {u.company}
               </div>
-            )}
+            ) : null}
           </td>
         );
+      }
 
       case 'reporting':
         return (
