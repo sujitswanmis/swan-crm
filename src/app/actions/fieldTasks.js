@@ -4,6 +4,9 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { createClient as createServerAuthClient } from '@/utils/supabase/server';
 import { logAuditAction } from '@/app/actions/audit';
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isUuid = (val) => Boolean(val && UUID_REGEX.test(String(val).trim()));
+
 function getAdminClient() {
   return createSupabaseClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -104,6 +107,8 @@ export async function createFieldTask(taskPayload) {
  * Fetch field tasks for a field person (e.g. today's scheduled tasks)
  */
 export async function getFieldTasksForUser(userId, options = {}) {
+  if (!isUuid(userId)) return [];
+  const cleanUserId = String(userId).trim();
   const supabase = getAdminClient();
   try {
     let query = supabase
@@ -112,7 +117,7 @@ export async function getFieldTasksForUser(userId, options = {}) {
         *,
         form:tenant_custom_forms(title, form_code, fields)
       `)
-      .eq('assigned_to_user_id', userId)
+      .eq('assigned_to_user_id', cleanUserId)
       .order('scheduled_start_time', { ascending: true });
 
     if (options.status) {
@@ -182,12 +187,18 @@ export async function getTodayUserAttendanceStatus(userId, userEmail = '') {
       .select('id, in_time, out_time, status')
       .eq('attendance_date', todayIST);
 
-    if (userId && userEmail) {
-      query = query.or(`user_id.eq.${userId},email.ilike.${userEmail.trim().toLowerCase()}`);
-    } else if (userId) {
-      query = query.eq('user_id', userId);
-    } else if (userEmail) {
-      query = query.ilike('email', userEmail.trim().toLowerCase());
+    const cleanUserId = isUuid(userId) ? String(userId).trim() : null;
+    const cleanEmail = userEmail ? String(userEmail).trim().toLowerCase() : '';
+    if (!cleanUserId && !cleanEmail) {
+      return { isPunchedIn: false, isPunchedOut: false, record: null, todayIST };
+    }
+
+    if (cleanUserId && cleanEmail) {
+      query = query.or(`user_id.eq.${cleanUserId},email.ilike.${cleanEmail}`);
+    } else if (cleanUserId) {
+      query = query.eq('user_id', cleanUserId);
+    } else if (cleanEmail) {
+      query = query.ilike('email', cleanEmail);
     }
 
     const { data, error } = await query.maybeSingle();
@@ -241,16 +252,21 @@ export async function performCheckIn(payload) {
       day: '2-digit'
     }).format(new Date());
 
-    if (field_user_id) {
+    const cleanFieldUserId = isUuid(field_user_id) ? String(field_user_id).trim() : null;
+    const cleanCheckInEmail = user_email ? String(user_email).trim().toLowerCase() : '';
+
+    if (cleanFieldUserId || cleanCheckInEmail) {
       let attQuery = supabase
         .from('attendance_records')
         .select('id, in_time, out_time, status')
         .eq('attendance_date', todayIST);
 
-      if (user_email) {
-        attQuery = attQuery.or(`user_id.eq.${field_user_id},email.ilike.${user_email.trim().toLowerCase()}`);
+      if (cleanFieldUserId && cleanCheckInEmail) {
+        attQuery = attQuery.or(`user_id.eq.${cleanFieldUserId},email.ilike.${cleanCheckInEmail}`);
+      } else if (cleanFieldUserId) {
+        attQuery = attQuery.eq('user_id', cleanFieldUserId);
       } else {
-        attQuery = attQuery.eq('user_id', field_user_id);
+        attQuery = attQuery.ilike('email', cleanCheckInEmail);
       }
 
       const { data: attRecord } = await attQuery.maybeSingle();
@@ -355,11 +371,12 @@ export async function performCheckIn(payload) {
 export async function getActiveFieldVisit(userId, company = 'TNT00001') {
   const supabase = getAdminClient();
   try {
-    if (!userId) return null;
+    if (!isUuid(userId)) return null;
+    const cleanUserId = String(userId).trim();
     const { data, error } = await supabase
       .from('field_tasks')
       .select('*')
-      .eq('assigned_to_user_id', userId)
+      .eq('assigned_to_user_id', cleanUserId)
       .eq('status', 'IN_PROGRESS')
       .order('updated_at', { ascending: false })
       .limit(1)
@@ -608,7 +625,7 @@ export async function performCheckOutWithOutput(payload) {
 
     // 3. Auto-Sync CRM Pipeline Stage & Follow-up Date:
     // If Lead ID is provided
-    if (lead_id) {
+    if (isUuid(lead_id)) {
       const updateData = {
         updated_at: checkOutTime
       };
@@ -628,10 +645,11 @@ export async function performCheckOutWithOutput(payload) {
       try {
         await supabase
           .from('lead_notes')
-          .insert({
+          .insert([{
             lead_id,
-            note: `[Field Visit - ${connectivity_mode}] Stage updated to "${lead_stage_updated || 'Updated'}". Outcome: ${outcome_status}.${next_followup_at ? ` Next Follow-up: ${next_followup_at}` : ''} Notes: ${discussion_notes || 'No notes'}`
-          });
+            note_text: `[Field Visit - ${connectivity_mode}] Stage updated to "${lead_stage_updated || 'Updated'}". Outcome: ${outcome_status}.${next_followup_at ? ` Next Follow-up: ${next_followup_at}` : ''} Notes: ${discussion_notes || 'No notes'}`,
+            created_by: 'Field Force App'
+          }]);
       } catch (_) {}
     }
 
@@ -754,7 +772,8 @@ export async function getModuleEntitiesForCheckIn({ company = 'TNT00001', module
  * Fetch all completed visits for an executive today (Strict IST Asia/Kolkata timezone)
  */
 export async function getUserCompletedVisitsToday(userId, company = 'TNT00001', dateStr = null) {
-  if (!userId) return [];
+  if (!isUuid(userId)) return [];
+  const cleanUserId = String(userId).trim();
   const supabase = getAdminClient();
   try {
     const today = dateStr || new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
@@ -764,7 +783,7 @@ export async function getUserCompletedVisitsToday(userId, company = 'TNT00001', 
     const { data, error } = await supabase
       .from('field_form_submissions')
       .select('*')
-      .eq('field_user_id', userId)
+      .eq('field_user_id', cleanUserId)
       .gte('created_at', startOfDay)
       .lte('created_at', endOfDay)
       .order('created_at', { ascending: false });

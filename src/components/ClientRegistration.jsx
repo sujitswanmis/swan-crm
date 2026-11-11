@@ -1464,7 +1464,7 @@ export default function ClientRegistration({
             
             if (finalNewLeadObj) {
               try {
-                await submitClientRegistrationAndSync(finalNewLeadObj, actor, finalNewLeadObj.our_company || cleanPayload.our_company);
+                await submitClientRegistrationAndSync(finalNewLeadObj, finalNewLeadObj.our_company || cleanPayload.our_company || '', actor);
               } catch (syncErr) {
                 console.warn('4-way auto-sync notice:', syncErr);
               }

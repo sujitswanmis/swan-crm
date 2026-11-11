@@ -2,6 +2,9 @@
 
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isUuid = (val) => Boolean(val && UUID_REGEX.test(String(val).trim()));
+
 const getAdminClient = () => {
   return createSupabaseClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -104,7 +107,7 @@ export async function getStatesCentral(countryId = null) {
     .order('name', { ascending: true });
 
   if (countryId) {
-    query = query.or(`country_id.eq.${countryId},country_id.is.null`);
+    if (isUuid(countryId)) query = query.or(`country_id.eq.${String(countryId).trim()},country_id.is.null`);
   }
 
   let { data, error } = await query;

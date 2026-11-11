@@ -161,11 +161,15 @@ export async function POST(request) {
     // 1. Resolve Target Instance from DB
     let instance = null;
     if (parsed.instanceKey) {
-      const { data: matched } = await adminDb
+      const cleanKey = String(parsed.instanceKey).trim();
+      const isUuidKey = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanKey);
+      let instQuery = adminDb
         .from('whatsapp_instances')
-        .select('id, instance_key, instance_name, status')
-        .or(`instance_key.eq.${parsed.instanceKey},id.eq.${parsed.instanceKey}`)
-        .maybeSingle();
+        .select('id, instance_key, instance_name, status');
+      instQuery = isUuidKey
+        ? instQuery.or(`instance_key.eq.${cleanKey},id.eq.${cleanKey}`)
+        : instQuery.eq('instance_key', cleanKey);
+      const { data: matched } = await instQuery.maybeSingle();
       instance = matched;
     }
 

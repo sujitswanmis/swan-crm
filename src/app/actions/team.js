@@ -236,26 +236,28 @@ export async function registerEmployeeDetails(userId, email, details) {
     }
   }
 
-  const targetTenantId = details.tenant_id || existingUser?.tenant_id || '00000000-0000-0000-0000-000000000001';
+  let targetTenantId = details.tenant_id || existingUser?.tenant_id || '00000000-0000-0000-0000-000000000001';
 
   // SaaS Seat Limit Enforcement (Master Production New Swan Group is always exempt)
   if (!isCustomer && targetTenantId !== '00000000-0000-0000-0000-000000000001') {
     try {
-      const { data: sub } = await adminClient
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetTenantId);
+      const { data: tenant } = await adminClient
+        .from('tenants')
+        .select('id, name, tenant_code')
+        .eq(isUuid ? 'id' : 'tenant_code', targetTenantId)
+        .maybeSingle();
+      const dbTenantId = tenant?.id || (isUuid ? targetTenantId : null);
+
+      const { data: sub } = dbTenantId ? await adminClient
         .from('tenant_subscriptions')
         .select('user_seat_limit')
-        .eq('tenant_id', targetTenantId)
+        .eq('tenant_id', dbTenantId)
         .order('created_at', { ascending: false })
         .limit(1)
-        .maybeSingle();
+        .maybeSingle() : { data: null };
 
       if (sub && typeof sub.user_seat_limit === 'number') {
-        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetTenantId);
-        const { data: tenant } = await adminClient
-          .from('tenants')
-          .select('name, tenant_code')
-          .eq(isUuid ? 'id' : 'tenant_code', targetTenantId)
-          .maybeSingle();
         const tenantName = tenant?.name || '';
 
         let seatQuery = adminClient

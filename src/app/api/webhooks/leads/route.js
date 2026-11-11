@@ -89,7 +89,7 @@ export async function POST(request) {
           try {
             await supabase.from('lead_notes').insert([{
               lead_id: existing.id,
-              content: `[Inbound Webhook Resubmission]: ${notes} (Source: ${source})`,
+              note_text: `[Inbound Webhook Resubmission]: ${notes} (Source: ${source})`,
               created_by: 'System Webhook'
             }]);
           } catch {
@@ -154,7 +154,7 @@ export async function POST(request) {
       try {
         await supabase.from('lead_notes').insert([{
           lead_id: newLead.id,
-          content: `Inquiry / Requirement: ${notes}`,
+          note_text: `Inquiry / Requirement: ${notes}`,
           created_by: 'System Webhook'
         }]);
       } catch {

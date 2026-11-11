@@ -18,11 +18,19 @@ const TENANT_UUID_MAP = {
   'TNT00003': '922d3e72-6588-457f-a562-4f1bdbf10d98'
 };
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isUuid = (val) => Boolean(val && UUID_REGEX.test(String(val).trim()));
+
 export async function resolveDbTenantUuid(tenantId) {
   if (!tenantId) return DEFAULT_TENANT_ID;
   const str = String(tenantId).trim();
-  if (TENANT_UUID_MAP[str]) return TENANT_UUID_MAP[str];
-  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str)) return str;
+  const upper = str.toUpperCase();
+  if (TENANT_UUID_MAP[upper]) return TENANT_UUID_MAP[upper];
+  const lower = str.toLowerCase();
+  if (lower.includes('supuja')) return '0a37b8e8-1c28-4e19-8891-951fc3f8f8af';
+  if (lower.includes('testing')) return '922d3e72-6588-457f-a562-4f1bdbf10d98';
+  if (lower.includes('swan') || lower.includes('nsmlr') || lower.includes('nstl')) return DEFAULT_TENANT_ID;
+  if (isUuid(str)) return str;
   return DEFAULT_TENANT_ID;
 }
 
@@ -494,9 +502,9 @@ export async function createPartyMaster(partyData, tenantId = DEFAULT_TENANT_ID,
     party_status: sanitizedStatus,
     onboarding_stage: sanitizedStage,
     acquisition_source: cleanPartyData.acquisition_source || 'CRM_LEAD',
-    source_lead_id: cleanPartyData.source_lead_id || null,
+    source_lead_id: isUuid(cleanPartyData.source_lead_id) ? String(cleanPartyData.source_lead_id).trim() : null,
     external_sap_code: cleanPartyData.external_sap_code || null,
-    created_by: cleanPartyData.created_by || null
+    created_by: isUuid(cleanPartyData.created_by) ? String(cleanPartyData.created_by).trim() : null
   };
 
   const { data: party, error } = await adminClient
@@ -576,7 +584,7 @@ export async function createPartyMaster(partyData, tenantId = DEFAULT_TENANT_ID,
   if (party.parent_distributor_id || party.parent_dealer_id) {
     try {
       await adminClient.from('party_relationship_history').insert([{
-        tenant_id: tenantId,
+        tenant_id: resolvedTenantUuid,
         party_id: party.id,
         party_type: partyType,
         parent_type: partyType === 'Dealer' ? 'Distributor' : 'Dealer',
@@ -1405,6 +1413,7 @@ export async function getParty360Details(partyId) {
  * Operational Engine 1: Order Followups
  */
 export async function getOrderFollowups(tenantId = DEFAULT_TENANT_ID, scheduledDate = null) {
+  tenantId = await resolveDbTenantUuid(tenantId);
   const adminClient = getAdminClient();
   let query = adminClient
     .from('party_order_followups')
@@ -1441,6 +1450,7 @@ export async function getOrderFollowups(tenantId = DEFAULT_TENANT_ID, scheduledD
 }
 
 export async function saveOrderFollowup(followupData, tenantId = DEFAULT_TENANT_ID) {
+  tenantId = await resolveDbTenantUuid(tenantId);
   const adminClient = getAdminClient();
   const payload = {
     ...followupData,
@@ -1462,6 +1472,7 @@ export async function saveOrderFollowup(followupData, tenantId = DEFAULT_TENANT_
  * Operational Engine 2: Post-Order Feedback
  */
 export async function getOrderFeedbackList(tenantId = DEFAULT_TENANT_ID) {
+  tenantId = await resolveDbTenantUuid(tenantId);
   const adminClient = getAdminClient();
   const { data, error } = await adminClient
     .from('party_order_feedback')
@@ -1474,6 +1485,7 @@ export async function getOrderFeedbackList(tenantId = DEFAULT_TENANT_ID) {
 }
 
 export async function saveOrderFeedback(feedbackData, tenantId = DEFAULT_TENANT_ID) {
+  tenantId = await resolveDbTenantUuid(tenantId);
   const adminClient = getAdminClient();
   const isComplaint = (feedbackData.overall_satisfaction <= 2) || feedbackData.has_transit_damage_shortage;
 
@@ -1524,6 +1536,7 @@ export async function saveOrderFeedback(feedbackData, tenantId = DEFAULT_TENANT_
  * Operational Engine 3: Monthly Default Feedback
  */
 export async function getMonthlyFeedbackList(tenantId = DEFAULT_TENANT_ID, monthStr = null) {
+  tenantId = await resolveDbTenantUuid(tenantId);
   const adminClient = getAdminClient();
   let results = [];
 
@@ -1606,6 +1619,7 @@ export async function getMonthlyFeedbackList(tenantId = DEFAULT_TENANT_ID, month
 }
 
 export async function saveMonthlyFeedback(feedbackData, tenantId = DEFAULT_TENANT_ID) {
+  tenantId = await resolveDbTenantUuid(tenantId);
   const adminClient = getAdminClient();
   const period = feedbackData.evaluation_period || new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit' }).format(new Date());
 
@@ -1665,6 +1679,7 @@ export async function saveMonthlyFeedback(feedbackData, tenantId = DEFAULT_TENAN
  * Operational Engine 4: Complaint Management System
  */
 export async function getComplaintsList(tenantId = DEFAULT_TENANT_ID) {
+  tenantId = await resolveDbTenantUuid(tenantId);
   const adminClient = getAdminClient();
   const { data, error } = await adminClient
     .from('party_complaints')
@@ -1691,6 +1706,7 @@ export async function getComplaintsList(tenantId = DEFAULT_TENANT_ID) {
 }
 
 export async function createComplaintTicket(complaintData, tenantId = DEFAULT_TENANT_ID) {
+  tenantId = await resolveDbTenantUuid(tenantId);
   const adminClient = getAdminClient();
   const ticketNo = `CMP-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`;
 
@@ -1749,9 +1765,13 @@ export async function verifyAndCloseComplaint(complaintId, otp, satisfactionRati
  * Permanently delete a channel partner from Party Master and its related stage records
  */
 export async function deletePartyMaster(partyId, tenantId = DEFAULT_TENANT_ID) {
+  tenantId = tenantId ? await resolveDbTenantUuid(tenantId) : null;
   const adminClient = getAdminClient();
   try {
-    if (!partyId) throw new Error('Party ID is required for deletion');
+    if (!isUuid(partyId)) {
+      throw new Error('Valid Party ID (UUID) is required for deletion');
+    }
+    partyId = String(partyId).trim();
 
     // 1. Fetch party to ensure it exists within tenant
     let partyQuery = adminClient
@@ -1857,6 +1877,7 @@ export async function deletePartyMaster(partyId, tenantId = DEFAULT_TENANT_ID) {
  * and party_roles records.
  */
 export async function bulkImportPartyMaster(partiesList = [], importMode = 'FULL', tenantId = DEFAULT_TENANT_ID, importedBy = 'Bulk Import Admin') {
+  tenantId = await resolveDbTenantUuid(tenantId);
   const adminClient = getAdminClient();
   const results = {
     total: partiesList.length,

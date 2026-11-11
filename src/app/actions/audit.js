@@ -58,6 +58,8 @@ async function resolveClientIp() {
   return '127.0.0.1 (Local)';
 }
 
+let auditPlatformColsMissingUntil = 0;
+
 function isMissingPlatformColumnError(error) {
   const code = String(error?.code || '');
   const msg = String(error?.message || '').toLowerCase();
@@ -193,8 +195,10 @@ export async function logAuditAction(action, target, details = {}) {
     };
 
     const adminClient = getAdminClient();
-    let { error } = await adminClient.from('audit_logs').insert([fullPayload]);
-    if (error && isMissingPlatformColumnError(error)) {
+    const skipPlatformCols = Date.now() < auditPlatformColsMissingUntil;
+    let { error } = await adminClient.from('audit_logs').insert([skipPlatformCols ? basePayload : fullPayload]);
+    if (!skipPlatformCols && error && isMissingPlatformColumnError(error)) {
+      auditPlatformColsMissingUntil = Date.now() + 5 * 60 * 1000;
       const fallbackRes = await adminClient.from('audit_logs').insert([basePayload]);
       error = fallbackRes.error;
     }
@@ -551,8 +555,10 @@ export async function getAuditLogs({
       return query.order('created_at', { ascending: false }).range(from, to);
     };
 
-    let { data, count, error } = await buildAuditLogsQuery(true);
+    const usePlatformCols = Date.now() >= auditPlatformColsMissingUntil;
+    let { data, count, error } = await buildAuditLogsQuery(usePlatformCols);
     if (error && isMissingPlatformColumnError(error)) {
+      auditPlatformColsMissingUntil = Date.now() + 5 * 60 * 1000;
       if (normalizedPlatformFilter !== 'all' && normalizedPlatformFilter !== PLATFORM_LABELS.LEGACY) {
         data = [];
         count = 0;
@@ -563,6 +569,10 @@ export async function getAuditLogs({
         count = fallbackRes.count;
         error = fallbackRes.error;
       }
+    }
+    if (!usePlatformCols && normalizedPlatformFilter !== 'all' && normalizedPlatformFilter !== PLATFORM_LABELS.LEGACY) {
+      data = [];
+      count = 0;
     }
     if (error) throw error;
 

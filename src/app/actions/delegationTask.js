@@ -2,6 +2,7 @@
 
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import crypto from 'crypto';
+import { resolveDbTenantUuid } from './partyMaster';
 
 const DEFAULT_TENANT_ID = '00000000-0000-0000-0000-000000000001';
 
@@ -17,6 +18,7 @@ const getAdminClient = () => {
 // ==========================================
 
 export async function createDelegationTask(taskData, tenantId = DEFAULT_TENANT_ID) {
+  tenantId = await resolveDbTenantUuid(tenantId);
   const adminClient = getAdminClient();
   try {
     const id = taskData.id || crypto.randomUUID();
@@ -82,6 +84,7 @@ export async function getDelegatedTasks({
   search = '',
   tenantId = DEFAULT_TENANT_ID
 } = {}) {
+  tenantId = await resolveDbTenantUuid(tenantId);
   const adminClient = getAdminClient();
   const emailClean = (userEmail || '').trim().toLowerCase();
   const teamEmailsClean = (teamMemberEmails || []).map(e => (e || '').trim().toLowerCase()).filter(Boolean);
@@ -161,6 +164,7 @@ export async function updateTaskStatus({
   user = {},
   tenantId = DEFAULT_TENANT_ID
 }) {
+  tenantId = await resolveDbTenantUuid(tenantId);
   const adminClient = getAdminClient();
   try {
     const updatePayload = {
@@ -214,6 +218,7 @@ export async function verifyAndCompleteTask({
   user = {},
   tenantId = DEFAULT_TENANT_ID
 }) {
+  tenantId = await resolveDbTenantUuid(tenantId);
   const adminClient = getAdminClient();
   try {
     const updatePayload = {
@@ -258,6 +263,7 @@ export async function reopenTask({
   user = {},
   tenantId = DEFAULT_TENANT_ID
 }) {
+  tenantId = await resolveDbTenantUuid(tenantId);
   const adminClient = getAdminClient();
   try {
     const updatePayload = {
@@ -322,6 +328,7 @@ export async function addTaskComment({
 }
 
 export async function getTaskActivities(taskId, tenantId = DEFAULT_TENANT_ID) {
+  tenantId = await resolveDbTenantUuid(tenantId);
   const adminClient = getAdminClient();
   try {
     const { data, error } = await adminClient
@@ -348,6 +355,7 @@ async function logTaskActivity({
   metadata = {},
   tenantId = DEFAULT_TENANT_ID
 }) {
+  tenantId = await resolveDbTenantUuid(tenantId);
   const adminClient = getAdminClient();
   try {
     const payload = {
@@ -377,6 +385,7 @@ async function logTaskActivity({
 }
 
 export async function getDelegationAnalytics(userEmail = '', tenantId = DEFAULT_TENANT_ID) {
+  tenantId = await resolveDbTenantUuid(tenantId);
   const adminClient = getAdminClient();
   const emailClean = (userEmail || '').trim().toLowerCase();
 

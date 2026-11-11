@@ -17,6 +17,7 @@ import {
   getISTDateParts
 } from '@/utils/checklistUtils';
 import crypto from 'crypto';
+import { resolveDbTenantUuid } from './partyMaster';
 
 const DEFAULT_TENANT_ID = '00000000-0000-0000-0000-000000000001';
 const HOLIDAYS_FILE_PATH = path.join(process.cwd(), 'src', 'config', 'company_holidays.json');
@@ -35,6 +36,7 @@ const getAdminClient = () => {
 // ==========================================
 
 export async function getChecklistTemplates(filter = {}, tenantId = DEFAULT_TENANT_ID) {
+  tenantId = await resolveDbTenantUuid(tenantId);
   const adminClient = getAdminClient();
   try {
     let query = adminClient
@@ -147,6 +149,7 @@ export async function getChecklistTemplates(filter = {}, tenantId = DEFAULT_TENA
 }
 
 export async function saveChecklistTemplate(templateData, tenantId = DEFAULT_TENANT_ID) {
+  tenantId = await resolveDbTenantUuid(tenantId);
   const adminClient = getAdminClient();
   try {
     const id = templateData.id || crypto.randomUUID();
@@ -239,6 +242,7 @@ export async function saveChecklistTemplate(templateData, tenantId = DEFAULT_TEN
 }
 
 export async function deleteChecklistTemplate(templateId, tenantId = DEFAULT_TENANT_ID) {
+  tenantId = await resolveDbTenantUuid(tenantId);
   const adminClient = getAdminClient();
   try {
     const { error } = await adminClient
@@ -256,6 +260,7 @@ export async function deleteChecklistTemplate(templateId, tenantId = DEFAULT_TEN
 }
 
 export async function setChecklistTemplateStatus(templateId, newStatus, tenantId = DEFAULT_TENANT_ID) {
+  tenantId = await resolveDbTenantUuid(tenantId);
   const adminClient = getAdminClient();
   try {
     const statusClean = ['ACTIVE', 'INACTIVE', 'DRAFT'].includes(String(newStatus).toUpperCase())
@@ -309,6 +314,7 @@ export async function getEmployeeChecklistDashboard({
   targetDate = new Date(),
   tenantId = DEFAULT_TENANT_ID
 }) {
+  tenantId = await resolveDbTenantUuid(tenantId);
   const adminClient = getAdminClient();
   const emailClean = (employeeEmail || '').trim().toLowerCase();
   const targetObj = new Date(targetDate);
@@ -614,6 +620,7 @@ export async function getEmployeeChecklistDashboard({
 }
 
 export async function submitChecklistResponse(submissionData, tenantId = DEFAULT_TENANT_ID) {
+  tenantId = await resolveDbTenantUuid(tenantId);
   const adminClient = getAdminClient();
   try {
     const {
@@ -751,6 +758,7 @@ export async function verifyChecklistSubmission({
     return { success: false, error: 'Invalid submissionId: Must be a valid UUID' };
   }
 
+  tenantId = await resolveDbTenantUuid(tenantId);
   const adminClient = getAdminClient();
   try {
     const payload = {
@@ -783,6 +791,7 @@ export async function getChecklistComplianceReport({
   department,
   tenantId = DEFAULT_TENANT_ID
 } = {}) {
+  tenantId = await resolveDbTenantUuid(tenantId);
   const adminClient = getAdminClient();
   try {
     let subQuery = adminClient
@@ -876,6 +885,7 @@ export async function getChecklistComplianceReport({
 // ==========================================
 
 export async function getCompanyHolidays(tenantId = DEFAULT_TENANT_ID, branchName = 'All Branches') {
+  tenantId = await resolveDbTenantUuid(tenantId);
   const now = Date.now();
   const cacheKey = `${tenantId}:${branchName || 'All Branches'}`;
   const cached = holidaysCache.get(cacheKey);
@@ -969,6 +979,7 @@ export async function getCompanyHolidays(tenantId = DEFAULT_TENANT_ID, branchNam
 }
 
 export async function saveCompanyHoliday(holidayData, tenantId = DEFAULT_TENANT_ID, branchName = 'All Branches') {
+  tenantId = await resolveDbTenantUuid(tenantId);
   const adminClient = getAdminClient();
   try {
     if (!holidayData.date || !holidayData.name?.trim()) {
@@ -1045,6 +1056,7 @@ export async function saveCompanyHoliday(holidayData, tenantId = DEFAULT_TENANT_
 }
 
 export async function deleteCompanyHoliday(holidayId, tenantId = DEFAULT_TENANT_ID, branchName = 'All Branches') {
+  tenantId = await resolveDbTenantUuid(tenantId);
   const adminClient = getAdminClient();
   try {
     if (holidayId && typeof holidayId === 'string' && holidayId.includes('-')) {
@@ -1080,6 +1092,7 @@ export async function deleteCompanyHoliday(holidayId, tenantId = DEFAULT_TENANT_
 }
 
 export async function resetCompanyHolidaysToDefault(tenantId = DEFAULT_TENANT_ID, branchName = 'All Branches') {
+  tenantId = await resolveDbTenantUuid(tenantId);
   const adminClient = getAdminClient();
   try {
     await adminClient

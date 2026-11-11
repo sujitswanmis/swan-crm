@@ -11,7 +11,7 @@ const DEFAULT_TENANT_ID = '00000000-0000-0000-0000-000000000001';
  */
 export async function getPartyOrderSchedules(tenantId = DEFAULT_TENANT_ID) {
   const adminClient = getAdminClient();
-  const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
+  const effectiveTenantId = await resolveDbTenantUuid(tenantId);
 
   try {
     // 1. Fetch enriched parties from Party Master
@@ -63,7 +63,7 @@ export async function getPartyOrderSchedules(tenantId = DEFAULT_TENANT_ID) {
  */
 export async function upsertPartyOrderSchedule(scheduleData, tenantId = DEFAULT_TENANT_ID) {
   const adminClient = getAdminClient();
-  const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
+  const effectiveTenantId = await resolveDbTenantUuid(tenantId);
 
   const nextDue = scheduleData.next_due_date || calculateNextDueDate(scheduleData);
 
@@ -112,7 +112,7 @@ export async function upsertPartyOrderSchedule(scheduleData, tenantId = DEFAULT_
  */
 export async function getDailyOrderFollowupQueue(tenantId = DEFAULT_TENANT_ID, targetDate = null) {
   const adminClient = getAdminClient();
-  const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
+  const effectiveTenantId = await resolveDbTenantUuid(tenantId);
   const todayStr = targetDate || new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
 
   try {
@@ -163,7 +163,7 @@ export async function getDailyOrderFollowupQueue(tenantId = DEFAULT_TENANT_ID, t
  */
 export async function generateNextSalesOrderNumber(tenantId = DEFAULT_TENANT_ID) {
   const adminClient = getAdminClient();
-  const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
+  const effectiveTenantId = await resolveDbTenantUuid(tenantId);
   const currentYear = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric' }).format(new Date());
   const prefix = `SO-${currentYear}-`;
 
@@ -217,7 +217,7 @@ export async function generateNextSalesOrderNumber(tenantId = DEFAULT_TENANT_ID)
  */
 export async function saveOrderFollowupAndRecur(followupData, tenantId = DEFAULT_TENANT_ID) {
   const adminClient = getAdminClient();
-  const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
+  const effectiveTenantId = await resolveDbTenantUuid(tenantId);
   const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
 
   const isOrder = followupData.call_status === 'ORDER_PLACED';
@@ -257,12 +257,13 @@ export async function saveOrderFollowupAndRecur(followupData, tenantId = DEFAULT
   // 2. Safe Employee ID Resolution for Foreign Key Constraint
   let validEmployeeId = null;
   const candidateCallerId = followupData.assigned_caller_id || followupData.caller_id;
-  if (candidateCallerId) {
+  if (candidateCallerId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(candidateCallerId).trim())) {
+    const cleanCallerId = String(candidateCallerId).trim();
     try {
       const { data: empMatch } = await adminClient
         .from('employees')
         .select('id')
-        .or(`id.eq.${candidateCallerId},user_id.eq.${candidateCallerId}`)
+        .or(`id.eq.${cleanCallerId},user_id.eq.${cleanCallerId}`)
         .limit(1)
         .maybeSingle();
 
@@ -389,7 +390,7 @@ export async function saveOrderFollowupAndRecur(followupData, tenantId = DEFAULT
  */
 export async function getPartyCallHistory(partyId, tenantId = DEFAULT_TENANT_ID) {
   const adminClient = getAdminClient();
-  const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
+  const effectiveTenantId = await resolveDbTenantUuid(tenantId);
 
   try {
     const { data, error } = await adminClient
@@ -413,7 +414,7 @@ export async function getPartyCallHistory(partyId, tenantId = DEFAULT_TENANT_ID)
  */
 export async function getDailyCallLogLedger(tenantId = DEFAULT_TENANT_ID, targetDateOrOptions = null, options = {}) {
   const adminClient = getAdminClient();
-  const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
+  const effectiveTenantId = await resolveDbTenantUuid(tenantId);
 
   let startDate = null;
   let endDate = null;
@@ -475,7 +476,7 @@ export async function getDailyCallLogLedger(tenantId = DEFAULT_TENANT_ID, target
  */
 export async function getOrderPipelineList(tenantId = DEFAULT_TENANT_ID, statusFilter = 'ALL') {
   const adminClient = getAdminClient();
-  const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
+  const effectiveTenantId = await resolveDbTenantUuid(tenantId);
 
   try {
     const parties = await getPartyList(effectiveTenantId);
@@ -511,7 +512,7 @@ export async function getOrderPipelineList(tenantId = DEFAULT_TENANT_ID, statusF
  */
 export async function updateOrderLifecycleStatus(orderId, updateData, tenantId = DEFAULT_TENANT_ID) {
   const adminClient = getAdminClient();
-  const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
+  const effectiveTenantId = await resolveDbTenantUuid(tenantId);
 
   try {
     // 1. Fetch current order to preserve line items and history
@@ -651,7 +652,7 @@ export async function updateOrderLifecycleStatus(orderId, updateData, tenantId =
  */
 export async function reviseOrderItems(orderId, updatedItems = [], updatedBy = 'Sales User', revisionReason = '', tenantId = DEFAULT_TENANT_ID) {
   const adminClient = getAdminClient();
-  const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
+  const effectiveTenantId = await resolveDbTenantUuid(tenantId);
 
   try {
     const { data: currentOrder, error: fetchErr } = await adminClient
@@ -738,7 +739,7 @@ export async function reviseOrderItems(orderId, updatedItems = [], updatedBy = '
  */
 export async function cancelOrder(orderId, cancelReason = '', cancelledBy = 'Sales User', notes = '', tenantId = DEFAULT_TENANT_ID) {
   const adminClient = getAdminClient();
-  const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
+  const effectiveTenantId = await resolveDbTenantUuid(tenantId);
 
   try {
     const { data: currentOrder, error: fetchErr } = await adminClient
@@ -805,7 +806,7 @@ export async function cancelOrder(orderId, cancelReason = '', cancelledBy = 'Sal
  */
 export async function dispatchPartialLot(orderId, lotData = {}, dispatchedBy = 'Logistics', tenantId = DEFAULT_TENANT_ID) {
   const adminClient = getAdminClient();
-  const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
+  const effectiveTenantId = await resolveDbTenantUuid(tenantId);
 
   try {
     const { data: currentOrder, error: fetchErr } = await adminClient
@@ -1002,7 +1003,7 @@ export async function dispatchPartialLot(orderId, lotData = {}, dispatchedBy = '
  */
 export async function getDeliveredOrdersPendingFeedback(tenantId = DEFAULT_TENANT_ID) {
   const adminClient = getAdminClient();
-  const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
+  const effectiveTenantId = await resolveDbTenantUuid(tenantId);
 
   try {
     const parties = await getPartyList(effectiveTenantId);
@@ -1049,7 +1050,7 @@ export async function getDeliveredOrdersPendingFeedback(tenantId = DEFAULT_TENAN
  */
 export async function savePostDeliveryFeedback(feedbackData, tenantId = DEFAULT_TENANT_ID) {
   const adminClient = getAdminClient();
-  const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
+  const effectiveTenantId = await resolveDbTenantUuid(tenantId);
 
   const isComplaint = (Number(feedbackData.overall_satisfaction) <= 2) || feedbackData.has_transit_damage_shortage;
   let linkedTicketId = null;
@@ -1123,7 +1124,7 @@ export async function savePostDeliveryFeedback(feedbackData, tenantId = DEFAULT_
  */
 export async function getMonthlyHealthCheckQueue(tenantId = DEFAULT_TENANT_ID, periodStr = null) {
   const adminClient = getAdminClient();
-  const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
+  const effectiveTenantId = await resolveDbTenantUuid(tenantId);
   const currentPeriod = periodStr || new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit' }).format(new Date());
 
   try {
@@ -1206,7 +1207,7 @@ export async function getMonthlyHealthCheckQueue(tenantId = DEFAULT_TENANT_ID, p
  */
 export async function saveMonthlyHealthCheckAudit(auditData, tenantId = DEFAULT_TENANT_ID) {
   const adminClient = getAdminClient();
-  const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
+  const effectiveTenantId = await resolveDbTenantUuid(tenantId);
   const period = auditData.evaluation_period || new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit' }).format(new Date());
 
   const orderRating = Math.max(1, Math.min(5, Number(auditData.rating_order) || Number(auditData.rating_order_delivery) || 5));
@@ -1625,7 +1626,7 @@ export async function advanceComplaintTicketStage(ticketId, stagePayload, tenant
  */
 export async function updateComplaintTicketAction(ticketId, actionData, tenantId = DEFAULT_TENANT_ID) {
   const adminClient = getAdminClient();
-  const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
+  const effectiveTenantId = await resolveDbTenantUuid(tenantId);
 
   const payload = {
     ticket_status: 'ACTION_TAKEN',
@@ -1656,7 +1657,7 @@ export async function updateComplaintTicketAction(ticketId, actionData, tenantId
  */
 export async function verifyAndCloseComplaintTicket(ticketId, closureData, tenantId = DEFAULT_TENANT_ID) {
   const adminClient = getAdminClient();
-  const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
+  const effectiveTenantId = await resolveDbTenantUuid(tenantId);
 
   const payload = {
     ticket_status: 'RESOLVED_CLOSED',

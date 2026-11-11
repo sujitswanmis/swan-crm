@@ -30,6 +30,38 @@ async function writeLocalSmtpLimits(limits) {
   }
 }
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isValidUuid(val) {
+  return Boolean(val && UUID_REGEX.test(String(val).trim()));
+}
+
+async function resolveSaasTenantUuid(admin, tenantId) {
+  if (!tenantId) return DEFAULT_TENANT_ID;
+  const raw = String(tenantId).trim();
+  if (!raw || raw.toLowerCase() === 'undefined' || raw.toLowerCase() === 'null') return DEFAULT_TENANT_ID;
+  if (isValidUuid(raw)) return raw;
+
+  const lower = raw.toLowerCase();
+  if (lower.includes('supuja') || lower === 'tnt00001') return '0a37b8e8-1c28-4e19-8891-951fc3f8f8af';
+  if (lower.includes('testing') || lower === 'tnt00003') return '922d3e72-6588-457f-a562-4f1bdbf10d98';
+  if (lower.includes('swan') || lower.includes('nsmlr') || lower.includes('nstl') || lower === 'tnt00002' || lower === 'default') {
+    return DEFAULT_TENANT_ID;
+  }
+
+  try {
+    const { data: row } = await admin
+      .from('tenants')
+      .select('id')
+      .or(`tenant_code.eq.${raw.toUpperCase()},name.ilike.${raw}`)
+      .limit(1)
+      .maybeSingle();
+    if (row?.id && isValidUuid(row.id)) return row.id;
+  } catch (_) {}
+
+  return DEFAULT_TENANT_ID;
+}
+
 const getAdminClient = () => {
   return createSupabaseClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -255,7 +287,7 @@ export async function calculatePlanPrice({ processCodes = [], userSeats = 1, cyc
 export async function getTenantSubscription(tenantId = DEFAULT_TENANT_ID) {
   try {
     const admin = getAdminClient();
-    const targetTenantId = tenantId || DEFAULT_TENANT_ID;
+    const targetTenantId = await resolveSaasTenantUuid(admin, tenantId);
 
     const { data: sub, error } = await admin
       .from('tenant_subscriptions')
@@ -327,7 +359,7 @@ export async function getTenantSubscription(tenantId = DEFAULT_TENANT_ID) {
 export async function getTenantEntitlements(tenantId = DEFAULT_TENANT_ID) {
   try {
     const admin = getAdminClient();
-    const targetTenantId = tenantId || DEFAULT_TENANT_ID;
+    const targetTenantId = await resolveSaasTenantUuid(admin, tenantId);
 
     const { data: rows, error } = await admin
       .from('tenant_entitlements')

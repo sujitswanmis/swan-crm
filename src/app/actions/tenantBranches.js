@@ -173,7 +173,8 @@ export async function getTenantBranches(companyOrTenantId = 'Default') {
       const admin = getAdminClient();
       if (admin) {
         // If key is a UUID that wasn't hardcoded above, look up tenant details from DB
-        if (!resolvedTenantCode && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawKey)) {
+        const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (!resolvedTenantCode && UUID_REGEX.test(rawKey)) {
           try {
             const { data: tData } = await admin.from('tenants').select('id, name, tenant_code').eq('id', rawKey).maybeSingle();
             if (tData) {
@@ -184,11 +185,19 @@ export async function getTenantBranches(companyOrTenantId = 'Default') {
           } catch (e) {}
         }
 
-        const { data, error } = await admin
+        const dbTenantCandidate = resolvedTenantId || (UUID_REGEX.test(rawKey) ? rawKey : null);
+        let branchQuery = admin
           .from('tenant_branches')
           .select('*')
-          .or(`company.ilike.${key},tenant_id.eq.${resolvedTenantId || rawKey}`)
           .order('created_at', { ascending: true });
+
+        if (dbTenantCandidate && UUID_REGEX.test(dbTenantCandidate)) {
+          branchQuery = branchQuery.or(`company.ilike.${key},tenant_id.eq.${dbTenantCandidate}`);
+        } else {
+          branchQuery = branchQuery.ilike('company', key);
+        }
+
+        const { data, error } = await branchQuery;
 
         if (!error && Array.isArray(data)) {
           dbBranches = data;
@@ -342,18 +351,24 @@ export async function saveTenantBranch({
     }
 
     const rawCompany = String(company || 'Default').trim();
-    const known = resolveKnownTenant(tenantId || rawCompany);
+    const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const known = resolveKnownTenantInternal(tenantId || rawCompany);
     const companyKey = known.companyName || rawCompany;
     let resolvedTenantCode = known.tenantCode;
-    let resolvedTenantId = known.tenantId || tenantId;
+    const cleanTenantArg = tenantId ? String(tenantId).trim() : '';
+    let resolvedTenantId = known.tenantId || (UUID_REGEX.test(cleanTenantArg) ? cleanTenantArg : null);
 
     const admin = getAdminClient();
     if (!resolvedTenantCode && admin) {
       try {
+        const tenantOrParts = [`tenant_code.eq.${rawCompany}`, `name.ilike.${rawCompany}`];
+        if (UUID_REGEX.test(cleanTenantArg)) {
+          tenantOrParts.unshift(`id.eq.${cleanTenantArg}`);
+        }
         const { data: tRow } = await admin
           .from('tenants')
           .select('id, name, tenant_code')
-          .or(`id.eq.${tenantId || '00000000-0000-0000-0000-000000000000'},tenant_code.eq.${rawCompany},name.ilike.${rawCompany}`)
+          .or(tenantOrParts.join(','))
           .maybeSingle();
         if (tRow) {
           resolvedTenantCode = tRow.tenant_code;

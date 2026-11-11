@@ -12,6 +12,16 @@ function getAdminClient() {
   );
 }
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isUuid = (v) => Boolean(v && UUID_REGEX.test(String(v).trim()));
+
+function clampBoundedInt(val, min, max, fallback = null) {
+  if (val == null || val === '') return fallback;
+  const num = Number(val);
+  if (!Number.isFinite(num)) return fallback;
+  return Math.max(min, Math.min(max, Math.round(num)));
+}
+
 /**
  * Record a batch of live GPS pings (from live tracking or offline delta sync)
  */
@@ -22,31 +32,38 @@ export async function recordLocationPingBatch(pings) {
   try {
     const formatted = pings
       .filter(p => {
+        if (!p || !isUuid(p.user_id)) return false;
         const lat = Number(p.latitude);
         const lng = Number(p.longitude);
-        if (isNaN(lat) || isNaN(lng) || (Math.abs(lat) < 0.01 && Math.abs(lng) < 0.01)) return false;
+        if (!Number.isFinite(lat) || !Number.isFinite(lng) || (Math.abs(lat) < 0.01 && Math.abs(lng) < 0.01)) return false;
         if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return false;
         // Drop desktop IP / coarse cell-tower fixes (>300m accuracy) so routes stay road-accurate
         const rawAcc = p.accuracy_meters != null ? Number(p.accuracy_meters) : (p.accuracy != null ? Number(p.accuracy) : null);
-        if (rawAcc != null && !isNaN(rawAcc) && rawAcc > 300) return false;
+        if (rawAcc != null && Number.isFinite(rawAcc) && rawAcc > 300) return false;
         return true;
       })
-      .map(p => ({
-        user_id: p.user_id,
-        company: p.company || 'TNT00001',
-        branch_code: p.branch_code || null,
-        latitude: p.latitude,
-        longitude: p.longitude,
-        accuracy_meters: p.accuracy_meters != null ? Math.min(Math.round(p.accuracy_meters), 9999) : (p.accuracy != null ? Math.min(Math.round(p.accuracy), 9999) : null),
-        speed_kmh: p.speed_kmh != null ? Math.min(Math.round(p.speed_kmh), 999) : (p.speed != null ? Math.min(Math.round(p.speed), 999) : 0),
-        heading: p.heading != null ? Math.min(Math.round(p.heading), 360) : null,
-        battery_pct: p.battery_pct != null ? Math.min(Math.max(Math.round(p.battery_pct), 0), 100) : (p.battery_level != null ? Math.min(Math.max(Math.round(p.battery_level), 0), 100) : null),
-        is_charging: Boolean(p.is_charging),
-        is_moving: Boolean(p.is_moving),
-        is_mock_gps: Boolean(p.is_mock_gps),
-        is_offline_synced: Boolean(p.is_offline_synced),
-        recorded_at: p.recorded_at || new Date().toISOString()
-      }));
+      .map(p => {
+        const rawHeading = p.heading != null ? Number(p.heading) : null;
+        const safeHeading = (rawHeading != null && Number.isFinite(rawHeading) && rawHeading >= 0)
+          ? Math.min(Math.round(rawHeading), 360)
+          : null;
+        return {
+          user_id: String(p.user_id).trim(),
+          company: p.company || 'TNT00001',
+          branch_code: p.branch_code || null,
+          latitude: Number(Number(p.latitude).toFixed(7)),
+          longitude: Number(Number(p.longitude).toFixed(7)),
+          accuracy_meters: clampBoundedInt(p.accuracy_meters ?? p.accuracy, 0, 9999, null),
+          speed_kmh: clampBoundedInt(p.speed_kmh ?? p.speed, 0, 999, 0),
+          heading: safeHeading,
+          battery_pct: clampBoundedInt(p.battery_pct ?? p.battery_level, 0, 100, null),
+          is_charging: Boolean(p.is_charging),
+          is_moving: Boolean(p.is_moving),
+          is_mock_gps: Boolean(p.is_mock_gps),
+          is_offline_synced: Boolean(p.is_offline_synced),
+          recorded_at: p.recorded_at || new Date().toISOString()
+        };
+      });
 
     if (formatted.length === 0) {
       return { success: true, count: 0, skippedLowAccuracy: pings.length };
@@ -157,7 +174,9 @@ function pushStoppageIfValid(currentStoppage, timeline) {
  * Fetches all breadcrumbs, detects stoppages, and matches client visits
  */
 export async function getEmployee360Route(userId, dateStr) {
-  if (!userId || !dateStr) return null;
+  if (!isUuid(userId) || !dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(String(dateStr).trim())) return null;
+  userId = String(userId).trim();
+  dateStr = String(dateStr).trim();
   const supabase = getAdminClient();
 
   try {
@@ -744,7 +763,7 @@ export async function getNationwideRadarData(company = 'TNT00001', branchCode = 
     const activeEmployees = Array.from(userMap.values());
 
     // Fetch employee names & details from user_roles
-    const userIds = activeEmployees.map(e => e.user_id);
+    const userIds = activeEmployees.map(e => e.user_id).filter(isUuid);
     let userDetailsMap = new Map();
     if (userIds.length > 0) {
       const { data: users } = await supabase
@@ -797,23 +816,26 @@ export async function getDailyConveyanceVouchers(company = 'TNT00001', branchCod
       return [];
     }
 
-    // Get user details
-    const userIds = [...new Set((summaries || []).map(s => s.user_id))];
+    // Get user details (`user_roles` uses `emp_name` and `emp_mobile`)
+    const userIds = [...new Set((summaries || []).map(s => s.user_id).filter(isUuid))];
     let userDetailsMap = new Map();
     if (userIds.length > 0) {
       const { data: users } = await supabase
         .from('user_roles')
-        .select('id, name, email, phone, role, vehicle_type, conveyance_rate_per_km')
-        .in('id', userIds);
-      (users || []).forEach(u => userDetailsMap.set(u.id, u));
+        .select('id, user_id, emp_name, email, emp_mobile, role, vehicle_type, conveyance_rate_per_km')
+        .or(`id.in.(${userIds.join(',')}),user_id.in.(${userIds.join(',')})`);
+      (users || []).forEach(u => {
+        if (u.id) userDetailsMap.set(u.id, u);
+        if (u.user_id) userDetailsMap.set(u.user_id, u);
+      });
     }
 
     return (summaries || []).map(s => {
       const u = userDetailsMap.get(s.user_id) || {};
       return {
         ...s,
-        employee_name: u.name || 'Field Person',
-        phone: u.phone || '',
+        employee_name: u.emp_name || u.email || 'Field Person',
+        phone: u.emp_mobile || '',
         role: u.role || 'Sales Executive',
         vehicle_type: s.vehicle_type || u.vehicle_type || 'BIKE',
         conveyance_rate_per_km: s.conveyance_rate_per_km || u.conveyance_rate_per_km || 4.50
@@ -856,7 +878,8 @@ export async function updateVoucherApproval(voucherId, status, approverUserId) {
  */
 export async function issueFieldTelemetryToken({ userId, company = 'TNT00001', branchCode = null } = {}) {
   try {
-    if (!userId) return { success: false, error: 'Missing userId' };
+    if (!isUuid(userId)) return { success: false, error: 'Missing or invalid userId' };
+    userId = String(userId).trim();
     const authClient = await createServerSupabase();
     const {
       data: { user }
@@ -1133,9 +1156,10 @@ export async function reportEmployeeDeviceHealth(snapshot = {}) {
     const policy = policyRes.policy;
     const nowIso = new Date().toISOString();
 
+    const rawTenantCandidate = tenantInfo?.tenantId || snapshot?.tenantId || null;
     const rawRecord = {
       user_id: effectiveUserId,
-      tenant_id: tenantInfo?.tenantId || snapshot?.tenantId || null,
+      tenant_id: isUuid(rawTenantCandidate) ? String(rawTenantCandidate).trim() : null,
       tenant_code: tenantInfo?.tenantCode || canonicalCompany,
       branch_code: branchCode || null,
       company: canonicalCompany,
@@ -1225,7 +1249,7 @@ export async function reportEmployeeDeviceHealth(snapshot = {}) {
 
 export async function getEmployeeDeviceHealthSummary(userId, company = 'TNT00001') {
   try {
-    if (!userId) return { success: false, summary: null };
+    if (!isUuid(userId)) return { success: false, summary: null };
     const { classifyDeviceHealth, HEALTH_STATUS_META } = await import('@/config/appReleaseConfig');
     const policyRes = await getAppReleasePolicy();
     const policy = policyRes.policy;
@@ -1451,8 +1475,8 @@ export async function getDeviceHealthFleetReport(company = 'ALL', branchCode = n
       admin.from('user_roles').select('*').order('emp_name', { ascending: true }),
       admin.from('employee_device_health').select('*').order('last_checked_at', { ascending: false }),
       admin.from('user_sessions').select('user_id, device, ip_address, last_active, is_active').order('last_active', { ascending: false }).limit(800),
-      admin.from('employee_location_pings').select('user_id, recorded_at, battery_pct').gte('recorded_at', startISO).lte('recorded_at', endISO).order('recorded_at', { ascending: false }).limit(2000),
-      admin.from('attendance_logs').select('user_id, attendance_date, in_time, out_time').eq('attendance_date', dayStr)
+      admin.from('employee_live_locations').select('user_id, recorded_at, battery_pct').gte('recorded_at', startISO).lte('recorded_at', endISO).order('recorded_at', { ascending: false }).limit(2000),
+      admin.from('attendance_records').select('user_id, email, attendance_date, in_time, out_time').eq('attendance_date', dayStr)
     ]);
 
     if (roleErr) {

@@ -20,6 +20,8 @@ import useTableColumnResize, { ColumnResizer } from '@/utils/tableColumnResize';
 import StandardTablePagination from '@/components/common/StandardTablePagination';
 import { snapRouteSegmentsToRoad, haversineMeters } from '@/utils/routeGeometryMatcher';
 
+const isValidExecUuid = (v) => Boolean(v && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(v).trim()));
+
 const MAP_TILE_STYLES = {
   street: {
     id: 'street',
@@ -330,11 +332,12 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
     if (typeof window !== 'undefined') {
       try {
         const lastSelected = localStorage.getItem(`crm_last_field_exec_${company || 'New Swan Group'}`);
-        if (lastSelected) return lastSelected;
+        if (isValidExecUuid(lastSelected)) return String(lastSelected).trim();
         const cached = localStorage.getItem(`crm_cached_field_executives_${company || 'New Swan Group'}`);
         if (cached) {
           const parsed = JSON.parse(cached);
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed[0].user_id;
+          const firstValid = Array.isArray(parsed) ? parsed.find(item => isValidExecUuid(item?.user_id)) : null;
+          if (firstValid) return String(firstValid.user_id).trim();
         }
       } catch (_) {}
     }
@@ -601,19 +604,21 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
       });
 
       const nowMs = Date.now();
-      const combined = filteredMembers.map(m => {
-        const id = m.user_id || m.id;
-        const pingMatch = (radarData || []).find(r => r.user_id === id);
-        return {
-          user_id: id,
-          name: (m.emp_name || m.name || m.email || id).trim(),
-          role: m.role || 'Field Staff',
-          phone: m.emp_mobile || m.phone || '',
-          hasPings: Boolean(pingMatch),
-          battery_pct: pingMatch?.battery_pct,
-          last_ping: pingMatch?.recorded_at || pingMatch?.last_ping || null
-        };
-      });
+      const combined = filteredMembers
+        .filter(m => isValidExecUuid(m.user_id || m.id))
+        .map(m => {
+          const id = String(m.user_id || m.id).trim();
+          const pingMatch = (radarData || []).find(r => r.user_id === id);
+          return {
+            user_id: id,
+            name: (m.emp_name || m.name || m.email || id).trim(),
+            role: m.role || 'Field Staff',
+            phone: m.emp_mobile || m.phone || '',
+            hasPings: Boolean(pingMatch),
+            battery_pct: pingMatch?.battery_pct,
+            last_ping: pingMatch?.recorded_at || pingMatch?.last_ping || null
+          };
+        });
 
       // Sort: Truly live online (<=90s) first, then recent pings descending, then alphabetically
       combined.sort((a, b) => {
@@ -638,17 +643,17 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
       // Auto-select active user if none selected or if current selection is not in list
       if (combined.length > 0) {
         setSelectedUserId(prevId => {
-          if (prevId && combined.some(m => m.user_id === prevId)) return prevId;
+          if (isValidExecUuid(prevId) && combined.some(m => m.user_id === prevId)) return prevId;
           const liveUser = combined.find(m => m.hasPings);
           if (liveUser) return liveUser.user_id;
           const adminUser = combined.find(m => String(m.role || '').toLowerCase().includes('admin') || String(m.name).toLowerCase().includes('admin'));
           const finalId = adminUser ? adminUser.user_id : combined[0].user_id;
-          if (typeof window !== 'undefined') {
+          if (typeof window !== 'undefined' && isValidExecUuid(finalId)) {
             try {
               localStorage.setItem(`crm_last_field_exec_${selectedCompany}`, finalId);
             } catch (_) {}
           }
-          return finalId;
+          return finalId || '';
         });
       }
     } catch (err) {
@@ -659,7 +664,7 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
   }, [selectedCompany, selectedBranch, tenantId]);
 
   const loadEmployeeRoute = useCallback(async (userId, dateStr, { silent = false, forceFresh = false } = {}) => {
-    if (!userId) return;
+    if (!isValidExecUuid(userId)) return;
     const cacheKey = `${userId}_${dateStr}`;
     const storageKey = `crm_cached_route_v2_${cacheKey}`;
     const todayIST = getTodayISTDateStr();

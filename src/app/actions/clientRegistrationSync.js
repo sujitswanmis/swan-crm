@@ -325,7 +325,7 @@ export async function submitClientRegistrationAndSync(formData, userCompany = ''
     try {
       await adminClient.from('lead_notes').insert([{
         lead_id: savedLeadId,
-        content: `[Client Registration Finalized]: Registered by ${currentUser || 'User'}. Synced to Party Master & Registered Report.`,
+        note_text: `[Client Registration Finalized]: Registered by ${currentUser || 'User'}. Synced to Party Master & Registered Report.`,
         created_by: currentUser || 'System'
       }]);
     } catch {}
@@ -389,7 +389,9 @@ export async function submitClientRegistrationAndSync(formData, userCompany = ''
           acquisition_source: 'CRM_REGISTRATION',
           source_lead_id: savedLeadId,
           our_company: finalCompany,
-          created_by: currentUser || 'Sales Executive'
+          created_by: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(formData?.created_by_user_id || '').trim())
+            ? String(formData.created_by_user_id).trim()
+            : null
         };
 
         const tenantUuid = await resolveDbTenantUuid(finalCompany);

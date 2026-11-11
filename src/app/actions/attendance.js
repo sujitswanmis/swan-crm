@@ -286,20 +286,29 @@ function resolveTenantId(tenantId, userCompany = '') {
   const comp = (userCompany || '').toLowerCase().trim();
   const rawId = String(tenantId || '').toLowerCase().trim();
 
-  if (comp.includes('supuja') || comp.includes('tnt00001') || rawId === 'tnt00001' || rawId === '0a37b8e8-1c28-4e19-8891-951fc3f8f8af') {
+  if (
+    comp.includes('supuja') || comp.includes('tnt00001') ||
+    rawId.includes('supuja') || rawId === 'tnt00001' || rawId === '0a37b8e8-1c28-4e19-8891-951fc3f8f8af'
+  ) {
     return '0a37b8e8-1c28-4e19-8891-951fc3f8f8af';
   }
-  if (comp.includes('testing') || comp.includes('tnt00003') || rawId === 'tnt00003' || rawId === '922d3e72-6588-457f-a562-4f1bdbf10d98') {
+  if (
+    comp.includes('testing') || comp.includes('tnt00003') ||
+    rawId.includes('testing') || rawId === 'tnt00003' || rawId === '922d3e72-6588-457f-a562-4f1bdbf10d98'
+  ) {
     return '922d3e72-6588-457f-a562-4f1bdbf10d98';
   }
-  if (comp.includes('swan') || comp.includes('nsmlr') || comp.includes('nstlp') || comp.includes('tnt00002') || rawId === 'tnt00002') {
+  if (
+    comp.includes('swan') || comp.includes('nsmlr') || comp.includes('nstl') || comp.includes('tnt00002') ||
+    rawId.includes('swan') || rawId.includes('nsmlr') || rawId.includes('nstl') || rawId === 'tnt00002' || rawId === '00000000-0000-0000-0000-000000000001'
+  ) {
     return '00000000-0000-0000-0000-000000000001';
   }
 
-  if (tenantId && isValidUuid(tenantId) && tenantId !== '00000000-0000-0000-0000-000000000001') {
+  if (tenantId && isValidUuid(tenantId)) {
     return tenantId;
   }
-  return tenantId || '00000000-0000-0000-0000-000000000001';
+  return DEFAULT_TENANT_ID;
 }
 
 /**
@@ -861,6 +870,7 @@ async function getLeaveTeam(context) {
 }
 
 async function readLeaveData(tenantId, { email = null, emails = null } = {}) {
+  tenantId = resolveTenantId(tenantId);
   const local = await getFallbackLeavesData();
   const allowed = emails ? new Set(emails.map(leaveEmail)) : null;
   const inScope = record => record.tenant_id === tenantId && (!email || record.email === leaveEmail(email))
@@ -942,7 +952,7 @@ async function syncApprovedLeaveAttendance(context, request) {
  */
 export async function getTodayAttendance(userEmail, userId, tenantId = DEFAULT_TENANT_ID, userCompany = '') {
   if (!userEmail) return { success: false, error: 'User email is required' };
-  if (!tenantId || tenantId === 'default') tenantId = resolveTenantId(null, userCompany);
+  tenantId = resolveTenantId(tenantId, userCompany);
   const adminClient = getAdminClient();
   const today = getTodayDateString();
   const normalizedEmail = userEmail.trim().toLowerCase();
@@ -1042,7 +1052,7 @@ export async function punchIn({
   userCompany = ''
 }) {
   if (!email) return { success: false, error: 'User email is required' };
-  if (!tenantId || tenantId === 'default') tenantId = resolveTenantId(null, userCompany);
+  tenantId = resolveTenantId(tenantId, userCompany);
   const adminClient = getAdminClient();
   const today = getTodayDateString();
   const nowIso = new Date().toISOString();
@@ -1258,13 +1268,13 @@ export async function punchIn({
     if (gpsMatch && resolvedUserId) {
       const pLat = parseFloat(gpsMatch[1]);
       const pLng = parseFloat(gpsMatch[2]);
-      if (!isNaN(pLat) && !isNaN(pLng)) {
+      if (Number.isFinite(pLat) && Number.isFinite(pLng) && pLat >= -90 && pLat <= 90 && pLng >= -180 && pLng <= 180) {
         await adminClient.from('employee_live_locations').insert({
           user_id: resolvedUserId,
           company: userCompany || 'TNT00001',
           branch_code: null,
-          latitude: pLat,
-          longitude: pLng,
+          latitude: Number(pLat.toFixed(7)),
+          longitude: Number(pLng.toFixed(7)),
           accuracy_meters: null,
           speed_kmh: 0,
           battery_pct: null,
@@ -1322,7 +1332,7 @@ export async function punchOut({
   userCompany = ''
 }) {
   if (!email) return { success: false, error: 'User email is required' };
-  if (!tenantId || tenantId === 'default') tenantId = resolveTenantId(null, userCompany);
+  tenantId = resolveTenantId(tenantId, userCompany);
   const adminClient = getAdminClient();
   const today = getTodayDateString();
   const nowIso = new Date().toISOString();
@@ -1557,13 +1567,13 @@ export async function punchOut({
     if (gpsMatch && resolvedUserId) {
       const pLat = parseFloat(gpsMatch[1]);
       const pLng = parseFloat(gpsMatch[2]);
-      if (!isNaN(pLat) && !isNaN(pLng)) {
+      if (Number.isFinite(pLat) && Number.isFinite(pLng) && pLat >= -90 && pLat <= 90 && pLng >= -180 && pLng <= 180) {
         await adminClient.from('employee_live_locations').insert({
           user_id: resolvedUserId,
           company: userCompany || 'TNT00001',
           branch_code: null,
-          latitude: pLat,
-          longitude: pLng,
+          latitude: Number(pLat.toFixed(7)),
+          longitude: Number(pLng.toFixed(7)),
           accuracy_meters: null,
           speed_kmh: 0,
           battery_pct: null,
@@ -1613,6 +1623,7 @@ export async function punchOut({
  */
 export async function getMyAttendanceHistory(userEmail, year, month, tenantId = DEFAULT_TENANT_ID, userCompany = '') {
   if (!userEmail) return { success: false, error: 'User email is required', records: [], summary: {} };
+  tenantId = resolveTenantId(tenantId, userCompany);
   const adminClient = getAdminClient();
   const normalizedEmail = (userEmail || '').trim().toLowerCase();
 
@@ -1868,6 +1879,7 @@ export async function applyMissingAttendance({
  */
 export async function getMyRegularizationRequests(userEmail, tenantId = DEFAULT_TENANT_ID) {
   if (!userEmail) return { success: false, requests: [] };
+  tenantId = resolveTenantId(tenantId);
   const adminClient = getAdminClient();
   const normalizedEmail = userEmail.trim().toLowerCase();
 
@@ -1915,6 +1927,7 @@ export async function getHodPendingRequests({
   tenantId = DEFAULT_TENANT_ID,
   company = ''
 }) {
+  tenantId = resolveTenantId(tenantId, company);
   const adminClient = getAdminClient();
   const isAdmin = userRole === 'admin' || userRole === 'Admin' || userRole === 'Super Admin' || userRole === 'super_admin' || userRole === 'management';
 
@@ -2380,6 +2393,7 @@ export async function getTeamAttendanceMaster({
   tenantId = DEFAULT_TENANT_ID,
   company = ''
 }) {
+  tenantId = resolveTenantId(tenantId, company);
   const adminClient = getAdminClient();
   let dbRecords = [];
   let allUsers = [];

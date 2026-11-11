@@ -2,6 +2,7 @@
 
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { getReportingFields } from '@/utils/reportingHierarchy';
+import { resolveDbTenantUuid } from './partyMaster';
 
 const getAdminClient = () => {
   return createSupabaseClient(
@@ -17,6 +18,7 @@ const cleanUUID = (val) => (val && typeof val === 'string' && val.trim() !== '' 
 export async function getEmployeesMaster(tenantId = DEFAULT_TENANT_ID, company = null) {
   const adminClient = getAdminClient();
   const employeeMap = new Map();
+  let dbTenantUuid = await resolveDbTenantUuid(tenantId || company || DEFAULT_TENANT_ID);
 
   // 1. Fetch all team members & employees from user_roles (Primary CRM User Store)
   try {
@@ -35,10 +37,11 @@ export async function getEmployeesMaster(tenantId = DEFAULT_TENANT_ID, company =
           const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId);
           const { data: tenant } = await adminClient
             .from('tenants')
-            .select('name, tenant_code, primary_contact_email')
+            .select('id, name, tenant_code, primary_contact_email')
             .eq(isUuid ? 'id' : 'tenant_code', tenantId)
             .maybeSingle();
           if (tenant) {
+            if (tenant.id) dbTenantUuid = tenant.id;
             tenantName = String(tenant.name || '').toLowerCase().trim();
             tenantCode = String(tenant.tenant_code || '').toLowerCase().trim();
             tenantAdminEmail = String(tenant.primary_contact_email || '').toLowerCase().trim();
@@ -123,7 +126,7 @@ export async function getEmployeesMaster(tenantId = DEFAULT_TENANT_ID, company =
     const { data: empData, error: empErr } = await adminClient
       .from('employees')
       .select('*, designation:designations(designation_name, designation_level, category)')
-      .eq('tenant_id', tenantId)
+      .eq('tenant_id', dbTenantUuid)
       .order('emp_name', { ascending: true });
 
     if (!empErr && Array.isArray(empData)) {
