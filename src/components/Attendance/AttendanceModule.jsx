@@ -5155,6 +5155,7 @@ export default function AttendanceModule({
                         setMatrixMonth(m);
                       }
                     }
+                    fetchTeamMonthlyMatrix();
                   }}
                   style={{
                     display: 'flex',
@@ -5339,7 +5340,7 @@ export default function AttendanceModule({
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                 <button
                   type="button"
-                  onClick={teamReportView === 'DAILY' ? fetchTeamMaster : fetchTeamMonthlyMatrix}
+                  onClick={teamReportView === 'DAILY' ? fetchTeamMaster : (teamReportView === 'LEAVE_LEDGER' ? fetchTeamLeaveReport : fetchTeamMonthlyMatrix)}
                   style={{
                     padding: '0.45rem 0.75rem',
                     borderRadius: '8px',
@@ -5353,7 +5354,7 @@ export default function AttendanceModule({
                     fontSize: '0.82rem'
                   }}
                 >
-                  <RefreshCw size={14} className={(loadingTeamMaster || loadingMonthlyMatrix) ? 'animate-spin' : ''} /> Refresh
+                  <RefreshCw size={14} className={(loadingTeamMaster || loadingMonthlyMatrix || loadingLeaveReport) ? 'animate-spin' : ''} /> Refresh
                 </button>
 
                 <button
@@ -5962,7 +5963,7 @@ export default function AttendanceModule({
                 </div>
                 <div style={{ padding: '0.85rem', borderRadius: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', textAlign: 'center' }}>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', fontWeight: 600 }}>DAYS IN MONTH</span>
-                  <span style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--accent-color)' }}>{monthlyMatrixData?.daysInMonth || 31}</span>
+                  <span style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--accent-color)' }}>{monthlyMatrixData?.daysInMonth || new Date(matrixYear, matrixMonth, 0).getDate()}</span>
                 </div>
                 <div style={{ padding: '0.85rem', borderRadius: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', textAlign: 'center' }}>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', fontWeight: 600 }}>WORKING DAYS</span>

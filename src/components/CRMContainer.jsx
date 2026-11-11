@@ -79,6 +79,7 @@ const FieldMobileDashboard = dynamic(() => import('./FieldForce/FieldMobileDashb
 const FieldTaskManager = dynamic(() => import('./FieldForce/FieldTaskManager'), { loading: () => <WorkspaceSkeleton variant="table" /> });
 const AdminFormStudio = dynamic(() => import('./FieldForce/AdminFormStudio'), { loading: () => <WorkspaceSkeleton variant="table" /> });
 const LiveFieldTrackingMap = dynamic(() => import('./Attendance/LiveFieldTrackingMap'), { loading: () => <WorkspaceSkeleton variant="analytics" /> });
+const FieldDeviceHealthAudit = dynamic(() => import('./FieldForce/FieldDeviceHealthAudit'), { loading: () => <WorkspaceSkeleton variant="table" /> });
 const BroadcastNotificationReceiver = dynamic(() => import('./common/BroadcastNotificationReceiver'), { ssr: false });
 const GlobalMobileTelemetryTracker = dynamic(() => import('./FieldForce/GlobalMobileTelemetryTracker'), { ssr: false });
 
@@ -642,6 +643,7 @@ export default function CRMContainer({
     if (['task_manager', 'task-manager', 'tasks', 'task'].includes(clean)) return 'task_manager';
     if (['form_studio', 'form-studio', 'forms', 'form', 'custom_forms', 'custom-form-studio'].includes(clean)) return 'form_studio';
     if (['live_radar', 'live-radar', 'radar', 'live_gps', 'live-gps', 'playback', 'live_tracking', 'route'].includes(clean)) return 'live_radar';
+    if (['device_health', 'device-health', 'app_health', 'app-health', 'health', 'permissions'].includes(clean)) return 'device_health';
     return 'mobile_dashboard';
   };
 
@@ -654,7 +656,7 @@ export default function CRMContainer({
       const sub = cleanPath.split('/')[1];
       return resolveFieldForceSubTab(sub);
     }
-    if (queryTab && ['mobile_dashboard', 'task_manager', 'form_studio', 'live_radar', 'app', 'tasks', 'forms', 'radar'].includes(queryTab)) {
+    if (queryTab && ['mobile_dashboard', 'task_manager', 'form_studio', 'live_radar', 'device_health', 'device-health', 'app_health', 'app-health', 'health', 'permissions', 'app', 'tasks', 'forms', 'radar'].includes(queryTab)) {
       return resolveFieldForceSubTab(queryTab);
     }
     return 'mobile_dashboard';
@@ -5096,6 +5098,15 @@ export default function CRMContainer({
                       🛰️ Live GPS & Playback
                     </button>
                   )}
+                  {getSubItemPermissions(moduleAccess, userRole, 'field_force', 'device_health').view && (
+                    <button
+                      onClick={() => handleFieldForceSubTabChange('device_health')}
+                      className="submenu-item"
+                      data-active={activeTab === 'field_force' && fieldForceSubTab === 'device_health'}
+                    >
+                      🛡️ App &amp; Permission Health
+                    </button>
+                  )}
                 </div>
               </div>
             </SidebarSubmenu>
@@ -7783,7 +7794,8 @@ export default function CRMContainer({
                       { id: 'mobile_dashboard', label: '📱 Field Executive App' },
                       { id: 'task_manager', label: '📋 Field Tasks Manager' },
                       { id: 'form_studio', label: '🎨 Custom Form Studio' },
-                      { id: 'live_radar', label: '🛰️ Live GPS & Playback' }
+                      { id: 'live_radar', label: '🛰️ Live GPS & Playback' },
+                      { id: 'device_health', label: '🛡️ App & Permission Health' }
                     ].map(sub => {
                       const perms = getSubItemPermissions(moduleAccess, userRole, 'field_force', sub.id);
                       if (!perms.view) return null;
@@ -7846,6 +7858,23 @@ export default function CRMContainer({
                       company={userCompany || 'New Swan Group'} 
                       currentUserRole={userRole} 
                       tenantId={effectiveTenantId}
+                      onOpenDeviceHealth={() => handleFieldForceSubTabChange('device_health')}
+                    />
+                  )}
+                  {fieldForceSubTab === 'device_health' && getSubItemPermissions(moduleAccess, userRole, 'field_force', 'device_health').view && (
+                    <FieldDeviceHealthAudit
+                      company={userCompany || 'New Swan Group'}
+                      userRole={userRole}
+                      isMasterAdmin={isMasterAdmin}
+                      onInspectEmployeeRoute={(row) => {
+                        if (row?.userId && typeof window !== 'undefined') {
+                          try {
+                            localStorage.setItem(`crm_last_field_exec_${userCompany || 'New Swan Group'}`, row.userId);
+                            window.dispatchEvent(new CustomEvent('crm_select_field_exec', { detail: { userId: row.userId } }));
+                          } catch {}
+                        }
+                        handleFieldForceSubTabChange('live_radar');
+                      }}
                     />
                   )}
                 </ErrorBoundary>

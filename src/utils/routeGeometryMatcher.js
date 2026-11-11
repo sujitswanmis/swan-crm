@@ -90,13 +90,10 @@ function emitCollapsedCluster(cluster, output) {
 }
 
 /**
- * Cleans raw GPS points:
- * 1. Validates and chronologically sorts waypoints
- * 2. Drops coarse >300m fixes and cold-start >80m jumps adjacent (+/-45s) to sharp <=50m locks
- * 3. Rejects teleport spikes (>130 km/h over >250m within 5m)
- * 4. Collapses stationary drift (<32m) to sharpest anchor while keeping entry & departure timestamps
+ * Removes invalid coordinates, chronologically sorts waypoints, strips indoor/cell-tower accuracy
+ * bounces, and filters impossible teleportation / triangle sawtooth glitches without collapsing stops.
  */
-export function filterRouteNoiseAndCoarseJumps(waypoints) {
+export function stripNoisyGpsOutliers(waypoints) {
   if (!Array.isArray(waypoints) || waypoints.length === 0) return [];
 
   // 1. Validate finite non-zero coordinates and normalize
@@ -138,21 +135,85 @@ export function filterRouteNoiseAndCoarseJumps(waypoints) {
   const under300 = normalized.filter(p => p.accuracy_meters == null || p.accuracy_meters <= 300);
   let valid = under300.length >= 2 || (normalized.length === 1 && under300.length === 1) ? under300 : normalized;
 
-  // 4. Drop cold-start >80m coarse cell-tower jumps when a crisp <=50m GPS lock exists within +/-45s
-  const withoutColdJumps = valid.filter((p, idx) => {
-    if (p.accuracy_meters != null && p.accuracy_meters > 80 && p.time) {
-      const tP = new Date(p.time).getTime();
-      const hasCrispNearby = valid.some((q, j) => {
-        if (j === idx || q.accuracy_meters == null || q.accuracy_meters > 50 || !q.time) return false;
-        return Math.abs(new Date(q.time).getTime() - tP) <= 45000;
-      });
-      if (hasCrispNearby) return false;
+  // 4. Drop displaced indoor/cell-tower jumps, while preserving same-spot (<=35m) timestamps:
+  //    a) >80m blurry fixes when a crisp <=35m GPS lock exists within +/-5 mins
+  //    b) >30m network fixes when a sharp <=20m GPS lock exists within +/-30s (prevents side-street driving spikes)
+  const findNearestCrispAnchor = (p, idx, maxAcc, maxWindowMs) => {
+    const tP = new Date(p.time).getTime();
+    let best = null;
+    let bestDt = Infinity;
+    for (let j = 0; j < valid.length; j++) {
+      if (j === idx) continue;
+      const q = valid[j];
+      if (q.accuracy_meters == null || q.accuracy_meters > maxAcc || !q.time) continue;
+      const dt = Math.abs(new Date(q.time).getTime() - tP);
+      if (dt <= maxWindowMs && dt < bestDt) {
+        bestDt = dt;
+        best = q;
+      }
     }
-    return true;
-  });
-  if (withoutColdJumps.length >= 1) valid = withoutColdJumps;
+    return best;
+  };
 
-  // 5. Filter impossible teleportation spikes (>130 km/h over >250m within 5 mins)
+  const withoutCoarseBounces = [];
+  for (let idx = 0; idx < valid.length; idx++) {
+    const p = valid[idx];
+    const acc = p.accuracy_meters;
+    if (acc == null || !p.time) {
+      withoutCoarseBounces.push(p);
+      continue;
+    }
+
+    const crispAnchor =
+      (acc > 30 ? findNearestCrispAnchor(p, idx, 20, 30000) : null) ||
+      (acc > 80 ? findNearestCrispAnchor(p, idx, 35, 300000) : null);
+
+    if (crispAnchor) {
+      const distFromAnchor = haversineMeters(p.lat, p.lng, crispAnchor.lat, crispAnchor.lng);
+      if (distFromAnchor > 35) {
+        continue; // Spatial bounce/spike — drop completely
+      }
+      // Same physical spot (<=35m): preserve timestamp for accurate dwell duration using crisp coordinates
+      withoutCoarseBounces.push({
+        ...p,
+        lat: crispAnchor.lat,
+        lng: crispAnchor.lng,
+        accuracy_meters: crispAnchor.accuracy_meters
+      });
+      continue;
+    }
+
+    withoutCoarseBounces.push(p);
+  }
+  if (withoutCoarseBounces.length >= 1) valid = withoutCoarseBounces;
+
+  // 5a. Drop single-point sawtooth / cell-tower V-detour glitches between accurate points
+  const sawtoothFree = [];
+  for (let i = 0; i < valid.length; i++) {
+    const cur = valid[i];
+    if (sawtoothFree.length > 0 && i + 1 < valid.length) {
+      const prev = sawtoothFree[sawtoothFree.length - 1];
+      const next = valid[i + 1];
+      const dPrevCur = haversineMeters(prev.lat, prev.lng, cur.lat, cur.lng);
+      const dCurNext = haversineMeters(cur.lat, cur.lng, next.lat, next.lng);
+      const dPrevNext = haversineMeters(prev.lat, prev.lng, next.lat, next.lng);
+      const dtWindowSec =
+        prev.time && next.time
+          ? Math.max(0, (new Date(next.time).getTime() - new Date(prev.time).getTime()) / 1000)
+          : 60;
+      const curAcc = cur.accuracy_meters ?? 25;
+      const anchorMaxAcc = Math.max(prev.accuracy_meters ?? 25, next.accuracy_meters ?? 25);
+      const isShortWindowJump = dtWindowSec <= 45 && dPrevCur + dCurNext > dPrevNext * 1.55 + 70;
+      const curIsLowerQuality = curAcc > anchorMaxAcc * 1.5 || (cur.speed === 0 && (prev.speed > 10 || next.speed > 10));
+      if (isShortWindowJump && curIsLowerQuality) {
+        continue;
+      }
+    }
+    sawtoothFree.push(cur);
+  }
+  valid = sawtoothFree;
+
+  // 5b. Filter impossible teleportation spikes (>130 km/h over >250m within 5m, or >140 km/h over >60m within 30s)
   const spikeFree = [valid[0]];
   for (let i = 1; i < valid.length; i++) {
     const prev = spikeFree[spikeFree.length - 1];
@@ -163,9 +224,21 @@ export function filterRouteNoiseAndCoarseJumps(waypoints) {
         ? Math.max(0, (new Date(cur.time).getTime() - new Date(prev.time).getTime()) / 1000)
         : 60;
     const spdKmh = dtSec > 0 ? (dist / dtSec) * 3.6 : dist > 50 ? 999 : 0;
-    if (dist > 250 && spdKmh > 130 && dtSec < 300) continue;
+    if ((dist > 250 && spdKmh > 130 && dtSec < 300) || (dist > 60 && spdKmh > 140 && dtSec < 30)) {
+      continue;
+    }
     spikeFree.push(cur);
   }
+
+  return spikeFree.map(({ _origIdx, ...rest }) => rest);
+}
+
+/**
+ * Cleans raw GPS points and collapses stationary drift (<32m) to sharpest anchor while keeping entry & departure timestamps.
+ */
+export function filterRouteNoiseAndCoarseJumps(waypoints) {
+  const spikeFree = stripNoisyGpsOutliers(waypoints);
+  if (spikeFree.length === 0) return [];
 
   // 6. Collapse stationary drift within 32m of cluster anchor
   const collapsed = [];
@@ -193,7 +266,7 @@ export function filterRouteNoiseAndCoarseJumps(waypoints) {
   }
   emitCollapsedCluster(cluster, collapsed);
 
-  return collapsed.map(({ _origIdx, ...rest }) => rest);
+  return collapsed;
 }
 
 /**
@@ -265,15 +338,36 @@ export function alignSnappedSegmentToWaypoints(stitchedCoords, tripPoints) {
   return snappedPolyline.length >= 2 ? snappedPolyline : tripPoints;
 }
 
-async function fetchOsrmMatchChunk(chunk) {
+const osrmChunkCache = new Map();
+
+function rememberOsrmChunk(cacheKey, value) {
+  if (osrmChunkCache.size >= 150) {
+    const oldestKey = osrmChunkCache.keys().next().value;
+    if (oldestKey !== undefined) osrmChunkCache.delete(oldestKey);
+  }
+  osrmChunkCache.set(cacheKey, value);
+}
+
+async function fetchOsrmMatchChunk(chunk, { wideFallback = false } = {}) {
+  if (!Array.isArray(chunk) || chunk.length < 2) return null;
+
+  const minRad = wideFallback ? 28 : 15;
+  const maxRad = wideFallback ? 45 : 35;
+  const defRad = wideFallback ? '35' : '24';
+
   const coordStr = chunk.map(p => `${Number(p.lng).toFixed(6)},${Number(p.lat).toFixed(6)}`).join(';');
   const radiusStr = chunk
     .map(p => {
       const acc = p.accuracy_meters != null ? Number(p.accuracy_meters) : NaN;
-      if (isNaN(acc) || acc <= 0) return '35';
-      return String(Math.min(Math.max(Math.round(acc), 25), 40));
+      if (isNaN(acc) || acc <= 0) return defRad;
+      return String(Math.min(Math.max(Math.round(acc + 4), minRad), maxRad));
     })
     .join(';');
+
+  const cacheKey = `${wideFallback ? 'W' : 'T'}:${coordStr}|${radiusStr}`;
+  if (osrmChunkCache.has(cacheKey)) {
+    return osrmChunkCache.get(cacheKey);
+  }
 
   const matchUrl = `https://router.project-osrm.org/match/v1/driving/${coordStr}?overview=full&geometries=geojson&gaps=ignore&tidy=false&radiuses=${radiusStr}`;
   const controller = new AbortController();
@@ -281,9 +375,28 @@ async function fetchOsrmMatchChunk(chunk) {
   try {
     const res = await fetch(matchUrl, { headers: { Accept: 'application/json' }, signal: controller.signal });
     clearTimeout(timeoutId);
-    if (!res.ok) return null;
-    const json = await res.json();
-    if (json?.code !== 'Ok' || !Array.isArray(json.matchings) || json.matchings.length === 0) return null;
+    const json = await res.json().catch(() => null);
+
+    // Public OSRM /match caps tracepoints (currently 10): automatically bisect if TooBig ever triggers
+    if (json?.code === 'TooBig' && chunk.length > 3) {
+      const mid = Math.ceil(chunk.length / 2);
+      const left = await fetchOsrmMatchChunk(chunk.slice(0, mid), { wideFallback });
+      const right = await fetchOsrmMatchChunk(chunk.slice(mid - 1), { wideFallback });
+      if (!left || !right) return null;
+      return {
+        coords: left.coords.concat(right.coords.slice(1)),
+        distance: left.distance + right.distance
+      };
+    }
+
+    // Retry once with wider snap radius only if tight colony-precision matching reports NoMatch/NoSegment
+    if (!wideFallback && (json?.code === 'NoMatch' || json?.code === 'NoSegment')) {
+      return fetchOsrmMatchChunk(chunk, { wideFallback: true });
+    }
+
+    if (!res.ok || json?.code !== 'Ok' || !Array.isArray(json.matchings) || json.matchings.length === 0) {
+      return null;
+    }
 
     let coords = [];
     let distance = 0;
@@ -293,7 +406,12 @@ async function fetchOsrmMatchChunk(chunk) {
       distance += Number(matching.distance || 0);
       coords = coords.length === 0 ? road : coords.concat(road.slice(1));
     }
-    return coords.length >= 2 ? { coords, distance } : null;
+    if (coords.length >= 2) {
+      const result = { coords, distance };
+      rememberOsrmChunk(cacheKey, result);
+      return result;
+    }
+    return null;
   } catch (_) {
     clearTimeout(timeoutId);
     return null;
@@ -317,7 +435,7 @@ async function snapContinuousTripToRoad(tripPoints) {
     movingStartIdx++;
   }
 
-  const movingPts = tripPoints.slice(movingStartIdx);
+  let movingPts = tripPoints.slice(movingStartIdx);
   if (movingPts.length < 2) {
     return { points: tripPoints.map(p => ({ ...p, isSnapped: false })), distanceMeters: 0, snapped: false };
   }
@@ -331,22 +449,64 @@ async function snapContinuousTripToRoad(tripPoints) {
     return { points: tripPoints.map(p => ({ ...p, isSnapped: false })), distanceMeters: 0, snapped: false };
   }
 
-  const chunkSize = 90;
+  // Preserve crisp indoor/compound arrival stops (offices, factories, client shops) so OSRM
+  // snaps public roads up to the gate instead of routing around back alleys behind the building.
+  const suffixPoints = [];
+  const endAnchor = movingPts[movingPts.length - 1];
+  const endIsStationaryArrival =
+    Number(endAnchor?.speed || 0) <= 5 &&
+    (endAnchor?.accuracy_meters == null || Number(endAnchor.accuracy_meters) <= 35);
+  if (endIsStationaryArrival) {
+    while (
+      movingPts.length > 3 &&
+      Number(movingPts[movingPts.length - 1]?.speed || 0) <= 10 &&
+      haversineMeters(
+        movingPts[movingPts.length - 1].lat,
+        movingPts[movingPts.length - 1].lng,
+        endAnchor.lat,
+        endAnchor.lng
+      ) <= 45
+    ) {
+      const popped = movingPts.pop();
+      suffixPoints.unshift({ ...popped, isSnapped: false });
+    }
+  }
+
+  // Deduplicate adjacent <6m stops before chunking so OSRM's 10-point trace slots focus on moving geometry
+  const condensedForMatch = [movingPts[0]];
+  for (let i = 1; i < movingPts.length; i++) {
+    const prev = condensedForMatch[condensedForMatch.length - 1];
+    const isLast = i === movingPts.length - 1;
+    if (isLast || haversineMeters(prev.lat, prev.lng, movingPts[i].lat, movingPts[i].lng) >= 6) {
+      condensedForMatch.push(movingPts[i]);
+    }
+  }
+
+  const chunkSize = 10;
   const chunks = [];
-  if (movingPts.length <= chunkSize) {
-    chunks.push(movingPts);
+  if (condensedForMatch.length <= chunkSize) {
+    chunks.push(condensedForMatch);
   } else {
-    for (let i = 0; i < movingPts.length - 1; i += chunkSize - 1) {
-      chunks.push(movingPts.slice(i, i + chunkSize));
-      if (i + chunkSize >= movingPts.length) break;
+    for (let i = 0; i < condensedForMatch.length - 1; i += chunkSize - 1) {
+      chunks.push(condensedForMatch.slice(i, i + chunkSize));
+      if (i + chunkSize >= condensedForMatch.length) break;
     }
   }
 
   let stitchedCoords = [];
   let totalSnappedDist = 0;
-  for (const chunk of chunks) {
-    if (chunk.length < 2) continue;
-    const matched = await fetchOsrmMatchChunk(chunk);
+  const validChunks = chunks.filter(c => c.length >= 2);
+  const chunkResults = new Array(validChunks.length);
+  const CONCURRENCY = 4;
+  for (let b = 0; b < validChunks.length; b += CONCURRENCY) {
+    const batch = validChunks.slice(b, b + CONCURRENCY);
+    const resolved = await Promise.all(batch.map(ch => fetchOsrmMatchChunk(ch)));
+    for (let k = 0; k < resolved.length; k++) {
+      chunkResults[b + k] = resolved[k];
+    }
+  }
+
+  for (const matched of chunkResults) {
     if (!matched) {
       // Do NOT fall back to OSRM /route (prevents fabricating turn-by-turn detours the user never drove)
       return {
@@ -370,9 +530,18 @@ async function snapContinuousTripToRoad(tripPoints) {
   }
 
   const aligned = alignSnappedSegmentToWaypoints(stitchedCoords, movingPts);
+  let suffixEntryMeters = 0;
+  if (suffixPoints.length > 0 && aligned.length > 0) {
+    let prevPt = aligned[aligned.length - 1];
+    for (const sp of suffixPoints) {
+      suffixEntryMeters += haversineMeters(prevPt.lat, prevPt.lng, sp.lat, sp.lng);
+      prevPt = sp;
+    }
+  }
+
   return {
-    points: [...prefixPoints, ...aligned],
-    distanceMeters: totalSnappedDist,
+    points: [...prefixPoints, ...aligned, ...suffixPoints],
+    distanceMeters: totalSnappedDist + (suffixEntryMeters <= 120 ? suffixEntryMeters : 0),
     snapped: true
   };
 }
@@ -428,19 +597,29 @@ export async function snapRouteSegmentsToRoad(waypoints) {
   let offlineGapMeters = 0;
   let hasSnappedRoad = false;
 
-  for (let t = 0; t < trips.length; t++) {
-    const trip = trips[t];
-    if (t > 0 && finalPolyline.length > 0 && trip.length > 0) {
+  const snappedTrips = new Array(trips.length);
+  const TRIP_CONCURRENCY = 4;
+  for (let b = 0; b < trips.length; b += TRIP_CONCURRENCY) {
+    const batch = trips.slice(b, b + TRIP_CONCURRENCY);
+    const resolved = await Promise.all(batch.map(tr => snapContinuousTripToRoad(tr)));
+    for (let k = 0; k < resolved.length; k++) {
+      snappedTrips[b + k] = resolved[k];
+    }
+  }
+
+  for (let t = 0; t < snappedTrips.length; t++) {
+    const snappedSeg = snappedTrips[t];
+    const tripPts = snappedSeg?.points || [];
+    if (t > 0 && finalPolyline.length > 0 && tripPts.length > 0) {
       const prevEnd = finalPolyline[finalPolyline.length - 1];
-      const nextStart = trip[0];
+      const nextStart = tripPts[0];
       offlineGapMeters += haversineMeters(prevEnd.lat, prevEnd.lng, nextStart.lat, nextStart.lng);
     }
 
-    const snappedSeg = await snapContinuousTripToRoad(trip);
     trackedRoadMeters += snappedSeg.distanceMeters;
     if (snappedSeg.snapped) hasSnappedRoad = true;
 
-    for (const pt of snappedSeg.points) {
+    for (const pt of tripPts) {
       finalPolyline.push(pt);
     }
   }

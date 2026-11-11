@@ -333,8 +333,12 @@ public class FieldTrackingService extends Service {
                 lastGpsFixMs = now;
                 lastGpsAcc = acc;
             } else if (LocationManager.NETWORK_PROVIDER.equals(provider)) {
-                // Ignore coarse cell/WiFi fixes when a sharper GPS fix happened in the last 30s
-                if ((now - lastGpsFixMs <= 30000L) && lastGpsAcc <= 60f && acc > 60f) {
+                // Reject coarse cell/Wi-Fi fixes whenever GPS had a crisp lock in the last 5 minutes,
+                // and block blurry >80m network jumps for 15 minutes after any GPS fix.
+                if ((now - lastGpsFixMs <= 300000L) && lastGpsAcc <= 35f && acc > 30f) {
+                    return;
+                }
+                if ((now - lastGpsFixMs <= 900000L) && acc > 80f) {
                     return;
                 }
             }

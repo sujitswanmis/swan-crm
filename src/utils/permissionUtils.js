@@ -204,8 +204,20 @@ export function getSubItemPermissions(moduleAccess, userRole, moduleId, subItemI
         return { view: isPrivileged, add: isPrivileged, edit: isPrivileged, delete: false };
       }
       // If this is field_force sub-items:
-      // Form Studio & Live Radar are STRICTLY supervisory / admin-only tools.
+      // Form Studio, Live Radar & App Health Audit are STRICTLY supervisory / admin-only tools.
       if (moduleId === 'field_force') {
+        if (subItemId === 'device_health') {
+          const rLower = String(userRole || '').trim().toLowerCase();
+          const hasLiveRadarGrant =
+            subItems['live_radar'] === true ||
+            (typeof subItems['live_radar'] === 'object' && subItems['live_radar']?.view === true);
+          const isPrivileged =
+            isAdmin ||
+            parentPerms.is_manager === true ||
+            ['hr', 'manager', 'hod'].includes(rLower) ||
+            hasLiveRadarGrant;
+          return { view: isPrivileged, add: isPrivileged, edit: isPrivileged, delete: false };
+        }
         if (subItemId === 'form_studio' || subItemId === 'live_radar') {
           const isPrivileged = isAdmin || parentPerms.is_manager === true;
           return { view: isPrivileged, add: isPrivileged, edit: isPrivileged, delete: false };
@@ -299,6 +311,9 @@ export function getSubItemPermissions(moduleAccess, userRole, moduleId, subItemI
   }
 
   if (moduleId === 'field_force') {
+    if (subItemId === 'device_health' && !isAdmin && parentPerms.is_manager !== true && !isHodOrManager && String(userRole || '').trim().toLowerCase() !== 'hr') {
+      return { view: false, add: false, edit: false, delete: false };
+    }
     if (!isAdmin && parentPerms.is_manager !== true) {
       if (subItemId === 'form_studio' || subItemId === 'live_radar') {
         return { view: false, add: false, edit: false, delete: false };

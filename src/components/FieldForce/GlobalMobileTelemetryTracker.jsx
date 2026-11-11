@@ -1,8 +1,12 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { MapPinOff, X } from 'lucide-react';
-import { recordLocationPingBatch, issueFieldTelemetryToken } from '@/app/actions/liveTracking';
+import { MapPinOff, X, Download, Settings, BatteryCharging, ShieldAlert } from 'lucide-react';
+import {
+  recordLocationPingBatch,
+  issueFieldTelemetryToken,
+  reportEmployeeDeviceHealth
+} from '@/app/actions/liveTracking';
 import { detectClientPlatform, PLATFORM_LABELS } from '@/utils/platformDetection';
 import { flushOfflineVault, queueOfflineGpsPing } from '@/utils/offlineLocationVault';
 
@@ -62,9 +66,13 @@ export default function GlobalMobileTelemetryTracker({
 }) {
   const lastRecordedRef = useRef({ lat: null, lng: null, time: 0 });
   const lastForceAtRef = useRef(0);
+  const lastCrispGpsRef = useRef({ time: 0, acc: 9999 });
   const inFlightRef = useRef(false);
   const [gpsAlert, setGpsAlert] = useState(null);
   const [dismissedAlert, setDismissedAlert] = useState(false);
+  const [deviceHealthBanner, setDeviceHealthBanner] = useState(null);
+  const [dismissedHealthBanner, setDismissedHealthBanner] = useState(false);
+  const lastHealthReportRef = useRef({ at: 0, sig: '' });
 
   useEffect(() => {
     if (!userId || typeof window === 'undefined' || !navigator.geolocation) return;
@@ -169,10 +177,16 @@ export default function GlobalMobileTelemetryTracker({
       // Skip web server uploads when Native Android Foreground Service is actively handling GPS + SQLite sync
       if (nativeServiceActive) return;
 
-      // Skip coarse cell-tower fixes (>300m) without updating throttle ref so a crisp fix sends immediately
-      if (accuracy != null && accuracy > 300) return;
-
       const now = Date.now();
+      if (accuracy != null && accuracy <= 25) {
+        lastCrispGpsRef.current = { time: now, acc: accuracy };
+      } else if (accuracy != null) {
+        const recentCrisp = now - (lastCrispGpsRef.current.time || 0) <= 180000;
+        if (accuracy > 150 || (recentCrisp && accuracy > 35)) {
+          return;
+        }
+      }
+
       const last = lastRecordedRef.current;
       const distMeters = (last.lat && last.lng)
         ? calculateHaversineMeters(last.lat, last.lng, lat, lng)
@@ -253,12 +267,120 @@ export default function GlobalMobileTelemetryTracker({
       }
     };
 
+    const reportMobileHealthAudit = async (force = false) => {
+      if (disposed || typeof window === 'undefined') return;
+      try {
+        const plat = detectClientPlatform();
+        const ua = navigator.userAgent || '';
+        const isDesktopPlatform =
+          plat?.platform === PLATFORM_LABELS.WINDOWS_APP ||
+          plat?.platform === PLATFORM_LABELS.MACOS_APP;
+        const isNativeAndroid = plat?.platform === PLATFORM_LABELS.ANDROID_APP;
+        const isMobileUa = /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
+        const plugin = getNativeTrackerPlugin();
+
+        if (isDesktopPlatform || (!isNativeAndroid && !isMobileUa && !plugin)) {
+          return;
+        }
+
+        let payload = {
+          userId,
+          company,
+          branchCode,
+          platform: plat?.platform || (plugin ? PLATFORM_LABELS.ANDROID_APP : PLATFORM_LABELS.WEB_APP),
+          platform_details: plat?.details || ua
+        };
+
+        if (plugin && typeof plugin.getStatus === 'function') {
+          try {
+            const st = await plugin.getStatus();
+            payload = {
+              ...payload,
+              platform: PLATFORM_LABELS.ANDROID_APP,
+              running: Boolean(st?.running),
+              pendingCount: Number(st?.pendingCount || 0),
+              hasForegroundLocation: st?.hasForegroundLocation,
+              hasBackgroundLocation: st?.hasBackgroundLocation,
+              locationMode: st?.locationMode,
+              appVersionCode: st?.appVersionCode,
+              appVersionName: st?.appVersionName,
+              osVersion: st?.osVersion,
+              sdkInt: st?.sdkInt,
+              deviceManufacturer: st?.deviceManufacturer,
+              deviceModel: st?.deviceModel,
+              batteryUnrestricted: st?.batteryUnrestricted,
+              notificationsEnabled: st?.notificationsEnabled,
+              gpsProviderEnabled: st?.gpsProviderEnabled
+            };
+          } catch {
+            // Legacy APK fallback without extended status fields
+          }
+        } else {
+          payload.locationMode = 'browser';
+        }
+
+        const sig = JSON.stringify([
+          payload.platform,
+          payload.appVersionCode ?? null,
+          payload.locationMode ?? null,
+          payload.hasForegroundLocation ?? null,
+          payload.hasBackgroundLocation ?? null,
+          payload.batteryUnrestricted ?? null,
+          payload.gpsProviderEnabled ?? null
+        ]);
+        const now = Date.now();
+        if (!force && sig === lastHealthReportRef.current.sig && now - lastHealthReportRef.current.at < 180000) {
+          return;
+        }
+        lastHealthReportRef.current = { at: now, sig };
+
+        const res = await reportEmployeeDeviceHealth(payload);
+        if (disposed || !res?.success) return;
+
+        const ev = res.evaluation;
+        const pol = res.policy;
+        if (!ev || ev.status === 'HEALTHY' || ev.status === 'OFFLINE') {
+          setDeviceHealthBanner(null);
+          return;
+        }
+
+        const needsApkUpdate = ev.status === 'FORCE_UPGRADE' || ev.status === 'OUTDATED_APK' || ev.status === 'BROWSER_ONLY';
+        const showAppSettings = Boolean(
+          plugin &&
+          (ev.locationMode === 'while_using' || ev.locationMode === 'denied')
+        );
+        const showBatteryFix = Boolean(plugin && payload.batteryUnrestricted === false);
+        const showGpsFix = Boolean(plugin && payload.gpsProviderEnabled === false);
+
+        setDeviceHealthBanner({
+          status: ev.status,
+          isLegacyApk: Boolean(ev.isNativeAndroid && ev.versionCode == null),
+          hasNativePlugin: Boolean(plugin),
+          message:
+            ev.status === 'BROWSER_ONLY'
+              ? 'Browser me screen lock hone par GPS band hota hai — SPC Workspace Android APK install karein.'
+              : ev.status === 'FORCE_UPGRADE'
+                ? `Purani Android APK detect hui hai — v${pol?.latest_version_code || 4} update install karein.`
+                : ev.issueSummary || 'Background GPS ya Battery permission fix karein.',
+          downloadUrl: pol?.download_url || '/api/public/android-apk',
+          latestCode: pol?.latest_version_code || 4,
+          showApkDownload: needsApkUpdate,
+          showAppSettings,
+          showBatteryFix,
+          showGpsFix
+        });
+      } catch {
+        // Non-blocking health telemetry diagnostic
+      }
+    };
+
     // Start Native Android Foreground Service first (if on APK); always flush legacy web vault
     startOrRefreshNativeService(true).then((started) => {
       if (disposed) return;
       if (!started) {
         captureImmediatePing(true);
       }
+      reportMobileHealthAudit(true);
     });
     syncQueuedPings();
 
@@ -282,6 +404,7 @@ export default function GlobalMobileTelemetryTracker({
       syncQueuedPings();
       startOrRefreshNativeService(false).then((started) => {
         if (!started && !disposed) captureImmediatePing(true);
+        reportMobileHealthAudit(true);
       });
     };
 
@@ -290,6 +413,7 @@ export default function GlobalMobileTelemetryTracker({
       syncQueuedPings();
       startOrRefreshNativeService(false).then((started) => {
         if (!started && !disposed) captureImmediatePing(true);
+        reportMobileHealthAudit(false);
       });
     };
 
@@ -309,50 +433,204 @@ export default function GlobalMobileTelemetryTracker({
     };
   }, [userId, company, branchCode]);
 
-  if (!gpsAlert || dismissedAlert) return null;
+  const handleSelfHealClick = async (kind) => {
+    try {
+      const plugin = typeof window !== 'undefined' ? window.Capacitor?.Plugins?.FieldTracker : null;
+      if (!plugin) return;
+      if (kind === 'app' && typeof plugin.openAppSettings === 'function') {
+        await plugin.openAppSettings();
+      } else if (kind === 'battery' && typeof plugin.requestBatteryExemption === 'function') {
+        await plugin.requestBatteryExemption();
+      } else if (kind === 'gps' && typeof plugin.openLocationSettings === 'function') {
+        await plugin.openLocationSettings();
+      }
+    } catch {
+      // Safe fallback
+    }
+  };
+
+  const showGpsAlert = Boolean(gpsAlert && !dismissedAlert);
+  const showHealthBanner = Boolean(deviceHealthBanner && !dismissedHealthBanner);
+  if (!showGpsAlert && !showHealthBanner) return null;
 
   return (
-    <div
-      role="status"
-      style={{
-        position: 'fixed',
-        bottom: '76px',
-        left: '50%',
-        transform: 'translateX(-50%)',
-        zIndex: 99990,
-        maxWidth: '92vw',
-        width: 'max-content',
-        background: '#fff7ed',
-        border: '1px solid #fdba74',
-        color: '#9a3412',
-        padding: '0.55rem 0.85rem',
-        borderRadius: '10px',
-        boxShadow: '0 8px 24px rgba(15, 23, 42, 0.16)',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '0.55rem',
-        fontSize: '0.78rem',
-        fontWeight: 700
-      }}
-    >
-      <MapPinOff size={16} color="#ea580c" style={{ flexShrink: 0 }} />
-      <span>{gpsAlert}</span>
-      <button
-        type="button"
-        onClick={() => setDismissedAlert(true)}
-        aria-label="Dismiss GPS notice"
-        style={{
-          border: 0,
-          background: 'transparent',
-          color: '#9a3412',
-          cursor: 'pointer',
-          padding: '2px',
-          display: 'flex',
-          alignItems: 'center'
-        }}
-      >
-        <X size={14} />
-      </button>
-    </div>
+    <>
+      {showHealthBanner && (
+        <div
+          role="status"
+          style={{
+            position: 'fixed',
+            bottom: showGpsAlert ? '128px' : '76px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 99989,
+            maxWidth: '94vw',
+            width: 'max-content',
+            background: deviceHealthBanner.status === 'FORCE_UPGRADE' || deviceHealthBanner.status === 'BROWSER_ONLY' ? '#fef2f2' : '#fffbeb',
+            border: `1px solid ${deviceHealthBanner.status === 'FORCE_UPGRADE' || deviceHealthBanner.status === 'BROWSER_ONLY' ? '#fca5a5' : '#fcd34d'}`,
+            color: '#1e293b',
+            padding: '0.55rem 0.85rem',
+            borderRadius: '10px',
+            boxShadow: '0 8px 24px rgba(15, 23, 42, 0.16)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.6rem',
+            fontSize: '0.76rem',
+            fontWeight: 600,
+            flexWrap: 'wrap'
+          }}
+        >
+          <ShieldAlert size={16} color={deviceHealthBanner.status === 'FORCE_UPGRADE' ? '#dc2626' : '#d97706'} style={{ flexShrink: 0 }} />
+          <span>{deviceHealthBanner.message}</span>
+
+          {deviceHealthBanner.showAppSettings && (
+            <button
+              type="button"
+              onClick={() => handleSelfHealClick('app')}
+              style={{
+                border: 'none',
+                borderRadius: 6,
+                background: '#2563eb',
+                color: '#ffffff',
+                padding: '4px 9px',
+                fontSize: '0.72rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4
+              }}
+            >
+              <Settings size={12} /> Allow All the Time
+            </button>
+          )}
+
+          {deviceHealthBanner.showBatteryFix && (
+            <button
+              type="button"
+              onClick={() => handleSelfHealClick('battery')}
+              style={{
+                border: 'none',
+                borderRadius: 6,
+                background: '#d97706',
+                color: '#ffffff',
+                padding: '4px 9px',
+                fontSize: '0.72rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4
+              }}
+            >
+              <BatteryCharging size={12} /> Fix Battery Saver
+            </button>
+          )}
+
+          {deviceHealthBanner.showGpsFix && (
+            <button
+              type="button"
+              onClick={() => handleSelfHealClick('gps')}
+              style={{
+                border: 'none',
+                borderRadius: 6,
+                background: '#dc2626',
+                color: '#ffffff',
+                padding: '4px 9px',
+                fontSize: '0.72rem',
+                fontWeight: 700,
+                cursor: 'pointer'
+              }}
+            >
+              Turn On GPS
+            </button>
+          )}
+
+          {deviceHealthBanner.showApkDownload && (
+            <a
+              href={deviceHealthBanner.downloadUrl || '/api/public/android-apk'}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                borderRadius: 6,
+                background: '#0f766e',
+                color: '#ffffff',
+                padding: '4px 9px',
+                fontSize: '0.72rem',
+                fontWeight: 700,
+                textDecoration: 'none',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4
+              }}
+            >
+              <Download size={12} /> Update APK v{deviceHealthBanner.latestCode}
+            </a>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setDismissedHealthBanner(true)}
+            aria-label="Dismiss device health notice"
+            style={{
+              border: 0,
+              background: 'transparent',
+              color: '#64748b',
+              cursor: 'pointer',
+              padding: '2px',
+              display: 'flex',
+              alignItems: 'center'
+            }}
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
+      {showGpsAlert && (
+        <div
+          role="status"
+          style={{
+            position: 'fixed',
+            bottom: '76px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 99990,
+            maxWidth: '92vw',
+            width: 'max-content',
+            background: '#fff7ed',
+            border: '1px solid #fdba74',
+            color: '#9a3412',
+            padding: '0.55rem 0.85rem',
+            borderRadius: '10px',
+            boxShadow: '0 8px 24px rgba(15, 23, 42, 0.16)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.55rem',
+            fontSize: '0.78rem',
+            fontWeight: 700
+          }}
+        >
+          <MapPinOff size={16} color="#ea580c" style={{ flexShrink: 0 }} />
+          <span>{gpsAlert}</span>
+          <button
+            type="button"
+            onClick={() => setDismissedAlert(true)}
+            aria-label="Dismiss GPS notice"
+            style={{
+              border: 0,
+              background: 'transparent',
+              color: '#9a3412',
+              cursor: 'pointer',
+              padding: '2px',
+              display: 'flex',
+              alignItems: 'center'
+            }}
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
+    </>
   );
 }

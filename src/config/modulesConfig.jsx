@@ -109,7 +109,8 @@ export const MODULES_CONFIG = [
       { id: 'mobile_dashboard', label: '📱 Field Executive App' },
       { id: 'task_manager', label: '📋 Field Tasks Manager' },
       { id: 'form_studio', label: '🎨 Custom Form Studio' },
-      { id: 'live_radar', label: '🛰️ Live GPS & Playback' }
+      { id: 'live_radar', label: '🛰️ Live GPS & Playback' },
+      { id: 'device_health', label: '🛡️ App & Permission Health' }
     ]
   },
   {

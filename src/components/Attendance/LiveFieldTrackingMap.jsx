@@ -6,18 +6,50 @@ import {
   BatteryCharging, Smartphone, Clock, Calendar, Search, Filter,
   Download, CheckCircle, XCircle, AlertTriangle, User, ChevronRight,
   TrendingUp, Award, Layers, ShieldCheck, RefreshCw, Eye, ChevronDown, Check, X,
-  Wifi, WifiOff, Satellite
+  Wifi, WifiOff, Satellite, LocateFixed, Maximize2, Minimize2, Route, Globe, Sun, Map as MapIcon
 } from 'lucide-react';
 import {
   getEmployee360Route,
   getNationwideRadarData,
   getDailyConveyanceVouchers,
-  updateVoucherApproval
+  updateVoucherApproval,
+  getEmployeeDeviceHealthSummary
 } from '@/app/actions/liveTracking';
 import { getTeamMembers } from '@/app/actions/team';
 import useTableColumnResize, { ColumnResizer } from '@/utils/tableColumnResize';
 import StandardTablePagination from '@/components/common/StandardTablePagination';
-import { snapRouteSegmentsToRoad } from '@/utils/routeGeometryMatcher';
+import { snapRouteSegmentsToRoad, haversineMeters } from '@/utils/routeGeometryMatcher';
+
+const MAP_TILE_STYLES = {
+  street: {
+    id: 'street',
+    label: 'Street Map',
+    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    subdomains: 'abc',
+    maxNativeZoom: 19,
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+  },
+  satellite: {
+    id: 'satellite',
+    label: 'Satellite',
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    subdomains: '',
+    maxNativeZoom: 18,
+    maxZoom: 19,
+    attribution: 'Tiles &copy; Esri — World Imagery'
+  },
+  light: {
+    id: 'light',
+    label: 'Clean Light',
+    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    subdomains: 'abc',
+    maxNativeZoom: 19,
+    maxZoom: 19,
+    tileClassName: 'crm-clean-light-tiles',
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+  }
+};
 
 const DEFAULT_VOUCHER_WIDTHS = {
   employee: 200,
@@ -41,6 +73,59 @@ function calculateBearing(lat1, lon1, lat2, lon2) {
     Math.sin((Number(lat1) * Math.PI) / 180) * Math.cos((Number(lat2) * Math.PI) / 180) * Math.cos(dLon);
   const brng = (Math.atan2(y, x) * 180) / Math.PI;
   return (brng + 360) % 360;
+}
+
+/**
+ * Splits a route into Going (Outward) and Return (Inward) only when a genuine turnaround occurs
+ * (prevents false return legs on one-way trips or sparse 2-point gap days).
+ */
+function splitGoingAndReturnRoute(polyline) {
+  if (!Array.isArray(polyline) || polyline.length === 0) {
+    return { turnaroundIdx: 0, hasReturnTrip: false, maxDistMeters: 0, returnGainMeters: 0 };
+  }
+
+  const originLat = Number(polyline[0]?.lat);
+  const originLng = Number(polyline[0]?.lng);
+  if (isNaN(originLat) || isNaN(originLng) || polyline.length < 3) {
+    return {
+      turnaroundIdx: Math.max(0, polyline.length - 1),
+      hasReturnTrip: false,
+      maxDistMeters: 0,
+      returnGainMeters: 0
+    };
+  }
+
+  let maxIdx = 0;
+  let maxDistMeters = 0;
+  for (let i = 1; i < polyline.length; i++) {
+    const lat = Number(polyline[i]?.lat);
+    const lng = Number(polyline[i]?.lng);
+    if (isNaN(lat) || isNaN(lng)) continue;
+    const d = haversineMeters(originLat, originLng, lat, lng);
+    if (d > maxDistMeters) {
+      maxDistMeters = d;
+      maxIdx = i;
+    }
+  }
+
+  const endLat = Number(polyline[polyline.length - 1]?.lat);
+  const endLng = Number(polyline[polyline.length - 1]?.lng);
+  const endDistMeters =
+    !isNaN(endLat) && !isNaN(endLng) ? haversineMeters(originLat, originLng, endLat, endLng) : maxDistMeters;
+  const returnGainMeters = Math.max(0, maxDistMeters - endDistMeters);
+
+  const hasReturnTrip =
+    maxIdx > 0 &&
+    maxIdx < polyline.length - 1 &&
+    maxDistMeters >= 150 &&
+    (returnGainMeters >= 100 || (maxDistMeters > 0 && returnGainMeters / maxDistMeters >= 0.25));
+
+  return {
+    turnaroundIdx: hasReturnTrip ? maxIdx : polyline.length - 1,
+    hasReturnTrip,
+    maxDistMeters,
+    returnGainMeters
+  };
 }
 
 const LIVE_OFFLINE_THRESHOLD_SEC = 90; // 1.5 minutes (3 missed ~25s heartbeats => truly offline)
@@ -213,7 +298,7 @@ function computeEmployeeLiveDeviceStatus(routeData, selectedDate, nowMs, fallbac
   };
 }
 
-export default function LiveFieldTrackingMap({ company = 'New Swan Group', branchCode = null, currentUserRole = 'ADMIN', tenantId = null }) {
+export default function LiveFieldTrackingMap({ company = 'New Swan Group', branchCode = null, currentUserRole = 'ADMIN', tenantId = null, onOpenDeviceHealth = null }) {
   const [activeMainTab, setActiveMainTab] = useState('360_PLAYBACK'); // '360_PLAYBACK', 'ALL_INDIA_RADAR', 'CONVEYANCE_VOUCHERS'
 
   // Global Filter State
@@ -257,7 +342,40 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
   });
 
   const [routeData, setRouteData] = useState(null);
+  const [deviceHealthState, setDeviceHealthState] = useState({ userId: '', summary: null });
   const [loadingRoute, setLoadingRoute] = useState(false);
+
+  const selectedDeviceHealth =
+    selectedUserId && deviceHealthState.userId === String(selectedUserId)
+      ? deviceHealthState.summary
+      : null;
+
+  useEffect(() => {
+    let active = true;
+    const targetId = String(selectedUserId || '');
+    if (!targetId) return undefined;
+    getEmployeeDeviceHealthSummary(targetId, selectedCompany)
+      .then((res) => {
+        if (active && res?.success) {
+          setDeviceHealthState({ userId: targetId, summary: res.summary || null });
+        }
+      })
+      .catch(() => {
+        // Non-blocking device health lookup
+      });
+    return () => { active = false; };
+  }, [selectedUserId, selectedCompany]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const onSelectExec = (ev) => {
+      const targetId = ev?.detail?.userId;
+      if (targetId) setSelectedUserId(String(targetId));
+    };
+    window.addEventListener('crm_select_field_exec', onSelectExec);
+    return () => window.removeEventListener('crm_select_field_exec', onSelectExec);
+  }, []);
+  const [syncingRoute, setSyncingRoute] = useState(false);
   const [liveNowMs, setLiveNowMs] = useState(() => Date.now());
   const [executiveSearch, setExecutiveSearch] = useState('');
   const [isExecutiveDropdownOpen, setIsExecutiveDropdownOpen] = useState(false);
@@ -313,14 +431,68 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
   const mapContainerRef = useRef(null);
   const mapInstanceRef = useRef(null);
   const markersGroupRef = useRef(null);
+  const estimateGroupRef = useRef(null);
+  const tileLayerRef = useRef(null);
+  const mapFullscreenWrapperRef = useRef(null);
   const runnerMarkerRef = useRef(null);
   const traveledTrailRef = useRef(null);
-  const upcomingTrailRef = useRef(null);
+  const offlineGapLayersRef = useRef([]);
   const animFrameRef = useRef(null);
   const lastFrameTimeRef = useRef(null);
   const progressRef = useRef(0);
+  const estimateSeqRef = useRef(0);
+  const showEstimateRouteRef = useRef(false);
+  const routeSplitInfoRef = useRef({ turnaroundIdx: 0, hasReturnTrip: false, maxDistMeters: 0, returnGainMeters: 0 });
+  const effectiveTripFilterRef = useRef('ALL');
   const [currentTelemetry, setCurrentTelemetry] = useState(null);
   const [leafletReady, setLeafletReady] = useState(false);
+  const [mapStyle, setMapStyle] = useState('street');
+  const [showMapStyleMenu, setShowMapStyleMenu] = useState(false);
+  const [isMapFullscreen, setIsMapFullscreen] = useState(false);
+  const [showEstimateRoute, setShowEstimateRoute] = useState(false);
+  const [loadingEstimate, setLoadingEstimate] = useState(false);
+  const [estimateSummary, setEstimateSummary] = useState(null);
+  const [routeTripFilter, setRouteTripFilter] = useState('ALL'); // 'ALL' | 'GOING' | 'RETURN'
+
+  const routeSplitInfo = useMemo(() => splitGoingAndReturnRoute(routeData?.polyline), [routeData?.polyline]);
+  const effectiveTripFilter = routeSplitInfo.hasReturnTrip ? routeTripFilter : 'ALL';
+
+  const routeSpeedStats = useMemo(() => {
+    const poly = routeData?.polyline || [];
+    if (poly.length === 0) return { avgSpeed: 0, maxSpeed: 0 };
+    const startIdx =
+      routeSplitInfo.hasReturnTrip && effectiveTripFilter === 'RETURN'
+        ? routeSplitInfo.turnaroundIdx
+        : 0;
+    const endIdx =
+      routeSplitInfo.hasReturnTrip && effectiveTripFilter === 'GOING'
+        ? routeSplitInfo.turnaroundIdx
+        : poly.length - 1;
+
+    let maxSpeed = 0;
+    let sumMoving = 0;
+    let movingCount = 0;
+    for (let i = startIdx; i <= endIdx; i++) {
+      const pt = poly[i];
+      if (!pt || pt.isOffline) continue;
+      const spd = Math.round(Number(pt.speed || 0));
+      if (isNaN(spd) || spd <= 0) continue;
+      if (spd > maxSpeed) maxSpeed = spd;
+      if (spd >= 4) {
+        sumMoving += spd;
+        movingCount++;
+      }
+    }
+    return {
+      avgSpeed: movingCount > 0 ? Math.round(sumMoving / movingCount) : 0,
+      maxSpeed
+    };
+  }, [routeData?.polyline, routeSplitInfo, effectiveTripFilter]);
+
+  useEffect(() => {
+    routeSplitInfoRef.current = routeSplitInfo;
+    effectiveTripFilterRef.current = effectiveTripFilter;
+  }, [routeSplitInfo, effectiveTripFilter]);
 
   // 2. All-India Radar State
   const [radarEmployees, setRadarEmployees] = useState([]);
@@ -489,11 +661,26 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
   const loadEmployeeRoute = useCallback(async (userId, dateStr, { silent = false, forceFresh = false } = {}) => {
     if (!userId) return;
     const cacheKey = `${userId}_${dateStr}`;
+    const storageKey = `crm_cached_route_v2_${cacheKey}`;
     const todayIST = getTodayISTDateStr();
 
+    let cachedRoute = routeCacheRef.current[cacheKey] || null;
+    if (!cachedRoute && typeof window !== 'undefined') {
+      try {
+        const rawCached = localStorage.getItem(storageKey);
+        if (rawCached) {
+          const parsed = JSON.parse(rawCached);
+          if (parsed && parsed.userId === userId && parsed.date === dateStr) {
+            cachedRoute = parsed;
+            routeCacheRef.current[cacheKey] = parsed;
+          }
+        }
+      } catch (_) {}
+    }
+
     let shouldBackgroundRefresh = false;
-    if (!forceFresh && routeCacheRef.current[cacheKey]) {
-      setRouteData(routeCacheRef.current[cacheKey]);
+    if (!forceFresh && cachedRoute) {
+      setRouteData(cachedRoute);
       setLoadingRoute(false);
       setIsPlaying(false);
       setPlaybackIndex(0);
@@ -518,6 +705,8 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
       setLoadingRoute(true);
       setIsPlaying(false);
       setPlaybackIndex(0);
+    } else if (shouldBackgroundRefresh) {
+      setSyncingRoute(true);
     }
     try {
       const data = await getEmployee360Route(userId, dateStr);
@@ -538,13 +727,27 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
       }
       if (data) {
         routeCacheRef.current[cacheKey] = data;
+        if (typeof window !== 'undefined') {
+          try {
+            // Keep persisted cache lightweight (<25KB) by omitting rawPolyline
+            const { rawPolyline: _omit, ...compactData } = data;
+            const routeKeys = Object.keys(localStorage).filter(k => k.startsWith('crm_cached_route_v2_'));
+            if (routeKeys.length >= 4 && !routeKeys.includes(storageKey)) {
+              localStorage.removeItem(routeKeys[0]);
+            }
+            localStorage.setItem(storageKey, JSON.stringify(compactData));
+          } catch (_) {}
+        }
       }
       setRouteData(data);
       setLiveNowMs(Date.now());
     } catch (err) {
       console.error('Failed to load 360 route:', err);
     } finally {
-      if (!isSilent && reqSeq === routeFetchSeqRef.current) setLoadingRoute(false);
+      if (reqSeq === routeFetchSeqRef.current) {
+        if (!isSilent) setLoadingRoute(false);
+        setSyncingRoute(false);
+      }
     }
   }, []);
 
@@ -652,20 +855,25 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
         markerZoomAnimation: true
       });
 
-      // Official Standard OpenStreetMap Tiles (100% Free, Zero Watermark, No API Key Required)
-      const tileLayer = window.L.tileLayer(
-        'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-        {
-          maxZoom: 19,
-          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        }
-      );
+      // Default Street Tile Layer (swappable via Map Style toolbar)
+      const initialStyle = MAP_TILE_STYLES.street;
+      const tileLayer = window.L.tileLayer(initialStyle.url, {
+        maxZoom: initialStyle.maxZoom,
+        ...(initialStyle.maxNativeZoom ? { maxNativeZoom: initialStyle.maxNativeZoom } : {}),
+        ...(initialStyle.subdomains ? { subdomains: initialStyle.subdomains } : {}),
+        ...(initialStyle.tileClassName ? { className: initialStyle.tileClassName } : {}),
+        attribution: initialStyle.attribution
+      });
 
       tileLayer.on('tileerror', (e) => {
-        console.warn('OpenStreetMap tile load notice:', e);
+        console.warn('Map tile load notice:', e);
       });
 
       tileLayer.addTo(map);
+      tileLayerRef.current = tileLayer;
+
+      const estimateGroup = window.L.layerGroup().addTo(map);
+      estimateGroupRef.current = estimateGroup;
 
       const markersGroup = window.L.layerGroup().addTo(map);
       markersGroupRef.current = markersGroup;
@@ -697,6 +905,261 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
     }
   }, [leafletReady, activeMainTab]);
 
+  // Swap Leaflet TileLayer cleanly when Map Style changes (Street / Satellite / Light)
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!leafletReady || !map || typeof window === 'undefined' || !window.L) return;
+    const styleCfg = MAP_TILE_STYLES[mapStyle] || MAP_TILE_STYLES.street;
+    try {
+      if (tileLayerRef.current) {
+        map.removeLayer(tileLayerRef.current);
+      }
+      const nextTile = window.L.tileLayer(styleCfg.url, {
+        maxZoom: styleCfg.maxZoom,
+        ...(styleCfg.maxNativeZoom ? { maxNativeZoom: styleCfg.maxNativeZoom } : {}),
+        ...(styleCfg.subdomains ? { subdomains: styleCfg.subdomains } : {}),
+        ...(styleCfg.tileClassName ? { className: styleCfg.tileClassName } : {}),
+        attribution: styleCfg.attribution
+      });
+      nextTile.addTo(map);
+      if (typeof nextTile.bringToBack === 'function') nextTile.bringToBack();
+      tileLayerRef.current = nextTile;
+    } catch (err) {
+      console.warn('Tile style switch notice:', err);
+    }
+  }, [mapStyle, leafletReady]);
+
+  // Sync fullscreen state on native fullscreen exit / Escape key and resize Leaflet cleanly
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const handleFsChange = () => {
+      const active = Boolean(document.fullscreenElement);
+      setIsMapFullscreen(active);
+      setTimeout(() => mapInstanceRef.current?.invalidateSize(), 80);
+    };
+    const handleEsc = (e) => {
+      if (e.key === 'Escape') {
+        setIsMapFullscreen(false);
+        setShowMapStyleMenu(false);
+        setTimeout(() => mapInstanceRef.current?.invalidateSize(), 80);
+      }
+    };
+    document.addEventListener('fullscreenchange', handleFsChange);
+    document.addEventListener('keydown', handleEsc);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFsChange);
+      document.removeEventListener('keydown', handleEsc);
+    };
+  }, []);
+
+  const getFilteredRouteCoords = useCallback((filterMode = effectiveTripFilter) => {
+    const raw = (routeData?.polyline || [])
+      .map(p => [Number(p.lat), Number(p.lng)])
+      .filter(([lat, lng]) => !isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0);
+    if (raw.length === 0 || !routeSplitInfo.hasReturnTrip || filterMode === 'ALL') return raw;
+    if (filterMode === 'GOING') return raw.slice(0, routeSplitInfo.turnaroundIdx + 1);
+    if (filterMode === 'RETURN') return raw.slice(routeSplitInfo.turnaroundIdx);
+    return raw;
+  }, [routeData, routeSplitInfo, effectiveTripFilter]);
+
+  const handleRecenterRoute = useCallback(() => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+    const pts = getFilteredRouteCoords();
+    try {
+      if (pts.length === 1) {
+        map.setView(pts[0], 15, { animate: true });
+      } else if (pts.length > 1) {
+        map.fitBounds(pts, { padding: [55, 55], maxZoom: 16, animate: true });
+      } else {
+        map.setView([30.9010, 75.8573], 12, { animate: true });
+      }
+    } catch (_) {}
+  }, [getFilteredRouteCoords]);
+
+  const handleSelectTripFilter = useCallback((nextFilter) => {
+    setRouteTripFilter(nextFilter);
+    setIsPlaying(false);
+    const poly = routeData?.polyline || [];
+    if (poly.length > 0) {
+      const targetIdx =
+        nextFilter === 'RETURN' && routeSplitInfo.hasReturnTrip
+          ? routeSplitInfo.turnaroundIdx
+          : 0;
+      progressRef.current = targetIdx;
+      setPlaybackIndex(targetIdx);
+      const map = mapInstanceRef.current;
+      const focusPts = getFilteredRouteCoords(nextFilter);
+      try {
+        if (map && focusPts.length === 1) {
+          map.flyTo(focusPts[0], 15, { duration: 0.55 });
+        } else if (map && focusPts.length > 1) {
+          map.flyToBounds(focusPts, { padding: [55, 55], maxZoom: 16, duration: 0.55 });
+        }
+      } catch (_) {}
+    }
+  }, [routeData, routeSplitInfo, getFilteredRouteCoords]);
+
+  const handleToggleFullscreen = useCallback(async () => {
+    const next = !isMapFullscreen;
+    setIsMapFullscreen(next);
+    try {
+      if (next && mapFullscreenWrapperRef.current?.requestFullscreen && !document.fullscreenElement) {
+        await mapFullscreenWrapperRef.current.requestFullscreen();
+      } else if (!next && document.fullscreenElement && document.exitFullscreen) {
+        await document.exitFullscreen();
+      }
+    } catch (_) {
+      // CSS fixed-overlay fallback keeps fullscreen working even inside restrictive WebViews
+    }
+    setTimeout(() => mapInstanceRef.current?.invalidateSize(), 80);
+    setTimeout(() => mapInstanceRef.current?.invalidateSize(), 240);
+  }, [isMapFullscreen]);
+
+  const restoreOfflineGapChords = useCallback(() => {
+    const markersGroup = markersGroupRef.current;
+    if (!markersGroup) return;
+    for (const entry of offlineGapLayersRef.current) {
+      if (entry?.layer && !markersGroup.hasLayer(entry.layer)) {
+        markersGroup.addLayer(entry.layer);
+      }
+    }
+  }, []);
+
+  const hideOfflineGapChordForSegment = useCallback((startPt, endPt) => {
+    const markersGroup = markersGroupRef.current;
+    if (!markersGroup || !startPt || !endPt) return;
+    for (const entry of offlineGapLayersRef.current) {
+      if (!entry?.layer || !entry.p1 || !entry.p2) continue;
+      const matchesForward =
+        haversineMeters(entry.p1[0], entry.p1[1], startPt.lat, startPt.lng) < 5 &&
+        haversineMeters(entry.p2[0], entry.p2[1], endPt.lat, endPt.lng) < 5;
+      if (matchesForward && markersGroup.hasLayer(entry.layer)) {
+        markersGroup.removeLayer(entry.layer);
+      }
+    }
+  }, []);
+
+  const renderEstimatedGapPreview = useCallback(async (data) => {
+    const group = estimateGroupRef.current;
+    if (!group || typeof window === 'undefined' || !window.L) return;
+    group.clearLayers();
+    restoreOfflineGapChords();
+    const seq = ++estimateSeqRef.current;
+
+    const poly = data?.polyline || [];
+    const split = splitGoingAndReturnRoute(poly);
+    const activeFilter = split.hasReturnTrip ? effectiveTripFilter : 'ALL';
+    const blindGaps = [];
+    for (let i = 1; i < poly.length; i++) {
+      const prev = poly[i - 1];
+      const cur = poly[i];
+      const leg = split.hasReturnTrip && i > split.turnaroundIdx ? 'RETURN' : 'GOING';
+      if (activeFilter !== 'ALL' && leg !== activeFilter) continue;
+      const isBlindOffline = Boolean(cur?.isOffline) && !Boolean(cur?.isSnapped);
+      if (isBlindOffline && haversineMeters(prev.lat, prev.lng, cur.lat, cur.lng) >= 30) {
+        blindGaps.push([prev, cur]);
+      }
+    }
+
+    if (blindGaps.length === 0) {
+      setEstimateSummary({ distanceKm: 0, noGaps: true });
+      setLoadingEstimate(false);
+      return;
+    }
+
+    setLoadingEstimate(true);
+    let totalEstMeters = 0;
+    let gapRendered = 0;
+
+    try {
+      for (const [startPt, endPt] of blindGaps) {
+        if (seq !== estimateSeqRef.current || !showEstimateRouteRef.current) return;
+        const coordStr = `${Number(startPt.lng).toFixed(6)},${Number(startPt.lat).toFixed(6)};${Number(endPt.lng).toFixed(6)},${Number(endPt.lat).toFixed(6)}`;
+        try {
+          const ctrl = new AbortController();
+          const timer = setTimeout(() => ctrl.abort(), 7000);
+          const res = await fetch(
+            `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=full&geometries=geojson&alternatives=true`,
+            { headers: { Accept: 'application/json' }, signal: ctrl.signal }
+          );
+          clearTimeout(timer);
+          if (seq !== estimateSeqRef.current || !showEstimateRouteRef.current) return;
+          if (res.ok) {
+            const json = await res.json();
+            const validRoutes = Array.isArray(json?.routes)
+              ? json.routes.filter(r => Array.isArray(r?.geometry?.coordinates) && r.geometry.coordinates.length >= 2)
+              : [];
+            const route = validRoutes.reduce(
+              (best, r) => (Number(r.distance ?? Infinity) < Number(best?.distance ?? Infinity) ? r : best),
+              validRoutes[0]
+            );
+            const roadCoords = route?.geometry?.coordinates;
+            if (json?.code === 'Ok' && Array.isArray(roadCoords) && roadCoords.length >= 2) {
+              const latLngs = roadCoords.map(([lng, lat]) => [lat, lng]);
+              const segEstKm = ((route.distance || 0) / 1000).toFixed(2);
+              totalEstMeters += Number(route.distance || 0);
+              gapRendered++;
+              hideOfflineGapChordForSegment(startPt, endPt);
+              window.L.polyline(latLngs, {
+                color: '#9333ea',
+                weight: 4.5,
+                opacity: 0.9,
+                dashArray: '4, 7',
+                smoothFactor: 0.5,
+                lineJoin: 'round',
+                lineCap: 'round'
+              })
+              .bindPopup(`<b>🟣 Estimated Road Preview (Unverified)</b><br/><span style="color:#64748b;font-size:11px;">Shortest OSRM road suggestion: ~${segEstKm} km<br/>Note: Replaces straight gap chord visually while Preview is ON</span>`)
+              .addTo(group);
+            }
+          }
+        } catch (_) {}
+      }
+
+      if (seq === estimateSeqRef.current && showEstimateRouteRef.current) {
+        setEstimateSummary({
+          distanceKm: Number((totalEstMeters / 1000).toFixed(2)),
+          segmentCount: gapRendered,
+          noGaps: gapRendered === 0
+        });
+      }
+    } finally {
+      if (seq === estimateSeqRef.current) setLoadingEstimate(false);
+    }
+  }, [restoreOfflineGapChords, hideOfflineGapChordForSegment, effectiveTripFilter]);
+
+  const handleToggleEstimateRoute = useCallback(() => {
+    const next = !showEstimateRouteRef.current;
+    showEstimateRouteRef.current = next;
+    setShowEstimateRoute(next);
+    if (!next) {
+      estimateSeqRef.current++;
+      estimateGroupRef.current?.clearLayers();
+      restoreOfflineGapChords();
+      setEstimateSummary(null);
+      setLoadingEstimate(false);
+    } else {
+      renderEstimatedGapPreview(routeData);
+    }
+  }, [routeData, renderEstimatedGapPreview, restoreOfflineGapChords]);
+
+  useEffect(() => {
+    estimateGroupRef.current?.clearLayers();
+    restoreOfflineGapChords();
+    let cancelled = false;
+    if (showEstimateRouteRef.current && routeData?.polyline) {
+      Promise.resolve().then(() => {
+        if (!cancelled && showEstimateRouteRef.current) {
+          renderEstimatedGapPreview(routeData);
+        }
+      });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [routeData, renderEstimatedGapPreview, restoreOfflineGapChords]);
+
   // Synchronize runner position, dynamic trail, and telemetry smoothly
   const updateRunnerPosition = (progress, polyline) => {
     if (!polyline || polyline.length === 0 || !markersGroupRef.current) return;
@@ -727,6 +1190,8 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
     const interpSpeed = Math.round(s1 + frac * (s2 - s1));
 
     const isCurrentOffline = Boolean((nextIdx > idx ? p2?.isOffline : p1?.isOffline) ?? p1?.isOffline);
+    const splitMeta = routeSplitInfoRef.current;
+    const isReturningLeg = Boolean(splitMeta.hasReturnTrip && nextIdx > splitMeta.turnaroundIdx);
 
     setCurrentTelemetry({
       lat,
@@ -734,23 +1199,31 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
       speed: interpSpeed,
       time: interpTime,
       bearing: brng,
-      isOffline: isCurrentOffline
+      isOffline: isCurrentOffline,
+      tripPhase: isReturningLeg ? 'RETURN' : 'GOING'
     });
 
     // Update runner marker position
     if (runnerMarkerRef.current) {
       runnerMarkerRef.current.setLatLng([lat, lng]);
 
-      // Rotate vehicle direction arrow smoothly and update live/offline theme
+      // Rotate vehicle direction arrow smoothly and morph Going (Blue) <-> Return (Magenta) <-> Offline (Orange)
       const rotator = document.getElementById('runner-vehicle-rotator');
+      const pulseRing = document.getElementById('runner-pulse-ring');
       if (rotator) {
         rotator.style.transform = `rotate(${Math.round(brng)}deg)`;
         if (isCurrentOffline) {
           rotator.style.background = 'linear-gradient(135deg, #c2410c 0%, #ea580c 100%)';
           rotator.style.boxShadow = '0 4px 14px rgba(234,88,12,0.75)';
+          if (pulseRing) pulseRing.style.background = 'rgba(234,88,12,0.3)';
+        } else if (isReturningLeg) {
+          rotator.style.background = 'linear-gradient(135deg, #be185d 0%, #ec4899 100%)';
+          rotator.style.boxShadow = '0 4px 16px rgba(236,72,153,0.75)';
+          if (pulseRing) pulseRing.style.background = 'rgba(236,72,153,0.32)';
         } else {
           rotator.style.background = 'linear-gradient(135deg, #1e40af 0%, #2563eb 100%)';
           rotator.style.boxShadow = '0 4px 14px rgba(37,99,235,0.7)';
+          if (pulseRing) pulseRing.style.background = 'rgba(37,99,235,0.25)';
         }
       }
 
@@ -762,20 +1235,38 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
       }
     }
 
-    // Dynamic Trail Polylines
+    // Dynamic Trail Polylines (respect trip leg filter + skip blind gap chords while Estimated Road Preview is active)
     if (traveledTrailRef.current) {
-      const traveledCoords = polyline.slice(0, idx + 1).map(p => [Number(p.lat), Number(p.lng)]);
-      traveledCoords.push([lat, lng]);
-      traveledTrailRef.current.setLatLngs(traveledCoords);
-      traveledTrailRef.current.setStyle({
-        color: isCurrentOffline ? '#ea580c' : '#2563eb',
-        dashArray: isCurrentOffline ? '8, 6' : null
-      });
-    }
-
-    if (upcomingTrailRef.current) {
-      const upcomingCoords = [[lat, lng], ...polyline.slice(nextIdx).map(p => [Number(p.lat), Number(p.lng)])];
-      upcomingTrailRef.current.setLatLngs(upcomingCoords);
+      const activeFilter = splitMeta.hasReturnTrip ? effectiveTripFilterRef.current : 'ALL';
+      const startWalkIdx = activeFilter === 'RETURN' ? splitMeta.turnaroundIdx : 0;
+      const walkEndIdx = activeFilter === 'GOING' ? Math.min(idx, splitMeta.turnaroundIdx) : idx;
+      if ((isCurrentOffline && showEstimateRouteRef.current) || idx < startWalkIdx) {
+        traveledTrailRef.current.setStyle({ opacity: 0 });
+      } else {
+        const runs = [];
+        let curRun = [[Number(polyline[startWalkIdx].lat), Number(polyline[startWalkIdx].lng)]];
+        for (let k = startWalkIdx + 1; k <= walkEndIdx; k++) {
+          const pt = polyline[k];
+          const isGapEdge = Boolean(pt?.isOffline) && !Boolean(pt?.isSnapped);
+          if (isGapEdge && showEstimateRouteRef.current) {
+            if (curRun.length >= 2) runs.push(curRun);
+            curRun = [[Number(pt.lat), Number(pt.lng)]];
+          } else {
+            curRun.push([Number(pt.lat), Number(pt.lng)]);
+          }
+        }
+        const isNextGapEdge = Boolean(polyline[nextIdx]?.isOffline) && !Boolean(polyline[nextIdx]?.isSnapped);
+        if (!(isNextGapEdge && showEstimateRouteRef.current) && (activeFilter !== 'GOING' || idx < splitMeta.turnaroundIdx)) {
+          curRun.push([lat, lng]);
+        }
+        if (curRun.length >= 2) runs.push(curRun);
+        traveledTrailRef.current.setLatLngs(runs);
+        traveledTrailRef.current.setStyle({
+          opacity: runs.length > 0 ? 0.95 : 0,
+          color: isCurrentOffline ? '#ea580c' : isReturningLeg ? '#ec4899' : '#2563eb',
+          dashArray: isCurrentOffline ? '8, 6' : isReturningLeg ? '8, 8' : null
+        });
+      }
     }
   };
 
@@ -799,9 +1290,13 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
       const baseDurationSec = Math.max(15, Math.min(45, totalPoints * 0.4));
       const pointsPerSec = (totalPoints / baseDurationSec) * playbackSpeed;
       let nextProg = progressRef.current + pointsPerSec * dt;
+      const endBoundIdx =
+        effectiveTripFilterRef.current === 'GOING' && routeSplitInfoRef.current.hasReturnTrip
+          ? routeSplitInfoRef.current.turnaroundIdx
+          : totalPoints - 1;
 
-      if (nextProg >= totalPoints - 1) {
-        nextProg = totalPoints - 1;
+      if (nextProg >= endBoundIdx) {
+        nextProg = endBoundIdx;
         progressRef.current = nextProg;
         setPlaybackIndex(Math.floor(nextProg));
         updateRunnerPosition(nextProg, poly);
@@ -824,112 +1319,235 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
     };
   }, [isPlaying, playbackSpeed, routeData]);
 
-  // Update Route Polyline & Markers on Map
+  // Update Route Polyline, Directional Chevrons, Turnaround Beacon & Markers on Map
   useEffect(() => {
     if (!mapInstanceRef.current || !markersGroupRef.current || !window.L) return;
 
     markersGroupRef.current.clearLayers();
+    offlineGapLayersRef.current = [];
     runnerMarkerRef.current = null;
     traveledTrailRef.current = null;
-    upcomingTrailRef.current = null;
 
     if (routeData?.polyline && routeData.polyline.length > 0) {
-      const coords = routeData.polyline
-        .map(p => [Number(p.lat), Number(p.lng)])
-        .filter(([lat, lng]) => !isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0);
+      const validPoints = routeData.polyline.filter((p) => {
+        const lat = Number(p?.lat);
+        const lng = Number(p?.lng);
+        return !isNaN(lat) && !isNaN(lng) && (Math.abs(lat) > 0.01 || Math.abs(lng) > 0.01);
+      });
+      const coords = validPoints.map(p => [Number(p.lat), Number(p.lng)]);
 
       if (coords.length > 0) {
-        // 1. Group route edge-by-edge: Live Online (Blue), Offline-Tracked Road (Solid Amber), Offline Gap (Dashed Orange)
+        const { hasReturnTrip, turnaroundIdx, maxDistMeters } = routeSplitInfo;
+        const activeFilter = hasReturnTrip ? effectiveTripFilter : 'ALL';
+
+        // 1. Partition edges by connectivity mode (ONLINE / OFFLINE_ROAD / OFFLINE_GAP) AND tripLeg (GOING / RETURN)
         const segments = [];
         for (let i = 1; i < coords.length; i++) {
-          const pt = routeData.polyline[i];
+          const pt = validPoints[i];
           const mode = !pt?.isOffline ? 'ONLINE' : (pt?.isSnapped ? 'OFFLINE_ROAD' : 'OFFLINE_GAP');
+          const tripLeg = hasReturnTrip && i > turnaroundIdx ? 'RETURN' : 'GOING';
           const prevCoord = coords[i - 1];
           const curCoord = coords[i];
           const lastSeg = segments[segments.length - 1];
 
-          if (lastSeg && lastSeg.mode === mode) {
+          if (lastSeg && lastSeg.mode === mode && lastSeg.tripLeg === tripLeg) {
             lastSeg.coords.push(curCoord);
+            lastSeg.times.push(pt?.time || null);
+            lastSeg.speeds.push(Math.max(0, Math.round(Number(pt?.speed || 0))));
             lastSeg.endTime = pt?.time;
           } else {
             segments.push({
               mode,
+              tripLeg,
               isOffline: Boolean(pt?.isOffline),
               coords: [prevCoord, curCoord],
-              startTime: routeData.polyline[i - 1]?.time || pt?.time,
+              times: [validPoints[i - 1]?.time || null, pt?.time || null],
+              speeds: [
+                Math.max(0, Math.round(Number(validPoints[i - 1]?.speed || 0))),
+                Math.max(0, Math.round(Number(pt?.speed || 0)))
+              ],
+              startTime: validPoints[i - 1]?.time || pt?.time,
               endTime: pt?.time
             });
           }
         }
 
-        // 2. Draw segmented polylines with Canvas-friendly sharp geometry (smoothFactor: 0.5)
+        // 2. Draw Going segments first, then Return segments on top (so Return dashed lines pop cleanly on overlapping roads)
         const basePolylineOpts = {
           smoothFactor: 0.5,
           lineJoin: 'round',
           lineCap: 'round'
         };
-        segments.forEach(seg => {
+        const visibleSegments = segments.filter(
+          seg => activeFilter === 'ALL' || seg.tripLeg === activeFilter
+        );
+        const orderedSegments = [
+          ...visibleSegments.filter(s => s.tripLeg === 'GOING'),
+          ...visibleSegments.filter(s => s.tripLeg === 'RETURN')
+        ];
+
+        const drawDirectionalChevrons = (segList, legType) => {
+          let legTotalMeters = 0;
+          segList.forEach(s => {
+            if (s.mode === 'OFFLINE_GAP') return;
+            for (let j = 1; j < s.coords.length; j++) {
+              legTotalMeters += haversineMeters(s.coords[j - 1][0], s.coords[j - 1][1], s.coords[j][0], s.coords[j][1]);
+            }
+          });
+          if (legTotalMeters < 110) return;
+
+          const spacing = Math.max(130, Math.round(legTotalMeters / 16));
+          let distSinceArrow = spacing * 0.55;
+          let placedCount = 0;
+          const isRet = legType === 'RETURN';
+          const bgHex = isRet ? '#ec4899' : '#2563eb';
+          const legLabel = isRet ? 'Return (Inward)' : 'Going (Outward)';
+          const turnaroundCoord = hasReturnTrip ? coords[turnaroundIdx] : null;
+          const originCoord = coords[0];
+          const destCoord = coords[coords.length - 1];
+
+          segList.forEach(s => {
+            if (s.mode === 'OFFLINE_GAP' || placedCount >= 24) return;
+            for (let j = 1; j < s.coords.length && placedCount < 24; j++) {
+              const pA = s.coords[j - 1];
+              const pB = s.coords[j];
+              const stepDist = haversineMeters(pA[0], pA[1], pB[0], pB[1]);
+              if (stepDist < 8) continue;
+              distSinceArrow += stepDist;
+              if (distSinceArrow < spacing) continue;
+
+              const midLat = (pA[0] + pB[0]) / 2;
+              const midLng = (pA[1] + pB[1]) / 2;
+              const tooCloseOrigin = haversineMeters(midLat, midLng, originCoord[0], originCoord[1]) < 45;
+              const tooCloseDest = haversineMeters(midLat, midLng, destCoord[0], destCoord[1]) < 45;
+              const tooCloseTurn = turnaroundCoord
+                ? haversineMeters(midLat, midLng, turnaroundCoord[0], turnaroundCoord[1]) < 45
+                : false;
+              if (tooCloseOrigin || tooCloseDest || tooCloseTurn) continue;
+
+              distSinceArrow = 0;
+              placedCount++;
+              const brng = calculateBearing(pA[0], pA[1], pB[0], pB[1]);
+              const tStamp = s.times?.[j]
+                ? new Date(s.times[j]).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' })
+                : '';
+              const segSpd = Math.max(0, Math.round(Number(s.speeds?.[j] ?? s.speeds?.[j - 1] ?? 0)));
+              const spdText = segSpd > 0 ? ` • ${segSpd} km/h` : '';
+
+              const chevIcon = window.L.divIcon({
+                className: 'crm-chevron-marker',
+                html: `<div class="crm-chevron-badge" style="width:18px;height:18px;border-radius:50%;background:${bgHex};border:1.5px solid #ffffff;box-shadow:0 2px 6px rgba(15,23,42,0.28);display:flex;align-items:center;justify-content:center;transform:rotate(${Math.round(brng)}deg);"><svg width="10" height="10" viewBox="0 0 24 24" fill="#ffffff"><polygon points="12 3 20 19 12 15 4 19 12 3"/></svg></div>`,
+                iconSize: [18, 18],
+                iconAnchor: [9, 9]
+              });
+              window.L.marker([midLat, midLng], {
+                icon: chevIcon,
+                zIndexOffset: isRet ? 780 : 650
+              })
+                .bindTooltip(`${isRet ? '🩷' : '🔵'} ${legLabel}${spdText}${tStamp ? ` • ${tStamp}` : ''}`, {
+                  direction: 'top',
+                  offset: [0, -8]
+                })
+                .addTo(markersGroupRef.current);
+            }
+          });
+        };
+
+        orderedSegments.forEach(seg => {
           const timeRange = `${seg.startTime ? new Date(seg.startTime).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }) : '-'} - ${seg.endTime ? new Date(seg.endTime).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }) : '-'}`;
+          const isReturn = seg.tripLeg === 'RETURN';
+          const movingSegSpeeds = (seg.speeds || []).filter(sp => sp >= 4);
+          const segMaxSpd = (seg.speeds || []).reduce((mx, sp) => (sp > mx ? sp : mx), 0);
+          const segAvgSpd = movingSegSpeeds.length > 0
+            ? Math.round(movingSegSpeeds.reduce((a, b) => a + b, 0) / movingSegSpeeds.length)
+            : 0;
+          const segSpeedHtml = segMaxSpd > 0
+            ? `<br/>⚡ Speed: <b>Avg ${segAvgSpd} km/h</b> • <b>Top ${segMaxSpd} km/h</b>`
+            : '';
+
           if (seg.mode === 'OFFLINE_GAP') {
-            window.L.polyline(seg.coords, {
-              ...basePolylineOpts,
-              color: '#ea580c',
-              weight: 5,
-              opacity: 0.95,
-              dashArray: '8, 6'
-            })
-            .bindPopup(`<b>🟠 Offline Gap (GPS/Data Off)</b><br/><span style="color:#64748b;font-size:11px;">Direct estimate — actual road not tracked during signal loss<br/>Time: ${timeRange}</span>`)
-            .addTo(markersGroupRef.current);
+            for (let k = 1; k < seg.coords.length; k++) {
+              const p1 = seg.coords[k - 1];
+              const p2 = seg.coords[k];
+              const gapPoly = window.L.polyline([p1, p2], {
+                ...basePolylineOpts,
+                color: '#ea580c',
+                weight: 4.5,
+                opacity: 0.92,
+                dashArray: '8, 6'
+              })
+              .bindPopup(`<b>🟠 Offline Gap (GPS/Data Off)${isReturn ? ' • Return Leg' : ''}</b><br/><span style="color:#64748b;font-size:11px;">Direct estimate — actual road not tracked during signal loss<br/>Time: ${timeRange}</span>`)
+              .addTo(markersGroupRef.current);
+              offlineGapLayersRef.current.push({ layer: gapPoly, p1, p2 });
+            }
           } else if (seg.mode === 'OFFLINE_ROAD') {
             window.L.polyline(seg.coords, {
               ...basePolylineOpts,
-              color: '#d97706',
-              weight: 5.5,
-              opacity: 0.95
+              color: isReturn ? '#ec4899' : '#d97706',
+              weight: isReturn ? 4.2 : 5.5,
+              opacity: 0.95,
+              dashArray: isReturn ? '8, 8' : null
             })
-            .bindPopup(`<b>🟠 Offline-Tracked Road (Synced Later)</b><br/><span style="color:#64748b;font-size:11px;">Recorded offline via device GPS vault & synced automatically<br/>Time: ${timeRange}</span>`)
+            .bindPopup(`<b>${isReturn ? '🩷 Return Offline-Tracked Road' : '🟡 Going Offline-Tracked Road'}</b><br/><span style="color:#64748b;font-size:11px;">Recorded offline via device GPS vault & synced automatically<br/>Time: ${timeRange}${segSpeedHtml}</span>`)
+            .addTo(markersGroupRef.current);
+          } else if (isReturn) {
+            window.L.polyline(seg.coords, {
+              ...basePolylineOpts,
+              color: '#ec4899',
+              weight: 4.2,
+              opacity: 0.96,
+              dashArray: '8, 8'
+            })
+            .bindPopup(`<b>🩷 Return Route (Inward Tracking)</b><br/><span style="color:#64748b;font-size:11px;">Return journey along road<br/>Time: ${timeRange}${segSpeedHtml}</span>`)
             .addTo(markersGroupRef.current);
           } else {
             window.L.polyline(seg.coords, {
               ...basePolylineOpts,
               color: '#2563eb',
-              weight: 5.5,
-              opacity: 0.95
+              weight: 6,
+              opacity: 0.88
             })
-            .bindPopup(`<b>🔵 Live Online Tracking (GPS Active)</b><br/><span style="color:#64748b;font-size:11px;">Active: ${timeRange}</span>`)
+            .bindPopup(`<b>🔵 Going Route (Outward Tracking)</b><br/><span style="color:#64748b;font-size:11px;">Active: ${timeRange}${segSpeedHtml}</span>`)
             .addTo(markersGroupRef.current);
           }
         });
 
+        // Directional Arrow Decorators (Going first, Return on top)
+        if (activeFilter === 'ALL' || activeFilter === 'GOING') {
+          drawDirectionalChevrons(orderedSegments.filter(s => s.tripLeg === 'GOING'), 'GOING');
+        }
+        if (hasReturnTrip && (activeFilter === 'ALL' || activeFilter === 'RETURN')) {
+          drawDirectionalChevrons(orderedSegments.filter(s => s.tripLeg === 'RETURN'), 'RETURN');
+        }
+
         // 3. Traveled dynamic glowing polyline (changes dynamically during playback)
-        const traveledTrail = window.L.polyline([coords[0]], {
+        const runnerInitIdx =
+          activeFilter === 'RETURN' && hasReturnTrip
+            ? turnaroundIdx
+            : 0;
+        const isInitReturn = hasReturnTrip && runnerInitIdx > turnaroundIdx;
+        const traveledTrail = window.L.polyline([coords[runnerInitIdx] || coords[0]], {
           ...basePolylineOpts,
-          color: routeData.polyline[0]?.isOffline ? '#ea580c' : '#2563eb',
+          color: validPoints[runnerInitIdx]?.isOffline ? '#ea580c' : isInitReturn ? '#ec4899' : '#2563eb',
           weight: 6,
-          opacity: 0.95
+          opacity: 0
         }).addTo(markersGroupRef.current);
         traveledTrailRef.current = traveledTrail;
 
-        // 4. Upcoming route polyline (subtle dashed slate ahead of vehicle)
-        const upcomingTrail = window.L.polyline(coords, {
-          ...basePolylineOpts,
-          color: '#64748b',
-          weight: 2.5,
-          opacity: 0.5,
-          dashArray: '4, 6'
-        }).addTo(markersGroupRef.current);
-        upcomingTrailRef.current = upcomingTrail;
-
-        // 5. Start Marker / Punch In Marker
+        // 5. Start Marker / Punch In Marker (Green Pin + Hover Tooltip)
         const isSinglePunch = coords.length === 1;
+        const startTimeIST = validPoints[0]?.time
+          ? new Date(validPoints[0].time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })
+          : '-';
         const startIcon = window.L.divIcon({
           className: 'custom-start-marker',
           html: `<div style="background:#16a34a;color:#fff;border-radius:50%;width:${isSinglePunch ? 34 : 28}px;height:${isSinglePunch ? 34 : 28}px;display:flex;align-items:center;justify-content:center;font-size:${isSinglePunch ? 16 : 13}px;border:3px solid #ffffff;box-shadow:0 3px 10px rgba(22,163,74,0.6);">🚩</div>`,
           iconSize: [isSinglePunch ? 34 : 28, isSinglePunch ? 34 : 28],
           iconAnchor: [isSinglePunch ? 17 : 14, isSinglePunch ? 17 : 14]
         });
-        const startMarker = window.L.marker(coords[0], { icon: startIcon })
-          .bindPopup(`<b>🚩 ${isSinglePunch ? 'Attendance Punch In (On Duty)' : 'Route Start Point'}</b><br/><span style="color:#64748b;font-size:11px;">Time: ${routeData.polyline[0].time ? new Date(routeData.polyline[0].time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }) : '-'}</span>`)
+        const startMarker = window.L.marker(coords[0], { icon: startIcon, zIndexOffset: 950 })
+          .bindTooltip(`🚩 Start (Origin) • ${startTimeIST}`, { direction: 'top', offset: [0, -12] })
+          .bindPopup(`<b>🚩 ${isSinglePunch ? 'Attendance Punch In (On Duty)' : 'Route Start Point (Origin)'}</b><br/><span style="color:#64748b;font-size:11px;">Time: ${startTimeIST}</span>`)
           .addTo(markersGroupRef.current);
 
         const fitKey = `${routeData.userId || ''}_${routeData.date || ''}`;
@@ -942,35 +1560,93 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
           startMarker.openPopup();
         }
 
-        // 6. Punch Out Marker or End Marker
+        // 5B. Turnaround / Farthest Destination Pulsing Beacon Marker (only when genuine round trip detected)
+        if (hasReturnTrip && coords[turnaroundIdx]) {
+          let turnLat = coords[turnaroundIdx][0];
+          let turnLng = coords[turnaroundIdx][1];
+          const collidesVisitOrStop = (routeData.timeline || []).some(
+            t =>
+              (t.type === 'visit' || t.type === 'stoppage') &&
+              t.lat &&
+              t.lng &&
+              haversineMeters(turnLat, turnLng, Number(t.lat), Number(t.lng)) < 25
+          );
+          if (collidesVisitOrStop) {
+            turnLat += 0.00012;
+            turnLng += 0.00012;
+          }
+          const turnTimeIST = validPoints[turnaroundIdx]?.time
+            ? new Date(validPoints[turnaroundIdx].time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })
+            : '-';
+          const distFromOriginKm = (maxDistMeters / 1000).toFixed(2);
+          const turnIcon = window.L.divIcon({
+            className: 'custom-turnaround-marker',
+            html: `
+              <div style="position:relative;width:38px;height:38px;display:flex;align-items:center;justify-content:center;">
+                <div style="position:absolute;width:38px;height:38px;border-radius:50%;background:rgba(249,115,22,0.28);animation:crmBeaconPulse 1.9s infinite;"></div>
+                <div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#f59e0b 0%,#ea580c 100%);color:#ffffff;border:2.5px solid #ffffff;box-shadow:0 3px 10px rgba(234,88,12,0.65);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;">↩</div>
+              </div>
+            `,
+            iconSize: [38, 38],
+            iconAnchor: [19, 19]
+          });
+          window.L.marker([turnLat, turnLng], { icon: turnIcon, zIndexOffset: 980 })
+            .bindTooltip(`↩️ Turnaround (${distFromOriginKm} km) • ${turnTimeIST}`, { direction: 'top', offset: [0, -14] })
+            .bindPopup(
+              `<b>↩️ Turnaround / Farthest Destination</b><br/><span style="color:#64748b;font-size:11px;">Peak Distance from Origin: <b>${distFromOriginKm} km</b><br/>Return Started Around: <b>${turnTimeIST}</b></span>`
+            )
+            .addTo(markersGroupRef.current);
+        }
+
+        // 6. Punch Out Marker or End Marker (with hover tooltip + slight offset if exact return to start)
         const punchOutTimeline = (routeData.timeline || []).find(t => t.type === 'punch_out');
         if (punchOutTimeline && punchOutTimeline.lat && punchOutTimeline.lng) {
+          let outLat = Number(punchOutTimeline.lat);
+          let outLng = Number(punchOutTimeline.lng);
+          if (haversineMeters(outLat, outLng, coords[0][0], coords[0][1]) < 20) {
+            outLat -= 0.00011;
+            outLng += 0.00011;
+          }
           const outIcon = window.L.divIcon({
             className: 'custom-punchout-marker',
-            html: '<div style="background:#7c3aed;color:#fff;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-size:14px;border:2.5px solid #ffffff;box-shadow:0 3px 10px rgba(124,58,237,0.6);">🏁</div>',
+            html: '<div style="background:#dc2626;color:#fff;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-size:14px;border:2.5px solid #ffffff;box-shadow:0 3px 10px rgba(220,38,38,0.6);">🏁</div>',
             iconSize: [30, 30],
             iconAnchor: [15, 15]
           });
           const timeText = punchOutTimeline.startTime ? new Date(punchOutTimeline.startTime).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }) : '-';
           const locText = punchOutTimeline.locationName ? `<br/><span style="color:#64748b;font-size:11px;">📍 ${punchOutTimeline.locationName}</span>` : '';
-          window.L.marker([Number(punchOutTimeline.lat), Number(punchOutTimeline.lng)], { icon: outIcon })
+          window.L.marker([outLat, outLng], { icon: outIcon, zIndexOffset: 960 })
+            .bindTooltip(`🏁 Punch Out (End) • ${timeText}`, { direction: 'top', offset: [0, -12] })
             .bindPopup(`<b>🏁 Attendance Punch Out (Shift Completed)</b><br/><span style="color:#64748b;font-size:11px;">Time: ${timeText}</span>${locText}`)
             .addTo(markersGroupRef.current);
         } else if (coords.length > 1) {
+          let endLat = coords[coords.length - 1][0];
+          let endLng = coords[coords.length - 1][1];
+          if (haversineMeters(endLat, endLng, coords[0][0], coords[0][1]) < 20) {
+            endLat -= 0.00011;
+            endLng += 0.00011;
+          }
+          const endTimeIST = validPoints[coords.length - 1]?.time
+            ? new Date(validPoints[coords.length - 1].time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })
+            : '-';
           const endIcon = window.L.divIcon({
             className: 'custom-end-marker',
-            html: '<div style="background:#dc2626;color:#fff;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:13px;border:2px solid #ffffff;box-shadow:0 2px 6px rgba(0,0,0,0.35);">🏁</div>',
+            html: '<div style="background:#dc2626;color:#fff;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:13px;border:2px solid #ffffff;box-shadow:0 2px 6px rgba(220,38,38,0.5);">🏁</div>',
             iconSize: [28, 28],
             iconAnchor: [14, 14]
           });
-          window.L.marker(coords[coords.length - 1], { icon: endIcon })
-            .bindPopup(`<b>🏁 Latest Known Location</b><br/><span style="color:#64748b;font-size:11px;">Time: ${routeData.polyline[coords.length - 1].time ? new Date(routeData.polyline[coords.length - 1].time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }) : '-'}</span>`)
+          window.L.marker([endLat, endLng], { icon: endIcon, zIndexOffset: 960 })
+            .bindTooltip(`🏁 Final Point • ${endTimeIST}`, { direction: 'top', offset: [0, -12] })
+            .bindPopup(`<b>🏁 Latest Known Location</b><br/><span style="color:#64748b;font-size:11px;">Time: ${endTimeIST}</span>`)
             .addTo(markersGroupRef.current);
         }
 
-        // 6. Client Visit Markers
+        // 7. Client Visit Markers (with hover tooltip + full popup)
         (routeData.timeline || []).filter(t => t.type === 'visit').forEach(vt => {
           if (!vt.lat || !vt.lng) return;
+          const visitTimeText = vt.checkInTime
+            ? new Date(vt.checkInTime).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })
+            : '-';
           const visitIcon = window.L.divIcon({
             className: 'custom-visit-marker',
             html: '<div style="background:#0284c7;color:#fff;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-size:14px;border:2px solid #ffffff;box-shadow:0 2px 8px rgba(2,132,199,0.5);">🏢</div>',
@@ -981,18 +1657,19 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
             <div style="font-family:system-ui,-apple-system,sans-serif;font-size:12px;min-width:190px;line-height:1.4;">
               <strong style="font-size:13px;color:#0f172a;display:block;">${vt.partyName}</strong>
               <div style="color:#0284c7;font-weight:700;margin-top:2px;font-size:11px;">📍 Verified Physical Visit</div>
-              <div style="color:#475569;margin-top:4px;">Check-In: <strong>${vt.checkInTime ? new Date(vt.checkInTime).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }) : '-'}</strong></div>
+              <div style="color:#475569;margin-top:4px;">Check-In: <strong>${visitTimeText}</strong></div>
               <div style="color:#475569;">Duration: <strong>${vt.durationMins || 0} mins</strong></div>
               ${vt.outcomeStatus ? `<div style="color:#16a34a;font-weight:600;margin-top:2px;font-size:11px;">Outcome: ${vt.outcomeStatus}</div>` : ''}
               ${vt.photos && vt.photos.length > 0 ? `<div style="margin-top:6px;"><img src="${vt.photos[0]}" style="width:100%;max-height:80px;object-fit:cover;border-radius:6px;border:1px solid #cbd5e1;"/></div>` : ''}
             </div>
           `;
-          window.L.marker([Number(vt.lat), Number(vt.lng)], { icon: visitIcon })
+          window.L.marker([Number(vt.lat), Number(vt.lng)], { icon: visitIcon, zIndexOffset: 900 })
+            .bindTooltip(`🏢 ${vt.partyName} • ${visitTimeText}`, { direction: 'top', offset: [0, -12] })
             .bindPopup(popupHtml)
             .addTo(markersGroupRef.current);
         });
 
-        // 7. Stoppage Markers
+        // 8. Stoppage Markers (with hover tooltip + popup)
         (routeData.timeline || []).filter(t => t.type === 'stoppage').forEach(st => {
           if (!st.lat || !st.lng) return;
           const stopIcon = window.L.divIcon({
@@ -1001,20 +1678,37 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
             iconSize: [26, 26],
             iconAnchor: [13, 13]
           });
+          const stopStartIST = new Date(st.startTime).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' });
+          const stopEndIST = new Date(st.endTime).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' });
           const locText = st.locationName ? `<br/><span style="color:#2563eb;font-weight:600;font-size:11px;">📍 ${st.locationName}</span>` : '';
-          window.L.marker([Number(st.lat), Number(st.lng)], { icon: stopIcon })
-            .bindPopup(`<div style="font-size:12px;"><strong>⏸️ Stoppage: ${st.durationMins} Mins</strong>${locText}<br/><span style="color:#64748b;">${new Date(st.startTime).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })} - ${new Date(st.endTime).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })}</span></div>`)
+          window.L.marker([Number(st.lat), Number(st.lng)], { icon: stopIcon, zIndexOffset: 850 })
+            .bindTooltip(`⏸️ ${st.durationMins}m Stop (${stopStartIST})`, { direction: 'top', offset: [0, -10] })
+            .bindPopup(`<div style="font-size:12px;"><strong>⏸️ Stoppage: ${st.durationMins} Mins</strong>${locText}<br/><span style="color:#64748b;">${stopStartIST} - ${stopEndIST}</span></div>`)
             .addTo(markersGroupRef.current);
         });
 
-        // 8. Animated Runner Marker with Rotatable Direction Arrow
-        const initialBearing = coords.length > 1 ? calculateBearing(coords[0][0], coords[0][1], coords[1][0], coords[1][1]) : 0;
+        // 9. Animated Runner Marker with Rotatable Direction Arrow & Morphing Pulse Ring
+        const runnerNextIdx = Math.min(runnerInitIdx + 1, coords.length - 1);
+        const initialBearing =
+          runnerNextIdx > runnerInitIdx
+            ? calculateBearing(coords[runnerInitIdx][0], coords[runnerInitIdx][1], coords[runnerNextIdx][0], coords[runnerNextIdx][1])
+            : 0;
+        const initRingBg = activeFilter === 'RETURN' && hasReturnTrip ? 'rgba(236,72,153,0.32)' : 'rgba(37,99,235,0.25)';
+        const initOrbBg =
+          activeFilter === 'RETURN' && hasReturnTrip
+            ? 'linear-gradient(135deg, #be185d 0%, #ec4899 100%)'
+            : 'linear-gradient(135deg, #1e40af 0%, #2563eb 100%)';
+        const initOrbShadow =
+          activeFilter === 'RETURN' && hasReturnTrip
+            ? '0 4px 16px rgba(236,72,153,0.75)'
+            : '0 4px 14px rgba(37,99,235,0.7)';
+
         const runnerIcon = window.L.divIcon({
           className: 'runner-marker-container',
           html: `
             <div style="position: relative; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;">
-              <div style="position: absolute; width: 44px; height: 44px; border-radius: 50%; background: rgba(37,99,235,0.25); animation: pulse 1.6s infinite;"></div>
-              <div id="runner-vehicle-rotator" style="transform: rotate(${Math.round(initialBearing)}deg); transition: transform 0.15s ease-out; display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; background: linear-gradient(135deg, #1e40af 0%, #2563eb 100%); border-radius: 50%; border: 2.5px solid #ffffff; box-shadow: 0 4px 14px rgba(37,99,235,0.7);">
+              <div id="runner-pulse-ring" style="position: absolute; width: 44px; height: 44px; border-radius: 50%; background: ${initRingBg}; transition: background 0.35s ease; animation: pulse 1.6s infinite;"></div>
+              <div id="runner-vehicle-rotator" style="transform: rotate(${Math.round(initialBearing)}deg); transition: transform 0.15s ease-out, background 0.35s ease, box-shadow 0.35s ease; display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; background: ${initOrbBg}; border-radius: 50%; border: 2.5px solid #ffffff; box-shadow: ${initOrbShadow};">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="#ffffff" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                   <polygon points="12 2 19 21 12 17 5 21 12 2" fill="#ffffff" />
                 </svg>
@@ -1025,7 +1719,7 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
           iconAnchor: [22, 22]
         });
 
-        const runner = window.L.marker(coords[0], { icon: runnerIcon, zIndexOffset: 2000 })
+        const runner = window.L.marker(coords[runnerInitIdx] || coords[0], { icon: runnerIcon, zIndexOffset: 2000 })
           .bindPopup('<b>🚗 Live Playhead Runner</b>')
           .addTo(markersGroupRef.current);
         runnerMarkerRef.current = runner;
@@ -1036,7 +1730,7 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
             if (coords.length === 1) {
               mapInstanceRef.current.setView(coords[0], 15);
             } else {
-              mapInstanceRef.current.fitBounds(coords, { padding: [50, 50], maxZoom: 16 });
+              mapInstanceRef.current.fitBounds(coords, { padding: [55, 55], maxZoom: 16 });
             }
             lastFitRouteKeyRef.current = `${fitKey}:${coords.length}`;
           }
@@ -1048,7 +1742,7 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
         }, 150);
       }
     }
-  }, [routeData]);
+  }, [routeData, effectiveTripFilter, routeSplitInfo]);
 
   // -------------------------------------------------------------
   // All-India State Clustered Counts
@@ -1248,7 +1942,10 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
             <input
               type="date"
               value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
+              onChange={(e) => {
+                setSelectedDate(e.target.value);
+                setRouteTripFilter('ALL');
+              }}
               style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 600, color: '#1e293b', outline: 'none' }}
             />
           </div>
@@ -1446,6 +2143,7 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
                             onClick={(e) => {
                               e.stopPropagation();
                               setSelectedUserId(emp.user_id);
+                              setRouteTripFilter('ALL');
                               if (typeof window !== 'undefined') {
                                 try {
                                   localStorage.setItem(`crm_last_field_exec_${selectedCompany}`, emp.user_id);
@@ -1519,6 +2217,13 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
                     <div style={{ background: '#ffffff', padding: '8px 10px', borderRadius: 8, border: '1px solid #e2e8f0' }}>
                       <div style={{ fontSize: 10, color: '#64748b', fontWeight: 600 }}>TOTAL DISTANCE</div>
                       <div style={{ fontSize: 16, fontWeight: 800, color: '#2563eb' }}>{routeData.totalKm} km</div>
+                      {routeSpeedStats.maxSpeed > 0 && (
+                        <div style={{ fontSize: 10, color: '#0f172a', fontWeight: 700, marginTop: 2, display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                          <span style={{ color: '#0284c7' }}>⚡ Avg: {routeSpeedStats.avgSpeed} km/h</span>
+                          <span style={{ color: '#94a3b8' }}>•</span>
+                          <span style={{ color: routeSpeedStats.maxSpeed >= 60 ? '#ea580c' : '#334155' }}>Top: {routeSpeedStats.maxSpeed} km/h</span>
+                        </div>
+                      )}
                       {routeData.offlineGapKm > 0 && (
                         <div style={{ fontSize: 9.5, color: '#c2410c', fontWeight: 600, marginTop: 2, lineHeight: 1.25 }}>
                           <span style={{ whiteSpace: 'nowrap' }}>Road: {routeData.trackedRoadKm ?? 0} km</span>{' '}
@@ -1584,9 +2289,106 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
                       </div>
                     </div>
                   </div>
+
+                  {/* Row 4: Clickable App & Permission Health Summary Chip */}
+                  {selectedDeviceHealth && (
+                    <button
+                      type="button"
+                      onClick={() => onOpenDeviceHealth?.()}
+                      style={{
+                        marginTop: 8,
+                        width: '100%',
+                        textAlign: 'left',
+                        background: selectedDeviceHealth.bg || '#f8fafc',
+                        border: `1px solid ${selectedDeviceHealth.border || '#cbd5e1'}`,
+                        borderRadius: 8,
+                        padding: '7px 10px',
+                        cursor: onOpenDeviceHealth ? 'pointer' : 'default',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 8
+                      }}
+                      title={selectedDeviceHealth.issueSummary || 'Inspect device permissions & APK version'}
+                    >
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 10, fontWeight: 800, color: selectedDeviceHealth.color || '#334155', display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                          {selectedDeviceHealth.status === 'HEALTHY' ? <ShieldCheck size={12} /> : <AlertTriangle size={12} />}
+                          <span>{selectedDeviceHealth.shortLabel || 'App Health'}</span>
+                          <span>•</span>
+                          <span>
+                            {selectedDeviceHealth.versionCode != null
+                              ? `APK v${selectedDeviceHealth.versionCode}`
+                              : selectedDeviceHealth.platform?.includes('Android')
+                                ? 'Old APK (v<=3)'
+                                : (selectedDeviceHealth.platform || 'No APK')}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: 10, color: '#475569', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {selectedDeviceHealth.locationMode === 'all_the_time'
+                            ? 'GPS: All the Time'
+                            : selectedDeviceHealth.locationMode === 'while_using'
+                              ? 'GPS: While Using Only'
+                              : selectedDeviceHealth.locationMode === 'denied'
+                                ? 'GPS: Denied'
+                                : selectedDeviceHealth.locationMode === 'browser'
+                                  ? 'Browser Only'
+                                  : 'Location: Pending'}
+                          {selectedDeviceHealth.batteryUnrestricted === false
+                            ? ' • Battery Restricted'
+                            : selectedDeviceHealth.batteryUnrestricted === true
+                              ? ' • Battery Unrestricted'
+                              : ''}
+                        </div>
+                      </div>
+                      {onOpenDeviceHealth && (
+                        <span style={{ fontSize: 10, fontWeight: 700, color: selectedDeviceHealth.color || '#1d4ed8', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                          Audit →
+                        </span>
+                      )}
+                    </button>
+                  )}
                 </div>
               );
             })()}
+
+            {/* Fallback Device Health Chip when employee has no route data yet */}
+            {!routeData && selectedDeviceHealth && (
+              <div style={{ padding: '10px 14px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                <button
+                  type="button"
+                  onClick={() => onOpenDeviceHealth?.()}
+                  style={{
+                    width: '100%',
+                    textAlign: 'left',
+                    background: selectedDeviceHealth.bg || '#ffffff',
+                    border: `1px solid ${selectedDeviceHealth.border || '#cbd5e1'}`,
+                    borderRadius: 8,
+                    padding: '7px 10px',
+                    cursor: onOpenDeviceHealth ? 'pointer' : 'default',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 8
+                  }}
+                >
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 10.5, fontWeight: 800, color: selectedDeviceHealth.color || '#334155', display: 'flex', alignItems: 'center', gap: 4 }}>
+                      {selectedDeviceHealth.status === 'HEALTHY' ? <ShieldCheck size={12} /> : <AlertTriangle size={12} />}
+                      <span>{selectedDeviceHealth.shortLabel || 'App Health'}</span>
+                    </div>
+                    <div style={{ fontSize: 10, color: '#475569', marginTop: 2 }}>
+                      {selectedDeviceHealth.issueSummary}
+                    </div>
+                  </div>
+                  {onOpenDeviceHealth && (
+                    <span style={{ fontSize: 10, fontWeight: 700, color: selectedDeviceHealth.color || '#1d4ed8', whiteSpace: 'nowrap' }}>
+                      Audit →
+                    </span>
+                  )}
+                </button>
+              </div>
+            )}
 
             {/* Chronological Stoppage & Visit Timeline */}
             <div style={{ padding: 14, flex: 1 }}>
@@ -1708,14 +2510,57 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
           </div>
 
           {/* Center Map & Video-Like Animated Playback Slider */}
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#f8fafc', position: 'relative', minHeight: 'calc(100vh - 220px)', height: '100%' }}>
+          <div
+            ref={mapFullscreenWrapperRef}
+            style={
+              isMapFullscreen
+                ? {
+                    position: 'fixed',
+                    inset: 0,
+                    zIndex: 99995,
+                    width: '100vw',
+                    height: '100vh',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    background: '#f8fafc'
+                  }
+                : {
+                    flex: 1,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    background: '#f8fafc',
+                    position: 'relative',
+                    minHeight: 'calc(100vh - 220px)',
+                    height: '100%'
+                  }
+            }
+          >
             {/* Interactive OpenStreetMap Leaflet Engine */}
-            <div style={{ flex: 1, position: 'relative', overflow: 'hidden', minHeight: 'calc(100vh - 280px)', height: '100%', width: '100%' }}>
+            <style>{`
+              .leaflet-tile-pane .crm-clean-light-tiles { filter: grayscale(92%) brightness(1.06) contrast(0.90); }
+              @keyframes pulse {
+                0% { transform: scale(0.92); opacity: 0.78; }
+                70% { transform: scale(1.42); opacity: 0; }
+                100% { transform: scale(1.42); opacity: 0; }
+              }
+              @keyframes crmBeaconPulse {
+                0% { transform: scale(0.85); opacity: 0.8; }
+                75% { transform: scale(1.65); opacity: 0; }
+                100% { transform: scale(1.65); opacity: 0; }
+              }
+              @keyframes crmChevronPop {
+                0% { opacity: 0; filter: drop-shadow(0 0 0 rgba(0,0,0,0)); }
+                100% { opacity: 1; filter: drop-shadow(0 2px 4px rgba(15,23,42,0.18)); }
+              }
+              .crm-chevron-badge { animation: crmChevronPop 0.35s ease-out both; transition: filter 0.18s ease, box-shadow 0.18s ease; }
+              .crm-chevron-marker:hover .crm-chevron-badge { box-shadow: 0 0 0 3px rgba(255,255,255,0.9), 0 4px 10px rgba(15,23,42,0.35) !important; }
+            `}</style>
+            <div style={{ flex: 1, position: 'relative', overflow: 'hidden', minHeight: isMapFullscreen ? 0 : 'calc(100vh - 280px)', height: '100%', width: '100%' }}>
               {/* Leaflet DOM Container */}
-              <div ref={mapContainerRef} style={{ width: '100%', height: '100%', minHeight: 'calc(100vh - 280px)', background: '#e2e8f0', zIndex: 1, position: 'relative' }} />
+              <div ref={mapContainerRef} style={{ width: '100%', height: '100%', minHeight: isMapFullscreen ? 0 : 'calc(100vh - 280px)', background: '#e2e8f0', zIndex: 1, position: 'relative' }} />
 
-              {/* Clean Map Loading / Snapping Overlay */}
-              {(!leafletReady || loadingRoute) && (
+              {/* Clean Map Loading Overlay (blocks only on very first cold load with zero cached route) */}
+              {(!leafletReady || (loadingRoute && !routeData)) && (
                 <div style={{
                   position: 'absolute',
                   top: 0,
@@ -1740,11 +2585,37 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
                     animation: 'spin 0.8s linear infinite'
                   }} />
                   <div style={{ fontSize: 13, fontWeight: 700, color: '#1e40af' }}>
-                    {!leafletReady ? 'Initializing 360° Interactive Radar Map...' : 'Snapping GPS Coordinates to Road Network (OSRM)...'}
+                    {!leafletReady ? 'Initializing 360° Interactive Radar Map...' : 'Loading Live Route...'}
                   </div>
                   <div style={{ fontSize: 11, color: '#64748b' }}>
                     Official Standard OpenStreetMap Navigation
                   </div>
+                </div>
+              )}
+
+              {/* Subtle Non-Blocking Sync Pill (when updating cached route or switching executive) */}
+              {leafletReady && ((loadingRoute && routeData) || syncingRoute) && (
+                <div style={{
+                  position: 'absolute',
+                  top: 14,
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  zIndex: 560,
+                  pointerEvents: 'none',
+                  background: 'rgba(255, 255, 255, 0.96)',
+                  border: '1px solid #bfdbfe',
+                  borderRadius: 999,
+                  padding: '5px 14px',
+                  boxShadow: '0 4px 12px rgba(37,99,235,0.16)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 7,
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: '#1d4ed8'
+                }}>
+                  <RefreshCw size={12} style={{ animation: 'spin 0.9s linear infinite' }} />
+                  <span>{loadingRoute ? 'Loading Selected Route...' : 'Syncing Live GPS...'}</span>
                 </div>
               )}
 
@@ -1779,7 +2650,7 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
                 <div style={{
                   position: 'absolute',
                   top: 14,
-                  right: 14,
+                  right: 68,
                   zIndex: 500,
                   background: 'rgba(255,255,255,0.96)',
                   padding: '8px 14px',
@@ -1798,32 +2669,329 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
                 </div>
               )}
 
-              {/* Top Overlay Badge with Speed & Time (Placed cleanly to the right of the Zoom +/- controls) */}
+              {/* Floating Right-Side Map Toolbar: Map Style, Recenter, Fullscreen & Estimate Route Toggle */}
+              {leafletReady && (
+                <div style={{
+                  position: 'absolute',
+                  top: 14,
+                  right: 14,
+                  zIndex: 550,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 8,
+                  alignItems: 'flex-end'
+                }}>
+                  {/* 1. Map Style Selector Button & Popover */}
+                  <div style={{ position: 'relative' }}>
+                    <button
+                      type="button"
+                      title="Switch Map Style (Street / Satellite / Light)"
+                      onClick={() => setShowMapStyleMenu(prev => !prev)}
+                      style={{
+                        width: 38,
+                        height: 38,
+                        borderRadius: 10,
+                        background: showMapStyleMenu || mapStyle !== 'street' ? '#eff6ff' : 'rgba(255,255,255,0.96)',
+                        border: showMapStyleMenu || mapStyle !== 'street' ? '1.5px solid #2563eb' : '1px solid #cbd5e1',
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'pointer',
+                        color: showMapStyleMenu || mapStyle !== 'street' ? '#2563eb' : '#334155'
+                      }}
+                    >
+                      <Layers size={18} />
+                    </button>
+
+                    {showMapStyleMenu && (
+                      <div style={{
+                        position: 'absolute',
+                        top: 0,
+                        right: 46,
+                        background: '#ffffff',
+                        borderRadius: 10,
+                        border: '1px solid #cbd5e1',
+                        boxShadow: '0 8px 24px rgba(0,0,0,0.14)',
+                        padding: 6,
+                        minWidth: 150,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 4
+                      }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', padding: '2px 8px', textTransform: 'uppercase' }}>
+                          Map Style
+                        </div>
+                        {Object.values(MAP_TILE_STYLES).map((st) => {
+                          const active = mapStyle === st.id;
+                          const IconComp = st.id === 'satellite' ? Globe : st.id === 'light' ? Sun : MapIcon;
+                          return (
+                            <button
+                              key={st.id}
+                              type="button"
+                              onClick={() => {
+                                setMapStyle(st.id);
+                                setShowMapStyleMenu(false);
+                              }}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                gap: 8,
+                                padding: '7px 10px',
+                                borderRadius: 7,
+                                border: 'none',
+                                background: active ? '#eff6ff' : 'transparent',
+                                color: active ? '#1d4ed8' : '#334155',
+                                fontSize: 12,
+                                fontWeight: active ? 700 : 600,
+                                cursor: 'pointer',
+                                textAlign: 'left'
+                              }}
+                            >
+                              <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                                <IconComp size={14} />
+                                {st.label}
+                              </span>
+                              {active && <Check size={13} color="#2563eb" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 2. Recenter & Fullscreen Group */}
+                  <div style={{
+                    background: 'rgba(255,255,255,0.96)',
+                    borderRadius: 10,
+                    border: '1px solid #cbd5e1',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+                    overflow: 'hidden',
+                    display: 'flex',
+                    flexDirection: 'column'
+                  }}>
+                    <button
+                      type="button"
+                      title="Recenter Route to Fit Screen"
+                      onClick={handleRecenterRoute}
+                      style={{
+                        width: 38,
+                        height: 38,
+                        border: 'none',
+                        borderBottom: '1px solid #e2e8f0',
+                        background: 'transparent',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'pointer',
+                        color: '#334155'
+                      }}
+                    >
+                      <LocateFixed size={17} />
+                    </button>
+                    <button
+                      type="button"
+                      title={isMapFullscreen ? 'Exit Fullscreen (Esc)' : 'Fullscreen Map'}
+                      onClick={handleToggleFullscreen}
+                      style={{
+                        width: 38,
+                        height: 38,
+                        border: 'none',
+                        background: isMapFullscreen ? '#eff6ff' : 'transparent',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'pointer',
+                        color: isMapFullscreen ? '#2563eb' : '#334155'
+                      }}
+                    >
+                      {isMapFullscreen ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
+                    </button>
+                  </div>
+
+                  {/* 3. See Estimate Route Toggle */}
+                  <button
+                    type="button"
+                    title={showEstimateRoute ? 'Hide Estimated Road Preview' : 'See Estimated Road Route Across Offline Gaps'}
+                    onClick={handleToggleEstimateRoute}
+                    style={{
+                      width: 38,
+                      height: 38,
+                      borderRadius: 10,
+                      background: showEstimateRoute ? '#f3e8ff' : 'rgba(255,255,255,0.96)',
+                      border: showEstimateRoute ? '1.5px solid #9333ea' : '1px solid #cbd5e1',
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      color: showEstimateRoute ? '#7e22ce' : '#334155'
+                    }}
+                  >
+                    {loadingEstimate ? (
+                      <RefreshCw size={17} style={{ animation: 'spin 1s linear infinite' }} />
+                    ) : (
+                      <Route size={18} />
+                    )}
+                  </button>
+                </div>
+              )}
+
+              {/* Estimate Route Floating Notice Badge (when toggled ON) */}
+              {showEstimateRoute && estimateSummary && (
+                <div style={{
+                  position: 'absolute',
+                  top: 56,
+                  left: 56,
+                  zIndex: 500,
+                  background: 'rgba(250, 245, 255, 0.96)',
+                  padding: '5px 11px',
+                  borderRadius: 8,
+                  border: '1px solid #d8b4fe',
+                  color: '#6b21a8',
+                  fontSize: 11,
+                  fontWeight: 700,
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6
+                }}>
+                  <Route size={13} color="#7e22ce" />
+                  {estimateSummary.noGaps ? (
+                    <span>No Offline Gaps Today • Actual Route Shown</span>
+                  ) : (
+                    <span>Estimated Gap Road: ~{estimateSummary.distanceKm} km (Preview Only)</span>
+                  )}
+                </div>
+              )}
+
+              {/* Top Overlay Badge with Speed, Time & Trip Phase */}
               {routeData?.polyline && routeData.polyline.length > 0 && (
-                <div style={{ position: 'absolute', top: 12, left: 56, zIndex: 500, background: 'rgba(255,255,255,0.96)', padding: '6px 14px', borderRadius: 8, border: '1px solid #cbd5e1', color: '#0f172a', fontSize: 12, fontWeight: 700, boxShadow: '0 2px 8px rgba(0,0,0,0.1)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ position: 'absolute', top: 12, left: 56, right: 64, maxWidth: 'fit-content', zIndex: 500, background: 'rgba(255,255,255,0.96)', padding: '6px 14px', borderRadius: 8, border: '1px solid #cbd5e1', color: '#0f172a', fontSize: 12, fontWeight: 700, boxShadow: '0 2px 8px rgba(0,0,0,0.1)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <span>🚗 Live Playhead:</span>
-                  <span style={{ color: currentTelemetry?.isOffline ? '#ea580c' : '#2563eb' }}>
+                  <span style={{ color: currentTelemetry?.isOffline ? '#ea580c' : currentTelemetry?.tripPhase === 'RETURN' ? '#db2777' : '#2563eb' }}>
                     {currentTelemetry?.speed != null ? currentTelemetry.speed : (routeData.polyline[playbackIndex]?.speed ?? 0)} km/h
                   </span>
                   <span style={{ color: '#64748b' }}>•</span>
                   <span>
                     {currentTelemetry?.time ? new Date(currentTelemetry.time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }) : (routeData.polyline[playbackIndex]?.time ? new Date(routeData.polyline[playbackIndex].time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }) : 'Start')}
                   </span>
+                  {routeSplitInfo.hasReturnTrip && (
+                    <span style={{
+                      marginLeft: 4,
+                      fontSize: 11,
+                      background: currentTelemetry?.tripPhase === 'RETURN' ? '#fdf2f8' : '#eff6ff',
+                      color: currentTelemetry?.tripPhase === 'RETURN' ? '#be185d' : '#1d4ed8',
+                      padding: '2px 8px',
+                      borderRadius: 12,
+                      border: currentTelemetry?.tripPhase === 'RETURN' ? '1px solid #fbcfe8' : '1px solid #bfdbfe',
+                      fontWeight: 700,
+                      transition: 'all 0.25s ease'
+                    }}>
+                      {currentTelemetry?.tripPhase === 'RETURN' ? '🩷 Return (Inward)' : '🔵 Going (Outward)'}
+                    </span>
+                  )}
                   {currentTelemetry?.isOffline ? (
-                    <span style={{ marginLeft: 6, fontSize: 11, background: '#fff7ed', color: '#c2410c', padding: '2px 8px', borderRadius: 12, border: '1px solid #fed7aa', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span style={{ marginLeft: 4, fontSize: 11, background: '#fff7ed', color: '#c2410c', padding: '2px 8px', borderRadius: 12, border: '1px solid #fed7aa', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
                       <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#ea580c' }}></span>
                       🟠 Offline Gap
                     </span>
                   ) : (
-                    <span style={{ marginLeft: 6, fontSize: 11, background: '#eff6ff', color: '#1d4ed8', padding: '2px 8px', borderRadius: 12, border: '1px solid #bfdbfe', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span style={{ marginLeft: 4, fontSize: 11, background: '#eff6ff', color: '#1d4ed8', padding: '2px 8px', borderRadius: 12, border: '1px solid #bfdbfe', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
                       <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#2563eb' }}></span>
                       🔵 Live Online
                     </span>
                   )}
                   {routeData?.isRoadSnapped && (
-                    <span style={{ marginLeft: 6, fontSize: 11, background: '#f8fafc', color: '#475569', padding: '2px 8px', borderRadius: 12, border: '1px solid #cbd5e1', fontWeight: 600 }}>
+                    <span style={{ marginLeft: 4, fontSize: 11, background: '#f8fafc', color: '#475569', padding: '2px 8px', borderRadius: 12, border: '1px solid #cbd5e1', fontWeight: 600 }}>
                       🛣️ Road-Snapped (OSRM)
                     </span>
+                  )}
+                  {routeSpeedStats.maxSpeed > 0 && (
+                    <span style={{ marginLeft: 4, fontSize: 11, background: '#f0f9ff', color: '#0369a1', padding: '2px 8px', borderRadius: 12, border: '1px solid #bae6fd', fontWeight: 700 }}>
+                      ⚡ Avg {routeSpeedStats.avgSpeed} • Top {routeSpeedStats.maxSpeed} km/h
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Bottom-Left Floating Interactive Trip Filter Pill Bar */}
+              {routeData?.polyline && routeData.polyline.length > 1 && (
+                <div style={{
+                  position: 'absolute',
+                  bottom: 16,
+                  left: 14,
+                  zIndex: 520,
+                  background: 'rgba(255, 255, 255, 0.96)',
+                  backdropFilter: 'blur(6px)',
+                  padding: 4,
+                  borderRadius: 10,
+                  border: '1px solid #cbd5e1',
+                  boxShadow: '0 4px 14px rgba(15,23,42,0.12)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4
+                }}>
+                  {routeSplitInfo.hasReturnTrip ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => handleSelectTripFilter('ALL')}
+                        style={{
+                          padding: '5px 10px',
+                          borderRadius: 7,
+                          border: 'none',
+                          background: effectiveTripFilter === 'ALL' ? '#0f172a' : 'transparent',
+                          color: effectiveTripFilter === 'ALL' ? '#ffffff' : '#475569',
+                          fontSize: 11,
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          transition: 'all 0.18s ease'
+                        }}
+                      >
+                        All Routes
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSelectTripFilter('GOING')}
+                        style={{
+                          padding: '5px 10px',
+                          borderRadius: 7,
+                          border: 'none',
+                          background: effectiveTripFilter === 'GOING' ? '#2563eb' : 'transparent',
+                          color: effectiveTripFilter === 'GOING' ? '#ffffff' : '#1e40af',
+                          fontSize: 11,
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          transition: 'all 0.18s ease'
+                        }}
+                      >
+                        Going Only (━━➤)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSelectTripFilter('RETURN')}
+                        style={{
+                          padding: '5px 10px',
+                          borderRadius: 7,
+                          border: 'none',
+                          background: effectiveTripFilter === 'RETURN' ? '#ec4899' : 'transparent',
+                          color: effectiveTripFilter === 'RETURN' ? '#ffffff' : '#be185d',
+                          fontSize: 11,
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          transition: 'all 0.18s ease'
+                        }}
+                      >
+                        Return Only (╍╍◀)
+                      </button>
+                    </>
+                  ) : (
+                    <div style={{ padding: '4px 10px', fontSize: 11, fontWeight: 700, color: '#1d4ed8', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ width: 14, height: 3, background: '#2563eb', borderRadius: 2, display: 'inline-block' }}></span>
+                      <span>Single Outward Route (No Return Yet)</span>
+                    </div>
                   )}
                 </div>
               )}
@@ -1845,12 +3013,19 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
                   alignItems: 'center',
                   gap: 12,
                   fontSize: 11,
-                  fontWeight: 600
+                  fontWeight: 600,
+                  flexWrap: 'wrap'
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                     <span style={{ width: 14, height: 4, background: '#2563eb', borderRadius: 2, display: 'inline-block' }}></span>
-                    <span style={{ color: '#1e293b' }}>Live Online</span>
+                    <span style={{ color: '#1e293b' }}>{routeSplitInfo.hasReturnTrip ? 'Going (Outward)' : 'Live Online'}</span>
                   </div>
+                  {routeSplitInfo.hasReturnTrip && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <span style={{ width: 14, height: 0, borderTop: '3px dashed #ec4899', display: 'inline-block' }}></span>
+                      <span style={{ color: '#be185d' }}>Return (Inward)</span>
+                    </div>
+                  )}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                     <span style={{ width: 14, height: 4, background: '#d97706', borderRadius: 2, display: 'inline-block' }}></span>
                     <span style={{ color: '#1e293b' }}>Offline Recorded</span>
@@ -1859,6 +3034,12 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
                     <span style={{ width: 14, height: 0, borderTop: '3px dashed #ea580c', display: 'inline-block' }}></span>
                     <span style={{ color: '#1e293b' }}>Signal Lost Gap</span>
                   </div>
+                  {showEstimateRoute && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <span style={{ width: 14, height: 0, borderTop: '3px dotted #9333ea', display: 'inline-block' }}></span>
+                      <span style={{ color: '#6b21a8' }}>Estimated Road</span>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1877,10 +3058,18 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
                 type="button"
                 onClick={() => {
                   if (!isPlaying && routeData?.polyline) {
-                    if (progressRef.current >= routeData.polyline.length - 1) {
-                      progressRef.current = 0;
-                      setPlaybackIndex(0);
-                      updateRunnerPosition(0, routeData.polyline);
+                    const legStartIdx =
+                      effectiveTripFilter === 'RETURN' && routeSplitInfo.hasReturnTrip
+                        ? routeSplitInfo.turnaroundIdx
+                        : 0;
+                    const legEndIdx =
+                      effectiveTripFilter === 'GOING' && routeSplitInfo.hasReturnTrip
+                        ? routeSplitInfo.turnaroundIdx
+                        : routeData.polyline.length - 1;
+                    if (progressRef.current >= legEndIdx || progressRef.current < legStartIdx) {
+                      progressRef.current = legStartIdx;
+                      setPlaybackIndex(legStartIdx);
+                      updateRunnerPosition(legStartIdx, routeData.polyline);
                     }
                   }
                   setIsPlaying(!isPlaying);
@@ -1889,14 +3078,15 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
                   width: 40,
                   height: 40,
                   borderRadius: '50%',
-                  background: '#2563eb',
+                  background: effectiveTripFilter === 'RETURN' ? '#ec4899' : '#2563eb',
                   border: 'none',
                   color: '#ffffff',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   cursor: 'pointer',
-                  boxShadow: '0 2px 8px rgba(37,99,235,0.3)'
+                  boxShadow: effectiveTripFilter === 'RETURN' ? '0 2px 10px rgba(236,72,153,0.35)' : '0 2px 8px rgba(37,99,235,0.3)',
+                  transition: 'background 0.25s ease'
                 }}
               >
                 {isPlaying ? <Pause size={18} /> : <Play size={18} style={{ marginLeft: 2 }} />}
@@ -1905,11 +3095,15 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
               <button
                 type="button"
                 onClick={() => {
-                  progressRef.current = 0;
-                  setPlaybackIndex(0);
+                  const legStartIdx =
+                    effectiveTripFilter === 'RETURN' && routeSplitInfo.hasReturnTrip
+                      ? routeSplitInfo.turnaroundIdx
+                      : 0;
+                  progressRef.current = legStartIdx;
+                  setPlaybackIndex(legStartIdx);
                   setIsPlaying(false);
                   if (routeData?.polyline) {
-                    updateRunnerPosition(0, routeData.polyline);
+                    updateRunnerPosition(legStartIdx, routeData.polyline);
                   }
                 }}
                 style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', display: 'flex', alignItems: 'center' }}

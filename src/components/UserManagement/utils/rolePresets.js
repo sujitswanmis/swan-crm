@@ -51,7 +51,8 @@ export const ROLE_PRESETS = [
           mobile_dashboard: { view: true },
           task_manager: { view: true },
           form_studio: { view: true },
-          live_radar: { view: true }
+          live_radar: { view: true },
+          device_health: { view: true }
         }
       },
       checklist: {
@@ -194,7 +195,8 @@ export const ROLE_PRESETS = [
           mobile_dashboard: { view: true },
           task_manager: { view: true },
           form_studio: { view: true },
-          live_radar: { view: true }
+          live_radar: { view: true },
+          device_health: { view: true }
         }
       },
       checklist: {
@@ -622,7 +624,8 @@ export const ROLE_PRESETS = [
           mobile_dashboard: { view: false },
           task_manager: { view: false },
           form_studio: { view: false },
-          live_radar: { view: false }
+          live_radar: { view: false },
+          device_health: { view: false }
         }
       },
       checklist: {

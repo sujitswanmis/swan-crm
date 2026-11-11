@@ -701,8 +701,9 @@ export async function getAllTenantAttendancePolicies() {
  * Helper to match company / workspace branch
  */
 function matchesCompany(userComp, targetCompany) {
-  if (!targetCompany || targetCompany.toLowerCase() === 'all') return true;
+  if (!targetCompany) return true;
   const target = targetCompany.toLowerCase().trim();
+  if (target === 'all' || target === 'all companies' || target === 'default') return true;
   const uComp = (userComp || '').toLowerCase().trim();
   if (target === 'nsmlr') return uComp.includes('nsmlr');
   if (target === 'nstlp' || target.includes('nstl')) return uComp.includes('nstl');
@@ -2730,6 +2731,7 @@ export async function getTeamMonthlyMatrix({
   const adminClient = getAdminClient();
   const targetYear = parseInt(year, 10);
   const targetMonth = parseInt(month, 10);
+  const effectiveTenantId = resolveTenantId(tenantId, company);
 
   const daysInMonth = new Date(targetYear, targetMonth, 0).getDate();
   const startDateStr = `${targetYear}-${String(targetMonth).padStart(2, '0')}-01`;
@@ -2752,8 +2754,8 @@ export async function getTeamMonthlyMatrix({
           if (u.is_approved !== true) return false;
           // Must not be a customer
           if (u.role === 'customer') return false;
-          const status = u.module_access?.emp_status;
-          return status !== 'InActive' && status !== 'Terminated' && status !== 'Resigned' && status !== 'Trash' && status !== 'Draft';
+          const status = String(u.emp_status || u.module_access?.emp_status || 'Active').toLowerCase();
+          return !['inactive', 'in_active', 'terminated', 'resigned', 'trash', 'draft'].includes(status);
         })
         .map(u => ({
           user_id: u.user_id,
@@ -2777,7 +2779,7 @@ export async function getTeamMonthlyMatrix({
     const { data, error } = await adminClient
       .from('attendance_records')
       .select('*')
-      .eq('tenant_id', tenantId)
+      .eq('tenant_id', effectiveTenantId)
       .gte('attendance_date', startDateStr)
       .lte('attendance_date', endDateStr);
 
@@ -2792,7 +2794,7 @@ export async function getTeamMonthlyMatrix({
 
   const local = await getFallbackData();
   const localMonthRecs = (local.records || []).filter(r => {
-    if ((r.tenant_id || DEFAULT_TENANT_ID) !== tenantId) return false;
+    if ((r.tenant_id || DEFAULT_TENANT_ID) !== effectiveTenantId) return false;
     if (r.attendance_date < startDateStr || r.attendance_date > endDateStr) return false;
     if (r.user_id && approvedUserIds.has(r.user_id)) return true;
     if (r.email && approvedUserEmails.has((r.email || '').toLowerCase())) return true;
@@ -2869,14 +2871,19 @@ export async function getTeamMonthlyMatrix({
   } catch {}
 
   // Load approved leaves for this month
-  const localLeaves = await readLeaveData(effectiveTenantId);
-  const allLeaveReqs = Array.isArray(localLeaves?.requests) ? localLeaves.requests : [];
-  const approvedLeaves = allLeaveReqs.filter(r => r.status === 'APPROVED');
+  let approvedLeaves = [];
+  try {
+    const localLeaves = await readLeaveData(effectiveTenantId);
+    const allLeaveReqs = Array.isArray(localLeaves?.requests) ? localLeaves.requests : [];
+    approvedLeaves = allLeaveReqs.filter(r => r.status === 'APPROVED');
+  } catch (e) {
+    console.warn('Error reading leave data in monthly matrix:', e);
+  }
   const leavesByEmpDate = new Map();
 
   approvedLeaves.forEach(l => {
     const lEmail = (l.email || '').toLowerCase();
-    if (l.tenant_id !== effectiveTenantId) return;
+    if (l.tenant_id && l.tenant_id !== effectiveTenantId) return;
     const start = new Date(`${l.from_date}T00:00:00+05:30`).getTime();
     const end = new Date(`${l.to_date}T00:00:00+05:30`).getTime();
     if (!Number.isFinite(start) || !Number.isFinite(end) || end - start > 366 * LEAVE_DAY_MS) return;
