@@ -21,6 +21,8 @@ import {
   ConsoleCheckInWorkspace,
   ConsoleCompletedVisitsView,
   ConsoleHeader,
+  getTaskInstructions,
+  getTaskStageInfo,
 } from './FieldExecutiveConsoleUI';
 import styles from './FieldExecutiveConsole.module.css';
 
@@ -201,7 +203,13 @@ export default function FieldMobileDashboard({
             setUserLng(session.userLng || null);
             setConnectivityMode(session.connectivityMode || 'PHYSICAL_VISIT');
             setActivePipeline(session.activePipeline === 'PARTY_MASTER' ? 'ORDER_DELIVERY' : (session.activePipeline || 'LEAD_DATA'));
-            setSelectedTask(session.taskId ? { id: session.taskId } : null);
+            setSelectedTask(session.taskId ? {
+              id: session.taskId,
+              task_code: session.taskCode || null,
+              taskDescription: session.taskDescription || '',
+              taskStage: session.taskStage || '',
+              taskStageLabel: session.taskStageLabel || ''
+            } : null);
             if (session.leadStage) setLeadStage(session.leadStage);
             if (session.orderDeliveryStage) setOrderDeliveryStage(session.orderDeliveryStage);
             if (session.workOutcome) setWorkOutcome(session.workOutcome);
@@ -229,14 +237,19 @@ export default function FieldMobileDashboard({
             setLeadId(task.lead_id || null);
             setPartyLat(task.party_lat || null);
             setPartyLng(task.party_lng || null);
-            setSelectedTask({ id: task.id });
+            setSelectedTask(task);
             setActivePipeline(resolvedPipeline);
             setElapsedMinutes(Math.max(1, Math.floor((Date.now() - new Date(startTime).getTime()) / 60000)));
             setActiveTab('ACTIVE_VISIT');
 
+            const activeStageInfo = getTaskStageInfo(task);
             try {
               localStorage.setItem('field_active_visit', JSON.stringify({
                 taskId: task.id,
+                taskCode: task.task_code || null,
+                taskDescription: getTaskInstructions(task),
+                taskStage: activeStageInfo?.rawValue || '',
+                taskStageLabel: activeStageInfo?.label || '',
                 activeCheckInTime: startTime,
                 partyName: task.party_name,
                 partyPhone: task.party_phone,
@@ -456,8 +469,31 @@ export default function FieldMobileDashboard({
     return () => window.removeEventListener('spc_mobile_gps_fix', handleGlobalGpsFix);
   }, []);
 
+  const applyTaskPipelineDefaults = useCallback((task) => {
+    if (!task) return;
+    const typeText = String(task.task_type || '');
+    const stageInfo = getTaskStageInfo(task);
+    if (typeText.includes('Order')) {
+      setActivePipeline('ORDER_DELIVERY');
+      if (stageInfo?.rawValue && ORDER_DELIVERY_STAGES.includes(stageInfo.rawValue)) {
+        setOrderDeliveryStage(stageInfo.rawValue);
+      }
+    } else if (typeText.includes('Complaint')) {
+      setActivePipeline('COMPLAINT_SERVICE');
+      setWorkOutcome('WORK_DONE');
+    } else {
+      setActivePipeline('LEAD_DATA');
+      if (task.form_details?.lead_status) {
+        setLeadStage(task.form_details.lead_status);
+      } else if (stageInfo?.rawValue && /^\d+;\d+>/.test(stageInfo.rawValue)) {
+        setLeadStage(stageInfo.rawValue);
+      }
+    }
+  }, []);
+
   const handleSelectEntity = useCallback((entity) => {
-    setSelectedTask(entity.task_id ? entity : (entity.task_code || entity.assigned_to_user_id ? entity : null));
+    const resolvedTask = entity.task_id ? entity : (entity.task_code || entity.assigned_to_user_id ? entity : null);
+    setSelectedTask(resolvedTask);
     setPartyName(entity.party_name);
     setPartyPhone(entity.party_phone || '');
     setPartyAddress(entity.party_address || '');
@@ -467,19 +503,17 @@ export default function FieldMobileDashboard({
     setIsManualEntry(false);
     fetchLiveGPS();
 
-    if (entity.current_stage) {
+    if (entity.current_stage && selectedModule !== 'FIELD_TASK') {
       setLeadStage(entity.current_stage);
     }
     if (selectedModule === 'PARTY_MASTER') {
       setActivePipeline('ORDER_DELIVERY');
     } else if (selectedModule === 'FIELD_TASK') {
-      if (entity.task_type && entity.task_type.includes('Order')) setActivePipeline('ORDER_DELIVERY');
-      else if (entity.task_type && entity.task_type.includes('Complaint')) setActivePipeline('COMPLAINT_SERVICE');
-      else setActivePipeline('LEAD_DATA');
+      applyTaskPipelineDefaults(entity);
     } else {
       setActivePipeline('LEAD_DATA');
     }
-  }, [selectedModule, fetchLiveGPS]);
+  }, [selectedModule, fetchLiveGPS, applyTaskPipelineDefaults]);
 
   const handleSelectTask = useCallback((task) => {
     setSelectedTask(task);
@@ -491,17 +525,9 @@ export default function FieldMobileDashboard({
     setPartyLng(task.party_lng ? Number(task.party_lng) : null);
     setIsManualEntry(false);
     fetchLiveGPS();
-
-    if (task.task_type && task.task_type.includes('Order')) {
-      setActivePipeline('ORDER_DELIVERY');
-    } else if (task.task_type && task.task_type.includes('Complaint')) {
-      setActivePipeline('COMPLAINT_SERVICE');
-      setWorkOutcome('WORK_DONE');
-    } else {
-      setActivePipeline('LEAD_DATA');
-    }
+    applyTaskPipelineDefaults(task);
     setMainView('CHECK_IN');
-  }, [fetchLiveGPS]);
+  }, [fetchLiveGPS, applyTaskPipelineDefaults]);
 
   const handleAttendanceGateClick = useCallback(() => {
     alert('Attendance Punch-In Required: Please mark today\'s Smart Attendance before starting a field visit.');
@@ -551,12 +577,24 @@ export default function FieldMobileDashboard({
     if (networkOnline) {
       const res = await performCheckIn(payload);
       if (res.success) {
+        const resolvedTaskCode = res.task_code || selectedTask?.task_code || null;
         setActiveCheckInTime(res.check_in_time);
-        if (res.task_id) setSelectedTask({ id: res.task_id });
+        if (res.task_id || resolvedTaskCode) {
+          setSelectedTask(prev => ({
+            ...(prev || {}),
+            ...(res.task_id ? { id: res.task_id } : {}),
+            ...(resolvedTaskCode ? { task_code: resolvedTaskCode } : {}),
+          }));
+        }
         setActiveTab('ACTIVE_VISIT');
+        const selectedStageInfo = getTaskStageInfo(selectedTask);
         try {
           localStorage.setItem('field_active_visit', JSON.stringify({
             taskId: res.task_id || selectedTask?.id || null,
+            taskCode: resolvedTaskCode,
+            taskDescription: getTaskInstructions(selectedTask),
+            taskStage: selectedStageInfo?.rawValue || '',
+            taskStageLabel: selectedStageInfo?.label || '',
             activeCheckInTime: res.check_in_time,
             partyName,
             partyPhone,
@@ -585,9 +623,14 @@ export default function FieldMobileDashboard({
       setActiveCheckInTime(offlineTime);
       setActiveTab('ACTIVE_VISIT');
       refreshPendingQueue();
+      const offlineStageInfo = getTaskStageInfo(selectedTask);
       try {
         localStorage.setItem('field_active_visit', JSON.stringify({
           taskId: selectedTask?.id || null,
+          taskCode: selectedTask?.task_code || null,
+          taskDescription: getTaskInstructions(selectedTask),
+          taskStage: offlineStageInfo?.rawValue || '',
+          taskStageLabel: offlineStageInfo?.label || '',
           activeCheckInTime: offlineTime,
           partyName,
           partyPhone,
@@ -925,6 +968,10 @@ export default function FieldMobileDashboard({
           partyName={partyName}
           elapsedMinutes={elapsedMinutes}
           connectivityMode={connectivityMode}
+          taskCode={selectedTask?.task_code || ''}
+          taskDescription={getTaskInstructions(selectedTask)}
+          taskStage={getTaskStageInfo(selectedTask)?.rawValue || ''}
+          taskStageLabel={getTaskStageInfo(selectedTask)?.label || ''}
           pipelines={PIPELINES}
           activePipeline={activePipeline}
           onPipelineChange={setActivePipeline}

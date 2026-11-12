@@ -59,6 +59,90 @@ export function formatConsoleIdentity(userName = '', company = '', userEmail = '
   return parts.join(' · ') || 'Field Executive Workspace';
 }
 
+export function getTaskInstructions(task) {
+  if (!task || typeof task !== 'object') return '';
+  const raw =
+    task.taskDescription ||
+    task.form_details?.description ||
+    task.form_details?.issue_description ||
+    task.description ||
+    '';
+  return String(raw || '').trim();
+}
+
+export function getTaskStageInfo(task) {
+  if (!task || typeof task !== 'object') return null;
+  const rawValue =
+    task.taskStage ||
+    task.form_details?.task_stage ||
+    task.form_details?.lead_status ||
+    task.form_details?.lead_status_at_assign ||
+    '';
+  const cleanValue = String(rawValue || '').trim();
+  if (!cleanValue) return null;
+  const label = String(
+    task.taskStageLabel ||
+    task.form_details?.task_stage_label ||
+    (task.form_details?.lead_status || task.form_details?.lead_status_at_assign ? 'Lead Status' : 'Stage')
+  ).trim();
+  return {
+    label,
+    rawValue: cleanValue,
+    displayValue: formatReadableStage(cleanValue) || cleanValue,
+  };
+}
+
+function TaskStageBadge({ info }) {
+  if (!info || !info.displayValue) return null;
+  return (
+    <div style={{
+      marginTop: 6,
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 5,
+      padding: '3px 8px',
+      borderRadius: 6,
+      background: '#f0f9ff',
+      border: '1px solid #bae6fd',
+      color: '#0369a1',
+      fontSize: 11.5,
+      fontWeight: 600,
+      maxWidth: '100%',
+      flexWrap: 'wrap',
+    }}>
+      <span>{info.label}:</span>
+      <strong style={{ color: '#0c4a6e' }}>{info.displayValue}</strong>
+    </div>
+  );
+}
+
+function TaskInstructionsBox({ text, compact = false }) {
+  const clean = String(text || '').trim();
+  if (!clean) return null;
+  return (
+    <div style={{
+      marginTop: compact ? 6 : 8,
+      padding: compact ? '6px 8px' : '8px 10px',
+      borderRadius: 7,
+      background: '#fffbeb',
+      border: '1px solid #fde68a',
+      color: '#78350f',
+      fontSize: compact ? 11.5 : 12,
+      lineHeight: 1.45,
+      whiteSpace: 'pre-wrap',
+      display: 'flex',
+      alignItems: 'flex-start',
+      gap: 6,
+    }}>
+      <FileText size={compact ? 12 : 13} color="#b45309" style={{ flexShrink: 0, marginTop: 2 }} aria-hidden="true" />
+      <div style={{ minWidth: 0 }}>
+        <strong style={{ color: '#92400e', fontWeight: 700 }}>Instructions: </strong>
+        <span>{clean}</span>
+      </div>
+    </div>
+  );
+}
+
 export function formatVisitTimeIST(value) {
   if (!value) return '--:--';
   const d = new Date(value);
@@ -227,6 +311,14 @@ export const AttendancePolicyBanner = memo(function AttendancePolicyBanner({ att
   return null;
 });
 
+const PRIORITY_BADGE_MAP = {
+  CRITICAL: { tone: 'danger', label: '🔴 CRITICAL' },
+  URGENT: { tone: 'urgent', label: '🟠 URGENT' },
+  HIGH: { tone: 'warning', label: '🟡 HIGH' },
+  MEDIUM: { tone: 'accent', label: '🔵 MEDIUM' },
+  LOW: { tone: 'healthy', label: '🟢 LOW' },
+};
+
 export const ConsoleAssignedTasksView = memo(function ConsoleAssignedTasksView({
   tasks,
   loadingTasks,
@@ -279,7 +371,7 @@ export const ConsoleAssignedTasksView = memo(function ConsoleAssignedTasksView({
               ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date(task.scheduled_start_time))
               : '';
             const isToday = Boolean(schedIST && schedIST === todayIST);
-            const priorityTone = task.priority === 'URGENT' ? 'danger' : task.priority === 'HIGH' ? 'warning' : 'muted';
+            const priorityMeta = PRIORITY_BADGE_MAP[String(task.priority || 'MEDIUM').toUpperCase()] || PRIORITY_BADGE_MAP.MEDIUM;
 
             return (
               <article key={task.id} className={styles.taskCard}>
@@ -287,7 +379,7 @@ export const ConsoleAssignedTasksView = memo(function ConsoleAssignedTasksView({
                   <div className={styles.taskMetaRow}>
                     <div className={styles.badgeGroup}>
                       <span className={styles.pill} data-tone="accent">{task.task_code || 'TASK'}</span>
-                      <span className={styles.pill} data-tone={priorityTone}>{task.priority || 'MEDIUM'}</span>
+                      <span className={styles.pill} data-tone={priorityMeta.tone}>{priorityMeta.label}</span>
                     </div>
                     <span className={styles.pill} data-tone={task.status === 'IN_PROGRESS' ? 'warning' : 'healthy'}>
                       {task.status || 'SCHEDULED'}
@@ -326,6 +418,10 @@ export const ConsoleAssignedTasksView = memo(function ConsoleAssignedTasksView({
                       </span>
                     )}
                   </div>
+
+                  <TaskStageBadge info={getTaskStageInfo(task)} />
+
+                  <TaskInstructionsBox text={getTaskInstructions(task)} />
 
                   {visitedToday && (
                     <div className={styles.entityBadges}>
@@ -515,6 +611,8 @@ export const ConsoleCheckInWorkspace = memo(function ConsoleCheckInWorkspace({
                         )}
                       </div>
                     )}
+                    <TaskStageBadge info={getTaskStageInfo(item)} />
+                    <TaskInstructionsBox text={getTaskInstructions(item)} compact />
                   </div>
 
                   <button type="button" className={styles.selectBtn} tabIndex={-1}>
@@ -552,11 +650,18 @@ export const ConsoleCheckInWorkspace = memo(function ConsoleCheckInWorkspace({
                 Pipeline: {activePipeline.replace('_', ' ')}
               </span>
               {selectedTask?.task_code && (
-                <span className={styles.pill} data-tone="healthy">
-                  Task: {selectedTask.task_code}
+                <span
+                  className={styles.pill}
+                  data-tone={String(selectedTask.task_code).toUpperCase().startsWith('CHK-') ? 'healthy' : 'accent'}
+                >
+                  {String(selectedTask.task_code).toUpperCase().startsWith('CHK-')
+                    ? `Self Check-In: ${selectedTask.task_code}`
+                    : `Task: ${selectedTask.task_code}`}
                 </span>
               )}
             </div>
+            <TaskStageBadge info={getTaskStageInfo(selectedTask)} />
+            <TaskInstructionsBox text={getTaskInstructions(selectedTask)} />
           </div>
         ) : isManualEntry ? (
           <div className={styles.manualEntryStack}>
@@ -784,6 +889,10 @@ export const ConsoleActiveVisitView = memo(function ConsoleActiveVisitView({
   partyName,
   elapsedMinutes,
   connectivityMode,
+  taskCode = '',
+  taskDescription = '',
+  taskStage = '',
+  taskStageLabel = '',
   pipelines,
   activePipeline,
   onPipelineChange,
@@ -821,7 +930,9 @@ export const ConsoleActiveVisitView = memo(function ConsoleActiveVisitView({
     <div>
       <div className={styles.activeVisitBanner}>
         <div>
-          <span style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: 0.7, opacity: 0.85 }}>Visit In Progress</span>
+          <span style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: 0.7, opacity: 0.85 }}>
+            Visit In Progress{taskCode ? ` · ${taskCode}` : ''}
+          </span>
           <div style={{ fontSize: 16, fontWeight: 700 }}>{partyName}</div>
           <div style={{ fontSize: 12, opacity: 0.9 }}>
             Duration: <strong>{elapsedMinutes} mins</strong> · {String(connectivityMode || '').replace('_', ' ')}
@@ -834,6 +945,15 @@ export const ConsoleActiveVisitView = memo(function ConsoleActiveVisitView({
           Jump to Check-Out
         </button>
       </div>
+
+      {(taskStage || taskDescription) && (
+        <div style={{ marginBottom: 12 }}>
+          {taskStage && (
+            <TaskStageBadge info={getTaskStageInfo({ taskStage, taskStageLabel })} />
+          )}
+          <TaskInstructionsBox text={taskDescription} />
+        </div>
+      )}
 
       <div className={styles.checkoutStack} id="checkout-output-section">
         <section className={styles.card}>

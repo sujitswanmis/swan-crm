@@ -857,9 +857,15 @@
 }
 
 .pill[data-tone='warning'] {
-  background: #fffbeb;
-  border-color: #fde68a;
-  color: #b45309;
+  background: #fefce8;
+  border-color: #fef08a;
+  color: #a16207;
+}
+
+.pill[data-tone='urgent'] {
+  background: #fff7ed;
+  border-color: #fed7aa;
+  color: #ea580c;
 }
 
 .pill[data-tone='danger'] {

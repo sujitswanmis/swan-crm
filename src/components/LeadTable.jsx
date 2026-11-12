@@ -27,6 +27,7 @@ import { getLeadRuntimeProfile, getMobileLeadPage, createLeadRowReader } from '@
 import { getPrimaryClaimAssignees, getLeadStageAccess,
   getPrimaryLeadHandoff, canClaimPrimaryTeamLead } from '@/utils/reportingHierarchy';
 import { claimPrimaryReportingLead } from '@/app/actions/reportingLeadClaims';
+import { getLeadFieldAssignmentSummaries } from '@/app/actions/fieldTasks';
 
 const LeadFormModal = dynamic(() => import('./LeadFormModal'));
 const LeadProfilePanel = dynamic(() => import('./LeadProfilePanel'));
@@ -421,15 +422,20 @@ const LeadAssigneeCell = React.memo(({ info }) => {
 
 const FieldPersonAssignCell = React.memo(({ info }) => {
   const lead = info.row.original;
-  const fieldPerson = lead.field_person_name || lead.field_person || null;
-  const visitMode = lead.field_connectivity_mode || lead.connectivity_mode || null;
-  const isFlagged = Boolean(lead.is_geofence_flagged);
+  const hydrated = info.table.options.meta?.fieldAssignMap?.[lead.id] || null;
+  const fieldPerson = hydrated?.field_person_name || lead.field_person_name || lead.field_person || null;
+  const visitMode = hydrated?.field_connectivity_mode || lead.field_connectivity_mode || lead.connectivity_mode || null;
+  const taskCode = hydrated?.field_task_code || lead.field_task_code || null;
+  const taskStatus = String(hydrated?.field_task_status || lead.field_task_status || '').toUpperCase();
+  const isFlagged = Boolean(hydrated ? hydrated.is_geofence_flagged : lead.is_geofence_flagged);
+  const totalTasksCount = Number(hydrated?.field_tasks_count ?? lead.field_tasks_count ?? 0);
+  const activeTasksCount = Number(hydrated?.field_active_tasks_count ?? lead.field_active_tasks_count ?? 0);
 
   const onOpenHistory = () => {
     info.table.options.meta?.onOpenProfile(lead, 'history');
   };
 
-  if (!fieldPerson && !visitMode) {
+  if (!fieldPerson && !visitMode && !taskCode) {
     return (
       <button
         type="button"
@@ -450,35 +456,69 @@ const FieldPersonAssignCell = React.memo(({ info }) => {
     );
   }
 
+  let statusBadge = { bg: '#fef3c7', color: '#b45309', label: '⏳ Scheduled' };
+  if (isFlagged) {
+    statusBadge = { bg: '#fee2e2', color: '#dc2626', label: '🚨 Fake / Flagged' };
+  } else if (visitMode === 'PHYSICAL_VISIT' || visitMode === 'Physical') {
+    statusBadge = { bg: '#dcfce7', color: '#166534', label: '🟢 Physical Visit' };
+  } else if (visitMode === 'TELEPHONIC_CALL' || visitMode === 'Telephonic') {
+    statusBadge = { bg: '#eff6ff', color: '#1d4ed8', label: '🔵 Telephonic' };
+  } else if (visitMode === 'WHATSAPP_CHAT' || visitMode === 'WhatsApp') {
+    statusBadge = { bg: '#ecfdf5', color: '#047857', label: '💬 WhatsApp' };
+  } else if (taskStatus === 'IN_PROGRESS') {
+    statusBadge = { bg: '#fef3c7', color: '#b45309', label: '🚗 In Progress' };
+  } else if (taskStatus === 'COMPLETED') {
+    statusBadge = { bg: '#dcfce7', color: '#166534', label: '✅ Completed' };
+  } else if (taskStatus === 'CANCELLED') {
+    statusBadge = { bg: '#fee2e2', color: '#dc2626', label: '❌ Cancelled' };
+  }
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'flex-start' }}>
+    <div
+      onClick={onOpenHistory}
+      title={taskCode ? `Task ${taskCode} • Click to view or assign field visit` : 'Click to view or assign field visit'}
+      style={{ display: 'flex', flexDirection: 'column', gap: '3px', alignItems: 'flex-start', cursor: 'pointer' }}
+    >
       <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)' }}>
         {fieldPerson || 'Field Person'}
       </span>
-      {isFlagged ? (
-        <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '1px 5px', borderRadius: '4px', background: '#fee2e2', color: '#dc2626' }}>
-          🚨 Fake / Flagged
+      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
+        <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '1px 5px', borderRadius: '4px', background: statusBadge.bg, color: statusBadge.color }}>
+          {statusBadge.label}
         </span>
-      ) : visitMode === 'PHYSICAL_VISIT' || visitMode === 'Physical' ? (
-        <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '1px 5px', borderRadius: '4px', background: '#dcfce7', color: '#166534' }}>
-          🟢 Physical Visit
-        </span>
-      ) : visitMode === 'TELEPHONIC_CALL' || visitMode === 'Telephonic' ? (
-        <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '1px 5px', borderRadius: '4px', background: '#eff6ff', color: '#1d4ed8' }}>
-          🔵 Telephonic
-        </span>
-      ) : visitMode === 'WHATSAPP_CHAT' || visitMode === 'WhatsApp' ? (
-        <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '1px 5px', borderRadius: '4px', background: '#ecfdf5', color: '#047857' }}>
-          💬 WhatsApp
-        </span>
-      ) : (
-        <span style={{ fontSize: '0.68rem', fontWeight: 600, padding: '1px 5px', borderRadius: '4px', background: '#fef3c7', color: '#b45309' }}>
-          ⏳ Scheduled
-        </span>
-      )}
+        {taskCode && (() => {
+          const isSelfChk = String(taskCode).toUpperCase().startsWith('CHK-');
+          return (
+            <span
+              title={isSelfChk ? 'Self Check-In Visit ID' : 'Assigned Field Task ID'}
+              style={{
+                fontSize: '0.67rem',
+                fontWeight: 700,
+                fontFamily: 'monospace',
+                padding: '1px 5px',
+                borderRadius: '4px',
+                background: isSelfChk ? '#ecfdf5' : '#eff6ff',
+                color: isSelfChk ? '#047857' : '#1d4ed8',
+                border: `1px solid ${isSelfChk ? '#a7f3d0' : '#bfdbfe'}`
+              }}
+            >
+              {isSelfChk ? `🏃 ${taskCode}` : taskCode}
+            </span>
+          );
+        })()}
+        {totalTasksCount > 1 && (
+          <span
+            title={`${totalTasksCount} field tasks assigned (${activeTasksCount} active). Click to view all tasks in history.`}
+            style={{ fontSize: '0.66rem', fontWeight: 700, padding: '1px 5px', borderRadius: '9999px', background: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd' }}
+          >
+            +{totalTasksCount - 1} ({totalTasksCount} tasks)
+          </span>
+        )}
+      </div>
     </div>
   );
 });
+FieldPersonAssignCell.displayName = 'FieldPersonAssignCell';
 
 const LeadStatusCell = React.memo(({ info }) => {
   const status = info.getValue() || 'New';
@@ -1493,6 +1533,20 @@ export default function LeadTable({
   const [activeRowId, setActiveRowId] = useState(null);
   const [isImporting, setIsImporting] = useState(false);
   const [viewMode, setViewMode] = useTableViewPreference('lead-data', { desktopKey: 'crm_lead_view_mode' });
+  const [fieldAssignMap, setFieldAssignMap] = useState({});
+  const fetchedFieldIdsRef = useRef(new Set());
+  const handleFieldTaskAssigned = useCallback((leadId, summary) => {
+    if (!leadId || !summary) return;
+    fetchedFieldIdsRef.current.add(String(leadId));
+    setFieldAssignMap(prev => ({
+      ...prev,
+      [leadId]: {
+        ...summary,
+        field_tasks_count: summary.field_tasks_count ?? (Number(prev[leadId]?.field_tasks_count || 0) + 1),
+        field_active_tasks_count: summary.field_active_tasks_count ?? (Number(prev[leadId]?.field_active_tasks_count || 0) + 1)
+      }
+    }));
+  }, []);
   const fileInputRef = React.useRef(null);
   const [columnFilters, setColumnFilters] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -1996,6 +2050,7 @@ export default function LeadTable({
     meta: {
       teamMembers,
       teamMemberMap,
+      fieldAssignMap,
       stages,
       userRole,
       userName,
@@ -2027,6 +2082,44 @@ export default function LeadTable({
       }
     }
   });
+
+  const visibleRowLeadIdsKey = table.getRowModel().rows
+    .map(r => r.original?.id)
+    .filter(Boolean)
+    .join(',');
+
+  useEffect(() => {
+    if (!visibleRowLeadIdsKey) return;
+    const fetchedSet = fetchedFieldIdsRef.current;
+    const ids = visibleRowLeadIdsKey
+      .split(',')
+      .filter(id => id && !fetchedSet.has(id));
+    if (ids.length === 0) return;
+
+    let active = true;
+    let settled = false;
+    ids.forEach(id => fetchedSet.add(id));
+
+    getLeadFieldAssignmentSummaries(ids)
+      .then(summaryMap => {
+        settled = true;
+        if (!active || !summaryMap || typeof summaryMap !== 'object') return;
+        if (Object.keys(summaryMap).length > 0) {
+          setFieldAssignMap(prev => ({ ...prev, ...summaryMap }));
+        }
+      })
+      .catch(() => {
+        settled = true;
+        ids.forEach(id => fetchedSet.delete(id));
+      });
+
+    return () => {
+      active = false;
+      if (!settled) {
+        ids.forEach(id => fetchedSet.delete(id));
+      }
+    };
+  }, [visibleRowLeadIdsKey]);
 
   useEffect(() => {
     if (process.env.NODE_ENV === 'production') return;
@@ -2473,6 +2566,7 @@ export default function LeadTable({
             hasPrevLead={hasPrevLead}
             currentLeadIndex={selectedLeadIndex >= 0 ? selectedLeadIndex + 1 : 1}
             totalLeadsCount={filteredLeadRows.length}
+            onFieldTaskAssigned={handleFieldTaskAssigned}
           />
         )}
       </div>
@@ -3743,6 +3837,7 @@ export default function LeadTable({
           hasPrevLead={hasPrevLead}
           currentLeadIndex={selectedLeadIndex >= 0 ? selectedLeadIndex + 1 : 1}
           totalLeadsCount={filteredLeadRows.length}
+          onFieldTaskAssigned={handleFieldTaskAssigned}
         />
       )}
     </div>

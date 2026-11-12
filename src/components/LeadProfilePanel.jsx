@@ -10,7 +10,7 @@ import { X, Send, Play, Pause, Phone, Volume2, RotateCw, Mic, MicOff, Check, Loa
 import { triggerWhatsappAutomationForStage } from '@/app/actions/whatsapp';
 import { triggerEmailAutomationForStage } from '@/app/actions/emailConfig';
 import { sendLeadToParty } from '@/app/actions/partyHandoff';
-import { getFieldHistoryForLead, createFieldTask } from '@/app/actions/fieldTasks';
+import { getFieldHistoryForLead, createFieldTask, updateFieldTask, getLeadFieldAssignmentSummaries } from '@/app/actions/fieldTasks';
 import MaskedPhoneDisplay from '@/components/common/MaskedPhoneDisplay';
 
 // Standard 7 CRM Stages Fallback Definition
@@ -84,6 +84,158 @@ export const formatStatusWithNumbers = (rawStatus, stagesList = DEFAULT_STAGES) 
   }
   return rawStatus;
 };
+
+const ORDER_PIPELINE_STAGE_OPTIONS = [
+  'S01 - Order Confirmation',
+  'S02 - PI Generation',
+  'S03 - PI Shared',
+  'S04 - Request Advance Payment',
+  'S05 - Receive Advance Payment',
+  'S06 - Check Stock & Production',
+  'S07 - Product Partial & Full Status',
+  'S08 - Quality Check (PDI)',
+  'S09 - Request 70% Balance',
+  'S10 - Receive 70% Balance',
+  'S11 - Ready for Dispatch',
+  'S12 - Dispatch Material',
+  'S13 - Material Delivered (POD)',
+];
+
+const FIELD_TASK_STAGE_CONFIG = {
+  'Lead Data Pipeline': {
+    fieldLabel: 'Lead Status (S01 - S08)',
+    shortLabel: 'Lead Status',
+    useLeadStages: true,
+  },
+  'Order Taking': {
+    fieldLabel: 'Order Pipeline Stage (S01 - S13)',
+    shortLabel: 'Order Stage',
+    options: ORDER_PIPELINE_STAGE_OPTIONS,
+  },
+  'Material Checking': {
+    fieldLabel: 'Material Checking Stage',
+    shortLabel: 'Material Stage',
+    options: [
+      'Incoming Material Inspection',
+      'Quantity & Quality Verification',
+      'Shortage / Damage Check',
+      'S08 - Quality Check (PDI)',
+      'S11 - Ready for Dispatch',
+      'S12 - Dispatch Material',
+      'S13 - Material Delivered (POD)',
+    ],
+  },
+  'Product Demonstration': {
+    fieldLabel: 'Product Demo Stage',
+    shortLabel: 'Demo Stage',
+    options: [
+      'Demo Scheduled / Pre-Visit',
+      'On-Site Product Demonstration',
+      'Live Machine / Technical Trial',
+      'Technical Q&A & Comparison',
+      'Demo Completed - Quotation Next',
+    ],
+  },
+  'Payment Collection': {
+    fieldLabel: 'Payment Collection Stage',
+    shortLabel: 'Payment Stage',
+    options: [
+      'Token Amount Collection',
+      'S04 - Request Advance Payment',
+      'S05 - Receive Advance Payment',
+      'S09 - Request 70% Balance',
+      'S10 - Receive 70% Balance',
+      'Outstanding Invoice Recovery',
+      'Cheque / NEFT / UPI Pickup',
+    ],
+  },
+};
+
+const TASK_PRIORITY_OPTIONS = [
+  { value: 'CRITICAL', emoji: '🔴', label: 'Critical', bg: '#fef2f2', color: '#dc2626', border: '#fecaca' },
+  { value: 'URGENT', emoji: '🟠', label: 'Urgent', bg: '#fff7ed', color: '#ea580c', border: '#fed7aa' },
+  { value: 'HIGH', emoji: '🟡', label: 'High', bg: '#fefce8', color: '#ca8a04', border: '#fef08a' },
+  { value: 'MEDIUM', emoji: '🔵', label: 'Medium', bg: '#eff6ff', color: '#2563eb', border: '#bfdbfe' },
+  { value: 'LOW', emoji: '🟢', label: 'Low', bg: '#f0fdf4', color: '#16a34a', border: '#bbf7d0' },
+];
+
+function getTaskPriorityMeta(priority) {
+  const normalized = String(priority || 'MEDIUM').toUpperCase();
+  return TASK_PRIORITY_OPTIONS.find((opt) => opt.value === normalized) || TASK_PRIORITY_OPTIONS[3];
+}
+
+function formatIsoToDatetimeLocalIST(value) {
+  if (!value) return '';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(d);
+  const map = {};
+  for (const p of parts) {
+    if (p.type !== 'literal') map[p.type] = p.value;
+  }
+  const hh = map.hour === '24' ? '00' : map.hour;
+  return `${map.year}-${map.month}-${map.day}T${hh}:${map.minute}`;
+}
+
+function parseDatetimeLocalISTToIso(localStr) {
+  if (!localStr) return null;
+  const trimmed = String(localStr).trim();
+  if (!trimmed) return null;
+  if (/[zZ]|[+-]\d{2}:\d{2}$/.test(trimmed)) {
+    const parsed = new Date(trimmed);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  }
+  const normalized = trimmed.length === 16 ? `${trimmed}:00+05:30` : `${trimmed}+05:30`;
+  const parsed = new Date(normalized);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
+function getDefaultFieldVisitStage(purpose, currentLeadStage = '') {
+  const cfg = FIELD_TASK_STAGE_CONFIG[purpose];
+  if (!cfg) return '';
+  if (cfg.useLeadStages) return currentLeadStage || '';
+  return cfg.options?.[0] || '';
+}
+
+function renderLeadStageOptgroups(stagesList, selectedVal, keyPrefix = 'stage') {
+  const list = (stagesList && stagesList.length > 0) ? stagesList : DEFAULT_STAGES;
+  const hasSelected = selectedVal && list.some(s =>
+    s.substages?.some(sub => sub === selectedVal || sub.includes(selectedVal) || selectedVal.includes(sub))
+  );
+  return (
+    <>
+      {selectedVal && !hasSelected && (
+        <option value={selectedVal}>{formatStatusWithNumbers(selectedVal, list)}</option>
+      )}
+      {list.map((stageObj, i) => {
+        const stageNum = i + 1;
+        const cleanStageName = stageObj.name.replace(/^\d+\s*-\s*/, '');
+        return (
+          <optgroup key={`${keyPrefix}-stage-${i}`} label={stageObj.name}>
+            {(stageObj.substages || []).map((sub, j) => {
+              const subNum = String(j + 1).padStart(2, '0');
+              const prefix = `${stageNum};${subNum}>${cleanStageName}>`;
+              const val = sub.startsWith(prefix) ? sub : `${prefix}${sub.includes('>') ? sub.split('>').pop() : sub}`;
+              return (
+                <option key={`${keyPrefix}-sub-${val}`} value={val}>
+                  {val}
+                </option>
+              );
+            })}
+          </optgroup>
+        );
+      })}
+    </>
+  );
+}
 
 // High-accuracy Devanagari to Hinglish transliterator for Sales & Telecalling
 const HINGLISH_DICT = {
@@ -425,7 +577,8 @@ export default function LeadProfilePanel({
   hasNextLead = false,
   hasPrevLead = false,
   currentLeadIndex,
-  totalLeadsCount
+  totalLeadsCount,
+  onFieldTaskAssigned
 }) {
   const supabase = useMemo(() => createClient(), []);
   const [activeLead, setActiveLead] = useState(lead);
@@ -442,6 +595,9 @@ export default function LeadProfilePanel({
   const [selectedFieldExecutive, setSelectedFieldExecutive] = useState('');
   const [fieldVisitDate, setFieldVisitDate] = useState('');
   const [fieldVisitPurpose, setFieldVisitPurpose] = useState('Lead Data Pipeline');
+  const [fieldVisitStage, setFieldVisitStage] = useState('');
+  const [fieldVisitPriority, setFieldVisitPriority] = useState('MEDIUM');
+  const [fieldVisitDescription, setFieldVisitDescription] = useState('');
   const [isSchedulingField, setIsSchedulingField] = useState(false);
   const [previewPhotoUrl, setPreviewPhotoUrl] = useState(null);
   const [isLoadingCalls, setIsLoadingCalls] = useState(false);
@@ -451,15 +607,25 @@ export default function LeadProfilePanel({
   const [isFieldDropdownOpen, setIsFieldDropdownOpen] = useState(false);
   const [fieldTaskSuccessModal, setFieldTaskSuccessModal] = useState(null);
   const [fieldAssignError, setFieldAssignError] = useState('');
+  const [editingFieldTask, setEditingFieldTask] = useState(null);
+  const [editTaskExec, setEditTaskExec] = useState('');
+  const [editTaskPurpose, setEditTaskPurpose] = useState('Lead Data Pipeline');
+  const [editTaskStage, setEditTaskStage] = useState('');
+  const [editTaskPriority, setEditTaskPriority] = useState('MEDIUM');
+  const [editTaskDate, setEditTaskDate] = useState('');
+  const [editTaskStatus, setEditTaskStatus] = useState('SCHEDULED');
+  const [editTaskDesc, setEditTaskDesc] = useState('');
+  const [editTaskError, setEditTaskError] = useState('');
+  const [isUpdatingFieldTask, setIsUpdatingFieldTask] = useState(false);
 
   useEffect(() => {
     const comp = company || lead?.company || 'TNT00002';
-    if (showFieldAssignModal && (!teamMembers || teamMembers.length === 0)) {
+    if ((showFieldAssignModal || editingFieldTask) && (!teamMembers || teamMembers.length === 0)) {
       getTeamMembers(comp).then(res => {
         if (res && res.length > 0) setInternalTeamMembers(res);
       }).catch(err => console.error(err));
     }
-  }, [showFieldAssignModal, teamMembers, company, lead?.company]);
+  }, [showFieldAssignModal, editingFieldTask, teamMembers, company, lead?.company]);
 
   const effectiveTeamMembers = (teamMembers && teamMembers.length > 0) ? teamMembers : internalTeamMembers;
 
@@ -1340,10 +1506,11 @@ export default function LeadProfilePanel({
     });
 
     (fieldVisits || []).forEach(v => {
+      const keyPrefix = v.entry_type === 'TASK' ? 'field_task' : 'field_visit';
       list.push({
-        id: `field_visit_${v.id}`,
+        id: `${keyPrefix}_${v.id}`,
         type: 'field_visit',
-        createdAt: v.created_at || v.check_in_time,
+        createdAt: v.created_at || v.check_in_time || v.scheduled_start_time,
         data: v
       });
     });
@@ -1804,7 +1971,11 @@ export default function LeadProfilePanel({
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <button
                 type="button"
-                onClick={() => setShowFieldAssignModal(true)}
+                onClick={() => {
+                  setFieldVisitStage(getDefaultFieldVisitStage(fieldVisitPurpose, currentStatus));
+                  setFieldVisitPriority('MEDIUM');
+                  setShowFieldAssignModal(true);
+                }}
                 style={{
                   padding: '0.3rem 0.65rem',
                   border: '1px solid #3b82f6',
@@ -2068,7 +2239,11 @@ export default function LeadProfilePanel({
                     </label>
                     <select
                       value={fieldVisitPurpose}
-                      onChange={(e) => setFieldVisitPurpose(e.target.value)}
+                      onChange={(e) => {
+                        const nextPurpose = e.target.value;
+                        setFieldVisitPurpose(nextPurpose);
+                        setFieldVisitStage(getDefaultFieldVisitStage(nextPurpose, currentStatus));
+                      }}
                       style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13, background: '#ffffff', color: '#0f172a' }}
                     >
                       <option value="Lead Data Pipeline">Lead Data Pipeline (S01 - S08)</option>
@@ -2076,6 +2251,51 @@ export default function LeadProfilePanel({
                       <option value="Material Checking">Material Checking & Receiving</option>
                       <option value="Product Demonstration">Product Demonstration / Visit</option>
                       <option value="Payment Collection">Payment Collection</option>
+                    </select>
+                  </div>
+
+                  {(() => {
+                    const stageCfg = FIELD_TASK_STAGE_CONFIG[fieldVisitPurpose];
+                    if (!stageCfg) return null;
+                    return (
+                      <div>
+                        <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>
+                          {stageCfg.fieldLabel} *
+                        </label>
+                        <select
+                          value={fieldVisitStage}
+                          onChange={(e) => setFieldVisitStage(e.target.value)}
+                          style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13, background: '#ffffff', color: '#0f172a' }}
+                        >
+                          {stageCfg.useLeadStages
+                            ? renderLeadStageOptgroups(stages, fieldVisitStage, 'assign')
+                            : stageCfg.options.map((opt) => (
+                                <option key={opt} value={opt}>{opt}</option>
+                              ))}
+                        </select>
+                        {stageCfg.useLeadStages && (
+                          <div style={{ fontSize: 11, color: '#64748b', marginTop: 3 }}>
+                            Assign ke time ka Lead Status task ke saath save hoga (CRM Lead stage visit complete hone par update hoga).
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>
+                      Task Priority *
+                    </label>
+                    <select
+                      value={fieldVisitPriority}
+                      onChange={(e) => setFieldVisitPriority(e.target.value)}
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13, background: '#ffffff', color: '#0f172a' }}
+                    >
+                      {TASK_PRIORITY_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.emoji} {opt.label}
+                        </option>
+                      ))}
                     </select>
                   </div>
 
@@ -2088,6 +2308,19 @@ export default function LeadProfilePanel({
                       value={fieldVisitDate}
                       onChange={(e) => setFieldVisitDate(e.target.value)}
                       style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13, boxSizing: 'border-box', background: '#ffffff', color: '#0f172a' }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>
+                      Task Description / Instructions *
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={fieldVisitDescription}
+                      onChange={(e) => setFieldVisitDescription(e.target.value)}
+                      placeholder="Field executive ko batayein ki is visit par kya kaam karna hai (e.g. demo dena, quotation share karna, site inspection, payment collection)..."
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13, boxSizing: 'border-box', background: '#ffffff', color: '#0f172a', resize: 'vertical', fontFamily: 'inherit' }}
                     />
                   </div>
                 </div>
@@ -2117,9 +2350,28 @@ export default function LeadProfilePanel({
                         setFieldAssignError('Please select a Field Executive first.');
                         return;
                       }
+                      const trimmedDesc = fieldVisitDescription.trim();
+                      if (!trimmedDesc) {
+                        setFieldAssignError('Please enter Task Description / Instructions for the field executive.');
+                        return;
+                      }
                       setFieldAssignError('');
                       setIsSchedulingField(true);
                       try {
+                        const stageCfg = FIELD_TASK_STAGE_CONFIG[fieldVisitPurpose];
+                        const resolvedTaskStage = fieldVisitStage || getDefaultFieldVisitStage(fieldVisitPurpose, currentStatus);
+                        const taskStageLabel = stageCfg?.shortLabel || 'Stage';
+                        const taskFormDetails = {
+                          description: trimmedDesc,
+                          task_stage: resolvedTaskStage,
+                          task_stage_label: taskStageLabel,
+                          ...(stageCfg?.useLeadStages ? {
+                            lead_status: resolvedTaskStage,
+                            lead_status_at_assign: currentStatus || ''
+                          } : {})
+                        };
+
+                        const scheduledIso = parseDatetimeLocalISTToIso(fieldVisitDate) || new Date().toISOString();
                         const res = await createFieldTask({
                           company: company || lead.tenant_id || 'TNT00001',
                           lead_id: lead.id,
@@ -2129,22 +2381,52 @@ export default function LeadProfilePanel({
                           assigned_by_user_id: userId,
                           assigned_to_user_id: selectedFieldExecutive,
                           task_type: fieldVisitPurpose,
-                          scheduled_start_time: fieldVisitDate ? new Date(fieldVisitDate).toISOString() : new Date().toISOString()
+                          priority: fieldVisitPriority || 'MEDIUM',
+                          scheduled_start_time: scheduledIso,
+                          form_details: taskFormDetails
                         });
                         if (res.success) {
                           const assignedMember = (effectiveTeamMembers || []).find(m => (m.user_id || m.id) === selectedFieldExecutive);
+                          const executiveName = assignedMember?.emp_name || assignedMember?.name || 'Field Executive';
                           setFieldTaskSuccessModal({
+                            taskCode: res.task?.task_code || '',
                             leadName: lead.company || lead.name || 'Lead Party',
-                            executiveName: assignedMember?.emp_name || assignedMember?.name || 'Field Executive',
+                            executiveName,
                             role: assignedMember?.role || 'Executive',
                             taskType: fieldVisitPurpose,
+                            priority: res.task?.priority || fieldVisitPriority || 'MEDIUM',
+                            taskStage: resolvedTaskStage,
+                            taskStageLabel,
+                            taskDescription: trimmedDesc,
                             scheduledTime: fieldVisitDate
-                              ? new Date(fieldVisitDate).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' })
+                              ? new Date(scheduledIso).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' })
                               : 'Immediate / Today'
+                          });
+                          getLeadFieldAssignmentSummaries([lead.id]).then(sMap => {
+                            const refreshed = sMap?.[lead.id];
+                            onFieldTaskAssigned?.(lead.id, refreshed || {
+                              field_person_name: executiveName,
+                              field_task_code: res.task?.task_code || null,
+                              field_task_status: res.task?.status || 'SCHEDULED',
+                              field_connectivity_mode: null,
+                              is_geofence_flagged: false,
+                              field_scheduled_time: res.task?.scheduled_start_time || null
+                            });
+                          }).catch(() => {
+                            onFieldTaskAssigned?.(lead.id, {
+                              field_person_name: executiveName,
+                              field_task_code: res.task?.task_code || null,
+                              field_task_status: res.task?.status || 'SCHEDULED',
+                              field_connectivity_mode: null,
+                              is_geofence_flagged: false,
+                              field_scheduled_time: res.task?.scheduled_start_time || null
+                            });
                           });
                           setShowFieldAssignModal(false);
                           setSelectedFieldExecutive('');
                           setFieldVisitDate('');
+                          setFieldVisitPriority('MEDIUM');
+                          setFieldVisitDescription('');
                           getFieldHistoryForLead(lead.id).then(d => setFieldVisits(d || []));
                         } else {
                           setFieldAssignError(`Error: ${res.error}`);
@@ -2227,6 +2509,23 @@ export default function LeadProfilePanel({
                   gap: 8,
                   boxSizing: 'border-box'
                 }}>
+                  {fieldTaskSuccessModal.taskCode && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f1f5f9', paddingBottom: 6 }}>
+                      <span style={{ color: '#64748b', fontWeight: 600 }}>Task ID:</span>
+                      <span style={{
+                        color: '#1d4ed8',
+                        background: '#eff6ff',
+                        border: '1px solid #bfdbfe',
+                        padding: '2px 8px',
+                        borderRadius: 6,
+                        fontWeight: 800,
+                        fontFamily: 'monospace',
+                        fontSize: 12
+                      }}>
+                        {fieldTaskSuccessModal.taskCode}
+                      </span>
+                    </div>
+                  )}
                   <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #f1f5f9', paddingBottom: 6 }}>
                     <span style={{ color: '#64748b', fontWeight: 600 }}>Client / Party:</span>
                     <strong style={{ color: '#0f172a' }}>{fieldTaskSuccessModal.leadName}</strong>
@@ -2239,10 +2538,43 @@ export default function LeadProfilePanel({
                     <span style={{ color: '#64748b', fontWeight: 600 }}>Task Purpose:</span>
                     <span style={{ color: '#0f172a', fontWeight: 600 }}>{fieldTaskSuccessModal.taskType}</span>
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  {(() => {
+                    const pMeta = getTaskPriorityMeta(fieldTaskSuccessModal.priority);
+                    return (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f1f5f9', paddingBottom: 6 }}>
+                        <span style={{ color: '#64748b', fontWeight: 600 }}>Task Priority:</span>
+                        <span style={{
+                          background: pMeta.bg,
+                          color: pMeta.color,
+                          border: `1px solid ${pMeta.border}`,
+                          padding: '2px 8px',
+                          borderRadius: 9999,
+                          fontWeight: 700,
+                          fontSize: 11
+                        }}>
+                          {pMeta.emoji} {pMeta.label.toUpperCase()}
+                        </span>
+                      </div>
+                    );
+                  })()}
+                  {fieldTaskSuccessModal.taskStage && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, borderBottom: '1px solid #f1f5f9', paddingBottom: 6 }}>
+                      <span style={{ color: '#64748b', fontWeight: 600 }}>{fieldTaskSuccessModal.taskStageLabel || 'Stage'}:</span>
+                      <span style={{ color: '#0369a1', fontWeight: 700, textAlign: 'right' }}>{fieldTaskSuccessModal.taskStage}</span>
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: fieldTaskSuccessModal.taskDescription ? '1px solid #f1f5f9' : 'none', paddingBottom: fieldTaskSuccessModal.taskDescription ? 6 : 0 }}>
                     <span style={{ color: '#64748b', fontWeight: 600 }}>Schedule:</span>
                     <span style={{ color: '#16a34a', fontWeight: 700 }}>📅 {fieldTaskSuccessModal.scheduledTime}</span>
                   </div>
+                  {fieldTaskSuccessModal.taskDescription && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, paddingTop: 2 }}>
+                      <span style={{ color: '#64748b', fontWeight: 600 }}>Instructions / Description:</span>
+                      <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 6, padding: '7px 9px', color: '#0f172a', lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>
+                        {fieldTaskSuccessModal.taskDescription}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Big Done Button in Center */}
@@ -2265,6 +2597,252 @@ export default function LeadProfilePanel({
                 >
                   OK, Great!
                 </button>
+              </div>
+            </div>
+          )}
+
+          {/* Edit Field Visit Task Modal (Creator or Admin) */}
+          {editingFieldTask && (
+            <div style={{
+              position: 'fixed',
+              inset: 0,
+              backgroundColor: 'rgba(15, 23, 42, 0.55)',
+              backdropFilter: 'blur(2px)',
+              zIndex: 10003,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 16
+            }}>
+              <div style={{
+                background: '#ffffff',
+                borderRadius: 12,
+                width: 'min(480px, 95vw)',
+                maxHeight: '90vh',
+                overflowY: 'auto',
+                padding: 20,
+                boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.25)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 12
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: 10 }}>
+                  <div>
+                    <h4 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#0f172a' }}>
+                      Edit Field Task ({editingFieldTask.task_code || 'TASK'})
+                    </h4>
+                    <p style={{ margin: '2px 0 0', fontSize: 12, color: '#64748b' }}>
+                      Reassign executive, update priority, reschedule (IST), or edit instructions.
+                    </p>
+                  </div>
+                  <button type="button" onClick={() => setEditingFieldTask(null)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+                    <X size={18} color="#64748b" />
+                  </button>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>
+                      Field Executive *
+                    </label>
+                    <select
+                      value={editTaskExec}
+                      onChange={(e) => setEditTaskExec(e.target.value)}
+                      style={{ width: '100%', padding: '7px 9px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13, background: '#ffffff', color: '#0f172a' }}
+                    >
+                      <option value="">-- Select Executive --</option>
+                      {(effectiveTeamMembers || []).map((m) => {
+                        const mId = m.user_id || m.id;
+                        return (
+                          <option key={mId} value={mId}>
+                            {m.emp_name || m.name || m.email} ({m.role || 'Executive'})
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>
+                      Task Priority *
+                    </label>
+                    <select
+                      value={editTaskPriority}
+                      onChange={(e) => setEditTaskPriority(e.target.value)}
+                      style={{ width: '100%', padding: '7px 9px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13, background: '#ffffff', color: '#0f172a' }}
+                    >
+                      {TASK_PRIORITY_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.emoji} {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>
+                      Visit Purpose / Task Type *
+                    </label>
+                    <select
+                      value={editTaskPurpose}
+                      onChange={(e) => {
+                        const nextP = e.target.value;
+                        setEditTaskPurpose(nextP);
+                        setEditTaskStage(getDefaultFieldVisitStage(nextP, currentStatus));
+                      }}
+                      style={{ width: '100%', padding: '7px 9px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13, background: '#ffffff', color: '#0f172a' }}
+                    >
+                      <option value="Lead Data Pipeline">Lead Data Pipeline (S01 - S08)</option>
+                      <option value="Order Taking">Order Taking &amp; Delivery</option>
+                      <option value="Material Checking">Material Checking &amp; Receiving</option>
+                      <option value="Product Demonstration">Product Demonstration / Visit</option>
+                      <option value="Payment Collection">Payment Collection</option>
+                      {!FIELD_TASK_STAGE_CONFIG[editTaskPurpose] && editTaskPurpose && (
+                        <option value={editTaskPurpose}>{editTaskPurpose}</option>
+                      )}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>
+                      Task Status
+                    </label>
+                    <select
+                      value={editTaskStatus}
+                      onChange={(e) => setEditTaskStatus(e.target.value)}
+                      style={{ width: '100%', padding: '7px 9px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13, background: '#ffffff', color: '#0f172a' }}
+                    >
+                      <option value="SCHEDULED">⏳ SCHEDULED</option>
+                      <option value="PENDING">🕒 PENDING</option>
+                      <option value="IN_PROGRESS">🚗 IN PROGRESS</option>
+                      <option value="CANCELLED">❌ CANCELLED</option>
+                    </select>
+                  </div>
+                </div>
+
+                {(() => {
+                  const stageCfg = FIELD_TASK_STAGE_CONFIG[editTaskPurpose];
+                  if (!stageCfg) return null;
+                  return (
+                    <div>
+                      <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>
+                        {stageCfg.fieldLabel}
+                      </label>
+                      <select
+                        value={editTaskStage}
+                        onChange={(e) => setEditTaskStage(e.target.value)}
+                        style={{ width: '100%', padding: '7px 9px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13, background: '#ffffff', color: '#0f172a' }}
+                      >
+                        {stageCfg.useLeadStages
+                          ? renderLeadStageOptgroups(stages, editTaskStage, 'edit-task')
+                          : stageCfg.options.map((opt) => (
+                              <option key={opt} value={opt}>{opt}</option>
+                            ))}
+                      </select>
+                    </div>
+                  );
+                })()}
+
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>
+                    Scheduled Visit Date &amp; Time (IST)
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={editTaskDate}
+                    onChange={(e) => setEditTaskDate(e.target.value)}
+                    style={{ width: '100%', padding: '7px 9px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13, boxSizing: 'border-box', background: '#ffffff', color: '#0f172a' }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>
+                    Task Description / Instructions *
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={editTaskDesc}
+                    onChange={(e) => setEditTaskDesc(e.target.value)}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13, boxSizing: 'border-box', background: '#ffffff', color: '#0f172a', resize: 'vertical', fontFamily: 'inherit' }}
+                  />
+                </div>
+
+                {editTaskError && (
+                  <div style={{ padding: '8px 10px', background: '#fee2e2', border: '1px solid #fecaca', borderRadius: 6, color: '#dc2626', fontSize: 12, fontWeight: 600 }}>
+                    ⚠️ {editTaskError}
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
+                  <button
+                    type="button"
+                    onClick={() => setEditingFieldTask(null)}
+                    style={{ padding: '8px 14px', borderRadius: 6, border: '1px solid #cbd5e1', background: '#fff', fontSize: 12, cursor: 'pointer' }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isUpdatingFieldTask}
+                    onClick={async () => {
+                      if (!editTaskExec) {
+                        setEditTaskError('Please select a Field Executive.');
+                        return;
+                      }
+                      const trimmed = editTaskDesc.trim();
+                      if (!trimmed) {
+                        setEditTaskError('Please enter Task Description / Instructions.');
+                        return;
+                      }
+                      setEditTaskError('');
+                      setIsUpdatingFieldTask(true);
+                      try {
+                        const stageCfg = FIELD_TASK_STAGE_CONFIG[editTaskPurpose];
+                        const resolvedStage = editTaskStage || getDefaultFieldVisitStage(editTaskPurpose, currentStatus);
+                        const scheduledIso = parseDatetimeLocalISTToIso(editTaskDate);
+                        const res = await updateFieldTask({
+                          taskId: editingFieldTask.id,
+                          actorUserId: userId,
+                          updates: {
+                            assigned_to_user_id: editTaskExec,
+                            task_type: editTaskPurpose,
+                            priority: editTaskPriority,
+                            status: editTaskStatus,
+                            ...(scheduledIso ? { scheduled_start_time: scheduledIso } : {}),
+                            form_details: {
+                              description: trimmed,
+                              task_stage: resolvedStage,
+                              task_stage_label: stageCfg?.shortLabel || 'Stage',
+                              ...(stageCfg?.useLeadStages ? { lead_status: resolvedStage } : {})
+                            }
+                          }
+                        });
+                        if (res?.success) {
+                          setEditingFieldTask(null);
+                          const [refreshedHistory, summaryMap] = await Promise.all([
+                            getFieldHistoryForLead(lead.id),
+                            getLeadFieldAssignmentSummaries([lead.id])
+                          ]);
+                          setFieldVisits(refreshedHistory || []);
+                          if (summaryMap?.[lead.id]) {
+                            onFieldTaskAssigned?.(lead.id, summaryMap[lead.id]);
+                          }
+                        } else {
+                          setEditTaskError(res?.error || 'Failed to update task');
+                        }
+                      } catch (err) {
+                        setEditTaskError(err?.message || 'Error updating task');
+                      } finally {
+                        setIsUpdatingFieldTask(false);
+                      }
+                    }}
+                    style={{ padding: '8px 14px', borderRadius: 6, border: 'none', background: '#2563eb', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+                  >
+                    {isUpdatingFieldTask ? 'Saving...' : 'Save Task Updates'}
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -2391,29 +2969,7 @@ export default function LeadProfilePanel({
                 }}
                 title={isLeadFrozen ? "Sales stage is locked because this lead is transferred to Party Master. Profile details remain editable." : isLeadPendingTransfer ? "Lead Won. Waiting for Party Master confirmation below." : currentStatus}
               >
-                {!stages.some(s => s.substages?.some(sub => sub === currentStatus || sub.includes(currentStatus) || currentStatus.includes(sub))) && (
-                  <option value={currentStatus}>
-                    {formatStatusWithNumbers(currentStatus, stages)}
-                  </option>
-                )}
-                {stages.map((stageObj, i) => {
-                  const stageNum = i + 1;
-                  const cleanStageName = stageObj.name.replace(/^\d+\s*-\s*/, '');
-                  return (
-                    <optgroup key={`top-stage-${i}`} label={stageObj.name}>
-                      {stageObj.substages.map((sub, j) => {
-                        const subNum = String(j + 1).padStart(2, '0');
-                        const prefix = `${stageNum};${subNum}>${cleanStageName}>`;
-                        const val = sub.startsWith(prefix) ? sub : `${prefix}${sub.includes('>') ? sub.split('>').pop() : sub}`;
-                        return (
-                          <option key={`top-sub-${val}`} value={val}>
-                            {val}
-                          </option>
-                        );
-                      })}
-                    </optgroup>
-                  );
-                })}
+                {renderLeadStageOptgroups(stages, currentStatus, 'top')}
               </select>
             </div>
 
@@ -2934,8 +3490,13 @@ export default function LeadProfilePanel({
                   Interaction & Call History
                   <button
                     type="button"
-                    onClick={fetchCalls}
-                    title="Refresh Call History"
+                    onClick={() => {
+                      fetchCalls();
+                      if (lead?.id) {
+                        getFieldHistoryForLead(lead.id).then(d => setFieldVisits(d || [])).catch(() => {});
+                      }
+                    }}
+                    title="Refresh Interaction & Call History"
                     style={{
                       background: 'none',
                       border: 'none',
@@ -3108,6 +3669,167 @@ export default function LeadProfilePanel({
 
                   if (item.type === 'field_visit') {
                     const v = item.data;
+                    const isSelfCheckInCode = String(v.task_code || '').toUpperCase().startsWith('CHK-');
+                    const taskCodeBadge = v.task_code ? (
+                      <span
+                        title={isSelfCheckInCode ? 'Field Executive Self Check-In Visit' : 'Assigned Field Task'}
+                        style={{
+                          fontSize: '0.74rem',
+                          fontWeight: 800,
+                          fontFamily: 'monospace',
+                          padding: '2px 7px',
+                          borderRadius: '5px',
+                          backgroundColor: isSelfCheckInCode ? '#ecfdf5' : '#ffffff',
+                          color: isSelfCheckInCode ? '#047857' : '#1d4ed8',
+                          border: `1px solid ${isSelfCheckInCode ? '#a7f3d0' : '#bfdbfe'}`
+                        }}
+                      >
+                        {isSelfCheckInCode ? `🏃 ${v.task_code}` : v.task_code}
+                      </span>
+                    ) : null;
+
+                    if (v.entry_type === 'TASK') {
+                      const matchedExec = (effectiveTeamMembers || []).find(
+                        m => (m.user_id || m.id) === v.assigned_to_user_id
+                      );
+                      const execName = v.assigned_to_name || matchedExec?.emp_name || matchedExec?.name || 'Field Executive';
+                      const statusUpper = String(v.status || 'SCHEDULED').toUpperCase();
+                      const statusColorMap = {
+                        SCHEDULED: { bg: '#2563eb', cardBg: '#eff6ff', border: '#bfdbfe', label: isSelfCheckInCode ? '🏃 SELF CHECK-IN' : '📅 TASK ASSIGNED' },
+                        PENDING: { bg: '#2563eb', cardBg: '#eff6ff', border: '#bfdbfe', label: isSelfCheckInCode ? '🏃 SELF CHECK-IN' : '📅 TASK PENDING' },
+                        IN_PROGRESS: { bg: isSelfCheckInCode ? '#047857' : '#d97706', cardBg: isSelfCheckInCode ? '#ecfdf5' : '#fffbeb', border: isSelfCheckInCode ? '#a7f3d0' : '#fde68a', label: isSelfCheckInCode ? '🏃 SELF VISIT IN PROGRESS' : '🚗 VISIT IN PROGRESS' },
+                        COMPLETED: { bg: '#16a34a', cardBg: '#f0fdf4', border: '#bbf7d0', label: isSelfCheckInCode ? '✅ SELF VISIT COMPLETED' : '✅ TASK COMPLETED' },
+                        CANCELLED: { bg: '#dc2626', cardBg: '#fef2f2', border: '#fecaca', label: '❌ TASK CANCELLED' }
+                      };
+                      const styleCfg = statusColorMap[statusUpper] || statusColorMap.SCHEDULED;
+                      const pMeta = getTaskPriorityMeta(v.priority);
+                      const isAdminRole = ['admin', 'superadmin', 'super_admin', 'masteradmin', 'master_admin', 'tenant_admin'].includes(String(userRole || '').toLowerCase());
+                      const canEditTask = statusUpper !== 'COMPLETED' && ((userId && String(v.assigned_by_user_id || '') === String(userId)) || isAdminRole);
+
+                      return (
+                        <div
+                          key={item.id}
+                          style={{
+                            padding: '0.85rem 1rem',
+                            backgroundColor: styleCfg.cardBg,
+                            borderRadius: '8px',
+                            border: `1px solid ${styleCfg.border}`,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '0.45rem'
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.4rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                              <span style={{
+                                fontSize: '0.72rem',
+                                fontWeight: 700,
+                                padding: '2px 8px',
+                                borderRadius: '9999px',
+                                backgroundColor: styleCfg.bg,
+                                color: '#ffffff'
+                              }}>
+                                {styleCfg.label}
+                              </span>
+                              {taskCodeBadge}
+                              <span style={{
+                                fontSize: '0.7rem',
+                                fontWeight: 700,
+                                padding: '2px 7px',
+                                borderRadius: '9999px',
+                                backgroundColor: pMeta.bg,
+                                color: pMeta.color,
+                                border: `1px solid ${pMeta.border}`
+                              }}>
+                                {pMeta.emoji} {pMeta.label.toUpperCase()}
+                              </span>
+                              <span style={{ fontWeight: 600, fontSize: '0.88rem', color: '#0f172a' }}>
+                                {v.task_type || 'Field Visit'}
+                              </span>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#475569' }}>
+                                Status: {statusUpper}
+                              </span>
+                              {canEditTask && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingFieldTask(v);
+                                    setEditTaskExec(v.assigned_to_user_id || '');
+                                    setEditTaskPurpose(v.task_type || 'Lead Data Pipeline');
+                                    setEditTaskStage(v.form_details?.task_stage || v.form_details?.lead_status || '');
+                                    setEditTaskPriority(String(v.priority || 'MEDIUM').toUpperCase());
+                                    setEditTaskStatus(statusUpper);
+                                    setEditTaskDate(formatIsoToDatetimeLocalIST(v.scheduled_start_time));
+                                    setEditTaskDesc(v.form_details?.description || v.form_details?.issue_description || '');
+                                    setEditTaskError('');
+                                  }}
+                                  style={{
+                                    fontSize: '0.7rem',
+                                    fontWeight: 700,
+                                    padding: '2px 7px',
+                                    borderRadius: 5,
+                                    border: '1px solid #93c5fd',
+                                    background: '#ffffff',
+                                    color: '#1d4ed8',
+                                    cursor: 'pointer'
+                                  }}
+                                  title="Edit, Reassign or Reschedule this task"
+                                >
+                                  ✏️ Edit
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.85rem', fontSize: '0.78rem', color: '#334155' }}>
+                            <span>👤 Assigned To: <b>{execName}</b></span>
+                            {v.assigned_by_name && <span>🧑‍💼 Assigned By: <b>{v.assigned_by_name}</b></span>}
+                          </div>
+
+                          {(v.form_details?.task_stage || v.form_details?.lead_status || v.form_details?.lead_status_at_assign) && (
+                            <div style={{
+                              fontSize: '0.76rem',
+                              color: '#0369a1',
+                              backgroundColor: '#f0f9ff',
+                              border: '1px solid #bae6fd',
+                              borderRadius: '6px',
+                              padding: '4px 8px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              alignSelf: 'flex-start',
+                              fontWeight: 600
+                            }}>
+                              <span>🏷️ {v.form_details?.task_stage_label || (v.form_details?.lead_status ? 'Lead Status' : 'Stage')}:</span>
+                              <span>{v.form_details?.task_stage || v.form_details?.lead_status || v.form_details?.lead_status_at_assign}</span>
+                            </div>
+                          )}
+
+                          {(v.form_details?.description || v.form_details?.issue_description) && (
+                            <div style={{
+                              fontSize: '0.8rem',
+                              color: '#1e293b',
+                              backgroundColor: 'rgba(255, 255, 255, 0.85)',
+                              border: `1px solid ${styleCfg.border}`,
+                              borderRadius: '6px',
+                              padding: '6px 9px',
+                              whiteSpace: 'pre-wrap',
+                              lineHeight: 1.45
+                            }}>
+                              <b>📋 Task Instructions:</b> {v.form_details?.description || v.form_details?.issue_description}
+                            </div>
+                          )}
+
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.4rem', marginTop: '0.2rem' }}>
+                            <span>🗓️ Scheduled: <b>{v.scheduled_start_time ? formatIST(v.scheduled_start_time) : 'Immediate'}</b></span>
+                            <span>📅 Assigned: {formatIST(item.createdAt)}</span>
+                          </div>
+                        </div>
+                      );
+                    }
+
                     const isFlagged = v.is_geofence_flagged;
                     return (
                       <div
@@ -3123,7 +3845,7 @@ export default function LeadProfilePanel({
                         }}
                       >
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.4rem' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                             <span style={{
                               fontSize: '0.72rem',
                               fontWeight: 700,
@@ -3134,6 +3856,7 @@ export default function LeadProfilePanel({
                             }}>
                               {isFlagged ? '🚨 GEOFENCE FLAGGED' : '🟢 FIELD VISIT'}
                             </span>
+                            {taskCodeBadge}
                             <span style={{ fontWeight: 600, fontSize: '0.88rem' }}>
                               Mode: {v.connectivity_mode?.replace('_', ' ')}
                             </span>
