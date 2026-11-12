@@ -29,6 +29,7 @@ export default function IntegrationsContainer({moduleAccess,userRole}) {
   const [pending,startTransition]=useTransition();
   const tabs=INTEGRATION_TABS.filter(tab=>getSubItemPermissions(moduleAccess,userRole,'settings',tab.id).view);
   const activePage=String(tabs.some(tab=>tab.id===requestedTab)?requestedTab:tabs[0]?.id || '');
+  const tenantCode=scope?.tenantCode || snapshot?.tenantCode,branchCode=(scope?scope.branchCode:snapshot?.branchCode) || null;
   useEffect(()=>{
     const sync=()=>{
       const sub=window.location.pathname.replace(/^\/+|\/+$/g,'').toLowerCase().split('/')[1];
@@ -51,7 +52,7 @@ export default function IntegrationsContainer({moduleAccess,userRole}) {
     let timer,lastRefresh=0;
     const refreshOnReturn=()=>{
       clearTimeout(timer);
-      if(document.visibilityState==='hidden') return;
+      if(document.visibilityState==='hidden'||secret?.kind==='api_key') return;
       // Focus and visibility often fire together. Coalesce them without polling.
       timer=setTimeout(()=>{
         lastRefresh=Date.now();
@@ -61,7 +62,7 @@ export default function IntegrationsContainer({moduleAccess,userRole}) {
     window.addEventListener('focus',refreshOnReturn);
     document.addEventListener('visibilitychange',refreshOnReturn);
     return()=>{clearTimeout(timer);window.removeEventListener('focus',refreshOnReturn);document.removeEventListener('visibilitychange',refreshOnReturn);};
-  },[]);
+  },[secret]);
   useEffect(()=>{
     if(!activePage) return;
     let active=true;
@@ -73,14 +74,25 @@ export default function IntegrationsContainer({moduleAccess,userRole}) {
     });
     return()=>{active=false;};
   },[scope,activePage,refreshKey]);
-  useEffect(()=>{startTransition(()=>{setSecret(null);setNotice(null);});},[scope,activePage]);
-  const tenantCode=scope?.tenantCode || snapshot?.tenantCode,branchCode=scope?scope.branchCode:snapshot?.branchCode;
+  useEffect(()=>{startTransition(()=>{
+    setSecret(current=>current?.page===activePage&&current.tenantCode===tenantCode&&(current.branchCode || null)===(branchCode || null)?current:null);
+    setNotice(null);
+  });},[tenantCode,branchCode,activePage]);
   const loadRows=useCallback(query=>consoleRequest({...query,command:'list',tenantCode,branchCode}),[tenantCode,branchCode]);
   const onAction=useCallback(input=>new Promise(resolve=>{
     startTransition(async()=>{
       try {
         const result=await consoleRequest({...input,tenantCode,branchCode,page:activePage});
-        if(result.success){if(result.message)setNotice({message:result.message});if(!['meta_assets','test_connection'].includes(input.command))setRefreshKey(value=>value+1);if(result.secret)setSecret({value:result.secret,message:result.message,code:result.code,page:activePage,tenantCode,branchCode,kind:['create_key','rotate_key'].includes(input.command)?'api_key':'webhook'});}
+        if(result.success){
+          const keyIssued=['create_key','rotate_key'].includes(input.command);
+          const hasSecret=typeof result.secret==='string'&&result.secret.trim().length>0;
+          if(keyIssued&&!hasSecret)setNotice({error:'The key was saved, but its full secret was missing from the response. Please report this before creating another key.'});
+          else if(result.message)setNotice({message:result.message});
+          // A key response must stay visible before another bootstrap can replace
+          // the current panel. The saved list refreshes when the key box closes.
+          if((!keyIssued||!hasSecret)&&!['meta_assets','test_connection'].includes(input.command))setRefreshKey(value=>value+1);
+          if(hasSecret)setSecret({value:result.secret,message:result.message,code:result.code,page:activePage,tenantCode,branchCode,kind:keyIssued?'api_key':'webhook'});
+        }
         else setNotice({error:result.error});
         resolve(result);
       } catch {const result={success:false,error:'Integration request could not be completed. Please retry.'};setNotice({error:result.error});resolve(result);}
@@ -109,7 +121,7 @@ export default function IntegrationsContainer({moduleAccess,userRole}) {
   const visibleSecret=secret?.page===activePage&&secret.tenantCode===tenantCode&&(secret.branchCode || null)===(branchCode || null)&&snapshot?.canManage?secret:null;
   return <section style={{padding:'1.5rem',maxWidth:1600,width:'100%',margin:'0 auto',boxSizing:'border-box'}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:12,marginBottom:12}}><div><h2 style={{display:'flex',alignItems:'center',gap:10,margin:0}}><Plug size={23}/> Integrations & API</h2><p style={{color:'var(--text-secondary)',fontSize:'0.87rem'}}>Connect your company and branches to external systems and Meta Lead Ads.</p></div><Button secondary disabled={pending} onClick={()=>setRefreshKey(value=>value+1)}><RefreshCw size={16}/> Refresh</Button></div>
-    {snapshot&&<IntegrationScopeSelector data={{...snapshot,tenantCode,branchCode}} disabled={pending} onChange={value=>{setSecret(null);setSnapshot(null);setScope(value);}}/>}
+    {snapshot&&<IntegrationScopeSelector data={{...snapshot,tenantCode,branchCode}} disabled={pending} onChange={value=>{if(value.tenantCode===tenantCode&&(value.branchCode || null)===(branchCode || null))return;setSecret(null);setSnapshot(null);setScope(value);}}/>}
     <nav role="tablist" aria-label="Integration tabs" style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:20}}>{tabs.map((tab,index)=><Button key={tab.id} id={`integration-tab-${tab.id}`} role="tab" aria-selected={activePage===tab.id} aria-controls="integration-tab-panel" tabIndex={activePage===tab.id?0:-1} secondary={activePage!==tab.id} onClick={()=>changeTab(tab.id)} onKeyDown={event=>onTabKeyDown(event,index)}>{tab.label}</Button>)}</nav>
     {!tabs.length&&<Notice>You do not have access to any integration tabs.</Notice>}
     {notice?.error&&<Notice tone="error">{notice.error}</Notice>}
@@ -124,7 +136,7 @@ export default function IntegrationsContainer({moduleAccess,userRole}) {
         {notice?.message&&!visibleSecret&&<Notice tone="success">{notice.message}</Notice>}
       </>}
       <div id="integration-tab-panel" role="tabpanel" aria-labelledby={`integration-tab-${activePage}`} tabIndex={0}>
-        {activePage!=='integrations'&&(!snapshot.setup.databaseReady||!featureAvailable)?<div style={panelStyle}><h3 style={{marginTop:0}}>{activeTab.label}</h3><p style={{color:'var(--text-secondary)'}}>{activeTab.description}</p><Button disabled>{!snapshot.setup.databaseReady?'Available after setup':snapshot.policy?.enabled?'Feature not enabled for this scope':'Master Admin activation required'}</Button></div>:<Panel key={`${activePage}:${scopeKey}`} scope={{tenantCode,branchCode}} scopeKey={scopeKey} bootstrap={snapshot} canManage={snapshot.setup.databaseReady&&snapshot.canManage&&!pending} onAction={onAction} loadRows={loadRows} refreshKey={refreshKey} apiSecret={visibleSecret?.kind==='api_key'?visibleSecret:null} onDismissSecret={()=>setSecret(null)}/>}
+        {activePage!=='integrations'&&(!snapshot.setup.databaseReady||!featureAvailable)?<div style={panelStyle}><h3 style={{marginTop:0}}>{activeTab.label}</h3><p style={{color:'var(--text-secondary)'}}>{activeTab.description}</p><Button disabled>{!snapshot.setup.databaseReady?'Available after setup':snapshot.policy?.enabled?'Feature not enabled for this scope':'Master Admin activation required'}</Button></div>:<Panel key={`${activePage}:${scopeKey}`} scope={{tenantCode,branchCode}} scopeKey={scopeKey} bootstrap={snapshot} canManage={snapshot.setup.databaseReady&&snapshot.canManage&&!pending} onAction={onAction} loadRows={loadRows} refreshKey={refreshKey} apiSecret={visibleSecret?.kind==='api_key'?visibleSecret:null} onDismissSecret={()=>{setSecret(null);setRefreshKey(value=>value+1);}}/>}
       </div>
     </>}
     {activePage&&!currentSnapshot&&!notice?.error&&<p role="status">Loading authorized integration scope…</p>}

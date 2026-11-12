@@ -199,9 +199,10 @@ test('new and replacement key responses survive same-tab sync and focus refresh 
   globalThis.document={visibilityState:'visible',addEventListener:()=>{},removeEventListener:()=>{}};
   const harness=componentHarness();
   try {
-    let issued=0,resolveDelayed;
+    let issued=0,resolveDelayed;const commands=[];
     t.mock.method(globalThis,'fetch',async(url,options)=>{
       const input=JSON.parse(options.body);
+      commands.push(input.command);
       if(input.command==='create_key'&&input.name==='delayed')return new Promise(resolve=>{resolveDelayed=()=>resolve(Response.json({success:true,code:'KEY_delayed',secret:'TEST_ONLY_DELAYED_SECRET'}));});
       if(['create_key','rotate_key'].includes(input.command))return Response.json({success:true,code:`KEY_fixture_${++issued}`,secret:`TEST_ONLY_FULL_SECRET_${issued}`,message:'Copy now'});
       return Response.json({success:true,tenantCode:input.tenantCode || 'TNT00002',branchCode:input.branchCode || null,tenants:[],branches:[],canManage:true,setup:{databaseReady:true,enabled:true},policy:{enabled:true,features:{api_read:true,api_write:true,meta:true}}});
@@ -211,14 +212,17 @@ test('new and replacement key responses survive same-tab sync and focus refresh 
     const {default:Container}=await loadJsx('src/components/Settings/Integrations/IntegrationsContainer.jsx',{react:harness.react,'@/config/integrationsConfig':config,'@/utils/permissionUtils':permissions,'./MappingEditor':editor,'./IntegrationScopeSelector':{__esModule:true,default:Scope},...children});
     const props={moduleAccess:{settings:{view:true}},userRole:'admin'},render=()=>harness.render(Container,props),panel=tree=>elements(tree,item=>item.type===Panel)[0];
     render();await harness.flush();let tree=render();
+    const bootstrapCount=()=>commands.filter(command=>command==='bootstrap').length,beforeIssue=bootstrapCount();
     await panel(tree).props.onAction({command:'create_key',name:'Fixture only',scopes:['leads:read']});
     tree=render();assert.equal(panel(tree).props.apiSecret.value,'TEST_ONLY_FULL_SECRET_1');
     await harness.flush();tree=render();
+    assert.equal(bootstrapCount(),beforeIssue,'key display must precede a list/bootstrap refresh');
     for(const event of ['setting_subtab_change','popstate']){events.get(event)();tree=render();await harness.flush();tree=render();assert.equal(panel(tree).props.apiSecret.value,'TEST_ONLY_FULL_SECRET_1');}
     elements(tree,item=>item.props.role==='tab'&&item.props['aria-selected'])[0].props.onClick();
     tree=render();assert.equal(panel(tree).props.apiSecret.value,'TEST_ONLY_FULL_SECRET_1');
     events.get('focus')();t.mock.timers.tick(150);render();await harness.flush();tree=render();assert.equal(panel(tree).props.apiSecret.value,'TEST_ONLY_FULL_SECRET_1');
-    panel(tree).props.onDismissSecret();tree=render();assert.equal(panel(tree).props.apiSecret,null);
+    assert.equal(bootstrapCount(),beforeIssue,'focus refresh pauses until the key is acknowledged');
+    panel(tree).props.onDismissSecret();tree=render();assert.equal(panel(tree).props.apiSecret,null);await harness.flush();tree=render();assert.equal(bootstrapCount(),beforeIssue+1);
     await panel(tree).props.onAction({command:'rotate_key',code:'KEY_fixture_1'});tree=render();await harness.flush();tree=render();assert.equal(panel(tree).props.apiSecret.value,'TEST_ONLY_FULL_SECRET_2');
     elements(tree,item=>item.type===Scope)[0].props.onChange({tenantCode:'TNT00002',branchCode:'TNT00002-B0001'});
     render();await harness.flush();tree=render();assert.equal(panel(tree).props.apiSecret,null);
@@ -262,6 +266,28 @@ test('full API key is visible near Create, scrolls into view, copies completely 
     elements(rowActions,item=>item.props.children==='Replace key')[0].props.onClick();tree=render();
     await elements(tree,item=>item.props.children==='Replace and show new key')[0].props.onClick();assert.deepEqual(actions,[{command:'rotate_key',code:'KEY_saved',expiresInDays:90}]);
   } finally {harness.unmount();if(previousNavigator)Object.defineProperty(globalThis,'navigator',previousNavigator);else Object.defineProperty(globalThis,'navigator',{configurable:true,value:undefined});}
+});
+
+test('Create displays and copies the returned secret without a parent secret prop; missing secrets produce a visible error',async()=>{
+  const harness=componentHarness(),previousNavigator=Object.getOwnPropertyDescriptor(globalThis,'navigator'),copies=[];
+  Object.defineProperty(globalThis,'navigator',{configurable:true,value:{clipboard:{writeText:async value=>copies.push(value)}}});
+  try{
+    const editor=await loadJsx('src/components/Settings/Integrations/MappingEditor.jsx');
+    const {default:Panel}=await loadJsx('src/components/Settings/Integrations/ApiAccessPanel.jsx',{react:harness.react,'@/config/integrationsConfig':config,'./MappingEditor':editor,'./IntegrationTable':{__esModule:true,default:()=>null}});
+    let response={success:true,code:'KEY_direct_fixture',secret:'DUMMY_DIRECT_RESPONSE_ONLY'};
+    const props={scope:{tenantCode:'TNT00002'},bootstrap:{canManage:true,policy:{features:{api_read:true,api_write:true}}},canManage:true,apiSecret:null,onAction:async()=>response};
+    const render=()=>harness.render(Panel,props),create=tree=>elements(tree,item=>item.type===editor.Button&&item.props.children==='Create API key')[0];
+    let tree=render();elements(tree,item=>item.type==='input'&&item.props.maxLength===120)[0].props.onChange({target:{value:'Direct response fixture'}});tree=render();
+    await create(tree).props.onClick();tree=render();
+    assert.equal(elements(tree,item=>item.props['aria-label']==='Full API key')[0].props.value,response.secret);
+    // The key remains available while parent setup/permission state refreshes.
+    props.canManage=false;props.bootstrap.canManage=false;tree=render();
+    await elements(tree,item=>item.props.children==='Copy API key')[0].props.onClick();assert.deepEqual(copies,[response.secret]);
+    elements(tree,item=>item.props.children==='Close key box')[0].props.onClick();tree=render();assert.equal(elements(tree,item=>item.props['aria-label']==='Full API key').length,0);
+    props.canManage=true;props.bootstrap.canManage=true;response={success:true,code:'KEY_missing_fixture'};
+    tree=render();elements(tree,item=>item.type==='input'&&item.props.maxLength===120)[0].props.onChange({target:{value:'Missing response fixture'}});tree=render();await create(tree).props.onClick();tree=render();
+    assert.match(renderToStaticMarkup(tree),/full secret was not returned/);assert.equal(elements(tree,item=>item.props['aria-label']==='Full API key').length,0);assert.equal(create(tree).props.disabled,true);
+  }finally{harness.unmount();if(previousNavigator)Object.defineProperty(globalThis,'navigator',previousNavigator);else Object.defineProperty(globalThis,'navigator',{configurable:true,value:undefined});}
 });
 
 test('examples contain full scoped URLs, headers and JSON; copied commands work in the selected format',async()=>{

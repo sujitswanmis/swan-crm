@@ -79,8 +79,10 @@ async function masterTenantAccess(input) {
 async function list(context,input) {
   const resource=RESOURCES[input.resource];
   if(!resource) throw new IntegrationError('Unsupported integration resource.');
-  const page=Number(input.currentPage || 1),size=Number(input.pageSize || 25);
-  if(!Number.isInteger(page)||page<1||page>10000||![10,25,50,100].includes(size)) throw new IntegrationError('Invalid pagination.');
+  if([input.currentPage,input.pageSize].some(value=>value!==undefined&&value!==null&&!['number','string'].includes(typeof value))) throw new IntegrationError('Invalid pagination.');
+  const page=Number(input.currentPage ?? 1),size=input.pageSize==='All'?100000:Number(input.pageSize ?? 25),all=size===100000;
+  if(!Number.isSafeInteger(page)||page<1||page>10000||!Number.isSafeInteger(size)||size<1||(!all&&size>1000)||(all&&page!==1)) throw new IntegrationError('Invalid pagination.');
+  const makeQuery=()=>{
   let query=scopeQuery(context.db.from(resource.table).select(resource.select,{count:'exact'}),context);
   if(input.resource==='connections') {
     if(!CONNECTION_TYPES.includes(input.type)) throw new IntegrationError('Select a connection type.');
@@ -95,9 +97,22 @@ async function list(context,input) {
     const search=String(input.search).slice(0,100);
     query=query.ilike(input.resource==='connections'||input.resource==='keys'?'name':'code',`%${search}%`);
   }
-  const response=await query.order('created_at',{ascending:false}).range((page-1)*size,page*size-1);
-  const rows=checked(response) || [];
-  return {success:true,rows:input.resource==='connections'?rows.map(connectionView):rows,total:response.count || 0};
+  return query.order('created_at',{ascending:false}).order('code',{ascending:false});
+  };
+  const deadline=Date.now()+20000;
+  const response=await makeQuery().range(all?0:(page-1)*size,all?999:page*size-1);
+  const rows=checked(response) || [],total=response.count || 0;
+  // All is deliberately bounded, and read in normal PostgREST batches rather
+  // than pretending a single 100000-row range bypasses its server row limit.
+  if(all&&total>5000) throw new IntegrationError('All is available for up to 5,000 integration records. Narrow the filters or choose a page size.',400,'all_rows_limit');
+  while(all&&rows.length<total){
+    if(Date.now()>deadline) throw new IntegrationError('Loading all integration records took too long. Choose a page size or narrow the filters.',503,'list_timeout');
+    const next=await makeQuery().range(rows.length,Math.min(rows.length+1000,total)-1),batch=checked(next) || [];
+    if(!batch.length||next.count!==total) throw new IntegrationError('Integration records changed while loading. Refresh and retry.',409,'records_changed');
+    rows.push(...batch);
+  }
+  if(all&&(rows.length!==total||new Set(rows.map(row=>row.code)).size!==rows.length)) throw new IntegrationError('Integration records changed while loading. Refresh and retry.',409,'records_changed');
+  return {success:true,rows:input.resource==='connections'?rows.map(connectionView):rows,total};
 }
 async function createKey(context,input,old) {
   const scopes=old?.scopes || input.scopes;
@@ -106,10 +121,12 @@ async function createKey(context,input,old) {
   for(const scope of scopes) assertTenantFeature(policy,['leads:read','lookups:read'].includes(scope)?'api_read':'api_write');
   const name=String(old?.name || input.name || '').trim();
   if(!name || name.length>120) throw new IntegrationError('Enter a key name up to 120 characters.');
-  const days=Number(input.expiresInDays ?? 90);
-  if(!Number.isInteger(days)||days<1||days>365) throw new IntegrationError('Key validity must be between 1 and 365 days.');
+  if(input.neverExpires!==undefined&&typeof input.neverExpires!=='boolean') throw new IntegrationError('Select a valid API key expiration.');
+  const never=input.neverExpires===true||(input.neverExpires===undefined&&input.expiresInDays===undefined&&old?.expires_at===null);
+  const days=never?null:Number(input.expiresInDays ?? 90);
+  if(!never&&(!Number.isInteger(days)||days<1||days>365)) throw new IntegrationError('Key validity must be between 1 and 365 days, or select Never expires.');
   const token=createSecret('crm'),code=createSecret('KEY');
-  const row={code,tenant_id:context.tenant.id,branch_code:old?.branch_code || context.branchCode,name,key_hash:hashSecret(token),key_prefix:token.slice(0,12)+'…',scopes,expires_at:new Date(Date.now()+days*86400000).toISOString(),requests_per_minute:120};
+  const row={code,tenant_id:context.tenant.id,branch_code:old?.branch_code || context.branchCode,name,key_hash:hashSecret(token),key_prefix:token.slice(0,12)+'…',scopes,expires_at:never?null:new Date(Date.now()+days*86400000).toISOString(),requests_per_minute:120};
   checked(await context.db.rpc('integration_create_key',{p_row:row,p_actor:context.actorCode,p_revoke_code:old?.code || null}));
   return {success:true,code,secret:token,message:'Copy this API key now. It will not be shown again.'};
 }
