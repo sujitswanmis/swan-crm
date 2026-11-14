@@ -96,16 +96,21 @@ function cleanRequestForDb(req, tenantId = DEFAULT_TENANT_ID) {
 
 // Some workspaces still use the original attendance schema. Retry only missing
 // optional shift columns; never hide other database errors or overwrite a punch.
-async function persistAttendancePunch(adminClient, record, tenantId, existingDb, punchType) {
+async function persistAttendancePunch(adminClient, record, tenantId, existingDb, punchType, isMultiRePunch = false) {
   const payload = cleanAttendanceRecordForDb(record, tenantId);
   const optionalColumns = ['short_leave_type', 'is_grace_applied', 'shift_name'];
   try {
     for (let attempt = 0; attempt <= optionalColumns.length; attempt++) {
       let query;
       if (existingDb?.id) {
-        query = adminClient.from('attendance_records').update(payload)
-          .eq('id', existingDb.id)
-          .is(punchType === 'IN' ? 'in_time' : 'out_time', null);
+        let updateQuery = adminClient.from('attendance_records').update(payload)
+          .eq('id', existingDb.id);
+        if (isMultiRePunch) {
+          // Multi-punch re-entry: in_time was set during punch #1, out_time is being cleared
+        } else {
+          updateQuery = updateQuery.is(punchType === 'IN' ? 'in_time' : 'out_time', null);
+        }
+        query = updateQuery;
       } else if (punchType === 'OUT') {
         query = adminClient.from('attendance_records').update(payload)
           .ilike('email', payload.email)
@@ -135,7 +140,7 @@ async function persistAttendancePunch(adminClient, record, tenantId, existingDb,
         .limit(1)
         .maybeSingle();
       if (current.error) return { error: current.error };
-      if (current.data?.[punchType === 'IN' ? 'in_time' : 'out_time']) {
+      if (current.data?.[punchType === 'IN' ? 'in_time' : 'out_time'] || (isMultiRePunch && current.data?.in_time)) {
         return { data: current.data, alreadyPunched: true };
       }
       return { error: new Error('Attendance save was not confirmed. Please retry.') };
@@ -1225,7 +1230,14 @@ export async function punchIn({
 
   const currentTodayRec = existingDb || existingLocal;
 
-  if (currentTodayRec && currentTodayRec.in_time) {
+  // Resolve user powers & multi-punch privilege
+  const allowMultiPunch = Boolean(
+    userRole?.module_access?.allow_multi_punch || 
+    userRole?.module_access?.powers?.allow_multi_punch
+  );
+
+  // Strict 1-Time Punch (Default): Block if already punched in
+  if (!allowMultiPunch && currentTodayRec && currentTodayRec.in_time) {
     return {
       success: false,
       error: `Aapka aaj ka Punch In (${new Date(currentTodayRec.in_time).toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })}) pehle se darj hai. Ek din me sirf 1 bar Punch In kiya ja sakta hai.`,
@@ -1233,6 +1245,18 @@ export async function punchIn({
       data: currentTodayRec
     };
   }
+
+  // Multi-Punch: Block if already currently on active duty (haven't punched out yet)
+  if (allowMultiPunch && currentTodayRec && currentTodayRec.in_time && !currentTodayRec.out_time) {
+    return {
+      success: false,
+      error: 'Aap pehle se active duty par punched in hain. Naya punch in karne ke liye pehle Punch Out karein.',
+      alreadyPunched: true,
+      data: currentTodayRec
+    };
+  }
+
+  const isMultiRePunch = Boolean(allowMultiPunch && currentTodayRec?.in_time && currentTodayRec?.out_time);
 
   let monthlyRecords = (monthDbRes?.data && monthDbRes.data.length > 0)
     ? monthDbRes.data
@@ -1346,6 +1370,21 @@ export async function punchIn({
   const monthlyUsage = calculateMonthlyShortLeaveUsage(monthlyRecords, nowYear, nowMonth, today, activeShift || tenantPolicy);
   const evaluation = evaluateMorningInPunch(now, monthlyUsage, resolvedEmpName, activeShift || tenantPolicy);
 
+  // For re-punch in (resuming duty), canonical in_time MUST remain the original 1st punch in time
+  const canonicalInTime = isMultiRePunch ? currentTodayRec.in_time : nowIso;
+  const canonicalInLocation = isMultiRePunch ? (currentTodayRec.in_location || location) : location;
+  const canonicalInMethod = isMultiRePunch ? (currentTodayRec.in_method || method) : method;
+
+  const inTimeFormatted = new Date(nowIso).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true });
+  const punchInTag = `[IN: ${inTimeFormatted} (${location.startsWith('GPS') ? 'GPS' : 'Web'})]`;
+  let combinedRemarks = '';
+  if (isMultiRePunch) {
+    const existingRemarks = currentTodayRec?.remarks || '';
+    combinedRemarks = [existingRemarks, punchInTag, `[SessionStart: ${nowIso}]`].filter(Boolean).join(' ');
+  } else {
+    combinedRemarks = [geofenceRemarks, evaluation.remarks, punchInTag].filter(Boolean).join(' ');
+  }
+
   let resultRecord = {
     id: ensureUuid(existingDb?.id || existingLocal?.id),
     tenant_id: tenantId,
@@ -1355,24 +1394,24 @@ export async function punchIn({
     email: normalizedEmail,
     department: resolvedDepartment,
     attendance_date: today,
-    in_time: nowIso,
+    in_time: canonicalInTime,
     out_time: null,
-    in_location: location,
+    in_location: canonicalInLocation,
     out_location: null,
-    in_method: method,
+    in_method: canonicalInMethod,
     out_method: null,
-    total_working_minutes: 0,
-    status: evaluation.status,
-    short_leave_type: evaluation.short_leave_type,
-    is_grace_applied: evaluation.is_grace_applied,
+    total_working_minutes: currentTodayRec?.total_working_minutes || 0,
+    status: isMultiRePunch ? (currentTodayRec.status || 'PRESENT') : evaluation.status,
+    short_leave_type: isMultiRePunch ? (currentTodayRec.short_leave_type || 'NONE') : evaluation.short_leave_type,
+    is_grace_applied: isMultiRePunch ? !!currentTodayRec.is_grace_applied : evaluation.is_grace_applied,
     shift_name: resolvedShiftName,
     is_regularized: false,
-    remarks: [geofenceRemarks, evaluation.remarks].filter(Boolean).join(' '),
-    created_at: nowIso,
+    remarks: combinedRemarks,
+    created_at: currentTodayRec?.created_at || nowIso,
     updated_at: nowIso
   };
 
-  const saved = await persistAttendancePunch(adminClient, resultRecord, tenantId, existingDb, 'IN');
+  const saved = await persistAttendancePunch(adminClient, resultRecord, tenantId, existingDb, 'IN', isMultiRePunch);
   if (saved.error) {
     console.error('Supabase punchIn save failed:', saved.error);
     return { success: false, error: 'Punch In server par save nahi hua. Kripya dobara try karein.' };
@@ -1436,7 +1475,9 @@ export async function punchIn({
 
   return {
     success: true,
-    message: `Punch In registered: ${evaluation.ruleTitle}`,
+    message: isMultiRePunch
+      ? `Duty Resumed! Punch In registered at ${inTimeFormatted}`
+      : `Punch In registered: ${evaluation.ruleTitle}`,
     data: resultRecord,
     evaluation,
     monthlyUsage
@@ -1531,10 +1572,24 @@ export async function punchOut({
       };
     }
 
-    if (existing.out_time) {
+    const allowMultiPunch = Boolean(
+      uRole?.module_access?.allow_multi_punch ||
+      uRole?.module_access?.powers?.allow_multi_punch
+    );
+
+    if (!allowMultiPunch && existing.out_time) {
       return {
         success: false,
         error: `Aapka aaj ka Final Punch Out (${new Date(existing.out_time).toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })}) pehle hi darj ho chuka hai. Ek din me sirf 1 bar Punch Out allow hai.`,
+        alreadyPunchedOut: true,
+        data: existing
+      };
+    }
+
+    if (allowMultiPunch && existing.out_time) {
+      return {
+        success: false,
+        error: `Aap pehle hi Punch Out (${new Date(existing.out_time).toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })}) kar chuke hain. Dobara punch out karne ke liye pehle Punch In karein.`,
         alreadyPunchedOut: true,
         data: existing
       };
@@ -1631,16 +1686,36 @@ export async function punchOut({
     const monthlyUsage = calculateMonthlyShortLeaveUsage(monthlyRecords, nowYear, nowMonth, today, activeShift || tenantPolicy);
     const evaluation = evaluateEveningOutPunch(now, existing.in_time, existing, monthlyUsage, empName || email.split('@')[0], activeShift || tenantPolicy);
 
+    // Session duration calculation for multi-punch duty intervals
+    let sessionStartMs = new Date(existing.in_time).getTime();
+    const sessionMatch = (existing.remarks || '').match(/\[SessionStart:\s*([^\]]+)\]/);
+    if (sessionMatch && sessionMatch[1]) {
+      const parsedSessionStart = new Date(sessionMatch[1]).getTime();
+      if (!isNaN(parsedSessionStart) && parsedSessionStart > sessionStartMs) {
+        sessionStartMs = parsedSessionStart;
+      }
+    }
+    const currentSessionMins = Math.max(0, Math.floor((new Date(nowIso).getTime() - sessionStartMs) / 60000));
+    const accumulatedMins = allowMultiPunch && (Number(existing.total_working_minutes) > 0)
+      ? (Number(existing.total_working_minutes) + currentSessionMins)
+      : (evaluation.total_working_minutes || currentSessionMins);
+
+    // Clean SessionStart tag from remarks and append punch out tag
+    const cleanOldRemarks = (existing.remarks || '').replace(/\[SessionStart:\s*[^\]]+\]/g, '').trim();
+    const outTimeFormatted = new Date(nowIso).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true });
+    const punchOutTag = `[OUT: ${outTimeFormatted} (${location.startsWith('GPS') ? 'GPS' : 'Web'})]`;
+    const finalRemarks = [cleanOldRemarks, geofenceRemarks, evaluation.remarks, punchOutTag].filter(Boolean).join(' ');
+
     let updatedRecord = {
       ...existing,
       email: normalizedEmail,
       out_time: nowIso,
       out_location: location,
       out_method: method,
-      total_working_minutes: evaluation.total_working_minutes,
+      total_working_minutes: accumulatedMins,
       status: evaluation.status,
       short_leave_type: evaluation.short_leave_type,
-      remarks: [geofenceRemarks, evaluation.remarks].filter(Boolean).join(' '),
+      remarks: finalRemarks,
       updated_at: nowIso
     };
 
@@ -1672,9 +1747,9 @@ export async function punchOut({
       out_location: location,
       in_method: existing.in_method || method,
       out_method: method,
-      total_working_minutes: evaluation.total_working_minutes,
+      total_working_minutes: accumulatedMins,
       status: evaluation.status,
-      remarks: [geofenceRemarks, evaluation.remarks].filter(Boolean).join(' '),
+      remarks: finalRemarks,
       updated_at: nowIso
     };
     const saved = await persistAttendancePunch(adminClient, punchOutRecord, resolvedTenantId, existingDb, 'OUT');
@@ -1741,7 +1816,9 @@ export async function punchOut({
 
     return {
       success: true,
-      message: `Punch Out registered: ${evaluation.ruleTitle}! Total time worked: ${formatMinutesToHours(evaluation.total_working_minutes)}`,
+      message: allowMultiPunch
+        ? `Punch Out registered at ${outTimeFormatted}! Total duty logged: ${formatMinutesToHours(accumulatedMins)}`
+        : `Punch Out registered: ${evaluation.ruleTitle}! Total time worked: ${formatMinutesToHours(evaluation.total_working_minutes)}`,
       data: updatedRecord,
       evaluation,
       monthlyUsage

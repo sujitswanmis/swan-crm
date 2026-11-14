@@ -38,7 +38,8 @@ const OPERATIONAL_POWERS = [
   { key: 'can_access_audit_logs', label: '📜 View Activity Audit Logs', desc: 'Allows viewing security audit logs and event history in Settings' },
   { key: 'can_manage_settings', label: '⚙️ Edit CRM Pipeline Config', desc: 'Allows modifying stages, sources, and system preferences' },
   { key: 'can_manage_column_data', label: '🛠️ Column Data Manager & Bulk Edit Power', desc: 'Allows bulk updating column values and find-and-replace across lead reports' },
-  { key: 'can_view_all_drafts', label: '📋 View All Team Drafts (Common Pool Access)', desc: 'Allows viewing, searching, and completing adhoora/incomplete draft registrations created by any user in New Lead Registration' }
+  { key: 'can_view_all_drafts', label: '📋 View All Team Drafts (Common Pool Access)', desc: 'Allows viewing, searching, and completing adhoora/incomplete draft registrations created by any user in New Lead Registration' },
+  { key: 'allow_multi_punch', label: '🔄 Multiple Punch In/Out Power (Multi-Punch Duty)', desc: 'Allows employee to punch in and out multiple times a day (for field/split shifts). Default is strict 1-time punch.' }
 ];
 
 const TABLE_COLUMNS = [

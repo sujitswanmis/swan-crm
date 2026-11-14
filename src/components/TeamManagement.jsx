@@ -3247,7 +3247,8 @@ export default function TeamManagement({ initialUsers = [], currentUserCompany =
                         { key: 'can_self_reset_password', label: '🔑 Self Password Reset', desc: 'Allows self password reset via Email OTP on login screen' },
                         { key: 'can_access_audit_logs', label: '📜 View Activity Audit Logs', desc: 'Allows viewing security audit logs and event history in Settings' },
                         { key: 'can_manage_settings', label: '⚙️ Edit CRM Pipeline Config', desc: 'Allows modifying stages, sources, and system preferences' },
-                        { key: 'can_manage_column_data', label: '🛠️ Column Data Manager & Bulk Edit Power', desc: 'Allows bulk updating column values and find-and-replace across lead reports' }
+                        { key: 'can_manage_column_data', label: '🛠️ Column Data Manager & Bulk Edit Power', desc: 'Allows bulk updating column values and find-and-replace across lead reports' },
+                        { key: 'allow_multi_punch', label: '🔄 Multiple Punch In/Out Power (Multi-Punch Duty)', desc: 'Allows employee to punch in and out multiple times a day (for field/split shifts). Default is strict 1-time punch.' }
                       ];
 
                       return powersList.map(p => (

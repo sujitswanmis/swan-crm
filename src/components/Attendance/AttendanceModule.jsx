@@ -321,6 +321,11 @@ export default function AttendanceModule({
 }) {
   const isAdmin = userRole === 'admin' || userRole === 'Admin';
   const isHodOrManager = isAdmin || userRole === 'manager' || userRole === 'hod' || moduleAccess?.attendance?.is_manager === true;
+  const allowMultiPunch = Boolean(
+    moduleAccess?.allow_multi_punch || 
+    moduleAccess?.attendance?.allow_multi_punch ||
+    moduleAccess?.powers?.allow_multi_punch
+  );
 
   const effectiveTenantId = useMemo(() => {
     if (tenantId && tenantId !== 'default' && tenantId !== '00000000-0000-0000-0000-000000000001') {
@@ -1974,7 +1979,12 @@ export default function AttendanceModule({
 
   // Handle Punch In click — instant 1-click reaction, show confirm popup first & pre-warm GPS
   const handlePunchIn = () => {
-    if (punchInFlightRef.current === attendanceScope || punchingIn || todayRecord?.in_time) return;
+    if (punchInFlightRef.current === attendanceScope || punchingIn) return;
+    if (allowMultiPunch) {
+      if (todayRecord?.in_time && !todayRecord?.out_time) return; // already active
+    } else {
+      if (todayRecord?.in_time) return; // strict 1-time
+    }
     preWarmGPSLocation();
     setPunchConfirm('IN');
   };
@@ -2018,7 +2028,12 @@ export default function AttendanceModule({
 
   const handleConfirmedPunchIn = async () => {
     setPunchConfirm(null);
-    if (punchInFlightRef.current === attendanceScope || todayRecordRef.current?.in_time) return;
+    if (punchInFlightRef.current === attendanceScope) return;
+    if (allowMultiPunch) {
+      if (todayRecordRef.current?.in_time && !todayRecordRef.current?.out_time) return;
+    } else {
+      if (todayRecordRef.current?.in_time) return;
+    }
     const scope = attendanceScope;
     const isCurrent = () => scope === attendanceScopeRef.current;
     punchInFlightRef.current = scope;
@@ -2883,7 +2898,9 @@ export default function AttendanceModule({
 
             {/* Title */}
             <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: '0 0 0.4rem', color: 'var(--text-primary)' }}>
-              {punchConfirm === 'IN' ? 'Confirm Punch In' : 'Confirm Punch Out'}
+              {punchConfirm === 'IN' 
+                ? (allowMultiPunch && todayRecord?.out_time ? 'Confirm Resume Duty (Punch In Again)' : 'Confirm Punch In') 
+                : 'Confirm Punch Out'}
             </h2>
 
             {/* Time display */}
@@ -3421,10 +3438,10 @@ export default function AttendanceModule({
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
                 
-                {/* 1. Punch In Button (Strict 1-Time Rule, Instant 1-Click Response) */}
+                {/* 1. Punch In Button (Strict 1-Time Rule or Multi-Punch Re-entry) */}
                 <button
                   type="button"
-                  disabled={punchingIn || !!todayRecord?.in_time}
+                  disabled={punchingIn || (allowMultiPunch ? (!!todayRecord?.in_time && !todayRecord?.out_time) : !!todayRecord?.in_time)}
                   onClick={handlePunchIn}
                   style={{
                     display: 'flex',
@@ -3434,24 +3451,28 @@ export default function AttendanceModule({
                     padding: '0.9rem 0.75rem',
                     borderRadius: '12px',
                     border: 'none',
-                    background: todayRecord?.in_time 
+                    background: (allowMultiPunch ? (!!todayRecord?.in_time && !todayRecord?.out_time) : !!todayRecord?.in_time)
                       ? '#16a34a' 
                       : 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
                     color: '#ffffff',
-                    cursor: todayRecord?.in_time ? 'not-allowed' : 'pointer',
-                    boxShadow: todayRecord?.in_time ? 'none' : '0 4px 12px rgba(220, 38, 38, 0.3)',
+                    cursor: (punchingIn || (allowMultiPunch ? (!!todayRecord?.in_time && !todayRecord?.out_time) : !!todayRecord?.in_time)) ? 'not-allowed' : 'pointer',
+                    boxShadow: (allowMultiPunch ? (!!todayRecord?.in_time && !todayRecord?.out_time) : !!todayRecord?.in_time) ? 'none' : '0 4px 12px rgba(22, 163, 74, 0.3)',
                     transition: 'all 0.2s',
-                    opacity: todayRecord?.in_time ? 0.85 : (punchingIn ? 0.7 : 1)
+                    opacity: (allowMultiPunch ? (!!todayRecord?.in_time && !todayRecord?.out_time) : !!todayRecord?.in_time) ? 0.85 : (punchingIn ? 0.7 : 1)
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700, fontSize: '0.95rem' }}>
                     <CheckCircle2 size={18} />
-                    {punchingIn ? 'Punching...' : (todayRecord?.in_time ? '✓ Punched In' : 'Punch In')}
+                    {punchingIn 
+                      ? 'Punching...' 
+                      : (allowMultiPunch && todayRecord?.in_time && todayRecord?.out_time 
+                          ? '🔄 Punch In Again' 
+                          : (todayRecord?.in_time ? '✓ Punched In' : 'Punch In'))}
                   </div>
                   <span style={{ fontSize: '0.75rem', marginTop: '0.2rem', opacity: 0.9 }}>
-                    {todayRecord?.in_time
-                      ? `In: ${formatTimeIST(todayRecord.in_time)}`
-                      : 'Click to Punch In'}
+                    {allowMultiPunch && todayRecord?.in_time && todayRecord?.out_time
+                      ? 'Resume Duty'
+                      : (todayRecord?.in_time ? `In: ${formatTimeIST(todayRecord.in_time)}` : 'Click to Punch In')}
                   </span>
                 </button>
 
@@ -3480,7 +3501,11 @@ export default function AttendanceModule({
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700, fontSize: '0.95rem' }}>
                     <XCircle size={18} />
-                    {punchingOut ? 'Punching...' : (todayRecord?.out_time ? '✓ Shift Completed' : 'Punch Out')}
+                    {punchingOut 
+                      ? 'Punching...' 
+                      : (todayRecord?.out_time 
+                          ? (allowMultiPunch ? '⏸️ On Break / Out' : '✓ Shift Completed') 
+                          : 'Punch Out')}
                   </div>
                   <span style={{ fontSize: '0.75rem', marginTop: '0.2rem', opacity: 0.9 }}>
                     {todayRecord?.out_time
@@ -3489,6 +3514,32 @@ export default function AttendanceModule({
                   </span>
                 </button>
               </div>
+
+              {allowMultiPunch && todayRecord?.in_time && (
+                <div style={{
+                  padding: '0.45rem 0.75rem',
+                  borderRadius: '8px',
+                  background: 'var(--bg-secondary, #f8fafc)',
+                  border: '1px solid var(--border-light, #e2e8f0)',
+                  fontSize: '0.72rem',
+                  color: 'var(--text-secondary, #64748b)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '0.35rem'
+                }}>
+                  <span style={{ fontWeight: 600, color: 'var(--text-primary, #1e293b)' }}>
+                    🔄 Multi-Punch Active
+                  </span>
+                  <span>
+                    1st In: <strong style={{ color: '#16a34a' }}>{formatTimeIST(todayRecord.in_time)}</strong>
+                    {todayRecord.out_time 
+                      ? <> | Last Out: <strong style={{ color: '#dc2626' }}>{formatTimeIST(todayRecord.out_time)}</strong></>
+                      : ' | Currently On Duty'}
+                  </span>
+                </div>
+              )}
 
               {/* Feedback messages */}
               {punchMessage && (
