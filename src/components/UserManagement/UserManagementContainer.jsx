@@ -640,10 +640,10 @@ export default function UserManagementContainer({
         setPermissionModal({ isOpen: false, user: null });
         fetchUsers(false);
       } else {
-        alert(res?.error || 'Failed to save permissions');
+        showToast(res?.error || 'Failed to save permissions', 'error');
       }
     } catch (err) {
-      alert('Error saving permissions: ' + err.message);
+      showToast('Error saving permissions: ' + err.message, 'error');
     } finally {
       setSavingPermissions(false);
     }
