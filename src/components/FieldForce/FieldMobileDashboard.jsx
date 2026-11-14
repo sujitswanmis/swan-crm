@@ -14,6 +14,11 @@ import {
 import { getPublishedForms } from '@/app/actions/fieldFormStudio';
 import { burnWatermarkOnPhoto } from '@/utils/cameraWatermark';
 import { queueOfflineAction, getPendingQueue, syncOfflineQueue, isOnline } from '@/utils/offlineLocationVault';
+import LeadFormModal from '@/components/LeadFormModal';
+import RegisterEndCustomerModal from '@/components/Orders/modals/RegisterEndCustomerModal';
+import { createPartyMaster } from '@/app/actions/partyMaster';
+import { getTenantProducts } from '@/app/actions/tenantProducts';
+import { PRODUCT_GROUPS } from '@/config/productCatalog';
 import {
   AttendancePolicyBanner,
   ConsoleActiveVisitView,
@@ -21,6 +26,9 @@ import {
   ConsoleCheckInWorkspace,
   ConsoleCompletedVisitsView,
   ConsoleHeader,
+  ConsoleHomeCockpitView,
+  InstantCheckInModal,
+  QuickPartyRegistrationModal,
   getTaskInstructions,
   getTaskStageInfo,
 } from './FieldExecutiveConsoleUI';
@@ -79,6 +87,24 @@ function calculateHaversineMeters(lat1, lon1, lat2, lon2) {
   return Math.round(R * c);
 }
 
+function formatDutyDuration(inTime, isPunchedIn, nowMs) {
+  if (!isPunchedIn || !inTime) return '00 s';
+  const inMs = new Date(inTime).getTime();
+  const diffSecs = Math.max(0, Math.floor((Number(nowMs || 0) - inMs) / 1000));
+  if (diffSecs < 60) {
+    return `${diffSecs} s`;
+  }
+  if (diffSecs < 3600) {
+    const mins = Math.floor(diffSecs / 60);
+    const secs = diffSecs % 60;
+    return `${mins}m ${String(secs).padStart(2, '0')}s`;
+  }
+  const hrs = Math.floor(diffSecs / 3600);
+  const mins = Math.floor((diffSecs % 3600) / 60);
+  const secs = diffSecs % 60;
+  return `${hrs}h ${mins}m ${String(secs).padStart(2, '0')}s`;
+}
+
 export default function FieldMobileDashboard({
   currentUserId,
   company = 'TNT00001',
@@ -109,7 +135,43 @@ export default function FieldMobileDashboard({
   const [activePipeline, setActivePipeline] = useState('LEAD_DATA');
   const [selectedFormId, setSelectedFormId] = useState('');
 
-  const [mainView, setMainView] = useState('ASSIGNED_TASKS'); // 'ASSIGNED_TASKS' | 'CHECK_IN' | 'COMPLETED_VISITS'
+  const [mainView, setMainView] = useState('HOME'); // 'HOME' | 'ASSIGNED_TASKS' | 'CHECK_IN' | 'COMPLETED_VISITS'
+  const [isCheckInModalOpen, setIsCheckInModalOpen] = useState(false);
+  const [showLeadModal, setShowLeadModal] = useState(false);
+  const [showPartyModal, setShowPartyModal] = useState(false);
+  const [showEndCustomerModal, setShowEndCustomerModal] = useState(false);
+  const [isPartySubmitting, setIsPartySubmitting] = useState(false);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  // Dynamic Visit Type State (TrackWick / New Swan WorkApp Inspired)
+  const [visitType, setVisitType] = useState('Lead Pipeline');
+  const [availableProducts, setAvailableProducts] = useState(() => (
+    PRODUCT_GROUPS.map((p) => ({
+      id: p.id,
+      name: p.name,
+      price: (p.price != null && p.price !== '') ? Number(p.price) : 0,
+      category: p.category || 'Implement'
+    }))
+  ));
+  const [orderFollowupOutcome, setOrderFollowupOutcome] = useState('ORDER_PLACED');
+  const [orderStatus, setOrderStatus] = useState('Order Confirmed & Placed');
+  const [noOrderReason, setNoOrderReason] = useState('Stock Full in Godown');
+  const [nextRequirementDate, setNextRequirementDate] = useState('');
+  const [orderItems, setOrderItems] = useState([
+    { productName: '', quantity: 1, price: 0, remarks: '' }
+  ]);
+  const [advancePayment, setAdvancePayment] = useState(0);
+  const [paymentMode, setPaymentMode] = useState('UPI');
+  const [serviceStatus, setServiceStatus] = useState('');
+  const [serviceRemark, setServiceRemark] = useState('');
+  const [complaintTargetType, setComplaintTargetType] = useState('PARTY_MASTER');
+  const [complaintChassisSerial, setComplaintChassisSerial] = useState('');
+  const [complaintProductName, setComplaintProductName] = useState('');
+  const [complaintStage, setComplaintStage] = useState('C04 - On-Site Execution & Digital Job Card');
+  const [hasFollowUp, setHasFollowUp] = useState(false);
+  const [materialStatus, setMaterialStatus] = useState('Material Received OK');
+  const [materialChallanNo, setMaterialChallanNo] = useState('');
+
   const [todayCompletedVisits, setTodayCompletedVisits] = useState([]);
   const [loadingCompleted, setLoadingCompleted] = useState(false);
 
@@ -139,6 +201,7 @@ export default function FieldMobileDashboard({
 
   // Output form inputs
   const [leadStage, setLeadStage] = useState('2;01>Contact Stage>Contacted');
+  const [initialLeadStage, setInitialLeadStage] = useState('2;01>Contact Stage>Contacted');
   const [orderDeliveryStage, setOrderDeliveryStage] = useState('S01 - Order Confirmation');
   const [workOutcome, setWorkOutcome] = useState('WORK_DONE');
   const [discussionNotes, setDiscussionNotes] = useState('');
@@ -183,6 +246,31 @@ export default function FieldMobileDashboard({
     };
   }, [refreshPendingQueue]);
 
+  // 1.0 Load products for the active tenant/branch
+  useEffect(() => {
+    let active = true;
+    getTenantProducts(company, branchCode || 'ALL')
+      .then((res) => {
+        if (!active) return;
+        const list = Array.isArray(res) ? res : (Array.isArray(res?.products) ? res.products : []);
+        if (list.length > 0) {
+          const mapped = list.filter(p => p.is_active !== false).map((p) => ({
+            id: p.id || p.name,
+            name: p.name || p.product_name,
+            price: Number(p.price || p.standard_rate || 0),
+            category: p.category || 'Implement',
+          }));
+          if (mapped.length > 0) {
+            setAvailableProducts(mapped);
+          }
+        }
+      })
+      .catch((err) => {
+        console.warn('Could not load tenant products, keeping default catalog:', err);
+      });
+    return () => { active = false; };
+  }, [company, branchCode]);
+
   // 1.1 Recover Active Visit Session cleanly across page navigation & refresh
   useEffect(() => {
     let active = true;
@@ -210,7 +298,10 @@ export default function FieldMobileDashboard({
               taskStage: session.taskStage || '',
               taskStageLabel: session.taskStageLabel || ''
             } : null);
-            if (session.leadStage) setLeadStage(session.leadStage);
+            if (session.leadStage) {
+              setLeadStage(session.leadStage);
+              setInitialLeadStage(session.initialLeadStage || session.leadStage);
+            }
             if (session.orderDeliveryStage) setOrderDeliveryStage(session.orderDeliveryStage);
             if (session.workOutcome) setWorkOutcome(session.workOutcome);
             const diffMs = Date.now() - new Date(session.activeCheckInTime).getTime();
@@ -296,6 +387,17 @@ export default function FieldMobileDashboard({
       setAttendanceStatus(prev => ({ ...prev, checked: true, loading: false }));
     }
   }, [currentUserId, userEmail]);
+
+  // Realtime Live Duty Duration Counter (Matching Screen 1)
+  useEffect(() => {
+    if (!attendanceStatus?.isPunchedIn || !attendanceStatus?.inTime) return;
+    const interval = setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [attendanceStatus?.isPunchedIn, attendanceStatus?.inTime]);
+
+  const liveDutyDuration = formatDutyDuration(attendanceStatus?.inTime, attendanceStatus?.isPunchedIn, nowMs);
 
   const loadCompletedVisits = useCallback(async () => {
     if (!currentUserId) return;
@@ -485,8 +587,10 @@ export default function FieldMobileDashboard({
       setActivePipeline('LEAD_DATA');
       if (task.form_details?.lead_status) {
         setLeadStage(task.form_details.lead_status);
+        setInitialLeadStage(task.form_details.lead_status);
       } else if (stageInfo?.rawValue && /^\d+;\d+>/.test(stageInfo.rawValue)) {
         setLeadStage(stageInfo.rawValue);
+        setInitialLeadStage(stageInfo.rawValue);
       }
     }
   }, []);
@@ -505,6 +609,7 @@ export default function FieldMobileDashboard({
 
     if (entity.current_stage && selectedModule !== 'FIELD_TASK') {
       setLeadStage(entity.current_stage);
+      setInitialLeadStage(entity.current_stage);
     }
     if (selectedModule === 'PARTY_MASTER') {
       setActivePipeline('ORDER_DELIVERY');
@@ -538,7 +643,7 @@ export default function FieldMobileDashboard({
     }
   }, [onNavigateToAttendance]);
 
-  const handleStartCheckIn = useCallback(async () => {
+  const handleStartCheckIn = useCallback(async (overrides = {}) => {
     if (attendanceStatus.checked && !attendanceStatus.isPunchedIn) {
       handleAttendanceGateClick();
       return;
@@ -547,7 +652,15 @@ export default function FieldMobileDashboard({
       alert('Shift Ended: Check-in is not allowed after punching out for the day.');
       return;
     }
-    if (!partyName.trim()) {
+
+    const effPartyName = overrides.partyName || partyName;
+    const effPartyPhone = overrides.partyPhone || partyPhone;
+    const effPartyAddress = overrides.partyAddress || partyAddress;
+    const effLeadId = overrides.leadId !== undefined ? overrides.leadId : leadId;
+    const effCustomerId = overrides.customerId !== undefined ? overrides.customerId : (selectedTask?.customer_id || null);
+    const effPipeline = overrides.pipelineType || activePipeline;
+
+    if (!effPartyName.trim()) {
       alert('Please select a party or enter a walk-in client name.');
       return;
     }
@@ -558,20 +671,20 @@ export default function FieldMobileDashboard({
     }
 
     const payload = {
-      taskId: selectedTask?.id || null,
+      taskId: overrides.taskId || selectedTask?.id || null,
       company,
       branch_code: branchCode,
       field_user_id: currentUserId,
       user_email: userEmail,
-      customer_id: selectedTask?.customer_id || null,
-      lead_id: leadId,
-      party_name: partyName,
+      customer_id: effCustomerId,
+      lead_id: effLeadId,
+      party_name: effPartyName,
       party_lat: partyLat,
       party_lng: partyLng,
       check_in_lat: userLat,
       check_in_lng: userLng,
       connectivity_mode: connectivityMode,
-      pipeline_type: activePipeline,
+      pipeline_type: effPipeline,
     };
 
     if (networkOnline) {
@@ -587,6 +700,7 @@ export default function FieldMobileDashboard({
           }));
         }
         setActiveTab('ACTIVE_VISIT');
+        setIsCheckInModalOpen(false);
         const selectedStageInfo = getTaskStageInfo(selectedTask);
         try {
           localStorage.setItem('field_active_visit', JSON.stringify({
@@ -596,17 +710,18 @@ export default function FieldMobileDashboard({
             taskStage: selectedStageInfo?.rawValue || '',
             taskStageLabel: selectedStageInfo?.label || '',
             activeCheckInTime: res.check_in_time,
-            partyName,
-            partyPhone,
-            partyAddress,
-            leadId,
+            partyName: effPartyName,
+            partyPhone: effPartyPhone,
+            partyAddress: effPartyAddress,
+            leadId: effLeadId,
             partyLat,
             partyLng,
             userLat,
             userLng,
             connectivityMode,
-            activePipeline,
+            activePipeline: effPipeline,
             leadStage,
+            initialLeadStage: initialLeadStage || leadStage,
             orderDeliveryStage,
             workOutcome,
             company,
@@ -622,6 +737,7 @@ export default function FieldMobileDashboard({
       await queueOfflineAction('CHECK_IN', { ...payload, check_in_time: offlineTime });
       setActiveCheckInTime(offlineTime);
       setActiveTab('ACTIVE_VISIT');
+      setIsCheckInModalOpen(false);
       refreshPendingQueue();
       const offlineStageInfo = getTaskStageInfo(selectedTask);
       try {
@@ -632,17 +748,18 @@ export default function FieldMobileDashboard({
           taskStage: offlineStageInfo?.rawValue || '',
           taskStageLabel: offlineStageInfo?.label || '',
           activeCheckInTime: offlineTime,
-          partyName,
-          partyPhone,
-          partyAddress,
-          leadId,
+          partyName: effPartyName,
+          partyPhone: effPartyPhone,
+          partyAddress: effPartyAddress,
+          leadId: effLeadId,
           partyLat,
           partyLng,
           userLat,
           userLng,
           connectivityMode,
-          activePipeline,
+          activePipeline: effPipeline,
           leadStage,
+          initialLeadStage: initialLeadStage || leadStage,
           orderDeliveryStage,
           workOutcome,
           company,
@@ -651,11 +768,99 @@ export default function FieldMobileDashboard({
       } catch (_) {}
     }
   }, [
-    attendanceStatus, handleAttendanceGateClick, partyName, connectivityMode, userLat, userLng,
-    fetchLiveGPS, selectedTask, company, branchCode, currentUserId, userEmail, leadId, partyLat,
-    partyLng, activePipeline, networkOnline, partyPhone, partyAddress, leadStage,
-    orderDeliveryStage, workOutcome, onNavigateToAttendance, refreshPendingQueue,
+    attendanceStatus, handleAttendanceGateClick, partyName, partyPhone, partyAddress,
+    connectivityMode, userLat, userLng, fetchLiveGPS, selectedTask, company, branchCode,
+    currentUserId, userEmail, leadId, partyLat, partyLng, activePipeline, networkOnline,
+    leadStage, initialLeadStage, orderDeliveryStage, workOutcome, onNavigateToAttendance, refreshPendingQueue
   ]);
+
+  // Handler 1: Instant Lead Registration Success
+  const handleLeadRegistered = useCallback(async (newLead) => {
+    if (!newLead) return;
+    const name = newLead.business_name || newLead.contact_person_name || 'New Lead';
+    const phone = newLead.contact_mobile_number || '';
+    const addr = [newLead.district_name, newLead.state].filter(Boolean).join(', ');
+    setPartyName(name);
+    setPartyPhone(phone);
+    setPartyAddress(addr);
+    setLeadId(newLead.id);
+    setSelectedTask(null);
+    setActivePipeline('LEAD_DATA');
+    setShowLeadModal(false);
+    setIsCheckInModalOpen(false);
+
+    // Auto-proceed to check-in and visit type screen
+    await handleStartCheckIn({
+      partyName: name,
+      partyPhone: phone,
+      partyAddress: addr,
+      leadId: newLead.id,
+      pipelineType: 'LEAD_DATA',
+    });
+  }, [handleStartCheckIn]);
+
+  // Handler 2: Register End Customer Success
+  const handleEndCustomerRegistered = useCallback(async (createdCustomer) => {
+    if (!createdCustomer) return;
+    const name = createdCustomer.full_name || 'End Customer';
+    const phone = createdCustomer.mobile_1 || '';
+    const addr = [createdCustomer.full_address, createdCustomer.district_name, createdCustomer.state_name].filter(Boolean).join(', ');
+    setPartyName(name);
+    setPartyPhone(phone);
+    setPartyAddress(addr);
+    setLeadId(null);
+    setSelectedTask(null);
+    setActivePipeline('ORDER_DELIVERY');
+    setShowEndCustomerModal(false);
+    setIsCheckInModalOpen(false);
+
+    // Auto-proceed to check-in and visit type screen
+    await handleStartCheckIn({
+      partyName: name,
+      partyPhone: phone,
+      partyAddress: addr,
+      customerId: createdCustomer.id,
+      pipelineType: 'ORDER_DELIVERY',
+    });
+  }, [handleStartCheckIn]);
+
+  // Handler 3: Party Registration (Dealer / Distributor) Success
+  const handlePartyRegistered = useCallback(async (formData) => {
+    setIsPartySubmitting(true);
+    try {
+      const createdParty = await createPartyMaster({
+        ...formData,
+        our_company: company,
+        created_by: currentUserId,
+      }, tenantId || company, userName);
+
+      const name = createdParty?.firm_name || createdParty?.legal_name || formData.firm_name;
+      const phone = createdParty?.primary_mobile || formData.primary_mobile;
+      const addr = [formData.address, formData.district_name, formData.state_name].filter(Boolean).join(', ');
+
+      setPartyName(name);
+      setPartyPhone(phone);
+      setPartyAddress(addr);
+      setLeadId(null);
+      setSelectedTask(null);
+      setActivePipeline('ORDER_DELIVERY');
+      setShowPartyModal(false);
+      setIsCheckInModalOpen(false);
+
+      // Auto-proceed to check-in and visit type screen
+      await handleStartCheckIn({
+        partyName: name,
+        partyPhone: phone,
+        partyAddress: addr,
+        pipelineType: 'ORDER_DELIVERY',
+      });
+    } catch (err) {
+      console.error('Party registration error:', err);
+      alert(`Party registration failed: ${err.message}`);
+    } finally {
+      setIsPartySubmitting(false);
+    }
+  }, [company, currentUserId, tenantId, userName, handleStartCheckIn]);
 
   const handleCapturePhoto = async (e) => {
     const file = e.target.files?.[0];
@@ -759,6 +964,17 @@ export default function FieldMobileDashboard({
     }
   };
 
+  const handleVisitTypeChange = useCallback((newType) => {
+    setVisitType(newType);
+    if (newType === 'Order Taking' || newType === 'Material Checking and Receiving') {
+      setActivePipeline('ORDER_DELIVERY');
+    } else if (newType === 'Service for NSMLR Product') {
+      setActivePipeline('COMPLAINT_SERVICE');
+    } else if (newType === 'Lead Pipeline' || newType === 'Visit') {
+      setActivePipeline('LEAD_DATA');
+    }
+  }, []);
+
   const resetForm = useCallback(() => {
     setActiveTab('SCHEDULED_TASKS');
     setActiveCheckInTime(null);
@@ -770,6 +986,26 @@ export default function FieldMobileDashboard({
     setDiscussionNotes('');
     setNextFollowup('');
     setWorkOutcome('WORK_DONE');
+    setLeadStage('2;01>Contact Stage>Contacted');
+    setInitialLeadStage('2;01>Contact Stage>Contacted');
+    setVisitType('Lead Pipeline');
+    setOrderFollowupOutcome('ORDER_PLACED');
+    setOrderStatus('Order Confirmed & Placed');
+    setNoOrderReason('Stock Full in Godown');
+    setNextRequirementDate('');
+    setOrderItems([{ productName: '', quantity: 1, price: 0, remarks: '' }]);
+    setAdvancePayment(0);
+    setPaymentMode('UPI');
+    setServiceStatus('');
+    setServiceRemark('');
+    setComplaintTargetType('PARTY_MASTER');
+    setComplaintChassisSerial('');
+    setComplaintProductName('');
+    setComplaintStage('C04 - On-Site Execution & Digital Job Card');
+    setHasFollowUp(false);
+    setMaterialStatus('Material Received OK');
+    setMaterialChallanNo('');
+    setIsCheckInModalOpen(false);
     try {
       localStorage.removeItem('field_active_visit');
       window.dispatchEvent(new Event('field_visit_state_changed'));
@@ -778,18 +1014,61 @@ export default function FieldMobileDashboard({
   }, [loadTodayTasks]);
 
   const handleCompleteCheckOut = async () => {
-    if (activePipeline === 'COMPLAINT_SERVICE' && workOutcome === 'WORK_INCOMPLETE' && !nextFollowup) {
+    // Dynamic pipeline type matching user visit type
+    let effectivePipeline = activePipeline;
+    if (visitType === 'Order Taking' || visitType === 'Material Checking and Receiving') {
+      effectivePipeline = 'ORDER_DELIVERY';
+    } else if (visitType === 'Service for NSMLR Product') {
+      effectivePipeline = 'COMPLAINT_SERVICE';
+    } else if (visitType === 'Lead Pipeline') {
+      effectivePipeline = 'LEAD_DATA';
+    }
+
+    if (effectivePipeline === 'COMPLAINT_SERVICE' && workOutcome === 'WORK_INCOMPLETE' && !nextFollowup) {
       alert('Next Follow-up Date & Time is mandatory when complaint work is marked incomplete.');
       return;
     }
 
-    const derivedOutcome = activePipeline === 'LEAD_DATA'
+    const derivedOutcome = effectivePipeline === 'LEAD_DATA'
       ? (leadStage ? leadStage.split('>').pop().trim() : 'COMPLETED')
-      : activePipeline === 'ORDER_DELIVERY'
+      : effectivePipeline === 'ORDER_DELIVERY'
         ? (orderDeliveryStage ? orderDeliveryStage.split('-').pop().trim() : 'COMPLETED')
-        : activePipeline === 'COMPLAINT_SERVICE'
+        : effectivePipeline === 'COMPLAINT_SERVICE'
           ? (workOutcome === 'WORK_INCOMPLETE' ? 'WORK_INCOMPLETE' : 'WORK_DONE')
           : 'COMPLETED';
+
+    // Calculate dynamic order value and build resolved notes based on visit type
+    let orderValueNum = 0;
+    if (visitType === 'Order Taking' && orderFollowupOutcome === 'ORDER_PLACED' && Array.isArray(orderItems)) {
+      orderValueNum = orderItems.reduce(
+        (sum, item) => sum + (Number(item.quantity || 0) * Number(item.price || 0)),
+        0
+      );
+    }
+
+    let resolvedNotes = discussionNotes;
+    if (visitType === 'Service for NSMLR Product' && serviceRemark) {
+      const targetLabel = complaintTargetType === 'END_CUSTOMER' ? 'End Customer (Farmer/Owner)' : 'Party Master (Dealer)';
+      const serviceHeader = `[${targetLabel}] Product: ${complaintProductName || 'NSMLR Unit'} | Serial/Chassis: ${complaintChassisSerial || 'N/A'}`;
+      resolvedNotes = `${serviceHeader}\nIssue Remark: ${serviceRemark}${discussionNotes ? `\nNotes: ${discussionNotes}` : ''}`;
+    } else if (visitType === 'Order Taking') {
+      if (orderFollowupOutcome === 'ORDER_PLACED') {
+        const orderSummary = `[Order Booked] Status: ${orderStatus} · Items: ${orderItems.length} · Est Total: ₹${orderValueNum} · Adv Collected: ₹${advancePayment || 0} (${paymentMode})`;
+        resolvedNotes = discussionNotes ? `${orderSummary}\n${discussionNotes}` : orderSummary;
+      } else if (orderFollowupOutcome === 'NO_ORDER') {
+        const noOrderSummary = `[No Order Today] Status: ${orderStatus} · Reason: ${noOrderReason}${nextRequirementDate ? ` · Next Expected: ${nextRequirementDate}` : ''}`;
+        resolvedNotes = discussionNotes ? `${noOrderSummary}\n${discussionNotes}` : noOrderSummary;
+      } else if (orderFollowupOutcome === 'RESCHEDULED') {
+        const reschedSummary = `[Revisit Scheduled] Status: ${orderStatus} · Reason: ${noOrderReason}${nextFollowup ? ` · Revisit: ${nextFollowup}` : ''}`;
+        resolvedNotes = discussionNotes ? `${reschedSummary}\n${discussionNotes}` : reschedSummary;
+      } else {
+        const unreachSummary = `[Counter Closed / Unreachable] Status: ${orderStatus} · Reason: ${noOrderReason}`;
+        resolvedNotes = discussionNotes ? `${unreachSummary}\n${discussionNotes}` : unreachSummary;
+      }
+    } else if (visitType === 'Material Checking and Receiving') {
+      const matSummary = `Material Status: ${materialStatus}${materialChallanNo ? ` · Challan: ${materialChallanNo}` : ''}`;
+      resolvedNotes = discussionNotes ? `${matSummary}\n${discussionNotes}` : matSummary;
+    }
 
     const payload = {
       taskId: selectedTask?.id || null,
@@ -809,23 +1088,41 @@ export default function FieldMobileDashboard({
       check_in_lng: userLng,
       check_out_lat: userLat,
       check_out_lng: userLng,
-      pipeline_type: activePipeline,
-      lead_stage_updated: activePipeline === 'LEAD_DATA' ? leadStage : null,
-      order_pipeline_stage: activePipeline === 'ORDER_DELIVERY' ? orderDeliveryStage : null,
-      complaint_ticket_stage: activePipeline === 'COMPLAINT_SERVICE'
-        ? (workOutcome === 'WORK_INCOMPLETE' ? 'C04 - On-Site Execution & Digital Job Card' : 'C05 - Customer OTP Verification & Sign-off')
+      pipeline_type: effectivePipeline,
+      lead_stage_updated: effectivePipeline === 'LEAD_DATA' ? leadStage : null,
+      order_pipeline_stage: (effectivePipeline === 'ORDER_DELIVERY' && orderFollowupOutcome === 'ORDER_PLACED') ? orderDeliveryStage : null,
+      complaint_ticket_stage: effectivePipeline === 'COMPLAINT_SERVICE'
+        ? (complaintStage || (workOutcome === 'WORK_INCOMPLETE' ? 'C04 - On-Site Execution & Digital Job Card' : 'C05 - Customer OTP Verification & Sign-off'))
         : null,
-      work_outcome: activePipeline === 'COMPLAINT_SERVICE' ? workOutcome : 'WORK_DONE',
-      form_id: activePipeline === 'CUSTOM_FORM' ? selectedFormId : null,
+      work_outcome: effectivePipeline === 'COMPLAINT_SERVICE' ? workOutcome : 'WORK_DONE',
+      form_id: effectivePipeline === 'CUSTOM_FORM' ? selectedFormId : null,
       outcome_status: derivedOutcome,
-      order_value: 0,
-      payment_collected: 0,
-      payment_mode: 'UPI',
+      order_value: orderFollowupOutcome === 'ORDER_PLACED' ? orderValueNum : 0,
+      payment_collected: orderFollowupOutcome === 'ORDER_PLACED' ? Number(advancePayment || 0) : 0,
+      payment_mode: paymentMode,
       cheque_utr_no: '',
-      form_data: {},
+      form_data: {
+        visit_type: visitType,
+        order_followup_outcome: orderFollowupOutcome,
+        order_status: orderStatus,
+        no_order_reason: noOrderReason,
+        next_requirement_date: nextRequirementDate,
+        order_items: orderFollowupOutcome === 'ORDER_PLACED' ? orderItems : [],
+        advance_payment: orderFollowupOutcome === 'ORDER_PLACED' ? Number(advancePayment || 0) : 0,
+        payment_mode: paymentMode,
+        service_status: serviceStatus,
+        service_remark: serviceRemark,
+        complaint_target_type: complaintTargetType,
+        complaint_chassis_serial: complaintChassisSerial,
+        complaint_product_name: complaintProductName,
+        complaint_stage: complaintStage,
+        has_follow_up: hasFollowUp,
+        material_status: materialStatus,
+        material_challan_no: materialChallanNo,
+      },
       photo_watermark_urls: photos.map(p => p.url),
       customer_signature_url: signatureData,
-      discussion_notes: discussionNotes,
+      discussion_notes: resolvedNotes,
       next_followup_at: nextFollowup ? new Date(nextFollowup).toISOString() : null,
     };
 
@@ -902,6 +1199,27 @@ export default function FieldMobileDashboard({
         <div className={styles.container}>
           <AttendancePolicyBanner attendanceStatus={attendanceStatus} onPunchInClick={handleAttendanceGateClick} />
 
+          {mainView === 'HOME' && (
+            <ConsoleHomeCockpitView
+              userName={userName}
+              company={company}
+              attendanceStatus={attendanceStatus}
+              liveDutyDuration={liveDutyDuration}
+              onPunchInClick={handleAttendanceGateClick}
+              onPunchOutClick={handleAttendanceGateClick}
+              onOpenCheckInModal={() => {
+                setIsCheckInModalOpen(true);
+                void loadModuleEntities(selectedModule, '');
+                fetchLiveGPS();
+              }}
+              activeFieldVisit={activeCheckInTime ? { partyName, activeCheckInTime } : null}
+              onResumeActiveVisit={() => setActiveTab('ACTIVE_VISIT')}
+              tasks={tasks}
+              todayCompletedCount={todayCompletedVisits.length}
+              onNavigateToView={(view) => setMainView(view)}
+            />
+          )}
+
           {mainView === 'ASSIGNED_TASKS' && (
             <ConsoleAssignedTasksView
               tasks={tasks}
@@ -977,6 +1295,7 @@ export default function FieldMobileDashboard({
           onPipelineChange={setActivePipeline}
           crmLeadStages={CRM_LEAD_STAGES}
           leadStage={leadStage}
+          initialLeadStage={initialLeadStage}
           onLeadStageChange={setLeadStage}
           orderDeliveryStages={ORDER_DELIVERY_STAGES}
           orderDeliveryStage={orderDeliveryStage}
@@ -1002,6 +1321,109 @@ export default function FieldMobileDashboard({
           onStopDrawing={stopDrawing}
           onClearSignature={clearSignature}
           onCompleteCheckOut={() => void handleCompleteCheckOut()}
+          visitType={visitType}
+          onVisitTypeChange={handleVisitTypeChange}
+          availableProducts={availableProducts}
+          orderFollowupOutcome={orderFollowupOutcome}
+          onOrderFollowupOutcomeChange={setOrderFollowupOutcome}
+          orderStatus={orderStatus}
+          onOrderStatusChange={setOrderStatus}
+          noOrderReason={noOrderReason}
+          onNoOrderReasonChange={setNoOrderReason}
+          nextRequirementDate={nextRequirementDate}
+          onNextRequirementDateChange={setNextRequirementDate}
+          orderItems={orderItems}
+          onOrderItemsChange={setOrderItems}
+          advancePayment={advancePayment}
+          onAdvancePaymentChange={setAdvancePayment}
+          paymentMode={paymentMode}
+          onPaymentModeChange={setPaymentMode}
+          serviceStatus={serviceStatus}
+          onServiceStatusChange={setServiceStatus}
+          serviceRemark={serviceRemark}
+          onServiceRemarkChange={setServiceRemark}
+          complaintTargetType={complaintTargetType}
+          onComplaintTargetTypeChange={setComplaintTargetType}
+          complaintChassisSerial={complaintChassisSerial}
+          onComplaintChassisSerialChange={setComplaintChassisSerial}
+          complaintProductName={complaintProductName}
+          onComplaintProductNameChange={setComplaintProductName}
+          complaintStage={complaintStage}
+          onComplaintStageChange={setComplaintStage}
+          hasFollowUp={hasFollowUp}
+          onHasFollowUpChange={setHasFollowUp}
+          materialStatus={materialStatus}
+          onMaterialStatusChange={setMaterialStatus}
+          materialChallanNo={materialChallanNo}
+          onMaterialChallanNoChange={setMaterialChallanNo}
+          onBackToCockpit={() => setActiveTab('SCHEDULED_TASKS')}
+        />
+      )}
+
+      {/* Instant Check-In Modal Popup (Matching Screen 5) */}
+      <InstantCheckInModal
+        isOpen={isCheckInModalOpen}
+        onClose={() => setIsCheckInModalOpen(false)}
+        searchQuery={searchQuery}
+        onSearchChange={(q) => {
+          setSearchQuery(q);
+          void loadModuleEntities(selectedModule, q);
+        }}
+        loadingEntities={loadingEntities}
+        moduleEntities={moduleEntities}
+        onSelectEntity={(ent) => {
+          handleSelectEntity(ent);
+          setSearchQuery('');
+        }}
+        isManualEntry={isManualEntry}
+        onSetManualEntry={setIsManualEntry}
+        partyName={partyName}
+        onPartyNameChange={setPartyName}
+        partyPhone={partyPhone}
+        onPartyPhoneChange={setPartyPhone}
+        partyAddress={partyAddress}
+        onPartyAddressChange={setPartyAddress}
+        onStartCheckIn={async () => {
+          await handleStartCheckIn();
+          setIsCheckInModalOpen(false);
+        }}
+        gpsLoading={gpsLoading}
+        userLat={userLat}
+        userLng={userLng}
+        onOpenLeadRegistration={() => setShowLeadModal(true)}
+        onOpenPartyRegistration={() => setShowPartyModal(true)}
+        onOpenEndCustomerRegistration={() => setShowEndCustomerModal(true)}
+      />
+
+      {/* 1. Instant Lead Registration Modal */}
+      {showLeadModal && (
+        <LeadFormModal
+          isOpen={true}
+          onClose={() => setShowLeadModal(false)}
+          userName={userName}
+          userId={currentUserId}
+          userCompany={company}
+          onLeadAdded={handleLeadRegistered}
+        />
+      )}
+
+      {/* 2. Party Registration (Dealer / Distributor) Modal */}
+      <QuickPartyRegistrationModal
+        isOpen={showPartyModal}
+        onClose={() => setShowPartyModal(false)}
+        onSubmit={handlePartyRegistered}
+        isSubmitting={isPartySubmitting}
+      />
+
+      {/* 3. Register End Customer Modal */}
+      {showEndCustomerModal && (
+        <RegisterEndCustomerModal
+          isOpen={true}
+          onClose={() => setShowEndCustomerModal(false)}
+          onSuccess={handleEndCustomerRegistered}
+          tenantId={tenantId || company}
+          userCompany={company}
+          userName={userName}
         />
       )}
     </div>

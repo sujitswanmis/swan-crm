@@ -110,6 +110,45 @@ test('active-day and range requests deduplicate, refresh works, and users never 
   assert.equal(calls, 3);
 });
 
+test('persisted pre-guard geometry stays stored but is not reused by the corrected playback', async () => {
+  const date = '2026-11-09';
+  const oldKey = `${userId}:${date}`;
+  const stored = new Map([[oldKey, { key: oldKey, at: now, data: route(date, 99) }]]);
+  const previousGuardKey = `gps-guard-v1:${oldKey}`;
+  stored.set(previousGuardKey, { key: previousGuardKey, at: now, data: route(date, 2.54) });
+  const previousActivityKey = `activity-v1:${oldKey}`;
+  stored.set(previousActivityKey, { key: previousActivityKey, at: now, data: { ...route(date), visitsCount: 5 } });
+  const reads = [];
+  const db = { transaction: () => ({ objectStore: () => ({
+    get(key) {
+      reads.push(key);
+      const request = {};
+      queueMicrotask(() => { request.result = stored.get(key); request.onsuccess(); });
+      return request;
+    },
+    put(record) { stored.set(record.key, record); },
+  }) }) };
+  const indexedDB = { open() {
+    const request = { result: db };
+    queueMicrotask(() => request.onsuccess());
+    return request;
+  } };
+  const mod = helpers({ indexedDB });
+  let calls = 0;
+  const fetchDaily = async () => { calls++; return route(date, 2.55); };
+  assert.equal((await mod.fetchTrackingDay(userId, date, fetchDaily, { now })).totalKm, 2.55);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.notEqual(reads[0], oldKey);
+  assert.notEqual(reads[0], previousGuardKey);
+  assert.notEqual(reads[0], previousActivityKey);
+  assert.equal(stored.get(oldKey).data.totalKm, 99);
+  assert.equal(stored.get(previousGuardKey).data.totalKm, 2.54);
+  assert.equal(stored.get(previousActivityKey).data.visitsCount, 5);
+  assert.equal(mod.peekTrackingDay(userId, date).totalKm, 2.55);
+  assert.equal((await mod.fetchTrackingDay(userId, date, fetchDaily, { now })).totalKm, 2.55);
+  assert.equal(calls, 1);
+});
+
 test('overlapping ranges and an active day share the same global two-request limit', async () => {
   const mod = helpers();
   let active = 0;
@@ -160,16 +199,26 @@ test('partial failures remain explicit and cancelled ranges stop publishing or s
 test('range totals add existing daily values without mutating routes or events', () => {
   const first = route('2026-11-09', 4.69);
   const second = route('2026-11-10', 1.73);
+  first.activityTimeline = [{ ...first.timeline[0], fullAddress: 'Address one' }, { type: 'travel', startTime: '2026-11-09T10:00:00+05:30', endTime: '2026-11-09T10:10:00+05:30', durationMins: 10, distanceKm: 4.69 }];
+  first.visitsCount = 5;
+  first.activityVisitsCount = 3;
+  second.activityTimeline = [{ ...second.timeline[0], fullAddress: 'Address two' }];
   const entries = { [first.date]: { status: 'success', data: first }, [second.date]: { status: 'success', data: second } };
   const before = JSON.stringify(entries);
   const summary = ranges.summarizeTrackingRange(entries, [first.date, second.date]);
   assert.equal(summary.totalKm, 6.42);
-  assert.equal(summary.visitsCount, 2);
+  assert.equal(summary.visitsCount, 6, 'Raw submission totals stay available to existing callers');
+  assert.equal(summary.activityVisitsCount, 4, 'Corrected daily counts sum independently with a legacy fallback');
   assert.equal(summary.timeline.length, 2);
+  assert.equal(summary.activityTimeline.length, 3);
+  assert.deepEqual(asJSON(summary.activityTimeline.map(event => event.trackingDate)), [first.date, first.date, second.date]);
+  assert.equal(summary.activityTimeline[1].distanceKm, 4.69);
+  assert.equal(summary.activityTimeline[2].fullAddress, 'Address two');
   assert.deepEqual(asJSON(summary.timeline.map(event => event.trackingDate)), [first.date, second.date]);
   assert.equal(summary.latest.date, second.date);
   assert.equal(JSON.stringify(entries), before);
   assert.equal(ranges.summarizeTrackingRange({}, [first.date]).totalKm, null);
+  assert.equal(ranges.summarizeTrackingRange({}, [first.date]).activityVisitsCount, null);
 });
 
 test('map overview separates days, connectivity gaps and return legs without overnight lines', () => {

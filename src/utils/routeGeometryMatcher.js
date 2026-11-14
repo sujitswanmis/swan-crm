@@ -93,7 +93,7 @@ function emitCollapsedCluster(cluster, output) {
  * Removes invalid coordinates, chronologically sorts waypoints, strips indoor/cell-tower accuracy
  * bounces, and filters impossible teleportation / triangle sawtooth glitches without collapsing stops.
  */
-export function stripNoisyGpsOutliers(waypoints) {
+export function stripNoisyGpsOutliers(waypoints, { rejectUnsupportedDetours = false } = {}) {
   if (!Array.isArray(waypoints) || waypoints.length === 0) return [];
 
   // 1. Validate finite non-zero coordinates and normalize
@@ -134,6 +134,30 @@ export function stripNoisyGpsOutliers(waypoints) {
   // 3. Drop >300m network/IP fixes when acceptable fixes exist
   const under300 = normalized.filter(p => p.accuracy_meters == null || p.accuracy_meters <= 300);
   let valid = under300.length >= 2 || (normalized.length === 1 && under300.length === 1) ? under300 : normalized;
+
+  if (rejectUnsupportedDetours) {
+    // Some network fixes claim 15–25m accuracy and zero speed during a moving
+    // 4m GPS trace. Compare them with time-bracketing GPS fixes, rather than
+    // snapping to the nearest fix (which can itself create backwards travel).
+    const sharp = valid.filter(point => point.accuracy_meters != null && point.accuracy_meters <= 8 && Number.isFinite(Date.parse(point.time)));
+    let cursor = 0;
+    valid = valid.filter(point => {
+      const time = Date.parse(point.time);
+      while (cursor < sharp.length && Date.parse(sharp[cursor].time) <= time) cursor++;
+      const before = sharp[cursor - 1];
+      const after = before && Date.parse(before.time) === time ? before : sharp[cursor];
+      if (!before || !after || !Number.isFinite(time) || point.accuracy_meters == null ||
+          point.accuracy_meters < Math.max(12, 3 * Math.max(before.accuracy_meters, after.accuracy_meters)) ||
+          point.speed > 3 || Math.max(before.speed, after.speed) <= 5) return true;
+      const start = Date.parse(before.time);
+      const end = Date.parse(after.time);
+      if (time - start > 30000 || end - time > 30000) return true;
+      const fraction = end > start ? (time - start) / (end - start) : 0;
+      const expectedLat = before.lat + (after.lat - before.lat) * fraction;
+      const expectedLng = before.lng + (after.lng - before.lng) * fraction;
+      return haversineMeters(point.lat, point.lng, expectedLat, expectedLng) <= Math.max(25, point.accuracy_meters * 1.5);
+    });
+  }
 
   // 4. Drop displaced indoor/cell-tower jumps, while preserving same-spot (<=35m) timestamps:
   //    a) >80m blurry fixes when a crisp <=35m GPS lock exists within +/-5 mins
@@ -236,8 +260,8 @@ export function stripNoisyGpsOutliers(waypoints) {
 /**
  * Cleans raw GPS points and collapses stationary drift (<32m) to sharpest anchor while keeping entry & departure timestamps.
  */
-export function filterRouteNoiseAndCoarseJumps(waypoints) {
-  const spikeFree = stripNoisyGpsOutliers(waypoints);
+export function filterRouteNoiseAndCoarseJumps(waypoints, { rejectUnsupportedDetours = false } = {}) {
+  const spikeFree = stripNoisyGpsOutliers(waypoints, { rejectUnsupportedDetours });
   if (spikeFree.length === 0) return [];
 
   // 6. Collapse stationary drift (<32m, or <=65m indoor/compound bounce that returns cleanly without real travel)
@@ -379,7 +403,7 @@ function rememberOsrmChunk(cacheKey, value) {
   osrmChunkCache.set(cacheKey, value);
 }
 
-async function fetchOsrmMatchChunk(chunk, { wideFallback = false } = {}) {
+async function fetchOsrmMatchChunk(chunk, { wideFallback = false, rejectUnsupportedDetours = false } = {}) {
   if (!Array.isArray(chunk) || chunk.length < 2) return null;
 
   const minRad = wideFallback ? 28 : 15;
@@ -395,7 +419,7 @@ async function fetchOsrmMatchChunk(chunk, { wideFallback = false } = {}) {
     })
     .join(';');
 
-  const cacheKey = `${wideFallback ? 'W' : 'T'}:${coordStr}|${radiusStr}`;
+  const cacheKey = `${rejectUnsupportedDetours ? 'guarded-v2:' : ''}${wideFallback ? 'W' : 'T'}:${coordStr}|${radiusStr}`;
   if (osrmChunkCache.has(cacheKey)) {
     return osrmChunkCache.get(cacheKey);
   }
@@ -411,8 +435,8 @@ async function fetchOsrmMatchChunk(chunk, { wideFallback = false } = {}) {
     // Public OSRM /match caps tracepoints (currently 10): automatically bisect if TooBig ever triggers
     if (json?.code === 'TooBig' && chunk.length > 3) {
       const mid = Math.ceil(chunk.length / 2);
-      const left = await fetchOsrmMatchChunk(chunk.slice(0, mid), { wideFallback });
-      const right = await fetchOsrmMatchChunk(chunk.slice(mid - 1), { wideFallback });
+      const left = await fetchOsrmMatchChunk(chunk.slice(0, mid), { wideFallback, rejectUnsupportedDetours });
+      const right = await fetchOsrmMatchChunk(chunk.slice(mid - 1), { wideFallback, rejectUnsupportedDetours });
       if (!left || !right) return null;
       return {
         coords: left.coords.concat(right.coords.slice(1)),
@@ -422,7 +446,7 @@ async function fetchOsrmMatchChunk(chunk, { wideFallback = false } = {}) {
 
     // Retry once with wider snap radius only if tight colony-precision matching reports NoMatch/NoSegment
     if (!wideFallback && (json?.code === 'NoMatch' || json?.code === 'NoSegment')) {
-      return fetchOsrmMatchChunk(chunk, { wideFallback: true });
+      return fetchOsrmMatchChunk(chunk, { wideFallback: true, rejectUnsupportedDetours });
     }
 
     if (!res.ok || json?.code !== 'Ok' || !Array.isArray(json.matchings) || json.matchings.length === 0) {
@@ -438,6 +462,17 @@ async function fetchOsrmMatchChunk(chunk, { wideFallback = false } = {}) {
       coords = coords.length === 0 ? road : coords.concat(road.slice(1));
     }
     if (coords.length >= 2) {
+      if (rejectUnsupportedDetours) {
+        const recordedDistance = chunk.slice(1).reduce((sum, point, index) =>
+          sum + haversineMeters(chunk[index].lat, chunk[index].lng, point.lat, point.lng), 0);
+        const lowConfidence = json.matchings.some(matching =>
+          matching.confidence != null && Number(matching.confidence) < 0.1);
+        // A short divided-road chunk can contain an invented out-and-back while the
+        // whole-trip distance still passes the legacy sanity limit. Prefer the GPS
+        // trace when the added road travel has no reliable matching evidence.
+        if ((lowConfidence && distance > recordedDistance * 1.25 + 60) ||
+            distance > recordedDistance * 1.65 + 100) return null;
+      }
       const result = { coords, distance };
       rememberOsrmChunk(cacheKey, result);
       return result;
@@ -449,7 +484,7 @@ async function fetchOsrmMatchChunk(chunk, { wideFallback = false } = {}) {
   }
 }
 
-async function snapContinuousTripToRoad(tripPoints) {
+async function snapContinuousTripToRoad(tripPoints, { rejectUnsupportedDetours = false } = {}) {
   // Collapse exact 0m entry/exit stationary points before OSRM matching, then restore entry timestamp
   const prefixPoints = [];
   let movingStartIdx = 0;
@@ -531,10 +566,34 @@ async function snapContinuousTripToRoad(tripPoints) {
   const CONCURRENCY = 4;
   for (let b = 0; b < validChunks.length; b += CONCURRENCY) {
     const batch = validChunks.slice(b, b + CONCURRENCY);
-    const resolved = await Promise.all(batch.map(ch => fetchOsrmMatchChunk(ch)));
+    const resolved = await Promise.all(batch.map(ch => fetchOsrmMatchChunk(ch, { rejectUnsupportedDetours })));
     for (let k = 0; k < resolved.length; k++) {
       chunkResults[b + k] = resolved[k];
     }
+  }
+
+  if (rejectUnsupportedDetours && chunkResults.some(result => !result)) {
+    // Retain verified road geometry in the other chunks. A bad match must not
+    // turn the whole trip into straight GPS chords through buildings.
+    const indices = new Map(movingPts.map((point, index) => [point, index]));
+    const points = [];
+    let distanceMeters = 0;
+    let snapped = false;
+    for (let i = 0; i < validChunks.length; i++) {
+      const chunk = validChunks[i];
+      const source = movingPts.slice(indices.get(chunk[0]), indices.get(chunk[chunk.length - 1]) + 1);
+      const matched = chunkResults[i];
+      const segment = matched
+        ? alignSnappedSegmentToWaypoints(matched.coords, source)
+        : source.map(point => ({ ...point, isSnapped: false }));
+      points.push(...segment.slice(i === 0 ? 0 : 1));
+      distanceMeters += matched ? matched.distance : source.slice(1).reduce((sum, point, index) =>
+        sum + haversineMeters(source[index].lat, source[index].lng, point.lat, point.lng), 0);
+      snapped ||= Boolean(matched);
+    }
+    const arrival = points[points.length - 1];
+    const dwells = trailingDwells.map(point => ({ ...point, lat: arrival.lat, lng: arrival.lng, isSnapped: Boolean(arrival.isSnapped), speed: 0 }));
+    return { points: [...prefixPoints, ...points, ...dwells], distanceMeters, snapped };
   }
 
   for (const matched of chunkResults) {
@@ -587,8 +646,8 @@ async function snapContinuousTripToRoad(tripPoints) {
  * - Snaps ONLY continuous tracked road trips via OSRM /match with detour sanity guard
  * - Connects blind offline gaps directly (no fabricated turn-by-turn road guessing)
  */
-export async function snapRouteSegmentsToRoad(waypoints) {
-  const cleaned = filterRouteNoiseAndCoarseJumps(waypoints);
+export async function snapRouteSegmentsToRoad(waypoints, { rejectUnsupportedDetours = false } = {}) {
+  const cleaned = filterRouteNoiseAndCoarseJumps(waypoints, { rejectUnsupportedDetours });
   if (cleaned.length < 2) {
     return {
       polyline: cleaned,
@@ -635,7 +694,7 @@ export async function snapRouteSegmentsToRoad(waypoints) {
   const TRIP_CONCURRENCY = 4;
   for (let b = 0; b < trips.length; b += TRIP_CONCURRENCY) {
     const batch = trips.slice(b, b + TRIP_CONCURRENCY);
-    const resolved = await Promise.all(batch.map(tr => snapContinuousTripToRoad(tr)));
+    const resolved = await Promise.all(batch.map(tr => snapContinuousTripToRoad(tr, { rejectUnsupportedDetours })));
     for (let k = 0; k < resolved.length; k++) {
       snappedTrips[b + k] = resolved[k];
     }

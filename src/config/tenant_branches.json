@@ -153,5 +153,28 @@
       "is_active": true,
       "created_at": "2026-10-16T17:56:46.378Z"
     }
+  ],
+  "Swan Hosting": [
+    {
+      "id": "TNT00001-B0001",
+      "company": "Swan Hosting",
+      "tenant_id": null,
+      "tenant_code": "TNT00001",
+      "branch_code": "TNT00001-B0001",
+      "custom_code": "HQ",
+      "legacy_code": "HQ",
+      "branch_name": "Swan Hosting (Headquarters)",
+      "location_type": "Headquarters",
+      "address": "Main Office Complex",
+      "city": "Headquarters City",
+      "state": "Punjab",
+      "pincode": "",
+      "gstin": "",
+      "phone": "",
+      "email": "",
+      "incharge_name": "Director / Branch Head",
+      "is_active": true,
+      "created_at": "2026-11-11T06:09:18.426Z"
+    }
   ]
 }

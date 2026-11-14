@@ -2,8 +2,9 @@
 
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { createClient as createServerSupabase } from '@/utils/supabase/server';
-import { signFieldTelemetryToken } from '@/utils/fieldTelemetryToken';
+import { signFieldTelemetryToken, verifyFieldTelemetryToken } from '@/utils/fieldTelemetryToken';
 import { haversineMeters, snapRouteSegmentsToRoad, stripNoisyGpsOutliers } from '@/utils/routeGeometryMatcher';
+import { buildTrackingActivityTimeline, enrichTrackingActivityTimeline } from '@/components/FieldForce/trackingActivityTimeline';
 
 function getAdminClient() {
   return createSupabaseClient(
@@ -106,20 +107,23 @@ export async function recordLocationPingBatch(pings) {
 
 // In-memory cache & in-flight deduplication for reverse geocoding
 const locationNameCache = new Map();
+const fullLocationNameCache = new Map();
 const inFlightLocationLookups = new Map();
 
 /**
  * Resolves coordinates to human-readable address / landmark name (OpenStreetMap Nominatim with caching)
  */
-export async function resolveLocationName(lat, lng) {
+export async function resolveLocationName(lat, lng, { fullAddress = false } = {}) {
   if (lat == null || lng == null || isNaN(lat) || isNaN(lng)) return null;
   const numLat = Number(lat);
   const numLng = Number(lng);
   if (numLat === 0 && numLng === 0) return null;
 
   const key = `${numLat.toFixed(4)},${numLng.toFixed(4)}`;
-  if (locationNameCache.has(key)) return locationNameCache.get(key);
-  if (inFlightLocationLookups.has(key)) return inFlightLocationLookups.get(key);
+  const cache = fullAddress ? fullLocationNameCache : locationNameCache;
+  const lookupKey = fullAddress ? `full:${key}` : key;
+  if (cache.has(key)) return cache.get(key);
+  if (inFlightLocationLookups.has(lookupKey)) return inFlightLocationLookups.get(lookupKey);
 
   const lookupPromise = (async () => {
     try {
@@ -147,12 +151,18 @@ export async function resolveLocationName(lat, lng) {
         if (!name && json.display_name) {
           name = json.display_name.split(',').slice(0, 3).join(', ').trim();
         }
-        const finalName = name || `Location (${numLat.toFixed(4)}, ${numLng.toFixed(4)})`;
-        if (locationNameCache.size >= 500) {
-          const oldest = locationNameCache.keys().next().value;
-          if (oldest !== undefined) locationNameCache.delete(oldest);
+        const fullName = typeof json.display_name === 'string' && json.display_name.trim() ||
+          [...new Set([primary, a.village, a.town || a.city, a.state_district, a.state, a.postcode, a.country].filter(Boolean))].join(', ');
+        const finalName = (fullAddress ? fullName || name : name) || `Location (${numLat.toFixed(4)}, ${numLng.toFixed(4)})`;
+        if (cache.size >= 500) {
+          const oldest = cache.keys().next().value;
+          if (oldest !== undefined) cache.delete(oldest);
         }
-        locationNameCache.set(key, finalName);
+        cache.set(key, finalName);
+        if (!fullAddress && fullName) {
+          if (fullLocationNameCache.size >= 500) fullLocationNameCache.delete(fullLocationNameCache.keys().next().value);
+          fullLocationNameCache.set(key, fullName);
+        }
         return finalName;
       }
     } catch (_) {}
@@ -161,12 +171,35 @@ export async function resolveLocationName(lat, lng) {
     return `Location (${numLat.toFixed(4)}, ${numLng.toFixed(4)})`;
   })();
 
-  inFlightLocationLookups.set(key, lookupPromise);
+  inFlightLocationLookups.set(lookupKey, lookupPromise);
   try {
     return await lookupPromise;
   } finally {
-    inFlightLocationLookups.delete(key);
+    inFlightLocationLookups.delete(lookupKey);
   }
+}
+
+async function loadTrackingActivityTasks(supabase, visits, userId) {
+  const ids = [...new Set((visits || []).map(visit => visit.task_id).filter(isUuid))];
+  if (!ids.length) return [];
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 3500);
+  const tasks = [];
+  let cursor = 0;
+  async function worker() {
+    while (cursor < ids.length && !controller.signal.aborted) {
+      const batch = ids.slice(cursor, cursor += 100);
+      try {
+        const { data, error } = await supabase.from('field_tasks')
+          .select('id, task_code, party_name, party_address, party_lat, party_lng')
+          .in('id', batch).eq('assigned_to_user_id', userId).abortSignal(controller.signal);
+        if (!error && Array.isArray(data)) tasks.push(...data);
+      } catch { /* Secondary metadata must never prevent a GPS route from loading. */ }
+    }
+  }
+  try { await Promise.all(Array.from({ length: Math.min(2, Math.ceil(ids.length / 100)) }, worker)); }
+  finally { clearTimeout(timer); }
+  return tasks;
 }
 
 function pushStoppageIfValid(currentStoppage, timeline) {
@@ -192,7 +225,7 @@ function pushStoppageIfValid(currentStoppage, timeline) {
  * Single Employee 360° Route & Playback Data (Aapke Screenshot 1 Jaisa)
  * Fetches all breadcrumbs, detects stoppages, and matches client visits
  */
-export async function getEmployee360Route(userId, dateStr) {
+export async function getEmployee360Route(userId, dateStr, { rejectUnsupportedDetours = false, includeActivityDetails = false } = {}) {
   if (!isUuid(userId) || !dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(String(dateStr).trim())) return null;
   userId = String(userId).trim();
   dateStr = String(dateStr).trim();
@@ -244,6 +277,7 @@ export async function getEmployee360Route(userId, dateStr) {
       console.error('Error fetching employee 360 route pings:', pingsErr);
       return null;
     }
+    const activityTasks = includeActivityDetails ? loadTrackingActivityTasks(supabase, visits, userId) : null;
 
     const pings = rawPings || [];
     let attRecord = attData || null;
@@ -637,7 +671,7 @@ export async function getEmployee360Route(userId, dateStr) {
     let offlineGapMeters = 0;
     const snapPromise =
       polyline.length >= 2
-        ? snapRouteSegmentsToRoad(polyline).catch(snapErr => {
+        ? snapRouteSegmentsToRoad(polyline, { rejectUnsupportedDetours: rejectUnsupportedDetours === true }).catch(snapErr => {
             console.warn('Road snapping step skipped:', snapErr?.message);
             return null;
           })
@@ -688,6 +722,17 @@ export async function getEmployee360Route(userId, dateStr) {
       }
     } catch (_) {}
 
+    let activityTimeline;
+    if (includeActivityDetails) {
+      try {
+        activityTimeline = await enrichTrackingActivityTimeline({ date: dateStr, timeline, polyline: finalPolyline, trackedRoadKm,
+          visits: visits || [], tasks: await activityTasks,
+          resolveAddress: (lat, lng) => resolveLocationName(lat, lng, { fullAddress: true }) });
+      } catch (_) {
+        activityTimeline = buildTrackingActivityTimeline({ date: dateStr, timeline, polyline: finalPolyline, trackedRoadKm });
+      }
+    }
+
     return {
       userId,
       date: dateStr,
@@ -707,6 +752,7 @@ export async function getEmployee360Route(userId, dateStr) {
       isRoadSnapped,
       routeCleaned,
       timeline,
+      ...(includeActivityDetails ? { activityTimeline, activityVisitsCount: activityTimeline.filter(event => event.type === 'visit').length } : {}),
       visitsCount: (visits || []).length
     };
   } catch (err) {
@@ -1292,6 +1338,79 @@ export async function reportEmployeeDeviceHealth(snapshot = {}) {
   }
 }
 
+// Token-only Android heartbeat: never requires a GPS fix or inserts a location ping.
+// Resolve identity from the signed token, including when this is called as an action.
+export async function reportFieldDeviceHeartbeat(token, snapshot = {}) {
+  try {
+    const claims = verifyFieldTelemetryToken(token);
+    if (!claims || !isUuid(claims.uid) || !claims.cmp) return { success: false, error: 'Unauthorized device heartbeat' };
+    const now = Date.now();
+    if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)
+      || typeof snapshot.capturedAtMs !== 'number' || !Number.isFinite(snapshot.capturedAtMs)
+      || now - snapshot.capturedAtMs > 120000 || snapshot.capturedAtMs - now > 30000) {
+      return { success: false, error: 'Invalid or stale device heartbeat' };
+    }
+    for (const key of ['hasForegroundLocation', 'hasBackgroundLocation', 'gpsProviderEnabled', 'running']) {
+      if (typeof snapshot[key] !== 'boolean') return { success: false, error: `Invalid ${key}` };
+    }
+    const { resolveKnownTenant } = await import('@/app/actions/tenantBranches');
+    const { classifyDeviceHealth } = await import('@/config/appReleaseConfig');
+    const tenant = await resolveKnownTenant(claims.cmp);
+    const company = tenant?.tenantCode || String(claims.cmp).trim();
+    const admin = getAdminClient();
+    const paths = await resolveHealthStorePaths();
+    const store = await readJsonFileSafe(paths.primary, paths.tmp, {});
+    const storeKey = `${claims.uid}::${company}`;
+    let previous = store[storeKey] || {};
+    if (admin) {
+      try {
+        const { data } = await admin.from('employee_device_health').select('*')
+          .eq('user_id', claims.uid).eq('company', company).maybeSingle();
+        if (data && (!previous.last_checked_at || Date.parse(data.last_checked_at) >= Date.parse(previous.last_checked_at))) previous = data;
+      } catch { /* Preserve the existing fallback record during a database outage. */ }
+    }
+    // Preserve the foreground audit's battery/notification/device metadata.
+    const nowIso = new Date(now).toISOString();
+    const rawRecord = {
+      ...previous,
+      user_id: claims.uid,
+      tenant_id: isUuid(tenant?.tenantId) ? tenant.tenantId : null,
+      tenant_code: company,
+      company,
+      branch_code: claims.br || previous.branch_code || null,
+      platform: 'Android App',
+      platform_details: previous.platform_details || 'SPC Workspace APK',
+      has_foreground_location: snapshot.hasForegroundLocation,
+      has_background_location: snapshot.hasForegroundLocation && snapshot.hasBackgroundLocation,
+      gps_provider_enabled: snapshot.gpsProviderEnabled,
+      service_running: snapshot.running,
+      location_mode: !snapshot.hasForegroundLocation ? 'denied' : snapshot.hasBackgroundLocation ? 'all_the_time' : 'while_using',
+      pending_queue_count: clampBoundedInt(snapshot.pendingCount, 0, 1000000, previous.pending_queue_count ?? 0),
+      app_version_code: clampBoundedInt(snapshot.appVersionCode, 1, 1000000, previous.app_version_code ?? null),
+      app_version_name: typeof snapshot.appVersionName === 'string' ? snapshot.appVersionName.slice(0, 80) : previous.app_version_name ?? null,
+      last_checked_at: nowIso,
+      updated_at: nowIso,
+    };
+    const { policy } = await getAppReleasePolicy();
+    const evaluation = classifyDeviceHealth(rawRecord, policy);
+    const record = { ...rawRecord, location_mode: evaluation.locationMode, health_status: evaluation.status, issue_summary: evaluation.issueSummary };
+    let persisted = false;
+    if (admin) {
+      try {
+        const { error } = await admin.from('employee_device_health').upsert(record, { onConflict: 'user_id,company' });
+        persisted = !error;
+      } catch { /* The JSON fallback remains available. */ }
+    }
+    // Re-read just before writing so other employees' fallback rows are retained.
+    const latestStore = await readJsonFileSafe(paths.primary, paths.tmp, {});
+    latestStore[storeKey] = record;
+    const cached = await writeJsonFileSafe(paths.primary, paths.tmp, latestStore);
+    return { success: persisted || cached };
+  } catch {
+    return { success: false, error: 'Device heartbeat unavailable' };
+  }
+}
+
 export async function getEmployeeDeviceHealthSummary(userId, company = 'TNT00001') {
   try {
     if (!isUuid(userId)) return { success: false, summary: null };
@@ -1368,6 +1487,8 @@ export async function getEmployeeDeviceHealthSummary(userId, company = 'TNT00001
         versionCode: latestRecord?.app_version_code ?? null,
         versionName: latestRecord?.app_version_name ?? null,
         locationMode: evaluation.locationMode,
+        hasForegroundLocation: latestRecord?.has_foreground_location ?? null,
+        hasBackgroundLocation: latestRecord?.has_background_location ?? null,
         batteryUnrestricted: latestRecord?.battery_unrestricted ?? null,
         gpsProviderEnabled: latestRecord?.gps_provider_enabled ?? null,
         notificationsEnabled: latestRecord?.notifications_enabled ?? null,

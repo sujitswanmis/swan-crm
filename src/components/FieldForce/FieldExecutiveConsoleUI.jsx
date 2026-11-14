@@ -1,13 +1,14 @@
 'use client';
 
-import React, { memo } from 'react';
+import React, { memo, useState } from 'react';
 import {
-  AlertTriangle, Building, Building2, Calendar, Camera, Check, CheckCircle2,
-  Clock, FileText, Layers, Lock, Mail, MapPin, MessageSquare, Mic, MicOff,
-  Navigation, PenTool, Phone, Play, RefreshCw, Search, ShieldCheck,
-  UserPlus, Wifi, WifiOff, X,
+  AlertTriangle, ArrowLeft, Building, Building2, Calendar, Camera, Check, CheckCircle2,
+  CheckSquare, ChevronRight, Clock, Compass, FileText, Home, Layers, Lock, LogIn,
+  LogOut, Mail, MapPin, MessageSquare, Mic, MicOff, Navigation, PenTool, Phone, Play,
+  Plus, RefreshCw, Search, ShieldCheck, Trash2, User, UserPlus, Wifi, WifiOff, X, Zap,
 } from 'lucide-react';
 import styles from './FieldExecutiveConsole.module.css';
+import SearchableProductSelect from '@/components/common/SearchableProductSelect';
 
 const IST_TIME_FMT = new Intl.DateTimeFormat('en-IN', {
   timeZone: 'Asia/Kolkata',
@@ -197,6 +198,7 @@ export const ConsoleHeader = memo(function ConsoleHeader({
 }) {
   const identityLine = formatConsoleIdentity(userName, company, userEmail);
   const navItems = [
+    ['HOME', Home, 'Home', null],
     ['ASSIGNED_TASKS', Calendar, 'Assigned Tasks', tasksCount],
     ['CHECK_IN', Navigation, 'Walk-In / Check-In', null],
     ['COMPLETED_VISITS', CheckCircle2, 'Completed Visits', completedCount],
@@ -318,6 +320,623 @@ const PRIORITY_BADGE_MAP = {
   MEDIUM: { tone: 'accent', label: '🔵 MEDIUM' },
   LOW: { tone: 'healthy', label: '🟢 LOW' },
 };
+
+/**
+ * Mobile-First Executive Home Cockpit View (TrackWick / New Swan WorkApp inspired)
+ */
+export const ConsoleHomeCockpitView = memo(function ConsoleHomeCockpitView({
+  userName = 'Field Executive',
+  company = 'New Swan Multitech Limited',
+  attendanceStatus,
+  liveDutyDuration = '00 s',
+  onPunchInClick,
+  onPunchOutClick,
+  onOpenCheckInModal,
+  activeFieldVisit,
+  onResumeActiveVisit,
+  tasks = [],
+  todayCompletedCount = 0,
+  onNavigateToView,
+}) {
+  const [expensePeriod, setExpensePeriod] = useState('Today');
+
+  const todayISTStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+
+  const pendingTodayCount = tasks.filter((t) => {
+    if (t.status === 'COMPLETED') return false;
+    if (!t.scheduled_start_time) return false;
+    const taskDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date(t.scheduled_start_time));
+    return taskDate === todayISTStr;
+  }).length;
+
+  const inProgressCount = tasks.filter((t) => t.status === 'IN_PROGRESS').length;
+
+  const overdueCount = tasks.filter((t) => {
+    if (t.status === 'COMPLETED') return false;
+    if (!t.scheduled_start_time) return false;
+    const taskDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date(t.scheduled_start_time));
+    return taskDate < todayISTStr;
+  }).length;
+
+  const totalTasks = tasks.length + todayCompletedCount;
+  const completionPct = totalTasks > 0 ? Math.round((todayCompletedCount / totalTasks) * 100) : 0;
+
+  const isPunchedIn = Boolean(attendanceStatus?.isPunchedIn);
+  const inTimeStr = attendanceStatus?.inTime ? formatVisitTimeIST(attendanceStatus.inTime) : '--:--';
+
+  const cleanCompanyName = String(company || '').trim() || 'New Swan Multitech Limited';
+  const logoInitial = cleanCompanyName.split(' ').map(w => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase() || 'NS';
+
+  return (
+    <div className={styles.homeCockpit}>
+      {/* 1. Punch In / Duty Hero Card */}
+      <section className={styles.punchHeroCard} aria-label="Executive Punch Status">
+        <div className={styles.punchHeroTop}>
+          <div>
+            <div className={styles.punchHeroTitle}>Hi! {cleanCompanyName}</div>
+            <div className={styles.punchHeroSub}>
+              {isPunchedIn ? 'You are punched In!' : 'You are punched Out!'}
+            </div>
+          </div>
+          <div className={styles.companyLogoBadge} title={cleanCompanyName}>
+            {logoInitial}
+          </div>
+        </div>
+
+        <div className={styles.punchPillBar}>
+          <div className={styles.punchTimeSegment}>
+            {isPunchedIn ? (
+              <>
+                <LogIn size={15} color="#16a34a" aria-hidden="true" />
+                <span>Punch In Time: <strong>{inTimeStr}</strong></span>
+              </>
+            ) : (
+              <>
+                <LogOut size={15} color="#dc2626" aria-hidden="true" />
+                <span>Off Duty</span>
+              </>
+            )}
+          </div>
+
+          {isPunchedIn && (
+            <div className={styles.durationPillSegment}>
+              <span className={styles.durationPillLabel}>Duration</span>
+              <strong className={styles.durationPillValue}>{liveDutyDuration}</strong>
+            </div>
+          )}
+
+          {isPunchedIn ? (
+            <button
+              type="button"
+              className={styles.punchActionBtn}
+              data-type="out"
+              onClick={onPunchOutClick}
+              title="Punch Out"
+            >
+              Punch Out
+            </button>
+          ) : (
+            <button
+              type="button"
+              className={styles.punchActionBtn}
+              data-type="in"
+              onClick={onPunchInClick}
+              title="Punch In"
+            >
+              Punch In
+            </button>
+          )}
+        </div>
+      </section>
+
+      {/* 2. Customer Check In Action Card */}
+      <section className={styles.customerCheckInCard} aria-label="Customer Check In Actions">
+        {activeFieldVisit ? (
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+            <div>
+              <span style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5, color: '#0284c7', fontWeight: 700 }}>
+                Active Visit in Progress
+              </span>
+              <div style={{ fontSize: 14, fontWeight: 700, color: '#0f172a' }}>{activeFieldVisit.partyName}</div>
+            </div>
+            <button type="button" className={styles.checkInGreenBtn} onClick={onResumeActiveVisit}>
+              <Compass size={14} aria-hidden="true" />
+              Resume Visit
+            </button>
+          </div>
+        ) : (
+          <>
+            <span className={styles.customerCheckInCardTitle}>Customer Check In</span>
+            <button type="button" className={styles.checkInGreenBtn} onClick={onOpenCheckInModal}>
+              <Navigation size={14} aria-hidden="true" />
+              Check In
+            </button>
+          </>
+        )}
+      </section>
+
+      {/* 3. Overall Performance (Month To Date) */}
+      <section className={styles.sectionCard} aria-label="Monthly Performance">
+        <div className={styles.sectionHeader}>
+          <span className={styles.sectionTitle}>Overall Performance (Month To Date)</span>
+        </div>
+        <div className={styles.performanceProgressBox}>
+          <div>
+            <div style={{ fontSize: 11.5, color: '#64748b' }}>Task Completed</div>
+            <div className={styles.performanceLabel}>
+              <strong>{todayCompletedCount}</strong> of <strong>{totalTasks}</strong>
+            </div>
+          </div>
+          <div className={styles.performanceBadge} style={{ borderColor: completionPct > 0 ? '#16a34a' : '#cbd5e1' }}>
+            {completionPct}%
+          </div>
+        </div>
+      </section>
+
+      {/* 4. Task Overview */}
+      <section className={styles.sectionCard} aria-label="Task Overview">
+        <div className={styles.sectionHeader}>
+          <span className={styles.sectionTitle}>Task Overview</span>
+          <button
+            type="button"
+            style={{ background: 'none', border: 'none', color: '#2563eb', fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }}
+            onClick={() => onNavigateToView('ASSIGNED_TASKS')}
+          >
+            View All →
+          </button>
+        </div>
+        <div className={styles.kpiGrid3}>
+          <div className={styles.kpiTile} onClick={() => onNavigateToView('ASSIGNED_TASKS')}>
+            <div className={styles.kpiLabel}>Pending (Today)</div>
+            <div className={`${styles.kpiValue} ${styles.kpiValueBlue}`}>{pendingTodayCount}</div>
+          </div>
+          <div className={styles.kpiTile} onClick={() => onNavigateToView('ASSIGNED_TASKS')}>
+            <div className={styles.kpiLabel}>In Progress (All)</div>
+            <div className={`${styles.kpiValue} ${styles.kpiValueBlue}`}>{inProgressCount}</div>
+          </div>
+          <div className={styles.kpiTile} onClick={() => onNavigateToView('ASSIGNED_TASKS')}>
+            <div className={styles.kpiLabel}>Overdue (All)</div>
+            <div className={`${styles.kpiValue} ${styles.kpiValueRed}`}>{overdueCount}</div>
+          </div>
+        </div>
+      </section>
+
+      {/* 5. Manage Leave */}
+      <section className={styles.sectionCard} aria-label="Manage Leave">
+        <div className={styles.sectionHeader}>
+          <span className={styles.sectionTitle}>Manage Leave</span>
+        </div>
+        <div className={styles.kpiGrid3}>
+          <div className={styles.kpiTile}>
+            <div className={styles.kpiLabel}>Balance</div>
+            <div className={styles.kpiValue}>0.00</div>
+          </div>
+          <div className={styles.kpiTile}>
+            <div className={styles.kpiLabel}>Taken</div>
+            <div className={styles.kpiValue}>0.00</div>
+          </div>
+          <div className={styles.kpiTile}>
+            <div className={styles.kpiLabel}>Pending</div>
+            <div className={styles.kpiValue}>0.00</div>
+          </div>
+        </div>
+      </section>
+
+      {/* 6. Expense */}
+      <section className={styles.sectionCard} aria-label="Expenses">
+        <div className={styles.sectionHeader}>
+          <span className={styles.sectionTitle}>Expense</span>
+          <select
+            value={expensePeriod}
+            onChange={(e) => setExpensePeriod(e.target.value)}
+            style={{ fontSize: 11.5, border: '1px solid #cbd5e1', borderRadius: 6, padding: '2px 6px', background: '#ffffff', color: '#475569' }}
+          >
+            <option value="Today">Today ▾</option>
+            <option value="Month">This Month ▾</option>
+          </select>
+        </div>
+        <div className={styles.kpiGrid3}>
+          <div className={styles.kpiTile}>
+            <div className={styles.kpiLabel}>Create</div>
+            <div className={styles.kpiValue}>0.0 <small style={{ fontSize: 10, color: '#64748b' }}>INR</small></div>
+          </div>
+          <div className={styles.kpiTile}>
+            <div className={styles.kpiLabel}>Approved</div>
+            <div className={`${styles.kpiValue} ${styles.kpiValueGreen}`}>0.0 <small style={{ fontSize: 10, color: '#16a34a' }}>INR</small></div>
+          </div>
+          <div className={styles.kpiTile}>
+            <div className={styles.kpiLabel}>Rejected</div>
+            <div className={`${styles.kpiValue} ${styles.kpiValueRed}`}>0.0 <small style={{ fontSize: 10, color: '#dc2626' }}>INR</small></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+});
+
+/**
+ * Instant Check-In Modal Popup (Matching Screen 5)
+ */
+export const InstantCheckInModal = memo(function InstantCheckInModal({
+  isOpen,
+  onClose,
+  searchQuery,
+  onSearchChange,
+  loadingEntities,
+  moduleEntities = [],
+  onSelectEntity,
+  isManualEntry,
+  onSetManualEntry,
+  partyName,
+  onPartyNameChange,
+  partyPhone,
+  onPartyPhoneChange,
+  partyAddress,
+  onPartyAddressChange,
+  onStartCheckIn,
+  gpsLoading,
+  userLat,
+  userLng,
+  onOpenLeadRegistration,
+  onOpenPartyRegistration,
+  onOpenEndCustomerRegistration,
+}) {
+  if (!isOpen) return null;
+
+  return (
+    <div className={styles.modalOverlay} role="dialog" aria-modal="true" aria-labelledby="checkin-modal-title">
+      <div className={styles.modalBox}>
+        {/* Header */}
+        <div className={styles.modalHeader}>
+          <button type="button" className={styles.modalBackBtn} onClick={onClose} aria-label="Close modal">
+            <ArrowLeft size={18} aria-hidden="true" />
+          </button>
+          <h2 id="checkin-modal-title" className={styles.modalTitle}>Check In</h2>
+        </div>
+
+        {/* Body */}
+        <div className={styles.modalBody}>
+          {!isManualEntry ? (
+            <>
+              <div>
+                <label style={{ fontSize: 12.5, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 6 }}>
+                  Select Existing Customer
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type="text"
+                    className={styles.textInput}
+                    placeholder="Select & Search Customer"
+                    value={searchQuery}
+                    onChange={(e) => onSearchChange(e.target.value)}
+                    autoFocus
+                  />
+                  {loadingEntities && (
+                    <RefreshCw size={14} className={styles.spinning} style={{ position: 'absolute', right: 10, top: 11, color: '#94a3b8' }} />
+                  )}
+                </div>
+
+                {/* Dropdown list of results */}
+                {searchQuery && moduleEntities.length > 0 && (
+                  <div style={{ maxHeight: 180, overflowY: 'auto', border: '1px solid #cbd5e1', borderRadius: 8, marginTop: 4, background: '#ffffff' }}>
+                    {moduleEntities.map((ent) => (
+                      <div
+                        key={ent.id}
+                        onClick={() => {
+                          onSelectEntity(ent);
+                        }}
+                        style={{ padding: '8px 12px', borderBottom: '1px solid #f1f5f9', cursor: 'pointer', fontSize: 12.5 }}
+                      >
+                        <strong style={{ color: '#0f172a' }}>{ent.displayName || ent.party_name}</strong>
+                        {ent.phone && <span style={{ color: '#64748b', marginLeft: 6 }}>({ent.phone})</span>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {partyName && (
+                <div style={{ padding: 10, borderRadius: 8, background: '#f0fdf4', border: '1px solid #bbf7d0', fontSize: 12.5 }}>
+                  <strong style={{ color: '#166534' }}>Selected: </strong>
+                  <span>{partyName}</span> {partyPhone && <span>· {partyPhone}</span>}
+                </div>
+              )}
+
+              <div className={styles.orDivider}>OR</div>
+
+              {/* 3 Registration Types Selector */}
+              <div>
+                <div style={{ fontSize: 12.5, fontWeight: 700, color: '#334155', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <UserPlus size={14} color="#0284c7" aria-hidden="true" />
+                  <span>Register New Customer (Choose Type):</span>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {/* 1. Instant Lead Registration */}
+                  <button
+                    type="button"
+                    className={styles.registrationOptionCard}
+                    onClick={onOpenLeadRegistration}
+                  >
+                    <div className={styles.registrationOptionIcon} style={{ background: '#eff6ff', color: '#2563eb' }}>
+                      <Zap size={16} aria-hidden="true" />
+                    </div>
+                    <div style={{ textAlign: 'left', flex: 1 }}>
+                      <strong style={{ fontSize: 13, color: '#1e293b', display: 'block' }}>⚡ Instant Lead Registration</strong>
+                      <small style={{ fontSize: 11, color: '#64748b' }}>Register prospect in CRM Leads pipeline</small>
+                    </div>
+                    <ChevronRight size={15} color="#94a3b8" />
+                  </button>
+
+                  {/* 2. Party Registration */}
+                  <button
+                    type="button"
+                    className={styles.registrationOptionCard}
+                    onClick={onOpenPartyRegistration}
+                  >
+                    <div className={styles.registrationOptionIcon} style={{ background: '#f0fdf4', color: '#16a34a' }}>
+                      <Building2 size={16} aria-hidden="true" />
+                    </div>
+                    <div style={{ textAlign: 'left', flex: 1 }}>
+                      <strong style={{ fontSize: 13, color: '#1e293b', display: 'block' }}>🏢 Party Registration</strong>
+                      <small style={{ fontSize: 11, color: '#64748b' }}>Onboard new Dealer / Distributor into Master</small>
+                    </div>
+                    <ChevronRight size={15} color="#94a3b8" />
+                  </button>
+
+                  {/* 3. Register End Customer */}
+                  <button
+                    type="button"
+                    className={styles.registrationOptionCard}
+                    onClick={onOpenEndCustomerRegistration}
+                  >
+                    <div className={styles.registrationOptionIcon} style={{ background: '#fef3c7', color: '#d97706' }}>
+                      <User size={16} aria-hidden="true" />
+                    </div>
+                    <div style={{ textAlign: 'left', flex: 1 }}>
+                      <strong style={{ fontSize: 13, color: '#1e293b', display: 'block' }}>🚜 Register End Customer</strong>
+                      <small style={{ fontSize: 11, color: '#64748b' }}>Register farmer / machine owner & warranty</small>
+                    </div>
+                    <ChevronRight size={15} color="#94a3b8" />
+                  </button>
+                </div>
+
+                <div style={{ textAlign: 'center', marginTop: 10 }}>
+                  <button
+                    type="button"
+                    style={{ background: 'none', border: 'none', color: '#64748b', fontSize: 11.5, cursor: 'pointer', textDecoration: 'underline' }}
+                    onClick={() => onSetManualEntry(true)}
+                  >
+                    Or enter quick walk-in details manually
+                  </button>
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <label style={{ fontSize: 12.5, fontWeight: 700, color: '#334155' }}>
+                    Quick Spot Walk-In Details
+                  </label>
+                  <button
+                    type="button"
+                    style={{ background: 'none', border: 'none', color: '#0284c7', fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }}
+                    onClick={() => onSetManualEntry(false)}
+                  >
+                    ← Select Existing / Choose Type
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  className={styles.textInput}
+                  placeholder="Customer / Business Name *"
+                  value={partyName}
+                  onChange={(e) => onPartyNameChange(e.target.value)}
+                  style={{ marginBottom: 8 }}
+                />
+                <input
+                  type="tel"
+                  className={styles.textInput}
+                  placeholder="Contact Number (10 digits)"
+                  value={partyPhone}
+                  onChange={(e) => onPartyPhoneChange(e.target.value)}
+                  style={{ marginBottom: 8 }}
+                />
+                <input
+                  type="text"
+                  className={styles.textInput}
+                  placeholder="Address / Location details"
+                  value={partyAddress}
+                  onChange={(e) => onPartyAddressChange(e.target.value)}
+                />
+              </div>
+            </>
+          )}
+
+          {/* GPS Info Stamp */}
+          <div style={{ fontSize: 11, color: '#64748b', display: 'flex', alignItems: 'center', gap: 5 }}>
+            <MapPin size={12} color="#0284c7" aria-hidden="true" />
+            <span>
+              {gpsLoading ? 'Fetching GPS coordinates...' : userLat ? `GPS Stamped (${userLat.toFixed(4)}, ${userLng.toFixed(4)})` : 'GPS will be fetched on check-in'}
+            </span>
+          </div>
+
+          {/* Action Button */}
+          <button
+            type="button"
+            className={styles.checkInGreenBtn}
+            style={{ width: '100%', justifyContent: 'center', padding: '12px 16px', fontSize: 14 }}
+            disabled={!partyName || gpsLoading}
+            onClick={onStartCheckIn}
+          >
+            <Navigation size={15} aria-hidden="true" />
+            Check In Now
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+});
+
+/**
+ * Quick Party Registration Modal (Dealer / Distributor)
+ */
+export const QuickPartyRegistrationModal = memo(function QuickPartyRegistrationModal({
+  isOpen,
+  onClose,
+  onSubmit,
+  isSubmitting,
+}) {
+  const [firmName, setFirmName] = useState('');
+  const [partyType, setPartyType] = useState('Dealer');
+  const [contactMobile, setContactMobile] = useState('');
+  const [address, setAddress] = useState('');
+  const [stateName, setStateName] = useState('Punjab');
+  const [districtName, setDistrictName] = useState('');
+  const [gstin, setGstin] = useState('');
+
+  if (!isOpen) return null;
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!firmName.trim() || !contactMobile.trim()) {
+      alert('Firm Name and Contact Mobile are mandatory.');
+      return;
+    }
+    onSubmit({
+      firm_name: firmName.trim(),
+      party_type: partyType,
+      primary_mobile: contactMobile.trim(),
+      address: address.trim(),
+      state_name: stateName,
+      district_name: districtName.trim(),
+      gstin: gstin.trim() || null,
+    });
+  };
+
+  return (
+    <div className={styles.modalOverlay} role="dialog" aria-modal="true" aria-labelledby="party-reg-title">
+      <div className={styles.modalBox} style={{ maxWidth: 460 }}>
+        <div className={styles.modalHeader} style={{ background: '#16a34a' }}>
+          <button type="button" className={styles.modalBackBtn} onClick={onClose} aria-label="Close modal">
+            <ArrowLeft size={18} aria-hidden="true" />
+          </button>
+          <h2 id="party-reg-title" className={styles.modalTitle}>🏢 Party Registration (Dealer / Distributor)</h2>
+        </div>
+
+        <form onSubmit={handleSubmit} className={styles.modalBody}>
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 4 }}>
+              Firm / Dealership Name *
+            </label>
+            <input
+              type="text"
+              className={styles.textInput}
+              placeholder="e.g. Kisan Agro Agency"
+              value={firmName}
+              onChange={(e) => setFirmName(e.target.value)}
+              required
+            />
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 4 }}>
+                Party Type
+              </label>
+              <select
+                className={styles.formSelect}
+                value={partyType}
+                onChange={(e) => setPartyType(e.target.value)}
+              >
+                <option value="Dealer">Dealer</option>
+                <option value="Distributor">Distributor</option>
+                <option value="OEM">OEM</option>
+                <option value="Retailer">Retailer</option>
+              </select>
+            </div>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 4 }}>
+                Primary Mobile *
+              </label>
+              <input
+                type="tel"
+                maxLength={10}
+                className={styles.textInput}
+                placeholder="10-digit mobile"
+                value={contactMobile}
+                onChange={(e) => setContactMobile(e.target.value)}
+                required
+              />
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 4 }}>
+                State / UT
+              </label>
+              <input
+                type="text"
+                className={styles.textInput}
+                value={stateName}
+                onChange={(e) => setStateName(e.target.value)}
+              />
+            </div>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 4 }}>
+                District
+              </label>
+              <input
+                type="text"
+                className={styles.textInput}
+                placeholder="District"
+                value={districtName}
+                onChange={(e) => setDistrictName(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 4 }}>
+              Business Address
+            </label>
+            <input
+              type="text"
+              className={styles.textInput}
+              placeholder="Shop No, Market, Town"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 4 }}>
+              GSTIN (Optional)
+            </label>
+            <input
+              type="text"
+              className={styles.textInput}
+              placeholder="15-character GSTIN"
+              value={gstin}
+              onChange={(e) => setGstin(e.target.value.toUpperCase())}
+            />
+          </div>
+
+          <button
+            type="submit"
+            className={styles.checkInGreenBtn}
+            style={{ width: '100%', justifyContent: 'center', padding: '12px 16px', fontSize: 14 }}
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? 'Registering Party...' : 'Save Party & Proceed to Check-In'}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+});
 
 export const ConsoleAssignedTasksView = memo(function ConsoleAssignedTasksView({
   tasks,
@@ -893,18 +1512,19 @@ export const ConsoleActiveVisitView = memo(function ConsoleActiveVisitView({
   taskDescription = '',
   taskStage = '',
   taskStageLabel = '',
-  pipelines,
+  pipelines = [],
   activePipeline,
   onPipelineChange,
-  crmLeadStages,
+  crmLeadStages = [],
   leadStage,
+  initialLeadStage = '',
   onLeadStageChange,
-  orderDeliveryStages,
+  orderDeliveryStages = [],
   orderDeliveryStage,
   onOrderDeliveryStageChange,
   workOutcome,
   onWorkOutcomeChange,
-  customForms,
+  customForms = [],
   selectedFormId,
   onSelectedFormChange,
   nextFollowup,
@@ -913,7 +1533,7 @@ export const ConsoleActiveVisitView = memo(function ConsoleActiveVisitView({
   onDiscussionNotesChange,
   isListening,
   onToggleVoice,
-  photos,
+  photos = [],
   isWatermarking,
   onCapturePhoto,
   onRemovePhoto,
@@ -923,99 +1543,789 @@ export const ConsoleActiveVisitView = memo(function ConsoleActiveVisitView({
   onStopDrawing,
   onClearSignature,
   onCompleteCheckOut,
+  // Dynamic Visit Type Props
+  visitType = 'Lead Pipeline',
+  onVisitTypeChange,
+  availableProducts = [],
+  orderFollowupOutcome = 'ORDER_PLACED',
+  onOrderFollowupOutcomeChange,
+  orderStatus = 'Order Confirmed & Placed',
+  onOrderStatusChange,
+  noOrderReason = '',
+  onNoOrderReasonChange,
+  nextRequirementDate = '',
+  onNextRequirementDateChange,
+  orderItems = [],
+  onOrderItemsChange,
+  advancePayment = 0,
+  onAdvancePaymentChange,
+  paymentMode = 'UPI',
+  onPaymentModeChange,
+  serviceStatus = '',
+  onServiceStatusChange,
+  serviceRemark = '',
+  onServiceRemarkChange,
+  hasFollowUp = false,
+  onHasFollowUpChange,
+  materialStatus = 'Material Received OK',
+  onMaterialStatusChange,
+  materialChallanNo = '',
+  onMaterialChallanNoChange,
+  // Complaint Scope & Pipeline Props
+  complaintTargetType = 'PARTY_MASTER',
+  onComplaintTargetTypeChange,
+  complaintChassisSerial = '',
+  onComplaintChassisSerialChange,
+  complaintProductName = '',
+  onComplaintProductNameChange,
+  complaintStage = 'C04 - On-Site Execution & Digital Job Card',
+  onComplaintStageChange,
+  onBackToCockpit,
 }) {
-  const isComplaintIncomplete = activePipeline === 'COMPLAINT_SERVICE' && workOutcome === 'WORK_INCOMPLETE';
+  const [showAdvancedPipeline, setShowAdvancedPipeline] = useState(false);
+  const isComplaintIncomplete = (visitType === 'Service for NSMLR Product' || activePipeline === 'COMPLAINT_SERVICE') && workOutcome === 'WORK_INCOMPLETE';
+
+  // Calculate order total
+  const orderTotalAmount = (orderItems || []).reduce(
+    (sum, item) => sum + (Number(item.quantity || 0) * Number(item.price || 0)),
+    0
+  );
+
+  const handleAddOrderItem = () => {
+    if (!onOrderItemsChange) return;
+    onOrderItemsChange([
+      ...(orderItems || []),
+      { productName: '', quantity: 1, price: 0, remarks: '' }
+    ]);
+  };
+
+  const handleUpdateOrderItem = (idx, field, value) => {
+    if (!onOrderItemsChange) return;
+    const updated = [...(orderItems || [])];
+    updated[idx] = { ...updated[idx], [field]: value };
+    onOrderItemsChange(updated);
+  };
+
+  const handleUpdateOrderItemFields = (idx, fieldsObj) => {
+    if (!onOrderItemsChange) return;
+    const updated = [...(orderItems || [])];
+    updated[idx] = { ...updated[idx], ...fieldsObj };
+    onOrderItemsChange(updated);
+  };
+
+  const handleRemoveOrderItem = (idx) => {
+    if (!onOrderItemsChange) return;
+    onOrderItemsChange((orderItems || []).filter((_, i) => i !== idx));
+  };
 
   return (
-    <div>
-      <div className={styles.activeVisitBanner}>
-        <div>
-          <span style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: 0.7, opacity: 0.85 }}>
-            Visit In Progress{taskCode ? ` · ${taskCode}` : ''}
-          </span>
-          <div style={{ fontSize: 16, fontWeight: 700 }}>{partyName}</div>
-          <div style={{ fontSize: 12, opacity: 0.9 }}>
-            Duration: <strong>{elapsedMinutes} mins</strong> · {String(connectivityMode || '').replace('_', ' ')}
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={() => document.getElementById('checkout-output-section')?.scrollIntoView({ behavior: 'smooth' })}
-        >
-          Jump to Check-Out
-        </button>
+    <div style={{ maxWidth: 540, margin: '0 auto' }}>
+      {/* 1. Header (Check Out) */}
+      <div className={styles.checkoutHeroHeader}>
+        {onBackToCockpit && (
+          <button
+            type="button"
+            className={styles.modalBackBtn}
+            onClick={onBackToCockpit}
+            aria-label="Back to home"
+          >
+            <ArrowLeft size={18} aria-hidden="true" />
+          </button>
+        )}
+        <h2 className={styles.modalTitle}>Check Out</h2>
       </div>
 
-      {(taskStage || taskDescription) && (
-        <div style={{ marginBottom: 12 }}>
-          {taskStage && (
-            <TaskStageBadge info={getTaskStageInfo({ taskStage, taskStageLabel })} />
-          )}
-          <TaskInstructionsBox text={taskDescription} />
-        </div>
-      )}
+      {/* 2. Customer Sub-bar */}
+      <div className={styles.checkoutCustomerBar}>
+        <span>Customer : <strong>{partyName || 'Customer Visit'}</strong></span>
+        {taskCode && <span style={{ marginLeft: 8, fontSize: 11.5, color: '#64748b' }}>({taskCode})</span>}
+      </div>
 
-      <div className={styles.checkoutStack} id="checkout-output-section">
-        <section className={styles.card}>
-          <span className={styles.sectionLabel}>Target Pipeline & Stage</span>
-          <select className={styles.formSelect} value={activePipeline} onChange={(e) => onPipelineChange(e.target.value)}>
-            {pipelines.map((p) => (
-              <option key={p.id} value={p.id}>{p.label}</option>
-            ))}
+      <div className={styles.checkoutStack} id="checkout-output-section" style={{ background: '#ffffff', padding: '16px 14px' }}>
+        {/* 3. Visit Type Selector - Lead Pipeline 1st in list as requested */}
+        <div>
+          <label style={{ fontSize: 12.5, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 6 }}>
+            Select Visit Type & Operational Pipeline *
+          </label>
+          <select
+            className={styles.formSelect}
+            value={visitType}
+            onChange={(e) => onVisitTypeChange && onVisitTypeChange(e.target.value)}
+            style={{ fontSize: 14, fontWeight: 700, padding: '10px 12px', border: '1.5px solid #0284c7', background: '#f0f9ff', color: '#0369a1' }}
+          >
+            <option value="Lead Pipeline">🎯 Lead Pipeline & Meeting (01 - 08)</option>
+            <option value="Order Taking">📦 Order Taking & Daily Order Follow-up (S01 - S13)</option>
+            <option value="Service for NSMLR Product">🛠️ Service & Complaint Issues (Party / End Customer)</option>
+            <option value="Material Checking and Receiving">🤝 Material Checking & Inspection</option>
           </select>
+        </div>
 
-          {activePipeline === 'LEAD_DATA' && (
-            <div style={{ marginTop: 12 }}>
-              <span className={styles.sectionLabel}>Update Lead Stage</span>
-              <select className={styles.formSelect} value={leadStage} onChange={(e) => onLeadStageChange(e.target.value)}>
-                {leadStage && !crmLeadStages.some((st) => st.substages.some((sub) => leadStage.includes(sub))) && (
-                  <option value={leadStage}>Current: {leadStage}</option>
-                )}
-                {crmLeadStages.map((stageObj, i) => {
-                  const stageNum = i + 1;
-                  const cleanStageName = stageObj.name.replace(/^\d+\s*-\s*/, '');
-                  return (
-                    <optgroup key={`stage-${i}`} label={stageObj.name}>
-                      {stageObj.substages.map((sub, j) => {
-                        const subNum = String(j + 1).padStart(2, '0');
-                        const formattedVal = `${stageNum};${subNum}>${cleanStageName}>${sub}`;
-                        return <option key={formattedVal} value={formattedVal}>{formattedVal}</option>;
-                      })}
-                    </optgroup>
-                  );
-                })}
-              </select>
-            </div>
-          )}
+        {/* 4. Form Content based on Visit Type */}
 
-          {activePipeline === 'ORDER_DELIVERY' && (
-            <div style={{ marginTop: 12 }}>
-              <span className={styles.sectionLabel}>Order to Delivery Stage</span>
-              <select className={styles.formSelect} value={orderDeliveryStage} onChange={(e) => onOrderDeliveryStageChange(e.target.value)}>
-                {orderDeliveryStages.map((s) => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
-            </div>
-          )}
+        {/* 4A. LEAD PIPELINE WORKFLOW */}
+        {visitType === 'Lead Pipeline' && (() => {
+          const baselineStageStr = initialLeadStage || leadStage || '2;01>Contact Stage>Contacted';
+          const matchBaseline = baselineStageStr.match(/^(\d+);(\d+)>([^>]+)>([^>]+)$/);
+          const currentStageNum = matchBaseline ? parseInt(matchBaseline[1], 10) : 2;
+          const currentStageName = matchBaseline ? matchBaseline[3] : 'Contact Stage';
+          const currentSubstage = matchBaseline ? matchBaseline[4] : 'Contacted';
 
-          {activePipeline === 'COMPLAINT_SERVICE' && (
-            <div style={{ marginTop: 12, padding: 12, borderRadius: 9, border: '1px solid #cbd5e1', background: '#f8fafc' }}>
-              <div className={styles.taskMetaRow}>
-                <span className={styles.pill} data-tone="accent">Sequential Complaint Pipeline</span>
-                <span className={styles.pill} data-tone="healthy">Stage C04 · On-Site</span>
+          const nextStageNum = Math.min(8, currentStageNum < 8 ? currentStageNum + 1 : currentStageNum);
+          const nextStageObj = crmLeadStages[nextStageNum - 1] || null;
+          const nextStageCleanName = nextStageObj?.name?.replace(/^\d+\s*-\s*/, '') || '';
+
+          const matchSelected = (leadStage || '').match(/^(\d+);(\d+)>([^>]+)>([^>]+)$/);
+          const isChanged = leadStage && leadStage !== baselineStageStr;
+
+          return (
+            <div style={{ marginTop: 14 }}>
+              <div style={{ padding: '8px 12px', background: '#f0fdf4', borderRadius: 8, border: '1px solid #bbf7d0', marginBottom: 12, fontSize: 12, color: '#166534' }}>
+                <strong>🎯 CRM Lead Pipeline: </strong> Advance prospect through 8 stages from initial contact to party transfer.
               </div>
-              <div className={styles.modeGrid} style={{ marginBottom: 8 }}>
+
+              {/* Stage Guidance & Status Card */}
+              <div className={styles.stageGuidanceCard}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                      📍 Preselected / Current Stage
+                    </div>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: '#0369a1', marginTop: 2 }}>
+                      0{currentStageNum} - {currentStageName} ➔ <span style={{ color: '#0284c7' }}>{currentSubstage}</span>
+                    </div>
+                  </div>
+                  {isChanged ? (
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 6, background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a' }}>
+                      ⚡ Changed: {matchSelected ? `0${matchSelected[1]} - ${matchSelected[4]}` : 'Updated'}
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 6, background: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd' }}>
+                      ✓ Preselected Baseline
+                    </span>
+                  )}
+                </div>
+
+                {/* Next Recommended Stage Quick Select Pills */}
+                {nextStageObj && nextStageNum !== currentStageNum && (
+                  <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 8, marginTop: 6 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#166534', display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <span>👉 Recommended Next:</span>
+                      <strong>{nextStageObj.name}</strong>
+                    </div>
+                    <div className={styles.stagePillsRow}>
+                      {nextStageObj.substages.slice(0, 5).map((sub, j) => {
+                        const subNum = String(j + 1).padStart(2, '0');
+                        const pillVal = `${nextStageNum};${subNum}>${nextStageCleanName}>${sub}`;
+                        const isSelectedPill = leadStage === pillVal;
+                        return (
+                          <button
+                            key={pillVal}
+                            type="button"
+                            className={styles.stageQuickPill}
+                            data-active={isSelectedPill ? 'true' : undefined}
+                            onClick={() => onLeadStageChange(pillVal)}
+                          >
+                            <span>⭐ {sub}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ fontSize: 12.5, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 6 }}>
+                  Update Lead Stage (01 - 08) *
+                </label>
+                <select className={styles.formSelect} value={leadStage} onChange={(e) => onLeadStageChange(e.target.value)}>
+                  {leadStage && !crmLeadStages.some((st) => st.substages.some((sub) => leadStage.includes(sub))) && (
+                    <option value={leadStage}>📍 [CURRENT] {leadStage}</option>
+                  )}
+                  {crmLeadStages.map((stageObj, i) => {
+                    const stageNum = i + 1;
+                    const cleanStageName = stageObj.name.replace(/^\d+\s*-\s*/, '');
+                    return (
+                      <optgroup key={`stage-${i}`} label={stageObj.name}>
+                        {stageObj.substages.map((sub, j) => {
+                          const subNum = String(j + 1).padStart(2, '0');
+                          const formattedVal = `${stageNum};${subNum}>${cleanStageName}>${sub}`;
+                          const isPreselected = formattedVal === baselineStageStr;
+                          const isNextStage = stageNum === nextStageNum && nextStageNum !== currentStageNum;
+                          const isFuture = stageNum > nextStageNum;
+                          const isPast = stageNum < currentStageNum;
+
+                          let labelPrefix = '';
+                          if (isPreselected) {
+                            labelPrefix = '📍 [CURRENT / PRESELECTED] ';
+                          } else if (isNextStage) {
+                            labelPrefix = '⭐ [RECOMMENDED NEXT] ';
+                          } else if (isFuture) {
+                            labelPrefix = '⏩ ';
+                          } else if (isPast) {
+                            labelPrefix = '⏮️ [Past Stage] ';
+                          }
+
+                          return (
+                            <option key={formattedVal} value={formattedVal}>
+                              {labelPrefix}{formattedVal}
+                            </option>
+                          );
+                        })}
+                      </optgroup>
+                    );
+                  })}
+                </select>
+              </div>
+
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <label style={{ fontSize: 12.5, fontWeight: 700, color: '#334155' }}>Discussion & Meeting Notes</label>
+                  <button
+                    type="button"
+                    className={styles.walkinBtn}
+                    style={isListening ? { background: '#fef2f2', borderColor: '#fecaca', color: '#dc2626' } : undefined}
+                    onClick={onToggleVoice}
+                  >
+                    {isListening ? <MicOff size={13} aria-hidden="true" /> : <Mic size={13} aria-hidden="true" />}
+                    {isListening ? 'Listening...' : 'Voice-to-Text'}
+                  </button>
+                </div>
+                <textarea
+                  rows={3}
+                  className={styles.textareaInput}
+                  value={discussionNotes}
+                  onChange={(e) => onDiscussionNotesChange(e.target.value)}
+                  placeholder="Client requirements, budget discussions, competitor details..."
+                />
+              </div>
+
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ fontSize: 12.5, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 6 }}>
+                  Next Follow-Up (IST) *
+                </label>
+                <input
+                  type="datetime-local"
+                  className={styles.textInput}
+                  value={nextFollowup}
+                  onChange={(e) => onNextFollowupChange(e.target.value)}
+                />
+                <div className={styles.quickPresetRow} style={{ marginTop: 6 }}>
+                  <button type="button" onClick={() => onNextFollowupChange(buildISTFollowupPreset(1))}>+1 Day (11 AM)</button>
+                  <button type="button" onClick={() => onNextFollowupChange(buildISTFollowupPreset(3))}>+3 Days (11 AM)</button>
+                  <button type="button" onClick={() => onNextFollowupChange(buildISTFollowupPreset(7))}>Next Week</button>
+                </div>
+              </div>
+
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ fontSize: 12.5, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 6 }}>
+                  Meeting Photo Proof
+                </label>
+                <label className={styles.photoProofBox}>
+                  <Camera size={26} color="#0284c7" aria-hidden="true" />
+                  <span style={{ fontSize: 13, fontWeight: 700, color: '#0284c7' }}>
+                    {isWatermarking ? 'Stamping Watermark...' : 'Add Photo!'}
+                  </span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    onChange={onCapturePhoto}
+                    style={{ display: 'none' }}
+                    disabled={isWatermarking}
+                  />
+                </label>
+
+                {photos.length > 0 && (
+                  <div className={styles.photoStrip} style={{ marginTop: 10 }}>
+                    {photos.map((p, idx) => (
+                      <div key={idx} className={styles.photoThumb}>
+                        <img src={p.url} alt={`Lead meeting proof ${idx + 1}`} />
+                        <button type="button" className={styles.photoRemove} aria-label={`Remove photo ${idx + 1}`} onClick={() => onRemovePhoto(idx)}>
+                          <X size={11} aria-hidden="true" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* 4B. ORDER TAKING & DAILY ORDER FOLLOW-UP WORKFLOW */}
+        {visitType === 'Order Taking' && (
+          <div style={{ marginTop: 14 }}>
+            <div style={{ padding: '8px 12px', background: '#eff6ff', borderRadius: 8, border: '1px solid #bfdbfe', marginBottom: 12, fontSize: 12, color: '#1e40af' }}>
+              <strong>⚡ Daily Order Follow-up & Booking: </strong> Record dealer meeting outcome, check stock, schedule next requirement, or punch sales orders.
+            </div>
+
+            {/* Follow-up Disposition Cards */}
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 12.5, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 6 }}>
+                Order Follow-up Outcome (Meeting Disposition) *
+              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => onOrderFollowupOutcomeChange && onOrderFollowupOutcomeChange('ORDER_PLACED')}
+                  style={{
+                    padding: '10px 8px',
+                    borderRadius: 8,
+                    border: orderFollowupOutcome === 'ORDER_PLACED' ? '2px solid #16a34a' : '1px solid #cbd5e1',
+                    background: orderFollowupOutcome === 'ORDER_PLACED' ? '#f0fdf4' : '#ffffff',
+                    textAlign: 'left',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: orderFollowupOutcome === 'ORDER_PLACED' ? '#166534' : '#334155' }}>
+                    🛒 Order Confirmed
+                  </div>
+                  <div style={{ fontSize: 10.5, color: '#64748b', marginTop: 2 }}>Booking sales order today</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onOrderFollowupOutcomeChange && onOrderFollowupOutcomeChange('NO_ORDER')}
+                  style={{
+                    padding: '10px 8px',
+                    borderRadius: 8,
+                    border: orderFollowupOutcome === 'NO_ORDER' ? '2px solid #ea580c' : '1px solid #cbd5e1',
+                    background: orderFollowupOutcome === 'NO_ORDER' ? '#fff7ed' : '#ffffff',
+                    textAlign: 'left',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: orderFollowupOutcome === 'NO_ORDER' ? '#9a3412' : '#334155' }}>
+                    📦 Stock Full / No Order
+                  </div>
+                  <div style={{ fontSize: 10.5, color: '#64748b', marginTop: 2 }}>Sufficient stock in godown</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onOrderFollowupOutcomeChange && onOrderFollowupOutcomeChange('RESCHEDULED')}
+                  style={{
+                    padding: '10px 8px',
+                    borderRadius: 8,
+                    border: orderFollowupOutcome === 'RESCHEDULED' ? '2px solid #0284c7' : '1px solid #cbd5e1',
+                    background: orderFollowupOutcome === 'RESCHEDULED' ? '#f0f9ff' : '#ffffff',
+                    textAlign: 'left',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: orderFollowupOutcome === 'RESCHEDULED' ? '#0369a1' : '#334155' }}>
+                    📅 Re-visit Scheduled
+                  </div>
+                  <div style={{ fontSize: 10.5, color: '#64748b', marginTop: 2 }}>Discussion done / follow-up due</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onOrderFollowupOutcomeChange && onOrderFollowupOutcomeChange('CLOSED')}
+                  style={{
+                    padding: '10px 8px',
+                    borderRadius: 8,
+                    border: orderFollowupOutcome === 'CLOSED' ? '2px solid #64748b' : '1px solid #cbd5e1',
+                    background: orderFollowupOutcome === 'CLOSED' ? '#f8fafc' : '#ffffff',
+                    textAlign: 'left',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: orderFollowupOutcome === 'CLOSED' ? '#334155' : '#64748b' }}>
+                    ⏳ Closed / Busy
+                  </div>
+                  <div style={{ fontSize: 10.5, color: '#64748b', marginTop: 2 }}>Counter closed or owner busy</div>
+                </button>
+              </div>
+            </div>
+
+            {/* When Order is Placed / Confirmed */}
+            {orderFollowupOutcome === 'ORDER_PLACED' && (
+              <>
+                {/* Order Pipeline Stage */}
+                <div style={{ marginBottom: 12 }}>
+                  <label style={{ fontSize: 12.5, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 6 }}>
+                    Order to Delivery Stage (S01 - S13) *
+                  </label>
+                  <select
+                    className={styles.formSelect}
+                    value={orderDeliveryStage}
+                    onChange={(e) => onOrderDeliveryStageChange && onOrderDeliveryStageChange(e.target.value)}
+                  >
+                    {orderDeliveryStages.map((s) => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div style={{ marginBottom: 12 }}>
+                  <label style={{ fontSize: 12.5, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 6 }}>
+                    Order Status *
+                  </label>
+                  <select
+                    className={styles.formSelect}
+                    value={orderStatus}
+                    onChange={(e) => onOrderStatusChange && onOrderStatusChange(e.target.value)}
+                  >
+                    <option value="Order Confirmed & Placed">Order Confirmed & Placed</option>
+                    <option value="Advance Payment Received">Advance Payment Received</option>
+                    <option value="Quotation Pending">Quotation Pending</option>
+                    <option value="Sample Order Placed">Sample Order Placed</option>
+                    <option value="Under Negotiation / Review">Under Negotiation / Review</option>
+                  </select>
+                </div>
+
+                <div style={{ marginTop: 14 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    <label style={{ fontSize: 12.5, fontWeight: 700, color: '#334155' }}>
+                      Order Products & Pricing (Search & Select from Catalog) *
+                    </label>
+                    <button
+                      type="button"
+                      className={styles.addItemBtn}
+                      onClick={handleAddOrderItem}
+                      title="Add product row"
+                    >
+                      <Plus size={14} aria-hidden="true" />
+                      Add Product
+                    </button>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {(orderItems || []).map((item, idx) => (
+                      <div key={idx} className={styles.orderItemCard}>
+                        <div className={styles.orderItemCardTop}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <SearchableProductSelect
+                              products={availableProducts}
+                              value={item.productName}
+                              onChange={(val) => {
+                                const prodObj = (typeof val === 'object' && val !== null) ? val : null;
+                                const prodName = prodObj?.name || (typeof val === 'string' ? val : '');
+                                const prodPrice = prodObj?.price != null && prodObj?.price !== '' ? Number(prodObj.price) : null;
+
+                                handleUpdateOrderItemFields(idx, {
+                                  productName: prodName,
+                                  ...(prodPrice != null ? { price: prodPrice } : {})
+                                });
+                              }}
+                              placeholder="Search & select product from catalog..."
+                              showPrice={true}
+                            />
+                          </div>
+                          {(orderItems || []).length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveOrderItem(idx)}
+                              style={{
+                                background: 'none',
+                                border: 'none',
+                                color: '#dc2626',
+                                cursor: 'pointer',
+                                padding: '4px',
+                                borderRadius: 4,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                flexShrink: 0
+                              }}
+                              aria-label="Remove item"
+                            >
+                              <Trash2 size={15} aria-hidden="true" />
+                            </button>
+                          )}
+                        </div>
+
+                        <div className={styles.orderItemCardBottom}>
+                          <div>
+                            <label className={styles.orderItemFieldLabel}>Qty (Units)</label>
+                            <input
+                              type="number"
+                              min="1"
+                              className={styles.orderItemMiniInput}
+                              value={item.quantity}
+                              onChange={(e) => handleUpdateOrderItem(idx, 'quantity', e.target.value)}
+                            />
+                          </div>
+                          <div>
+                            <label className={styles.orderItemFieldLabel}>Rate / Price (₹)</label>
+                            <input
+                              type="number"
+                              min="0"
+                              className={styles.orderItemMiniInput}
+                              value={item.price}
+                              onChange={(e) => handleUpdateOrderItem(idx, 'price', e.target.value)}
+                            />
+                          </div>
+                          <div>
+                            <label className={styles.orderItemFieldLabel}>Item Total</label>
+                            <div className={styles.orderItemLineTotal}>
+                              ₹{((Number(item.quantity) || 0) * (Number(item.price) || 0)).toLocaleString('en-IN')}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {orderTotalAmount > 0 && (
+                    <div style={{ textAlign: 'right', marginTop: 10, fontSize: 13, fontWeight: 700, color: '#0f172a', padding: '6px 10px', background: '#f8fafc', borderRadius: 6, border: '1px solid #e2e8f0' }}>
+                      Estimated Order Total: <span style={{ color: '#16a34a', fontSize: 15 }}>₹{orderTotalAmount.toLocaleString('en-IN')}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Advance Payment Details */}
+                <div style={{ marginTop: 14, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 4 }}>
+                      Advance Collected (₹)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      className={styles.textInput}
+                      placeholder="₹ 0.00"
+                      value={advancePayment}
+                      onChange={(e) => onAdvancePaymentChange && onAdvancePaymentChange(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 4 }}>
+                      Payment Mode
+                    </label>
+                    <select
+                      className={styles.formSelect}
+                      value={paymentMode}
+                      onChange={(e) => onPaymentModeChange && onPaymentModeChange(e.target.value)}
+                    >
+                      <option value="UPI">UPI / QR Code</option>
+                      <option value="NEFT">Bank Transfer (NEFT/RTGS)</option>
+                      <option value="Cheque">Cheque</option>
+                      <option value="Cash">Cash</option>
+                    </select>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* When Stock is Full / No Order */}
+            {orderFollowupOutcome === 'NO_ORDER' && (
+              <div style={{ marginTop: 12, padding: 12, background: '#fff7ed', borderRadius: 8, border: '1px solid #fed7aa' }}>
+                <div style={{ marginBottom: 10 }}>
+                  <label style={{ fontSize: 12, fontWeight: 700, color: '#9a3412', display: 'block', marginBottom: 4 }}>
+                    Reason for No Order *
+                  </label>
+                  <select
+                    className={styles.formSelect}
+                    value={noOrderReason}
+                    onChange={(e) => onNoOrderReasonChange && onNoOrderReasonChange(e.target.value)}
+                  >
+                    <option value="SUFFICIENT_STOCK">Sufficient Stock in Godown</option>
+                    <option value="PRICE_COMPETITOR">Price Discrepancy / Competitor Scheme</option>
+                    <option value="SEASON_SLUMP">Off-season / Slow Retail Demand</option>
+                    <option value="PAYMENT_HOLD">Previous Payment Clearance Pending</option>
+                    <option value="OTHER">Other Commercial Reason</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 700, color: '#9a3412', display: 'block', marginBottom: 4 }}>
+                    Next Expected Requirement Date
+                  </label>
+                  <input
+                    type="date"
+                    className={styles.textInput}
+                    value={nextRequirementDate}
+                    onChange={(e) => onNextRequirementDateChange && onNextRequirementDateChange(e.target.value)}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* When Re-visit is Scheduled */}
+            {orderFollowupOutcome === 'RESCHEDULED' && (
+              <div style={{ marginTop: 12, padding: 12, background: '#f0f9ff', borderRadius: 8, border: '1px solid #bae6fd' }}>
+                <div style={{ marginBottom: 10 }}>
+                  <label style={{ fontSize: 12, fontWeight: 700, color: '#0369a1', display: 'block', marginBottom: 4 }}>
+                    Re-visit Scheduled Reason *
+                  </label>
+                  <select
+                    className={styles.formSelect}
+                    value={noOrderReason}
+                    onChange={(e) => onNoOrderReasonChange && onNoOrderReasonChange(e.target.value)}
+                  >
+                    <option value="KEY_PERSON_ABSENT">Key Decision Maker Absent / In Travel</option>
+                    <option value="DISCUSSION_PENDING">Product Demonstration / Quotation Requested</option>
+                    <option value="PAYMENT_ARRANGEMENT">Arranging Advance / Credit Approval</option>
+                    <option value="OTHER">Follow-up Discussion Pending</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 700, color: '#0369a1', display: 'block', marginBottom: 4 }}>
+                    Re-visit Date & Time (IST) *
+                  </label>
+                  <input
+                    type="datetime-local"
+                    className={styles.textInput}
+                    value={nextFollowup}
+                    onChange={(e) => onNextFollowupChange(e.target.value)}
+                  />
+                  <div className={styles.quickPresetRow} style={{ marginTop: 6 }}>
+                    <button type="button" onClick={() => onNextFollowupChange(buildISTFollowupPreset(1))}>+1 Day (11 AM)</button>
+                    <button type="button" onClick={() => onNextFollowupChange(buildISTFollowupPreset(3))}>+3 Days (11 AM)</button>
+                    <button type="button" onClick={() => onNextFollowupChange(buildISTFollowupPreset(7))}>Next Week</button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* When Counter is Closed */}
+            {orderFollowupOutcome === 'CLOSED' && (
+              <div style={{ marginTop: 12, padding: 12, background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+                <label style={{ fontSize: 12, fontWeight: 700, color: '#475569', display: 'block', marginBottom: 4 }}>
+                  Counter / Shop Status *
+                </label>
+                <select
+                  className={styles.formSelect}
+                  value={noOrderReason}
+                  onChange={(e) => onNoOrderReasonChange && onNoOrderReasonChange(e.target.value)}
+                >
+                  <option value="SHOP_CLOSED">Premises / Shop Shutter Closed</option>
+                  <option value="OWNER_BUSY">Owner Busy / Refused Discussion</option>
+                  <option value="RELOCATED">Address Relocated / Contact Changed</option>
+                  <option value="UNREACHABLE">Phone Unreachable / Not Attending</option>
+                </select>
+              </div>
+            )}
+
+            <div style={{ marginTop: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <label style={{ fontSize: 12.5, fontWeight: 700, color: '#334155' }}>Order Discussion & Notes</label>
+                <button
+                  type="button"
+                  className={styles.walkinBtn}
+                  style={isListening ? { background: '#fef2f2', borderColor: '#fecaca', color: '#dc2626' } : undefined}
+                  onClick={onToggleVoice}
+                >
+                  {isListening ? <MicOff size={13} aria-hidden="true" /> : <Mic size={13} aria-hidden="true" />}
+                  {isListening ? 'Listening...' : 'Voice-to-Text'}
+                </button>
+              </div>
+              <textarea
+                rows={2}
+                className={styles.textareaInput}
+                value={discussionNotes}
+                onChange={(e) => onDiscussionNotesChange(e.target.value)}
+                placeholder="Commitments, expected delivery date, transporter preference, market feedback..."
+              />
+            </div>
+          </div>
+        )}
+
+        {/* 4C. SERVICE & COMPLAINT ISSUES (PARTY MASTER VS END CUSTOMER) */}
+        {visitType === 'Service for NSMLR Product' && (
+          <div style={{ marginTop: 14 }}>
+            <div className={styles.locationFetchNotice}>
+              <span>GPS Location will be fetched automatically before submit</span>
+              <div style={{ display: 'flex', gap: 6, color: '#0284c7' }}>
+                <Navigation size={15} aria-hidden="true" />
+                <MapPin size={15} aria-hidden="true" />
+              </div>
+            </div>
+
+            {/* Target Scope Switcher (Party vs End Customer) */}
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 12.5, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 6 }}>
+                Whose Complaint / Service Issue is this? *
+              </label>
+              <div className={styles.complaintScopeSelector}>
+                <button
+                  type="button"
+                  className={styles.complaintScopePill}
+                  data-active={complaintTargetType === 'PARTY_MASTER'}
+                  onClick={() => onComplaintTargetTypeChange && onComplaintTargetTypeChange('PARTY_MASTER')}
+                >
+                  <Building2 size={16} aria-hidden="true" />
+                  <span>🏢 Party Master (Dealer)</span>
+                </button>
+                <button
+                  type="button"
+                  className={styles.complaintScopePill}
+                  data-active={complaintTargetType === 'END_CUSTOMER'}
+                  onClick={() => onComplaintTargetTypeChange && onComplaintTargetTypeChange('END_CUSTOMER')}
+                >
+                  <User size={16} aria-hidden="true" />
+                  <span>🚜 End Customer (Farmer)</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Machine & Chassis Details */}
+            <div style={{ padding: 12, background: '#f8fafc', borderRadius: 10, border: '1px solid #e2e8f0', marginBottom: 14 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#0284c7', marginBottom: 8 }}>
+                {complaintTargetType === 'END_CUSTOMER' ? '🚜 Machine & Owner Identification' : '🏢 Dealership Identification'}
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div>
+                  <label style={{ fontSize: 11.5, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>
+                    Product / Machine Model *
+                  </label>
+                  <input
+                    type="text"
+                    className={styles.textInput}
+                    placeholder="e.g. Rotary Tiller 7ft / Laser Leveler"
+                    value={complaintProductName}
+                    onChange={(e) => onComplaintProductNameChange && onComplaintProductNameChange(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: 11.5, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>
+                    Chassis / Serial Number
+                  </label>
+                  <input
+                    type="text"
+                    className={styles.textInput}
+                    placeholder="e.g. NS-RT-2026-089"
+                    value={complaintChassisSerial}
+                    onChange={(e) => onComplaintChassisSerialChange && onComplaintChassisSerialChange(e.target.value.toUpperCase())}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Complaint Ticket Stage */}
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 12.5, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 6 }}>
+                Complaint Ticket Stage (C01 - C06) *
+              </label>
+              <select
+                className={styles.formSelect}
+                value={complaintStage}
+                onChange={(e) => onComplaintStageChange && onComplaintStageChange(e.target.value)}
+              >
+                <option value="C04 - On-Site Execution & Digital Job Card">C04 - On-Site Execution & Digital Job Card</option>
+                <option value="C05 - Customer Verification & Sign-off">C05 - Customer Verification & Sign-off</option>
+                <option value="C01 - Ticket Generation & Logging">C01 - Ticket Generation & Logging</option>
+                <option value="C02 - RCA & Resolution Path">C02 - RCA & Resolution Path</option>
+                <option value="C03 - Service Engineer Deputation">C03 - Service Engineer Deputation</option>
+                <option value="C06 - Audit & Closure">C06 - Audit & Closure</option>
+              </select>
+            </div>
+
+            {/* Work Resolution Outcome */}
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 12.5, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 6 }}>
+                Resolution Outcome *
+              </label>
+              <div className={styles.modeGrid}>
                 <button
                   type="button"
                   className={styles.modeTile}
-                  data-mode="PHYSICAL_VISIT"
                   aria-pressed={workOutcome === 'WORK_DONE'}
                   onClick={() => onWorkOutcomeChange('WORK_DONE')}
                 >
                   <ShieldCheck size={16} aria-hidden="true" />
                   <strong>Work Completed</strong>
-                  <small>Capture C05 customer sign-off</small>
+                  <small>Issue fixed on site</small>
                 </button>
                 <button
                   type="button"
@@ -1024,125 +2334,237 @@ export const ConsoleActiveVisitView = memo(function ConsoleActiveVisitView({
                   onClick={() => onWorkOutcomeChange('WORK_INCOMPLETE')}
                 >
                   <Clock size={16} aria-hidden="true" />
-                  <strong>Work Incomplete</strong>
-                  <small>Schedule follow-up visit</small>
+                  <strong>Parts Pending / Incomplete</strong>
+                  <small>Requires revisit</small>
                 </button>
               </div>
             </div>
-          )}
 
-          {activePipeline === 'CUSTOM_FORM' && (
-            <div style={{ marginTop: 12 }}>
-              <span className={styles.sectionLabel}>Assigned Custom Form</span>
-              <select className={styles.formSelect} value={selectedFormId} onChange={(e) => onSelectedFormChange(e.target.value)}>
-                {customForms.length === 0 ? (
-                  <option value="">No published custom forms</option>
-                ) : (
-                  customForms.map((f) => (
-                    <option key={f.id} value={f.id}>{f.title} ({f.data_type})</option>
-                  ))
-                )}
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 12.5, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 6 }}>
+                Status Description *
+              </label>
+              <select
+                className={styles.formSelect}
+                value={serviceStatus}
+                onChange={(e) => onServiceStatusChange && onServiceStatusChange(e.target.value)}
+              >
+                <option value="">Please select</option>
+                <option value="Issue Solved / Machine Ready">Issue Solved / Machine Ready</option>
+                <option value="Under Observation">Under Observation</option>
+                <option value="Spare Part Replacement Required">Spare Part Replacement Required</option>
+                <option value="Customer Confirmation Pending">Customer Confirmation Pending</option>
+                <option value="Unresolved / Escalated to Plant">Unresolved / Escalated to Plant</option>
               </select>
             </div>
-          )}
 
-          <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px dashed #cbd5e1' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-              <span className={styles.sectionLabel} style={{ marginBottom: 0, color: isComplaintIncomplete ? '#b91c1c' : undefined }}>
-                Next Follow-Up (IST) {isComplaintIncomplete ? '* Mandatory' : '(Optional)'}
-              </span>
-              {nextFollowup && (
-                <button type="button" className={styles.clearBtn} onClick={() => onNextFollowupChange('')}>Clear</button>
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 12.5, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 6 }}>
+                Service Engineer Remarks *
+              </label>
+              <textarea
+                rows={2}
+                className={styles.textareaInput}
+                placeholder="RCA findings, parts replaced, work carried out..."
+                value={serviceRemark}
+                onChange={(e) => onServiceRemarkChange && onServiceRemarkChange(e.target.value)}
+              />
+            </div>
+
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 12.5, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 6 }}>
+                Solved Proof / Job Card Photo *
+              </label>
+              <label className={styles.photoProofBox}>
+                <Camera size={26} color="#0284c7" aria-hidden="true" />
+                <span style={{ fontSize: 13, fontWeight: 700, color: '#0284c7' }}>
+                  {isWatermarking ? 'Stamping Watermark...' : 'Add Photo!'}
+                </span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={onCapturePhoto}
+                  style={{ display: 'none' }}
+                  disabled={isWatermarking}
+                />
+              </label>
+
+              {photos.length > 0 && (
+                <div className={styles.photoStrip} style={{ marginTop: 10 }}>
+                  {photos.map((p, idx) => (
+                    <div key={idx} className={styles.photoThumb}>
+                      <img src={p.url} alt={`Service proof ${idx + 1}`} />
+                      <button type="button" className={styles.photoRemove} aria-label={`Remove photo ${idx + 1}`} onClick={() => onRemovePhoto(idx)}>
+                        <X size={11} aria-hidden="true" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
-            <input
-              type="datetime-local"
-              className={styles.textInput}
-              value={nextFollowup}
-              onChange={(e) => onNextFollowupChange(e.target.value)}
-            />
-            <div className={styles.quickPresetRow}>
-              <button type="button" onClick={() => onNextFollowupChange(buildISTFollowupPreset(1))}>+1 Day (11 AM)</button>
-              <button type="button" onClick={() => onNextFollowupChange(buildISTFollowupPreset(3))}>+3 Days (11 AM)</button>
-              <button type="button" onClick={() => onNextFollowupChange(buildISTFollowupPreset(7))}>Next Week</button>
+
+            <div className={styles.toggleContainer}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: '#334155' }}>
+                Follow Up Required {isComplaintIncomplete ? '(Mandatory)' : ''}
+              </span>
+              <label className={styles.switchToggle}>
+                <input
+                  type="checkbox"
+                  checked={hasFollowUp || isComplaintIncomplete}
+                  onChange={(e) => onHasFollowUpChange && onHasFollowUpChange(e.target.checked)}
+                />
+                <span className={styles.switchSlider}></span>
+              </label>
+            </div>
+
+            {(hasFollowUp || isComplaintIncomplete) && (
+              <div style={{ marginTop: 10, padding: 10, background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+                <label style={{ fontSize: 11.5, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>
+                  Follow-up Date & Time (IST) *
+                </label>
+                <input
+                  type="datetime-local"
+                  className={styles.textInput}
+                  value={nextFollowup}
+                  onChange={(e) => onNextFollowupChange(e.target.value)}
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 4D. MATERIAL CHECKING WORKFLOW */}
+        {visitType === 'Material Checking and Receiving' && (
+          <div style={{ marginTop: 14 }}>
+            <div className={styles.locationFetchNotice}>
+              <span>Delivery location validation active</span>
+              <MapPin size={15} color="#0284c7" aria-hidden="true" />
+            </div>
+
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 12.5, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 6 }}>
+                Inspection Status *
+              </label>
+              <select
+                className={styles.formSelect}
+                value={materialStatus}
+                onChange={(e) => onMaterialStatusChange && onMaterialStatusChange(e.target.value)}
+              >
+                <option value="Material Received OK">Material Received OK & Verified</option>
+                <option value="Shortage Reported">Shortage / Partial Material Received</option>
+                <option value="Damage Reported">Damaged Goods Reported</option>
+                <option value="Return / Rejected">Rejected / Discrepancy Found</option>
+              </select>
+            </div>
+
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 12.5, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 6 }}>
+                Challan / Invoice Number
+              </label>
+              <input
+                type="text"
+                className={styles.textInput}
+                placeholder="e.g. INV-2026-9021 or Challan No."
+                value={materialChallanNo}
+                onChange={(e) => onMaterialChallanNoChange && onMaterialChallanNoChange(e.target.value)}
+              />
+            </div>
+
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 12.5, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 6 }}>
+                Challan / POD Photo Proof
+              </label>
+              <label className={styles.photoProofBox}>
+                <Camera size={26} color="#0284c7" aria-hidden="true" />
+                <span style={{ fontSize: 13, fontWeight: 700, color: '#0284c7' }}>
+                  {isWatermarking ? 'Stamping Watermark...' : 'Upload POD / Challan Photo'}
+                </span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={onCapturePhoto}
+                  style={{ display: 'none' }}
+                  disabled={isWatermarking}
+                />
+              </label>
+
+              {photos.length > 0 && (
+                <div className={styles.photoStrip} style={{ marginTop: 10 }}>
+                  {photos.map((p, idx) => (
+                    <div key={idx} className={styles.photoThumb}>
+                      <img src={p.url} alt={`POD proof ${idx + 1}`} />
+                      <button type="button" className={styles.photoRemove} aria-label={`Remove photo ${idx + 1}`} onClick={() => onRemovePhoto(idx)}>
+                        <X size={11} aria-hidden="true" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div style={{ marginTop: 12 }}>
+              <label style={{ fontSize: 12.5, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 6 }}>
+                Inspection Notes / Observations
+              </label>
+              <textarea
+                rows={2}
+                className={styles.textareaInput}
+                value={discussionNotes}
+                onChange={(e) => onDiscussionNotesChange(e.target.value)}
+                placeholder="Material condition, seal integrity, unloading remarks..."
+              />
             </div>
           </div>
-        </section>
+        )}
 
-        <section className={styles.card}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-            <span className={styles.sectionLabel} style={{ marginBottom: 0 }}>Discussion & Meeting Notes</span>
+        {/* 5. Collapsible Advanced Settings (Custom Forms) */}
+        {customForms?.length > 0 && (
+          <div style={{ marginTop: 16, borderTop: '1px dashed #cbd5e1', paddingTop: 10 }}>
             <button
               type="button"
-              className={styles.walkinBtn}
-              style={isListening ? { background: '#fef2f2', borderColor: '#fecaca', color: '#dc2626' } : undefined}
-              onClick={onToggleVoice}
+              onClick={() => setShowAdvancedPipeline(prev => !prev)}
+              style={{
+                background: 'none',
+                border: 'none',
+                fontSize: 12,
+                fontWeight: 600,
+                color: '#0284c7',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: 0
+              }}
             >
-              {isListening ? <MicOff size={13} aria-hidden="true" /> : <Mic size={13} aria-hidden="true" />}
-              {isListening ? 'Listening...' : 'Voice-to-Text'}
+              <span>{showAdvancedPipeline ? '▼ Hide Assigned Custom Form' : '▶ Attach Assigned Custom Form'}</span>
             </button>
-          </div>
-          <textarea
-            rows={3}
-            className={styles.textareaInput}
-            value={discussionNotes}
-            onChange={(e) => onDiscussionNotesChange(e.target.value)}
-            placeholder="Record points discussed, client requirements, payment commitments..."
-          />
-        </section>
 
-        <section className={styles.card}>
-          <span className={styles.sectionLabel}>Watermarked On-Site Photos</span>
-          <p style={{ margin: '0 0 10px', fontSize: 11.5, color: '#64748b' }}>
-            Live GPS coordinates, IST timestamp, and client name are stamped on each captured photo.
-          </p>
-          <div className={styles.photoStrip}>
-            <label className={styles.captureTile}>
-              <Camera size={16} aria-hidden="true" />
-              <span>{isWatermarking ? 'Stamping Watermark...' : 'Capture Photo'}</span>
-              <input
-                type="file"
-                accept="image/*"
-                capture="environment"
-                onChange={onCapturePhoto}
-                style={{ display: 'none' }}
-                disabled={isWatermarking}
-              />
-            </label>
-            {photos.map((p, idx) => (
-              <div key={idx} className={styles.photoThumb}>
-                <img src={p.url} alt={`Visit proof ${idx + 1}`} />
-                <button type="button" className={styles.photoRemove} aria-label={`Remove photo ${idx + 1}`} onClick={() => onRemovePhoto(idx)}>
-                  <X size={11} aria-hidden="true" />
-                </button>
+            {showAdvancedPipeline && (
+              <div style={{ marginTop: 10, padding: 12, background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+                <span className={styles.sectionLabel}>Select Custom Form</span>
+                <select className={styles.formSelect} value={selectedFormId} onChange={(e) => onSelectedFormChange(e.target.value)}>
+                  {customForms.map((f) => (
+                    <option key={f.id} value={f.id}>{f.title} ({f.data_type})</option>
+                  ))}
+                </select>
               </div>
-            ))}
+            )}
           </div>
-        </section>
+        )}
 
-        <section className={styles.card}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-            <span className={styles.sectionLabel} style={{ marginBottom: 0 }}>Customer E-Signature</span>
-            <button type="button" className={styles.clearBtn} onClick={onClearSignature}>Clear Signature</button>
-          </div>
-          <canvas
-            ref={signatureCanvasRef}
-            width={320}
-            height={130}
-            className={styles.signaturePad}
-            onMouseDown={onStartDrawing}
-            onMouseMove={onDraw}
-            onMouseUp={onStopDrawing}
-            onTouchStart={onStartDrawing}
-            onTouchMove={onDraw}
-            onTouchEnd={onStopDrawing}
-          />
-        </section>
-
-        <button type="button" className={styles.primaryAction} data-tone="success" onClick={onCompleteCheckOut}>
-          <CheckCircle2 size={16} aria-hidden="true" />
-          Complete Check-Out & Save Report
-        </button>
+        {/* 6. Big Orange / Red Action Button (CHECK OUT) */}
+        <div style={{ marginTop: 20 }}>
+          <button
+            type="button"
+            className={styles.orangeCheckOutBtn}
+            onClick={onCompleteCheckOut}
+          >
+            <CheckCircle2 size={18} aria-hidden="true" />
+            CHECK OUT
+          </button>
+        </div>
       </div>
     </div>
   );

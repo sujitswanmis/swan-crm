@@ -25,12 +25,14 @@ import {
   TrackingMapToolbar, TrackingRouteDock, TrackingPlaybackControls, TrackingRangeOverview
 } from '@/components/FieldForce/FieldTrackingDashboardUI';
 import trackingStyles from '@/components/FieldForce/LiveTrackingDashboard.module.css';
+import { deriveTrackingDeviceStatus } from '@/components/FieldForce/trackingDeviceStatus';
 import {
   resolveTrackingDateRange, enumerateTrackingDates, fetchTrackingDay, peekTrackingDay,
   loadTrackingRange, summarizeTrackingRange, getTrackingOverviewRuns, nextTrackingPlaybackDay
 } from '@/components/FieldForce/trackingDateRanges';
 
 const EMPTY_TRACKING_RANGE_ENTRIES = Object.freeze({});
+const getFieldForce360Route = (userId, date) => getEmployee360Route(userId, date, { rejectUnsupportedDetours: true, includeActivityDetails: true });
 
 const isValidExecUuid = (v) => Boolean(v && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(v).trim()));
 
@@ -251,7 +253,7 @@ export function computeRouteSignature(data) {
   const lastPt = poly[poly.length - 1] || {};
   const lastTl = tl[tl.length - 1] || {};
   const lastPingAt = data.lastPing?.recorded_at || data.lastPing?.time || '';
-  return [
+  const signature = [
     data.userId || '',
     data.date || '',
     Boolean(data.shiftCompleted),
@@ -274,6 +276,11 @@ export function computeRouteSignature(data) {
     lastTl.startTime || '',
     lastTl.endTime || ''
   ].join('|');
+  return Array.isArray(data.activityTimeline) ? `${signature}|activity:${JSON.stringify(data.activityTimeline.map(event => [
+    event.type, event.startTime || event.checkInTime, event.endTime || event.checkOutTime,
+    event.durationMins, event.distanceKm, event.visitCode, event.partyName, event.visitType,
+    event.fullAddress, event.locationName, event.lat, event.lng, event.offlineRecorded, event.isGeofenceFlagged, event.shiftName
+  ]))}` : signature;
 }
 
 /**
@@ -683,6 +690,24 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
   }, [selectedUserId, selectedCompany]);
 
   useEffect(() => {
+    if (!isFieldForcePresentation || !selectedUserId || activeMainTab !== '360_PLAYBACK' || selectedDate !== getTodayISTDateStr()) return undefined;
+    let active = true;
+    let pending = false;
+    const refreshHealth = async () => {
+      if (pending || (typeof document !== 'undefined' && document.visibilityState === 'hidden')) return;
+      pending = true;
+      try {
+        const result = await getEmployeeDeviceHealthSummary(String(selectedUserId), selectedCompany);
+        if (active && result?.success) setDeviceHealthState({ userId: String(selectedUserId), summary: result.summary || null });
+      } catch { /* Device diagnostics must not block route playback. */ }
+      finally { pending = false; }
+    };
+    const timer = setInterval(refreshHealth, 30000);
+    window.addEventListener('focus', refreshHealth);
+    return () => { active = false; clearInterval(timer); window.removeEventListener('focus', refreshHealth); };
+  }, [isFieldForcePresentation, selectedUserId, selectedCompany, activeMainTab, selectedDate]);
+
+  useEffect(() => {
     if (typeof window === 'undefined') return undefined;
     const onSelectExec = (ev) => {
       const targetId = ev?.detail?.userId;
@@ -782,7 +807,7 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
     () => buildPlaybackEdgeModel(routeData?.polyline, routeData?.timeline),
     [routeData?.polyline, routeData?.timeline]
   );
-  const effectiveTripFilter = routeSplitInfo.hasReturnTrip ? routeTripFilter : 'ALL';
+  const effectiveTripFilter = routeSplitInfo.hasReturnTrip || (isFieldForcePresentation && routeTripFilter === 'GOING') ? routeTripFilter : 'ALL';
 
   const routeSpeedStats = useMemo(() => {
     const poly = routeData?.polyline || [];
@@ -1005,16 +1030,18 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
   const loadEmployeeRoute = useCallback(async (userId, dateStr, { silent = false, forceFresh = false } = {}) => {
     if (!isValidExecUuid(userId)) return;
     const cacheKey = `${userId}_${dateStr}`;
-    const storageKey = `crm_cached_route_v3_${cacheKey}`;
+    const storagePrefix = isFieldForcePresentation ? 'crm_cached_field_force_route_v5_' : 'crm_cached_route_v3_';
+    const storageKey = `${storagePrefix}${cacheKey}`;
     const todayIST = getTodayISTDateStr();
 
     let cachedRoute = routeCacheRef.current[cacheKey] || null;
+    if (isFieldForcePresentation && (!Array.isArray(cachedRoute?.activityTimeline) || !Number.isFinite(cachedRoute?.activityVisitsCount))) cachedRoute = null;
     if (!cachedRoute && typeof window !== 'undefined') {
       try {
         const rawCached = localStorage.getItem(storageKey);
         if (rawCached) {
           const parsed = JSON.parse(rawCached);
-          if (parsed && parsed.userId === userId && parsed.date === dateStr) {
+          if (parsed && parsed.userId === userId && parsed.date === dateStr && (!isFieldForcePresentation || (Array.isArray(parsed.activityTimeline) && Number.isFinite(parsed.activityVisitsCount)))) {
             cachedRoute = parsed;
             routeCacheRef.current[cacheKey] = parsed;
           }
@@ -1062,12 +1089,12 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
     }
     try {
       const data = isFieldForcePresentation
-        ? await fetchTrackingDay(userId, dateStr, getEmployee360Route, { forceFresh })
+        ? await fetchTrackingDay(userId, dateStr, getFieldForce360Route, { forceFresh })
         : await getEmployee360Route(userId, dateStr);
       if (reqSeq !== routeFetchSeqRef.current) return;
       if (data?.polyline && data.polyline.length >= 2 && !data.routeCleaned && !data.isRoadSnapped) {
         try {
-          const clientSnapped = await snapRouteSegmentsToRoad(data.polyline);
+          const clientSnapped = await snapRouteSegmentsToRoad(data.polyline, { rejectUnsupportedDetours: isFieldForcePresentation });
           if (reqSeq !== routeFetchSeqRef.current) return;
           if (clientSnapped?.polyline?.length > 0) {
             data.polyline = clientSnapped.polyline;
@@ -1085,12 +1112,12 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
           try {
             // Keep persisted cache lightweight (<25KB) by omitting rawPolyline
             const { rawPolyline: _omit, ...compactData } = data;
-            Object.keys(localStorage)
+            if (!isFieldForcePresentation) Object.keys(localStorage)
               .filter(k => k.startsWith('crm_cached_route_v2_'))
               .forEach(oldKey => {
                 if (typeof localStorage.removeItem === 'function') localStorage.removeItem(oldKey);
               });
-            const routeKeys = Object.keys(localStorage).filter(k => k.startsWith('crm_cached_route_v3_'));
+            const routeKeys = Object.keys(localStorage).filter(k => k.startsWith(storagePrefix));
             if (routeKeys.length >= 4 && !routeKeys.includes(storageKey) && typeof localStorage.removeItem === 'function') {
               localStorage.removeItem(routeKeys[0]);
             }
@@ -1121,7 +1148,7 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
     Promise.resolve().then(() => {
       if (controller.signal.aborted) return;
       return loadTrackingRange({
-        userId: selectedUserId, dates: trackingRangeDates, fetchDaily: getEmployee360Route,
+        userId: selectedUserId, dates: trackingRangeDates, fetchDaily: getFieldForce360Route,
         signal: controller.signal, forceFresh: rangeRefreshRequest.key === rangeKey,
         onProgress: snapshot => setRangeLoadState({ ...snapshot, key: rangeKey })
       });
@@ -2333,9 +2360,9 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
 
   const currentRunnerPoint = routeData?.polyline?.[playbackIndex] || null;
   const presentationRoute = routeData?.userId === selectedUserId && routeData?.date === selectedDate ? routeData : null;
-  const presentationStatus = useMemo(() => computeEmployeeLiveDeviceStatus(
+  const presentationStatus = useMemo(() => deriveTrackingDeviceStatus(computeEmployeeLiveDeviceStatus(
     presentationRoute, selectedDate, liveNowMs, selectedEmployee
-  ), [presentationRoute, selectedDate, liveNowMs, selectedEmployee]);
+  ), presentationRoute, selectedDeviceHealth, liveNowMs), [presentationRoute, selectedDate, liveNowMs, selectedEmployee, selectedDeviceHealth]);
 
   const cachedRangeEntries = useMemo(() => {
     if (!hasTrackingRange) return EMPTY_TRACKING_RANGE_ENTRIES;
@@ -2465,12 +2492,13 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
   }, [hasTrackingRange, selectedDate, handleRangeDay]);
   const handleActivityToggle = useCallback(() => setActivityExpanded(value => !value), []);
   const handlePresentationTripFilter = useCallback((filter) => {
+    if (filter === 'RETURN' && !routeSplitInfo.hasReturnTrip) return;
     stopRangePlayback();
     setIsPlaying(false);
     setTrackingViewMode('playback');
     setSelectedTimelineEvent(null);
     handleSelectTripFilter(filter);
-  }, [handleSelectTripFilter, stopRangePlayback]);
+  }, [handleSelectTripFilter, stopRangePlayback, routeSplitInfo.hasReturnTrip]);
 
 
   const handleToggleRangeDays = useCallback(() => {

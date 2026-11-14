@@ -1,6 +1,6 @@
 <!-- BEGIN:nextjs-agent-rules -->
 
-# This is NOT the Next.js you know
+## This is NOT the Next.js you know
 
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
 
@@ -183,6 +183,21 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - **Default Deny for Regular Employees**: Under NO circumstances should any newly created Module, Page, Sub-Page, Sub-Tab, or Feature be granted default `view: true` access to regular employee roles (`telecaller`, `sales_executive`, `hr_recruiter`, `read_only_viewer`, etc.).
 - **Admin-Only Initial Access**: All newly introduced modules and supervisory/tracking pages MUST be configured as **Admin-Only** (`master_admin` and `admin`) by default.
 - **Explicit Opt-In via Permission Matrix**: Regular employees may ONLY receive access if and when an Admin explicitly checks their permission checkbox in the Role & Permission Matrix. Never hardcode automatic inheritance that exposes internal tracking, supervisor tools, or unassigned modules to normal staff.
+
+# Protected Live GPS & Playback Baseline (Zero-Touch During Other Upgrades)
+- **Explicit Authorization Only**: Whenever upgrading, fixing, or adding ANY other CRM module or sub-tab (including other tabs under `Field Force & Forms` such as `Field Executive App`, `Field Tasks Manager`, `Custom Form Studio`, `App & Permission Health`, as well as `Smart Attendance`, `Lead Data`, `Party Master`, etc.), every AI agent and developer MUST NEVER modify, refactor, optimize, re-style, rename, or "clean up" the **Live GPS & Playback** (`live_radar`) page, its map/playback engine, route-snapping utilities, server actions, or styling — UNLESS the user **explicitly requests a change to Live GPS & Playback itself** AND approves an exact implementation plan and file whitelist for it.
+- **Protected Live GPS & Playback Source Files (Zero Touch Unless Explicitly Unlocked)**:
+  - `src/components/Attendance/LiveFieldTrackingMap.jsx`
+  - `src/components/FieldForce/FieldTrackingDashboardUI.jsx`
+  - `src/components/FieldForce/LiveTrackingDashboard.module.css`
+  - `src/components/FieldForce/trackingDateRanges.js`
+  - `src/app/actions/liveTracking.js`
+  - `src/utils/routeGeometryMatcher.js`
+  - The `live_radar` / `<LiveFieldTrackingMap ... />` render wiring block inside `src/components/CRMContainer.jsx`
+  - Regression test files: `tests/live-tracking-dashboard-ui.test.mjs`, `tests/live-tracking-date-range.test.mjs`, `tests/live-tracking-return-route.test.mjs`
+- **Shared Helper Contract Guard**: If another module upgrade legitimately touches a shared utility or wrapper used by Live GPS & Playback (e.g., `src/components/CRMContainer.jsx`, `src/app/actions/team.js`, `src/utils/branchAccess.js`, `src/utils/tableColumnResize.js`, `src/components/common/StandardTablePagination.jsx`), all props, signatures, exports, return shapes, and behaviors relied upon by `LiveFieldTrackingMap` and `liveTracking.js` MUST remain 100% unchanged and backward-compatible. If a shared fix or bug affects Live GPS & Playback, STOP and ask the user for separate explicit unlock approval first.
+- **Pre-Commit Diff Verification**: Before completing or committing any upgrade to another module, verify via `git diff --name-only` that zero locked Live GPS & Playback files were modified.
+- **Documentation-Only Rule Note**: Adding or updating this protection rule alone does not change runtime code and must not increment `package.json` or `SOFTPHONE_VERSION`.
 
 
 

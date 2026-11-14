@@ -1,0 +1,29 @@
+{
+  "07fa35d3-f50a-4e41-ae15-b2692e393ea0::TNT00002": {
+    "user_id": "07fa35d3-f50a-4e41-ae15-b2692e393ea0",
+    "tenant_id": "00000000-0000-0000-0000-000000000001",
+    "tenant_code": "TNT00002",
+    "branch_code": null,
+    "company": "TNT00002",
+    "platform": "Web App",
+    "platform_details": "Chrome 157 • Android 16 • Mobile Web",
+    "app_version_code": null,
+    "app_version_name": null,
+    "os_version": null,
+    "sdk_int": null,
+    "device_manufacturer": null,
+    "device_model": null,
+    "has_foreground_location": null,
+    "has_background_location": null,
+    "battery_unrestricted": null,
+    "notifications_enabled": null,
+    "gps_provider_enabled": null,
+    "service_running": false,
+    "pending_queue_count": 0,
+    "location_mode": "browser",
+    "health_status": "BROWSER_ONLY",
+    "issue_summary": "Mobile browser session detected — install Android APK for background tracking",
+    "last_checked_at": "2026-11-11T16:18:17.567Z",
+    "updated_at": "2026-11-11T16:18:17.567Z"
+  }
+}

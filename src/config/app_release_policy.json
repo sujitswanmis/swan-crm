@@ -1,0 +1,10 @@
+{
+  "platform": "android",
+  "latest_version_code": 5,
+  "latest_version_name": "2.5.1156",
+  "min_supported_version_code": 4,
+  "download_url": "/api/public/android-apk",
+  "release_notes": "Independent device heartbeat with separate app location permission, device Location switch, background location and connectivity status.",
+  "updated_by": "Codex (user-approved APK v5 release)",
+  "updated_at": "2026-11-14T05:27:03.501+00:00"
+}

@@ -81,6 +81,9 @@ export default function GlobalMobileTelemetryTracker({
     let disposed = false;
     let watchId = null;
     let heartbeatTimer = null;
+    let healthTimer = null;
+    let healthReportInFlight = false;
+    let permissionStatus = null;
     let nativeServiceActive = false;
     let lastNativeTokenAt = 0;
 
@@ -268,7 +271,8 @@ export default function GlobalMobileTelemetryTracker({
     };
 
     const reportMobileHealthAudit = async (force = false) => {
-      if (disposed || typeof window === 'undefined') return;
+      if (disposed || healthReportInFlight || typeof window === 'undefined' || navigator.onLine === false) return;
+      healthReportInFlight = true;
       try {
         const plat = detectClientPlatform();
         const ua = navigator.userAgent || '';
@@ -329,13 +333,12 @@ export default function GlobalMobileTelemetryTracker({
           payload.gpsProviderEnabled ?? null
         ]);
         const now = Date.now();
-        if (!force && sig === lastHealthReportRef.current.sig && now - lastHealthReportRef.current.at < 180000) {
+        if (!force && sig === lastHealthReportRef.current.sig && now - lastHealthReportRef.current.at < 45000) {
           return;
         }
-        lastHealthReportRef.current = { at: now, sig };
-
         const res = await reportEmployeeDeviceHealth(payload);
         if (disposed || !res?.success) return;
+        lastHealthReportRef.current = { at: now, sig };
 
         const ev = res.evaluation;
         const pol = res.policy;
@@ -371,7 +374,7 @@ export default function GlobalMobileTelemetryTracker({
         });
       } catch {
         // Non-blocking health telemetry diagnostic
-      }
+      } finally { healthReportInFlight = false; }
     };
 
     // Start Native Android Foreground Service first (if on APK); always flush legacy web vault
@@ -398,6 +401,16 @@ export default function GlobalMobileTelemetryTracker({
     heartbeatTimer = setInterval(() => {
       if (!nativeServiceActive) captureImmediatePing(false);
     }, 25000);
+    // This timer survives native GPS activation and does not require a fix.
+    healthTimer = setInterval(() => { void reportMobileHealthAudit(false); }, 25000);
+    const handlePermissionChange = () => { void reportMobileHealthAudit(true); };
+    try {
+      navigator.permissions?.query({ name: 'geolocation' }).then(permission => {
+        if (disposed) return;
+        permissionStatus = permission;
+        permissionStatus.addEventListener('change', handlePermissionChange);
+      }).catch(() => {});
+    } catch { /* Older WebViews still report on resume and the independent timer. */ }
 
     const handleResume = () => {
       if (document.visibilityState === 'hidden') return;
@@ -427,6 +440,8 @@ export default function GlobalMobileTelemetryTracker({
         try { navigator.geolocation.clearWatch(watchId); } catch {}
       }
       if (heartbeatTimer) clearInterval(heartbeatTimer);
+      if (healthTimer) clearInterval(healthTimer);
+      permissionStatus?.removeEventListener('change', handlePermissionChange);
       document.removeEventListener('visibilitychange', handleResume);
       window.removeEventListener('focus', handleResume);
       window.removeEventListener('online', handleOnline);

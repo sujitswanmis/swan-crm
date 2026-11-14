@@ -961,6 +961,29 @@ export default function AttendanceModule({
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [playingVoice, setPlayingVoice] = useState(false);
   const audioPlayerRef = useRef(null);
+  const gpsCacheRef = useRef({ location: null, timestamp: 0 });
+
+  // Pre-warm GPS location in background so punch action has instant 0ms access
+  const preWarmGPSLocation = useCallback(() => {
+    if (typeof window === 'undefined' || !navigator.geolocation) return;
+    const now = Date.now();
+    if (gpsCacheRef.current.location && (now - gpsCacheRef.current.timestamp) < 120000) return;
+    getCurrentGPSLocation({ timeout: 2000, maximumAge: 60000 }).then(gps => {
+      if (gps && gps.success) {
+        gpsCacheRef.current = {
+          location: `GPS (${gps.latitude.toFixed(4)}, ${gps.longitude.toFixed(4)})`,
+          timestamp: Date.now()
+        };
+      }
+    }).catch(() => {});
+  }, []);
+
+  // Pre-warm GPS location when viewing Daily Punch Station
+  useEffect(() => {
+    if (activeTab === 'my_attendance') {
+      preWarmGPSLocation();
+    }
+  }, [activeTab, preWarmGPSLocation]);
 
   // Preload speech synthesis voices on mount for instant 0ms trigger
   useEffect(() => {
@@ -1949,15 +1972,17 @@ export default function AttendanceModule({
     }
   }, [activeTab, teamReportView, teamDatePreset, teamStartDate, teamEndDate, teamMasterDepartment, matrixYear, matrixMonth, effectiveTenantId, userCompany, adjustLeavesInReport, leaveReportDept, adminCompanyFilter, effectiveBranchAccess?.scope]);
 
-  // Handle Punch In click — instant 1-click reaction, show confirm popup first
+  // Handle Punch In click — instant 1-click reaction, show confirm popup first & pre-warm GPS
   const handlePunchIn = () => {
     if (punchInFlightRef.current === attendanceScope || punchingIn || todayRecord?.in_time) return;
+    preWarmGPSLocation();
     setPunchConfirm('IN');
   };
 
-  // Handle Punch Out click — instant 1-click reaction, show confirm popup first
+  // Handle Punch Out click — instant 1-click reaction, show confirm popup first & pre-warm GPS
   const handlePunchOut = () => {
     if (punchInFlightRef.current === attendanceScope || punchingOut || !todayRecord?.in_time || todayRecord?.out_time) return;
+    preWarmGPSLocation();
     setPunchConfirm('OUT');
   };
 
@@ -2028,12 +2053,19 @@ export default function AttendanceModule({
         if (await saveOfflinePunch('IN', offlineRecord, punchLocation, scope)) accepted = offlineRecord;
         return;
       }
-      try {
-        const gps = await getCurrentGPSLocation();
-        if (gps.success) {
-          punchLocation = `GPS (${gps.latitude.toFixed(4)}, ${gps.longitude.toFixed(4)})`;
-        }
-      } catch (e) {}
+      // Instant GPS check: Use cached pre-warmed GPS or quick 800ms lookup
+      const nowTs = Date.now();
+      if (gpsCacheRef.current.location && (nowTs - gpsCacheRef.current.timestamp) < 120000) {
+        punchLocation = gpsCacheRef.current.location;
+      } else {
+        try {
+          const gps = await getCurrentGPSLocation({ timeout: 800, maximumAge: 60000 });
+          if (gps?.success) {
+            punchLocation = `GPS (${gps.latitude.toFixed(4)}, ${gps.longitude.toFixed(4)})`;
+            gpsCacheRef.current = { location: punchLocation, timestamp: Date.now() };
+          }
+        } catch (e) {}
+      }
 
       const res = await punchIn({
         email: userEmail,
@@ -2111,10 +2143,19 @@ export default function AttendanceModule({
         accepted = await saveOfflinePunch('OUT', offlineRecord, punchLocation, scope);
         return;
       }
-      try {
-        const gps = await getCurrentGPSLocation();
-        if (gps.success) punchLocation = `GPS (${gps.latitude.toFixed(4)}, ${gps.longitude.toFixed(4)})`;
-      } catch (e) {}
+      // Instant GPS check: Use cached pre-warmed GPS or quick 800ms lookup
+      const nowTsOut = Date.now();
+      if (gpsCacheRef.current.location && (nowTsOut - gpsCacheRef.current.timestamp) < 120000) {
+        punchLocation = gpsCacheRef.current.location;
+      } else {
+        try {
+          const gps = await getCurrentGPSLocation({ timeout: 800, maximumAge: 60000 });
+          if (gps?.success) {
+            punchLocation = `GPS (${gps.latitude.toFixed(4)}, ${gps.longitude.toFixed(4)})`;
+            gpsCacheRef.current = { location: punchLocation, timestamp: Date.now() };
+          }
+        } catch (e) {}
+      }
       const res = await punchOut({
         email: userEmail,
         userId,

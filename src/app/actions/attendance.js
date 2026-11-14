@@ -1163,29 +1163,45 @@ export async function punchIn({
   const nowIso = new Date().toISOString();
   const normalizedEmail = email.trim().toLowerCase();
 
-  // 1. Fetch current today record from local or DB - Strict 1-Time Punch In Rule
-  const local = await getFallbackData();
-  const existingLocal = local.records.find(r => 
-    (r.tenant_id || DEFAULT_TENANT_ID) === tenantId &&
-    (r.email || '').toLowerCase() === normalizedEmail && 
-    r.attendance_date === today
-  );
-  let existingDb = null;
+  const now = new Date();
+  const { year: nowYear, month: nowMonth } = getIstDateParts(now);
+  const startDateStr = `${nowYear}-${String(nowMonth).padStart(2, '0')}-01`;
+  const lastDay = new Date(Date.UTC(nowYear, nowMonth, 0)).getUTCDate();
+  const endDateStr = `${nowYear}-${String(nowMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
 
-  try {
-    const { data: dbRec, error } = await adminClient
+  // Execute independent initial reads concurrently in parallel via Promise.all for <300ms response
+  const [local, todayDbRes, monthDbRes, userRole] = await Promise.all([
+    getFallbackData(),
+    adminClient
       .from('attendance_records')
       .select('*')
       .ilike('email', normalizedEmail)
       .eq('tenant_id', tenantId)
       .eq('attendance_date', today)
-      .maybeSingle();
-    if (error) throw error;
-    if (dbRec) existingDb = dbRec;
-  } catch (error) {
-    console.error('Attendance punch-in verification failed:', error);
+      .maybeSingle()
+      .catch(err => ({ error: err })),
+    adminClient
+      .from('attendance_records')
+      .select('*')
+      .ilike('email', normalizedEmail)
+      .eq('tenant_id', tenantId)
+      .gte('attendance_date', startDateStr)
+      .lte('attendance_date', endDateStr)
+      .catch(() => ({ data: [] })),
+    getUserRoleAttendanceProfile(adminClient, normalizedEmail)
+  ]);
+
+  if (todayDbRes.error && todayDbRes.error.code !== 'PGRST116') {
+    console.error('Attendance punch-in verification failed:', todayDbRes.error);
     return { success: false, error: 'Punch In verify nahi ho saka. Kripya dobara try karein.' };
   }
+
+  const existingDb = todayDbRes.data || null;
+  const existingLocal = (local?.records || []).find(r => 
+    (r.tenant_id || DEFAULT_TENANT_ID) === tenantId &&
+    (r.email || '').toLowerCase() === normalizedEmail && 
+    r.attendance_date === today
+  );
 
   const currentTodayRec = existingDb || existingLocal;
 
@@ -1198,31 +1214,12 @@ export async function punchIn({
     };
   }
 
-  // 2. Fetch monthly records for short leave quota tracking
-  const now = new Date();
-  const { year: nowYear, month: nowMonth } = getIstDateParts(now);
-
-  let monthlyRecords = local.records.filter(r => 
-    (r.tenant_id || DEFAULT_TENANT_ID) === tenantId &&
-    (r.email || '').toLowerCase() === normalizedEmail
-  );
-  try {
-    const startDateStr = `${nowYear}-${String(nowMonth).padStart(2, '0')}-01`;
-    const lastDay = new Date(Date.UTC(nowYear, nowMonth, 0)).getUTCDate();
-    const endDateStr = `${nowYear}-${String(nowMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
-
-    const { data: dbMonthRecs } = await adminClient
-      .from('attendance_records')
-      .select('*')
-      .ilike('email', normalizedEmail)
-      .eq('tenant_id', tenantId)
-      .gte('attendance_date', startDateStr)
-      .lte('attendance_date', endDateStr);
-
-    if (dbMonthRecs && dbMonthRecs.length > 0) {
-      monthlyRecords = dbMonthRecs;
-    }
-  } catch {}
+  let monthlyRecords = (monthDbRes?.data && monthDbRes.data.length > 0)
+    ? monthDbRes.data
+    : (local?.records || []).filter(r => 
+        (r.tenant_id || DEFAULT_TENANT_ID) === tenantId &&
+        (r.email || '').toLowerCase() === normalizedEmail
+      );
 
   // Resolve emp_code and department from user_roles if not provided
   let resolvedEmpCode = empCode || '';
@@ -1234,7 +1231,6 @@ export async function punchIn({
   let roleCompanyFromDb = '';
   let roleTenantFromDb = null;
 
-  const userRole = await getUserRoleAttendanceProfile(adminClient, normalizedEmail);
   if (userRole) {
     if (!resolvedEmpCode) resolvedEmpCode = userRole.emp_id || '';
     if (!resolvedDepartment) resolvedDepartment = userRole.emp_department || 'General';
@@ -1367,54 +1363,56 @@ export async function punchIn({
   };
   resultRecord = saved.data;
 
-  // Insert initial starting live ping into employee_live_locations
-  try {
-    const gpsMatch = String(location || '').match(/GPS\s*\(\s*([0-9.-]+)\s*,\s*([0-9.-]+)\s*\)/i);
-    const resolvedUserId = resultRecord.user_id || (userId && isValidUuid(userId) ? userId : null);
-    if (gpsMatch && resolvedUserId) {
-      const pLat = parseFloat(gpsMatch[1]);
-      const pLng = parseFloat(gpsMatch[2]);
-      if (Number.isFinite(pLat) && Number.isFinite(pLng) && pLat >= -90 && pLat <= 90 && pLng >= -180 && pLng <= 180) {
-        await adminClient.from('employee_live_locations').insert({
-          user_id: resolvedUserId,
-          company: userCompany || 'TNT00001',
-          branch_code: null,
-          latitude: Number(pLat.toFixed(7)),
-          longitude: Number(pLng.toFixed(7)),
-          accuracy_meters: null,
-          speed_kmh: 0,
-          battery_pct: null,
-          is_charging: false,
-          is_moving: false,
-          is_mock_gps: false,
-          is_offline_synced: false,
-          recorded_at: nowIso
-        });
+  // Asynchronous background operations (fire-and-forget for instant <300ms client response)
+  (async () => {
+    try {
+      const gpsMatch = String(location || '').match(/GPS\s*\(\s*([0-9.-]+)\s*,\s*([0-9.-]+)\s*\)/i);
+      const resolvedUserId = resultRecord.user_id || (userId && isValidUuid(userId) ? userId : null);
+      if (gpsMatch && resolvedUserId) {
+        const pLat = parseFloat(gpsMatch[1]);
+        const pLng = parseFloat(gpsMatch[2]);
+        if (Number.isFinite(pLat) && Number.isFinite(pLng) && pLat >= -90 && pLat <= 90 && pLng >= -180 && pLng <= 180) {
+          await adminClient.from('employee_live_locations').insert({
+            user_id: resolvedUserId,
+            company: userCompany || 'TNT00001',
+            branch_code: null,
+            latitude: Number(pLat.toFixed(7)),
+            longitude: Number(pLng.toFixed(7)),
+            accuracy_meters: null,
+            speed_kmh: 0,
+            battery_pct: null,
+            is_charging: false,
+            is_moving: false,
+            is_mock_gps: false,
+            is_offline_synced: false,
+            recorded_at: nowIso
+          });
+        }
       }
+    } catch (locErr) {
+      console.warn('Could not insert punch-in live location ping:', locErr);
     }
-  } catch (locErr) {
-    console.warn('Could not insert punch-in live location ping:', locErr);
-  }
 
-  // Update local fallback storage
-  const existingIdx = local.records.findIndex(r => (r.tenant_id || DEFAULT_TENANT_ID) === tenantId && (r.email || '').toLowerCase() === normalizedEmail && r.attendance_date === today);
-  if (existingIdx >= 0) {
-    local.records[existingIdx] = resultRecord;
-  } else {
-    local.records.unshift(resultRecord);
-  }
-  await saveFallbackData(local);
+    try {
+      const existingIdx = (local?.records || []).findIndex(r => (r.tenant_id || DEFAULT_TENANT_ID) === tenantId && (r.email || '').toLowerCase() === normalizedEmail && r.attendance_date === today);
+      if (existingIdx >= 0) {
+        local.records[existingIdx] = resultRecord;
+      } else {
+        local.records.unshift(resultRecord);
+      }
+      await saveFallbackData(local);
+    } catch {}
 
-  // Log audit action
-  try {
-    await logAuditAction({
-      module: 'attendance',
-      action: 'PUNCH_IN',
-      details: `Employee ${empName || email} punched in at ${new Date(nowIso).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })} on ${today} (${location}) [${evaluation.ruleTitle}]`,
-      userEmail: normalizedEmail,
-      userName: empName
-    });
-  } catch (aErr) {}
+    try {
+      await logAuditAction({
+        module: 'attendance',
+        action: 'PUNCH_IN',
+        details: `Employee ${empName || email} punched in at ${new Date(nowIso).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })} on ${today} (${location}) [${evaluation.ruleTitle}]`,
+        userEmail: normalizedEmail,
+        userName: empName
+      });
+    } catch {}
+  })();
 
   return {
     success: true,
@@ -1444,29 +1442,45 @@ export async function punchOut({
   const nowIso = new Date().toISOString();
   const normalizedEmail = email.trim().toLowerCase();
 
-  // 1. Fetch current today record from local or DB
-  const local = await getFallbackData();
-  let existingLocal = local.records.find(r => 
-    (r.tenant_id || DEFAULT_TENANT_ID) === tenantId &&
-    (r.email || '').toLowerCase() === normalizedEmail && 
-    r.attendance_date === today
-  );
-  let existingDb = null;
+  const now = new Date();
+  const { year: nowYear, month: nowMonth } = getIstDateParts(now);
+  const startDateStr = `${nowYear}-${String(nowMonth).padStart(2, '0')}-01`;
+  const lastDay = new Date(Date.UTC(nowYear, nowMonth, 0)).getUTCDate();
+  const endDateStr = `${nowYear}-${String(nowMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
 
-  try {
-    const { data: dbRec, error } = await adminClient
+  // Execute independent initial reads concurrently via Promise.all for <300ms response
+  const [local, todayDbRes, monthDbRes, uRole] = await Promise.all([
+    getFallbackData(),
+    adminClient
       .from('attendance_records')
       .select('*')
       .ilike('email', normalizedEmail)
       .eq('tenant_id', tenantId)
       .eq('attendance_date', today)
-      .maybeSingle();
-    if (error) throw error;
-    if (dbRec) existingDb = dbRec;
-  } catch (error) {
-    console.error('Attendance punch-out verification failed:', error);
+      .maybeSingle()
+      .catch(err => ({ error: err })),
+    adminClient
+      .from('attendance_records')
+      .select('*')
+      .ilike('email', normalizedEmail)
+      .eq('tenant_id', tenantId)
+      .gte('attendance_date', startDateStr)
+      .lte('attendance_date', endDateStr)
+      .catch(() => ({ data: [] })),
+    getUserRoleAttendanceProfile(adminClient, normalizedEmail)
+  ]);
+
+  if (todayDbRes.error && todayDbRes.error.code !== 'PGRST116') {
+    console.error('Attendance punch-out verification failed:', todayDbRes.error);
     return { success: false, error: 'Punch Out verify nahi ho saka. Kripya dobara try karein.' };
   }
+
+  let existingDb = todayDbRes.data || null;
+  let existingLocal = (local?.records || []).find(r => 
+    (r.tenant_id || DEFAULT_TENANT_ID) === tenantId &&
+    (r.email || '').toLowerCase() === normalizedEmail && 
+    r.attendance_date === today
+  );
 
   let existing = existingDb || existingLocal;
   if (existingLocal?.in_time && !existingDb?.in_time) {
@@ -1489,36 +1503,16 @@ export async function punchOut({
     };
   }
 
-  // Fetch monthly records for short leave quota tracking
-  const now = new Date();
-  const { year: nowYear, month: nowMonth } = getIstDateParts(now);
-
-  let monthlyRecords = local.records.filter(r => 
-    (r.tenant_id || DEFAULT_TENANT_ID) === tenantId &&
-    (r.email || '').toLowerCase() === normalizedEmail
-  );
-  try {
-    const startDateStr = `${nowYear}-${String(nowMonth).padStart(2, '0')}-01`;
-    const lastDay = new Date(Date.UTC(nowYear, nowMonth, 0)).getUTCDate();
-    const endDateStr = `${nowYear}-${String(nowMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
-
-    const { data: dbMonthRecs } = await adminClient
-      .from('attendance_records')
-      .select('*')
-      .ilike('email', normalizedEmail)
-      .eq('tenant_id', tenantId)
-      .gte('attendance_date', startDateStr)
-      .lte('attendance_date', endDateStr);
-
-    if (dbMonthRecs && dbMonthRecs.length > 0) {
-      monthlyRecords = dbMonthRecs;
-    }
-  } catch {}
+  let monthlyRecords = (monthDbRes?.data && monthDbRes.data.length > 0)
+    ? monthDbRes.data
+    : (local?.records || []).filter(r => 
+        (r.tenant_id || DEFAULT_TENANT_ID) === tenantId &&
+        (r.email || '').toLowerCase() === normalizedEmail
+      );
 
   let effectiveCompany = userCompany || existing.company_name || '';
   let employeeBranch = existing.branch_name || '';
   let employeeModuleAccess = null;
-  const uRole = await getUserRoleAttendanceProfile(adminClient, normalizedEmail);
   if (uRole) {
     const roleComp = uRole.company || uRole.module_access?.company_name || '';
     const roleBranch = uRole.branch_name || uRole.module_access?.branch_name || '';
@@ -1656,54 +1650,56 @@ export async function punchOut({
   };
   updatedRecord = saved.data;
 
-  // Insert closing live ping into employee_live_locations
-  try {
-    const gpsMatch = String(location || '').match(/GPS\s*\(\s*([0-9.-]+)\s*,\s*([0-9.-]+)\s*\)/i);
-    const resolvedUserId = updatedRecord.user_id || (userId && isValidUuid(userId) ? userId : null);
-    if (gpsMatch && resolvedUserId) {
-      const pLat = parseFloat(gpsMatch[1]);
-      const pLng = parseFloat(gpsMatch[2]);
-      if (Number.isFinite(pLat) && Number.isFinite(pLng) && pLat >= -90 && pLat <= 90 && pLng >= -180 && pLng <= 180) {
-        await adminClient.from('employee_live_locations').insert({
-          user_id: resolvedUserId,
-          company: userCompany || 'TNT00001',
-          branch_code: null,
-          latitude: Number(pLat.toFixed(7)),
-          longitude: Number(pLng.toFixed(7)),
-          accuracy_meters: null,
-          speed_kmh: 0,
-          battery_pct: null,
-          is_charging: false,
-          is_moving: false,
-          is_mock_gps: false,
-          is_offline_synced: false,
-          recorded_at: nowIso
-        });
+  // Fire-and-forget background tasks (location ping, fallback file write, audit log) for <500ms immediate response
+  (async () => {
+    try {
+      const gpsMatch = String(location || '').match(/GPS\s*\(\s*([0-9.-]+)\s*,\s*([0-9.-]+)\s*\)/i);
+      const resolvedUserId = updatedRecord.user_id || (userId && isValidUuid(userId) ? userId : null);
+      if (gpsMatch && resolvedUserId) {
+        const pLat = parseFloat(gpsMatch[1]);
+        const pLng = parseFloat(gpsMatch[2]);
+        if (Number.isFinite(pLat) && Number.isFinite(pLng) && pLat >= -90 && pLat <= 90 && pLng >= -180 && pLng <= 180) {
+          await adminClient.from('employee_live_locations').insert({
+            user_id: resolvedUserId,
+            company: userCompany || 'TNT00001',
+            branch_code: null,
+            latitude: Number(pLat.toFixed(7)),
+            longitude: Number(pLng.toFixed(7)),
+            accuracy_meters: null,
+            speed_kmh: 0,
+            battery_pct: null,
+            is_charging: false,
+            is_moving: false,
+            is_mock_gps: false,
+            is_offline_synced: false,
+            recorded_at: nowIso
+          });
+        }
       }
+    } catch (locErr) {
+      console.warn('Could not insert punch-out live location ping:', locErr);
     }
-  } catch (locErr) {
-    console.warn('Could not insert punch-out live location ping:', locErr);
-  }
 
-  // Update local storage
-  const existingIdx = local.records.findIndex(r => (r.tenant_id || DEFAULT_TENANT_ID) === tenantId && (r.email || '').toLowerCase() === normalizedEmail && r.attendance_date === today);
-  if (existingIdx >= 0) {
-    local.records[existingIdx] = updatedRecord;
-  } else {
-    local.records.unshift(updatedRecord);
-  }
-  await saveFallbackData(local);
+    try {
+      const existingIdx = (local?.records || []).findIndex(r => (r.tenant_id || DEFAULT_TENANT_ID) === tenantId && (r.email || '').toLowerCase() === normalizedEmail && r.attendance_date === today);
+      if (existingIdx >= 0) {
+        local.records[existingIdx] = updatedRecord;
+      } else {
+        local.records.unshift(updatedRecord);
+      }
+      await saveFallbackData(local);
+    } catch {}
 
-  // Log audit action
-  try {
-    await logAuditAction({
-      module: 'attendance',
-      action: 'PUNCH_OUT',
-      details: `Employee ${empName || email} punched out at ${new Date(nowIso).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })} on ${today} (Worked: ${formatMinutesToHours(evaluation.total_working_minutes)}) [${evaluation.ruleTitle}]`,
-      userEmail: normalizedEmail,
-      userName: empName
-    });
-  } catch (aErr) {}
+    try {
+      await logAuditAction({
+        module: 'attendance',
+        action: 'PUNCH_OUT',
+        details: `Employee ${empName || email} punched out at ${new Date(nowIso).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })} on ${today} (Worked: ${formatMinutesToHours(evaluation.total_working_minutes)}) [${evaluation.ruleTitle}]`,
+        userEmail: normalizedEmail,
+        userName: empName
+      });
+    } catch (aErr) {}
+  })();
 
   return {
     success: true,

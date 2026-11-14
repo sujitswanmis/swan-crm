@@ -22,6 +22,7 @@ const mapCode = await compile('src/components/Attendance/LiveFieldTrackingMap.js
 const matcherCode = await compile('src/utils/routeGeometryMatcher.js');
 const rangeCode = await compile('src/components/FieldForce/trackingDateRanges.js');
 const branchAccessCode = await compile('src/utils/branchAccess.js');
+const deviceStatusCode = await compile('src/components/FieldForce/trackingDeviceStatus.js');
 const icons = new Proxy({}, { get: () => () => null });
 
 function loadExports(code, dependencies, extraGlobals = {}) {
@@ -138,7 +139,7 @@ function createFakeLeaflet() {
   return { L, FakeGroup };
 }
 
-async function setupTrackingHarness({ initialStorageEntries = {}, attachLeafletOnStart = true, presentation = 'legacy', routeByDate = false } = {}) {
+async function setupTrackingHarness({ initialStorageEntries = {}, attachLeafletOnStart = true, presentation = 'legacy', routeByDate = false, oneWay = false } = {}) {
   const matcherLoaded = loadExports(matcherCode, {});
   const rangeLoaded = loadExports(rangeCode, {});
   const matcherMod = matcherLoaded.exports;
@@ -157,6 +158,7 @@ async function setupTrackingHarness({ initialStorageEntries = {}, attachLeafletO
   let frameClock = 0;
   const frames = new Map();
   const dailyCalls = [];
+  const dailyOptions = [];
 
   const depsChanged = (prevDeps, nextDeps) =>
     !prevDeps || !nextDeps || nextDeps.length !== prevDeps.length || nextDeps.some((d, k) => !Object.is(d, prevDeps[k]));
@@ -206,6 +208,7 @@ async function setupTrackingHarness({ initialStorageEntries = {}, attachLeafletO
     // Blind 4.5-hour gap on return back to Punch Out at origin
     { lat: 30.8990, lng: 75.9217, time: '2026-11-11T14:29:00.000Z', speed: 0, accuracy_meters: 25, isOffline: true, isSnapped: false }
   ];
+  if (oneWay) samplePolyline.pop();
 
   const osrmReturnRoad = [
     [75.9325, 30.8875],
@@ -263,8 +266,9 @@ async function setupTrackingHarness({ initialStorageEntries = {}, attachLeafletO
     react,
     'lucide-react': icons,
     '@/app/actions/liveTracking': {
-      getEmployee360Route: async (_userId, day) => {
+      getEmployee360Route: async (_userId, day, options) => {
         dailyCalls.push(day);
+        dailyOptions.push(options);
         if (!routeByDate) return routePayload;
         return { ...routePayload, date: day,
           polyline: samplePolyline.map(point => ({ ...point, time: point.time.replace('2026-11-11', day) })),
@@ -287,10 +291,12 @@ async function setupTrackingHarness({ initialStorageEntries = {}, attachLeafletO
     '@/components/FieldForce/FieldTrackingDashboardUI': Object.fromEntries(['TrackingHeader', 'TrackingSummary', 'TrackingActivityPanel', 'TrackingPositionInfo', 'TrackingMapToolbar', 'TrackingRouteDock', 'TrackingPlaybackControls', 'TrackingRangeOverview'].map(name => [name, name])),
     '@/components/FieldForce/LiveTrackingDashboard.module.css': {},
     '@/components/FieldForce/trackingDateRanges': rangeLoaded.exports,
+    '@/components/FieldForce/trackingDeviceStatus': loadExports(deviceStatusCode, {}).exports,
     '@/utils/routeGeometryMatcher': matcherMod,
     '@/utils/branchAccess': loadExports(branchAccessCode, {}).exports
   }, {
     window: mockWindow,
+    localStorage: mockWindow.localStorage,
     document: mockDocument,
     ...(routeByDate ? {
       requestAnimationFrame: fn => { frames.set(++frameId, fn); return frameId; },
@@ -357,6 +363,7 @@ async function setupTrackingHarness({ initialStorageEntries = {}, attachLeafletO
     routePayload,
     loadedMapMod,
     dailyCalls,
+    dailyOptions,
     render,
     flushPasses,
     advanceFrames: async (count) => {
@@ -385,6 +392,10 @@ test(`LiveFieldTrackingMap (${presentation}) auto-renders road-snapped Return ro
 
   try {
     await flushPasses(6);
+    assert.ok(h.dailyOptions.length > 0);
+    for (const options of h.dailyOptions) {
+      assert.equal(options?.rejectUnsupportedDetours, presentation === 'field-force' ? true : undefined);
+    }
 
     // Verify OSRM road route was automatically fetched for Return gap (default showEstimateRoute = true)
     assert.equal(fetchCalls.length >= 1, true, 'Estimated Return road must be fetched automatically without manual toggle');
@@ -500,6 +511,42 @@ test('Field Force range selection loads every day, sums actual daily totals and 
     assert.equal(finalOverview.props.selectedDate, end, 'Playback must advance to the final day');
     assert.equal(finalOverview.props.playingRange, false, 'Range playback must finish after the last day');
     assert.equal(h.routePayload.totalKm, 4, 'Daily billing distance must remain unchanged');
+    assert.ok(h.dailyOptions.every(options => options?.rejectUnsupportedDetours === true), 'Every range day uses the guarded Field Force fetch');
+  } finally { h.cleanup(); }
+});
+
+test('Field Force one-way filters preserve the route and ignore unavailable Return; old local geometry is bypassed', async () => {
+  const uid = '11111111-1111-4111-8111-111111111111';
+  const date = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+  const oldKey = `crm_cached_route_v3_${uid}_${date}`;
+  const previousGuardKey = `crm_cached_field_force_route_v4_${uid}_${date}`;
+  const stale = JSON.stringify({ userId: uid, date, totalKm: 99, polyline: [] });
+  const h = await setupTrackingHarness({ presentation: 'field-force', oneWay: true, initialStorageEntries: { [oldKey]: stale, [previousGuardKey]: stale } });
+  function findDock(node) {
+    if (!node || typeof node !== 'object') return null;
+    if (node.type === 'TrackingRouteDock') return node;
+    for (const child of React.Children.toArray(node.props?.children)) {
+      const match = findDock(child);
+      if (match) return match;
+    }
+    return null;
+  }
+  try {
+    await h.flushPasses(6);
+    let dock = findDock(h.render());
+    assert.equal(dock.props.hasReturn, false);
+    assert.equal(dock.props.filter, 'ALL');
+    dock.props.onFilter('GOING');
+    await h.flushPasses(3);
+    dock = findDock(h.render());
+    assert.equal(dock.props.filter, 'GOING');
+    dock.props.onFilter('RETURN');
+    await h.flushPasses(3);
+    assert.equal(findDock(h.render()).props.filter, 'GOING');
+    assert.equal(h.mockWindow.localStorage.getItem(oldKey), stale, 'Legacy cache is preserved');
+    assert.equal(h.mockWindow.localStorage.getItem(previousGuardKey), stale, 'Previous guard cache is preserved but bypassed');
+    assert.equal(JSON.parse(h.mockWindow.localStorage.getItem(`crm_cached_field_force_route_v5_${uid}_${date}`)).totalKm, 4);
+    assert.ok(!h.states.some(value => value?.totalKm === 99), 'Old snapped geometry must never hydrate the Field Force view');
   } finally { h.cleanup(); }
 });
 

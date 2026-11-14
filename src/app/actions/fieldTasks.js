@@ -1247,9 +1247,90 @@ async function resolveActorContext(supabase, requestedUserId = null) {
   };
 }
 
+function applyManagedFieldTaskScopeFilters(query, {
+  viewScope,
+  actorIdList,
+  branchAccess,
+  branchUtils = null,
+  adminCompanyFilter,
+  company,
+  tenantId,
+  leadId,
+  status,
+  priority,
+  assignedTo,
+  dateFrom,
+  dateTo
+}) {
+  let q = query;
+  if (viewScope === 'assigned_by_me') {
+    q = actorIdList.length === 1
+      ? q.eq('assigned_by_user_id', actorIdList[0])
+      : q.in('assigned_by_user_id', actorIdList);
+  } else if (viewScope === 'assigned_to_me') {
+    q = actorIdList.length === 1
+      ? q.eq('assigned_to_user_id', actorIdList[0])
+      : q.in('assigned_to_user_id', actorIdList);
+  } else {
+    // 'all_team' enforces company / branch isolation
+    const expandAliases = branchUtils?.expandCompanyAliases || ((val) => (val ? [val] : []));
+    const allowedFromAccess = Array.isArray(branchAccess?.allowedCompanies) ? branchAccess.allowedCompanies : [];
+    const hasRestrictedBranch = Boolean(branchAccess && !branchAccess.isAllBranches && allowedFromAccess.length > 0);
+    const selectedAdminFilter = cleanFieldText(adminCompanyFilter);
+
+    if (selectedAdminFilter && selectedAdminFilter.toLowerCase() !== 'all' && selectedAdminFilter.toLowerCase() !== 'all companies') {
+      const filterAliases = Array.from(new Set(expandAliases(selectedAdminFilter).map(v => cleanFieldText(v)).filter(Boolean)));
+      if (filterAliases.length > 0) {
+        q = q.in('company', filterAliases);
+      }
+    } else if (hasRestrictedBranch) {
+      const branchAliases = Array.from(new Set(allowedFromAccess.flatMap(expandAliases).map(v => cleanFieldText(v)).filter(Boolean)));
+      if (branchAliases.length > 0) {
+        q = q.in('company', branchAliases);
+      }
+    } else {
+      const cleanCompany = String(company || '').trim();
+      const lowerCompany = cleanCompany.toLowerCase();
+      const isAllScope = !cleanCompany || lowerCompany === 'all' || lowerCompany === 'all companies';
+      if (!isAllScope) {
+        if (SWAN_COMPANY_MATCHERS.has(lowerCompany)) {
+          q = q.in('company', SWAN_OUR_COMPANIES);
+        } else {
+          const aliases = Array.from(new Set(expandAliases(cleanCompany).map(v => cleanFieldText(v)).filter(Boolean)));
+          q = aliases.length > 1 ? q.in('company', aliases) : q.eq('company', cleanCompany);
+        }
+      } else if (isUuid(tenantId)) {
+        q = q.eq('tenant_id', String(tenantId).trim());
+      }
+    }
+  }
+
+  if (isUuid(leadId)) {
+    q = q.eq('lead_id', String(leadId).trim());
+  }
+  if (status && status !== 'ALL') {
+    q = q.eq('status', String(status).toUpperCase());
+  }
+  if (priority && priority !== 'ALL') {
+    q = q.eq('priority', String(priority).toUpperCase());
+  }
+  if (isUuid(assignedTo)) {
+    q = q.eq('assigned_to_user_id', String(assignedTo).trim());
+  }
+  if (dateFrom) {
+    q = q.gte('scheduled_start_time', `${dateFrom}T00:00:00.000+05:30`);
+  }
+  if (dateTo) {
+    q = q.lte('scheduled_start_time', `${dateTo}T23:59:59.999+05:30`);
+  }
+
+  return q;
+}
+
 /**
  * Fetch managed field tasks for Field Task Management Console
  * Supports viewScope: 'assigned_by_me' | 'all_team' | 'assigned_to_me'
+ * Optional additive params: `since` (delta sync ISO timestamp) & `includeActiveIds` (reconciliation)
  */
 export async function getManagedFieldTasks({
   viewScope = 'assigned_by_me',
@@ -1266,18 +1347,47 @@ export async function getManagedFieldTasks({
   search = '',
   dateFrom = '',
   dateTo = '',
-  limit = 500
+  limit = 500,
+  since = null,
+  includeActiveIds = false
 } = {}) {
   const supabase = getAdminClient();
   try {
+    const syncStartedAt = new Date().toISOString();
     const actor = await resolveActorContext(supabase, currentUserId);
     const actorIdList = Array.from(actor.actorIds);
 
     if ((viewScope === 'assigned_by_me' || viewScope === 'assigned_to_me') && actorIdList.length === 0) {
-      return { success: true, tasks: [], isAdmin: actor.isAdmin };
+      return { success: true, tasks: [], activeIds: includeActiveIds ? [] : undefined, syncedAt: syncStartedAt, isDelta: false, isAdmin: actor.isAdmin };
     }
 
-    let query = supabase
+    const safeLimit = Math.min(Math.max(Number(limit) || 500, 1), 1000);
+    const sinceMs = since ? Date.parse(since) : NaN;
+    const deltaIso = Number.isFinite(sinceMs)
+      ? new Date(Math.max(0, sinceMs - 15 * 60 * 1000)).toISOString()
+      : null;
+
+    const branchUtils = viewScope !== 'assigned_by_me' && viewScope !== 'assigned_to_me'
+      ? await import('@/utils/branchAccess')
+      : null;
+
+    const filterArgs = {
+      viewScope,
+      actorIdList,
+      branchAccess,
+      branchUtils,
+      adminCompanyFilter,
+      company,
+      tenantId,
+      leadId,
+      status,
+      priority,
+      assignedTo,
+      dateFrom,
+      dateTo
+    };
+
+    let dataQuery = supabase
       .from('field_tasks')
       .select(`
         id,
@@ -1306,76 +1416,38 @@ export async function getManagedFieldTasks({
         form:tenant_custom_forms(title, form_code)
       `)
       .order('created_at', { ascending: false })
-      .limit(Math.min(Math.max(Number(limit) || 500, 1), 1000));
+      .limit(safeLimit);
 
-    if (viewScope === 'assigned_by_me') {
-      query = actorIdList.length === 1
-        ? query.eq('assigned_by_user_id', actorIdList[0])
-        : query.in('assigned_by_user_id', actorIdList);
-    } else if (viewScope === 'assigned_to_me') {
-      query = actorIdList.length === 1
-        ? query.eq('assigned_to_user_id', actorIdList[0])
-        : query.in('assigned_to_user_id', actorIdList);
-    } else {
-      // 'all_team' enforces company / branch isolation
-      const branchUtils = await import('@/utils/branchAccess');
-      const allowedFromAccess = Array.isArray(branchAccess?.allowedCompanies) ? branchAccess.allowedCompanies : [];
-      const hasRestrictedBranch = Boolean(branchAccess && !branchAccess.isAllBranches && allowedFromAccess.length > 0);
-      const selectedAdminFilter = cleanFieldText(adminCompanyFilter);
-
-      if (selectedAdminFilter && selectedAdminFilter.toLowerCase() !== 'all' && selectedAdminFilter.toLowerCase() !== 'all companies') {
-        const filterAliases = Array.from(new Set(branchUtils.expandCompanyAliases(selectedAdminFilter).map(v => cleanFieldText(v)).filter(Boolean)));
-        if (filterAliases.length > 0) {
-          query = query.in('company', filterAliases);
-        }
-      } else if (hasRestrictedBranch) {
-        const branchAliases = Array.from(new Set(allowedFromAccess.flatMap(branchUtils.expandCompanyAliases).map(v => cleanFieldText(v)).filter(Boolean)));
-        if (branchAliases.length > 0) {
-          query = query.in('company', branchAliases);
-        }
-      } else {
-        const cleanCompany = String(company || '').trim();
-        const lowerCompany = cleanCompany.toLowerCase();
-        const isAllScope = !cleanCompany || lowerCompany === 'all' || lowerCompany === 'all companies';
-        if (!isAllScope) {
-          if (SWAN_COMPANY_MATCHERS.has(lowerCompany)) {
-            query = query.in('company', SWAN_OUR_COMPANIES);
-          } else {
-            const aliases = Array.from(new Set(branchUtils.expandCompanyAliases(cleanCompany).map(v => cleanFieldText(v)).filter(Boolean)));
-            query = aliases.length > 1 ? query.in('company', aliases) : query.eq('company', cleanCompany);
-          }
-        } else if (isUuid(tenantId)) {
-          query = query.eq('tenant_id', String(tenantId).trim());
-        }
-      }
+    dataQuery = applyManagedFieldTaskScopeFilters(dataQuery, filterArgs);
+    if (deltaIso) {
+      dataQuery = dataQuery.or(`updated_at.gte.${deltaIso},created_at.gte.${deltaIso}`);
     }
 
-    if (isUuid(leadId)) {
-      query = query.eq('lead_id', String(leadId).trim());
-    }
-    if (status && status !== 'ALL') {
-      query = query.eq('status', String(status).toUpperCase());
-    }
-    if (priority && priority !== 'ALL') {
-      query = query.eq('priority', String(priority).toUpperCase());
-    }
-    if (isUuid(assignedTo)) {
-      query = query.eq('assigned_to_user_id', String(assignedTo).trim());
-    }
-    if (dateFrom) {
-      query = query.gte('scheduled_start_time', `${dateFrom}T00:00:00.000+05:30`);
-    }
-    if (dateTo) {
-      query = query.lte('scheduled_start_time', `${dateTo}T23:59:59.999+05:30`);
+    let idQueryPromise = Promise.resolve(null);
+    if (includeActiveIds && deltaIso) {
+      let idQuery = supabase
+        .from('field_tasks')
+        .select('id')
+        .order('created_at', { ascending: false })
+        .limit(safeLimit);
+      idQuery = applyManagedFieldTaskScopeFilters(idQuery, filterArgs);
+      idQueryPromise = idQuery;
     }
 
-    const { data, error } = await query;
+    const [{ data, error }, idRes] = await Promise.all([dataQuery, idQueryPromise]);
     if (error) {
       console.error('Error in getManagedFieldTasks:', error);
       return { success: false, tasks: [], error: error.message, isAdmin: actor.isAdmin };
     }
 
     const rows = data || [];
+    const activeIds = includeActiveIds
+      ? (deltaIso
+        ? (!idRes?.error && Array.isArray(idRes?.data)
+          ? idRes.data.map(r => r.id).filter(Boolean)
+          : undefined)
+        : rows.map(r => r.id).filter(Boolean))
+      : undefined;
     const userNameMap = await resolveUserNameMap(supabase, [
       ...rows.map(r => r.assigned_to_user_id),
       ...rows.map(r => r.assigned_by_user_id)
@@ -1430,7 +1502,14 @@ export async function getManagedFieldTasks({
         return true;
       });
 
-    return { success: true, tasks: enriched, isAdmin: actor.isAdmin };
+    return {
+      success: true,
+      tasks: enriched,
+      ...(activeIds !== undefined ? { activeIds } : {}),
+      syncedAt: syncStartedAt,
+      isDelta: Boolean(deltaIso),
+      isAdmin: actor.isAdmin
+    };
   } catch (err) {
     console.error('Error in getManagedFieldTasks:', err);
     return { success: false, tasks: [], error: err?.message || 'Failed to load field tasks', isAdmin: false };

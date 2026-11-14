@@ -49,6 +49,7 @@ export function enumerateTrackingDates(startDate, endDate) {
 }
 
 const dayCache = new Map();
+const TRACKING_CACHE_REVISION = 'activity-v2';
 const dayRequests = new Map();
 const queuedDailyRequests = [];
 let activeDailyRequests = 0;
@@ -115,11 +116,11 @@ function freshRecord(record, date, now) {
 }
 
 export function peekTrackingDay(userId, date) {
-  return dayCache.get(`${userId}:${date}`)?.data || null;
+  return dayCache.get(`${TRACKING_CACHE_REVISION}:${userId}:${date}`)?.data || null;
 }
 
 export async function fetchTrackingDay(userId, date, fetchDaily, { forceFresh = false, now = Date.now() } = {}) {
-  const key = `${userId}:${date}`;
+  const key = `${TRACKING_CACHE_REVISION}:${userId}:${date}`;
   if (dayRequests.has(key)) return dayRequests.get(key);
   const promise = (async () => {
     if (!forceFresh) {
@@ -176,13 +177,15 @@ export function summarizeTrackingRange(entries, dates) {
   const days = loaded.map(date => entries[date].data);
   const sum = field => days.reduce((total, day) => total + (Number(day[field]) || 0), 0);
   const timeline = days.flatMap(day => (day.timeline || []).map((event, index) => ({ ...event, trackingDate: day.date, trackingEventKey: `${day.date}:${index}` })));
+  const activityTimeline = days.flatMap(day => (day.activityTimeline || day.timeline || []).map((event, index) => ({ ...event, trackingDate: day.date, trackingEventKey: `${day.date}:activity:${index}` })));
   const latest = [...days].reverse().find(day => day.lastPing || day.latestBattery) || null;
   return {
     totalKm: loaded.length ? Number(sum('totalKm').toFixed(2)) : null,
     trackedRoadKm: loaded.length ? Number(sum('trackedRoadKm').toFixed(2)) : null,
     offlineGapKm: loaded.length ? Number(sum('offlineGapKm').toFixed(2)) : null,
     visitsCount: loaded.length ? sum('visitsCount') : null,
-    timeline, latest, lastPing: latest?.lastPing || null, loadedDays: loaded.length, totalDays: dates.length,
+    activityVisitsCount: loaded.length ? days.reduce((total, day) => total + (Number(day.activityVisitsCount ?? day.visitsCount) || 0), 0) : null,
+    timeline, activityTimeline, latest, lastPing: latest?.lastPing || null, loadedDays: loaded.length, totalDays: dates.length,
     failedDays: dates.filter(date => entries[date]?.status === 'error').length,
     movementDays: loaded.filter(date => (entries[date].data.polyline?.length || 0) > 1),
   };

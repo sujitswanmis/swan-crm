@@ -39,6 +39,7 @@ const datePickerCode = await compile('src/components/common/DateRangePicker.jsx'
 const datePicker = load(datePickerCode, { react: React, 'lucide-react': icons });
 const rangeCode = await compile('src/components/FieldForce/trackingDateRanges.js');
 const rangeHelpers = load(rangeCode, {});
+const deviceStatusHelpers = load(await compile('src/components/FieldForce/trackingDeviceStatus.js'), {});
 const ui = load(uiCode, { react: React, 'lucide-react': icons, './LiveTrackingDashboard.module.css': css, '@/components/common/DateRangePicker': datePicker, './trackingDateRanges': rangeHelpers });
 const matcher = load(await compile('src/utils/routeGeometryMatcher.js'), {});
 const mapCode = await compile('src/components/Attendance/LiveFieldTrackingMap.jsx');
@@ -58,9 +59,11 @@ const map = load(`${mapCode}\nmodule.exports.deviceStatusForTest = computeEmploy
   '@/utils/tableColumnResize': { __esModule: true, default: () => ({ colWidths: {} }), ColumnResizer: () => null },
   '@/components/common/StandardTablePagination': () => null,
   '@/utils/routeGeometryMatcher': matcher,
+  '@/utils/branchAccess': load(await compile('src/utils/branchAccess.js'), {}),
   '@/components/FieldForce/FieldTrackingDashboardUI': ui,
   '@/components/FieldForce/LiveTrackingDashboard.module.css': css,
   '@/components/FieldForce/trackingDateRanges': rangeHelpers,
+  '@/components/FieldForce/trackingDeviceStatus': deviceStatusHelpers,
 });
 
 const html = (Component, props) => renderToStaticMarkup(React.createElement(Component, props));
@@ -87,6 +90,23 @@ const freshData = {
   timeline: [{ type: 'stoppage', startTime: '2026-11-10T18:40:00.000Z', endTime: '2026-11-11T04:36:00.000Z', durationMins: 596, locationName: 'Focal Point', lat: 30.9, lng: 75.92 }],
 };
 const freshStatus = map.deviceStatusForTest(freshData, date, now);
+
+test('permission denied and device switch OFF have separate GPS labels while fresh mobile heartbeat stays Online', () => {
+  const health = { platform: 'Android App', lastCheckedAt: new Date(now - 10000).toISOString(), hasForegroundLocation: true, hasBackgroundLocation: true, gpsProviderEnabled: true };
+  for (const [patch, expected] of [[{ hasForegroundLocation: false }, 'Location permission denied'], [{ gpsProviderEnabled: false }, 'Device GPS OFF'], [{ hasBackgroundLocation: false }, 'Background location restricted']]) {
+    const status = deviceStatusHelpers.deriveTrackingDeviceStatus(freshStatus, freshData, { ...health, ...patch }, now);
+    const summary = html(ui.TrackingSummary, { data: freshData, status });
+    const panel = html(ui.TrackingActivityPanel, { data: freshData, status, employee: { name: 'Executive' } });
+    assert.match(summary, new RegExp(expected));
+    assert.match(panel, />Online</);
+    assert.match(panel, new RegExp(expected));
+    const latest = html(ui.TrackingPositionInfo, { mode: 'latest', data: freshData, status, date });
+    assert.match(latest, new RegExp(expected));
+    assert.doesNotMatch(latest, /Live online/);
+    const replay = html(ui.TrackingPositionInfo, { mode: 'playback', data: freshData, status, date });
+    assert.match(replay, /Historical playback/);
+  }
+});
 
 test('IST formatting and human-readable duration preserve long recorded stops', () => {
   for (const [minutes, expected] of [[596, '9h 56m'], [391, '6h 31m'], [157, '2h 37m'], [60, '1h'], [0, '0m']]) {
@@ -150,6 +170,17 @@ test('summary preserves zero values and displays unavailable values without fabr
   assert.doesNotThrow(() => html(ui.TrackingSummary, { data: { lastPing: { recorded_at: 'invalid' } }, status: null }));
 });
 
+test('Client visits uses the grouped activity count while preserving raw legacy counts and zero', () => {
+  for (const [data, count] of [
+    [{ visitsCount: 5, activityVisitsCount: 3 }, 3],
+    [{ visitsCount: 5, activityVisitsCount: 0 }, 0],
+    [{ visitsCount: 5 }, 5],
+  ]) {
+    const output = html(ui.TrackingSummary, { data, status: null });
+    assert.match(output, new RegExp(`Client visits<\\/div><strong[^>]*>${count}<\\/strong>`));
+  }
+});
+
 test('timeline preserves order, event meaning, coordinates and source duration', () => {
   const data = { timeline: [
     { type: 'punch_in', startTime: freshData.timeline[0].startTime, lat: 30.9, lng: 75.92 },
@@ -159,7 +190,7 @@ test('timeline preserves order, event meaning, coordinates and source duration',
   ] };
   const before = JSON.stringify(data);
   const output = html(ui.TrackingActivityPanel, { data, expanded: true, onSelectEvent() {}, status: freshStatus });
-  assert.match(output, /9h 56m/);
+  assert.match(output, /Stoppage of 09:56/);
   assert.match(output, /Client A/);
   assert.ok(output.indexOf('Punch in') < output.indexOf('Stoppage'));
   assert.ok(output.indexOf('Stoppage') < output.indexOf('Client visit'));
@@ -171,6 +202,34 @@ test('timeline preserves order, event meaning, coordinates and source duration',
   button.props.onClick();
   assert.equal(selected[0], freshData.timeline[0]);
   assert.equal(selected[1], 1);
+});
+
+test('rich timeline shows actual visit code, customer, type, full address, exact IST times and travel distance', () => {
+  const events = [
+    { type: 'stoppage', startTime: '2026-11-13T04:30:00Z', endTime: '2026-11-13T04:42:00Z', durationMins: 12, fullAddress: 'NH12, Berhampore, Murshidabad, West Bengal, 742101, India' },
+    { type: 'travel', startTime: '2026-11-13T05:28:31Z', endTime: '2026-11-13T06:17:25Z', durationMins: 48, distanceKm: 14.39, lat: 30, lng: 75 },
+    { type: 'visit', visitCode: 'CHK-41275', partyName: 'Truvox Private Limited', visitType: 'Visit', checkInTime: '2026-11-13T05:16:09Z', checkOutTime: '2026-11-13T05:28:31Z', durationMins: 12, fullAddress: 'NH12, West Bengal, 742101, India', lat: 30, lng: 75 },
+  ];
+  const output = html(ui.TrackingActivityPanel, { data: { timeline: [], activityTimeline: events }, expanded: true });
+  for (const label of ['Stoppage of 00:12', 'Travelled (14.39 km)', '10:58:31', '11:47:25', '(00:48)', 'CHK-41275', 'Truvox Private Limited', 'Type: ', '742101, India', '3 events · IST']) assert.ok(output.includes(label), label);
+  assert.doesNotMatch(output, /PHYSICAL_VISIT|until/);
+  assert.equal(ui.formatActivityTime('2026-11-13T10:58:31'), '10:58:31', 'Timezone-free activity fields are interpreted as IST');
+  assert.equal(ui.formatActivityTime('2026-11-12T18:30:00Z'), '00:00:00');
+  assert.equal(ui.formatActivityDuration(1500), '25:00');
+  assert.equal(ui.formatActivityDuration(null), 'Unavailable');
+  assert.notEqual(map.computeRouteSignature({ ...freshData, activityTimeline: events }), map.computeRouteSignature({ ...freshData, activityTimeline: events.map(event => ({ ...event, fullAddress: 'Updated address' })) }));
+});
+
+test('timeline day separators, missing metadata and signal gaps remain explicit without UUID exposure or fake distance', () => {
+  const uuid = '11111111-1111-4111-8111-111111111111';
+  const events = [
+    { type: 'visit', visitCode: uuid, partyName: uuid, checkInTime: '2026-11-12T10:00:00+05:30', durationMins: null, lat: 0, lng: 0, trackingDate: '2026-11-12' },
+    { type: 'signal_gap', startTime: '2026-11-13T10:00:00+05:30', endTime: '2026-11-13T11:00:00+05:30', durationMins: 60, trackingDate: '2026-11-13' },
+  ];
+  const output = html(ui.TrackingActivityPanel, { data: { activityTimeline: events }, rangeMode: true });
+  for (const label of ['12 Nov 2026', '13 Nov 2026', 'Customer unavailable', 'Address unavailable', 'Checkout time unavailable', 'GPS signal gap', 'Distance unavailable']) assert.ok(output.includes(label), label);
+  assert.doesNotMatch(output, /11111111-1111|0\.00 km|undefined|NaN/);
+  assert.match(output, /timelineEvent" disabled=""/);
 });
 
 test('playback controls dispatch play, reset, seek and all supported speeds', () => {
@@ -187,6 +246,24 @@ test('playback controls dispatch play, reset, seek and all supported speeds', ()
   for (const value of [1, 2, 5]) find(tree, node => node.props?.['aria-label'] === `Playback speed ${value}x`).props.onClick();
   assert.deepEqual(calls, ['play', 'reset', 3, '1x', '2x', '5x']);
   assert.equal(find(tree, node => node.props?.['aria-label'] === 'Playback speed 2x').props['aria-pressed'], true);
+});
+
+test('All Routes, Going and Return remain visible on one-way days without inventing a return leg', () => {
+  const output = html(ui.TrackingRouteDock, { hasReturn: false, filter: 'ALL', onFilter() {} });
+  assert.match(output, />All Routes<\/button>/);
+  assert.match(output, />Going<\/button>/);
+  assert.match(output, /data-leg="RETURN"[^>]*disabled=""[^>]*No return trip recorded for this day[^>]*>Return<\/button>/);
+  const calls = [];
+  const tree = load(uiCode, { react: pureReact, 'lucide-react': icons, './LiveTrackingDashboard.module.css': css,
+    '@/components/common/DateRangePicker': datePicker, './trackingDateRanges': rangeHelpers });
+  const dock = unwrap(tree.TrackingRouteDock)({ hasReturn: true, filter: 'RETURN', onFilter: value => calls.push(value) });
+  for (const id of ['ALL', 'GOING', 'RETURN']) {
+    const button = find(dock, node => node.props?.['data-leg'] === id);
+    assert.equal(button.props.disabled, false);
+    button.props.onClick();
+  }
+  assert.deepEqual(calls, ['ALL', 'GOING', 'RETURN']);
+  assert.equal(find(dock, node => node.props?.['data-leg'] === 'RETURN').props['aria-pressed'], true);
 });
 
 test('empty routes disable play and seeking while navigation remains available', () => {

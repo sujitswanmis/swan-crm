@@ -5,7 +5,7 @@ import {
   Activity, ArrowDownLeft, ArrowUpRight, Battery, BatteryCharging, Calendar,
   Check, CheckCircle2, ChevronDown, Clock3, Flag, Layers, List, LocateFixed,
   MapPin, Maximize2, Minimize2, Navigation, Pause, Play, RefreshCw, Route,
-  Search, ShieldCheck, Signal, Wifi, WifiOff,
+  Search, ShieldCheck, Signal, Wifi, WifiOff, CircleStop, UserRound,
 } from 'lucide-react';
 import styles from './LiveTrackingDashboard.module.css';
 import DateRangePicker from '@/components/common/DateRangePicker';
@@ -37,11 +37,27 @@ export function formatTrackingDuration(minutes) {
   return hours ? `${hours}h${total % 60 ? ` ${total % 60}m` : ''}` : `${total}m`;
 }
 
+const ACTIVITY_TIME = new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
+export function formatActivityTime(value) {
+  if (!value) return 'Unavailable';
+  const input = String(value).trim();
+  const explicit = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/.test(input) ? `${input.replace(' ', 'T')}+05:30` : value;
+  const date = new Date(explicit);
+  return Number.isFinite(date.getTime()) ? ACTIVITY_TIME.format(date) : 'Unavailable';
+}
+export function formatActivityDuration(minutes) {
+  if (minutes == null || minutes === '' || !Number.isFinite(Number(minutes)) || Number(minutes) < 0) return 'Unavailable';
+  const total = Math.round(Number(minutes));
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+}
+const activityText = value => typeof value === 'string' ? value.replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, '').trim() : '';
+
 // Presentation only: freshness, shift and connectivity decisions come from the existing status model.
 export function getTrackingStatus(status) {
   if (!status) return { label: 'Tracking unavailable', tone: 'muted' };
   if (status.isShiftCompleted) return { label: 'Shift ended', tone: 'muted' };
   if (!status.isToday) return { label: 'Historical record', tone: 'muted' };
+  if (status.independentTelemetry) return { label: status.gpsStatusState.label, tone: status.gpsStatusState.tone };
   if (!status.lastPingMs) return { label: status.headerBadge?.label || 'GPS unavailable', tone: 'warning' };
   if (status.gpsStatusState?.isOff) return { label: 'Last known location', tone: 'warning' };
   return { label: 'GPS active', tone: 'healthy' };
@@ -74,7 +90,7 @@ export const TrackingDatePicker = memo(function TrackingDatePicker({ date, range
     <DateRangePicker preset={selected.preset} startDate={selected.startDate} endDate={selected.endDate}
       presetOptions={TRACKING_RANGE_PRESETS} rangeResolver={resolveTrackingDateRange} title="Select GPS tracking date range (IST)"
       onChange={selection => setError(applyTrackingDateSelection(selection, onDateChange))}
-      style={{ minHeight: 43, width: '100%', minWidth: 0, fontSize: 12, justifyContent: 'space-between' }} />
+      style={{ height: 47, minHeight: 47, width: '100%', minWidth: 0, fontSize: 12, justifyContent: 'space-between' }} />
     <span id={hintId} className={styles.dateHint}>Date range totals and daily route playback · IST</span>
     {error && <span role="alert" className={styles.dateError}>{error}</span>}
   </div>;
@@ -173,11 +189,12 @@ export const TrackingSummary = memo(function TrackingSummary({ data, status, spe
   const tracking = rangeSummary ? { label: 'Range history', tone: 'muted' } : getTrackingStatus(status);
   const stops = rangeSummary?.loadedDays === 0 ? null : Array.isArray(data?.timeline) ? data.timeline.filter(item => item.type === 'stoppage') : null;
   const number = value => value != null && value !== '' && Number.isFinite(Number(value));
+  const visitsCount = number(data?.activityVisitsCount) ? data.activityVisitsCount : data?.visitsCount;
   const metrics = [
     { label: 'Total distance', Icon: Route, value: number(data?.totalKm) ? `${Number(data.totalKm).toFixed(2)} km` : '—', detail: data?.offlineGapKm > 0 ? `${data.trackedRoadKm ?? '—'} km tracked · ${data.offlineGapKm} km gaps` : speedStats?.maxSpeed > 0 ? `Avg ${speedStats.avgSpeed} · Top ${speedStats.maxSpeed} km/h` : 'Recorded route distance' },
-    { label: 'Client visits', Icon: CheckCircle2, value: number(data?.visitsCount) ? String(data.visitsCount) : '—', detail: 'Completed visits' },
+    { label: 'Client visits', Icon: CheckCircle2, value: number(visitsCount) ? String(visitsCount) : '—', detail: 'Completed visits' },
     { label: 'Stoppages', Icon: Pause, value: stops ? String(stops.length) : '—', detail: stops ? formatTrackingDuration(stops.reduce((sum, item) => sum + (Number(item.durationMins) || 0), 0)) + ' across recorded stops' : 'No route loaded' },
-    { label: 'Tracking status', Icon: Signal, value: tracking.label, detail: rangeSummary ? `${rangeSummary.loadedDays} / ${rangeSummary.totalDays} days loaded${rangeSummary.failedDays ? ' (partial)' : ''}` : status?.gpsStatusState?.label || 'Unavailable', tone: tracking.tone, compact: true },
+    { label: 'Tracking status', Icon: Signal, value: tracking.label, detail: rangeSummary ? `${rangeSummary.loadedDays} / ${rangeSummary.totalDays} days loaded${rangeSummary.failedDays ? ' (partial)' : ''}` : status?.gpsStatusState?.detail || status?.gpsStatusState?.label || 'Unavailable', tone: tracking.tone, compact: true },
     { label: 'Battery', Icon: status?.isCharging ? BatteryCharging : Battery, value: number(status?.battPct) ? `${status.battPct}%` : '—', detail: status?.isCharging ? 'Charging at last report' : status?.battPct != null ? 'At last device report' : 'Unavailable', tone: status?.battPct != null ? status.battPct <= 15 ? 'critical' : status.battPct <= 30 ? 'warning' : undefined : undefined },
     { label: 'Last GPS ping', Icon: Clock3, value: status?.lastPingMs ? formatTrackingTime(status.lastPingMs) : '—', detail: data?.lastPing?.recorded_at && Number.isFinite(new Date(data.lastPing.recorded_at).getTime()) ? IST_DATE.format(new Date(data.lastPing.recorded_at)) + ' · IST' : 'Unavailable' },
   ];
@@ -187,35 +204,46 @@ export const TrackingSummary = memo(function TrackingSummary({ data, status, spe
 });
 
 export const TrackingActivityPanel = memo(function TrackingActivityPanel({ employee, data, status, health, onOpenHealth, loading, error, expanded, onToggle, onSelectEvent, selectedEvent, rangeMode = false }) {
-  const events = Array.isArray(data?.timeline) ? data.timeline : [];
+  const events = Array.isArray(data?.activityTimeline) ? data.activityTimeline : Array.isArray(data?.timeline) ? data.timeline : [];
   return <aside className={styles.activityPanel} data-expanded={expanded} aria-label="Employee activity">
     <button type="button" className={styles.activityToggle} aria-expanded={expanded} aria-controls="field-tracking-activity" onClick={onToggle}><List size={17} aria-hidden="true" /><strong>Activity timeline</strong><span>{events.length} events</span><ChevronDown size={16} aria-hidden="true" /></button>
     <div id="field-tracking-activity" className={styles.activityContents}>
       <div className={styles.employeeProfile}><span className={styles.avatar}>{employee?.name?.charAt(0)?.toUpperCase() || 'F'}</span><div><strong>{employee?.name || 'Select an executive'}</strong><span>{[employee?.phone, employee?.role].filter(Boolean).join(' · ') || 'Employee information unavailable'}</span></div></div>
-      <div className={styles.healthDetails}><div>{status?.mobileDataState?.isOff ? <WifiOff size={15} /> : <Wifi size={15} />}<span>Mobile data</span><strong>{status?.mobileDataState?.label || 'Unavailable'}</strong></div><div><Activity size={15} /><span>GPS</span><strong>{status?.gpsStatusState?.label || 'Unavailable'}</strong></div></div>
+      <div className={styles.healthDetails}><div>{status?.mobileDataState?.code === 'UNKNOWN' ? <Signal size={15} /> : status?.mobileDataState?.isOff ? <WifiOff size={15} /> : <Wifi size={15} />}<span>Mobile data</span><strong title={status?.mobileDataState?.detail} style={status?.independentTelemetry ? { color: status.mobileDataState.color } : undefined}>{status?.mobileDataState?.label || 'Unavailable'}</strong></div><div><Activity size={15} /><span>GPS</span><strong title={status?.gpsStatusState?.detail} style={status?.independentTelemetry ? { color: status.gpsStatusState.color } : undefined}>{status?.gpsStatusState?.label || 'Unavailable'}</strong></div></div>
       {error && data && <p role="status" className={styles.refreshNotice}>Could not refresh. Showing the last loaded route.</p>}
       {health && <button type="button" className={styles.healthAudit} data-tone={health.status === 'HEALTHY' ? 'healthy' : health.status === 'CRITICAL' ? 'critical' : 'warning'} disabled={!onOpenHealth} onClick={onOpenHealth} title={health.issueSummary || 'Device permission health'}><ShieldCheck size={17} /><span><strong>{health.shortLabel || 'App & permission health'}{health.versionCode != null ? ` · APK v${health.versionCode}` : ''}</strong><small>{health.issueSummary || [health.locationMode === 'all_the_time' ? 'GPS: All the time' : health.locationMode === 'while_using' ? 'GPS: While using' : 'Location: ' + (health.locationMode || 'Pending'), health.batteryUnrestricted === true ? 'Battery unrestricted' : health.batteryUnrestricted === false ? 'Battery restricted' : ''].filter(Boolean).join(' · ')}</small></span>{onOpenHealth && <ChevronDown size={14} className={styles.auditArrow} />}</button>}
-      <div className={styles.timelineHeading}><h2>Activity timeline</h2><span>{events.length} events</span></div>
+      <div className={styles.timelineHeading}><h2>Activity timeline</h2><span>{events.length} events · IST</span></div>
       {loading && (!data || (rangeMode && !events.length)) ? <div role="status" className={styles.emptyState}><RefreshCw size={24} className={styles.spinning} /><strong>Loading field activity</strong><span>Retrieving the selected route.</span></div> : error && !data ? <div role="alert" className={styles.emptyState}><Signal size={24} /><strong>Route could not be loaded</strong><span>Use refresh to try again.</span></div> : !events.length ? <div className={styles.emptyState}><MapPin size={26} /><strong>{employee ? 'No activity recorded' : 'Choose a field executive'}</strong><span>{employee ? 'GPS events and visits for this date will appear here.' : 'Select an employee to explore their route.'}</span></div> : <ol className={styles.timeline}>
         {events.map((event, index) => {
           const isStop = event.type === 'stoppage';
           const isVisit = event.type === 'visit';
+          const isTravel = event.type === 'travel';
+          const isGap = event.type === 'signal_gap';
           const isIn = event.type === 'punch_in';
-          const Icon = isStop ? Pause : isVisit ? MapPin : Flag;
-          const type = isStop ? 'Stoppage' : isVisit ? 'Client visit' : isIn ? 'Punch in' : event.type === 'punch_out' ? 'Punch out' : 'Tracking event';
+          const Icon = isStop ? CircleStop : isVisit ? MapPin : isTravel ? Route : isGap ? Signal : Flag;
+          const type = isStop ? 'Stoppage' : isVisit ? 'Client visit' : isTravel ? 'Travelled' : isGap ? 'GPS signal gap' : isIn ? 'Punch in' : event.type === 'punch_out' ? 'Punch out' : 'Tracking event';
           const start = event.startTime || event.checkInTime;
           const end = event.endTime || event.checkOutTime;
-          const hasPosition = event.lat != null && event.lng != null && Number.isFinite(Number(event.lat)) && Number.isFinite(Number(event.lng));
-          return <li key={event.trackingEventKey || `${event.type}-${start || index}-${index}`} data-type={event.type}>
-            <span className={styles.timelineIcon}><Icon size={14} aria-hidden="true" /></span>
+          const hasPosition = event.lat != null && event.lng != null && Number.isFinite(Number(event.lat)) && Number.isFinite(Number(event.lng)) && (Math.abs(Number(event.lat)) > 0.01 || Math.abs(Number(event.lng)) > 0.01);
+          const duration = formatActivityDuration(event.durationMins);
+          const code = /^(CHK|TSK)-\d+$/i.test(activityText(event.visitCode)) ? activityText(event.visitCode) : '';
+          const title = isStop ? `Stoppage of ${duration}` : isTravel && event.distanceKm != null && Number.isFinite(Number(event.distanceKm)) ? `Travelled (${Number(event.distanceKm).toFixed(2)} km)` : isVisit ? code || type : type;
+          const address = activityText(event.fullAddress) || activityText(event.locationName);
+          const visitType = activityText(event.visitType) || ({ PHYSICAL_VISIT: 'Visit', TELEPHONIC_CALL: 'Phone call', WHATSAPP_CHAT: 'WhatsApp', EMAIL_QUOTE: 'Email' }[event.connectivityMode]) || 'Visit';
+          return <React.Fragment key={event.trackingEventKey || event.activityKey || `${event.type}-${start || index}-${index}`}>
+            {rangeMode && event.trackingDate && (index === 0 || events[index - 1].trackingDate !== event.trackingDate) && <li className={styles.timelineDay}><span>{formatTrackingDate(event.trackingDate)}</span></li>}
+            <li data-type={event.type}>
+            <span className={styles.timelineIcon}><Icon size={isStop ? 19 : 17} aria-hidden="true" /></span>
             <button type="button" className={styles.timelineEvent} disabled={!hasPosition} aria-pressed={selectedEvent === index} aria-label={`${type}, ${formatTrackingTime(start)}${hasPosition ? ', locate on map' : ''}`} onClick={() => onSelectEvent(event, index)}>
-              <span className={styles.eventTop}><strong>{type}</strong><time>{formatTrackingTime(start)}</time></span>
-              {rangeMode && event.trackingDate && <span className={styles.eventDate}>{formatTrackingDate(event.trackingDate)}</span>}
-              {(isStop || isVisit) && <span className={styles.eventDuration}>{formatTrackingDuration(event.durationMins)}{end && <span> · until {formatTrackingTime(end)}</span>}</span>}
-              <span className={styles.eventLocation}>{isVisit ? event.partyName || event.locationName || 'Location unavailable' : event.locationName || (isIn ? event.label || 'Shift started' : event.type === 'punch_out' ? event.label || 'Shift completed' : 'Location unavailable')}</span>
-              {event.shiftName && <span className={styles.eventExtra}>{event.shiftName}</span>}{event.connectivityMode && <span className={styles.eventExtra}>{event.connectivityMode}</span>}{event.isGeofenceFlagged && <span className={styles.geofenceFlag}>Geofence mismatch flagged</span>}
+              <span className={styles.eventTop}><strong>{title}</strong></span>
+              <span className={styles.eventTimeRange}><span><time dateTime={start}>{formatActivityTime(start)}</time>{end && <> – <time dateTime={end}>{formatActivityTime(end)}</time></>}</span>{(isVisit || isTravel || isGap) && <strong title="Recorded duration (HH:MM)">({duration})</strong>}</span>
+              {isVisit && <><span className={styles.eventCustomer}><UserRound size={13} aria-hidden="true" /><strong>{activityText(event.partyName) || 'Customer unavailable'}</strong></span><span className={styles.eventType}>Type: {visitType}</span>{!end && <span className={styles.eventExtra}>Checkout time unavailable</span>}</>}
+              {!isTravel && !isGap && <span className={styles.eventLocation}><MapPin size={12} aria-hidden="true" /><span>{address && !/^(?:Location|GPS)\s*\(/i.test(address) ? address : 'Address unavailable'}</span></span>}
+              {isGap && <span className={styles.eventExtra}>Distance unavailable · GPS breadcrumbs missing</span>}
+              {isTravel && event.offlineRecorded && <span className={styles.eventExtra}>GPS recorded offline</span>}
+              {event.shiftName && <span className={styles.eventExtra}>{activityText(event.shiftName)}</span>}{event.isGeofenceFlagged && <span className={styles.geofenceFlag}>Geofence mismatch flagged</span>}
             </button>
-          </li>;
+          </li></React.Fragment>;
         })}
       </ol>}
     </div>
@@ -270,7 +298,7 @@ export const TrackingRouteDock = memo(function TrackingRouteDock({ hasReturn, fi
   const [legendOpen, setLegendOpen] = useState(false);
   return <div className={styles.routeDock}>
     {estimate && summary && !summary.noGaps && <div className={styles.estimateNotice}><Route size={13} />Estimated {summary.hasReturnGap ? 'return' : 'gap'} road: ~{summary.distanceKm} km · GPS off</div>}
-    <div className={styles.routeDockRow}><div className={styles.routeFilters} aria-label="Route filter">{(hasReturn ? [['ALL', 'All routes'], ['GOING', 'Outward'], ['RETURN', 'Return']] : [['ALL', 'Outward route']]).map(([id, label]) => <button key={id} type="button" data-leg={id} aria-pressed={filter === id} onClick={() => onFilter(id)}>{label}</button>)}</div><button type="button" className={styles.legendToggle} aria-expanded={legendOpen} aria-controls="field-tracking-legend" onClick={() => setLegendOpen(value => !value)}><Layers size={14} />Legend<ChevronDown size={13} /></button></div>
+    <div className={styles.routeDockRow}><div className={styles.routeFilters} aria-label="Route filter">{[['ALL', 'All Routes'], ['GOING', 'Going'], ['RETURN', 'Return']].map(([id, label]) => <button key={id} type="button" data-leg={id} aria-pressed={filter === id} disabled={id === 'RETURN' && !hasReturn} title={id === 'RETURN' && !hasReturn ? 'No return trip recorded for this day' : undefined} onClick={() => onFilter(id)}>{label}</button>)}</div><button type="button" className={styles.legendToggle} aria-expanded={legendOpen} aria-controls="field-tracking-legend" onClick={() => setLegendOpen(value => !value)}><Layers size={14} />Legend<ChevronDown size={13} /></button></div>
     {legendOpen && <div id="field-tracking-legend" className={styles.legend}>{[['going', 'Going / outward'], ['return', 'Return / inward'], ['offline', 'Offline recorded'], ['gap', 'Signal lost gap'], ['estimated', 'Estimated road']].map(([type, label]) => <span key={type}><i data-route={type} />{label}</span>)}</div>}
   </div>;
 });

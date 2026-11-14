@@ -7,6 +7,7 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
+import android.content.BroadcastReceiver;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
@@ -28,6 +29,8 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 import androidx.core.content.ContextCompat;
+import androidx.core.content.pm.PackageInfoCompat;
+import androidx.core.location.LocationManagerCompat;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
@@ -42,6 +45,7 @@ import java.util.Locale;
 import java.util.TimeZone;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -76,6 +80,15 @@ public class FieldTrackingService extends Service {
     private long lastGpsFixMs = 0L;
     private float lastGpsAcc = 9999f;
     private volatile boolean isUploading = false;
+    private long lastStatusSentMs = 0L;
+    private String lastStatusSignature = "";
+    private final AtomicBoolean statusUploadQueued = new AtomicBoolean(false);
+    private boolean providerReceiverRegistered = false;
+    private final BroadcastReceiver providerReceiver = new BroadcastReceiver() {
+        @Override public void onReceive(Context context, Intent intent) {
+            scheduleStatusHeartbeat(true);
+        }
+    };
 
     private final LocationListener locationListener = new LocationListener() {
         @Override
@@ -88,11 +101,14 @@ public class FieldTrackingService extends Service {
 
         @Override
         public void onProviderEnabled(@NonNull String provider) {
+            scheduleStatusHeartbeat(true);
             pollSingleLocationFix(true);
         }
 
         @Override
-        public void onProviderDisabled(@NonNull String provider) {}
+        public void onProviderDisabled(@NonNull String provider) {
+            scheduleStatusHeartbeat(true);
+        }
     };
 
     private final Runnable heartbeatRunnable = new Runnable() {
@@ -110,6 +126,8 @@ public class FieldTrackingService extends Service {
             if (isNetworkAvailable() && dbHelper != null && dbHelper.getPendingCount() > 0) {
                 scheduleFlush(0L);
             }
+            // Connectivity and permission reporting must not depend on a location fix.
+            scheduleStatusHeartbeat(false);
             if (mainHandler != null) {
                 mainHandler.postDelayed(this, HEARTBEAT_INTERVAL_MS);
             }
@@ -126,6 +144,11 @@ public class FieldTrackingService extends Service {
         connectivityManager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
         createNotificationChannel();
         registerConnectivityListener();
+        try {
+            ContextCompat.registerReceiver(this, providerReceiver,
+                new IntentFilter(LocationManager.PROVIDERS_CHANGED_ACTION), ContextCompat.RECEIVER_NOT_EXPORTED);
+            providerReceiverRegistered = true;
+        } catch (Exception ignored) {}
     }
 
     @Override
@@ -149,6 +172,7 @@ public class FieldTrackingService extends Service {
         }
 
         isServiceRunning = true;
+        scheduleStatusHeartbeat(false);
 
         if (ACTION_FLUSH.equals(action)) {
             scheduleFlush(0L);
@@ -472,6 +496,7 @@ public class FieldTrackingService extends Service {
             networkCallback = new ConnectivityManager.NetworkCallback() {
                 @Override
                 public void onAvailable(@NonNull Network network) {
+                    scheduleStatusHeartbeat(true);
                     scheduleFlush(700L);
                     if (mainHandler != null) {
                         mainHandler.postDelayed(() -> pollSingleLocationFix(true), 400L);
@@ -493,6 +518,84 @@ public class FieldTrackingService extends Service {
                 }
             }, delayMs);
         }
+    }
+
+    private JSONObject buildDeviceStatus() throws Exception {
+        boolean foreground = hasForegroundLocationPermission();
+        boolean background = foreground && (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
+            || ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED);
+        JSONObject status = new JSONObject();
+        status.put("capturedAtMs", System.currentTimeMillis());
+        status.put("hasForegroundLocation", foreground);
+        status.put("hasBackgroundLocation", background);
+        status.put("gpsProviderEnabled", locationManager != null && LocationManagerCompat.isLocationEnabled(locationManager));
+        status.put("running", isServiceRunning);
+        status.put("pendingCount", dbHelper != null ? dbHelper.getPendingCount() : 0);
+        android.content.pm.PackageInfo packageInfo = getPackageManager().getPackageInfo(getPackageName(), 0);
+        status.put("appVersionCode", PackageInfoCompat.getLongVersionCode(packageInfo));
+        status.put("appVersionName", packageInfo.versionName);
+        return status;
+    }
+
+    private String statusSignature(JSONObject status) {
+        return status.optBoolean("hasForegroundLocation") + ":" + status.optBoolean("hasBackgroundLocation")
+            + ":" + status.optBoolean("gpsProviderEnabled") + ":" + status.optBoolean("running");
+    }
+
+    private boolean statusDue(JSONObject status) {
+        return System.currentTimeMillis() - lastStatusSentMs >= HEARTBEAT_INTERVAL_MS
+            || !statusSignature(status).equals(lastStatusSignature);
+    }
+
+    private void markStatusAccepted(JSONObject status) {
+        lastStatusSentMs = System.currentTimeMillis();
+        lastStatusSignature = statusSignature(status);
+    }
+
+    private void scheduleStatusHeartbeat(boolean force) {
+        if (!isServiceRunning || uploadExecutor == null || uploadExecutor.isShutdown()
+            || !statusUploadQueued.compareAndSet(false, true)) return;
+        try {
+            uploadExecutor.execute(() -> {
+                HttpURLConnection conn = null;
+                try {
+                    if (!isNetworkAvailable()) return;
+                    JSONObject status = buildDeviceStatus();
+                    if (!force && !statusDue(status)) return;
+                    SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+                    String endpoint = prefs.getString("endpointUrl", "");
+                    String token = prefs.getString("token", "");
+                    if (endpoint == null || endpoint.isEmpty() || token == null || token.isEmpty()) return;
+                    JSONObject body = new JSONObject();
+                    body.put("token", token);
+                    body.put("pings", new JSONArray());
+                    body.put("deviceStatus", status);
+                    conn = (HttpURLConnection) new URL(endpoint.replaceAll("/+$", "") + "/api/field-force/telemetry").openConnection();
+                    conn.setRequestMethod("POST");
+                    conn.setConnectTimeout(10000);
+                    conn.setReadTimeout(15000);
+                    conn.setDoOutput(true);
+                    conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+                    conn.setRequestProperty("Authorization", "Bearer " + token);
+                    try (OutputStream stream = conn.getOutputStream()) {
+                        stream.write(body.toString().getBytes(StandardCharsets.UTF_8));
+                    }
+                    if (conn.getResponseCode() >= 200 && conn.getResponseCode() < 300) {
+                        StringBuilder response = new StringBuilder();
+                        try (BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
+                            String line;
+                            while ((line = reader.readLine()) != null) response.append(line);
+                        }
+                        if (new JSONObject(response.toString()).optBoolean("statusAccepted", false)) markStatusAccepted(status);
+                    }
+                } catch (Exception ignored) {
+                    // Retry current status on the next heartbeat; never fabricate GPS points.
+                } finally {
+                    if (conn != null) conn.disconnect();
+                    statusUploadQueued.set(false);
+                }
+            });
+        } catch (Exception ignored) { statusUploadQueued.set(false); }
     }
 
     private void flushPendingQueue() {
@@ -536,6 +639,13 @@ public class FieldTrackingService extends Service {
                 JSONObject requestBody = new JSONObject();
                 requestBody.put("token", token);
                 requestBody.put("pings", pingsArray);
+                JSONObject deviceStatus = null;
+                boolean includeStatus = false;
+                try {
+                    deviceStatus = buildDeviceStatus();
+                    includeStatus = statusDue(deviceStatus);
+                } catch (Exception ignored) { /* Diagnostics must not block queued GPS uploads. */ }
+                if (includeStatus) requestBody.put("deviceStatus", deviceStatus);
 
                 HttpURLConnection conn = null;
                 try {
@@ -561,6 +671,7 @@ public class FieldTrackingService extends Service {
                             while ((line = br.readLine()) != null) sb.append(line);
                         }
                         JSONObject resp = new JSONObject(sb.toString());
+                        if (includeStatus && resp.optBoolean("statusAccepted", false)) markStatusAccepted(deviceStatus);
                         if (resp.optBoolean("success", true)) {
                             dbHelper.deleteByIds(idsToDelete);
                         } else {
@@ -621,6 +732,10 @@ public class FieldTrackingService extends Service {
     @Override
     public void onDestroy() {
         isServiceRunning = false;
+        if (providerReceiverRegistered) {
+            try { unregisterReceiver(providerReceiver); } catch (Exception ignored) {}
+            providerReceiverRegistered = false;
+        }
         if (mainHandler != null) {
             mainHandler.removeCallbacksAndMessages(null);
         }

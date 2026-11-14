@@ -357,6 +357,7 @@ export default function LeadFormModal({
     district_name: '',
     city_name: '',
     pin_code: '',
+    address: '',
     
     // Metadata
     entry_by: '',
@@ -494,6 +495,7 @@ export default function LeadFormModal({
       district_name: '',
       city_name: '',
       pin_code: '',
+      address: '',
       entry_by: activeUserName,
       created_by: activeUserName,
       lead_date: todayIST
@@ -540,6 +542,8 @@ export default function LeadFormModal({
         company: formData.company?.trim() || '',
         phone: formData.phone?.trim() || '',
         email: formData.email?.trim() || '',
+        pin_code: formData.pin_code?.trim() || '',
+        address: formData.address?.trim() || '',
         our_company: formData.our_company || activeCompany || 'NSMLR',
         entry_by: activeUserName,
         created_by: activeUserName,
@@ -1248,6 +1252,37 @@ export default function LeadFormModal({
                         <option key={dt} value={dt}>{dt}</option>
                       ))}
                     </select>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.85rem', marginTop: '0.85rem' }}>
+                  <div style={{ flex: '1 1 160px', minWidth: 0 }}>
+                    <label style={labelStyle}>PIN Code</label>
+                    <input
+                      type="text"
+                      name="pin_code"
+                      inputMode="numeric"
+                      maxLength={6}
+                      value={formData.pin_code || ''}
+                      onChange={(e) => {
+                        const cleaned = e.target.value.replace(/\D/g, '').slice(0, 6);
+                        setFormData(prev => ({ ...prev, pin_code: cleaned }));
+                      }}
+                      placeholder="e.g. 141001"
+                      style={inputStyle}
+                    />
+                  </div>
+
+                  <div style={{ flex: '2 1 320px', minWidth: 0 }}>
+                    <label style={labelStyle}>Full Address</label>
+                    <input
+                      type="text"
+                      name="address"
+                      value={formData.address || ''}
+                      onChange={handleChange}
+                      placeholder="House / Shop No., Street, Village / City, Landmark..."
+                      style={inputStyle}
+                    />
                   </div>
                 </div>
               </div>

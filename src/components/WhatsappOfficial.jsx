@@ -1,7 +1,9 @@
 'use client';
 
-import MobileTableView, { TableViewToggle, useTableViewPreference } from '@/components/common/MobileTableView';
+import MobileTableView, { useTableViewPreference } from '@/components/common/MobileTableView';
 import StandardTablePagination from '@/components/common/StandardTablePagination';
+import { CRMPage, CRMPageHeader, CRMCard, CRMToolbar, CRMTabs, CRMTabPanel, CRMStatusBadge, CRMViewToggle, crmStyles, useCRMPageSize, useCRMPageSizeOptions, useCRMResizableTable } from '@/components/common/CRMDesignSystem';
+import { ColumnResizer, useTableColumnResize } from '@/utils/tableColumnResize';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import WhatsappOfficialMessageLogs from '@/components/WhatsappOfficialMessageLogs';
 import React, { useState, useEffect } from 'react';
@@ -30,6 +32,14 @@ import {
 } from '@/app/actions/whatsapp';
 import { getTenantBranches, getAllTenantBranches } from '@/app/actions/tenantBranches';
 import { filterVisibleSubTabs, getSubItemPermissions } from '@/utils/permissionUtils';
+
+const ALLOCATION_WIDTHS = { office: 240, type: 140, bsps: 260, defaultBsp: 160, quota: 110, action: 90 };
+const TEMPLATE_WIDTHS = { select: 48, name: 240, provider: 150, branch: 180, campaign: 170, preview: 280, actions: 144 };
+const AUTOMATION_WIDTHS = { select: 48, company: 160, stage: 240, template: 250, frequency: 140, status: 130, actions: 144 };
+const ALLOCATION_MINIMUMS = { office: 160, type: 110, bsps: 180, defaultBsp: 120, quota: 80, action: 70 };
+const TEMPLATE_MINIMUMS = { select: 48, name: 110, provider: 100, branch: 110, campaign: 110, preview: 140, actions: 144 };
+const AUTOMATION_MINIMUMS = { select: 48, company: 100, stage: 110, template: 120, frequency: 100, status: 100, actions: 144 };
+const WA_EDGE_MAXIMUMS = { select: 72, actions: 180 };
 
 const ALL_WA_TABS = [
   { id: 'templates', label: 'Templates Library', icon: MessageSquare },
@@ -80,6 +90,9 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
   const handleTabChange = (tabId) => {
     if (!visibleTabs.some(t => t.id === tabId)) return;
     setActiveTab(tabId);
+    setTemplatePage(1);
+    setAutoPage(1);
+    setAllocationPage(1);
     if (tabId === 'catalog') setActiveAdminSubTab('catalog');
     if (tabId === 'allocations') setActiveAdminSubTab('allocations');
     if (tabId === 'settings') setActiveAdminSubTab('credentials');
@@ -152,16 +165,9 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
   // Template Search, Selection List, & Pagination State
   const [templateSearch, setTemplateSearch] = useState('');
   const [selectedTemplateIds, setSelectedTemplateIds] = useState([]);
-  const [templatePerPage, setTemplatePerPage] = useState(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const saved = localStorage.getItem('crm_wa_templates_per_page');
-        if (saved) return parseInt(saved, 10) || 12;
-      } catch (_) {}
-    }
-    return 12;
-  });
   const [templatePage, setTemplatePage] = useState(1);
+  const [templatePerPage, setTemplatePerPage] = useCRMPageSize(setTemplatePage);
+  const templatePageSizes = useCRMPageSizeOptions(templatePerPage);
   const [templateViewMode, setTemplateViewMode] = useState('grid'); // 'grid' | 'table'
   const [deletingBulkTemplates, setDeletingBulkTemplates] = useState(false);
 
@@ -186,15 +192,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
   const [autoFrequencyFilter, setAutoFrequencyFilter] = useState('ALL');
   const [autoTableView, setAutoTableView] = useTableViewPreference('WhatsappOfficial-1');
   const [autoPage, setAutoPage] = useState(1);
-  const [autoPageSize, setAutoPageSize] = useState(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const s = JSON.parse(localStorage.getItem('crmPageNavSettings') || '{}');
-        if (s.defaultPageSize) return Number(s.defaultPageSize);
-      } catch (e) {}
-    }
-    return 15;
-  });
+  const [autoPageSize, setAutoPageSize] = useCRMPageSize(setAutoPage);
 
   const autoCompanyOptions = React.useMemo(() => {
     const set = new Set();
@@ -541,104 +539,13 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
     });
   }, [allClients, overviewTableHqFilter, hqOptions]);
 
-  // Resizable columns state for Allocation Matrix Table (Lead Data Pattern)
-  const defaultColWidths = {
-    office: 240,
-    type: 140,
-    bsps: 260,
-    defaultBsp: 160,
-    quota: 110,
-    action: 90
-  };
-  const [tableColWidths, setTableColWidths] = useState(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const saved = localStorage.getItem('crm_wa_table_col_widths');
-        if (saved) return { ...defaultColWidths, ...JSON.parse(saved) };
-      } catch (e) {}
-    }
-    return defaultColWidths;
-  });
-  const [resizingCol, setResizingCol] = useState(null);
-
-  const handleColumnResizeMouseDown = (colKey, e) => {
-    e.preventDefault();
-    setResizingCol(colKey);
-    const startX = e.clientX;
-    const startWidth = tableColWidths[colKey] || defaultColWidths[colKey];
-
-    const onMouseMove = (moveEvent) => {
-      const diff = moveEvent.clientX - startX;
-      const minW = colKey === 'action' ? 70 : 90;
-      const newWidth = Math.max(minW, startWidth + diff);
-      setTableColWidths(prev => {
-        const updated = { ...prev, [colKey]: newWidth };
-        try {
-          localStorage.setItem('crm_wa_table_col_widths', JSON.stringify(updated));
-        } catch (err) {}
-        return updated;
-      });
-    };
-
-    const onMouseUp = () => {
-      setResizingCol(null);
-      document.removeEventListener('mousemove', onMouseMove);
-      document.removeEventListener('mouseup', onMouseUp);
-    };
-
-    document.addEventListener('mousemove', onMouseMove);
-    document.addEventListener('mouseup', onMouseUp);
-  };
-
-  // Resizable columns state for Template Table (Lead Data Pattern)
-  const defaultTemplateColWidths = {
-    select: 48,
-    name: 240,
-    provider: 150,
-    branch: 180,
-    campaign: 170,
-    preview: 280,
-    actions: 110
-  };
-  const [templateColWidths, setTemplateColWidths] = useState(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const saved = localStorage.getItem('crm_wa_template_table_col_widths');
-        if (saved) return { ...defaultTemplateColWidths, ...JSON.parse(saved) };
-      } catch (e) {}
-    }
-    return defaultTemplateColWidths;
-  });
-  const [resizingTemplateCol, setResizingTemplateCol] = useState(null);
-
-  const handleTemplateColumnResizeMouseDown = (colKey, e) => {
-    e.preventDefault();
-    setResizingTemplateCol(colKey);
-    const startX = e.clientX;
-    const startWidth = templateColWidths[colKey] || defaultTemplateColWidths[colKey];
-
-    const onMouseMove = (moveEvent) => {
-      const diff = moveEvent.clientX - startX;
-      const minW = colKey === 'select' ? 40 : 70;
-      const newWidth = Math.max(minW, startWidth + diff);
-      setTemplateColWidths(prev => {
-        const updated = { ...prev, [colKey]: newWidth };
-        try {
-          localStorage.setItem('crm_wa_template_table_col_widths', JSON.stringify(updated));
-        } catch (err) {}
-        return updated;
-      });
-    };
-
-    const onMouseUp = () => {
-      setResizingTemplateCol(null);
-      document.removeEventListener('mousemove', onMouseMove);
-      document.removeEventListener('mouseup', onMouseUp);
-    };
-
-    document.addEventListener('mousemove', onMouseMove);
-    document.addEventListener('mouseup', onMouseUp);
-  };
+  const allocationResize = useTableColumnResize('crm_wa_table_col_widths', ALLOCATION_WIDTHS, ALLOCATION_MINIMUMS);
+  const { attachContainer: templateContainerRef, ...templateResize } = useCRMResizableTable('crm_wa_template_table_col_widths', TEMPLATE_WIDTHS, TEMPLATE_MINIMUMS, activeTab === 'templates' && templateViewMode === 'table', WA_EDGE_MAXIMUMS);
+  const { attachContainer: automationContainerRef, ...automationResize } = useCRMResizableTable('crm_wa_automation_table_col_widths', AUTOMATION_WIDTHS, AUTOMATION_MINIMUMS, activeTab === 'automations' && autoTableView === 'table', WA_EDGE_MAXIMUMS);
+  const [allocationPage, setAllocationPage] = useState(1);
+  const [allocationPageSize, setAllocationPageSize] = useCRMPageSize(setAllocationPage);
+  const currentAllocationPage = Math.min(allocationPage, Math.max(1, Math.ceil(filteredTableClients.length / allocationPageSize)));
+  const paginatedTableClients = filteredTableClients.slice((currentAllocationPage - 1) * allocationPageSize, currentAllocationPage * allocationPageSize);
 
   const getInitialClientAlloc = (clientCode) => {
     const code = String(clientCode || '').toUpperCase();
@@ -1273,41 +1180,11 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
   }
 
   return (
-    <div className="card saas-card" style={{ padding: activeTab === 'sent_logs' ? '1.25rem' : '1.75rem', minHeight: '80vh', backgroundColor: 'var(--bg-surface)' }}>
+    <CRMPage style={{ minHeight: '80vh' }}>
       
       {/* Enterprise B2B SaaS Segmented Sub-Tab Navigation */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(226, 232, 240, 0.85)', paddingBottom: '1.15rem', marginBottom: '1.75rem', flexWrap: 'wrap', gap: '1rem' }}>
-        <div style={{ display: 'inline-flex', padding: '0.3rem', backgroundColor: '#f1f5f9', borderRadius: '10px', border: '1px solid rgba(226, 232, 240, 0.9)', gap: '0.35rem', overflowX: 'auto', maxWidth: '100%' }}>
-          {visibleTabs.map(tab => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
-            return (
-              <button 
-                key={tab.id}
-                onClick={() => handleTabChange(tab.id)}
-                className="saas-hover-lift"
-                style={{ 
-                  padding: '0.45rem 0.9rem', 
-                  backgroundColor: isActive ? '#ffffff' : 'transparent', 
-                  color: isActive ? '#4f46e5' : '#64748b', 
-                  border: isActive ? '1px solid rgba(99, 102, 241, 0.25)' : '1px solid transparent', 
-                  borderRadius: '7px', 
-                  cursor: 'pointer', 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: '0.5rem', 
-                  fontWeight: isActive ? 600 : 500,
-                  fontSize: '0.82rem',
-                  boxShadow: isActive ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
-                  transition: 'all 0.18s cubic-bezier(0.16, 1, 0.3, 1)'
-                }}
-              >
-                <Icon size={16} strokeWidth={isActive ? 2.2 : 1.8} style={{ color: isActive ? '#4f46e5' : '#64748b' }} /> {tab.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      <CRMTabs id="wa-official" label="WhatsApp Official pages" items={visibleTabs} value={activeTab} onChange={handleTabChange} />
+      <CRMTabPanel tabsId="wa-official" value={activeTab}>
 
       {activeTab === 'sent_logs' && visibleTabs.some(tab => tab.id === 'sent_logs') && (
         <ErrorBoundary>
@@ -1326,56 +1203,11 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
 
       {/* SETTINGS, CATALOG & ALLOCATIONS TABS */}
       {['settings', 'catalog', 'allocations'].includes(activeTab) && (
-        <div style={{ maxWidth: '1080px' }}>
-          <div style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
-            <div>
-              {activeTab === 'catalog' && (
-                <>
-                  <h2 style={{ fontSize: '1.35rem', fontWeight: 700, margin: '0 0 0.35rem 0', color: 'var(--text-primary)' }}>
-                    Master BSP Gateway Catalog (20+ Gateways)
-                  </h2>
-                  <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', margin: 0 }}>
-                    Browse official WhatsApp Business Solution Providers (BSPs) or add custom HTTP webhook gateways.
-                  </p>
-                </>
-              )}
-              {activeTab === 'allocations' && (
-                <>
-                  <h2 style={{ fontSize: '1.35rem', fontWeight: 700, margin: '0 0 0.35rem 0', color: 'var(--text-primary)' }}>
-                    Client & Branch WhatsApp Allocation Matrix
-                  </h2>
-                  <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', margin: 0 }}>
-                    Assign permitted BSP gateways and default sender endpoints to each Headquarters and Operational Branch Office.
-                  </p>
-                </>
-              )}
-              {activeTab === 'settings' && (
-                <>
-                  <h2 style={{ fontSize: '1.35rem', fontWeight: 700, margin: '0 0 0.35rem 0', color: 'var(--text-primary)' }}>
-                    WhatsApp API Credentials & Gateway Setup
-                  </h2>
-                  <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', margin: 0 }}>
-                    {isAdmin 
-                      ? 'Configure official WhatsApp Business API credentials per Headquarters and Branch Office.' 
-                      : 'Configure official WhatsApp Business API credentials for your assigned workspace.'}
-                  </p>
-                </>
-              )}
-            </div>
-            {isClientScoped && (
-              <span style={{ 
-                padding: '0.35rem 0.75rem', 
-                borderRadius: '20px', 
-                backgroundColor: 'rgba(37, 99, 235, 0.1)', 
-                color: 'var(--accent-color, #2563eb)', 
-                fontWeight: 600, 
-                fontSize: '0.8rem', 
-                border: '1px solid rgba(37, 99, 235, 0.25)' 
-              }}>
-                🏢 Workspace: {userCompany || 'New Swan Group'}
-              </span>
-            )}
-          </div>
+        <div style={{ minWidth: 0 }}>
+          <CRMPageHeader icon={activeTab === 'catalog' ? Layers : activeTab === 'allocations' ? Users : Settings}
+            title={activeTab === 'catalog' ? 'Master BSP Gateway Catalog (20+ Gateways)' : activeTab === 'allocations' ? 'Client & Branch WhatsApp Allocation Matrix' : 'WhatsApp API Credentials & Gateway Setup'}
+            description={activeTab === 'catalog' ? 'Browse official WhatsApp Business Solution Providers (BSPs) or add custom HTTP webhook gateways.' : activeTab === 'allocations' ? 'Assign permitted BSP gateways and default sender endpoints to each Headquarters and Operational Branch Office.' : isAdmin ? 'Configure official WhatsApp Business API credentials per Headquarters and Branch Office.' : 'Configure official WhatsApp Business API credentials for your assigned workspace.'}
+            actions={isClientScoped && <CRMStatusBadge tone="info"><Building2 size={12} /> Workspace: {userCompany || 'New Swan Group'}</CRMStatusBadge>} />
 
           {/* ======================================================== */}
           {/* TIER 1: MASTER BSP CATALOG (ALL 20+ GLOBAL GATEWAYS)    */}
@@ -1383,11 +1215,11 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
           {isMasterAdmin && activeTab === 'catalog' && (
             <div>
               {/* TOP ACTIONS & SEARCH */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1.25rem' }}>
+              <CRMToolbar style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1.25rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: '1 1 300px' }}>
                   <div style={{ position: 'relative', width: '100%' }}>
                     <Search size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
-                    <input
+                    <input className={crmStyles.field}
                       type="text"
                       value={catalogSearch}
                       onChange={(e) => setCatalogSearch(e.target.value)}
@@ -1409,7 +1241,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                     {enabledProviders.length} of {combinedCatalog.length} Active
                   </span>
                   {settingsPerms.edit && (
-                    <button
+                    <button className={crmStyles.button}
                       type="button"
                       onClick={handleOpenAddCustomBsp}
                       style={{
@@ -1430,10 +1262,10 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                     </button>
                   )}
                 </div>
-              </div>
+              </CRMToolbar>
 
               {/* GLOBAL BSP GRID */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
+              <div className={crmStyles.formGrid} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
                 {combinedCatalog
                   .filter(b => {
                     if (!catalogSearch.trim()) return true;
@@ -1448,7 +1280,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                   .map(b => {
                     const isEnabled = enabledProviders.includes(b.id);
                     return (
-                      <div
+                      <CRMCard className={`${crmStyles.interactiveCard}`} data-selected={isEnabled}
                         key={b.id}
                         style={{
                           padding: '1.15rem',
@@ -1519,7 +1351,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                               </a>
                             )}
                             {settingsPerms.edit && (
-                              <button
+                              <button className={crmStyles.button}
                                 type="button"
                                 onClick={(e) => handleOpenEditBsp(b, e)}
                                 style={{ background: 'none', border: 'none', color: b.hasOverride ? '#ea580c' : (b.isCustom ? '#7c3aed' : 'var(--accent-color, #2563eb)'), fontSize: '0.74rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.2rem' }}
@@ -1529,7 +1361,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                               </button>
                             )}
                             {b.hasOverride && settingsPerms.edit && (
-                              <button
+                              <button className={crmStyles.button}
                                 type="button"
                                 onClick={(e) => handleResetBspOverride(b.id, b.name, e)}
                                 style={{ background: 'none', border: 'none', color: '#64748b', fontSize: '0.74rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.2rem' }}
@@ -1539,7 +1371,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                               </button>
                             )}
                             {b.isCustom && settingsPerms.edit && (
-                              <button
+                              <button className={crmStyles.button}
                                 type="button"
                                 onClick={(e) => handleDeleteCustomBsp(b.id, b.name, e)}
                                 style={{ background: 'none', border: 'none', color: '#ef4444', fontSize: '0.74rem', cursor: 'pointer' }}
@@ -1551,7 +1383,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                           </div>
 
                           {settingsPerms.edit && (
-                            <button
+                            <button className={crmStyles.button}
                               type="button"
                               onClick={() => toggleProvider(b.id)}
                               style={{
@@ -1573,7 +1405,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                             </button>
                           )}
                         </div>
-                      </div>
+                      </CRMCard>
                     );
                   })}
               </div>
@@ -1585,7 +1417,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
           {/* ======================================================== */}
           {isMasterAdmin && (activeTab === 'allocations' || (activeTab === 'settings' && activeAdminSubTab === 'allocations')) && (
             <div style={{ marginBottom: '2rem' }}>
-              <div style={{ 
+              <CRMCard style={{
                 padding: '1.25rem', 
                 backgroundColor: 'var(--bg-primary)', 
                 borderRadius: '10px', 
@@ -1605,11 +1437,11 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                   {/* 2 LINKED CASCADING FILTERS: HEADQUARTERS -> USKE ANUSAR BRANCH */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
                     {/* FILTER 1: HEADQUARTERS */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                    <div className={crmStyles.scopeField} style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
                       <label style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                         <span>🏢</span> Headquarters:
                       </label>
-                      <select
+                      <select className={crmStyles.field}
                         value={selectedHqForAllocation}
                         onChange={(e) => handleHqChange(e.target.value)}
                         style={{
@@ -1633,11 +1465,11 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                     </div>
 
                     {/* FILTER 2: USKE ANUSAR BRANCH / OFFICE */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                    <div className={crmStyles.scopeField} style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
                       <label style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                         <span>🏭</span> Branch / Office:
                       </label>
-                      <select
+                      <select className={crmStyles.field}
                         value={selectedClientForAllocation}
                         onChange={(e) => setSelectedClientForAllocation(e.target.value)}
                         style={{
@@ -1669,7 +1501,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                 </div>
 
                 {/* SELECTED CLIENT CONFIGURATION BOX */}
-                <div style={{ 
+                <CRMCard style={{
                   padding: '1rem', 
                   borderRadius: '8px', 
                   backgroundColor: 'var(--bg-surface)', 
@@ -1681,7 +1513,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                       Assigned BSP Gateways for: <span style={{ color: 'var(--accent-color, #2563eb)' }}>{selectedClientForAllocation}</span>
                     </div>
                     <div style={{ display: 'flex', gap: '0.5rem' }}>
-                      <button
+                      <button className={crmStyles.button}
                         type="button"
                         onClick={() => {
                           const allIds = [...catalog, ...customBsps].map(b => b.id);
@@ -1699,7 +1531,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                       >
                         Select All 20+
                       </button>
-                      <button
+                      <button className={crmStyles.button}
                         type="button"
                         onClick={() => {
                           setClientAllocations(prev => ({
@@ -1720,7 +1552,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                   </div>
 
                   {/* CHECKBOX MATRIX OF ALL 20+ BSPS */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '0.65rem', marginBottom: '1.25rem' }}>
+                  <div className={crmStyles.formGrid} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '0.65rem', marginBottom: '1.25rem' }}>
                     {[...catalog, ...customBsps].map(b => {
                       const isAllowed = (currentClientAlloc.allowed_bsps || []).includes(b.id);
                       return (
@@ -1759,12 +1591,12 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                   </div>
 
                   {/* CLIENT DEFAULT GATEWAY & ACCOUNT LIMIT */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border-light)' }}>
+                  <div className={crmStyles.formGrid} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border-light)' }}>
                     <div>
                       <label style={{ fontSize: '0.82rem', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
                         Client Default BSP Gateway:
                       </label>
-                      <select
+                      <select className={crmStyles.field}
                         value={currentClientAlloc.default_bsp || (currentClientAlloc.allowed_bsps || [])[0] || 'aisensy'}
                         onChange={(e) => setClientDefaultBsp(e.target.value)}
                         style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-primary)', fontSize: '0.85rem', fontWeight: 600 }}
@@ -1781,7 +1613,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                       <label style={{ fontSize: '0.82rem', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
                         Allowed Active Account Limit:
                       </label>
-                      <input
+                      <input className={crmStyles.field}
                         type="number"
                         min="1"
                         max="20"
@@ -1791,11 +1623,11 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                       />
                     </div>
                   </div>
-                </div>
+                </CRMCard>
 
                 {/* SAVE ALLOCATION BUTTON & FEEDBACK */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                  <button
+                  <button className={crmStyles.button}
                     type="button"
                     onClick={handleSaveClientAllocations}
                     disabled={savingAllocations}
@@ -1822,10 +1654,10 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                     </span>
                   )}
                 </div>
-              </div>
+              </CRMCard>
 
               {/* OVERVIEW TABLE OF ALL ALLOCATIONS WITH HQ FILTER & RESIZABLE COLUMNS */}
-              <div style={{ padding: '1.25rem', backgroundColor: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
+              <CRMCard style={{ padding: '1.25rem', backgroundColor: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem', flexWrap: 'wrap', gap: '0.5rem' }}>
                   <div>
                     <h4 style={{ margin: 0, fontSize: '0.98rem', fontWeight: 700 }}>
@@ -1840,9 +1672,9 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                       <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
                         Filter by Headquarters:
                       </label>
-                      <select
+                      <select className={crmStyles.field}
                         value={overviewTableHqFilter}
-                        onChange={(e) => setOverviewTableHqFilter(e.target.value)}
+                        onChange={(e) => { setOverviewTableHqFilter(e.target.value); setAllocationPage(1); }}
                         style={{
                           padding: '0.35rem 0.75rem',
                           borderRadius: '6px',
@@ -1866,187 +1698,50 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                   </div>
                 </div>
 
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.83rem', tableLayout: 'fixed' }}>
+                <div className={crmStyles.tableScroll} style={{ overflowX: 'auto' }}>
+                  <table data-column-resize-managed="true" className={crmStyles.table} style={{ width: allocationResize.getTotalTableWidth(), borderCollapse: 'collapse', fontSize: '0.83rem', tableLayout: 'fixed' , minWidth: allocationResize.getTotalTableWidth()}}>
+                  <colgroup>{Object.entries(allocationResize.colWidths).map(([key, width]) => <col key={key} style={{ width }} />)}</colgroup>
                     <thead>
                       <tr style={{ borderBottom: '2px solid var(--border-light)', textAlign: 'left', color: 'var(--text-secondary)' }}>
                         {/* 1. Office Header */}
-                        <th style={{ position: 'relative', width: `${tableColWidths.office}px`, padding: '0.65rem 0.75rem', minWidth: '160px', userSelect: 'none' }}>
+                        <th scope="col" style={{ width: allocationResize.colWidths.office }}>
                           <span>Headquarters / Branch Office</span>
-                          <div
-                            onMouseDown={(e) => handleColumnResizeMouseDown('office', e)}
-                            onDoubleClick={() => setTableColWidths(prev => ({ ...prev, office: defaultColWidths.office }))}
-                            title="Drag to resize | Double-click to reset"
-                            style={{
-                              position: 'absolute',
-                              right: 0,
-                              top: 0,
-                              height: '100%',
-                              width: '10px',
-                              cursor: 'col-resize',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              zIndex: 10
-                            }}
-                          >
-                            <div style={{
-                              width: resizingCol === 'office' ? '3px' : '2px',
-                              height: '70%',
-                              backgroundColor: resizingCol === 'office' ? 'var(--accent-color, #2563eb)' : 'var(--border-light)',
-                              borderRadius: '2px'
-                            }} />
-                          </div>
-                        </th>
+
+                        <span style={{ position: 'absolute', right: 4, top: 0, width: 12, height: '100%' }}><ColumnResizer colKey="office" isResizing={allocationResize.resizingCol === 'office'} onResizeStart={allocationResize.handleResizeStart} onReset={allocationResize.resetColWidth} /></span></th>
 
                         {/* 2. Type Header */}
-                        <th style={{ position: 'relative', width: `${tableColWidths.type}px`, padding: '0.65rem 0.75rem', minWidth: '110px', userSelect: 'none' }}>
+                        <th scope="col" style={{ width: allocationResize.colWidths.type }}>
                           <span>Office Type</span>
-                          <div
-                            onMouseDown={(e) => handleColumnResizeMouseDown('type', e)}
-                            onDoubleClick={() => setTableColWidths(prev => ({ ...prev, type: defaultColWidths.type }))}
-                            title="Drag to resize | Double-click to reset"
-                            style={{
-                              position: 'absolute',
-                              right: 0,
-                              top: 0,
-                              height: '100%',
-                              width: '10px',
-                              cursor: 'col-resize',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              zIndex: 10
-                            }}
-                          >
-                            <div style={{
-                              width: resizingCol === 'type' ? '3px' : '2px',
-                              height: '70%',
-                              backgroundColor: resizingCol === 'type' ? 'var(--accent-color, #2563eb)' : 'var(--border-light)',
-                              borderRadius: '2px'
-                            }} />
-                          </div>
-                        </th>
+
+                        <span style={{ position: 'absolute', right: 4, top: 0, width: 12, height: '100%' }}><ColumnResizer colKey="type" isResizing={allocationResize.resizingCol === 'type'} onResizeStart={allocationResize.handleResizeStart} onReset={allocationResize.resetColWidth} /></span></th>
 
                         {/* 3. Assigned BSPs Header */}
-                        <th style={{ position: 'relative', width: `${tableColWidths.bsps}px`, padding: '0.65rem 0.75rem', minWidth: '180px', userSelect: 'none' }}>
+                        <th scope="col" style={{ width: allocationResize.colWidths.bsps }}>
                           <span>Assigned BSP Gateways</span>
-                          <div
-                            onMouseDown={(e) => handleColumnResizeMouseDown('bsps', e)}
-                            onDoubleClick={() => setTableColWidths(prev => ({ ...prev, bsps: defaultColWidths.bsps }))}
-                            title="Drag to resize | Double-click to reset"
-                            style={{
-                              position: 'absolute',
-                              right: 0,
-                              top: 0,
-                              height: '100%',
-                              width: '10px',
-                              cursor: 'col-resize',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              zIndex: 10
-                            }}
-                          >
-                            <div style={{
-                              width: resizingCol === 'bsps' ? '3px' : '2px',
-                              height: '70%',
-                              backgroundColor: resizingCol === 'bsps' ? 'var(--accent-color, #2563eb)' : 'var(--border-light)',
-                              borderRadius: '2px'
-                            }} />
-                          </div>
-                        </th>
+
+                        <span style={{ position: 'absolute', right: 4, top: 0, width: 12, height: '100%' }}><ColumnResizer colKey="bsps" isResizing={allocationResize.resizingCol === 'bsps'} onResizeStart={allocationResize.handleResizeStart} onReset={allocationResize.resetColWidth} /></span></th>
 
                         {/* 4. Default Gateway Header */}
-                        <th style={{ position: 'relative', width: `${tableColWidths.defaultBsp}px`, padding: '0.65rem 0.75rem', minWidth: '120px', userSelect: 'none' }}>
+                        <th scope="col" style={{ width: allocationResize.colWidths.defaultBsp }}>
                           <span>Default Gateway</span>
-                          <div
-                            onMouseDown={(e) => handleColumnResizeMouseDown('defaultBsp', e)}
-                            onDoubleClick={() => setTableColWidths(prev => ({ ...prev, defaultBsp: defaultColWidths.defaultBsp }))}
-                            title="Drag to resize | Double-click to reset"
-                            style={{
-                              position: 'absolute',
-                              right: 0,
-                              top: 0,
-                              height: '100%',
-                              width: '10px',
-                              cursor: 'col-resize',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              zIndex: 10
-                            }}
-                          >
-                            <div style={{
-                              width: resizingCol === 'defaultBsp' ? '3px' : '2px',
-                              height: '70%',
-                              backgroundColor: resizingCol === 'defaultBsp' ? 'var(--accent-color, #2563eb)' : 'var(--border-light)',
-                              borderRadius: '2px'
-                            }} />
-                          </div>
-                        </th>
+
+                        <span style={{ position: 'absolute', right: 4, top: 0, width: 12, height: '100%' }}><ColumnResizer colKey="defaultBsp" isResizing={allocationResize.resizingCol === 'defaultBsp'} onResizeStart={allocationResize.handleResizeStart} onReset={allocationResize.resetColWidth} /></span></th>
 
                         {/* 5. Quota Header */}
-                        <th style={{ position: 'relative', width: `${tableColWidths.quota}px`, padding: '0.65rem 0.75rem', minWidth: '80px', userSelect: 'none' }}>
+                        <th scope="col" style={{ width: allocationResize.colWidths.quota }}>
                           <span>Quota</span>
-                          <div
-                            onMouseDown={(e) => handleColumnResizeMouseDown('quota', e)}
-                            onDoubleClick={() => setTableColWidths(prev => ({ ...prev, quota: defaultColWidths.quota }))}
-                            title="Drag to resize | Double-click to reset"
-                            style={{
-                              position: 'absolute',
-                              right: 0,
-                              top: 0,
-                              height: '100%',
-                              width: '10px',
-                              cursor: 'col-resize',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              zIndex: 10
-                            }}
-                          >
-                            <div style={{
-                              width: resizingCol === 'quota' ? '3px' : '2px',
-                              height: '70%',
-                              backgroundColor: resizingCol === 'quota' ? 'var(--accent-color, #2563eb)' : 'var(--border-light)',
-                              borderRadius: '2px'
-                            }} />
-                          </div>
-                        </th>
+
+                        <span style={{ position: 'absolute', right: 4, top: 0, width: 12, height: '100%' }}><ColumnResizer colKey="quota" isResizing={allocationResize.resizingCol === 'quota'} onResizeStart={allocationResize.handleResizeStart} onReset={allocationResize.resetColWidth} /></span></th>
 
                         {/* 6. Action Header */}
-                        <th style={{ position: 'relative', width: `${tableColWidths.action}px`, padding: '0.65rem 0.75rem', minWidth: '70px', userSelect: 'none' }}>
+                        <th scope="col" style={{ width: allocationResize.colWidths.action }}>
                           <span>Action</span>
-                          <div
-                            onMouseDown={(e) => handleColumnResizeMouseDown('action', e)}
-                            onDoubleClick={() => setTableColWidths(prev => ({ ...prev, action: defaultColWidths.action }))}
-                            title="Drag to resize | Double-click to reset"
-                            style={{
-                              position: 'absolute',
-                              right: 0,
-                              top: 0,
-                              height: '100%',
-                              width: '10px',
-                              cursor: 'col-resize',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              zIndex: 10
-                            }}
-                          >
-                            <div style={{
-                              width: resizingCol === 'action' ? '3px' : '2px',
-                              height: '70%',
-                              backgroundColor: resizingCol === 'action' ? 'var(--accent-color, #2563eb)' : 'var(--border-light)',
-                              borderRadius: '2px'
-                            }} />
-                          </div>
-                        </th>
+
+                        <span style={{ position: 'absolute', right: 4, top: 0, width: 12, height: '100%' }}><ColumnResizer colKey="action" isResizing={allocationResize.resizingCol === 'action'} onResizeStart={allocationResize.handleResizeStart} onReset={allocationResize.resetColWidth} /></span></th>
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredTableClients.map(c => {
+                      {paginatedTableClients.map(c => {
                         const alloc = clientAllocations[c.code] || clientAllocations[c.name] || getInitialClientAlloc(c.code);
                         const isHQ = c.type === 'headquarters';
                         const isNstlp = (c.code || '').toUpperCase().includes('NSTLP');
@@ -2091,7 +1786,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                             </td>
                             <td style={{ padding: '0.75rem' }}>
                               <div style={{ display: 'flex', gap: '0.35rem' }}>
-                                <button
+                                <button className={crmStyles.button}
                                   type="button"
                                   onClick={() => {
                                     if (c.hqCode) setSelectedHqForAllocation(c.hqCode);
@@ -2102,7 +1797,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                                 >
                                   Edit
                                 </button>
-                                <button
+                                <button className={crmStyles.button}
                                   type="button"
                                   onClick={() => {
                                     if (c.hqCode) setSelectedHqForCredentials(c.hqCode);
@@ -2124,7 +1819,8 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                     </tbody>
                   </table>
                 </div>
-              </div>
+                <StandardTablePagination className={crmStyles.pagination} currentPage={currentAllocationPage} totalRecords={filteredTableClients.length} pageSize={allocationPageSize} onPageChange={setAllocationPage} onPageSizeChange={setAllocationPageSize} />
+              </CRMCard>
             </div>
           )}
 
@@ -2169,11 +1865,11 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
                       {/* FILTER 1: HEADQUARTERS */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                      <div className={crmStyles.scopeField} style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
                         <label style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                           <span>🏢</span> Headquarters:
                         </label>
-                        <select
+                        <select className={crmStyles.field}
                           value={selectedHqForCredentials}
                           onChange={(e) => handleCredentialsHqChange(e.target.value)}
                           style={{
@@ -2197,11 +1893,11 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                       </div>
 
                       {/* FILTER 2: BRANCH / OFFICE */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                      <div className={crmStyles.scopeField} style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
                         <label style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                           <span>🏭</span> Branch / Office:
                         </label>
-                        <select
+                        <select className={crmStyles.field}
                           value={selectedClientForCredentials}
                           onChange={(e) => handleCredentialsClientChange(e.target.value)}
                           style={{
@@ -2258,7 +1954,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                 </div>
 
                 {/* OPTION C: PRIMARY DEFAULT PROVIDER SELECTOR */}
-                <div style={{ 
+                <CRMToolbar style={{
                   marginBottom: '1.5rem', 
                   padding: '1rem 1.25rem', 
                   backgroundColor: 'var(--bg-primary)', 
@@ -2279,7 +1975,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                   </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <select
+                  <select className={crmStyles.field}
                     value={defaultProvider}
                     onChange={(e) => setDefaultProvider(e.target.value)}
                     disabled={!settingsPerms.edit}
@@ -2300,22 +1996,22 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                     ))}
                   </select>
                 </div>
-              </div>
+              </CRMToolbar>
 
               {/* CREDENTIALS CARDS */}
               {/* 1. Meta Direct */}
               {((isClientScoped && assignedBsps.length > 0) ? assignedBsps : enabledProviders).includes('meta') && (
-                <div style={{ marginBottom: '1.5rem', padding: '1.5rem', backgroundColor: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
+                <CRMCard style={{ marginBottom: '1.5rem', padding: '1.5rem', backgroundColor: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', color: '#2563eb' }}>
                     <ShieldCheck size={20} />
                     <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>Meta Cloud API Credentials (v21.0)</h3>
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+                  <div className={crmStyles.formGrid} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
                     <div>
                       <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
                         Phone Number ID <span style={{ color: '#ef4444' }}>*</span>
                       </label>
-                      <input 
+                      <input className={crmStyles.field}
                         type="text"
                         value={metaConfig.phone_number_id}
                         onChange={(e) => setMetaConfig({ ...metaConfig, phone_number_id: e.target.value })}
@@ -2328,7 +2024,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                       <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
                         WABA ID (WhatsApp Business Account ID)
                       </label>
-                      <input 
+                      <input className={crmStyles.field}
                         type="text"
                         value={metaConfig.waba_id}
                         onChange={(e) => setMetaConfig({ ...metaConfig, waba_id: e.target.value })}
@@ -2343,7 +2039,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                       <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>
                         System User Permanent Access Token <span style={{ color: '#ef4444' }}>*</span>
                       </label>
-                      <button 
+                      <button className={crmStyles.button}
                         type="button" 
                         onClick={() => setShowSecretToken(!showSecretToken)} 
                         style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.78rem' }}
@@ -2351,7 +2047,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                         {showSecretToken ? <EyeOff size={14} /> : <Eye size={14} />} {showSecretToken ? 'Hide Token' : 'Show Token'}
                       </button>
                     </div>
-                    <textarea 
+                    <textarea className={crmStyles.field}
                       value={metaConfig.access_token}
                       onChange={(e) => setMetaConfig({ ...metaConfig, access_token: e.target.value })}
                       disabled={!settingsPerms.edit}
@@ -2370,12 +2066,12 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                       }}
                     />
                   </div>
-                </div>
+                </CRMCard>
               )}
 
               {/* 2. AiSensy */}
               {((isClientScoped && assignedBsps.length > 0) ? assignedBsps : enabledProviders).includes('aisensy') && (
-                <div style={{ marginBottom: '1.5rem', padding: '1.5rem', backgroundColor: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
+                <CRMCard style={{ marginBottom: '1.5rem', padding: '1.5rem', backgroundColor: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', color: '#0284c7' }}>
                     <ShieldCheck size={20} />
                     <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>AiSensy WhatsApp API Credentials {isNewSwan ? '(NSMLR / Global)' : `(${activeClientName})`}</h3>
@@ -2384,7 +2080,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                     <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
                       AiSensy API Key <span style={{ color: '#ef4444' }}>*</span>
                     </label>
-                    <textarea 
+                    <textarea className={crmStyles.field}
                       value={aisensyConfig.api_key}
                       onChange={(e) => setAisensyConfig({ ...aisensyConfig, api_key: e.target.value })}
                       disabled={!settingsPerms.edit}
@@ -2396,7 +2092,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                     <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
                       AiSensy Registered Business / User Name
                     </label>
-                    <input 
+                    <input className={crmStyles.field}
                       type="text"
                       value={aisensyConfig.user_name}
                       onChange={(e) => setAisensyConfig({ ...aisensyConfig, user_name: e.target.value })}
@@ -2405,12 +2101,12 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                       style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontSize: '0.85rem' }}
                     />
                   </div>
-                </div>
+                </CRMCard>
               )}
 
               {/* 3. Interakt */}
               {((isClientScoped && assignedBsps.length > 0) ? assignedBsps : enabledProviders).includes('interakt') && (
-                <div style={{ marginBottom: '1.5rem', padding: '1.5rem', backgroundColor: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
+                <CRMCard style={{ marginBottom: '1.5rem', padding: '1.5rem', backgroundColor: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', color: '#7c3aed' }}>
                     <ShieldCheck size={20} />
                     <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>Interakt (Jio Haptik) API Credentials</h3>
@@ -2419,7 +2115,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                     <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
                       Interakt Secret API Key <span style={{ color: '#ef4444' }}>*</span>
                     </label>
-                    <input 
+                    <input className={crmStyles.field}
                       type="password"
                       value={interaktConfig.api_key}
                       onChange={(e) => setInteraktConfig({ ...interaktConfig, api_key: e.target.value })}
@@ -2428,12 +2124,12 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                       style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontFamily: 'monospace', fontSize: '0.85rem' }}
                     />
                   </div>
-                </div>
+                </CRMCard>
               )}
 
               {/* 4. Wati */}
               {((isClientScoped && assignedBsps.length > 0) ? assignedBsps : enabledProviders).includes('wati') && (
-                <div style={{ marginBottom: '1.5rem', padding: '1.5rem', backgroundColor: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
+                <CRMCard style={{ marginBottom: '1.5rem', padding: '1.5rem', backgroundColor: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', color: '#059669' }}>
                     <ShieldCheck size={20} />
                     <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>Wati (Clare.ai) API Credentials</h3>
@@ -2442,7 +2138,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                     <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
                       Wati API Endpoint URL <span style={{ color: '#ef4444' }}>*</span>
                     </label>
-                    <input 
+                    <input className={crmStyles.field}
                       type="text"
                       value={watiConfig.endpoint_url}
                       onChange={(e) => setWatiConfig({ ...watiConfig, endpoint_url: e.target.value })}
@@ -2455,7 +2151,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                     <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
                       Wati Access Token <span style={{ color: '#ef4444' }}>*</span>
                     </label>
-                    <textarea 
+                    <textarea className={crmStyles.field}
                       value={watiConfig.access_token}
                       onChange={(e) => setWatiConfig({ ...watiConfig, access_token: e.target.value })}
                       disabled={!settingsPerms.edit}
@@ -2463,12 +2159,12 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                       style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontFamily: 'monospace', fontSize: '0.82rem', minHeight: '65px' }}
                     />
                   </div>
-                </div>
+                </CRMCard>
               )}
 
               {/* 5. Nextel */}
               {((isClientScoped && assignedBsps.length > 0) ? assignedBsps : enabledProviders).includes('nextel') && (
-                <div style={{ marginBottom: '1.5rem', padding: '1.5rem', backgroundColor: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
+                <CRMCard style={{ marginBottom: '1.5rem', padding: '1.5rem', backgroundColor: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', color: '#d97706' }}>
                     <ShieldCheck size={20} />
                     <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>Nextel.io API Credentials {isNewSwan ? '(NSTLP)' : `(${activeClientName})`}</h3>
@@ -2477,7 +2173,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                     <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
                       Nextel Session Endpoint URL <span style={{ color: '#ef4444' }}>*</span>
                     </label>
-                    <textarea 
+                    <textarea className={crmStyles.field}
                       value={nextelConfig.endpoint_url}
                       onChange={(e) => setNextelConfig({ ...nextelConfig, endpoint_url: e.target.value })}
                       disabled={!settingsPerms.edit}
@@ -2485,7 +2181,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                       style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontFamily: 'monospace', fontSize: '0.82rem', minHeight: '75px' }}
                     />
                   </div>
-                </div>
+                </CRMCard>
               )}
 
               {/* 6. ALL OTHER GLOBAL CATALOG BSPS (Gupshup, Twilio, DoubleTick, Gallabox, Infobip, Kaleyra, CM.com, MessageBird, Sinch, Zoko, Yellow.ai, Karix, ValueFirst, BhashSMS) */}
@@ -2495,7 +2191,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                   const bspInfo = catalog.find(b => b.id === pId) || { id: pId, name: pId.toUpperCase() };
                   const creds = bspCredentials[pId] || {};
                   return (
-                    <div key={pId} style={{ marginBottom: '1.5rem', padding: '1.5rem', backgroundColor: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
+                    <CRMCard key={pId} style={{ marginBottom: '1.5rem', padding: '1.5rem', backgroundColor: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#0284c7' }}>
                           <ShieldCheck size={20} />
@@ -2511,12 +2207,12 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                         )}
                       </div>
 
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+                      <div className={crmStyles.formGrid} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
                         <div>
                           <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
                             API Key / Auth Token <span style={{ color: '#ef4444' }}>*</span>
                           </label>
-                          <input 
+                          <input className={crmStyles.field}
                             type="password"
                             value={creds.api_key || creds.access_token || ''}
                             onChange={(e) => handleUpdateBspCredential(pId, 'api_key', e.target.value)}
@@ -2530,7 +2226,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                           <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
                             API Endpoint URL
                           </label>
-                          <input 
+                          <input className={crmStyles.field}
                             type="text"
                             value={creds.endpoint_url || bspInfo.default_endpoint || ''}
                             onChange={(e) => handleUpdateBspCredential(pId, 'endpoint_url', e.target.value)}
@@ -2543,12 +2239,12 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
 
                       {/* Provider Specific Helper Fields */}
                       {pId === 'twilio' && (
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem' }}>
+                        <div className={crmStyles.formGrid} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem' }}>
                           <div>
                             <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
                               Twilio Account SID
                             </label>
-                            <input 
+                            <input className={crmStyles.field}
                               type="text"
                               value={creds.account_sid || ''}
                               onChange={(e) => handleUpdateBspCredential(pId, 'account_sid', e.target.value)}
@@ -2561,7 +2257,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                             <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
                               Twilio From WhatsApp Number
                             </label>
-                            <input 
+                            <input className={crmStyles.field}
                               type="text"
                               value={creds.from_number || ''}
                               onChange={(e) => handleUpdateBspCredential(pId, 'from_number', e.target.value)}
@@ -2574,12 +2270,12 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                       )}
 
                       {pId === 'gupshup' && (
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem' }}>
+                        <div className={crmStyles.formGrid} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem' }}>
                           <div>
                             <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
                               Gupshup App Name
                             </label>
-                            <input 
+                            <input className={crmStyles.field}
                               type="text"
                               value={creds.app_name || ''}
                               onChange={(e) => handleUpdateBspCredential(pId, 'app_name', e.target.value)}
@@ -2592,7 +2288,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                             <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
                               Source / Sender Number
                             </label>
-                            <input 
+                            <input className={crmStyles.field}
                               type="text"
                               value={creds.source_number || ''}
                               onChange={(e) => handleUpdateBspCredential(pId, 'source_number', e.target.value)}
@@ -2603,7 +2299,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                           </div>
                         </div>
                       )}
-                    </div>
+                    </CRMCard>
                   );
                 })}
 
@@ -2617,7 +2313,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                       <span style={{ fontSize: '0.72rem', fontWeight: 600, padding: '0.15rem 0.45rem', borderRadius: '4px', backgroundColor: 'rgba(139, 92, 246, 0.15)', color: '#6d28d9' }}>Custom BSP</span>
                     </div>
                     {settingsPerms.edit && (
-                      <button
+                      <button className={crmStyles.button}
                         type="button"
                         onClick={(e) => handleOpenEditCustomBsp(cb, e)}
                         style={{
@@ -2638,7 +2334,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                       </button>
                     )}
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+                  <div className={crmStyles.formGrid} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
                     <div>
                       <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem', color: 'var(--text-secondary)' }}>
                         API Endpoint URL:
@@ -2702,7 +2398,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
               )}
 
               {/* LIVE TEST CONNECTION CARD */}
-              <div style={{ 
+              <CRMCard style={{
                 marginBottom: '1.5rem', 
                 padding: '1.25rem', 
                 backgroundColor: 'var(--bg-primary)', 
@@ -2717,7 +2413,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                 </p>
 
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'center', marginBottom: testFeedback ? '0.75rem' : 0 }}>
-                  <select
+                  <select className={crmStyles.field}
                     value={testProvider}
                     onChange={(e) => setTestProvider(e.target.value)}
                     style={{
@@ -2737,7 +2433,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                     ))}
                   </select>
 
-                  <input 
+                  <input className={crmStyles.field}
                     type="text"
                     value={testPhone}
                     onChange={(e) => setTestPhone(e.target.value)}
@@ -2751,7 +2447,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                       fontSize: '0.85rem' 
                     }}
                   />
-                  <button
+                  <button className={crmStyles.button}
                     type="button"
                     onClick={handleTestConnection}
                     disabled={testingConnection || !settingsPerms.edit}
@@ -2791,12 +2487,12 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                     <span>{testFeedback.message || testFeedback.error}</span>
                   </div>
                 )}
-              </div>
+              </CRMCard>
 
               {/* ACTION BUTTON */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', paddingTop: '0.5rem' }}>
                 {settingsPerms.edit ? (
-                  <button 
+                  <button className={crmStyles.button}
                     onClick={() => handleSaveSettings()}
                     disabled={loading}
                     style={{ 
@@ -2829,41 +2525,16 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
       {/* TEMPLATES TAB */}
       {activeTab === 'templates' && (
         <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
-            <div>
-              <h2 style={{ fontSize: '1.25rem', margin: '0 0 0.25rem 0' }}>Message Templates Library</h2>
-              <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                Create and manage official WhatsApp templates mapped to your Client Main Office / Branches and selected BSP provider.
-              </p>
-            </div>
-            {templatesPerms.add && (
-              <button 
-                onClick={handleOpenCreateTemplate}
-                style={{ padding: '0.55rem 1.15rem', background: '#10b981', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600, fontSize: '0.88rem' }}
-              >
-                <Plus size={18} /> Create New Template
-              </button>
-            )}
-          </div>
+          <CRMPageHeader icon={MessageSquare} title="Message Templates Library" description="Create and manage official WhatsApp templates mapped to your Client Main Office / Branches and selected BSP provider." actions={templatesPerms.add && (
+            <button type="button" onClick={handleOpenCreateTemplate} className={`${crmStyles.button} ${crmStyles.primaryButton}`}><Plus size={16} /> Create New Template</button>
+          )} />
 
           {/* SEARCH, FILTERS, PER PAGE & VIEW MODE TOOLBAR */}
-          <div style={{ 
-            display: 'flex', 
-            flexWrap: 'wrap', 
-            gap: '0.75rem', 
-            alignItems: 'center', 
-            justifyContent: 'space-between',
-            marginBottom: '1.25rem', 
-            padding: '0.85rem 1rem', 
-            backgroundColor: 'var(--bg-primary)', 
-            borderRadius: '10px', 
-            border: '1px solid var(--border-light)',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.03)'
-          }}>
+          <CRMToolbar >
             {/* LEFT: SEARCH INPUT */}
             <div style={{ position: 'relative', flex: '1 1 260px', maxWidth: '380px' }}>
               <Search size={16} style={{ position: 'absolute', left: '11px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
-              <input
+              <input className={crmStyles.field}
                 type="text"
                 value={templateSearch}
                 onChange={(e) => {
@@ -2882,7 +2553,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                 }}
               />
               {templateSearch && (
-                <button
+                <button className={crmStyles.button}
                   type="button"
                   onClick={() => { setTemplateSearch(''); setTemplatePage(1); }}
                   style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '2px' }}
@@ -2895,7 +2566,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
             {/* MIDDLE: FILTERS */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexWrap: 'wrap' }}>
               {/* Filter by BSP */}
-              <select
+              <select aria-label="Filter templates by gateway" className={crmStyles.field}
                 value={filterBsp}
                 onChange={(e) => {
                   setFilterBsp(e.target.value);
@@ -2910,7 +2581,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
               </select>
 
               {/* Filter by Branch */}
-              <select
+              <select aria-label="Filter templates by branch" className={crmStyles.field}
                 value={filterBranch}
                 onChange={(e) => {
                   setFilterBranch(e.target.value);
@@ -2932,7 +2603,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
               {/* PER PAGE SELECTOR */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                 <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Show:</span>
-                <select
+                <select aria-label="Templates per page" className={crmStyles.field}
                   value={templatePerPage}
                   onChange={(e) => {
                     const newLimit = parseInt(e.target.value, 10);
@@ -2942,58 +2613,14 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                   }}
                   style={{ padding: '0.5rem 0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)', cursor: 'pointer' }}
                 >
-                  <option value={6}>6 / page</option>
-                  <option value={10}>10 / page</option>
-                  <option value={12}>12 / page</option>
-                  <option value={24}>24 / page</option>
-                  <option value={50}>50 / page</option>
-                  <option value={100}>100 / page</option>
+                  {templatePageSizes.map(size => <option key={size} value={size}>{size === 100000 ? 'All' : `${size} / page`}</option>)}
                 </select>
               </div>
 
               {/* VIEW MODE TOGGLE */}
-              <div style={{ display: 'flex', border: '1px solid var(--border-light)', borderRadius: '6px', overflow: 'hidden' }}>
-                <button
-                  type="button"
-                  onClick={() => setTemplateViewMode('grid')}
-                  style={{
-                    padding: '0.45rem 0.65rem',
-                    border: 'none',
-                    backgroundColor: templateViewMode === 'grid' ? 'var(--accent-color, #2563eb)' : 'var(--bg-surface)',
-                    color: templateViewMode === 'grid' ? '#fff' : 'var(--text-secondary)',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.3rem',
-                    fontSize: '0.78rem',
-                    fontWeight: 600
-                  }}
-                  title="Grid Cards View"
-                >
-                  <LayoutGrid size={15} /> Grid
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setTemplateViewMode('table')}
-                  style={{
-                    padding: '0.45rem 0.65rem',
-                    border: 'none',
-                    backgroundColor: templateViewMode === 'table' ? 'var(--accent-color, #2563eb)' : 'var(--bg-surface)',
-                    color: templateViewMode === 'table' ? '#fff' : 'var(--text-secondary)',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.3rem',
-                    fontSize: '0.78rem',
-                    fontWeight: 600
-                  }}
-                  title="Table Selection List View"
-                >
-                  <List size={15} /> List
-                </button>
-              </div>
+              <CRMViewToggle label="Template layout" value={templateViewMode} onChange={setTemplateViewMode} items={[{ id: 'grid', label: 'Grid', icon: LayoutGrid }, { id: 'table', label: 'Table', icon: List, title: 'Table Selection List View' }]} />
             </div>
-          </div>
+          </CRMToolbar>
 
           {/* SELECTION ACTIONS BAR */}
           {selectedTemplateIds.length > 0 && (
@@ -3015,7 +2642,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                   {selectedTemplateIds.length} template(s) selected
                 </span>
 
-                <button
+                <button className={crmStyles.button}
                   type="button"
                   onClick={handleSelectAllVisibleTemplates}
                   style={{
@@ -3033,7 +2660,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                 </button>
 
                 {filteredTemplates.length > paginatedTemplates.length && (
-                  <button
+                  <button className={crmStyles.button}
                     type="button"
                     onClick={handleSelectAllFilteredTemplates}
                     style={{
@@ -3051,7 +2678,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                   </button>
                 )}
 
-                <button
+                <button className={crmStyles.button}
                   type="button"
                   onClick={() => setSelectedTemplateIds([])}
                   style={{
@@ -3070,7 +2697,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
               </div>
 
               {templatesPerms.delete && (
-                <button
+                <button className={crmStyles.button}
                   type="button"
                   onClick={handleBulkDeleteTemplates}
                   disabled={deletingBulkTemplates}
@@ -3096,18 +2723,18 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
           )}
 
           {showTemplateForm && (
-            <div style={{ backgroundColor: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '10px', padding: '1.75rem', marginBottom: '2rem', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
+            <CRMCard style={{ backgroundColor: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '10px', padding: '1.75rem', marginBottom: '2rem', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
               <h3 style={{ marginTop: 0, marginBottom: '1.25rem', fontSize: '1.15rem', fontWeight: 700 }}>
                 {currentTemplate.id ? 'Edit Template' : 'Create New WhatsApp Template'}
               </h3>
               
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.25rem', marginBottom: '1.25rem' }}>
+              <div className={crmStyles.formGrid} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.25rem', marginBottom: '1.25rem' }}>
                 {/* 1. Selected BSP Name */}
                 <div className="form-group">
                   <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem', marginBottom: '0.45rem', color: 'var(--text-primary)' }}>
                     <Zap size={15} color="#2563eb" /> Selected BSP Provider
                   </label>
-                  <select 
+                  <select className={crmStyles.field}
                     value={selectedTemplateBsp} 
                     onChange={e => setSelectedTemplateBsp(e.target.value)} 
                     style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontWeight: 600, fontSize: '0.85rem' }}
@@ -3140,7 +2767,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                   <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem', marginBottom: '0.45rem', color: 'var(--text-primary)' }}>
                     <Building2 size={15} color="#10b981" /> Client Office / Branch List
                   </label>
-                  <select 
+                  <select className={crmStyles.field}
                     value={selectedTemplateBranch} 
                     onChange={e => setSelectedTemplateBranch(e.target.value)} 
                     style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontWeight: 600, fontSize: '0.85rem' }}
@@ -3165,7 +2792,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                   <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.45rem', color: 'var(--text-primary)' }}>
                     Template Name (CRM Display) <span style={{ color: '#ef4444' }}>*</span>
                   </label>
-                  <input 
+                  <input className={crmStyles.field}
                     type="text" 
                     value={currentTemplate.template_name} 
                     onChange={e => setCurrentTemplate({...currentTemplate, template_name: e.target.value})} 
@@ -3179,7 +2806,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                   <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.45rem', color: 'var(--text-primary)' }}>
                     API Campaign ID / Name <span style={{ color: '#ef4444' }}>*</span>
                   </label>
-                  <input 
+                  <input className={crmStyles.field}
                     type="text" 
                     value={currentTemplate.campaign_name} 
                     onChange={e => setCurrentTemplate({...currentTemplate, campaign_name: e.target.value})} 
@@ -3193,7 +2820,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                 <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.45rem', color: 'var(--text-primary)' }}>
                   Message Content Body <span style={{ color: '#ef4444' }}>*</span>
                 </label>
-                <textarea 
+                <textarea className={crmStyles.field}
                   value={currentTemplate.message_body} 
                   onChange={e => setCurrentTemplate({...currentTemplate, message_body: e.target.value})} 
                   placeholder="Paste template message body here. Use {{1}} for customer name..." 
@@ -3221,26 +2848,26 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
               </div>
 
               <div style={{ display: 'flex', gap: '1rem' }}>
-                <button 
+                <button className={crmStyles.button}
                   onClick={handleSaveTemplate} 
                   disabled={loading} 
                   style={{ padding: '0.65rem 1.6rem', background: 'var(--accent-color, #2563eb)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.88rem' }}
                 >
                   {loading ? 'Saving...' : 'Save Template'}
                 </button>
-                <button 
+                <button className={crmStyles.button}
                   onClick={() => setShowTemplateForm(false)} 
                   style={{ padding: '0.65rem 1.4rem', background: 'transparent', color: 'var(--text-secondary)', border: '1px solid var(--border-light)', borderRadius: '6px', cursor: 'pointer', fontWeight: 500, fontSize: '0.88rem' }}
                 >
                   Cancel
                 </button>
               </div>
-            </div>
+            </CRMCard>
           )}
 
           {/* TEMPLATES DISPLAY (GRID VIEW OR TABLE LIST VIEW) */}
           {paginatedTemplates.length === 0 ? (
-            <div style={{ padding: '3.5rem 1rem', textAlign: 'center', color: 'var(--text-secondary)', background: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
+            <div className={crmStyles.empty} style={{ padding: '3.5rem 1rem', textAlign: 'center', color: 'var(--text-secondary)', background: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
               <div style={{ fontSize: '1.75rem', marginBottom: '0.5rem' }}>📄</div>
               <div style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.25rem' }}>
                 {templateSearch.trim() || filterBsp !== 'All' || filterBranch !== 'All'
@@ -3253,7 +2880,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                   : 'Click "Create New Template" above to start broadcasting.'}
               </p>
               {(templateSearch.trim() || filterBsp !== 'All' || filterBranch !== 'All') && (
-                <button
+                <button className={crmStyles.button}
                   type="button"
                   onClick={() => { setTemplateSearch(''); setFilterBsp('All'); setFilterBranch('All'); setTemplatePage(1); }}
                   style={{ marginTop: '1rem', padding: '0.45rem 0.95rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer' }}
@@ -3266,12 +2893,12 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
             /* ======================================================== */
             /* VIEW MODE A: GRID CARDS VIEW                             */
             /* ======================================================== */
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1.25rem' }}>
+            <div className={crmStyles.formGrid} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1.25rem' }}>
               {paginatedTemplates.map(tpl => {
                 const meta = parseTemplateMeta(tpl.company);
                 const isSelected = selectedTemplateIds.includes(tpl.id);
                 return (
-                  <div 
+                  <CRMCard className={`${crmStyles.interactiveCard} ${crmStyles.flushCard}`} data-selected={isSelected}
                     key={tpl.id} 
                     style={{ 
                       border: isSelected ? '1.5px solid var(--accent-color, #2563eb)' : '1px solid var(--border-light)', 
@@ -3363,7 +2990,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                       
                       <div style={{ display: 'flex', gap: '0.5rem', marginTop: 'auto' }}>
                         {templatesPerms.edit && (
-                          <button 
+                          <button className={crmStyles.button}
                             onClick={() => handleOpenEditTemplate(tpl)} 
                             style={{ flex: 1, padding: '0.45rem', background: 'var(--th-bg)', color: 'var(--text-primary)', border: '1px solid var(--border-light)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600 }}
                           >
@@ -3371,7 +2998,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                           </button>
                         )}
                         {templatesPerms.delete && (
-                          <button 
+                          <button className={crmStyles.button}
                             onClick={() => handleDeleteTemplate(tpl.id)} 
                             style={{ padding: '0.45rem 0.75rem', background: '#fee2e2', color: '#ef4444', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                             title="Delete Template"
@@ -3381,7 +3008,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                         )}
                       </div>
                     </div>
-                  </div>
+                  </CRMCard>
                 );
               })}
             </div>
@@ -3389,12 +3016,13 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
             /* ======================================================== */
             /* VIEW MODE B: INTERACTIVE TABLE / SELECTION LIST VIEW      */
             /* ======================================================== */
-            <div style={{ overflowX: 'auto', border: '1px solid var(--border-light)', borderRadius: '10px', backgroundColor: 'var(--bg-surface)', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
+            <div ref={templateContainerRef} className={`${crmStyles.tableScroll} ${crmStyles.fittedTableScroll}`} style={{ overflowX: 'auto', border: '1px solid var(--border-light)', borderRadius: '10px', backgroundColor: 'var(--bg-surface)', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+              <table data-column-resize-managed="true" className={crmStyles.table} style={{ width: templateResize.getTotalTableWidth(), borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' , minWidth: templateResize.getTotalTableWidth()}}>
+                  <colgroup>{Object.entries(templateResize.colWidths).map(([key, width]) => <col key={key} style={{ width }} />)}</colgroup>
                 <thead>
                   <tr style={{ backgroundColor: 'var(--th-bg)', borderBottom: '1.5px solid var(--border-light)' }}>
                     {/* SELECT ALL COLUMN */}
-                    <th style={{ width: templateColWidths.select, minWidth: '40px', padding: '0.75rem', textAlign: 'center', position: 'relative', userSelect: 'none' }}>
+                    <th scope="col" className={crmStyles.selectionColumn} style={{ width: templateResize.colWidths.select,  textAlign: 'center'  }}>
                       <input
                         type="checkbox"
                         checked={paginatedTemplates.length > 0 && paginatedTemplates.every(t => selectedTemplateIds.includes(t.id))}
@@ -3402,79 +3030,44 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                         style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                         title="Select/Deselect visible templates"
                       />
-                      <div
-                        onMouseDown={(e) => handleTemplateColumnResizeMouseDown('select', e)}
-                        onDoubleClick={() => setTemplateColWidths(prev => ({ ...prev, select: defaultTemplateColWidths.select }))}
-                        style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: '6px', cursor: 'col-resize', backgroundColor: resizingTemplateCol === 'select' ? 'var(--accent-color, #2563eb)' : 'transparent', zIndex: 2, touchAction: 'none' }}
-                        title="Drag to resize, double-click to reset"
-                      />
-                    </th>
+
+                    <span style={{ position: 'absolute', right: 4, top: 0, width: 12, height: '100%' }}><ColumnResizer colKey="select" isResizing={templateResize.resizingCol === 'select'} onResizeStart={templateResize.handleResizeStart} onReset={templateResize.resetColWidth} /></span></th>
 
                     {/* TEMPLATE NAME */}
-                    <th style={{ width: templateColWidths.name, position: 'relative', padding: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', userSelect: 'none' }}>
+                    <th scope="col" style={{ width: templateResize.colWidths.name }}>
                       <span>Template Name</span>
-                      <div
-                        onMouseDown={(e) => handleTemplateColumnResizeMouseDown('name', e)}
-                        onDoubleClick={() => setTemplateColWidths(prev => ({ ...prev, name: defaultTemplateColWidths.name }))}
-                        style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: '6px', cursor: 'col-resize', backgroundColor: resizingTemplateCol === 'name' ? 'var(--accent-color, #2563eb)' : 'transparent', zIndex: 2, touchAction: 'none' }}
-                        title="Drag to resize, double-click to reset"
-                      />
-                    </th>
+
+                    <span style={{ position: 'absolute', right: 4, top: 0, width: 12, height: '100%' }}><ColumnResizer colKey="name" isResizing={templateResize.resizingCol === 'name'} onResizeStart={templateResize.handleResizeStart} onReset={templateResize.resetColWidth} /></span></th>
 
                     {/* BSP GATEWAY */}
-                    <th style={{ width: templateColWidths.provider, position: 'relative', padding: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', userSelect: 'none' }}>
+                    <th scope="col" style={{ width: templateResize.colWidths.provider }}>
                       <span>BSP Gateway</span>
-                      <div
-                        onMouseDown={(e) => handleTemplateColumnResizeMouseDown('provider', e)}
-                        onDoubleClick={() => setTemplateColWidths(prev => ({ ...prev, provider: defaultTemplateColWidths.provider }))}
-                        style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: '6px', cursor: 'col-resize', backgroundColor: resizingTemplateCol === 'provider' ? 'var(--accent-color, #2563eb)' : 'transparent', zIndex: 2, touchAction: 'none' }}
-                        title="Drag to resize, double-click to reset"
-                      />
-                    </th>
+
+                    <span style={{ position: 'absolute', right: 4, top: 0, width: 12, height: '100%' }}><ColumnResizer colKey="provider" isResizing={templateResize.resizingCol === 'provider'} onResizeStart={templateResize.handleResizeStart} onReset={templateResize.resetColWidth} /></span></th>
 
                     {/* OFFICE / BRANCH */}
-                    <th style={{ width: templateColWidths.branch, position: 'relative', padding: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', userSelect: 'none' }}>
+                    <th scope="col" style={{ width: templateResize.colWidths.branch }}>
                       <span>Branch / Office</span>
-                      <div
-                        onMouseDown={(e) => handleTemplateColumnResizeMouseDown('branch', e)}
-                        onDoubleClick={() => setTemplateColWidths(prev => ({ ...prev, branch: defaultTemplateColWidths.branch }))}
-                        style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: '6px', cursor: 'col-resize', backgroundColor: resizingTemplateCol === 'branch' ? 'var(--accent-color, #2563eb)' : 'transparent', zIndex: 2, touchAction: 'none' }}
-                        title="Drag to resize, double-click to reset"
-                      />
-                    </th>
+
+                    <span style={{ position: 'absolute', right: 4, top: 0, width: 12, height: '100%' }}><ColumnResizer colKey="branch" isResizing={templateResize.resizingCol === 'branch'} onResizeStart={templateResize.handleResizeStart} onReset={templateResize.resetColWidth} /></span></th>
 
                     {/* CAMPAIGN / API ID */}
-                    <th style={{ width: templateColWidths.campaign, position: 'relative', padding: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', userSelect: 'none' }}>
+                    <th scope="col" style={{ width: templateResize.colWidths.campaign }}>
                       <span>API Campaign ID</span>
-                      <div
-                        onMouseDown={(e) => handleTemplateColumnResizeMouseDown('campaign', e)}
-                        onDoubleClick={() => setTemplateColWidths(prev => ({ ...prev, campaign: defaultTemplateColWidths.campaign }))}
-                        style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: '6px', cursor: 'col-resize', backgroundColor: resizingTemplateCol === 'campaign' ? 'var(--accent-color, #2563eb)' : 'transparent', zIndex: 2, touchAction: 'none' }}
-                        title="Drag to resize, double-click to reset"
-                      />
-                    </th>
+
+                    <span style={{ position: 'absolute', right: 4, top: 0, width: 12, height: '100%' }}><ColumnResizer colKey="campaign" isResizing={templateResize.resizingCol === 'campaign'} onResizeStart={templateResize.handleResizeStart} onReset={templateResize.resetColWidth} /></span></th>
 
                     {/* MESSAGE PREVIEW */}
-                    <th style={{ width: templateColWidths.preview, position: 'relative', padding: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', userSelect: 'none' }}>
+                    <th scope="col" style={{ width: templateResize.colWidths.preview }}>
                       <span>Message Preview</span>
-                      <div
-                        onMouseDown={(e) => handleTemplateColumnResizeMouseDown('preview', e)}
-                        onDoubleClick={() => setTemplateColWidths(prev => ({ ...prev, preview: defaultTemplateColWidths.preview }))}
-                        style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: '6px', cursor: 'col-resize', backgroundColor: resizingTemplateCol === 'preview' ? 'var(--accent-color, #2563eb)' : 'transparent', zIndex: 2, touchAction: 'none' }}
-                        title="Drag to resize, double-click to reset"
-                      />
-                    </th>
+
+                    <span style={{ position: 'absolute', right: 4, top: 0, width: 12, height: '100%' }}><ColumnResizer colKey="preview" isResizing={templateResize.resizingCol === 'preview'} onResizeStart={templateResize.handleResizeStart} onReset={templateResize.resetColWidth} /></span></th>
 
                     {/* ACTIONS */}
-                    <th style={{ width: templateColWidths.actions, position: 'relative', padding: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', userSelect: 'none' }}>
+                    <th scope="col" className={crmStyles.actionsColumn} style={{ width: templateResize.colWidths.actions }}>
                       <span>Actions</span>
-                      <div
-                        onMouseDown={(e) => handleTemplateColumnResizeMouseDown('actions', e)}
-                        onDoubleClick={() => setTemplateColWidths(prev => ({ ...prev, actions: defaultTemplateColWidths.actions }))}
-                        style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: '6px', cursor: 'col-resize', backgroundColor: resizingTemplateCol === 'actions' ? 'var(--accent-color, #2563eb)' : 'transparent', zIndex: 2, touchAction: 'none' }}
-                        title="Drag to resize, double-click to reset"
-                      />
-                    </th>
+
+                    <span style={{ position: 'absolute', right: 4, top: 0, width: 12, height: '100%' }}><ColumnResizer colKey="actions" isResizing={templateResize.resizingCol === 'actions'} onResizeStart={templateResize.handleResizeStart} onReset={templateResize.resetColWidth} /></span></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -3482,7 +3075,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                     const meta = parseTemplateMeta(tpl.company);
                     const isSelected = selectedTemplateIds.includes(tpl.id);
                     return (
-                      <tr 
+                      <tr data-selected={isSelected}
                         key={tpl.id} 
                         style={{ 
                           borderBottom: '1px solid var(--border-light)',
@@ -3491,7 +3084,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                         }}
                       >
                         {/* SELECT CHECKBOX */}
-                        <td style={{ padding: '0.75rem', textAlign: 'center' }}>
+                        <td className={crmStyles.selectionColumn} style={{ padding: '0.75rem', textAlign: 'center' }}>
                           <input
                             type="checkbox"
                             checked={isSelected}
@@ -3561,10 +3154,10 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                         </td>
 
                         {/* ACTIONS */}
-                        <td style={{ padding: '0.75rem' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                        <td className={crmStyles.actionsColumn} style={{ padding: '0.75rem' }}>
+                          <div className={crmStyles.rowActions}>
                             {templatesPerms.edit && (
-                              <button
+                              <button className={crmStyles.button}
                                 type="button"
                                 onClick={() => handleOpenEditTemplate(tpl)}
                                 style={{ padding: '0.28rem 0.55rem', borderRadius: '4px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer' }}
@@ -3573,7 +3166,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                               </button>
                             )}
                             {templatesPerms.delete && (
-                              <button
+                              <button className={crmStyles.button}
                                 type="button"
                                 onClick={() => handleDeleteTemplate(tpl.id)}
                                 style={{ padding: '0.28rem 0.45rem', borderRadius: '4px', border: 'none', backgroundColor: '#fee2e2', color: '#ef4444', fontSize: '0.75rem', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
@@ -3594,7 +3187,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
 
           {/* PAGINATION NAVIGATION BAR */}
           {filteredTemplates.length > 0 && (
-            <StandardTablePagination
+            <StandardTablePagination className={crmStyles.pagination}
               currentPage={templatePage}
               totalRecords={filteredTemplates.length}
               pageSize={templatePerPage === 'All' ? 100000 : Number(templatePerPage)}
@@ -3612,20 +3205,9 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
       {/* AUTOMATIONS TAB */}
       {activeTab === 'automations' && (
         <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
-            <div>
-              <h2 style={{ fontSize: '1.25rem', margin: '0 0 0.25rem 0' }}>Stage-Based Automation Rules</h2>
-              <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Map your templates to specific CRM stages to send automated drip campaigns.</p>
-            </div>
-            {automationsPerms.add && (
-              <button 
-                onClick={() => { setCurrentAuto({ stage_name: '', template_id: '', frequency: 'Once', company: 'All', is_active: true }); setShowAutoForm(true); }}
-                style={{ padding: '0.5rem 1rem', background: '#10b981', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 500 }}
-              >
-                <Plus size={18} /> Add New Rule
-              </button>
-            )}
-          </div>
+          <CRMPageHeader icon={Repeat} title="Stage-Based Automation Rules" description="Map your templates to specific CRM stages to send automated drip campaigns." actions={automationsPerms.add && (
+            <button type="button" onClick={() => { setCurrentAuto({ stage_name: '', template_id: '', frequency: 'Once', company: 'All', is_active: true }); setShowAutoForm(true); }} className={`${crmStyles.button} ${crmStyles.primaryButton}`}><Plus size={16} /> Add New Rule</button>
+          )} />
 
           {showAutoForm && (
             <div 
@@ -3671,7 +3253,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                       </p>
                     </div>
                   </div>
-                  <button 
+                  <button className={crmStyles.button}
                     onClick={() => setShowAutoForm(false)}
                     style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '0.35rem', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                     title="Close"
@@ -3682,10 +3264,10 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
 
                 {/* Form Body */}
                 <div style={{ padding: '1.5rem' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem', marginBottom: '1.5rem' }}>
+                  <div className={crmStyles.formGrid} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem', marginBottom: '1.5rem' }}>
                     <div className="form-group">
                       <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.4rem' }}>Company</label>
-                      <select 
+                      <select className={crmStyles.field}
                         value={currentAuto.company || 'All'} 
                         onChange={e => setCurrentAuto({...currentAuto, company: e.target.value})}
                         style={{ width: '100%', padding: '0.6rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}
@@ -3698,7 +3280,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
 
                     <div className="form-group">
                       <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.4rem' }}>Status</label>
-                      <select 
+                      <select className={crmStyles.field}
                         value={currentAuto.is_active ? 'active' : 'inactive'} 
                         onChange={e => setCurrentAuto({...currentAuto, is_active: e.target.value === 'active'})}
                         style={{ width: '100%', padding: '0.6rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', color: currentAuto.is_active ? '#16a34a' : '#ef4444', fontWeight: 600 }}
@@ -3710,7 +3292,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
 
                     <div className="form-group" style={{ gridColumn: 'span 2' }}>
                       <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.4rem' }}>If Lead is in Stage:</label>
-                      <select value={currentAuto.stage_name} onChange={e => setCurrentAuto({...currentAuto, stage_name: e.target.value})} style={{ width: '100%', padding: '0.6rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}>
+                      <select className={crmStyles.field} value={currentAuto.stage_name} onChange={e => setCurrentAuto({...currentAuto, stage_name: e.target.value})} style={{ width: '100%', padding: '0.6rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}>
                         <option value="">Select Stage</option>
                         {stages.map((stageObj, i) => {
                           const stageNum = i + 1;
@@ -3731,7 +3313,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
 
                     <div className="form-group" style={{ gridColumn: 'span 2' }}>
                       <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.4rem' }}>Send this Template:</label>
-                      <select 
+                      <select className={crmStyles.field}
                         value={currentAuto.template_id} 
                         onChange={e => setCurrentAuto({...currentAuto, template_id: e.target.value})}
                         style={{ width: '100%', padding: '0.6rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}
@@ -3745,7 +3327,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
 
                     <div className="form-group" style={{ gridColumn: 'span 2' }}>
                       <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.4rem' }}>Frequency:</label>
-                      <select 
+                      <select className={crmStyles.field}
                         value={currentAuto.frequency} 
                         onChange={e => setCurrentAuto({...currentAuto, frequency: e.target.value})}
                         style={{ width: '100%', padding: '0.6rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}
@@ -3760,14 +3342,14 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
 
                   {/* Footer Actions */}
                   <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', borderTop: '1px solid var(--border-light)', paddingTop: '1.25rem' }}>
-                    <button 
+                    <button className={crmStyles.button}
                       type="button"
                       onClick={() => setShowAutoForm(false)} 
                       style={{ padding: '0.6rem 1.25rem', background: 'transparent', color: 'var(--text-secondary)', border: '1px solid var(--border-light)', borderRadius: '6px', cursor: 'pointer', fontWeight: 500 }}
                     >
                       Cancel
                     </button>
-                    <button 
+                    <button className={crmStyles.button}
                       type="button"
                       onClick={handleSaveAutomation} 
                       disabled={savingAuto} 
@@ -3813,7 +3395,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
-                <button
+                <button className={crmStyles.button}
                   type="button"
                   onClick={() => handleBulkToggleAutoStatus(false)}
                   disabled={updatingBulkAuto}
@@ -3835,7 +3417,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                   <PauseCircle size={16} /> {updatingBulkAuto ? 'Updating...' : `Pause Selected (${selectedAutoIds.length})`}
                 </button>
 
-                <button
+                <button className={crmStyles.button}
                   type="button"
                   onClick={() => handleBulkToggleAutoStatus(true)}
                   disabled={updatingBulkAuto}
@@ -3857,7 +3439,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                   <PlayCircle size={16} /> {updatingBulkAuto ? 'Updating...' : `Activate Selected (${selectedAutoIds.length})`}
                 </button>
 
-                <button
+                <button className={crmStyles.button}
                   type="button"
                   onClick={() => setSelectedAutoIds([])}
                   style={{
@@ -3877,23 +3459,12 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
           )}
 
           {/* Filter & Search Toolbar */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '0.75rem',
-            flexWrap: 'wrap',
-            padding: '0.75rem 1rem',
-            backgroundColor: 'var(--bg-surface)',
-            border: '1px solid var(--border-light)',
-            borderRadius: '8px',
-            marginBottom: '1rem'
-          }}>
+          <CRMToolbar >
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', flex: 1 }}>
               {/* Search input */}
               <div style={{ position: 'relative', minWidth: '240px', flex: '1 1 240px', maxWidth: '380px' }}>
                 <Search size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
-                <input
+                <input className={crmStyles.field}
                   type="text"
                   value={autoSearch}
                   onChange={(e) => {
@@ -3912,7 +3483,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                   }}
                 />
                 {autoSearch && (
-                  <button
+                  <button className={crmStyles.button}
                     type="button"
                     onClick={() => { setAutoSearch(''); setAutoPage(1); }}
                     style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '2px' }}
@@ -3923,7 +3494,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
               </div>
 
               {/* Company Filter */}
-              <select
+              <select aria-label="Filter automation company" className={crmStyles.field}
                 value={autoCompanyFilter}
                 onChange={(e) => {
                   setAutoCompanyFilter(e.target.value);
@@ -3946,7 +3517,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
               </select>
 
               {/* Status Filter */}
-              <select
+              <select aria-label="Filter automation status" className={crmStyles.field}
                 value={autoStatusFilter}
                 onChange={(e) => {
                   setAutoStatusFilter(e.target.value);
@@ -3968,7 +3539,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
               </select>
 
               {/* Frequency Filter */}
-              <select
+              <select aria-label="Filter automation frequency" className={crmStyles.field}
                 value={autoFrequencyFilter}
                 onChange={(e) => {
                   setAutoFrequencyFilter(e.target.value);
@@ -3993,7 +3564,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
 
               {/* Clear Filters Button */}
               {(autoSearch || autoCompanyFilter !== 'ALL' || autoStatusFilter !== 'ALL' || autoFrequencyFilter !== 'ALL') && (
-                <button
+                <button className={crmStyles.button}
                   type="button"
                   onClick={() => {
                     setAutoSearch('');
@@ -4023,18 +3594,19 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
 
             {/* Right: TableViewToggle & Results Count */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-              <TableViewToggle view={autoTableView} onChange={setAutoTableView} />
+              <CRMViewToggle label="Automation layout" value={autoTableView} onChange={setAutoTableView} items={[{ id: 'table', label: 'Table', icon: List }, { id: 'tiles', label: 'Tiles', icon: LayoutGrid }]} />
               <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
                 <span>{filteredAutomations.length} of {automations.length} rules</span>
               </div>
             </div>
-          </div>
+          </CRMToolbar>
 
-          <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 310px)', minHeight: '380px', borderRadius: '8px 8px 0 0', border: '1px solid var(--border-light)', borderBottom: 'none' }}>
-            <MobileTableView id="WhatsappOfficial-1" view={autoTableView} hideToggle={true}><table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', backgroundColor: 'var(--bg-surface)' }}>
+          <div ref={automationContainerRef} className={autoTableView === 'tiles' ? crmStyles.tiles : `${crmStyles.tableScroll} ${crmStyles.fittedTableScroll}`} style={{ overflow: 'auto', maxHeight: 'calc(100vh - 310px)', minHeight: '380px', borderRadius: '8px 8px 0 0', border: '1px solid var(--border-light)', borderBottom: 'none' }}>
+            <MobileTableView id="WhatsappOfficial-1" view={autoTableView} hideToggle={true}><table data-column-resize-managed="true" className={crmStyles.table} style={{ width: automationResize.getTotalTableWidth(), borderCollapse: 'collapse', textAlign: 'left', backgroundColor: 'var(--bg-surface)' , minWidth: automationResize.getTotalTableWidth()}}>
+                  <colgroup>{Object.entries(automationResize.colWidths).map(([key, width]) => <col key={key} style={{ width }} />)}</colgroup>
               <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--bg-surface)' }}>
                 <tr style={{ borderBottom: '1px solid var(--border-light)' }}>
-                  <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)', padding: '1rem', width: '40px', textAlign: 'center' }}>
+                  <th scope="col" className={crmStyles.selectionColumn} style={{ width: automationResize.colWidths.select,  textAlign: 'center'  }}>
                     <input 
                       type="checkbox"
                       checked={paginatedAutomations.length > 0 && paginatedAutomations.every(a => selectedAutoIds.includes(a.id))}
@@ -4042,13 +3614,13 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                       style={{ cursor: 'pointer', width: '16px', height: '16px' }}
                       title="Select / Deselect Visible Rules"
                     />
-                  </th>
-                  <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)', padding: '1rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Company</th>
-                  <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)', padding: '1rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Target Stage</th>
-                  <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)', padding: '1rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Template Assigned</th>
-                  <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)', padding: '1rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Frequency</th>
-                  <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)', padding: '1rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Status</th>
-                  <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)', padding: '1rem', fontSize: '0.85rem', color: 'var(--text-secondary)', textAlign: 'right' }}>Actions</th>
+                  <span style={{ position: 'absolute', right: 4, top: 0, width: 12, height: '100%' }}><ColumnResizer colKey="select" isResizing={automationResize.resizingCol === 'select'} onResizeStart={automationResize.handleResizeStart} onReset={automationResize.resetColWidth} /></span></th>
+                  <th scope="col" style={{ width: automationResize.colWidths.company }}>Company<span style={{ position: 'absolute', right: 4, top: 0, width: 12, height: '100%' }}><ColumnResizer colKey="company" isResizing={automationResize.resizingCol === 'company'} onResizeStart={automationResize.handleResizeStart} onReset={automationResize.resetColWidth} /></span></th>
+                  <th scope="col" style={{ width: automationResize.colWidths.stage }}>Target Stage<span style={{ position: 'absolute', right: 4, top: 0, width: 12, height: '100%' }}><ColumnResizer colKey="stage" isResizing={automationResize.resizingCol === 'stage'} onResizeStart={automationResize.handleResizeStart} onReset={automationResize.resetColWidth} /></span></th>
+                  <th scope="col" style={{ width: automationResize.colWidths.template }}>Template Assigned<span style={{ position: 'absolute', right: 4, top: 0, width: 12, height: '100%' }}><ColumnResizer colKey="template" isResizing={automationResize.resizingCol === 'template'} onResizeStart={automationResize.handleResizeStart} onReset={automationResize.resetColWidth} /></span></th>
+                  <th scope="col" style={{ width: automationResize.colWidths.frequency }}>Frequency<span style={{ position: 'absolute', right: 4, top: 0, width: 12, height: '100%' }}><ColumnResizer colKey="frequency" isResizing={automationResize.resizingCol === 'frequency'} onResizeStart={automationResize.handleResizeStart} onReset={automationResize.resetColWidth} /></span></th>
+                  <th scope="col" style={{ width: automationResize.colWidths.status }}>Status<span style={{ position: 'absolute', right: 4, top: 0, width: 12, height: '100%' }}><ColumnResizer colKey="status" isResizing={automationResize.resizingCol === 'status'} onResizeStart={automationResize.handleResizeStart} onReset={automationResize.resetColWidth} /></span></th>
+                  <th scope="col" className={crmStyles.actionsColumn} style={{ width: automationResize.colWidths.actions }}>Actions<span style={{ position: 'absolute', right: 4, top: 0, width: 12, height: '100%' }}><ColumnResizer colKey="actions" isResizing={automationResize.resizingCol === 'actions'} onResizeStart={automationResize.handleResizeStart} onReset={automationResize.resetColWidth} /></span></th>
                 </tr>
               </thead>
               <tbody>
@@ -4061,7 +3633,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                           {automations.length === 0 ? 'No automation rules defined yet.' : 'No automation rules match your filters or search.'}
                         </div>
                         {(autoSearch || autoCompanyFilter !== 'ALL' || autoStatusFilter !== 'ALL' || autoFrequencyFilter !== 'ALL') && (
-                          <button
+                          <button className={crmStyles.button}
                             type="button"
                             onClick={() => {
                               setAutoSearch('');
@@ -4091,14 +3663,14 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                   paginatedAutomations.map(auto => {
                     const isSelected = selectedAutoIds.includes(auto.id);
                     return (
-                      <tr 
+                      <tr data-selected={isSelected}
                         key={auto.id} 
                         style={{ 
                           borderBottom: '1px solid var(--border-light)',
                           backgroundColor: isSelected ? 'var(--accent-subtle, rgba(37,99,235,0.06))' : 'transparent'
                         }}
                       >
-                        <td style={{ padding: '1rem', textAlign: 'center' }}>
+                        <td className={crmStyles.selectionColumn} style={{ padding: '1rem', textAlign: 'center' }}>
                           <input 
                             type="checkbox"
                             checked={isSelected}
@@ -4107,55 +3679,31 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                           />
                         </td>
                         <td style={{ padding: '1rem' }}>
-                          <span style={{ fontSize: '0.75rem', fontWeight: 600, padding: '0.15rem 0.4rem', backgroundColor: 'var(--th-hover-bg)', borderRadius: '4px' }}>{auto.company || 'All'}</span>
+                          <CRMStatusBadge>{auto.company || 'All'}</CRMStatusBadge>
                         </td>
                         <td style={{ padding: '1rem', fontWeight: 500 }}>{auto.stage_name}</td>
                         <td style={{ padding: '1rem' }}>
                           {auto.whatsapp_templates?.template_name || <span style={{color: '#ef4444'}}>Missing Template</span>}
                         </td>
                         <td style={{ padding: '1rem' }}>
-                          <span style={{ padding: '0.2rem 0.5rem', backgroundColor: '#e0f2fe', color: '#0284c7', borderRadius: '4px', fontSize: '0.8rem' }}>
-                            {auto.frequency}
-                          </span>
+                          <CRMStatusBadge tone="info">{auto.frequency}</CRMStatusBadge>
                         </td>
                         <td style={{ padding: '1rem' }}>
                           {automationsPerms.edit ? (
-                            <button
-                              type="button"
-                              onClick={() => handleQuickToggleAutoStatus(auto)}
-                              style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '0.35rem',
-                                padding: '0.25rem 0.6rem',
-                                borderRadius: '12px',
-                                border: '1px solid',
-                                borderColor: auto.is_active ? '#bbf7d0' : '#e2e8f0',
-                                backgroundColor: auto.is_active ? '#f0fdf4' : '#f8fafc',
-                                color: auto.is_active ? '#16a34a' : '#64748b',
-                                fontSize: '0.8rem',
-                                fontWeight: 600,
-                                cursor: 'pointer',
-                                transition: 'all 0.15s ease'
-                              }}
-                              title={auto.is_active ? 'Click to Pause this rule' : 'Click to Activate this rule'}
-                            >
-                              <div style={{ width: '7px', height: '7px', borderRadius: '50%', backgroundColor: auto.is_active ? '#16a34a' : '#94a3b8' }}></div>
-                              {auto.is_active ? 'Active' : 'Paused'}
+                            <button type="button" className={crmStyles.badgeButton} onClick={() => handleQuickToggleAutoStatus(auto)} title={auto.is_active ? 'Click to Pause this rule' : 'Click to Activate this rule'}>
+                              <CRMStatusBadge tone={auto.is_active ? 'success' : 'neutral'}>{auto.is_active ? 'Active' : 'Paused'}</CRMStatusBadge>
                             </button>
-                          ) : (
-                            auto.is_active ? 
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', color: '#10b981', fontSize: '0.85rem' }}><div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#10b981' }}></div> Active</span> : 
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', color: '#94a3b8', fontSize: '0.85rem' }}><div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#94a3b8' }}></div> Paused</span>
-                          )}
+                          ) : <CRMStatusBadge tone={auto.is_active ? 'success' : 'neutral'}>{auto.is_active ? 'Active' : 'Paused'}</CRMStatusBadge>}
                         </td>
-                        <td style={{ padding: '1rem', textAlign: 'right' }}>
+                        <td className={crmStyles.actionsColumn} style={{ padding: '1rem' }}>
+                          <div className={crmStyles.rowActions}>
                           {automationsPerms.edit && (
-                            <button onClick={() => { const { whatsapp_templates, ...cleanAuto } = auto; setCurrentAuto(cleanAuto); setShowAutoForm(true); }} style={{ padding: '0.4rem', background: 'transparent', color: '#475569', border: 'none', cursor: 'pointer' }}>Edit</button>
+                            <button className={crmStyles.button} onClick={() => { const { whatsapp_templates, ...cleanAuto } = auto; setCurrentAuto(cleanAuto); setShowAutoForm(true); }} style={{ padding: '0.4rem', background: 'transparent', color: '#475569', border: 'none', cursor: 'pointer' }}>Edit</button>
                           )}
                           {automationsPerms.delete && (
-                            <button onClick={() => handleDeleteAutomation(auto.id)} style={{ padding: '0.4rem', background: 'transparent', color: '#ef4444', border: 'none', cursor: 'pointer' }}>Delete</button>
+                            <button className={crmStyles.button} onClick={() => handleDeleteAutomation(auto.id)} style={{ padding: '0.4rem', background: 'transparent', color: '#ef4444', border: 'none', cursor: 'pointer' }}>Delete</button>
                           )}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -4166,7 +3714,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
           </div>
 
           {/* Unified Standard Bottom Page Navigation */}
-          <StandardTablePagination
+          <StandardTablePagination className={crmStyles.pagination}
             currentPage={autoPage}
             totalRecords={filteredAutomations.length}
             pageSize={autoPageSize}
@@ -4229,7 +3777,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                   </span>
                 </div>
               </div>
-              <button 
+              <button className={crmStyles.button}
                 type="button"
                 onClick={() => setShowCustomBspModal(false)} 
                 style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '0.25rem', borderRadius: '4px' }}
@@ -4285,7 +3833,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                       payload: '{\n  "to": "{{PHONE}}",\n  "template_name": "{{TEMPLATE_NAME}}",\n  "customer_name": "{{NAME}}",\n  "message": "{{MESSAGE}}",\n  "media_url": "{{IMAGE_URL}}"\n}'
                     }
                   ].map(preset => (
-                    <button
+                    <button className={crmStyles.button}
                       key={preset.label}
                       type="button"
                       onClick={() => {
@@ -4317,12 +3865,12 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
               </div>
 
               {/* Form Grid */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+              <div className={crmStyles.formGrid} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
                 <div>
                   <label style={{ fontSize: '0.82rem', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
                     BSP Display Name <span style={{ color: '#ef4444' }}>*</span>
                   </label>
-                  <input
+                  <input className={crmStyles.field}
                     type="text"
                     value={customBspForm.name}
                     onChange={e => setCustomBspForm({ ...customBspForm, name: e.target.value })}
@@ -4335,7 +3883,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                   <label style={{ fontSize: '0.82rem', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
                     HTTP Method
                   </label>
-                  <select
+                  <select className={crmStyles.field}
                     value={customBspForm.method}
                     onChange={e => setCustomBspForm({ ...customBspForm, method: e.target.value })}
                     style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-primary)', fontSize: '0.85rem', fontWeight: 600 }}
@@ -4351,7 +3899,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                 <label style={{ fontSize: '0.82rem', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
                   API Endpoint URL <span style={{ color: '#ef4444' }}>*</span>
                 </label>
-                <input
+                <input className={crmStyles.field}
                   type="text"
                   value={customBspForm.endpoint_url}
                   onChange={e => setCustomBspForm({ ...customBspForm, endpoint_url: e.target.value })}
@@ -4361,12 +3909,12 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
               </div>
 
               {/* Auth Settings */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+              <div className={crmStyles.formGrid} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
                 <div>
                   <label style={{ fontSize: '0.82rem', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
                     Authentication Type
                   </label>
-                  <select
+                  <select className={crmStyles.field}
                     value={customBspForm.auth_type}
                     onChange={e => setCustomBspForm({ ...customBspForm, auth_type: e.target.value })}
                     style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-primary)', fontSize: '0.85rem' }}
@@ -4383,7 +3931,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                     <label style={{ fontSize: '0.82rem', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
                       Auth Header Name <span style={{ color: '#ef4444' }}>*</span>
                     </label>
-                    <input
+                    <input className={crmStyles.field}
                       type="text"
                       value={customBspForm.auth_header_name}
                       onChange={e => setCustomBspForm({ ...customBspForm, auth_header_name: e.target.value })}
@@ -4400,7 +3948,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                     <label style={{ fontSize: '0.82rem', fontWeight: 600 }}>
                       API Token / Secret Key <span style={{ color: '#ef4444' }}>*</span>
                     </label>
-                    <button 
+                    <button className={crmStyles.button}
                       type="button" 
                       onClick={() => setShowCustomToken(!showCustomToken)} 
                       style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.75rem' }}
@@ -4408,7 +3956,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                       {showCustomToken ? <EyeOff size={13} /> : <Eye size={13} />} {showCustomToken ? 'Hide' : 'Show'}
                     </button>
                   </div>
-                  <input
+                  <input className={crmStyles.field}
                     type={showCustomToken ? 'text' : 'password'}
                     value={customBspForm.auth_token}
                     onChange={e => setCustomBspForm({ ...customBspForm, auth_token: e.target.value })}
@@ -4443,7 +3991,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                     ))}
                   </div>
                 </div>
-                <textarea
+                <textarea className={crmStyles.field}
                   value={customBspForm.payload_format}
                   onChange={e => setCustomBspForm({ ...customBspForm, payload_format: e.target.value })}
                   rows={7}
@@ -4457,14 +4005,14 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
 
               {/* Action Buttons */}
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', borderTop: '1px solid var(--border-light)', paddingTop: '1rem' }}>
-                <button
+                <button className={crmStyles.button}
                   type="button"
                   onClick={() => setShowCustomBspModal(false)}
                   style={{ padding: '0.6rem 1.25rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', fontWeight: 500, fontSize: '0.85rem' }}
                 >
                   Cancel
                 </button>
-                <button
+                <button className={crmStyles.button}
                   type="button"
                   onClick={handleSaveCustomBsp}
                   disabled={loading}
@@ -4492,6 +4040,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
         </div>
       )}
 
-    </div>
+    </CRMTabPanel>
+    </CRMPage>
   );
 }
