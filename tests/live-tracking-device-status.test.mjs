@@ -66,3 +66,14 @@ test('archive and ended shift return the unchanged legacy object; inputs stay im
   derive(base, {}, health, now);
   assert.equal(JSON.stringify({ base, health }), before);
 });
+
+test('health badge freshness does not inherit a GPS fix or desktop session', () => {
+  const stale = { ...health, lastCheckedAt: ago(240) };
+  const status = derive({ ...base, lastPingMs: Date.parse(ago(5)) }, {}, stale, now);
+  assert.equal(status.gpsStatusState.code, 'ACTIVE');
+  assert.equal(status.deviceHealthFresh, false);
+  assert.equal(status.deviceHealthReportedAt, Date.parse(stale.lastCheckedAt));
+  assert.match(status.deviceHealthDetail, /Last device report:.*IST\. Current permissions unconfirmed/);
+  assert.equal(derive(base, {}, health, now).deviceHealthFresh, true);
+  assert.equal(derive(base, {}, { ...health, platform: 'Windows App' }, now).deviceHealthFresh, false);
+});

@@ -91,6 +91,28 @@ const freshData = {
 };
 const freshStatus = map.deviceStatusForTest(freshData, date, now);
 
+test('stale Ready badge becomes Status outdated with last report time, while fresh denied permission stays Online', () => {
+  const health = { platform: 'Android App', status: 'HEALTHY', shortLabel: 'Ready', versionCode: 5,
+    issueSummary: 'All permissions, battery, and APK version healthy',
+    lastCheckedAt: new Date(now - 240000).toISOString(), hasForegroundLocation: true, hasBackgroundLocation: true, gpsProviderEnabled: true };
+  const status = deviceStatusHelpers.deriveTrackingDeviceStatus(freshStatus, freshData, health, now);
+  const output = html(ui.TrackingActivityPanel, { data: freshData, status, health });
+  assert.match(output, /Status outdated · APK v5/);
+  assert.match(output, /Last device report:.*IST/);
+  assert.match(output, /Current permissions unconfirmed/);
+  assert.doesNotMatch(output, /Ready|All permissions, battery, and APK version healthy/);
+  const denied = { ...health, status: 'NEEDS_PERMISSION_FIX', shortLabel: 'Fix Permissions', issueSummary: 'Location permission denied',
+    hasForegroundLocation: false, hasBackgroundLocation: false, lastCheckedAt: new Date(now - 1000).toISOString() };
+  const updated = deviceStatusHelpers.deriveTrackingDeviceStatus(freshStatus, freshData, denied, now);
+  const fresh = html(ui.TrackingActivityPanel, { data: freshData, status: updated, health: denied });
+  assert.match(fresh, />Online</);
+  assert.match(fresh, /Location permission denied/);
+  assert.match(fresh, /Fix Permissions · APK v5/);
+  assert.doesNotMatch(fresh, /Status outdated/);
+  const archive = html(ui.TrackingActivityPanel, { data: freshData, status: { ...freshStatus, isToday: false }, health });
+  assert.match(archive, /Ready · APK v5/);
+});
+
 test('permission denied and device switch OFF have separate GPS labels while fresh mobile heartbeat stays Online', () => {
   const health = { platform: 'Android App', lastCheckedAt: new Date(now - 10000).toISOString(), hasForegroundLocation: true, hasBackgroundLocation: true, gpsProviderEnabled: true };
   for (const [patch, expected] of [[{ hasForegroundLocation: false }, 'Location permission denied'], [{ gpsProviderEnabled: false }, 'Device GPS OFF'], [{ hasBackgroundLocation: false }, 'Background location restricted']]) {

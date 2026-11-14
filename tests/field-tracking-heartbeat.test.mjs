@@ -15,7 +15,7 @@ const compile = async filename => (await swc.transform(fs.readFileSync(filename,
 })).code;
 function load(code, dependencies, globals = {}) {
   const loaded = { exports: {} };
-  vm.runInNewContext(code, { module: loaded, exports: loaded.exports, console, Date, Buffer, ...globals,
+  vm.runInNewContext(code, { module: loaded, exports: loaded.exports, console, Date, Buffer, setTimeout, clearTimeout, ...globals,
     require: name => { if (!Object.hasOwn(dependencies, name)) throw new Error(`Unexpected dependency: ${name}`); return dependencies[name]; } });
   return loaded.exports;
 }
@@ -195,4 +195,72 @@ test('mobile health timer survives native GPS activation, reports permission cha
   assert.equal(intervals.size, 0);
   assert.equal(permissionListeners.size, 0);
   assert.equal(listeners.size, 0);
+});
+
+function startMobileTracker({ hasGeolocation = true, blockedStart = false, blockedStatus = false, desktopLabel = false } = {}) {
+  const effects = [], reports = [], timers = new Map(), intervals = new Map(), events = new Map();
+  let nextTimer = 0, serviceAttempts = 0;
+  const device = snapshot({ hasForegroundLocation: false, hasBackgroundLocation: false, locationMode: 'denied', running: false });
+  const never = () => new Promise(() => {});
+  const tracker = load(trackerCode, {
+    react: { useRef: initial => ({ current: initial }), useState: initial => [initial, () => {}], useEffect: fn => effects.push(fn) },
+    'lucide-react': {},
+    '@/app/actions/liveTracking': { issueFieldTelemetryToken: async () => ({ success: true, token }),
+      recordLocationPingBatch: async () => assert.fail('Health reporting must not fabricate locations'),
+      reportEmployeeDeviceHealth: async payload => { reports.push(payload); return { success: true }; } },
+    '@/utils/platformDetection': { detectClientPlatform: () => ({ platform: desktopLabel ? 'Windows App' : 'Android App' }), PLATFORM_LABELS: { ANDROID_APP: 'Android App', WINDOWS_APP: 'Windows App' } },
+    '@/utils/offlineLocationVault': { flushOfflineVault: async () => {}, queueOfflineGpsPing: async () => assert.fail('No fixes were supplied') },
+  }, { navigator: { onLine: true, userAgent: desktopLabel ? 'SPC Workspace' : 'Android',
+      ...(hasGeolocation ? { geolocation: { watchPosition: () => 1, clearWatch() {}, getCurrentPosition() {} } } : {}) },
+    document: { visibilityState: 'visible', addEventListener: (key, fn) => events.set(`doc:${key}`, fn), removeEventListener: key => events.delete(`doc:${key}`) },
+    window: { location: { origin: 'https://example.test' }, addEventListener: (key, fn) => events.set(key, fn), removeEventListener: key => events.delete(key),
+      Capacitor: { isNativePlatform: () => true, Plugins: { FieldTracker: {
+        startTracking: () => { serviceAttempts++; return blockedStart ? never() : Promise.resolve({ permissionDenied: true }); },
+        getStatus: () => blockedStatus ? never() : Promise.resolve(device),
+      } } } },
+    setTimeout: fn => { timers.set(++nextTimer, fn); return nextTimer; }, clearTimeout: key => timers.delete(key),
+    setInterval: fn => { intervals.set(++nextTimer, fn); return nextTimer; }, clearInterval: key => intervals.delete(key),
+  });
+  tracker.default({ userId: uid, company });
+  const cleanup = effects[0]();
+  return { reports, timers, intervals, events, cleanup, attempts: () => serviceAttempts };
+}
+const settle = () => new Promise(resolve => setImmediate(resolve));
+
+test('denied permission is reported at startup even while native permission/service startup never resolves', async () => {
+  const h = startMobileTracker({ blockedStart: true });
+  await settle();
+  assert.equal(h.attempts(), 1);
+  assert.equal(h.reports.length, 1);
+  assert.equal(h.reports[0].locationMode, 'denied');
+  assert.equal(h.reports[0].gpsProviderEnabled, true);
+  assert.equal(h.reports[0].running, false);
+  h.events.get('focus')(); await settle();
+  assert.equal(h.reports.length, 2, 'Resume audit must not await the still-pending location request');
+  assert.equal(h.attempts(), 1, 'Resume cannot open duplicate permission prompts');
+  h.cleanup();
+  assert.equal(h.intervals.size, 0);
+  assert.equal(h.events.size, 0);
+});
+
+test('native permission audit runs without a geolocation API and wins over a misleading desktop UA label', async () => {
+  const h = startMobileTracker({ hasGeolocation: false, blockedStart: true, desktopLabel: true });
+  await settle();
+  assert.equal(h.reports.length, 1);
+  assert.equal(h.reports[0].platform, 'Android App');
+  assert.equal(h.reports[0].hasForegroundLocation, false);
+  h.cleanup();
+});
+
+test('an unresponsive native status bridge times out without replacing the last valid health and allows retry', async () => {
+  const h = startMobileTracker({ blockedStart: true, blockedStatus: true });
+  await settle();
+  assert.equal(h.timers.size, 1);
+  [...h.timers.values()][0](); await settle();
+  assert.equal(h.reports.length, 0, 'A timeout must not upload guessed permission flags');
+  assert.equal(h.timers.size, 0);
+  h.events.get('focus')(); await settle();
+  assert.equal(h.timers.size, 1, 'A stalled bridge cannot permanently lock health reporting');
+  [...h.timers.values()][0](); await settle();
+  h.cleanup();
 });

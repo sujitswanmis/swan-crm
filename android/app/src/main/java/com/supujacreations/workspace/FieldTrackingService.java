@@ -29,8 +29,6 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 import androidx.core.content.ContextCompat;
-import androidx.core.content.pm.PackageInfoCompat;
-import androidx.core.location.LocationManagerCompat;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
@@ -45,7 +43,6 @@ import java.util.Locale;
 import java.util.TimeZone;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicBoolean;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -80,9 +77,6 @@ public class FieldTrackingService extends Service {
     private long lastGpsFixMs = 0L;
     private float lastGpsAcc = 9999f;
     private volatile boolean isUploading = false;
-    private long lastStatusSentMs = 0L;
-    private String lastStatusSignature = "";
-    private final AtomicBoolean statusUploadQueued = new AtomicBoolean(false);
     private boolean providerReceiverRegistered = false;
     private final BroadcastReceiver providerReceiver = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
@@ -143,6 +137,7 @@ public class FieldTrackingService extends Service {
         locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
         connectivityManager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
         createNotificationChannel();
+        FieldDeviceStatusReporter.get(this).ensureScheduled();
         registerConnectivityListener();
         try {
             ContextCompat.registerReceiver(this, providerReceiver,
@@ -162,6 +157,7 @@ public class FieldTrackingService extends Service {
 
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
         if (!prefs.getBoolean("enabled", false) || !hasForegroundLocationPermission()) {
+            FieldDeviceStatusReporter.get(this).reportNow(true);
             stopServiceCleanly();
             return START_NOT_STICKY;
         }
@@ -521,81 +517,21 @@ public class FieldTrackingService extends Service {
     }
 
     private JSONObject buildDeviceStatus() throws Exception {
-        boolean foreground = hasForegroundLocationPermission();
-        boolean background = foreground && (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
-            || ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED);
-        JSONObject status = new JSONObject();
-        status.put("capturedAtMs", System.currentTimeMillis());
-        status.put("hasForegroundLocation", foreground);
-        status.put("hasBackgroundLocation", background);
-        status.put("gpsProviderEnabled", locationManager != null && LocationManagerCompat.isLocationEnabled(locationManager));
-        status.put("running", isServiceRunning);
+        JSONObject status = FieldDeviceStatusReporter.get(this).snapshot();
         status.put("pendingCount", dbHelper != null ? dbHelper.getPendingCount() : 0);
-        android.content.pm.PackageInfo packageInfo = getPackageManager().getPackageInfo(getPackageName(), 0);
-        status.put("appVersionCode", PackageInfoCompat.getLongVersionCode(packageInfo));
-        status.put("appVersionName", packageInfo.versionName);
         return status;
     }
 
-    private String statusSignature(JSONObject status) {
-        return status.optBoolean("hasForegroundLocation") + ":" + status.optBoolean("hasBackgroundLocation")
-            + ":" + status.optBoolean("gpsProviderEnabled") + ":" + status.optBoolean("running");
-    }
-
     private boolean statusDue(JSONObject status) {
-        return System.currentTimeMillis() - lastStatusSentMs >= HEARTBEAT_INTERVAL_MS
-            || !statusSignature(status).equals(lastStatusSignature);
+        return FieldDeviceStatusReporter.get(this).statusDue(status);
     }
 
     private void markStatusAccepted(JSONObject status) {
-        lastStatusSentMs = System.currentTimeMillis();
-        lastStatusSignature = statusSignature(status);
+        FieldDeviceStatusReporter.get(this).markAccepted(status);
     }
 
     private void scheduleStatusHeartbeat(boolean force) {
-        if (!isServiceRunning || uploadExecutor == null || uploadExecutor.isShutdown()
-            || !statusUploadQueued.compareAndSet(false, true)) return;
-        try {
-            uploadExecutor.execute(() -> {
-                HttpURLConnection conn = null;
-                try {
-                    if (!isNetworkAvailable()) return;
-                    JSONObject status = buildDeviceStatus();
-                    if (!force && !statusDue(status)) return;
-                    SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-                    String endpoint = prefs.getString("endpointUrl", "");
-                    String token = prefs.getString("token", "");
-                    if (endpoint == null || endpoint.isEmpty() || token == null || token.isEmpty()) return;
-                    JSONObject body = new JSONObject();
-                    body.put("token", token);
-                    body.put("pings", new JSONArray());
-                    body.put("deviceStatus", status);
-                    conn = (HttpURLConnection) new URL(endpoint.replaceAll("/+$", "") + "/api/field-force/telemetry").openConnection();
-                    conn.setRequestMethod("POST");
-                    conn.setConnectTimeout(10000);
-                    conn.setReadTimeout(15000);
-                    conn.setDoOutput(true);
-                    conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
-                    conn.setRequestProperty("Authorization", "Bearer " + token);
-                    try (OutputStream stream = conn.getOutputStream()) {
-                        stream.write(body.toString().getBytes(StandardCharsets.UTF_8));
-                    }
-                    if (conn.getResponseCode() >= 200 && conn.getResponseCode() < 300) {
-                        StringBuilder response = new StringBuilder();
-                        try (BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
-                            String line;
-                            while ((line = reader.readLine()) != null) response.append(line);
-                        }
-                        if (new JSONObject(response.toString()).optBoolean("statusAccepted", false)) markStatusAccepted(status);
-                    }
-                } catch (Exception ignored) {
-                    // Retry current status on the next heartbeat; never fabricate GPS points.
-                } finally {
-                    if (conn != null) conn.disconnect();
-                    statusUploadQueued.set(false);
-                }
-            });
-        } catch (Exception ignored) { statusUploadQueued.set(false); }
+        FieldDeviceStatusReporter.get(this).reportNow(force);
     }
 
     private void flushPendingQueue() {

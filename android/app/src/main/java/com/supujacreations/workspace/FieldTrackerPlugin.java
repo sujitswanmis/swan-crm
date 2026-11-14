@@ -42,6 +42,23 @@ public class FieldTrackerPlugin extends Plugin {
 
     private static final int BG_PERM_REQ_CODE = 1002;
 
+    @Override public void load() {
+        FieldDeviceStatusReporter.get(getContext()).ensureScheduled();
+        FieldDeviceStatusReporter.get(getContext()).reportNow(true);
+    }
+
+    @Override protected void handleOnResume() {
+        FieldDeviceStatusReporter.get(getContext()).onForeground();
+    }
+
+    @Override protected void handleOnPause() {
+        FieldDeviceStatusReporter.get(getContext()).onBackground();
+    }
+
+    @Override protected void handleOnDestroy() {
+        FieldDeviceStatusReporter.get(getContext()).onBackground();
+    }
+
     @PluginMethod
     public void startTracking(PluginCall call) {
         String userId = call.getString("userId", "");
@@ -65,6 +82,9 @@ public class FieldTrackerPlugin extends Plugin {
             .putString("token", token != null ? token.trim() : "")
             .apply();
 
+        // Persisted credentials and diagnostics are available even if the GPS prompt is denied/pending.
+        FieldDeviceStatusReporter.get(ctx).credentialsChanged();
+
         if (!hasLocationPermission()) {
             requestPermissionForAlias("location", call, "locationPermissionCallback");
             return;
@@ -81,6 +101,7 @@ public class FieldTrackerPlugin extends Plugin {
 
     @PermissionCallback
     private void locationPermissionCallback(PluginCall call) {
+        FieldDeviceStatusReporter.get(getContext()).reportNow(true);
         if (getPermissionState("location") == PermissionState.GRANTED || hasLocationPermission()) {
             boolean started = launchService(FieldTrackingService.ACTION_START);
             SharedPreferences prefs = getContext().getSharedPreferences(FieldTrackingService.PREFS_NAME, Context.MODE_PRIVATE);
@@ -245,6 +266,7 @@ public class FieldTrackerPlugin extends Plugin {
         Context ctx = getContext();
         SharedPreferences prefs = ctx.getSharedPreferences(FieldTrackingService.PREFS_NAME, Context.MODE_PRIVATE);
         prefs.edit().putBoolean("enabled", false).apply();
+        FieldDeviceStatusReporter.get(ctx).stop();
 
         try {
             Intent stopIntent = new Intent(ctx, FieldTrackingService.class);
@@ -259,6 +281,7 @@ public class FieldTrackerPlugin extends Plugin {
 
     @PluginMethod
     public void flushNow(PluginCall call) {
+        FieldDeviceStatusReporter.get(getContext()).reportNow(true);
         boolean triggered = false;
         if (hasLocationPermission()) {
             triggered = launchService(FieldTrackingService.ACTION_FLUSH);

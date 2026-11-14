@@ -1,10 +1,10 @@
 {
   "platform": "android",
-  "latest_version_code": 5,
-  "latest_version_name": "2.5.1156",
+  "latest_version_code": 6,
+  "latest_version_name": "2.5.1158",
   "min_supported_version_code": 4,
   "download_url": "/api/public/android-apk",
-  "release_notes": "Independent device heartbeat with separate app location permission, device Location switch, background location and connectivity status.",
-  "updated_by": "Codex (user-approved APK v5 release)",
-  "updated_at": "2026-11-14T05:27:03.501+00:00"
+  "release_notes": "GPS-independent native status reporting on app startup/resume, scheduled background status jobs, and separate location permission/connectivity diagnostics. Stale health reports display their last report time.",
+  "updated_by": "Codex (user-approved APK v6 permission heartbeat fix)",
+  "updated_at": "2026-11-14T06:38:31.784+00:00"
 }

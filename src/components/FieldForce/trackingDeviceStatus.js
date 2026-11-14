@@ -43,6 +43,10 @@ export function deriveTrackingDeviceStatus(base, route, health, nowMs = Date.now
     gps = state('UNKNOWN', 'GPS status unconfirmed', 'muted');
   }
   if (healthFresh && !gps.detail) gps.detail = `Reported ${clock.format(new Date(healthMs))} IST`;
+  const healthDetail = healthMs != null && healthMs <= nowMs + 30000
+    ? `Last device report: ${clock.format(new Date(healthMs))} IST. Current permissions unconfirmed.`
+    : 'No current mobile device report. Current permissions unconfirmed.';
   return { ...base, independentTelemetry: true, mobileDataState: network, gpsStatusState: gps,
+    deviceHealthFresh: healthFresh, deviceHealthReportedAt: healthMs, deviceHealthDetail: healthDetail,
     headerBadge: { label: gps.label, color: gps.color, dot: gps.color } };
 }

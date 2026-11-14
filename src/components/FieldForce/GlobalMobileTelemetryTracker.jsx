@@ -27,6 +27,7 @@ function calculateHaversineMeters(lat1, lon1, lat2, lon2) {
 function isMobileTrackerClient() {
   if (typeof window === 'undefined') return false;
   try {
+    if (window.Capacitor?.isNativePlatform?.()) return true;
     const { platform } = detectClientPlatform();
     if (platform === PLATFORM_LABELS.ANDROID_APP || platform === PLATFORM_LABELS.IOS_APP) {
       return true;
@@ -75,7 +76,7 @@ export default function GlobalMobileTelemetryTracker({
   const lastHealthReportRef = useRef({ at: 0, sig: '' });
 
   useEffect(() => {
-    if (!userId || typeof window === 'undefined' || !navigator.geolocation) return;
+    if (!userId || typeof window === 'undefined') return;
     if (!isMobileTrackerClient()) return;
 
     let disposed = false;
@@ -85,6 +86,7 @@ export default function GlobalMobileTelemetryTracker({
     let healthReportInFlight = false;
     let permissionStatus = null;
     let nativeServiceActive = false;
+    let nativeStartInFlight = false;
     let lastNativeTokenAt = 0;
 
     const getNativeTrackerPlugin = () => {
@@ -99,7 +101,7 @@ export default function GlobalMobileTelemetryTracker({
 
     const startOrRefreshNativeService = async (forceRefresh = false) => {
       const plugin = getNativeTrackerPlugin();
-      if (!plugin || disposed) return false;
+      if (!plugin || disposed || nativeStartInFlight) return nativeServiceActive;
       const now = Date.now();
       if (!forceRefresh && nativeServiceActive && now - lastNativeTokenAt < 6 * 3600 * 1000) {
         try {
@@ -108,6 +110,7 @@ export default function GlobalMobileTelemetryTracker({
         return true;
       }
 
+      nativeStartInFlight = true;
       try {
         const tokenRes = await issueFieldTelemetryToken({
           userId,
@@ -138,7 +141,7 @@ export default function GlobalMobileTelemetryTracker({
         }
       } catch {
         // Fallback smoothly to web tracker if native bridge unavailable
-      }
+      } finally { nativeStartInFlight = false; }
       return false;
     };
 
@@ -258,7 +261,7 @@ export default function GlobalMobileTelemetryTracker({
     };
 
     const captureImmediatePing = (force = false) => {
-      if (disposed || nativeServiceActive) return;
+      if (disposed || nativeServiceActive || !navigator.geolocation) return;
       try {
         navigator.geolocation.getCurrentPosition(
           (pos) => handlePosition(pos, force),
@@ -283,7 +286,7 @@ export default function GlobalMobileTelemetryTracker({
         const isMobileUa = /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
         const plugin = getNativeTrackerPlugin();
 
-        if (isDesktopPlatform || (!isNativeAndroid && !isMobileUa && !plugin)) {
+        if (!plugin && (isDesktopPlatform || (!isNativeAndroid && !isMobileUa))) {
           return;
         }
 
@@ -297,7 +300,14 @@ export default function GlobalMobileTelemetryTracker({
 
         if (plugin && typeof plugin.getStatus === 'function') {
           try {
-            const st = await plugin.getStatus();
+            let statusTimer;
+            let st;
+            try {
+              st = await Promise.race([
+                plugin.getStatus(),
+                new Promise((_, reject) => { statusTimer = setTimeout(() => reject(new Error('Native status timeout')), 5000); })
+              ]);
+            } finally { clearTimeout(statusTimer); }
             payload = {
               ...payload,
               platform: PLATFORM_LABELS.ANDROID_APP,
@@ -317,7 +327,8 @@ export default function GlobalMobileTelemetryTracker({
               gpsProviderEnabled: st?.gpsProviderEnabled
             };
           } catch {
-            // Legacy APK fallback without extended status fields
+            // A failed bridge read is not a new permission or connectivity report.
+            return;
           }
         } else {
           payload.locationMode = 'browser';
@@ -330,7 +341,8 @@ export default function GlobalMobileTelemetryTracker({
           payload.hasForegroundLocation ?? null,
           payload.hasBackgroundLocation ?? null,
           payload.batteryUnrestricted ?? null,
-          payload.gpsProviderEnabled ?? null
+          payload.gpsProviderEnabled ?? null,
+          payload.running ?? null
         ]);
         const now = Date.now();
         if (!force && sig === lastHealthReportRef.current.sig && now - lastHealthReportRef.current.at < 45000) {
@@ -377,18 +389,19 @@ export default function GlobalMobileTelemetryTracker({
       } finally { healthReportInFlight = false; }
     };
 
-    // Start Native Android Foreground Service first (if on APK); always flush legacy web vault
+    // Health reporting must not wait for a location permission prompt or GPS service start.
+    void reportMobileHealthAudit(true);
     startOrRefreshNativeService(true).then((started) => {
       if (disposed) return;
       if (!started) {
         captureImmediatePing(true);
       }
-      reportMobileHealthAudit(true);
+      reportMobileHealthAudit(false);
     });
     syncQueuedPings();
 
     try {
-      watchId = navigator.geolocation.watchPosition(
+      watchId = navigator.geolocation?.watchPosition(
         (pos) => handlePosition(pos, false),
         handleGeoError,
         { enableHighAccuracy: true, maximumAge: 8000, timeout: 15000 }
@@ -414,19 +427,19 @@ export default function GlobalMobileTelemetryTracker({
 
     const handleResume = () => {
       if (document.visibilityState === 'hidden') return;
+      void reportMobileHealthAudit(true);
       syncQueuedPings();
       startOrRefreshNativeService(false).then((started) => {
         if (!started && !disposed) captureImmediatePing(true);
-        reportMobileHealthAudit(true);
       });
     };
 
     const handleOnline = () => {
       lastForceAtRef.current = 0;
+      void reportMobileHealthAudit(true);
       syncQueuedPings();
       startOrRefreshNativeService(false).then((started) => {
         if (!started && !disposed) captureImmediatePing(true);
-        reportMobileHealthAudit(false);
       });
     };
 
@@ -437,7 +450,7 @@ export default function GlobalMobileTelemetryTracker({
     return () => {
       disposed = true;
       if (watchId !== null) {
-        try { navigator.geolocation.clearWatch(watchId); } catch {}
+        try { navigator.geolocation?.clearWatch(watchId); } catch {}
       }
       if (heartbeatTimer) clearInterval(heartbeatTimer);
       if (healthTimer) clearInterval(healthTimer);
