@@ -1,6 +1,33 @@
 {
   "records": [
     {
+      "id": "36434225-d189-496f-8dc2-108ea52fe5cc",
+      "tenant_id": "00000000-0000-0000-0000-000000000001",
+      "user_id": "07fa35d3-f50a-4e41-ae15-b2692e393ea0",
+      "emp_code": "Admin",
+      "emp_name": "New Swan Admin",
+      "email": "admin@newswangroup.com",
+      "department": "General",
+      "attendance_date": "2026-11-14",
+      "in_time": "2026-11-14T05:12:30.216+00:00",
+      "out_time": "2026-11-14T13:56:01.267+00:00",
+      "in_location": "GPS (30.8940, 75.9248)",
+      "out_location": "GPS (30.8990, 75.9216)",
+      "in_method": "GPS_PUNCH",
+      "out_method": "GPS_PUNCH",
+      "total_working_minutes": 523,
+      "status": "PRESENT",
+      "is_regularized": false,
+      "regularization_id": null,
+      "remarks": "2-Hour Short Leave Applied (Morning arrival between 09:21 AM - 11:00 AM) | Shift Completed on Time | Shift Completed on Time",
+      "created_at": "2026-11-14T05:12:30.216+00:00",
+      "updated_at": "2026-11-14T13:56:01.267+00:00",
+      "short_leave_type": "2_HR_IN",
+      "is_grace_applied": false,
+      "shift_name": "Regular Shift (NSMLR / New Swan Group)",
+      "branch_name": null
+    },
+    {
       "id": "9fe73f3b-3d76-4908-93b0-d3ccaf3516b4",
       "tenant_id": "00000000-0000-0000-0000-000000000001",
       "user_id": "07fa35d3-f50a-4e41-ae15-b2692e393ea0",

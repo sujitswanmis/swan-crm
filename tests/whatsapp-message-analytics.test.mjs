@@ -10,7 +10,7 @@ import {
   normalizeWhatsappRecipient, summarizeWhatsappMessageLogs, getWhatsappMessageTrend
 } from '../src/utils/whatsappMessageAnalytics.js';
 import * as cache from '../src/utils/whatsappMessageLogsCache.js';
-import { getSubItemPermissions } from '../src/utils/permissionUtils.js';
+import { getSubItemPermissions, PLATFORM_ACCESS_OPTIONS } from '../src/utils/permissionUtils.js';
 import * as logConfig from '../src/config/whatsappMessageLogsConfig.js';
 import * as integrationConfig from '../src/config/integrationsConfig.js';
 import { ROLE_PRESETS } from '../src/components/UserManagement/utils/rolePresets.js';
@@ -230,7 +230,7 @@ const commonDependencies = {
   '@/utils/tableColumnResize': { useTableColumnResize: mockResize, ColumnResizer: () => React.createElement('span', { className: 'column-resizer' }) },
   '@/utils/whatsappMessageAnalytics': { buildWhatsappMessageAnalytics, filterWhatsappMessageLogs, getWhatsappMessageTrend },
   '@/config/whatsappMessageLogsConfig': logConfig,
-  '@/utils/permissionUtils': { getSubItemPermissions }
+  '@/utils/permissionUtils': { getSubItemPermissions, PLATFORM_ACCESS_OPTIONS }
 };
 const filterModule = compile('src/components/WhatsappMessageLogsFilter.jsx', commonDependencies);
 commonDependencies['@/components/WhatsappMessageLogsFilter'] = filterModule;
@@ -624,6 +624,67 @@ test('table pagination resets on changed filters and sizes while retaining full 
   assert.equal(pagination().totalRecords, 200);
 });
 
+test('all four analytics tables fill their card with proportional columns and retain a scrollable minimum', () => {
+  const tables = [];
+  for (const id of logConfig.WHATSAPP_LOG_VIEW_IDS) {
+    const dashboard = hookHarness('src/components/WhatsappMessageLogsDashboard.jsx', dashboardDependencies, { ...dashboardProps, allowedViews: [id] });
+    tables.push(...nodes(dashboard.render()).filter(node => node.type === tableModule.default).map(node => node.props));
+  }
+  assert.equal(tables.length, 4);
+  for (const props of tables) {
+    const table = hookHarness('src/components/WhatsappMessageLogsTable.jsx', commonDependencies, props);
+    const tree = table.render();
+    const element = nodes(tree).find(node => node.type === 'table');
+    const columns = nodes(element).filter(node => node.type === 'col');
+    const total = props.columns.reduce((sum, column) => sum + column.width, 0);
+    assert.equal(element.props.style.width, '100%', props.id);
+    assert.equal(element.props.style.minWidth, total, props.id);
+    assert.ok(Math.abs(columns.reduce((sum, column) => sum + parseFloat(column.props.style.width), 0) - 100) < 0.00001);
+    for (const [index, column] of columns.entries()) {
+      const share = parseFloat(column.props.style.width) / 100;
+      assert.ok(Math.abs(share - props.columns[index].width / total) < 0.00001);
+      // Wide cards grow every column; narrow cards scroll at the saved footprint.
+      assert.ok(Math.max(total, 2200) * share >= props.columns[index].width);
+      assert.ok(Math.abs(Math.max(total, 320) * share - props.columns[index].width) < 0.00001);
+    }
+    assert.match(tree.props.className, /wa-log-table-card/);
+    assert.ok(nodes(tree).some(node => node.props.className?.includes('wa-log-table-scroll')));
+  }
+});
+
+test('saved sizing excludes obsolete columns, enforces minima and preserves every resizer/reset callback', () => {
+  const start = () => {}, reset = () => {};
+  let saved = { name: 450, sent: 150, obsoleteColumn: 9000 };
+  const Resizer = () => null;
+  const props = { id: 'sizing-test', title: 'Sizing', rows: [], filterKey: 'one', columns: [{ id: 'name', label: 'Customer', width: 240 }, { id: 'sent', label: 'Sent', width: 75 }] };
+  const harness = hookHarness('src/components/WhatsappMessageLogsTable.jsx', {
+    ...commonDependencies,
+    '@/utils/tableColumnResize': { useTableColumnResize: key => {
+      assert.equal(key, 'crm_wa_premium_sizing-test_widths');
+      return { colWidths: saved, handleResizeStart: start, resetColWidth: reset, resizingCol: 'name' };
+    }, ColumnResizer: Resizer }
+  }, props);
+  let tree = harness.render();
+  const table = () => nodes(tree).find(node => node.type === 'table');
+  const shares = () => nodes(table()).filter(node => node.type === 'col').map(node => node.props.style.width);
+  assert.equal(table().props.style.minWidth, 600);
+  assert.deepEqual(shares(), ['75%', '25%']);
+  const handles = nodes(tree).filter(node => node.type === Resizer);
+  assert.equal(handles.length, 2);
+  for (const handle of handles) {
+    assert.equal(handle.props.onResizeStart, start);
+    assert.equal(handle.props.onReset, reset);
+  }
+  assert.equal(handles[0].props.isResizing, true);
+  saved = { name: 240, sent: 75 }; tree = harness.render();
+  assert.equal(table().props.style.minWidth, 315);
+  saved = { name: -5, sent: 2 }; tree = harness.render();
+  assert.equal(table().props.style.minWidth, 310);
+  saved = { name: Infinity, sent: 'invalid' }; tree = harness.render();
+  assert.equal(table().props.style.minWidth, 315);
+  assert.ok(shares().every(share => Number.isFinite(parseFloat(share))));
+});
+
 test('new views default deny, managers cannot inherit them, and explicit legacy raw grants remain compatible', () => {
   for (const role of ['telecaller', 'manager', 'hod', 'sales_executive', 'read_only_viewer']) {
     const access = { whatsapp_official: { view: true, is_manager: true, sub_items: { sent_logs: { view: true } } } };
@@ -646,7 +707,8 @@ test('all three views appear in the source registry and both permission editors 
   assert.deepEqual(Array.from(whatsappModule.subItems.filter(item => item.pageId === 'sent_logs'), item => item.id), logConfig.WHATSAPP_LOG_VIEW_IDS);
   assert.equal(whatsappModule.subItemGroups[0].subItems.length, 3);
   const access = { whatsapp_official: { view: true, is_manager: true, sub_items: { sent_logs: { view: true } } } };
-  const dependencies = { ...commonDependencies, '@/config/modulesConfig': { MODULES_CONFIG: [whatsappModule] }, '../utils/rolePresets': { ROLE_PRESETS }, '@/config/integrationsConfig': integrationConfig };
+  const dependencies = { ...commonDependencies, '@/config/modulesConfig': { MODULES_CONFIG: [whatsappModule] }, '../utils/rolePresets': { ROLE_PRESETS }, '@/config/integrationsConfig': integrationConfig,
+    '../components/PlatformAccessPills': compile('src/components/UserManagement/components/PlatformAccessPills.jsx', commonDependencies) };
   const harness = hookHarness('src/components/UserManagement/modals/PermissionMatrixModal.jsx', dependencies,
     { isOpen: true, user: { user_id: 'actor', role: 'manager', module_access: access }, onClose() {}, onSave() {} }, 'default', {}, true);
   let tree = harness.render(); tree = harness.render();

@@ -87,16 +87,23 @@ export default function WhatsappMessageLogsTable({ id, title, description, rows 
   const widths = useMemo(() => Object.fromEntries(columns.map(column => [column.id, column.width])), [columns]);
   const minimums = useMemo(() => Object.fromEntries(columns.map(column => [column.id, column.width <= 100 ? 70 : 100])), [columns]);
   const resize = useTableColumnResize(`crm_wa_premium_${id}_widths`, widths, minimums);
+  // Fill the card proportionally using only the columns that are actually shown.
+  // Saved pixel widths remain the minimum footprint and the resizer's preferences.
+  const columnWidths = useMemo(() => columns.map(column => {
+    const saved = Number(resize.colWidths[column.id]);
+    return Math.max(minimums[column.id], Number.isFinite(saved) && saved > 0 ? saved : column.width);
+  }), [columns, resize.colWidths, minimums]);
+  const totalWidth = columnWidths.reduce((sum, width) => sum + width, 0);
   const currentPage = Math.min(page.filterKey === filterKey ? page.value : 1, Math.max(1, Math.ceil(rows.length / pageSize)));
   const visible = rows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const changePage = useCallback(value => setPage({ filterKey, value }), [filterKey]);
   const changePageSize = useCallback(value => { setPageSize(value); setPage({ filterKey, value: 1 }); }, [filterKey]);
-  return <div className="wa:overflow-hidden wa:rounded-xl wa:border wa:border-slate-200/80 wa:bg-white wa:shadow-[0_1px_3px_rgba(0,0,0,0.05)] wa:transition-all wa:duration-200 wa:hover:shadow-[0_4px_12px_rgba(0,0,0,0.06)]">
+  return <div className="wa-log-table-card wa:overflow-hidden wa:rounded-xl wa:border wa:border-slate-200/80 wa:bg-white wa:shadow-[0_1px_3px_rgba(0,0,0,0.05)] wa:transition-all wa:duration-200 wa:hover:shadow-[0_4px_12px_rgba(0,0,0,0.06)]">
     <div className="wa:flex wa:items-center wa:justify-between wa:gap-3 wa:border-b wa:border-slate-100 wa:px-4 wa:py-3.5"><div><h3 className="wa:m-0 wa:text-[13px] wa:font-semibold wa:tracking-tight wa:text-slate-800">{title}</h3>{description && <p className="wa:mt-0.5 wa:mb-0 wa:text-[11px] wa:text-slate-400">{description}</p>}</div><span className="wa:shrink-0 wa:rounded-md wa:border wa:border-slate-200/70 wa:bg-slate-50 wa:px-2 wa:py-1 wa:font-mono wa:text-[10px] wa:tabular-nums wa:text-slate-600">{rows.length.toLocaleString('en-IN')} records</span></div>
     {loading && <div aria-label="Refreshing table" className="wa-loading-shimmer wa:h-0.5 wa:w-full" />}
-    <div className="wa:overflow-auto wa:overscroll-contain" style={{ maxHeight: compact ? 340 : 'calc(100vh - 440px)', minHeight: compact ? 150 : 310 }}>
-      <table data-column-resize-managed="true" aria-label={title} aria-busy={loading} className="wa-log-table wa:table-fixed wa:text-left wa:text-xs wa:tabular-nums" style={{ width: resize.getTotalTableWidth(), minWidth: resize.getTotalTableWidth(), tableLayout: 'fixed' }}>
-        <colgroup>{columns.map(column => <col key={column.id} style={{ width: resize.colWidths[column.id] }} />)}</colgroup>
+    <div className="wa-log-table-scroll wa:overflow-auto wa:overscroll-contain" style={{ maxHeight: compact ? 340 : 'calc(100vh - 440px)', minHeight: compact ? 150 : 310 }}>
+      <table data-column-resize-managed="true" aria-label={title} aria-busy={loading} className="wa-log-table wa:table-fixed wa:text-left wa:text-xs wa:tabular-nums" style={{ width: '100%', minWidth: totalWidth, tableLayout: 'fixed' }}>
+        <colgroup>{columns.map((column, index) => <col key={column.id} style={{ width: `${columnWidths[index] / totalWidth * 100}%` }} />)}</colgroup>
         <thead className="wa:sticky wa:top-0 wa:z-10 wa:bg-slate-50/95 wa:backdrop-blur-md"><tr>{columns.map(column => <th key={column.id} scope="col" className="wa:sticky wa:top-0 wa:z-10 wa:h-11 wa:whitespace-nowrap wa:bg-slate-50/95 wa:px-3.5 wa:text-[9px] wa:font-semibold wa:tracking-[0.075em] wa:text-slate-500 wa:uppercase" style={{ minWidth: minimums[column.id], boxShadow: 'inset 0 -1px 0 rgba(226, 232, 240, 0.85)' }}>{column.label}<span style={{ position: 'absolute', right: 4, top: 0, height: '100%', width: 12 }}><ColumnResizer colKey={column.id} isResizing={resize.resizingCol === column.id} onResizeStart={resize.handleResizeStart} onReset={resize.resetColWidth} /></span></th>)}</tr></thead>
         <tbody>{visible.map(row => <tr key={row.id || row.key} className="wa:h-11 wa:transition-colors wa:duration-150 wa:hover:bg-slate-50/90">{columns.map(column => <td key={column.id} className="wa:h-11 wa:border-b wa:border-slate-100 wa:px-3.5 wa:py-2.5 wa:align-middle wa:text-slate-600">{column.render ? column.render(row) : typeof row[column.id] === 'number' ? <span className="wa:font-mono wa:font-medium wa:tabular-nums">{row[column.id].toLocaleString('en-IN')}</span> : row[column.id] || '—'}</td>)}</tr>)}
           {!visible.length && loading && Array.from({ length: 5 }, (_, index) => <tr key={index} className="wa:h-11">{columns.map(column => <td key={column.id} className="wa:border-b wa:border-slate-100 wa:px-3.5 wa:py-2.5"><div className="wa-loading-shimmer wa:h-3 wa:w-3/4 wa:rounded" /></td>)}</tr>)}

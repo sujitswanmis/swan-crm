@@ -101,13 +101,21 @@ async function persistAttendancePunch(adminClient, record, tenantId, existingDb,
   const optionalColumns = ['short_leave_type', 'is_grace_applied', 'shift_name'];
   try {
     for (let attempt = 0; attempt <= optionalColumns.length; attempt++) {
-      const query = existingDb
-        ? adminClient.from('attendance_records').update(payload)
-          .eq('id', existingDb.id).eq('tenant_id', tenantId)
-          .is(punchType === 'IN' ? 'in_time' : 'out_time', null)
-        : adminClient.from('attendance_records').upsert(payload, {
+      let query;
+      if (existingDb?.id) {
+        query = adminClient.from('attendance_records').update(payload)
+          .eq('id', existingDb.id)
+          .is(punchType === 'IN' ? 'in_time' : 'out_time', null);
+      } else if (punchType === 'OUT') {
+        query = adminClient.from('attendance_records').update(payload)
+          .ilike('email', payload.email)
+          .eq('attendance_date', payload.attendance_date)
+          .is('out_time', null);
+      } else {
+        query = adminClient.from('attendance_records').upsert(payload, {
           onConflict: 'email,attendance_date', ignoreDuplicates: true
         });
+      }
       const { data, error } = await query.select().maybeSingle();
       if (error) {
         const missingColumn = ['PGRST204', '42703'].includes(error.code)
@@ -121,8 +129,11 @@ async function persistAttendancePunch(adminClient, record, tenantId, existingDb,
 
       // A concurrent tab/device may have saved first. Return its original times.
       const current = await adminClient.from('attendance_records').select('*')
-        .eq('tenant_id', tenantId).ilike('email', payload.email)
-        .eq('attendance_date', payload.attendance_date).maybeSingle();
+        .ilike('email', payload.email)
+        .eq('attendance_date', payload.attendance_date)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
       if (current.error) return { error: current.error };
       if (current.data?.[punchType === 'IN' ? 'in_time' : 'out_time']) {
         return { data: current.data, alreadyPunched: true };
@@ -1156,52 +1167,61 @@ export async function punchIn({
   shiftName = null,
   userCompany = ''
 }) {
-  if (!email) return { success: false, error: 'User email is required' };
-  tenantId = resolveTenantId(tenantId, userCompany);
-  const adminClient = getAdminClient();
-  const today = getTodayDateString();
-  const nowIso = new Date().toISOString();
-  const normalizedEmail = email.trim().toLowerCase();
+  try {
+    if (!email) return { success: false, error: 'User email is required' };
+    tenantId = resolveTenantId(tenantId, userCompany);
+    const adminClient = getAdminClient();
+    const today = getTodayDateString();
+    const nowIso = new Date().toISOString();
+    const normalizedEmail = email.trim().toLowerCase();
 
-  const now = new Date();
-  const { year: nowYear, month: nowMonth } = getIstDateParts(now);
-  const startDateStr = `${nowYear}-${String(nowMonth).padStart(2, '0')}-01`;
-  const lastDay = new Date(Date.UTC(nowYear, nowMonth, 0)).getUTCDate();
-  const endDateStr = `${nowYear}-${String(nowMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+    const now = new Date();
+    const { year: nowYear, month: nowMonth } = getIstDateParts(now);
+    const startDateStr = `${nowYear}-${String(nowMonth).padStart(2, '0')}-01`;
+    const lastDay = new Date(Date.UTC(nowYear, nowMonth, 0)).getUTCDate();
+    const endDateStr = `${nowYear}-${String(nowMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
 
-  // Execute independent initial reads concurrently in parallel via Promise.all for <300ms response
-  const [local, todayDbRes, monthDbRes, userRole] = await Promise.all([
-    getFallbackData(),
-    adminClient
-      .from('attendance_records')
-      .select('*')
-      .ilike('email', normalizedEmail)
-      .eq('tenant_id', tenantId)
-      .eq('attendance_date', today)
-      .maybeSingle()
-      .catch(err => ({ error: err })),
-    adminClient
-      .from('attendance_records')
-      .select('*')
-      .ilike('email', normalizedEmail)
-      .eq('tenant_id', tenantId)
-      .gte('attendance_date', startDateStr)
-      .lte('attendance_date', endDateStr)
-      .catch(() => ({ data: [] })),
-    getUserRoleAttendanceProfile(adminClient, normalizedEmail)
-  ]);
+    // Execute independent initial reads concurrently in parallel via Promise.all for <300ms response
+    const [local, todayDbRes, monthDbRes, userRole] = await Promise.all([
+      getFallbackData(),
+      (async () => {
+        try {
+          return await adminClient
+            .from('attendance_records')
+            .select('*')
+            .ilike('email', normalizedEmail)
+            .eq('attendance_date', today)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+        } catch (err) {
+          return { error: err };
+        }
+      })(),
+      (async () => {
+        try {
+          return await adminClient
+            .from('attendance_records')
+            .select('*')
+            .ilike('email', normalizedEmail)
+            .gte('attendance_date', startDateStr)
+            .lte('attendance_date', endDateStr);
+        } catch {
+          return { data: [] };
+        }
+      })(),
+      getUserRoleAttendanceProfile(adminClient, normalizedEmail)
+    ]);
 
-  if (todayDbRes.error && todayDbRes.error.code !== 'PGRST116') {
-    console.error('Attendance punch-in verification failed:', todayDbRes.error);
-    return { success: false, error: 'Punch In verify nahi ho saka. Kripya dobara try karein.' };
-  }
+    if (todayDbRes.error && todayDbRes.error.code !== 'PGRST116') {
+      console.warn('Attendance punch-in verification notice:', todayDbRes.error);
+    }
 
-  const existingDb = todayDbRes.data || null;
-  const existingLocal = (local?.records || []).find(r => 
-    (r.tenant_id || DEFAULT_TENANT_ID) === tenantId &&
-    (r.email || '').toLowerCase() === normalizedEmail && 
-    r.attendance_date === today
-  );
+    const existingDb = todayDbRes.data || null;
+    const existingLocal = (local?.records || []).find(r => 
+      (r.email || '').toLowerCase() === normalizedEmail && 
+      r.attendance_date === today
+    );
 
   const currentTodayRec = existingDb || existingLocal;
 
@@ -1421,6 +1441,13 @@ export async function punchIn({
     evaluation,
     monthlyUsage
   };
+  } catch (punchInErr) {
+    console.error('Fatal unhandled punchIn error:', punchInErr);
+    return {
+      success: false,
+      error: punchInErr?.message ? `Punch In failed: ${punchInErr.message}` : 'Punch In process nahi ho saka. Kripya dobara try karein.'
+    };
+  }
 }
 
 /**
@@ -1435,279 +1462,297 @@ export async function punchOut({
   tenantId = DEFAULT_TENANT_ID,
   userCompany = ''
 }) {
-  if (!email) return { success: false, error: 'User email is required' };
-  tenantId = resolveTenantId(tenantId, userCompany);
-  const adminClient = getAdminClient();
-  const today = getTodayDateString();
-  const nowIso = new Date().toISOString();
-  const normalizedEmail = email.trim().toLowerCase();
+  try {
+    if (!email) return { success: false, error: 'User email is required' };
+    tenantId = resolveTenantId(tenantId, userCompany);
+    const adminClient = getAdminClient();
+    const today = getTodayDateString();
+    const nowIso = new Date().toISOString();
+    const normalizedEmail = email.trim().toLowerCase();
 
-  const now = new Date();
-  const { year: nowYear, month: nowMonth } = getIstDateParts(now);
-  const startDateStr = `${nowYear}-${String(nowMonth).padStart(2, '0')}-01`;
-  const lastDay = new Date(Date.UTC(nowYear, nowMonth, 0)).getUTCDate();
-  const endDateStr = `${nowYear}-${String(nowMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+    const now = new Date();
+    const { year: nowYear, month: nowMonth } = getIstDateParts(now);
+    const startDateStr = `${nowYear}-${String(nowMonth).padStart(2, '0')}-01`;
+    const lastDay = new Date(Date.UTC(nowYear, nowMonth, 0)).getUTCDate();
+    const endDateStr = `${nowYear}-${String(nowMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
 
-  // Execute independent initial reads concurrently via Promise.all for <300ms response
-  const [local, todayDbRes, monthDbRes, uRole] = await Promise.all([
-    getFallbackData(),
-    adminClient
-      .from('attendance_records')
-      .select('*')
-      .ilike('email', normalizedEmail)
-      .eq('tenant_id', tenantId)
-      .eq('attendance_date', today)
-      .maybeSingle()
-      .catch(err => ({ error: err })),
-    adminClient
-      .from('attendance_records')
-      .select('*')
-      .ilike('email', normalizedEmail)
-      .eq('tenant_id', tenantId)
-      .gte('attendance_date', startDateStr)
-      .lte('attendance_date', endDateStr)
-      .catch(() => ({ data: [] })),
-    getUserRoleAttendanceProfile(adminClient, normalizedEmail)
-  ]);
+    // Execute independent initial reads concurrently via Promise.all for <300ms response
+    // Match by email + attendance_date without tenant restriction so cross-tenant or UUID mismatches never lose today's record
+    const [local, todayDbRes, monthDbRes, uRole] = await Promise.all([
+      getFallbackData(),
+      (async () => {
+        try {
+          return await adminClient
+            .from('attendance_records')
+            .select('*')
+            .ilike('email', normalizedEmail)
+            .eq('attendance_date', today)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+        } catch (err) {
+          return { error: err };
+        }
+      })(),
+      (async () => {
+        try {
+          return await adminClient
+            .from('attendance_records')
+            .select('*')
+            .ilike('email', normalizedEmail)
+            .gte('attendance_date', startDateStr)
+            .lte('attendance_date', endDateStr);
+        } catch {
+          return { data: [] };
+        }
+      })(),
+      getUserRoleAttendanceProfile(adminClient, normalizedEmail)
+    ]);
 
-  if (todayDbRes.error && todayDbRes.error.code !== 'PGRST116') {
-    console.error('Attendance punch-out verification failed:', todayDbRes.error);
-    return { success: false, error: 'Punch Out verify nahi ho saka. Kripya dobara try karein.' };
-  }
+    if (todayDbRes.error && todayDbRes.error.code !== 'PGRST116') {
+      console.warn('Attendance punch-out today query notice:', todayDbRes.error);
+    }
 
-  let existingDb = todayDbRes.data || null;
-  let existingLocal = (local?.records || []).find(r => 
-    (r.tenant_id || DEFAULT_TENANT_ID) === tenantId &&
-    (r.email || '').toLowerCase() === normalizedEmail && 
-    r.attendance_date === today
-  );
+    let existingDb = todayDbRes.data || null;
+    let existingLocal = (local?.records || []).find(r => 
+      (r.email || '').toLowerCase() === normalizedEmail && 
+      r.attendance_date === today
+    );
 
-  let existing = existingDb || existingLocal;
-  if (existingLocal?.in_time && !existingDb?.in_time) {
-    existing = existingLocal;
-  }
+    let existing = existingDb || existingLocal;
+    if (existingLocal?.in_time && !existingDb?.in_time) {
+      existing = existingLocal;
+    }
 
-  if (!existing || !existing.in_time) {
-    return {
-      success: false,
-      error: 'Aapne aaj abhi tak Punch In nahi kiya hai. Punch Out karne ke liye pehle Punch In hona zaroori hai.'
-    };
-  }
-
-  if (existing.out_time) {
-    return {
-      success: false,
-      error: `Aapka aaj ka Final Punch Out (${new Date(existing.out_time).toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })}) pehle hi darj ho chuka hai. Ek din me sirf 1 bar Punch Out allow hai.`,
-      alreadyPunchedOut: true,
-      data: existing
-    };
-  }
-
-  let monthlyRecords = (monthDbRes?.data && monthDbRes.data.length > 0)
-    ? monthDbRes.data
-    : (local?.records || []).filter(r => 
-        (r.tenant_id || DEFAULT_TENANT_ID) === tenantId &&
-        (r.email || '').toLowerCase() === normalizedEmail
-      );
-
-  let effectiveCompany = userCompany || existing.company_name || '';
-  let employeeBranch = existing.branch_name || '';
-  let employeeModuleAccess = null;
-  if (uRole) {
-    const roleComp = uRole.company || uRole.module_access?.company_name || '';
-    const roleBranch = uRole.branch_name || uRole.module_access?.branch_name || '';
-    if (roleComp && !effectiveCompany) effectiveCompany = roleComp;
-    if (roleBranch && !employeeBranch) employeeBranch = roleBranch;
-    if (uRole.module_access) employeeModuleAccess = uRole.module_access;
-  }
-  const effectiveTenant = resolveTenantId(tenantId || uRole?.tenant_id || uRole?.module_access?._tenantId, effectiveCompany);
-  const policyRes = await getAttendancePolicyForUserScope(effectiveTenant, effectiveCompany, employeeBranch, employeeModuleAccess);
-  const tenantPolicy = policyRes?.data || null;
-
-  // 1. Mandatory GPS Permission Check (ON / OFF / AUTO)
-  const rawGpsMode = tenantPolicy?.require_gps;
-  const isStrictGps = rawGpsMode === true || rawGpsMode === 'ON' || rawGpsMode === 'true' || rawGpsMode === 'STRICT';
-  const isAutoGps = rawGpsMode === 'AUTO' || rawGpsMode === 'auto';
-  const isGpsPunch = location && typeof location === 'string' && location.startsWith('GPS');
-
-  let geofenceRemarks = '';
-
-  if (!isGpsPunch) {
-    if (isStrictGps) {
+    if (!existing || !existing.in_time) {
       return {
         success: false,
-        error: '⚠️ Mandatory GPS Policy Enforced: Location / GPS permission allow karna anivarya hai. Bina location permission ke Punch Out nahi ho sakta.'
+        error: 'Aapne aaj abhi tak Punch In nahi kiya hai. Punch Out karne ke liye pehle Punch In hona zaroori hai.'
       };
     }
-    if (isAutoGps) {
-      geofenceRemarks = '[⚠️ GPS Unavailable (Punch Allowed via Auto Fallback)]';
+
+    if (existing.out_time) {
+      return {
+        success: false,
+        error: `Aapka aaj ka Final Punch Out (${new Date(existing.out_time).toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })}) pehle hi darj ho chuka hai. Ek din me sirf 1 bar Punch Out allow hai.`,
+        alreadyPunchedOut: true,
+        data: existing
+      };
     }
-  }
 
-  // 2. Geofence Boundary Check
-  if (tenantPolicy?.enable_geofence && Array.isArray(tenantPolicy?.geofence_locations) && tenantPolicy.geofence_locations.length > 0) {
-    const activeLocations = tenantPolicy.geofence_locations.filter(loc => loc.is_active !== false && loc.latitude && loc.longitude);
-    if (activeLocations.length > 0) {
-      const gpsMatch = location?.match(/GPS\s*\(\s*([\d.-]+)\s*,\s*([\d.-]+)\s*\)/i);
-      if (gpsMatch) {
-        const userLat = parseFloat(gpsMatch[1]);
-        const userLon = parseFloat(gpsMatch[2]);
+    let monthlyRecords = (monthDbRes?.data && monthDbRes.data.length > 0)
+      ? monthDbRes.data
+      : (local?.records || []).filter(r => 
+          (r.email || '').toLowerCase() === normalizedEmail
+        );
 
-        let minDistance = Infinity;
-        let nearestOffice = null;
+    let effectiveCompany = userCompany || existing.company_name || '';
+    let employeeBranch = existing.branch_name || '';
+    let employeeModuleAccess = null;
+    if (uRole) {
+      const roleComp = uRole.company || uRole.module_access?.company_name || '';
+      const roleBranch = uRole.branch_name || uRole.module_access?.branch_name || '';
+      if (roleComp && !effectiveCompany) effectiveCompany = roleComp;
+      if (roleBranch && !employeeBranch) employeeBranch = roleBranch;
+      if (uRole.module_access) employeeModuleAccess = uRole.module_access;
+    }
+    const effectiveTenant = resolveTenantId(tenantId || uRole?.tenant_id || uRole?.module_access?._tenantId || existing.tenant_id, effectiveCompany);
+    const policyRes = await getAttendancePolicyForUserScope(effectiveTenant, effectiveCompany, employeeBranch, employeeModuleAccess);
+    const tenantPolicy = policyRes?.data || null;
 
-        for (const loc of activeLocations) {
-          const dist = calculateDistanceMeters(userLat, userLon, Number(loc.latitude), Number(loc.longitude));
-          if (dist < minDistance) {
-            minDistance = dist;
-            nearestOffice = loc;
-          }
-        }
+    // 1. Mandatory GPS Permission Check (ON / OFF / AUTO)
+    const rawGpsMode = tenantPolicy?.require_gps;
+    const isStrictGps = rawGpsMode === true || rawGpsMode === 'ON' || rawGpsMode === 'true' || rawGpsMode === 'STRICT';
+    const isAutoGps = rawGpsMode === 'AUTO' || rawGpsMode === 'auto';
+    const isGpsPunch = location && typeof location === 'string' && location.startsWith('GPS');
 
-        if (nearestOffice) {
-          const allowedRadius = Number(nearestOffice.radius_meters || 200);
-          const isWithin = minDistance <= allowedRadius;
+    let geofenceRemarks = '';
 
-          if (!isWithin) {
-            if (tenantPolicy.geofence_mode === 'FLAG_OUTSIDE') {
-              geofenceRemarks = (geofenceRemarks ? geofenceRemarks + ' ' : '') + `[Outside Geofence: ${minDistance}m from ${nearestOffice.name || 'Office'}]`;
-            } else {
-              return {
-                success: false,
-                error: `🚫 Office Geofence Violation: Aap "${nearestOffice.name || 'Office'}" se ${minDistance}m door hain (Allowed radius: ${allowedRadius}m). Kripya office campus me aakar punch out karein.`
-              };
-            }
-          } else {
-            geofenceRemarks = (geofenceRemarks ? geofenceRemarks + ' ' : '') + `[Inside Geofence: ${minDistance}m from ${nearestOffice.name || 'Office'}]`;
-          }
-        }
-      } else if (isStrictGps) {
+    if (!isGpsPunch) {
+      if (isStrictGps) {
         return {
           success: false,
-          error: '⚠️ Mandatory GPS Policy Enforced: Valid GPS coordinates prapt nahi ho sake. Kripya location check karein.'
+          error: '⚠️ Mandatory GPS Policy Enforced: Location / GPS permission allow karna anivarya hai. Bina location permission ke Punch Out nahi ho sakta.'
         };
       }
+      if (isAutoGps) {
+        geofenceRemarks = '[⚠️ GPS Unavailable (Punch Allowed via Auto Fallback)]';
+      }
     }
-  }
 
-  const activeShift = resolveShiftFromPolicy(tenantPolicy, existing.shift_name);
+    // 2. Geofence Boundary Check
+    if (tenantPolicy?.enable_geofence && Array.isArray(tenantPolicy?.geofence_locations) && tenantPolicy.geofence_locations.length > 0) {
+      const activeLocations = tenantPolicy.geofence_locations.filter(loc => loc.is_active !== false && loc.latitude && loc.longitude);
+      if (activeLocations.length > 0) {
+        const gpsMatch = location?.match(/GPS\s*\(\s*([\d.-]+)\s*,\s*([\d.-]+)\s*\)/i);
+        if (gpsMatch) {
+          const userLat = parseFloat(gpsMatch[1]);
+          const userLon = parseFloat(gpsMatch[2]);
 
-  const monthlyUsage = calculateMonthlyShortLeaveUsage(monthlyRecords, nowYear, nowMonth, today, activeShift || tenantPolicy);
-  const evaluation = evaluateEveningOutPunch(now, existing.in_time, existing, monthlyUsage, empName || email.split('@')[0], activeShift || tenantPolicy);
+          let minDistance = Infinity;
+          let nearestOffice = null;
 
-  let updatedRecord = {
-    ...existing,
-    email: normalizedEmail,
-    out_time: nowIso,
-    out_location: location,
-    out_method: method,
-    total_working_minutes: evaluation.total_working_minutes,
-    status: evaluation.status,
-    short_leave_type: evaluation.short_leave_type,
-    remarks: [geofenceRemarks, evaluation.remarks].filter(Boolean).join(' '),
-    updated_at: nowIso
-  };
+          for (const loc of activeLocations) {
+            const dist = calculateDistanceMeters(userLat, userLon, Number(loc.latitude), Number(loc.longitude));
+            if (dist < minDistance) {
+              minDistance = dist;
+              nearestOffice = loc;
+            }
+          }
 
-  let resolvedOutEmpCode = existing.emp_code || '';
-  let resolvedOutDept = existing.department || '';
-  let resolvedOutEmpName = existing.emp_name || empName || '';
+          if (nearestOffice) {
+            const allowedRadius = Number(nearestOffice.radius_meters || 200);
+            const isWithin = minDistance <= allowedRadius;
 
-  if ((!resolvedOutEmpCode || !resolvedOutDept || resolvedOutDept === 'General') && uRole) {
-    if (!resolvedOutEmpCode) resolvedOutEmpCode = uRole.emp_id || '';
-    if (!resolvedOutDept || resolvedOutDept === 'General') resolvedOutDept = uRole.emp_department || 'General';
-    if (!resolvedOutEmpName) resolvedOutEmpName = uRole.emp_name || '';
-  }
-
-  const punchOutRecord = {
-    ...updatedRecord,
-    id: ensureUuid(existing.id),
-    tenant_id: existing.tenant_id || tenantId,
-    user_id: existing.user_id || userId || null,
-    emp_code: resolvedOutEmpCode,
-    emp_name: resolvedOutEmpName,
-    email: normalizedEmail,
-    department: resolvedOutDept,
-    attendance_date: today,
-    in_time: existing.in_time,
-    out_time: nowIso,
-    in_location: existing.in_location || location,
-    out_location: location,
-    in_method: existing.in_method || method,
-    out_method: method,
-    total_working_minutes: evaluation.total_working_minutes,
-    status: evaluation.status,
-    remarks: [geofenceRemarks, evaluation.remarks].filter(Boolean).join(' '),
-    updated_at: nowIso
-  };
-  const saved = await persistAttendancePunch(adminClient, punchOutRecord, tenantId, existingDb, 'OUT');
-  if (saved.error) {
-    console.error('Supabase punchOut save failed:', saved.error);
-    return { success: false, error: 'Punch Out server par save nahi hua. Kripya dobara try karein.' };
-  }
-  if (saved.alreadyPunched) return {
-    success: false, alreadyPunchedOut: true, data: saved.data,
-    error: 'Aapka aaj ka Punch Out pehle se saved hai.'
-  };
-  updatedRecord = saved.data;
-
-  // Fire-and-forget background tasks (location ping, fallback file write, audit log) for <500ms immediate response
-  (async () => {
-    try {
-      const gpsMatch = String(location || '').match(/GPS\s*\(\s*([0-9.-]+)\s*,\s*([0-9.-]+)\s*\)/i);
-      const resolvedUserId = updatedRecord.user_id || (userId && isValidUuid(userId) ? userId : null);
-      if (gpsMatch && resolvedUserId) {
-        const pLat = parseFloat(gpsMatch[1]);
-        const pLng = parseFloat(gpsMatch[2]);
-        if (Number.isFinite(pLat) && Number.isFinite(pLng) && pLat >= -90 && pLat <= 90 && pLng >= -180 && pLng <= 180) {
-          await adminClient.from('employee_live_locations').insert({
-            user_id: resolvedUserId,
-            company: userCompany || 'TNT00001',
-            branch_code: null,
-            latitude: Number(pLat.toFixed(7)),
-            longitude: Number(pLng.toFixed(7)),
-            accuracy_meters: null,
-            speed_kmh: 0,
-            battery_pct: null,
-            is_charging: false,
-            is_moving: false,
-            is_mock_gps: false,
-            is_offline_synced: false,
-            recorded_at: nowIso
-          });
+            if (!isWithin) {
+              if (tenantPolicy.geofence_mode === 'FLAG_OUTSIDE') {
+                geofenceRemarks = (geofenceRemarks ? geofenceRemarks + ' ' : '') + `[Outside Geofence: ${minDistance}m from ${nearestOffice.name || 'Office'}]`;
+              } else {
+                return {
+                  success: false,
+                  error: `🚫 Office Geofence Violation: Aap "${nearestOffice.name || 'Office'}" se ${minDistance}m door hain (Allowed radius: ${allowedRadius}m). Kripya office campus me aakar punch out karein.`
+                };
+              }
+            } else {
+              geofenceRemarks = (geofenceRemarks ? geofenceRemarks + ' ' : '') + `[Inside Geofence: ${minDistance}m from ${nearestOffice.name || 'Office'}]`;
+            }
+          }
+        } else if (isStrictGps) {
+          return {
+            success: false,
+            error: '⚠️ Mandatory GPS Policy Enforced: Valid GPS coordinates prapt nahi ho sake. Kripya location check karein.'
+          };
         }
       }
-    } catch (locErr) {
-      console.warn('Could not insert punch-out live location ping:', locErr);
     }
 
-    try {
-      const existingIdx = (local?.records || []).findIndex(r => (r.tenant_id || DEFAULT_TENANT_ID) === tenantId && (r.email || '').toLowerCase() === normalizedEmail && r.attendance_date === today);
-      if (existingIdx >= 0) {
-        local.records[existingIdx] = updatedRecord;
-      } else {
-        local.records.unshift(updatedRecord);
+    const activeShift = resolveShiftFromPolicy(tenantPolicy, existing.shift_name);
+
+    const monthlyUsage = calculateMonthlyShortLeaveUsage(monthlyRecords, nowYear, nowMonth, today, activeShift || tenantPolicy);
+    const evaluation = evaluateEveningOutPunch(now, existing.in_time, existing, monthlyUsage, empName || email.split('@')[0], activeShift || tenantPolicy);
+
+    let updatedRecord = {
+      ...existing,
+      email: normalizedEmail,
+      out_time: nowIso,
+      out_location: location,
+      out_method: method,
+      total_working_minutes: evaluation.total_working_minutes,
+      status: evaluation.status,
+      short_leave_type: evaluation.short_leave_type,
+      remarks: [geofenceRemarks, evaluation.remarks].filter(Boolean).join(' '),
+      updated_at: nowIso
+    };
+
+    let resolvedOutEmpCode = existing.emp_code || '';
+    let resolvedOutDept = existing.department || '';
+    let resolvedOutEmpName = existing.emp_name || empName || '';
+
+    if ((!resolvedOutEmpCode || !resolvedOutDept || resolvedOutDept === 'General') && uRole) {
+      if (!resolvedOutEmpCode) resolvedOutEmpCode = uRole.emp_id || '';
+      if (!resolvedOutDept || resolvedOutDept === 'General') resolvedOutDept = uRole.emp_department || 'General';
+      if (!resolvedOutEmpName) resolvedOutEmpName = uRole.emp_name || '';
+    }
+
+    const resolvedTenantId = existing.tenant_id || tenantId;
+
+    const punchOutRecord = {
+      ...updatedRecord,
+      id: ensureUuid(existing.id),
+      tenant_id: resolvedTenantId,
+      user_id: existing.user_id || userId || null,
+      emp_code: resolvedOutEmpCode,
+      emp_name: resolvedOutEmpName,
+      email: normalizedEmail,
+      department: resolvedOutDept,
+      attendance_date: today,
+      in_time: existing.in_time,
+      out_time: nowIso,
+      in_location: existing.in_location || location,
+      out_location: location,
+      in_method: existing.in_method || method,
+      out_method: method,
+      total_working_minutes: evaluation.total_working_minutes,
+      status: evaluation.status,
+      remarks: [geofenceRemarks, evaluation.remarks].filter(Boolean).join(' '),
+      updated_at: nowIso
+    };
+    const saved = await persistAttendancePunch(adminClient, punchOutRecord, resolvedTenantId, existingDb, 'OUT');
+    if (saved.error) {
+      console.error('Supabase punchOut save failed:', saved.error);
+      return { success: false, error: 'Punch Out server par save nahi hua. Kripya dobara try karein.' };
+    }
+    if (saved.alreadyPunched) return {
+      success: false, alreadyPunchedOut: true, data: saved.data,
+      error: 'Aapka aaj ka Punch Out pehle se saved hai.'
+    };
+    updatedRecord = saved.data;
+
+    // Fire-and-forget background tasks (location ping, fallback file write, audit log) for <500ms immediate response
+    (async () => {
+      try {
+        const gpsMatch = String(location || '').match(/GPS\s*\(\s*([0-9.-]+)\s*,\s*([0-9.-]+)\s*\)/i);
+        const resolvedUserId = updatedRecord.user_id || (userId && isValidUuid(userId) ? userId : null);
+        if (gpsMatch && resolvedUserId) {
+          const pLat = parseFloat(gpsMatch[1]);
+          const pLng = parseFloat(gpsMatch[2]);
+          if (Number.isFinite(pLat) && Number.isFinite(pLng) && pLat >= -90 && pLat <= 90 && pLng >= -180 && pLng <= 180) {
+            await adminClient.from('employee_live_locations').insert({
+              user_id: resolvedUserId,
+              company: userCompany || 'TNT00001',
+              branch_code: null,
+              latitude: Number(pLat.toFixed(7)),
+              longitude: Number(pLng.toFixed(7)),
+              accuracy_meters: null,
+              speed_kmh: 0,
+              battery_pct: null,
+              is_charging: false,
+              is_moving: false,
+              is_mock_gps: false,
+              is_offline_synced: false,
+              recorded_at: nowIso
+            });
+          }
+        }
+      } catch (locErr) {
+        console.warn('Could not insert punch-out live location ping:', locErr);
       }
-      await saveFallbackData(local);
-    } catch {}
 
-    try {
-      await logAuditAction({
-        module: 'attendance',
-        action: 'PUNCH_OUT',
-        details: `Employee ${empName || email} punched out at ${new Date(nowIso).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })} on ${today} (Worked: ${formatMinutesToHours(evaluation.total_working_minutes)}) [${evaluation.ruleTitle}]`,
-        userEmail: normalizedEmail,
-        userName: empName
-      });
-    } catch (aErr) {}
-  })();
+      try {
+        const existingIdx = (local?.records || []).findIndex(r => (r.email || '').toLowerCase() === normalizedEmail && r.attendance_date === today);
+        if (existingIdx >= 0) {
+          local.records[existingIdx] = updatedRecord;
+        } else {
+          local.records.unshift(updatedRecord);
+        }
+        await saveFallbackData(local);
+      } catch {}
 
-  return {
-    success: true,
-    message: `Punch Out registered: ${evaluation.ruleTitle}! Total time worked: ${formatMinutesToHours(evaluation.total_working_minutes)}`,
-    data: updatedRecord,
-    evaluation,
-    monthlyUsage
-  };
+      try {
+        await logAuditAction({
+          module: 'attendance',
+          action: 'PUNCH_OUT',
+          details: `Employee ${empName || email} punched out at ${new Date(nowIso).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })} on ${today} (Worked: ${formatMinutesToHours(evaluation.total_working_minutes)}) [${evaluation.ruleTitle}]`,
+          userEmail: normalizedEmail,
+          userName: empName
+        });
+      } catch (aErr) {}
+    })();
+
+    return {
+      success: true,
+      message: `Punch Out registered: ${evaluation.ruleTitle}! Total time worked: ${formatMinutesToHours(evaluation.total_working_minutes)}`,
+      data: updatedRecord,
+      evaluation,
+      monthlyUsage
+    };
+  } catch (fatalErr) {
+    console.error('Fatal unhandled punchOut error:', fatalErr);
+    return {
+      success: false,
+      error: fatalErr?.message ? `Punch Out failed: ${fatalErr.message}` : 'Punch Out process nahi ho saka. Kripya dobara try karein.'
+    };
+  }
 }
 
 /**

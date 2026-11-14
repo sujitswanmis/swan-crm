@@ -28,6 +28,7 @@
   isolation: isolate;
 }
 #wa-message-analytics *, .wa-log-popover *, .wa-log-filter-menu * { box-sizing: border-box; }
+#wa-message-analytics .wa-log-table-card, #wa-message-analytics .wa-log-table-scroll { width: 100%; min-width: 0; max-width: 100%; }
 #wa-message-analytics .wa-log-table { border-collapse: separate !important; border-spacing: 0 !important; }
 #wa-message-analytics .wa-log-table th { background: rgba(248, 250, 252, 0.94) !important; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); color: #64748b !important; }
 #wa-message-analytics .wa-log-table td { height: 46px; padding: 0.625rem 0.875rem !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }

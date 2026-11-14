@@ -2099,11 +2099,18 @@ export default function AttendanceModule({
       // An online error can have an ambiguous result; verify it before retrying.
       if (!navigator.onLine && isCurrent()
         && await saveOfflinePunch('IN', offlineRecord, punchLocation, scope)) accepted = offlineRecord;
-      else if (isCurrent() && navigator.onLine) setPunchError('Punch In confirm nahi ho saka. Status dobara verify karein.');
+      else {
+        const msg = String(err?.message || '');
+        if (msg.includes('Failed to find Server Action') || msg.includes('older or newer deployment')) {
+          setPunchError('Naya update aaya hai. Kripya page refresh (Ctrl + Shift + R) karein aur Punch In karein.');
+        } else {
+          setPunchError(err?.message ? `Punch In error: ${err.message}` : 'Punch In confirm nahi ho saka. Status dobara verify karein.');
+        }
+      }
     } finally {
       if (punchInFlightRef.current === scope) punchInFlightRef.current = false;
+      setPunchingIn(false);
       if (isCurrent()) {
-        setPunchingIn(false);
         if (accepted) {
           const voiceMsg = evaluation.voiceMessageEnglish || `Punch In successful. Welcome, ${userName || 'User'}!`;
           speakHumanFemaleAnnouncement(voiceMsg);
@@ -2185,11 +2192,18 @@ export default function AttendanceModule({
     } catch (err) {
       console.warn('Network punch-out failed, queueing offline:', err);
       if (!navigator.onLine && isCurrent()) accepted = await saveOfflinePunch('OUT', offlineRecord, punchLocation, scope);
-      else if (isCurrent()) setPunchError('Punch Out confirm nahi ho saka. Status dobara verify karein.');
+      else {
+        const msg = String(err?.message || '');
+        if (msg.includes('Failed to find Server Action') || msg.includes('older or newer deployment')) {
+          setPunchError('Naya update aaya hai. Kripya page refresh (Ctrl + Shift + R) karein aur Punch Out karein.');
+        } else {
+          setPunchError(err?.message ? `Punch Out error: ${err.message}` : 'Punch Out confirm nahi ho saka. Status dobara verify karein.');
+        }
+      }
     } finally {
       if (punchInFlightRef.current === scope) punchInFlightRef.current = false;
+      setPunchingOut(false);
       if (isCurrent()) {
-        setPunchingOut(false);
         if (accepted) {
           const voiceMsg = evaluation.voiceMessageEnglish || `Punch Out successful. Thank you, ${userName || 'User'}!`;
           speakHumanFemaleAnnouncement(voiceMsg);
