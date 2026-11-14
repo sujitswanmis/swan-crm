@@ -143,7 +143,12 @@ export const MODULES_CONFIG = [
   },
 
   // Sales
-  { id: 'registration', path: 'registration', label: 'New Lead Registration', category: 'Sales', icon: <UserPlus size={20} /> },
+  { id: 'registration', path: 'registration', label: 'New Lead Registration', category: 'Sales', icon: <UserPlus size={20} />, subItems: [
+    { id: 'form', label: 'New Lead Registration' },
+    { id: 'drafts', label: 'Saved Drafts' },
+    { id: 'submitted', label: 'Lead Submitted' },
+    { id: 'deleted', label: 'Lead Deleted' },
+  ] },
   { id: 'report', path: 'report', label: 'Lead Registered Report', category: 'Sales', icon: <FileText size={20} /> },
   { 
     id: 'leads', 

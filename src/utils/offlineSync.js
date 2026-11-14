@@ -1629,6 +1629,26 @@ export async function syncPendingQueue(supabaseClient, onProgress = null) {
         }
         await removeQueueItem(item.queueId, { ...item, title: `Task Status: ${payload.status || 'Updated'}` });
         successCount++;
+      } else if (item.entityType === 'registration_lifecycle') {
+        // Isolated opt-in handler. Existing lead/calling/attendance queue paths are unchanged.
+        const actions = await import('@/app/actions/clientRegistrationSync');
+        const payload = item.payload;
+        const result = item.actionType === 'archive'
+          ? await actions.deleteClientRegistrationDraft(payload.id, payload.reason)
+          : item.actionType === 'save'
+            ? await actions.saveClientRegistrationDraft(payload, payload.userCompany || '')
+            : item.actionType === 'submit'
+              ? await actions.submitClientRegistrationAndSync(payload, payload.userCompany || '')
+              : { success: false, error: 'Unsupported registration operation.' };
+        if (!result?.success) throw new Error(result?.error || 'Registration sync was not confirmed.');
+        if (result.lead) {
+          await upsertLeadsLocally([result.lead]);
+          if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('crm_leads_imported', { detail: [result.lead] }));
+        }
+        const { notifyRegistrationChanged } = await import('./clientRegistrationLifecycle');
+        notifyRegistrationChanged(result.lead || result.draft);
+        await removeQueueItem(item.queueId, item);
+        successCount++;
       } else if (item.entityType === 'attendance_regularize') {
         const payload = item.payload;
         const { applyMissingAttendance } = await import('@/app/actions/attendance');

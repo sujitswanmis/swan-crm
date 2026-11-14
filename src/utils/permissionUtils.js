@@ -146,6 +146,18 @@ export function getSubItemPermissions(moduleAccess, userRole, moduleId, subItemI
   if (isAdmin) {
     return { view: true, add: true, edit: true, delete: true };
   }
+  // Registration history is opt-in even for module managers. Existing form/draft
+  // access retains its legacy parent grant unless explicitly disabled.
+  if (moduleId === 'registration') {
+    if (['submitted', 'deleted'].includes(subItemId)) {
+      return { view: subRaw === true || subRaw?.view === true, add: false, edit: false, delete: false };
+    }
+    if (['form', 'drafts'].includes(subItemId)) {
+      if (subRaw === false || subRaw?.view === false) return { view: false, add: false, edit: false, delete: false };
+      return { ...parentPerms };
+    }
+    return { view: false, add: false, edit: false, delete: false };
+  }
   // This existing page owns three registered views. Legacy explicit log grants
   // retain raw access; the two analytics views require separate explicit grants.
   if (moduleId === 'whatsapp_official' && subItemId === WHATSAPP_LOG_PAGE_ID) {

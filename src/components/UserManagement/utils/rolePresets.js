@@ -908,6 +908,18 @@ export const ROLE_PRESETS = [
 
 // Register every tab of the single Integrations page, preserving stored permission IDs.
 for (const preset of ROLE_PRESETS) {
+  const registration = preset.presetData.registration;
+  const registrationAdmin = ['master_admin', 'admin'].includes(preset.key);
+  preset.presetData.registration = {
+    ...(registration || { view: false, read: false, write: false, edit: false }),
+    sub_items: {
+      ...(registration?.sub_items || {}),
+      form: { view: registration?.view === true },
+      drafts: { view: registration?.view === true },
+      submitted: { view: registrationAdmin },
+      deleted: { view: registrationAdmin },
+    },
+  };
   const whatsapp = preset.presetData.whatsapp_official;
   const canViewApiLogs = ['master_admin', 'admin'].includes(preset.key);
   preset.presetData.whatsapp_official = {

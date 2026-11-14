@@ -2,7 +2,12 @@
 
 import MobileTableView from '@/components/common/MobileTableView';
 import StandardTablePagination from '@/components/common/StandardTablePagination';
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { usePathname } from 'next/navigation';
+import RegistrationHistoryTable from '@/components/Registration/RegistrationHistoryTable';
+import useTableColumnResize, { ColumnResizer } from '@/utils/tableColumnResize';
+import { getSubItemPermissions } from '@/utils/permissionUtils';
+import { REGISTRATION_TABS, registrationView, registrationStatus, getRegistrationSnapshot, readRegistrationCache, saveRegistrationCache, mergeRegistrationRows, notifyRegistrationChanged } from '@/utils/clientRegistrationLifecycle';
 import { createClient } from '@/utils/supabase/client';
 import { ChevronDown, ChevronUp, Save, Briefcase, MapPin, User, FileText, CheckCircle2, Upload, Download, X, AlertTriangle, AlertCircle, Search, ChevronLeft, ChevronRight, Filter, UserPlus, Edit3, Trash2, Clock } from 'lucide-react';
 import Papa from 'papaparse';
@@ -490,10 +495,12 @@ export default function ClientRegistration({
   userRole = '',
   userName = '',
   adminCompanyFilter = 'All',
-  branchAccess = null
+  branchAccess = null,
+  userId = ''
 }) {
   const supabase = createClient();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const submittingRef = useRef(false);
   const [uploadModal, setUploadModal] = useState(null);
   const [availableBranches, setAvailableBranches] = useState([]);
 
@@ -775,8 +782,48 @@ export default function ClientRegistration({
   ]);
   const [businessTypes, setBusinessTypes] = useState(DEFAULT_BUSINESS_TYPES);
 
-  const [activeView, setActiveView] = useState('form'); // 'form' | 'drafts'
-  const [draftsList, setDraftsList] = useState([]);
+  const [draftPage, setDraftPage] = useState(1);
+  const pathname = usePathname();
+  const [activeView, setActiveViewState] = useState(() => registrationView(pathname));
+  const allowedTabs = REGISTRATION_TABS.filter(tab => getSubItemPermissions(moduleAccess, userRole, 'registration', tab.id).view);
+  const canViewTab = useCallback(id => getSubItemPermissions(moduleAccess, userRole, 'registration', id).view, [moduleAccess, userRole]);
+  const setActiveView = useCallback(view => {
+    if (!canViewTab(view)) return;
+    setActiveViewState(view);
+    setDraftPage(1);
+    if (!isEditMode) window.history.pushState(null, '', REGISTRATION_TABS.find(tab => tab.id === view)?.path || '/registration');
+  }, [canViewTab, isEditMode]);
+  useEffect(() => {
+    const syncRoute = () => {
+      const requested = registrationView(window.location.pathname);
+      setActiveViewState(canViewTab(requested) ? requested : REGISTRATION_TABS.find(tab => canViewTab(tab.id))?.id || 'denied');
+    };
+    syncRoute();
+    window.addEventListener('popstate', syncRoute);
+    return () => window.removeEventListener('popstate', syncRoute);
+  }, [pathname, canViewTab]);
+  const registrationScope = JSON.stringify([userId, userName, userRole, userCompany, adminCompanyFilter, moduleAccess, effectiveBranchAccess.allowedCompanies]);
+  const registrationScopeRef = useRef(registrationScope);
+  registrationScopeRef.current = registrationScope;
+  const [registrationData, setRegistrationData] = useState({ scope: registrationScope, lists: {} });
+  const viewRows = view => registrationData.scope === registrationScope && registrationData.lists[view]
+    ? registrationData.lists[view] : getRegistrationSnapshot(`${registrationScope}:${view}`).rows;
+  const draftsList = useMemo(() => {
+    if (!canViewTab('drafts')) return [];
+    return registrationData.scope === registrationScope && registrationData.lists.drafts
+      ? registrationData.lists.drafts : getRegistrationSnapshot(`${registrationScope}:drafts`).rows;
+  }, [canViewTab, registrationData, registrationScope]);
+  const setDraftsList = updater => setRegistrationData(previous => ({ scope: registrationScope, lists: {
+    ...(previous.scope === registrationScope ? previous.lists : {}),
+    drafts: typeof updater === 'function' ? updater(previous.scope === registrationScope ? previous.lists.drafts || draftsList : draftsList) : updater,
+  } }));
+  const registrationRequests = useRef(new Set());
+  const loadedRegistrationScope = useRef(registrationScope);
+  const [registrationErrors, setRegistrationErrors] = useState({});
+  const [deleteDraft, setDeleteDraft] = useState(null);
+  const [deleteReason, setDeleteReason] = useState('');
+  const [isDeletingDraft, setIsDeletingDraft] = useState(false);
+  const draftWidths = useTableColumnResize('crm_registration_drafts_widths', { company: 290, contact: 280, location: 160, missing: 180, saved: 180, actor: 180, actions: 240 });
   const [isLoadingDrafts, setIsLoadingDrafts] = useState(false);
   const [currentDraftId, setCurrentDraftId] = useState(null);
   const [isSavingDraft, setIsSavingDraft] = useState(false);
@@ -786,7 +833,6 @@ export default function ClientRegistration({
   const [draftSearch, setDraftSearch] = useState('');
   const [draftViewFilter, setDraftViewFilter] = useState('all'); // 'all' | 'my'
   const [draftUserFilter, setDraftUserFilter] = useState('all');
-  const [draftPage, setDraftPage] = useState(1);
   const [draftPageSize, setDraftPageSize] = useState(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -821,33 +867,90 @@ export default function ClientRegistration({
     resolveActor();
   }, [userName, teamMembers, supabase, defaultWorkspaceCompany]);
 
-  const loadDrafts = async () => {
+  const loadRegistrationRecords = useCallback(async (view = 'drafts') => {
+    if (isEditMode || !canViewTab(view)) return;
+    const scope = registrationScope;
+    const key = `${scope}:${view}`;
+    if (registrationRequests.current.has(key)) return;
+    registrationRequests.current.add(key);
     setIsLoadingDrafts(true);
     try {
+      const cached = await readRegistrationCache(key);
+      if (registrationScopeRef.current !== scope) return;
+      if (loadedRegistrationScope.current !== scope) {
+        loadedRegistrationScope.current = scope;
+        setDraftPage(1);
+      }
+      setRegistrationData(previous => ({ scope, lists: { ...(previous.scope === scope ? previous.lists : {}), [view]: cached.rows } }));
       let res;
+      const options = { view, since: cached.cursor };
       if (adminCompanyFilter && adminCompanyFilter.toLowerCase() !== 'all') {
-        res = await getClientRegistrationDrafts(adminCompanyFilter, currentActor, canViewAllDrafts);
+        res = await getClientRegistrationDrafts(adminCompanyFilter, currentActor, canViewAllDrafts, null, options);
       } else if (effectiveBranchAccess.isAllBranches) {
         const allTarget = isSwanWorkspace ? 'New Swan Group' : (userCompany || 'All');
-        res = await getClientRegistrationDrafts(allTarget, currentActor, canViewAllDrafts);
+        res = await getClientRegistrationDrafts(allTarget, currentActor, canViewAllDrafts, null, options);
       } else if (effectiveBranchAccess.isMultiBranch && effectiveBranchAccess.allowedCompanies.length > 0) {
-        res = await getClientRegistrationDrafts('All', currentActor, canViewAllDrafts, effectiveBranchAccess.allowedCompanies);
+        res = await getClientRegistrationDrafts('All', currentActor, canViewAllDrafts, effectiveBranchAccess.allowedCompanies, options);
       } else {
-        res = await getClientRegistrationDrafts(userCompany || 'New Swan Group', currentActor, canViewAllDrafts);
+        res = await getClientRegistrationDrafts(userCompany || 'New Swan Group', currentActor, canViewAllDrafts, null, options);
       }
-      if (res && res.success) {
-        setDraftsList(res.drafts || []);
-      }
+      if (!res?.success) throw new Error(res?.error || 'Could not load registration records.');
+      const snapshot = { rows: mergeRegistrationRows(cached.rows, res.drafts, view), cursor: res.cursor };
+      await saveRegistrationCache(key, snapshot);
+      if (registrationScopeRef.current !== scope) return;
+      setRegistrationData(previous => ({ scope, lists: { ...(previous.scope === scope ? previous.lists : {}), [view]: snapshot.rows } }));
+      setRegistrationErrors(previous => ({ ...previous, [view]: '' }));
     } catch (err) {
-      console.warn('Draft load notice:', err);
+      if (registrationScopeRef.current === scope) setRegistrationErrors(previous => ({ ...previous, [view]: err.message || 'Could not update records.' }));
     } finally {
+      registrationRequests.current.delete(key);
       setIsLoadingDrafts(false);
     }
+  }, [registrationScope, isEditMode, canViewTab, adminCompanyFilter, currentActor, canViewAllDrafts, effectiveBranchAccess, isSwanWorkspace, userCompany]);
+  const loadDrafts = () => loadRegistrationRecords('drafts');
+  const cacheRegistrationChange = async lead => {
+    const companyMatches = adminCompanyFilter && adminCompanyFilter.toLowerCase() !== 'all'
+      ? matchesCompanyToken(lead.our_company, [adminCompanyFilter])
+      : matchesCompanyToken(lead.our_company, effectiveBranchAccess.allowedCompanies);
+    const ownerMatches = canViewAllDrafts || [lead.entry_by, lead.created_by].some(value =>
+      currentActor && String(value || '').toLowerCase().includes(currentActor.toLowerCase()));
+    const change = companyMatches && ownerMatches ? lead : { id: lead.id, _removed: true };
+    const lists = {};
+    await Promise.allSettled(['drafts', 'submitted', 'deleted'].filter(canViewTab).map(async view => {
+      const key = `${registrationScope}:${view}`;
+      const cached = getRegistrationSnapshot(key);
+      const snapshot = { ...cached, rows: mergeRegistrationRows(cached.rows, [change], view) };
+      lists[view] = snapshot.rows;
+      await saveRegistrationCache(key, snapshot);
+    }));
+    if (registrationScopeRef.current === registrationScope) setRegistrationData(previous => ({
+      scope: registrationScope, lists: { ...(previous.scope === registrationScope ? previous.lists : {}), ...lists },
+    }));
   };
 
   useEffect(() => {
-    loadDrafts();
-  }, [userCompany, adminCompanyFilter, currentActor, canViewAllDrafts, effectiveBranchAccess]);
+    if (isEditMode) return;
+    const refresh = () => {
+      if (activeView === 'form' || activeView === 'drafts') loadRegistrationRecords('drafts');
+      else if (['submitted', 'deleted'].includes(activeView)) loadRegistrationRecords(activeView);
+    };
+    refresh();
+    const onStorage = event => { if (event.key === 'crm_registration_changed') refresh(); };
+    window.addEventListener('crm_registration_changed', refresh);
+    window.addEventListener('crm_trigger_delta_sync', refresh);
+    window.addEventListener('supuja_offline_sync_completed', refresh);
+    window.addEventListener('online', refresh);
+    window.addEventListener('storage', onStorage);
+    const interval = setInterval(() => { if (document.visibilityState === 'visible') refresh(); }, 60000);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('crm_registration_changed', refresh);
+      window.removeEventListener('crm_trigger_delta_sync', refresh);
+      window.removeEventListener('supuja_offline_sync_completed', refresh);
+      window.removeEventListener('online', refresh);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, [loadRegistrationRecords, activeView, isEditMode]);
 
   // Filtered drafts based on search and user filter
   const filteredDraftsList = useMemo(() => {
@@ -953,8 +1056,23 @@ export default function ClientRegistration({
         ...formData,
         id: currentDraftId || initialData?.id || undefined
       };
+      if (!navigator.onLine) {
+        const check = canPerformOfflineAction('clientRegistration');
+        if (!check.allowed) throw new Error(check.reason);
+        const localId = currentDraftId || crypto.randomUUID();
+        const queued = await enqueueOfflineAction('save', 'registration_lifecycle', { ...draftPayload, id: localId, offlineCreate: !currentDraftId, userCompany });
+        if (!queued) throw new Error('Draft could not be saved to device storage. Please keep this form open and retry.');
+        setCurrentDraftId(localId);
+        setFormData(previous => ({ ...previous, id: localId }));
+        showSyncToast('Draft safely queued on this device. It will sync when connected.', 'info', 5000);
+        return;
+      }
       const res = await saveClientRegistrationDraft(draftPayload, userCompany, actor);
       if (res && res.success) {
+        if (res.draft) {
+          await cacheRegistrationChange(res.draft);
+          notifyRegistrationChanged(res.draft);
+        }
         if (res.draft?.id) setCurrentDraftId(res.draft.id);
         setUploadModal({
           type: 'success',
@@ -1000,19 +1118,40 @@ export default function ClientRegistration({
       ...prev,
       ...draft,
       our_company: resolvedComp,
-      id: draft.id
+      id: draft.id,
+      status: registrationStatus(draft.status, tenantLeadStatuses[0])
     }));
     setActiveView('form');
   };
 
-  const handleDeleteDraft = async (draftId) => {
-    if (!window.confirm('Kya aap is draft ko delete karna chahte hain?')) return;
+  const handleDeleteDraft = async () => {
+    if (!deleteDraft || isDeletingDraft) return;
+    const reason = deleteReason.trim();
+    if (reason.length < 3) return;
+    setIsDeletingDraft(true);
     try {
-      await deleteClientRegistrationDraft(draftId);
+      const draftId = deleteDraft.id;
+      if (!navigator.onLine) {
+        const check = canPerformOfflineAction('clientRegistration');
+        if (!check.allowed) throw new Error(check.reason);
+        const queued = await enqueueOfflineAction('archive', 'registration_lifecycle', { id: draftId, reason, company: deleteDraft.company });
+        if (!queued) throw new Error('Could not save the deletion request on this device.');
+        showSyncToast('Deletion reason saved on this device. Archive will complete after sync.', 'info', 5000);
+      } else {
+        const result = await deleteClientRegistrationDraft(draftId, reason);
+        if (!result?.success) throw new Error(result?.error || 'Draft could not be archived.');
+        await cacheRegistrationChange(result.draft);
+        notifyRegistrationChanged(result.draft);
+      }
       setDraftsList(prev => prev.filter(d => d.id !== draftId));
+      setDraftPage(1);
       if (currentDraftId === draftId) setCurrentDraftId(null);
+      setDeleteDraft(null);
+      setDeleteReason('');
     } catch (e) {
       alert('Error deleting draft: ' + e.message);
+    } finally {
+      setIsDeletingDraft(false);
     }
   };
 
@@ -1172,6 +1311,7 @@ export default function ClientRegistration({
         let dupQuery = supabase
           .from('leads')
           .select(selectQuery)
+          .is('registration_deleted_at', null)
           .or(filters.join(','));
 
         // Exclude the current editing draft/record so it never masks real duplicates
@@ -1287,6 +1427,7 @@ export default function ClientRegistration({
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (submittingRef.current) return;
 
     // Guard against submitting duplicates without confirmation
     if (!isEditMode && duplicateInfo) {
@@ -1298,6 +1439,7 @@ export default function ClientRegistration({
       }
     }
 
+    submittingRef.current = true;
     setIsSubmitting(true);
     
     try {
@@ -1400,8 +1542,49 @@ export default function ClientRegistration({
             }
           }
         }
+      } else if (currentDraftId) {
+        const draftPayload = { ...rawNormalized, id: currentDraftId, fromSavedDraft: true,
+          status: registrationStatus(rawNormalized.status, tenantLeadStatuses[0]) };
+        const queueSubmission = async () => {
+          const check = canPerformOfflineAction('clientRegistration');
+          if (!check.allowed) throw new Error(check.reason);
+          const queued = await enqueueOfflineAction('submit', 'registration_lifecycle', { ...draftPayload, userCompany });
+          if (!queued) throw new Error('Could not save submission on this device. Your draft has been preserved.');
+          showSyncToast('Submission queued safely on this device. Report and Lead Data will update after cloud sync.', 'info', 6000);
+        };
+        if (!navigator.onLine) {
+          await queueSubmission();
+          return;
+        }
+        let result;
+        try {
+          result = await submitClientRegistrationAndSync(draftPayload, draftPayload.our_company || userCompany, actor);
+        } catch (error) {
+          if (!navigator.onLine || /failed to fetch|network\s*error|load\s*failed/i.test(error.message || '')) {
+            await queueSubmission();
+            return;
+          }
+          throw error;
+        }
+        if (!result?.success || !result.lead || result.lead.status === 'DRAFT') {
+          throw new Error(result?.error || 'Submission was not confirmed. Your draft has been preserved.');
+        }
+        const committed = result.lead;
+        await upsertLeadsLocally([committed]);
+        await cacheRegistrationChange(committed);
+        setDraftsList(previous => previous.filter(draft => draft.id !== currentDraftId));
+        setCurrentDraftId(null);
+        setFormData(previous => Object.fromEntries(Object.keys(previous).map(key => [key,
+          key === 'our_company' ? defaultWorkspaceCompany : key === 'status' ? registrationStatus('', tenantLeadStatuses[0])
+            : key === 'entry_by' ? currentActor || userName : key === 'lead_date' ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date()) : ''
+        ])));
+        notifyRegistrationChanged(committed);
+        window.dispatchEvent(new CustomEvent('crm_leads_imported', { detail: [committed] }));
+        if (onRegistrationSuccess) onRegistrationSuccess(committed);
+        showSyncToast('Lead submitted successfully. Report and Lead Data updated.', 'success', 5000);
       } else {
         // INSERT MODE
+        rawNormalized.status = registrationStatus(rawNormalized.status, tenantLeadStatuses[0]);
         rawNormalized.created_by = actor;
         const cleanPayload = sanitizeLeadPayloadForDb(rawNormalized, false);
         delete cleanPayload.id; // Guarantee fresh UUID and zero leads_pkey collision
@@ -1453,7 +1636,7 @@ export default function ClientRegistration({
               // Get the total count of leads to calculate the stable 15-digit Lead ID
               const { count } = await supabase.from('leads').select('*', { count: 'exact', head: true });
               const d = new Date(newLead.created_at || new Date());
-              const dateStr = d.toISOString().split('T')[0].replace(/-/g, '');
+              const dateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(d).replace(/-/g, '');
               const seq = String(count).padStart(7, '0');
               const newFormattedId = dateStr + seq;
               
@@ -1482,19 +1665,13 @@ export default function ClientRegistration({
             
             if (finalNewLeadObj) {
               try {
-                await submitClientRegistrationAndSync(finalNewLeadObj, finalNewLeadObj.our_company || cleanPayload.our_company || '', actor);
+                const syncResult = await submitClientRegistrationAndSync(finalNewLeadObj, finalNewLeadObj.our_company || cleanPayload.our_company || '', actor);
+                if (syncResult?.success && syncResult.lead) {
+                  finalNewLeadObj = { ...finalNewLeadObj, ...syncResult.lead };
+                  await upsertLeadsLocally([finalNewLeadObj]);
+                } else console.warn('Secondary registration sync notice:', syncResult?.error);
               } catch (syncErr) {
-                console.warn('4-way auto-sync notice:', syncErr);
-              }
-            }
-
-            if (currentDraftId) {
-              try {
-                await deleteClientRegistrationDraft(currentDraftId);
-                setCurrentDraftId(null);
-                loadDrafts();
-              } catch (draftErr) {
-                console.warn('Draft cleanup notice:', draftErr);
+                console.warn('Secondary registration sync notice:', syncErr);
               }
             }
             
@@ -1552,6 +1729,7 @@ export default function ClientRegistration({
       console.error(err);
       alert('Error saving client: ' + err.message);
     } finally {
+      submittingRef.current = false;
       setIsSubmitting(false);
     }
   };
@@ -2049,6 +2227,7 @@ export default function ClientRegistration({
           const { data: pageData, error: fetchErr } = await supabase
             .from('leads')
             .select(selectFields)
+            .is('registration_deleted_at', null)
             .range(fetchPage * 1000, (fetchPage + 1) * 1000 - 1);
           
           if (fetchErr) throw fetchErr;
@@ -2507,66 +2686,28 @@ export default function ClientRegistration({
           </div>
         </div>
 
-        {/* Navigation Tabs: Form vs Saved Drafts */}
-        {!isEditMode && (
-          <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem' }}>
-            <button
-              type="button"
-              onClick={() => setActiveView('form')}
-              style={{
-                padding: '0.6rem 1.25rem',
-                borderRadius: '8px',
-                border: activeView === 'form' ? '1px solid var(--accent-color)' : '1px solid var(--border-light)',
-                background: activeView === 'form' ? 'var(--accent-color)' : 'var(--bg-primary)',
-                color: activeView === 'form' ? '#ffffff' : 'var(--text-secondary)',
-                fontWeight: 600,
-                fontSize: '0.9rem',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem',
-                transition: 'all 0.2s ease'
-              }}
-            >
-              <UserPlus size={16} /> New Lead Registration
-            </button>
-            <button
-              type="button"
-              onClick={() => { setActiveView('drafts'); loadDrafts(); }}
-              style={{
-                padding: '0.6rem 1.25rem',
-                borderRadius: '8px',
-                border: activeView === 'drafts' ? '1px solid var(--accent-color)' : '1px solid var(--border-light)',
-                background: activeView === 'drafts' ? 'var(--accent-color)' : 'var(--bg-primary)',
-                color: activeView === 'drafts' ? '#ffffff' : 'var(--text-secondary)',
-                fontWeight: 600,
-                fontSize: '0.9rem',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem',
-                transition: 'all 0.2s ease'
-              }}
-            >
-              <FileText size={16} /> Saved Drafts
-              {draftsList.length > 0 && (
-                <span style={{
-                  backgroundColor: activeView === 'drafts' ? '#ffffff' : 'var(--accent-color)',
-                  color: activeView === 'drafts' ? 'var(--accent-color)' : '#ffffff',
-                  fontSize: '0.75rem',
-                  padding: '0.1rem 0.5rem',
-                  borderRadius: '10px',
-                  fontWeight: 700
-                }}>
-                  {draftsList.length}
-                </span>
-              )}
-            </button>
+        {/* Registration lifecycle tabs */}
+        {!isEditMode && <div role="tablist" aria-label="Lead registration" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem' }}>
+          {allowedTabs.map(tab => <button key={tab.id} type="button" role="tab" aria-selected={activeView === tab.id} onClick={() => setActiveView(tab.id)} style={{ padding: '0.6rem 1.25rem', borderRadius: 8, border: '1px solid var(--border-light)', background: activeView === tab.id ? 'var(--accent-color)' : 'var(--bg-primary)', color: activeView === tab.id ? '#fff' : 'var(--text-secondary)', fontWeight: 600, cursor: 'pointer' }}>
+            {tab.label}{tab.id === 'drafts' ? ' (' + draftsList.length + ')' : ''}
+          </button>)}
+        </div>}
+        {deleteDraft && <div role="dialog" aria-modal="true" aria-labelledby="registration-delete-title" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 10000, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '1rem' }}>
+          <div style={{ background: 'var(--bg-surface)', color: 'var(--text-primary)', padding: '1.5rem', borderRadius: 12, maxWidth: 500, width: '100%' }}>
+            <h3 id="registration-delete-title">Delete Saved Draft</h3>
+            <p>{deleteDraft.company || deleteDraft.name} ko Lead Deleted mein archive karne ka reason likhein.</p>
+            <label htmlFor="registration-delete-reason">Deletion reason (required)</label>
+            <textarea id="registration-delete-reason" autoFocus value={deleteReason} onChange={event => setDeleteReason(event.target.value)} maxLength={1000} rows={4} placeholder="Example: Duplicate lead — already registered" style={{ width: '100%', margin: '0.5rem 0 1rem', padding: '0.5rem', background: 'var(--bg-primary)', color: 'var(--text-primary)', border: '1px solid var(--border-light)', borderRadius: 6 }} />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              <button type="button" disabled={isDeletingDraft} onClick={() => { setDeleteDraft(null); setDeleteReason(''); }}>Cancel</button>
+              <button type="button" disabled={isDeletingDraft || deleteReason.trim().length < 3} onClick={handleDeleteDraft}>{isDeletingDraft ? 'Saving…' : 'Delete with Reason'}</button>
+            </div>
           </div>
-        )}
-
+        </div>}
         {/* Drafts View */}
-        {activeView === 'drafts' && !isEditMode ? (
+        {!isEditMode && ['submitted', 'deleted'].includes(activeView) ? (
+          <RegistrationHistoryTable key={registrationScope + activeView} view={activeView} rows={canViewTab(activeView) ? viewRows(activeView) : []} loading={isLoadingDrafts} error={registrationErrors[activeView]} onRetry={() => loadRegistrationRecords(activeView)} />
+        ) : !isEditMode && activeView === 'denied' ? <p>You do not have access to registration tabs.</p> : activeView === 'drafts' && !isEditMode ? (
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
               <div>
@@ -2664,11 +2805,9 @@ export default function ClientRegistration({
               </div>
             </div>
 
-            {isLoadingDrafts ? (
-              <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
-                Loading saved drafts...
-              </div>
-            ) : filteredDraftsList.length === 0 ? (
+            {registrationErrors.drafts && <p role="alert">{registrationErrors.drafts} <button type="button" onClick={loadDrafts}>Retry</button></p>}
+            {isLoadingDrafts && <p role="status">Updating drafts…</p>}
+            {filteredDraftsList.length === 0 ? (
               <div style={{ padding: '3rem 1.5rem', textAlign: 'center', background: 'var(--bg-primary)', borderRadius: '10px', border: '1px dashed var(--border-light)' }}>
                 <Clock size={36} color="var(--text-secondary)" style={{ margin: '0 auto 0.75rem auto', opacity: 0.6 }} />
                 <h4 style={{ margin: 0, color: 'var(--text-primary)', fontSize: '1rem' }}>No Matching Saved Drafts</h4>
@@ -2698,17 +2837,13 @@ export default function ClientRegistration({
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                <div style={{ overflowX: 'auto', border: '1px solid var(--border-light)', borderRadius: '8px' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.88rem' }}>
-                    <thead>
+                <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 350px)', minHeight: 380, border: '1px solid var(--border-light)', borderRadius: '8px' }}>
+                  <table style={{ width: draftWidths.getTotalTableWidth(), minWidth: '100%', tableLayout: 'fixed', borderCollapse: 'separate', borderSpacing: 0, textAlign: 'left', fontSize: '0.88rem' }}>
+                    <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--bg-surface)' }}>
                       <tr style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
-                        <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Business / Lead Name</th>
-                        <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Contact Person &amp; Phone</th>
-                        <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>City / State</th>
-                        <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Missing Information</th>
-                        <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Last Saved</th>
-                        <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Saved By</th>
-                        <th style={{ padding: '0.75rem 1rem', fontWeight: 600, textAlign: 'center' }}>Actions</th>
+                        {[['company', 'Business / Lead Name'], ['contact', 'Contact Person & Phone'], ['location', 'City / State'], ['missing', 'Missing Information'], ['saved', 'Last Saved'], ['actor', 'Saved By'], ['actions', 'Actions']].map(([key, label]) => <th key={key} style={{ padding: '0.75rem 1rem', fontWeight: 600, position: 'sticky', top: 0, zIndex: 10, width: draftWidths.colWidths[key], backgroundColor: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' }}>
+                          {label}<ColumnResizer colKey={key} isResizing={draftWidths.resizingCol === key} onResizeStart={draftWidths.handleResizeStart} onReset={draftWidths.resetColWidth} />
+                        </th>)}
                       </tr>
                     </thead>
                     <tbody>
@@ -2788,7 +2923,7 @@ export default function ClientRegistration({
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => handleDeleteDraft(draft.id)}
+                                  onClick={() => { setDeleteDraft(draft); setDeleteReason(''); }}
                                   style={{
                                     padding: '0.35rem 0.65rem',
                                     background: '#fee2e2',
@@ -2847,7 +2982,7 @@ export default function ClientRegistration({
                 gap: '0.5rem'
               }}>
                 <div style={{ fontSize: '0.88rem', color: '#0369a1', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <span>📝 Resuming Saved Draft (ID: #{currentDraftId})</span>
+                  <span>📝 Resuming Saved Draft {formData.lead_ref_id ? '(Lead #' + formData.lead_ref_id + ')' : ''}</span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                   <button

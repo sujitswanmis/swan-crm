@@ -477,6 +477,7 @@ export default function CRMContainer({
     }
     
     // Check if path is a dashboard subtab or alias
+    if (path === 'registration' || path.startsWith('registration/')) return 'registration';
     if (['scorecard', 'overview', 'pipeline', 'lead-data', 'leads-data'].includes(path) || (path && path.startsWith('dashboard/')) || path === 'dashboard') {
       const isAdmin = userRole === 'admin' || userRole === 'Admin' || (typeof userRole === 'string' && userRole.toLowerCase() === 'masteradmin');
       const hasAnalyticsAccess = isAdmin || moduleAccess?.['analytics']?.view === true;
@@ -2916,6 +2917,7 @@ export default function CRMContainer({
     const path = window.location.pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
     const params = new URLSearchParams(window.location.search);
     let tab = path || params.get('tab');
+    if (tab?.startsWith('registration/')) tab = 'registration';
     if (['scorecard', 'overview', 'pipeline', 'lead-data', 'leads-data'].includes(tab)) {
       setDashboardSubTab(tab === 'pipeline' || tab === 'leads-data' ? 'lead-data' : tab);
       tab = 'dashboard';
@@ -3064,6 +3066,7 @@ export default function CRMContainer({
       let tab = window.location.pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
       const params = new URLSearchParams(window.location.search);
       if (!tab) tab = params.get('tab');
+      if (tab?.startsWith('registration/')) tab = 'registration';
       if (['scorecard', 'overview', 'pipeline', 'lead-data', 'leads-data'].includes(tab)) {
         setDashboardSubTab(tab === 'pipeline' || tab === 'leads-data' ? 'lead-data' : tab);
         tab = 'dashboard';
@@ -5393,6 +5396,18 @@ export default function CRMContainer({
                               })}
                             </div>
                           </div>
+                        )}
+
+                        {module.id === 'registration' && activeTab === 'registration' && (
+                          <div className="submenu-list expanded"><div className="submenu-inner">
+                            {(module.subItems || []).filter(item => getSubItemPermissions(moduleAccess, userRole, 'registration', item.id).view).map(item => (
+                              <button key={item.id} className="submenu-item" onClick={() => {
+                                const target = item.id === 'form' ? '/registration' : `/registration/${item.id}`;
+                                window.history.pushState(null, '', target);
+                                window.dispatchEvent(new PopStateEvent('popstate'));
+                              }}>{item.label}</button>
+                            ))}
+                          </div></div>
                         )}
 
                         {module.id === 'party' && (
@@ -7917,6 +7932,7 @@ export default function CRMContainer({
               >
                 <ErrorBoundary>
                   <ClientRegistration 
+                    userId={userId}
                     onRegistrationSuccess={(newLeads) => {
                       if (newLeads) {
                         handleLeadsChange(newLeads);
