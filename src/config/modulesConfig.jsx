@@ -92,7 +92,6 @@ export const MODULES_CONFIG = [
       { id: 'my_leaves', label: 'My Leaves' },
       { id: 'hod_approvals', label: 'HOD Approvals' },
       { id: 'team_report', label: 'Team Attendance Report' },
-      { id: 'live_tracking', label: 'Live Field Tracking & Radar' },
       { id: 'shift_rules', label: 'Shift Rules' },
       { id: 'leave_policy', label: 'Company Leave Policy' },
       { id: 'geofencing', label: 'Office Geofencing Policy' }

@@ -47,6 +47,7 @@ import { getReportingTeam, getLeadAssignees, isLeadInAssignmentScope, getLeadSta
 import { isCompleteLeadCache, matchesLeadCacheContext, mergeLeadCacheForDisplay } from '@/utils/leadCachePolicy';
 import { getUserBranchAccess, evaluateLeadCompanyScope, matchesCompanyToken } from '@/utils/branchAccess';
 import { getTenantBranches } from '@/app/actions/tenantBranches';
+import HeaderBranchFilter from '@/components/common/HeaderBranchFilter';
 
 const OfflineBlockScreen = dynamic(() => import('./Offline/OfflineBlockScreen'));
 const AnalyticsDashboard = dynamic(() => import('@/components/AnalyticsDashboard'), { loading: () => <WorkspaceSkeleton variant="analytics" /> });
@@ -4956,15 +4957,6 @@ export default function CRMContainer({
                       🌴 Company Leave Policy
                     </button>
                   )}
-                  {getSubItemPermissions(moduleAccess, userRole, 'attendance', 'live_tracking').view && (
-                    <button
-                      onClick={() => handleAttendanceSubTabChange('live_tracking')}
-                      className="submenu-item"
-                      data-active={activeTab === 'attendance' && attendanceSubTab === 'live_tracking'}
-                    >
-                      🛰️ Live GPS & Playback
-                    </button>
-                  )}
                   {getSubItemPermissions(moduleAccess, userRole, 'attendance', 'geofencing').view && (
                     <button
                       onClick={() => handleAttendanceSubTabChange('geofencing')}
@@ -6112,8 +6104,8 @@ export default function CRMContainer({
             </button>
             
             {activeTab !== 'ai' && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0, flex: '0 1 auto', overflow: 'hidden' }}>
-                <h1 suppressHydrationWarning style={{ fontSize: '0.96rem', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', margin: 0, minWidth: 0, flex: '0 1 auto', letterSpacing: '-0.015em' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0, flexShrink: 0, overflow: 'hidden' }}>
+                <h1 suppressHydrationWarning style={{ fontSize: '0.96rem', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', margin: 0, minWidth: 0, flexShrink: 0, letterSpacing: '-0.015em' }}>
                   {activeTab === 'dashboard' && 'Analytics Dashboard'}
                   {activeTab === 'leads' && (
                     leadsFilterStage === 'hourly_work' 
@@ -6291,42 +6283,11 @@ export default function CRMContainer({
             {/* Admin / Multi-Branch Company Filter */}
             {(userRole === 'admin' || userRole === 'Admin' || userBranchAccess.isAllBranches || userBranchAccess.isMultiBranch) && (
               <div className="desktop-only" style={{ display: 'flex', alignItems: 'center', marginRight: '0.25rem', flexShrink: 0 }}>
-                <select 
-                  value={adminCompanyFilter} 
-                  onChange={(e) => setAdminCompanyFilter(e.target.value)}
-                  title="Filter by Assigned Branches / Companies"
-                  style={{ padding: '0.38rem 0.65rem', borderRadius: '8px', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: 600, outline: 'none', cursor: 'pointer', flexShrink: 0 }}
-                >
-                  {(() => {
-                    if (!isSwanWorkspace && !userBranchAccess.isMultiBranch && userCompany && liveTenantBranches.length <= 1) {
-                      return <option value={userCompany}>{userCompany}</option>;
-                    }
-                    const opts = userBranchAccess.displayFilterOptions.length > 0
-                      ? userBranchAccess.displayFilterOptions
-                      : ['NSG', 'NSMLR', 'NSTLP', 'NSE1', 'NSE2', 'NSE3', 'NSE4', 'NSACPL1'];
-                    return (
-                      <>
-                        <option value="All">
-                          {userBranchAccess.isAllBranches ? '🏢 All Companies' : `🏢 All Assigned (${opts.length})`}
-                        </option>
-                        {opts.map(opt => {
-                          const matchedBranch = liveTenantBranches.find(b => 
-                            b.custom_code === opt || b.branch_code === opt || b.legacy_code === opt || b.branch_name === opt
-                          );
-                          const cleanBranchName = matchedBranch?.branch_name
-                            ? matchedBranch.branch_name.replace(/^New Swan\s+/i, '').replace(/^SuPuja Creations?\s+/i, '')
-                            : '';
-                          const label = cleanBranchName && cleanBranchName !== opt
-                            ? `${opt} (${cleanBranchName})`
-                            : opt;
-                          return (
-                            <option key={opt} value={opt}>{label}</option>
-                          );
-                        })}
-                      </>
-                    );
-                  })()}
-                </select>
+                <HeaderBranchFilter
+                  value={adminCompanyFilter}
+                  onChange={(val) => setAdminCompanyFilter(val || 'All')}
+                  branches={liveTenantBranches}
+                />
               </div>
             )}
 
@@ -7734,6 +7695,9 @@ export default function CRMContainer({
                     isSyncing={isSyncing}
                     syncLoadedCount={syncLoadedCount}
                     initialSubTab={dashboardSubTab}
+                    tenantId={effectiveTenantId}
+                    userCompany={userCompany}
+                    adminCompanyFilter={adminCompanyFilter}
                     onNavigateTab={(tab, subTab, stage) => {
                       if (tab === 'leads' && (stage || subTab)) {
                         const targetStage = stage || (typeof subTab === 'string' && subTab.includes('Stage') ? subTab : null);
@@ -7809,6 +7773,7 @@ export default function CRMContainer({
                     isAdmin={userRole === 'admin' || userRole === 'Admin'}
                     userCompany={userCompany}
                     tenantId={effectiveTenantId}
+                    adminCompanyFilter={adminCompanyFilter}
                   />
                 </ErrorBoundary>
               </KeepAliveTab>
@@ -7858,6 +7823,7 @@ export default function CRMContainer({
                     userCompany={userCompany}
                     tenantId={effectiveTenantId}
                     isMasterAdmin={isMasterAdmin}
+                    adminCompanyFilter={adminCompanyFilter}
                   />
                 </ErrorBoundary>
               </KeepAliveTab>
@@ -7879,6 +7845,7 @@ export default function CRMContainer({
                     userCompany={userCompany}
                     tenantId={effectiveTenantId}
                     isMasterAdmin={isMasterAdmin}
+                    adminCompanyFilter={adminCompanyFilter}
                   />
                 </ErrorBoundary>
               </KeepAliveTab>
