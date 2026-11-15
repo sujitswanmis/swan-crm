@@ -2196,6 +2196,18 @@ export default function AttendanceModule({
         } catch {}
       }
 
+      let currentStatus = record.status || 'PRESENT';
+      const rem = (record.remarks || '').toLowerCase();
+      if (currentStatus === 'ON_LEAVE' || currentStatus === 'WEEK_OFF' || rem.includes('[week_off]') || rem.includes('week off')) {
+        currentStatus = 'WEEK_OFF';
+      } else if (currentStatus === 'LWP' || rem.includes('[lwp]') || rem.includes('leave without pay')) {
+        currentStatus = 'LWP';
+      } else if (currentStatus === 'CPL' || rem.includes('[cpl]') || rem.includes('comp off') || rem.includes('compensatory')) {
+        currentStatus = 'CPL';
+      }
+
+      const isNoPunch = currentStatus === 'ABSENT' || currentStatus === 'WEEK_OFF' || currentStatus === 'LWP' || currentStatus === 'CPL';
+
       setCorrectionTarget({
         id: record.id || null,
         email: record.email || '',
@@ -2204,10 +2216,10 @@ export default function AttendanceModule({
         department: record.department || 'General',
         designation: record.designation || '',
         attendance_date: record.attendance_date || teamStartDate || getTodayDateString(),
-        in_time: inTimeStr || (record.status === 'ABSENT' || record.status === 'WEEK_OFF' ? '' : '09:00'),
-        out_time: outTimeStr || (record.status === 'ABSENT' || record.status === 'WEEK_OFF' ? '' : '18:30'),
-        status: record.status || 'PRESENT',
-        is_regularized: record.is_regularized ?? true,
+        in_time: isNoPunch ? '' : (inTimeStr || '09:00'),
+        out_time: isNoPunch ? '' : (outTimeStr || '18:30'),
+        status: currentStatus,
+        is_regularized: (currentStatus === 'WEEK_OFF' || currentStatus === 'LWP' || currentStatus === 'ABSENT') ? false : (record.is_regularized ?? true),
         remarks: record.remarks || ''
       });
       setEmpSearchQuery(formatEmpDisplayName(record));
@@ -2933,11 +2945,11 @@ export default function AttendanceModule({
 
     list.forEach(r => {
       const rem = (r.remarks || '').toLowerCase();
-      if (r.status === 'LWP' || rem.includes('leave without pay') || rem.includes('lwp')) {
+      if (r.status === 'LWP' || rem.includes('[lwp]') || rem.includes('leave without pay') || rem.includes('lwp')) {
         lwp += 1;
-      } else if (r.status === 'CPL' || rem.includes('compensatory') || rem.includes('comp off') || rem.includes('cpl')) {
+      } else if (r.status === 'CPL' || rem.includes('[cpl]') || rem.includes('compensatory') || rem.includes('comp off') || rem.includes('cpl')) {
         cpl += 1;
-      } else if (r.status === 'WEEK_OFF' || r.status === 'WO' || rem.includes('paid week off') || rem.includes('week off')) {
+      } else if (r.status === 'WEEK_OFF' || r.status === 'WO' || rem.includes('[week_off]') || rem.includes('paid week off') || rem.includes('week off')) {
         weekOff += 1;
       } else if (r.status === 'PRESENT') {
         present += 1;
@@ -3097,21 +3109,21 @@ export default function AttendanceModule({
   // Helper formatting for status badges
   const renderStatusBadge = (status, isRegularized = false, remarks = '') => {
     const rem = (remarks || '').toLowerCase();
-    if (status === 'LWP' || rem.includes('leave without pay') || rem.includes('lwp')) {
+    if (status === 'LWP' || rem.includes('[lwp]') || rem.includes('leave without pay') || rem.includes('lwp')) {
       return (
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', padding: '0.2rem 0.6rem', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 600, background: '#fef9c3', color: '#854d0e' }}>
           <AlertCircle size={12} /> LWP (Leave Without Pay)
         </span>
       );
     }
-    if (status === 'CPL' || rem.includes('compensatory') || rem.includes('comp off') || rem.includes('cpl')) {
+    if (status === 'CPL' || rem.includes('[cpl]') || rem.includes('compensatory') || rem.includes('comp off') || rem.includes('cpl')) {
       return (
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', padding: '0.2rem 0.6rem', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 600, background: '#ecfdf5', color: '#065f46' }}>
           <Award size={12} /> CPL (Comp Off)
         </span>
       );
     }
-    if (status === 'WEEK_OFF' || status === 'WO' || rem.includes('paid week off') || rem.includes('week off')) {
+    if (status === 'WEEK_OFF' || status === 'WO' || rem.includes('[week_off]') || rem.includes('paid week off') || rem.includes('week off')) {
       return (
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', padding: '0.2rem 0.6rem', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 600, background: '#f3e8ff', color: '#6b21a8' }}>
           <Calendar size={12} /> Week Off

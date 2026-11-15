@@ -36,6 +36,30 @@ function ensureUuid(id) {
 }
 
 function cleanAttendanceRecordForDb(rec, tenantId = DEFAULT_TENANT_ID) {
+  // Normalize status for database constraint compliance
+  // Postgres check constraint allows: ('PRESENT', 'HALF_DAY', 'LATE', 'MISSED_PUNCH', 'REGULARIZED', 'ABSENT', 'ON_LEAVE')
+  let dbStatus = rec.status || 'PRESENT';
+  let dbRemarks = rec.remarks || null;
+
+  if (rec.status === 'WEEK_OFF' || rec.status === 'WO') {
+    dbStatus = 'ON_LEAVE';
+    if (!dbRemarks || !dbRemarks.includes('[WEEK_OFF]')) {
+      dbRemarks = dbRemarks ? `[WEEK_OFF] ${dbRemarks}` : '[WEEK_OFF] Week Off';
+    }
+  } else if (rec.status === 'LWP') {
+    dbStatus = 'ON_LEAVE';
+    if (!dbRemarks || !dbRemarks.includes('[LWP]')) {
+      dbRemarks = dbRemarks ? `[LWP] ${dbRemarks}` : '[LWP] Leave Without Pay';
+    }
+  } else if (rec.status === 'CPL') {
+    dbStatus = 'ON_LEAVE';
+    if (!dbRemarks || !dbRemarks.includes('[CPL]')) {
+      dbRemarks = dbRemarks ? `[CPL] ${dbRemarks}` : '[CPL] Compensatory Off';
+    }
+  }
+
+  const isNoPunch = rec.status === 'WEEK_OFF' || rec.status === 'WO' || rec.status === 'LWP' || rec.status === 'CPL' || rec.status === 'ABSENT';
+
   return {
     id: ensureUuid(rec.id),
     tenant_id: rec.tenant_id || tenantId,
@@ -45,21 +69,21 @@ function cleanAttendanceRecordForDb(rec, tenantId = DEFAULT_TENANT_ID) {
     email: (rec.email || '').trim().toLowerCase(),
     department: rec.department || '',
     attendance_date: rec.attendance_date,
-    in_time: rec.in_time || null,
-    out_time: rec.out_time || null,
-    in_location: rec.in_location || 'Office Web Terminal',
-    out_location: rec.out_location || null,
-    in_method: rec.in_method || 'WEB_PUNCH',
-    out_method: rec.out_method || null,
-    total_working_minutes: rec.total_working_minutes || 0,
-    status: rec.status || 'PRESENT',
+    in_time: isNoPunch ? null : (rec.in_time || null),
+    out_time: isNoPunch ? null : (rec.out_time || null),
+    in_location: isNoPunch ? null : (rec.in_location || 'Office Web Terminal'),
+    out_location: isNoPunch ? null : rec.out_location || null,
+    in_method: isNoPunch ? 'MANUAL_CORRECTION' : (rec.in_method || 'WEB_PUNCH'),
+    out_method: isNoPunch ? null : rec.out_method || null,
+    total_working_minutes: isNoPunch ? 0 : (rec.total_working_minutes || 0),
+    status: dbStatus,
     short_leave_type: rec.short_leave_type || 'NONE',
     is_grace_applied: !!rec.is_grace_applied,
     shift_name: rec.shift_name || 'Regular Shift',
-    is_regularized: !!rec.is_regularized,
+    is_regularized: (rec.status === 'WEEK_OFF' || rec.status === 'WO' || rec.status === 'LWP' || rec.status === 'ABSENT') ? false : !!rec.is_regularized,
     regularization_id: rec.regularization_id && isValidUuid(rec.regularization_id) ? rec.regularization_id : null,
     branch_name: rec.branch_name || null,
-    remarks: rec.remarks || null,
+    remarks: dbRemarks,
     created_at: rec.created_at || new Date().toISOString(),
     updated_at: rec.updated_at || new Date().toISOString()
   };
@@ -3039,11 +3063,40 @@ export async function getTeamAttendanceMaster({
   const enrichedDbRecords = dbRecords.map(r => {
     const user = (r.user_id && userMapById.get(r.user_id)) || userMapByEmail.get(r.email?.toLowerCase());
     const localRec = localMap.get(`${(r.email || '').toLowerCase()}_${r.attendance_date}`);
+
+    // Resolve effective status from DB/local and remarks tags
+    let effectiveStatus = r.status || localRec?.status || 'PRESENT';
+    const combinedRemarks = r.remarks || localRec?.remarks || '';
+    const rem = combinedRemarks.toLowerCase();
+
+    if (effectiveStatus === 'ON_LEAVE' || effectiveStatus === 'WEEK_OFF') {
+      if (rem.includes('[week_off]') || rem.includes('week off') || rem.includes('paid week off')) {
+        effectiveStatus = 'WEEK_OFF';
+      } else if (rem.includes('[lwp]') || rem.includes('leave without pay') || rem.includes('lwp')) {
+        effectiveStatus = 'LWP';
+      } else if (rem.includes('[cpl]') || rem.includes('comp off') || rem.includes('compensatory') || rem.includes('cpl')) {
+        effectiveStatus = 'CPL';
+      }
+    } else if (rem.includes('[week_off]')) {
+      effectiveStatus = 'WEEK_OFF';
+    } else if (rem.includes('[lwp]')) {
+      effectiveStatus = 'LWP';
+    } else if (rem.includes('[cpl]')) {
+      effectiveStatus = 'CPL';
+    }
+
+    const isNonWorking = effectiveStatus === 'WEEK_OFF' || effectiveStatus === 'LWP' || effectiveStatus === 'CPL' || effectiveStatus === 'ABSENT';
+
     return {
       ...r,
+      status: effectiveStatus,
+      in_time: isNonWorking ? null : r.in_time,
+      out_time: isNonWorking ? null : r.out_time,
+      total_working_minutes: isNonWorking ? 0 : (r.total_working_minutes || 0),
+      is_regularized: (effectiveStatus === 'WEEK_OFF' || effectiveStatus === 'LWP' || effectiveStatus === 'ABSENT') ? false : Boolean(r.is_regularized || localRec?.is_regularized),
       short_leave_type: r.short_leave_type || localRec?.short_leave_type || 'NONE',
       is_grace_applied: r.is_grace_applied ?? localRec?.is_grace_applied ?? false,
-      remarks: r.remarks || localRec?.remarks || null,
+      remarks: combinedRemarks || null,
       emp_code: r.emp_code || user?.emp_code || user?.emp_id || '',
       emp_name: r.emp_name || user?.emp_name || r.email?.split('@')[0],
       department: r.department || user?.department || user?.emp_department || 'General',
@@ -3108,7 +3161,10 @@ export async function getTeamAttendanceMaster({
       totalHalfDay: enrichedDbRecords.filter(r => r.status === 'HALF_DAY').length,
       totalLate: enrichedDbRecords.filter(r => r.status === 'LATE').length,
       totalAbsent: absentCount,
-      totalRegularized: enrichedDbRecords.filter(r => r.is_regularized).length
+      totalRegularized: enrichedDbRecords.filter(r => r.is_regularized).length,
+      totalWeekOff: enrichedDbRecords.filter(r => r.status === 'WEEK_OFF').length,
+      totalLwp: enrichedDbRecords.filter(r => r.status === 'LWP').length,
+      totalCpl: enrichedDbRecords.filter(r => r.status === 'CPL').length
     }
   };
 }
