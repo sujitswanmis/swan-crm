@@ -1773,7 +1773,11 @@ export default function AttendanceModule({
       const sStr = String(secs).padStart(2, '0');
       setLiveDuration(`${hStr}h ${mStr}m ${sStr}s`);
     } else if (todayRecord?.in_time && todayRecord?.out_time) {
-      const mins = todayRecord.total_working_minutes || 0;
+      let mins = Number(todayRecord.total_working_minutes) || 0;
+      if (mins <= 1 && todayRecord.in_time && todayRecord.out_time) {
+        const fullSpan = Math.max(0, Math.floor((new Date(todayRecord.out_time).getTime() - new Date(todayRecord.in_time).getTime()) / 60000));
+        if (fullSpan > 1) mins = fullSpan;
+      }
       const hours = Math.floor(mins / 60);
       const remMins = mins % 60;
       const hStr = String(hours).padStart(2, '0');
@@ -1784,26 +1788,40 @@ export default function AttendanceModule({
     }
   }, [currentTime, todayRecord]);
 
+  // Effective total working minutes (with fallback if database has 0/1m but in/out span is real)
+  const effectiveTotalWorkingMinutes = useMemo(() => {
+    let mins = Number(todayRecord?.total_working_minutes) || 0;
+    if (mins <= 1 && todayRecord?.in_time && todayRecord?.out_time) {
+      const fullSpan = Math.max(0, Math.floor((new Date(todayRecord.out_time).getTime() - new Date(todayRecord.in_time).getTime()) / 60000));
+      if (fullSpan > 1) mins = fullSpan;
+    }
+    return mins;
+  }, [todayRecord]);
+
   // 2b. Parsed Today's Punch Sessions Trail (P1, P2, P3...)
   const todayPunchSessions = useMemo(() => {
     if (!todayRecord?.in_time) return [];
     const remarks = todayRecord.remarks || '';
-    const sessions = [];
+    let sessions = [];
 
     // Parse P1, P2, P3... tags from remarks
     // Examples: [P1 IN: 09:30 AM (Web)] ... [P1 OUT: 01:15 PM (Web) - P1: 3h 45m]
-    const pInRegex = /\[P(\d+)\s+IN:\s*([^\]\)]+?)(?:\s*\(([^)]+)\))?\]/g;
+    const pInRegex = /\[P(\d+)\s+IN:\s*([^\]\)]+?)(?:\s*\(([^)]+)\))?\]/gi;
     const inMap = {};
     let m;
     while ((m = pInRegex.exec(remarks)) !== null) {
-      inMap[m[1]] = { inTime: m[2].trim(), inMethod: m[3] || 'Web' };
+      inMap[Number(m[1])] = { inTime: m[2].trim(), inMethod: m[3] || 'Web' };
     }
 
-    const pOutRegex = /\[P(\d+)\s+OUT:\s*([^\]\)]+?)(?:\s*\(([^)]+)\))?(?:\s*-\s*P\d+:\s*([^\]]+))?\]/g;
+    const pOutRegex = /\[P(\d+)\s+OUT:\s*([^\]\)]+?)(?:\s*\(([^)]+)\))?(?:\s*-\s*P\d+:\s*([^\]]+))?\]/gi;
     const outMap = {};
     while ((m = pOutRegex.exec(remarks)) !== null) {
-      outMap[m[1]] = { outTime: m[2].trim(), outMethod: m[3] || 'Web', duration: m[4] || '' };
+      outMap[Number(m[1])] = { outTime: m[2].trim(), outMethod: m[3] || 'Web', duration: m[4] ? m[4].trim() : '' };
     }
+
+    // Canonical first punch of the day is ALWAYS todayRecord.in_time
+    const canonicalFirstInStr = formatTimeIST(todayRecord.in_time);
+    inMap[1] = { inTime: canonicalFirstInStr, inMethod: inMap[1]?.inMethod || todayRecord.in_method || 'Web' };
 
     const allKeys = Array.from(new Set([...Object.keys(inMap), ...Object.keys(outMap)]))
       .map(Number)
@@ -1811,28 +1829,64 @@ export default function AttendanceModule({
 
     if (allKeys.length > 0) {
       for (const k of allKeys) {
+        const sIn = inMap[k]?.inTime || (k === 1 ? canonicalFirstInStr : '—');
+        const sOut = outMap[k]?.outTime || (todayRecord.out_time && k === allKeys[allKeys.length - 1] ? formatTimeIST(todayRecord.out_time) : null);
+        let sDuration = outMap[k]?.duration || '';
+
+        // If duration is missing or 0m while sIn and sOut differ, calculate or fallback
+        if ((!sDuration || sDuration === '0m') && sIn && sOut && sIn !== sOut) {
+          if (k === 1) {
+            const mSpan = effectiveTotalWorkingMinutes;
+            if (mSpan > 0) {
+              const h = Math.floor(mSpan / 60);
+              const min = mSpan % 60;
+              sDuration = h > 0 ? `${h}h ${min}m` : `${min}m`;
+            }
+          }
+        }
+
         sessions.push({
           num: k,
           label: `P${k}`,
-          inTime: inMap[k]?.inTime || (k === 1 ? formatTimeIST(todayRecord.in_time) : '—'),
-          outTime: outMap[k]?.outTime || (todayRecord.out_time && k === allKeys[allKeys.length - 1] ? formatTimeIST(todayRecord.out_time) : null),
-          duration: outMap[k]?.duration || '',
-          isActive: !outMap[k]?.outTime && !todayRecord.out_time && k === allKeys[allKeys.length - 1]
+          inTime: sIn,
+          outTime: sOut,
+          duration: sDuration,
+          isActive: !sOut && !todayRecord.out_time && k === allKeys[allKeys.length - 1]
         });
       }
+
+      // Filter out phantom duplicate sessions created by rapid consecutive clicks (e.g. 0m duplicate of previous session's out time)
+      if (sessions.length > 1) {
+        sessions = sessions.filter((s, idx) => {
+          if (idx > 0 && s.inTime === s.outTime && (!s.duration || s.duration === '0m')) {
+            const prev = sessions[idx - 1];
+            if (prev.outTime && s.inTime.toLowerCase() === prev.outTime.toLowerCase()) {
+              return false;
+            }
+          }
+          return true;
+        });
+      }
+
+      // Re-index labels sequentially P1, P2...
+      sessions.forEach((s, idx) => {
+        s.num = idx + 1;
+        s.label = `P${idx + 1}`;
+      });
     } else {
+      const mins = effectiveTotalWorkingMinutes;
       sessions.push({
         num: 1,
         label: 'P1',
-        inTime: formatTimeIST(todayRecord.in_time),
+        inTime: canonicalFirstInStr,
         outTime: todayRecord.out_time ? formatTimeIST(todayRecord.out_time) : null,
-        duration: todayRecord.total_working_minutes ? `${Math.floor(todayRecord.total_working_minutes / 60)}h ${todayRecord.total_working_minutes % 60}m` : '',
+        duration: mins ? `${Math.floor(mins / 60)}h ${mins % 60}m` : '',
         isActive: !todayRecord.out_time
       });
     }
 
     return sessions;
-  }, [todayRecord]);
+  }, [todayRecord, effectiveTotalWorkingMinutes]);
 
   // 3. Load Today's Attendance (Silent on focus/background to prevent button freezing)
   const fetchTodayAttendance = useCallback(async (clearError = false, isSilent = false) => {
@@ -3902,7 +3956,7 @@ export default function AttendanceModule({
                   <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between', borderTop: '1px dashed var(--border-light, #e2e8f0)', paddingTop: '0.35rem' }}>
                     <span>1st In: <strong style={{ color: '#16a34a' }}>{formatTimeIST(todayRecord.in_time)}</strong></span>
                     {todayRecord.out_time && <span>Last Out: <strong style={{ color: '#dc2626' }}>{formatTimeIST(todayRecord.out_time)}</strong></span>}
-                    <span>Total Active: <strong style={{ color: 'var(--accent-color, #2563eb)' }}>{Math.floor((todayRecord.total_working_minutes || 0) / 60)}h {(todayRecord.total_working_minutes || 0) % 60}m</strong></span>
+                    <span>Total Active: <strong style={{ color: 'var(--accent-color, #2563eb)' }}>{Math.floor(effectiveTotalWorkingMinutes / 60)}h {effectiveTotalWorkingMinutes % 60}m</strong></span>
                   </div>
                 </div>
               )}
@@ -6917,7 +6971,7 @@ export default function AttendanceModule({
                     const bCode = b?.branch_code || b?.id || '';
                     return (
                       <option key={b.id || bName} value={bName}>
-                        {bName} {bCode ? `(${bCode})` : ''}
+                        {bCode ? `${bCode} — ` : ''}{bName}
                       </option>
                     );
                   })}
@@ -7912,7 +7966,7 @@ export default function AttendanceModule({
                     const bCode = b?.branch_code || b?.id || '';
                     return (
                       <option key={b.id || bName} value={bName}>
-                        {bName} {bCode ? `(${bCode})` : ''}
+                        {bCode ? `${bCode} — ` : ''}{bName}
                       </option>
                     );
                   })}
@@ -8628,7 +8682,7 @@ export default function AttendanceModule({
                     const bCode = b?.branch_code || b?.id || '';
                     return (
                       <option key={b.id || bName} value={bName}>
-                        {bName} {bCode ? `(${bCode})` : ''}
+                        {bCode ? `${bCode} — ` : ''}{bName}
                       </option>
                     );
                   })}
@@ -9179,7 +9233,7 @@ export default function AttendanceModule({
                         const bCode = b?.branch_code || b?.id || '';
                         return (
                           <option key={b.id || bName} value={bName}>
-                            {bName} {bCode ? `(${bCode})` : ''}
+                            {bCode ? `${bCode} — ` : ''}{bName}
                           </option>
                         );
                       })}

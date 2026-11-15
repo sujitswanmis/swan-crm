@@ -1378,8 +1378,11 @@ export async function punchIn({
   const canonicalInMethod = isMultiRePunch ? (currentTodayRec.in_method || method) : method;
 
   const inTimeFormatted = new Date(nowIso).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true });
-  const existingInMatches = (currentTodayRec?.remarks || '').match(/\[P(\d+)\s+IN:/g) || [];
-  const pNum = isMultiRePunch ? (existingInMatches.length + 1) : 1;
+  const existingPInMatches = ((currentTodayRec?.remarks || '').match(/\[P(\d+)\s+IN:/gi) || []).length;
+  const existingPOutMatches = ((currentTodayRec?.remarks || '').match(/\[P(\d+)\s+OUT:/gi) || []).length;
+  const legacyOutMatches = ((currentTodayRec?.remarks || '').match(/\[OUT:/gi) || []).length;
+  const totalCompletedSessions = Math.max(existingPOutMatches, legacyOutMatches);
+  const pNum = isMultiRePunch ? Math.max(2, Math.max(existingPInMatches + 1, totalCompletedSessions + 1)) : 1;
   const inLocType = location.startsWith('GPS') ? 'GPS' : 'Web';
   const punchInTag = `[P${pNum} IN: ${inTimeFormatted} (${inLocType})]`;
   let combinedRemarks = '';
@@ -1705,14 +1708,38 @@ export async function punchOut({
       }
     }
     const currentSessionMins = Math.max(0, Math.floor((new Date(nowIso).getTime() - sessionStartMs) / 60000));
-    const accumulatedMins = allowMultiPunch && (Number(existing.total_working_minutes) > 0)
-      ? (Number(existing.total_working_minutes) + currentSessionMins)
-      : (evaluation.total_working_minutes || currentSessionMins);
+    const fullDaySpanMins = Math.max(0, Math.floor((new Date(nowIso).getTime() - new Date(existing.in_time).getTime()) / 60000));
 
-    // Determine P number for out punch: match existing P IN tags
-    const pInMatches = (existing.remarks || '').match(/\[P(\d+)\s+IN:/g) || [];
-    const pOutMatches = (existing.remarks || '').match(/\[P(\d+)\s+OUT:/g) || [];
-    const pNum = Math.max(1, pInMatches.length || (pOutMatches.length + 1) || 1);
+    let accumulatedMins = 0;
+    if (allowMultiPunch) {
+      const prevMins = Number(existing.total_working_minutes) || 0;
+      if (prevMins > 0) {
+        accumulatedMins = prevMins + currentSessionMins;
+      } else {
+        accumulatedMins = Math.max(currentSessionMins, evaluation.total_working_minutes || 0, fullDaySpanMins);
+      }
+      // Safety fallback: if accumulatedMins is suspiciously tiny (<= 1) while fullDaySpanMins is multi-minute,
+      // and there's no previous completed P2 session, preserve full day span
+      if (accumulatedMins <= 1 && fullDaySpanMins > 1 && (!existing.remarks || !existing.remarks.includes('[P2 OUT:'))) {
+        accumulatedMins = Math.max(accumulatedMins, evaluation.total_working_minutes || fullDaySpanMins);
+      }
+    } else {
+      accumulatedMins = evaluation.total_working_minutes || fullDaySpanMins;
+    }
+
+    // Determine P number for out punch: match the active session or existing P IN tags
+    const pInTags = (existing.remarks || '').match(/\[P(\d+)\s+IN:/gi) || [];
+    const pOutTags = (existing.remarks || '').match(/\[P(\d+)\s+OUT:/gi) || [];
+    let pNum = 1;
+    if (pInTags.length > 0) {
+      const inNums = pInTags.map(m => {
+        const match = m.match(/P(\d+)/i);
+        return match ? parseInt(match[1], 10) : 1;
+      });
+      pNum = Math.max(...inNums);
+    } else {
+      pNum = Math.max(1, pOutTags.length + 1);
+    }
 
     const sHours = Math.floor(currentSessionMins / 60);
     const sMins = currentSessionMins % 60;
