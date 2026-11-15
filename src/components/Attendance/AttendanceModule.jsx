@@ -975,8 +975,8 @@ export default function AttendanceModule({
   const preWarmGPSLocation = useCallback(() => {
     if (typeof window === 'undefined' || !navigator.geolocation) return;
     const now = Date.now();
-    if (gpsCacheRef.current.location && (now - gpsCacheRef.current.timestamp) < 120000) return;
-    getCurrentGPSLocation({ timeout: 2000, maximumAge: 60000 }).then(gps => {
+    if (gpsCacheRef.current.location && (now - gpsCacheRef.current.timestamp) < 300000) return;
+    getCurrentGPSLocation({ timeout: 1500, enableHighAccuracy: false, maximumAge: 300000 }).then(gps => {
       if (gps && gps.success) {
         gpsCacheRef.current = {
           location: `GPS (${gps.latitude.toFixed(4)}, ${gps.longitude.toFixed(4)})`,
@@ -2415,13 +2415,13 @@ export default function AttendanceModule({
         if (await saveOfflinePunch('IN', offlineRecord, punchLocation, scope)) accepted = offlineRecord;
         return;
       }
-      // Instant GPS check: Use cached pre-warmed GPS or quick 800ms lookup
+      // Instant GPS check: Use cached pre-warmed GPS or quick 1000ms lookup with 5-min cache
       const nowTs = Date.now();
-      if (gpsCacheRef.current.location && (nowTs - gpsCacheRef.current.timestamp) < 120000) {
+      if (gpsCacheRef.current.location && (nowTs - gpsCacheRef.current.timestamp) < 300000) {
         punchLocation = gpsCacheRef.current.location;
       } else {
         try {
-          const gps = await getCurrentGPSLocation({ timeout: 800, maximumAge: 60000 });
+          const gps = await getCurrentGPSLocation({ timeout: 1000, enableHighAccuracy: false, maximumAge: 300000 });
           if (gps?.success) {
             punchLocation = `GPS (${gps.latitude.toFixed(4)}, ${gps.longitude.toFixed(4)})`;
             gpsCacheRef.current = { location: punchLocation, timestamp: Date.now() };
@@ -2514,13 +2514,13 @@ export default function AttendanceModule({
         accepted = await saveOfflinePunch('OUT', offlineRecord, punchLocation, scope);
         return;
       }
-      // Instant GPS check: Use cached pre-warmed GPS or quick 800ms lookup
+      // Instant GPS check: Use cached pre-warmed GPS or quick 1000ms lookup with 5-min cache
       const nowTsOut = Date.now();
-      if (gpsCacheRef.current.location && (nowTsOut - gpsCacheRef.current.timestamp) < 120000) {
+      if (gpsCacheRef.current.location && (nowTsOut - gpsCacheRef.current.timestamp) < 300000) {
         punchLocation = gpsCacheRef.current.location;
       } else {
         try {
-          const gps = await getCurrentGPSLocation({ timeout: 800, maximumAge: 60000 });
+          const gps = await getCurrentGPSLocation({ timeout: 1000, enableHighAccuracy: false, maximumAge: 300000 });
           if (gps?.success) {
             punchLocation = `GPS (${gps.latitude.toFixed(4)}, ${gps.longitude.toFixed(4)})`;
             gpsCacheRef.current = { location: punchLocation, timestamp: Date.now() };
@@ -4654,14 +4654,27 @@ export default function AttendanceModule({
                               {renderShortLeaveBadge(r)}
                             </div>
                           </td>
-                          <td style={{ padding: '0.75rem 1rem', fontSize: '0.78rem', color: 'var(--text-secondary)', maxWidth: '240px' }}>
-                            {r.is_regularized ? (
-                              <span title={r.remarks} style={{ color: '#4f46e5', fontWeight: 500 }}>Regularized by HOD</span>
-                            ) : (
-                              <span title={r.remarks || ''}>
-                                {r.remarks || r.in_method || 'WEB_PUNCH'}
-                              </span>
-                            )}
+                          <td style={{ padding: '0.75rem 1rem', fontSize: '0.78rem', color: 'var(--text-secondary)', maxWidth: '280px' }}>
+                            {(() => {
+                              if (r.is_regularized) {
+                                return <span title={r.remarks} style={{ color: '#4f46e5', fontWeight: 500 }}>Regularized by HOD</span>;
+                              }
+                              const cleanRem = (r.remarks || '').replace(/\[SessionStart:[^\]]+\]/gi, '').trim();
+                              // Strip internal bracketed session tags from table cell, keeping clean remark for display
+                              const mainText = cleanRem.replace(/\[P\d+[^\]]+\]/gi, '').replace(/\s*\|\s*$/, '').trim();
+                              const sessionCount = (cleanRem.match(/\[P\d+\s+OUT:/gi) || []).length;
+
+                              return (
+                                <span title={cleanRem || r.in_method || 'WEB_PUNCH'} style={{ lineHeight: 1.35, display: 'inline-block' }}>
+                                  {mainText || (sessionCount > 0 ? `${sessionCount} Session${sessionCount > 1 ? 's' : ''} Completed` : (r.in_method || 'WEB_PUNCH'))}
+                                  {sessionCount > 1 && (
+                                    <span style={{ display: 'inline-block', marginLeft: '0.35rem', fontSize: '0.68rem', padding: '1px 5px', borderRadius: '4px', background: '#e0f2fe', color: '#0369a1', fontWeight: 600 }}>
+                                      {sessionCount} Sessions
+                                    </span>
+                                  )}
+                                </span>
+                              );
+                            })()}
                           </td>
                           <td style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>
                             {hasMissingPunch || r.status === 'MISSED_PUNCH' || !r.out_time ? (

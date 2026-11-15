@@ -3,13 +3,14 @@
 // ============================================================================
 
 /**
- * Gets high-accuracy GPS coordinates from mobile / browser hardware
- * Supports configurable timeout (default 3000ms for fast, non-blocking auto query)
+ * Gets GPS coordinates from mobile / browser hardware
+ * Defaults to enableHighAccuracy: false and 5-min maximumAge for lightning-fast (10-50ms) web response
  */
 export function getCurrentGPSLocation(options = {}) {
-  const timeoutMs = options.timeout || 3000;
-  const enableHighAccuracy = options.enableHighAccuracy !== false;
-  const maximumAge = options.maximumAge || 30000;
+  const timeoutMs = options.timeout || 2000;
+  // Default to false for rapid 50ms Wi-Fi/IP resolution on web browsers unless explicitly requested
+  const enableHighAccuracy = options.enableHighAccuracy === true;
+  const maximumAge = options.maximumAge !== undefined ? options.maximumAge : 300000; // 5 minutes cache for 0ms instant hits
 
   return new Promise((resolve) => {
     if (typeof window === 'undefined' || !navigator.geolocation) {
@@ -21,9 +22,9 @@ export function getCurrentGPSLocation(options = {}) {
     const timer = setTimeout(() => {
       if (!settled) {
         settled = true;
-        resolve({ success: false, error: 'Location request timed out (3s fallback)' });
+        resolve({ success: false, error: 'Location request timed out (fast fallback)' });
       }
-    }, timeoutMs + 300);
+    }, timeoutMs + 100);
 
     navigator.geolocation.getCurrentPosition(
       (position) => {

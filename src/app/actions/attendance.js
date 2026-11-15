@@ -328,12 +328,71 @@ function resolveTenantId(tenantId, userCompany = '') {
   return DEFAULT_TENANT_ID;
 }
 
+// Fast in-memory policy and profile caches for <50ms instant punch response
+const tenantPolicyMemCache = new Map();
+const userProfileMemCache = new Map();
+
 /**
- * 0. Get Tenant Attendance Policy (Dynamic for each company/tenant)
+ * Sanitizes and deduplicates remarks to prevent duplicate sentences and bracket tags
+ */
+function sanitizeAttendanceRemarks(remarksStr) {
+  if (!remarksStr) return '';
+  // Strip SessionStart tags
+  let clean = remarksStr.replace(/\[SessionStart:\s*[^\]]+\]/gi, '').trim();
+
+  // Deduplicate status sentences like "Half Day Marked: ..." or "Shift Completed on Time"
+  const statusPhrases = [
+    /Half Day Marked:[^\[\|]+/gi,
+    /Absent Marked:[^\[\|]+/gi,
+    /Shift Completed on Time/gi,
+    /2-Hour Short Leave Applied[^\[\|]+/gi,
+    /20-Minute Short Leave Applied[^\[\|]+/gi
+  ];
+  for (const regex of statusPhrases) {
+    const matches = clean.match(regex);
+    if (matches && matches.length > 1) {
+      let first = true;
+      clean = clean.replace(regex, (m) => {
+        if (first) {
+          first = false;
+          return m.trim();
+        }
+        return '';
+      });
+    }
+  }
+
+  // Deduplicate bracketed session tags like [P1 IN: ...], [P1 OUT: ...]
+  const tagRegex = /\[P\d+\s+(IN|OUT):[^\]]+\]/gi;
+  const seenTags = new Set();
+  clean = clean.replace(tagRegex, (fullTag) => {
+    const normalizedTag = fullTag.trim().toLowerCase();
+    if (seenTags.has(normalizedTag)) return '';
+    seenTags.add(normalizedTag);
+    return fullTag.trim();
+  });
+
+  // Clean extra spaces, pipes, and dangling separators
+  clean = clean.replace(/\s*\|\s*\|\s*/g, ' | ')
+               .replace(/\|\s*$/g, '')
+               .replace(/\s{2,}/g, ' ')
+               .trim();
+
+  return clean;
+}
+
+/**
+ * 0. Get Tenant Attendance Policy (Dynamic for each company/tenant with 60s in-memory cache)
  */
 export async function getTenantAttendancePolicy(tenantId = null, userCompany = '', branchName = '') {
   const effectiveTenantId = resolveTenantId(tenantId, userCompany);
   const cleanBranch = branchName && branchName !== 'All Branches' && branchName !== 'All Branches (Default)' ? branchName.trim() : '';
+  const cacheKey = `${effectiveTenantId}:${cleanBranch}`;
+  const cached = tenantPolicyMemCache.get(cacheKey);
+  if (cached && (Date.now() - cached.ts) < 60000) {
+    return { success: true, data: cached.data };
+  }
+
   const adminClient = getAdminClient();
   const fallbackPolicies = await getFallbackPolicies();
 
@@ -1134,6 +1193,8 @@ async function getAttendancePolicyForUserScope(tenantId, userCompany, primaryBra
 
 async function getUserRoleAttendanceProfile(adminClient, normalizedEmail) {
   if (!adminClient || !normalizedEmail) return null;
+  const cached = userProfileMemCache.get(normalizedEmail);
+  if (cached && (Date.now() - cached.ts) < 60000) return cached.data;
   try {
     const { data, error } = await adminClient
       .from('user_roles')
@@ -1142,7 +1203,10 @@ async function getUserRoleAttendanceProfile(adminClient, normalizedEmail) {
       .limit(1)
       .maybeSingle();
 
-    if (!error) return data || null;
+    if (!error) {
+      if (data) userProfileMemCache.set(normalizedEmail, { data, ts: Date.now() });
+      return data || null;
+    }
 
     if (error.code === '42703' || String(error.message || '').includes('does not exist')) {
       const { data: fallbackRow } = await adminClient
@@ -1151,6 +1215,7 @@ async function getUserRoleAttendanceProfile(adminClient, normalizedEmail) {
         .ilike('email', normalizedEmail)
         .limit(1)
         .maybeSingle();
+      if (fallbackRow) userProfileMemCache.set(normalizedEmail, { data: fallbackRow, ts: Date.now() });
       return fallbackRow || null;
     }
   } catch {}
@@ -1378,19 +1443,22 @@ export async function punchIn({
   const canonicalInMethod = isMultiRePunch ? (currentTodayRec.in_method || method) : method;
 
   const inTimeFormatted = new Date(nowIso).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true });
-  const existingPInMatches = ((currentTodayRec?.remarks || '').match(/\[P(\d+)\s+IN:/gi) || []).length;
-  const existingPOutMatches = ((currentTodayRec?.remarks || '').match(/\[P(\d+)\s+OUT:/gi) || []).length;
-  const legacyOutMatches = ((currentTodayRec?.remarks || '').match(/\[OUT:/gi) || []).length;
-  const totalCompletedSessions = Math.max(existingPOutMatches, legacyOutMatches);
-  const pNum = isMultiRePunch ? Math.max(2, Math.max(existingPInMatches + 1, totalCompletedSessions + 1)) : 1;
+
+  // Determine next session number strictly from completed OUT sessions (guarantees consecutive P1, P2, P3...)
+  const pOutMatches = Array.from((currentTodayRec?.remarks || '').matchAll(/\[P(\d+)\s+OUT:/gi));
+  const completedOutNums = pOutMatches.map(m => parseInt(m[1], 10)).filter(n => !isNaN(n));
+  const maxCompletedSession = completedOutNums.length > 0 ? Math.max(...completedOutNums) : (currentTodayRec?.out_time ? 1 : 0);
+  const pNum = isMultiRePunch ? Math.max(2, maxCompletedSession + 1) : 1;
+
   const inLocType = location.startsWith('GPS') ? 'GPS' : 'Web';
   const punchInTag = `[P${pNum} IN: ${inTimeFormatted} (${inLocType})]`;
   let combinedRemarks = '';
   if (isMultiRePunch) {
     const existingRemarks = currentTodayRec?.remarks || '';
-    combinedRemarks = [existingRemarks, punchInTag, `[SessionStart: ${nowIso}]`].filter(Boolean).join(' ');
+    combinedRemarks = sanitizeAttendanceRemarks([existingRemarks, punchInTag].filter(Boolean).join(' '));
+    combinedRemarks = [combinedRemarks, `[SessionStart: ${nowIso}]`].join(' ');
   } else {
-    combinedRemarks = [geofenceRemarks, evaluation.remarks, punchInTag].filter(Boolean).join(' ');
+    combinedRemarks = sanitizeAttendanceRemarks([geofenceRemarks, evaluation.remarks, punchInTag].filter(Boolean).join(' '));
   }
 
   let resultRecord = {
@@ -1727,19 +1795,10 @@ export async function punchOut({
       accumulatedMins = evaluation.total_working_minutes || fullDaySpanMins;
     }
 
-    // Determine P number for out punch: match the active session or existing P IN tags
-    const pInTags = (existing.remarks || '').match(/\[P(\d+)\s+IN:/gi) || [];
-    const pOutTags = (existing.remarks || '').match(/\[P(\d+)\s+OUT:/gi) || [];
-    let pNum = 1;
-    if (pInTags.length > 0) {
-      const inNums = pInTags.map(m => {
-        const match = m.match(/P(\d+)/i);
-        return match ? parseInt(match[1], 10) : 1;
-      });
-      pNum = Math.max(...inNums);
-    } else {
-      pNum = Math.max(1, pOutTags.length + 1);
-    }
+    // Determine P number for out punch: strictly match the active session from latest IN punch
+    const pInMatches = Array.from((existing.remarks || '').matchAll(/\[P(\d+)\s+IN:/gi));
+    const inNums = pInMatches.map(m => parseInt(m[1], 10)).filter(n => !isNaN(n));
+    const pNum = inNums.length > 0 ? Math.max(...inNums) : Math.max(1, (existing.out_time ? 2 : 1));
 
     const sHours = Math.floor(currentSessionMins / 60);
     const sMins = currentSessionMins % 60;
@@ -1758,7 +1817,7 @@ export async function punchOut({
       evalRemarksToAdd = '';
     }
 
-    const finalRemarks = [cleanOldRemarks, geofenceRemarks, evalRemarksToAdd, punchOutTag].filter(Boolean).join(' ');
+    const finalRemarks = sanitizeAttendanceRemarks([cleanOldRemarks, geofenceRemarks, evalRemarksToAdd, punchOutTag].filter(Boolean).join(' '));
 
     let updatedRecord = {
       ...existing,
