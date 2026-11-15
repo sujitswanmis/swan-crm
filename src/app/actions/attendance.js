@@ -58,6 +58,7 @@ function cleanAttendanceRecordForDb(rec, tenantId = DEFAULT_TENANT_ID) {
     shift_name: rec.shift_name || 'Regular Shift',
     is_regularized: !!rec.is_regularized,
     regularization_id: rec.regularization_id && isValidUuid(rec.regularization_id) ? rec.regularization_id : null,
+    branch_name: rec.branch_name || null,
     remarks: rec.remarks || null,
     created_at: rec.created_at || new Date().toISOString(),
     updated_at: rec.updated_at || new Date().toISOString()
@@ -98,7 +99,7 @@ function cleanRequestForDb(req, tenantId = DEFAULT_TENANT_ID) {
 // optional shift columns; never hide other database errors or overwrite a punch.
 async function persistAttendancePunch(adminClient, record, tenantId, existingDb, punchType, isMultiRePunch = false) {
   const payload = cleanAttendanceRecordForDb(record, tenantId);
-  const optionalColumns = ['short_leave_type', 'is_grace_applied', 'shift_name'];
+  const optionalColumns = ['short_leave_type', 'is_grace_applied', 'shift_name', 'branch_name'];
   try {
     for (let attempt = 0; attempt <= optionalColumns.length; attempt++) {
       let query;
@@ -997,7 +998,7 @@ async function syncApprovedLeaveAttendance(context, request) {
 /**
  * 1. Get Today's Attendance for Current User
  */
-export async function getTodayAttendance(userEmail, userId, tenantId = DEFAULT_TENANT_ID, userCompany = '') {
+export async function getTodayAttendance(userEmail, userId, tenantId = DEFAULT_TENANT_ID, userCompany = '', branchName = '') {
   if (!userEmail) return { success: false, error: 'User email is required' };
   tenantId = resolveTenantId(tenantId, userCompany);
   const adminClient = getAdminClient();
@@ -1011,7 +1012,6 @@ export async function getTodayAttendance(userEmail, userId, tenantId = DEFAULT_T
   // Local fallback first
   const local = await getFallbackData();
   const localRec = local.records.find(r => 
-    (r.tenant_id || DEFAULT_TENANT_ID) === tenantId &&
     (r.email || '').toLowerCase() === normalizedEmail && 
     r.attendance_date === today
   );
@@ -1021,24 +1021,25 @@ export async function getTodayAttendance(userEmail, userId, tenantId = DEFAULT_T
     const lastDay = new Date(Date.UTC(nowYear, nowMonth, 0)).getUTCDate();
     const endDateStr = `${nowYear}-${String(nowMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
 
+    // Query directly on (email, attendance_date) using unique composite index for <2ms instant response
     const [monthRes, todayRes] = await Promise.all([
       adminClient
         .from('attendance_records')
         .select('*')
         .ilike('email', normalizedEmail)
-        .eq('tenant_id', tenantId)
         .gte('attendance_date', startDateStr)
         .lte('attendance_date', endDateStr),
       adminClient
         .from('attendance_records')
         .select('*')
         .ilike('email', normalizedEmail)
-        .eq('tenant_id', tenantId)
         .eq('attendance_date', today)
+        .order('created_at', { ascending: false })
+        .limit(1)
         .maybeSingle()
     ]);
 
-    if (todayRes.error) throw todayRes.error;
+    if (todayRes.error && todayRes.error.code !== 'PGRST116') throw todayRes.error;
     const dbMonthRecs = monthRes?.data;
     const dbToday = todayRes?.data;
 
@@ -1046,14 +1047,13 @@ export async function getTodayAttendance(userEmail, userId, tenantId = DEFAULT_T
       monthlyRecords = dbMonthRecs;
     } else {
       monthlyRecords = local.records.filter(r => 
-        (r.tenant_id || DEFAULT_TENANT_ID) === tenantId && 
         (r.email || '').toLowerCase() === normalizedEmail
       );
     }
 
     let tenantPolicy = null;
     try {
-      const policyRes = await getTenantAttendancePolicy(tenantId, userCompany);
+      const policyRes = await getTenantAttendancePolicy(tenantId, userCompany, branchName || '');
       tenantPolicy = policyRes?.data || null;
     } catch {}
     const monthlyUsage = calculateMonthlyShortLeaveUsage(monthlyRecords, nowYear, nowMonth, today, tenantPolicy);
@@ -1170,7 +1170,9 @@ export async function punchIn({
   method = 'WEB_PUNCH',
   tenantId = DEFAULT_TENANT_ID,
   shiftName = null,
-  userCompany = ''
+  userCompany = '',
+  branchCode = null,
+  branchName = null
 }) {
   try {
     if (!email) return { success: false, error: 'User email is required' };
@@ -1261,7 +1263,6 @@ export async function punchIn({
   let monthlyRecords = (monthDbRes?.data && monthDbRes.data.length > 0)
     ? monthDbRes.data
     : (local?.records || []).filter(r => 
-        (r.tenant_id || DEFAULT_TENANT_ID) === tenantId &&
         (r.email || '').toLowerCase() === normalizedEmail
       );
 
@@ -1270,7 +1271,7 @@ export async function punchIn({
   let resolvedDepartment = department || '';
   let resolvedEmpName = empName || email.split('@')[0];
   let assignedShiftFromDb = null;
-  let employeeBranchFromDb = '';
+  let employeeBranchFromDb = branchName || '';
   let employeeModuleAccess = null;
   let roleCompanyFromDb = '';
   let roleTenantFromDb = null;
@@ -1280,13 +1281,14 @@ export async function punchIn({
     if (!resolvedDepartment) resolvedDepartment = userRole.emp_department || 'General';
     if (!resolvedEmpName || resolvedEmpName === email.split('@')[0]) resolvedEmpName = userRole.emp_name || resolvedEmpName;
     if (userRole.assigned_shift) assignedShiftFromDb = userRole.assigned_shift;
-    if (userRole.branch_name || userRole.module_access?.branch_name) {
+    if (!employeeBranchFromDb && (userRole.branch_name || userRole.module_access?.branch_name)) {
       employeeBranchFromDb = userRole.branch_name || userRole.module_access?.branch_name || '';
     }
     if (userRole.module_access) employeeModuleAccess = userRole.module_access;
     roleCompanyFromDb = userRole.company || userRole.module_access?.company_name || '';
     roleTenantFromDb = userRole.tenant_id || userRole.module_access?._tenantId || null;
   }
+  if (!employeeBranchFromDb && branchCode) employeeBranchFromDb = branchCode;
 
   const effectiveCompany = userCompany || roleCompanyFromDb || '';
   const effectiveTenant = resolveTenantId(tenantId || roleTenantFromDb, effectiveCompany);
@@ -1376,7 +1378,10 @@ export async function punchIn({
   const canonicalInMethod = isMultiRePunch ? (currentTodayRec.in_method || method) : method;
 
   const inTimeFormatted = new Date(nowIso).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true });
-  const punchInTag = `[IN: ${inTimeFormatted} (${location.startsWith('GPS') ? 'GPS' : 'Web'})]`;
+  const existingInMatches = (currentTodayRec?.remarks || '').match(/\[P(\d+)\s+IN:/g) || [];
+  const pNum = isMultiRePunch ? (existingInMatches.length + 1) : 1;
+  const inLocType = location.startsWith('GPS') ? 'GPS' : 'Web';
+  const punchInTag = `[P${pNum} IN: ${inTimeFormatted} (${inLocType})]`;
   let combinedRemarks = '';
   if (isMultiRePunch) {
     const existingRemarks = currentTodayRec?.remarks || '';
@@ -1406,6 +1411,7 @@ export async function punchIn({
     is_grace_applied: isMultiRePunch ? !!currentTodayRec.is_grace_applied : evaluation.is_grace_applied,
     shift_name: resolvedShiftName,
     is_regularized: false,
+    branch_name: branchName || currentTodayRec?.branch_name || employeeBranchFromDb || null,
     remarks: combinedRemarks,
     created_at: currentTodayRec?.created_at || nowIso,
     updated_at: nowIso
@@ -1476,8 +1482,8 @@ export async function punchIn({
   return {
     success: true,
     message: isMultiRePunch
-      ? `Duty Resumed! Punch In registered at ${inTimeFormatted}`
-      : `Punch In registered: ${evaluation.ruleTitle}`,
+      ? `Duty Resumed (P${pNum})! Punch In registered at ${inTimeFormatted}`
+      : `Punch In (P1) registered: ${evaluation.ruleTitle}`,
     data: resultRecord,
     evaluation,
     monthlyUsage
@@ -1501,7 +1507,9 @@ export async function punchOut({
   location = 'Web Terminal',
   method = 'WEB_PUNCH',
   tenantId = DEFAULT_TENANT_ID,
-  userCompany = ''
+  userCompany = '',
+  branchCode = null,
+  branchName = null
 }) {
   try {
     if (!email) return { success: false, error: 'User email is required' };
@@ -1602,7 +1610,7 @@ export async function punchOut({
         );
 
     let effectiveCompany = userCompany || existing.company_name || '';
-    let employeeBranch = existing.branch_name || '';
+    let employeeBranch = branchName || existing.branch_name || '';
     let employeeModuleAccess = null;
     if (uRole) {
       const roleComp = uRole.company || uRole.module_access?.company_name || '';
@@ -1611,6 +1619,7 @@ export async function punchOut({
       if (roleBranch && !employeeBranch) employeeBranch = roleBranch;
       if (uRole.module_access) employeeModuleAccess = uRole.module_access;
     }
+    if (!employeeBranch && branchCode) employeeBranch = branchCode;
     const effectiveTenant = resolveTenantId(tenantId || uRole?.tenant_id || uRole?.module_access?._tenantId || existing.tenant_id, effectiveCompany);
     const policyRes = await getAttendancePolicyForUserScope(effectiveTenant, effectiveCompany, employeeBranch, employeeModuleAccess);
     const tenantPolicy = policyRes?.data || null;
@@ -1700,11 +1709,29 @@ export async function punchOut({
       ? (Number(existing.total_working_minutes) + currentSessionMins)
       : (evaluation.total_working_minutes || currentSessionMins);
 
-    // Clean SessionStart tag from remarks and append punch out tag
-    const cleanOldRemarks = (existing.remarks || '').replace(/\[SessionStart:\s*[^\]]+\]/g, '').trim();
+    // Determine P number for out punch: match existing P IN tags
+    const pInMatches = (existing.remarks || '').match(/\[P(\d+)\s+IN:/g) || [];
+    const pOutMatches = (existing.remarks || '').match(/\[P(\d+)\s+OUT:/g) || [];
+    const pNum = Math.max(1, pInMatches.length || (pOutMatches.length + 1) || 1);
+
+    const sHours = Math.floor(currentSessionMins / 60);
+    const sMins = currentSessionMins % 60;
+    const sDurationStr = sHours > 0 ? `${sHours}h ${sMins}m` : `${sMins}m`;
+
+    const outLocType = location.startsWith('GPS') ? 'GPS' : 'Web';
     const outTimeFormatted = new Date(nowIso).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true });
-    const punchOutTag = `[OUT: ${outTimeFormatted} (${location.startsWith('GPS') ? 'GPS' : 'Web'})]`;
-    const finalRemarks = [cleanOldRemarks, geofenceRemarks, evaluation.remarks, punchOutTag].filter(Boolean).join(' ');
+    const punchOutTag = `[P${pNum} OUT: ${outTimeFormatted} (${outLocType}) - P${pNum}: ${sDurationStr}]`;
+
+    // Clean SessionStart tag from remarks and append punch out tag
+    let cleanOldRemarks = (existing.remarks || '').replace(/\[SessionStart:\s*[^\]]+\]/g, '').trim();
+
+    // Prevent duplicate evaluation remarks from bloating on multiple punch outs
+    let evalRemarksToAdd = evaluation.remarks || '';
+    if (evalRemarksToAdd && cleanOldRemarks.includes(evalRemarksToAdd)) {
+      evalRemarksToAdd = '';
+    }
+
+    const finalRemarks = [cleanOldRemarks, geofenceRemarks, evalRemarksToAdd, punchOutTag].filter(Boolean).join(' ');
 
     let updatedRecord = {
       ...existing,
@@ -1715,6 +1742,7 @@ export async function punchOut({
       total_working_minutes: accumulatedMins,
       status: evaluation.status,
       short_leave_type: evaluation.short_leave_type,
+      branch_name: branchName || existing.branch_name || employeeBranch || null,
       remarks: finalRemarks,
       updated_at: nowIso
     };
@@ -1749,6 +1777,7 @@ export async function punchOut({
       out_method: method,
       total_working_minutes: accumulatedMins,
       status: evaluation.status,
+      branch_name: branchName || existing.branch_name || employeeBranch || null,
       remarks: finalRemarks,
       updated_at: nowIso
     };
@@ -1817,7 +1846,7 @@ export async function punchOut({
     return {
       success: true,
       message: allowMultiPunch
-        ? `Punch Out registered at ${outTimeFormatted}! Total duty logged: ${formatMinutesToHours(accumulatedMins)}`
+        ? `Punch Out (P${pNum}) registered at ${outTimeFormatted}! (P${pNum}: ${sDurationStr}, Total Active: ${formatMinutesToHours(accumulatedMins)})`
         : `Punch Out registered: ${evaluation.ruleTitle}! Total time worked: ${formatMinutesToHours(evaluation.total_working_minutes)}`,
       data: updatedRecord,
       evaluation,

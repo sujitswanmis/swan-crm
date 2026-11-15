@@ -1753,23 +1753,25 @@ export default function AttendanceModule({
     return () => clearInterval(timer);
   }, []);
 
-  // 2. Dynamic Real-Time Working Stopwatch Timer (Seconds Ticking)
+  // 2. Dynamic Real-Time Working Stopwatch Timer (Multi-Punch Aware Seconds Ticking)
   useEffect(() => {
     if (todayRecord?.in_time && !todayRecord?.out_time) {
-      const inTimeMs = new Date(todayRecord.in_time).getTime();
-      const diffMs = currentTime.getTime() - inTimeMs;
-      if (diffMs >= 0) {
-        const totalSeconds = Math.floor(diffMs / 1000);
-        const hours = Math.floor(totalSeconds / 3600);
-        const mins = Math.floor((totalSeconds % 3600) / 60);
-        const secs = totalSeconds % 60;
-        const hStr = String(hours).padStart(2, '0');
-        const mStr = String(mins).padStart(2, '0');
-        const sStr = String(secs).padStart(2, '0');
-        setLiveDuration(`${hStr}h ${mStr}m ${sStr}s`);
-      } else {
-        setLiveDuration('00h 00m 00s');
+      let sessionStartMs = new Date(todayRecord.in_time).getTime();
+      const sessionMatch = (todayRecord.remarks || '').match(/\[SessionStart:\s*([^\]]+)\]/);
+      if (sessionMatch && sessionMatch[1]) {
+        const parsed = new Date(sessionMatch[1]).getTime();
+        if (!isNaN(parsed) && parsed > sessionStartMs) sessionStartMs = parsed;
       }
+      const priorSecs = (Number(todayRecord.total_working_minutes) || 0) * 60;
+      const currentSessionMs = currentTime.getTime() - sessionStartMs;
+      const totalSeconds = priorSecs + Math.max(0, Math.floor(currentSessionMs / 1000));
+      const hours = Math.floor(totalSeconds / 3600);
+      const mins = Math.floor((totalSeconds % 3600) / 60);
+      const secs = totalSeconds % 60;
+      const hStr = String(hours).padStart(2, '0');
+      const mStr = String(mins).padStart(2, '0');
+      const sStr = String(secs).padStart(2, '0');
+      setLiveDuration(`${hStr}h ${mStr}m ${sStr}s`);
     } else if (todayRecord?.in_time && todayRecord?.out_time) {
       const mins = todayRecord.total_working_minutes || 0;
       const hours = Math.floor(mins / 60);
@@ -1782,7 +1784,55 @@ export default function AttendanceModule({
     }
   }, [currentTime, todayRecord]);
 
-  // 2b. Live Mobile GPS & Battery tracking now runs globally via GlobalMobileTelemetryTracker in CRMContainer.
+  // 2b. Parsed Today's Punch Sessions Trail (P1, P2, P3...)
+  const todayPunchSessions = useMemo(() => {
+    if (!todayRecord?.in_time) return [];
+    const remarks = todayRecord.remarks || '';
+    const sessions = [];
+
+    // Parse P1, P2, P3... tags from remarks
+    // Examples: [P1 IN: 09:30 AM (Web)] ... [P1 OUT: 01:15 PM (Web) - P1: 3h 45m]
+    const pInRegex = /\[P(\d+)\s+IN:\s*([^\]\)]+?)(?:\s*\(([^)]+)\))?\]/g;
+    const inMap = {};
+    let m;
+    while ((m = pInRegex.exec(remarks)) !== null) {
+      inMap[m[1]] = { inTime: m[2].trim(), inMethod: m[3] || 'Web' };
+    }
+
+    const pOutRegex = /\[P(\d+)\s+OUT:\s*([^\]\)]+?)(?:\s*\(([^)]+)\))?(?:\s*-\s*P\d+:\s*([^\]]+))?\]/g;
+    const outMap = {};
+    while ((m = pOutRegex.exec(remarks)) !== null) {
+      outMap[m[1]] = { outTime: m[2].trim(), outMethod: m[3] || 'Web', duration: m[4] || '' };
+    }
+
+    const allKeys = Array.from(new Set([...Object.keys(inMap), ...Object.keys(outMap)]))
+      .map(Number)
+      .sort((a, b) => a - b);
+
+    if (allKeys.length > 0) {
+      for (const k of allKeys) {
+        sessions.push({
+          num: k,
+          label: `P${k}`,
+          inTime: inMap[k]?.inTime || (k === 1 ? formatTimeIST(todayRecord.in_time) : '—'),
+          outTime: outMap[k]?.outTime || (todayRecord.out_time && k === allKeys[allKeys.length - 1] ? formatTimeIST(todayRecord.out_time) : null),
+          duration: outMap[k]?.duration || '',
+          isActive: !outMap[k]?.outTime && !todayRecord.out_time && k === allKeys[allKeys.length - 1]
+        });
+      }
+    } else {
+      sessions.push({
+        num: 1,
+        label: 'P1',
+        inTime: formatTimeIST(todayRecord.in_time),
+        outTime: todayRecord.out_time ? formatTimeIST(todayRecord.out_time) : null,
+        duration: todayRecord.total_working_minutes ? `${Math.floor(todayRecord.total_working_minutes / 60)}h ${todayRecord.total_working_minutes % 60}m` : '',
+        isActive: !todayRecord.out_time
+      });
+    }
+
+    return sessions;
+  }, [todayRecord]);
 
   // 3. Load Today's Attendance (Silent on focus/background to prevent button freezing)
   const fetchTodayAttendance = useCallback(async (clearError = false, isSilent = false) => {
@@ -1792,7 +1842,13 @@ export default function AttendanceModule({
     const isCurrent = () => scope === attendanceScopeRef.current && requestId === todayLoadRef.current;
     if (!isSilent && !todayRecordRef.current) setLoadingToday(true);
     try {
-      const res = await getTodayAttendance(userEmail, userId, effectiveTenantId, userCompany);
+      const res = await getTodayAttendance(
+        userEmail,
+        userId,
+        effectiveTenantId,
+        userCompany,
+        effectiveBranchAccess?.primaryBranchName || ''
+      );
       if (!isCurrent()) return;
       if (res.success) {
         if (clearError) setPunchError(null);
@@ -1811,7 +1867,7 @@ export default function AttendanceModule({
     } finally {
       if (isCurrent()) setLoadingToday(false);
     }
-  }, [userEmail, userId, effectiveTenantId, userCompany, attendanceScope, updateTodayRecord]);
+  }, [userEmail, userId, effectiveTenantId, userCompany, effectiveBranchAccess?.primaryBranchName, attendanceScope, updateTodayRecord]);
 
   useEffect(() => {
     // Window focus / online event runs silently without blocking Punch In/Out buttons
@@ -2327,7 +2383,9 @@ export default function AttendanceModule({
         shiftName: activePunchShift.shift_name || null,
         location: punchLocation,
         method: punchLocation.startsWith('GPS') ? 'GPS_PUNCH' : 'WEB_PUNCH',
-        tenantId: effectiveTenantId
+        tenantId: effectiveTenantId,
+        branchCode: effectiveBranchAccess?.primaryBranchCode || null,
+        branchName: effectiveBranchAccess?.primaryBranchName || null
       });
       if (!isCurrent()) return;
       if (res.success) {
@@ -2367,7 +2425,7 @@ export default function AttendanceModule({
           const voiceMsg = evaluation.voiceMessageEnglish || `Punch In successful. Welcome, ${userName || 'User'}!`;
           speakHumanFemaleAnnouncement(voiceMsg);
         }
-        if (navigator.onLine) fetchTodayAttendance();
+        if (!accepted && navigator.onLine) fetchTodayAttendance();
       }
     }
   };
@@ -2422,7 +2480,9 @@ export default function AttendanceModule({
         userCompany,
         location: punchLocation,
         method: punchLocation.startsWith('GPS') ? 'GPS_PUNCH' : 'WEB_PUNCH',
-        tenantId: effectiveTenantId
+        tenantId: effectiveTenantId,
+        branchCode: effectiveBranchAccess?.primaryBranchCode || null,
+        branchName: effectiveBranchAccess?.primaryBranchName || null
       });
       if (!isCurrent()) return;
       if (res.success) {
@@ -2460,7 +2520,7 @@ export default function AttendanceModule({
           const voiceMsg = evaluation.voiceMessageEnglish || `Punch Out successful. Thank you, ${userName || 'User'}!`;
           speakHumanFemaleAnnouncement(voiceMsg);
         }
-        if (navigator.onLine) fetchTodayAttendance();
+        if (!accepted && navigator.onLine) fetchTodayAttendance();
       }
     }
   };
@@ -3158,8 +3218,8 @@ export default function AttendanceModule({
             {/* Title */}
             <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: '0 0 0.4rem', color: 'var(--text-primary)' }}>
               {punchConfirm === 'IN' 
-                ? (allowMultiPunch && todayRecord?.out_time ? 'Confirm Resume Duty (Punch In Again)' : 'Confirm Punch In') 
-                : 'Confirm Punch Out'}
+                ? (allowMultiPunch && todayRecord?.out_time ? `Confirm Resume Duty (Start P${todayPunchSessions.length + 1})` : (allowMultiPunch ? 'Confirm Punch In (P1)' : 'Confirm Punch In')) 
+                : (allowMultiPunch ? `Confirm Punch Out (End P${todayPunchSessions.length || 1})` : 'Confirm Punch Out')}
             </h2>
 
             {/* Time display */}
@@ -3182,8 +3242,12 @@ export default function AttendanceModule({
               textAlign: 'left'
             }}>
               {punchConfirm === 'IN'
-                ? '⚠️ Ek din mein sirf 1 baar Punch In allowed hai. Kya aap confirm karte hain?'
-                : '⚠️ Ek din mein sirf 1 baar Punch Out allowed hai. Kya aap confirm karte hain?'
+                ? (allowMultiPunch
+                    ? (todayRecord?.out_time ? `Kya aap session P${todayPunchSessions.length + 1} ke liye Punch In confirm karte hain?` : 'Kya aap aaj ka Punch In (P1) confirm karte hain?')
+                    : '⚠️ Ek din mein sirf 1 baar Punch In allowed hai. Kya aap confirm karte hain?')
+                : (allowMultiPunch
+                    ? `Kya aap session P${todayPunchSessions.length || 1} ka Punch Out confirm karte hain?`
+                    : '⚠️ Ek din mein sirf 1 baar Punch Out allowed hai. Kya aap confirm karte hain?')
               }
             </div>
 
@@ -3725,8 +3789,8 @@ export default function AttendanceModule({
                     {punchingIn 
                       ? 'Punching...' 
                       : (allowMultiPunch && todayRecord?.in_time && todayRecord?.out_time 
-                          ? '🔄 Punch In Again' 
-                          : (todayRecord?.in_time ? '✓ Punched In' : 'Punch In'))}
+                          ? `🔄 Punch In (Start P${todayPunchSessions.length + 1})` 
+                          : (todayRecord?.in_time ? `✓ Punched In (P${todayPunchSessions.length || 1})` : 'Punch In (P1)'))}
                   </div>
                   <span style={{ fontSize: '0.75rem', marginTop: '0.2rem', opacity: 0.9 }}>
                     {allowMultiPunch && todayRecord?.in_time && todayRecord?.out_time
@@ -3763,8 +3827,8 @@ export default function AttendanceModule({
                     {punchingOut 
                       ? 'Punching...' 
                       : (todayRecord?.out_time 
-                          ? (allowMultiPunch ? '⏸️ On Break / Out' : '✓ Shift Completed') 
-                          : 'Punch Out')}
+                          ? (allowMultiPunch ? `⏸️ On Break (P${todayPunchSessions.length} Logged)` : '✓ Shift Completed') 
+                          : (allowMultiPunch ? `Punch Out (End P${todayPunchSessions.length || 1})` : 'Punch Out'))}
                   </div>
                   <span style={{ fontSize: '0.75rem', marginTop: '0.2rem', opacity: 0.9 }}>
                     {todayRecord?.out_time
@@ -3776,27 +3840,70 @@ export default function AttendanceModule({
 
               {allowMultiPunch && todayRecord?.in_time && (
                 <div style={{
-                  padding: '0.45rem 0.75rem',
-                  borderRadius: '8px',
+                  padding: '0.6rem 0.75rem',
+                  borderRadius: '10px',
                   background: 'var(--bg-secondary, #f8fafc)',
                   border: '1px solid var(--border-light, #e2e8f0)',
-                  fontSize: '0.72rem',
+                  fontSize: '0.75rem',
                   color: 'var(--text-secondary, #64748b)',
                   display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  flexWrap: 'wrap',
-                  gap: '0.35rem'
+                  flexDirection: 'column',
+                  gap: '0.45rem'
                 }}>
-                  <span style={{ fontWeight: 600, color: 'var(--text-primary, #1e293b)' }}>
-                    🔄 Multi-Punch Active
-                  </span>
-                  <span>
-                    1st In: <strong style={{ color: '#16a34a' }}>{formatTimeIST(todayRecord.in_time)}</strong>
-                    {todayRecord.out_time 
-                      ? <> | Last Out: <strong style={{ color: '#dc2626' }}>{formatTimeIST(todayRecord.out_time)}</strong></>
-                      : ' | Currently On Duty'}
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.35rem' }}>
+                    <span style={{ fontWeight: 700, color: 'var(--text-primary, #1e293b)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      📋 Today's Punches Trail:
+                    </span>
+                    <span style={{
+                      fontSize: '0.72rem',
+                      fontWeight: 700,
+                      padding: '0.15rem 0.45rem',
+                      borderRadius: '6px',
+                      background: todayRecord.out_time ? 'rgba(234, 179, 8, 0.15)' : 'rgba(34, 197, 94, 0.15)',
+                      color: todayRecord.out_time ? '#b45309' : '#15803d'
+                    }}>
+                      {todayRecord.out_time ? `⏸️ On Break (P${todayPunchSessions.length} Logged)` : `🟢 Active (P${todayPunchSessions.length || 1} Running)`}
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+                    {todayPunchSessions.map((s) => (
+                      <span
+                        key={s.num}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.28rem',
+                          padding: '0.25rem 0.5rem',
+                          borderRadius: '6px',
+                          background: s.isActive ? 'rgba(34, 197, 94, 0.12)' : 'var(--bg-surface, #ffffff)',
+                          border: s.isActive ? '1px solid #22c55e' : '1px solid var(--border-light, #e2e8f0)',
+                          color: s.isActive ? '#15803d' : 'var(--text-primary, #334155)',
+                          fontSize: '0.72rem',
+                          fontWeight: 600
+                        }}
+                      >
+                        <strong style={{ color: s.isActive ? '#16a34a' : 'var(--accent-color, #2563eb)' }}>{s.label}:</strong>
+                        <span>{s.inTime}</span>
+                        <span style={{ opacity: 0.6 }}>➔</span>
+                        {s.outTime ? (
+                          <>
+                            <span>{s.outTime}</span>
+                            {s.duration && <span style={{ opacity: 0.8, fontSize: '0.67rem', color: 'var(--text-secondary)' }}>({s.duration})</span>}
+                            <span style={{ color: '#16a34a', fontSize: '0.68rem' }}>✓</span>
+                          </>
+                        ) : (
+                          <span style={{ color: '#16a34a', fontWeight: 700 }}>● Active</span>
+                        )}
+                      </span>
+                    ))}
+                  </div>
+
+                  <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between', borderTop: '1px dashed var(--border-light, #e2e8f0)', paddingTop: '0.35rem' }}>
+                    <span>1st In: <strong style={{ color: '#16a34a' }}>{formatTimeIST(todayRecord.in_time)}</strong></span>
+                    {todayRecord.out_time && <span>Last Out: <strong style={{ color: '#dc2626' }}>{formatTimeIST(todayRecord.out_time)}</strong></span>}
+                    <span>Total Active: <strong style={{ color: 'var(--accent-color, #2563eb)' }}>{Math.floor((todayRecord.total_working_minutes || 0) / 60)}h {(todayRecord.total_working_minutes || 0) % 60}m</strong></span>
+                  </div>
                 </div>
               )}
 
@@ -3841,7 +3948,7 @@ export default function AttendanceModule({
                   {liveDuration}
                 </span>
                 <span style={{ fontSize: '0.78rem', color: todayRecord?.in_time && !todayRecord?.out_time ? '#16a34a' : 'var(--text-secondary)', fontWeight: 600 }}>
-                  {todayRecord?.out_time ? '(Final Logged)' : (todayRecord?.in_time ? '● LIVE RUNNING' : '(Not Started)')}
+                  {todayRecord?.out_time ? (allowMultiPunch ? '(Paused / On Break)' : '(Final Logged)') : (todayRecord?.in_time ? `● LIVE RUNNING${allowMultiPunch ? ` (P${todayPunchSessions.length || 1})` : ''}` : '(Not Started)')}
                   {todayRecord?._offlinePending && ' · Sync Pending'}
                 </span>
               </div>
