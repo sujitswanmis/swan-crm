@@ -274,6 +274,22 @@ export const ConsoleHeader = memo(function ConsoleHeader({
 export const AttendancePolicyBanner = memo(function AttendancePolicyBanner({ attendanceStatus, onPunchInClick }) {
   if (!attendanceStatus?.checked) return null;
 
+  if (attendanceStatus.isPunchedOut) {
+    return (
+      <section aria-label="Shift completed notice" className={styles.noticeBanner} data-tone="danger">
+        <div className={styles.noticeContent}>
+          <span className={styles.noticeIcon}>
+            <Lock size={18} aria-hidden="true" />
+          </span>
+          <div className={styles.noticeText}>
+            <strong>Shift ended for today ({formatVisitTimeIST(attendanceStatus.outTime)})</strong>
+            <p>You have punched out for today. New client visit check-ins are locked until your next shift.</p>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
   if (!attendanceStatus.isPunchedIn) {
     return (
       <section aria-label="Attendance policy notice" className={styles.noticeBanner} data-tone="warning">
@@ -290,22 +306,6 @@ export const AttendancePolicyBanner = memo(function AttendancePolicyBanner({ att
           <Clock size={14} aria-hidden="true" />
           Punch In Attendance
         </button>
-      </section>
-    );
-  }
-
-  if (attendanceStatus.isPunchedOut) {
-    return (
-      <section aria-label="Shift completed notice" className={styles.noticeBanner} data-tone="danger">
-        <div className={styles.noticeContent}>
-          <span className={styles.noticeIcon}>
-            <Lock size={18} aria-hidden="true" />
-          </span>
-          <div className={styles.noticeText}>
-            <strong>Shift ended for today ({formatVisitTimeIST(attendanceStatus.outTime)})</strong>
-            <p>You have punched out for today. New client visit check-ins are locked until your next shift.</p>
-          </div>
-        </div>
       </section>
     );
   }
@@ -361,8 +361,10 @@ export const ConsoleHomeCockpitView = memo(function ConsoleHomeCockpitView({
   const totalTasks = tasks.length + todayCompletedCount;
   const completionPct = totalTasks > 0 ? Math.round((todayCompletedCount / totalTasks) * 100) : 0;
 
-  const isPunchedIn = Boolean(attendanceStatus?.isPunchedIn);
+  const isPunchedIn = Boolean(attendanceStatus?.isPunchedIn && !attendanceStatus?.isPunchedOut);
+  const isPunchedOut = Boolean(attendanceStatus?.isPunchedOut);
   const inTimeStr = attendanceStatus?.inTime ? formatVisitTimeIST(attendanceStatus.inTime) : '--:--';
+  const outTimeStr = attendanceStatus?.outTime ? formatVisitTimeIST(attendanceStatus.outTime) : '--:--';
 
   const cleanCompanyName = String(company || '').trim() || 'New Swan Multitech Limited';
   const logoInitial = cleanCompanyName.split(' ').map(w => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase() || 'NS';
@@ -375,7 +377,7 @@ export const ConsoleHomeCockpitView = memo(function ConsoleHomeCockpitView({
           <div>
             <div className={styles.punchHeroTitle}>Hi! {cleanCompanyName}</div>
             <div className={styles.punchHeroSub}>
-              {isPunchedIn ? 'You are punched In!' : 'You are punched Out!'}
+              {isPunchedIn ? 'You are punched In!' : (isPunchedOut ? 'You are punched Out!' : 'Off Duty')}
             </div>
           </div>
           <div className={styles.companyLogoBadge} title={cleanCompanyName}>
@@ -390,17 +392,22 @@ export const ConsoleHomeCockpitView = memo(function ConsoleHomeCockpitView({
                 <LogIn size={15} color="#16a34a" aria-hidden="true" />
                 <span>Punch In Time: <strong>{inTimeStr}</strong></span>
               </>
-            ) : (
+            ) : isPunchedOut ? (
               <>
                 <LogOut size={15} color="#dc2626" aria-hidden="true" />
+                <span>Punch Out: <strong>{outTimeStr}</strong></span>
+              </>
+            ) : (
+              <>
+                <LogOut size={15} color="#64748b" aria-hidden="true" />
                 <span>Off Duty</span>
               </>
             )}
           </div>
 
-          {isPunchedIn && (
+          {(isPunchedIn || (isPunchedOut && liveDutyDuration && liveDutyDuration !== '00 s')) && (
             <div className={styles.durationPillSegment}>
-              <span className={styles.durationPillLabel}>Duration</span>
+              <span className={styles.durationPillLabel}>{isPunchedIn ? 'Duration' : 'Logged'}</span>
               <strong className={styles.durationPillValue}>{liveDutyDuration}</strong>
             </div>
           )}
@@ -421,7 +428,7 @@ export const ConsoleHomeCockpitView = memo(function ConsoleHomeCockpitView({
               className={styles.punchActionBtn}
               data-type="in"
               onClick={onPunchInClick}
-              title="Punch In"
+              title={isPunchedOut ? 'Resume Duty (Punch In Again)' : 'Punch In'}
             >
               Punch In
             </button>
@@ -1052,15 +1059,15 @@ export const ConsoleAssignedTasksView = memo(function ConsoleAssignedTasksView({
                   )}
                 </div>
 
-                {attendanceStatus.checked && !attendanceStatus.isPunchedIn ? (
-                  <button type="button" className={styles.primaryAction} data-tone="warning" onClick={onAttendanceGateClick}>
-                    <Lock size={14} aria-hidden="true" />
-                    Punch Attendance First
-                  </button>
-                ) : attendanceStatus.checked && attendanceStatus.isPunchedOut ? (
+                {attendanceStatus.checked && attendanceStatus.isPunchedOut ? (
                   <button type="button" className={styles.primaryAction} disabled>
                     <Lock size={14} aria-hidden="true" />
                     Shift Ended
+                  </button>
+                ) : attendanceStatus.checked && !attendanceStatus.isPunchedIn ? (
+                  <button type="button" className={styles.primaryAction} data-tone="warning" onClick={onAttendanceGateClick}>
+                    <Lock size={14} aria-hidden="true" />
+                    Punch Attendance First
                   </button>
                 ) : (
                   <button type="button" className={styles.primaryAction} data-tone="success" onClick={() => onSelectTask(task)}>
@@ -1374,15 +1381,15 @@ export const ConsoleCheckInWorkspace = memo(function ConsoleCheckInWorkspace({
           )}
         </div>
 
-        {attendanceStatus.checked && !attendanceStatus.isPunchedIn ? (
-          <button type="button" className={styles.primaryAction} data-tone="warning" onClick={onAttendanceGateClick}>
-            <Lock size={15} aria-hidden="true" />
-            Punch Attendance First to Check-In
-          </button>
-        ) : attendanceStatus.checked && attendanceStatus.isPunchedOut ? (
+        {attendanceStatus.checked && attendanceStatus.isPunchedOut ? (
           <button type="button" className={styles.primaryAction} disabled>
             <Lock size={15} aria-hidden="true" />
             Shift Ended (Punched Out)
+          </button>
+        ) : attendanceStatus.checked && !attendanceStatus.isPunchedIn ? (
+          <button type="button" className={styles.primaryAction} data-tone="warning" onClick={onAttendanceGateClick}>
+            <Lock size={15} aria-hidden="true" />
+            Punch Attendance First to Check-In
           </button>
         ) : (
           <button type="button" className={styles.primaryAction} disabled={!partyName.trim()} onClick={onStartCheckIn}>

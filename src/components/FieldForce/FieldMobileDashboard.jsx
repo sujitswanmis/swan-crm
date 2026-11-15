@@ -87,10 +87,16 @@ function calculateHaversineMeters(lat1, lon1, lat2, lon2) {
   return Math.round(R * c);
 }
 
-function formatDutyDuration(inTime, isPunchedIn, nowMs) {
-  if (!isPunchedIn || !inTime) return '00 s';
+function formatDutyDuration(inTime, isPunchedIn, nowMs, outTime = null, totalMinutes = 0) {
+  if (totalMinutes > 0) {
+    const hrs = Math.floor(totalMinutes / 60);
+    const mins = totalMinutes % 60;
+    return hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`;
+  }
+  if (!inTime) return '00 s';
   const inMs = new Date(inTime).getTime();
-  const diffSecs = Math.max(0, Math.floor((Number(nowMs || 0) - inMs) / 1000));
+  const endMs = isPunchedIn ? Number(nowMs || 0) : (outTime ? new Date(outTime).getTime() : inMs);
+  const diffSecs = Math.max(0, Math.floor((endMs - inMs) / 1000));
   if (diffSecs < 60) {
     return `${diffSecs} s`;
   }
@@ -381,6 +387,7 @@ export default function FieldMobileDashboard({
         isPunchedOut: Boolean(res?.isPunchedOut),
         inTime: res?.inTime || null,
         outTime: res?.outTime || null,
+        totalWorkingMinutes: res?.totalWorkingMinutes || 0,
       });
     } catch (e) {
       console.warn('Failed to verify attendance status:', e);
@@ -397,7 +404,13 @@ export default function FieldMobileDashboard({
     return () => clearInterval(interval);
   }, [attendanceStatus?.isPunchedIn, attendanceStatus?.inTime]);
 
-  const liveDutyDuration = formatDutyDuration(attendanceStatus?.inTime, attendanceStatus?.isPunchedIn, nowMs);
+  const liveDutyDuration = formatDutyDuration(
+    attendanceStatus?.inTime,
+    attendanceStatus?.isPunchedIn,
+    nowMs,
+    attendanceStatus?.outTime,
+    attendanceStatus?.totalWorkingMinutes
+  );
 
   const loadCompletedVisits = useCallback(async () => {
     if (!currentUserId) return;
@@ -644,12 +657,12 @@ export default function FieldMobileDashboard({
   }, [onNavigateToAttendance]);
 
   const handleStartCheckIn = useCallback(async (overrides = {}) => {
-    if (attendanceStatus.checked && !attendanceStatus.isPunchedIn) {
-      handleAttendanceGateClick();
-      return;
-    }
     if (attendanceStatus.checked && attendanceStatus.isPunchedOut) {
       alert('Shift Ended: Check-in is not allowed after punching out for the day.');
+      return;
+    }
+    if (attendanceStatus.checked && !attendanceStatus.isPunchedIn) {
+      handleAttendanceGateClick();
       return;
     }
 

@@ -486,7 +486,7 @@ export async function getTodayUserAttendanceStatus(userId, userEmail = '') {
 
     let query = supabase
       .from('attendance_records')
-      .select('id, in_time, out_time, status')
+      .select('id, in_time, out_time, status, total_working_minutes')
       .eq('attendance_date', todayIST);
 
     const cleanUserId = isUuid(userId) ? String(userId).trim() : null;
@@ -512,11 +512,13 @@ export async function getTodayUserAttendanceStatus(userId, userEmail = '') {
     }
 
     return {
-      isPunchedIn: Boolean(data.in_time),
+      isPunchedIn: Boolean(data.in_time && !data.out_time),
       isPunchedOut: Boolean(data.out_time),
+      hasPunchedInToday: Boolean(data.in_time),
       inTime: data.in_time,
       outTime: data.out_time,
       status: data.status,
+      totalWorkingMinutes: data.total_working_minutes || 0,
       todayIST
     };
   } catch (err) {
