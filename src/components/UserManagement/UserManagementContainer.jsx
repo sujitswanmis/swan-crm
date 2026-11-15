@@ -1057,6 +1057,7 @@ export default function UserManagementContainer({
         onSave={handleSavePermissions}
         saving={savingPermissions}
         customRoles={roleTemplates}
+        isMasterAdmin={effectiveIsMasterAdmin}
       />
 
       {roleModalOpen && (

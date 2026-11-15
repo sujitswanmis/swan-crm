@@ -82,7 +82,8 @@ export default function PermissionMatrixModal({
   user,
   onSave,
   saving = false,
-  customRoles = []
+  customRoles = [],
+  isMasterAdmin = false
 }) {
   const [accessForm, setAccessForm] = useState({});
   const [searchQuery, setSearchQuery] = useState('');
@@ -111,10 +112,15 @@ export default function PermissionMatrixModal({
     return ROLE_PRESETS.filter(p => p.key !== 'master_admin');
   }, []);
 
-  // Only role-assignable modules for staff accounts
+  // Only role-assignable modules for staff accounts; Master Admin modules only visible if viewer is Master Admin
   const assignableModules = useMemo(() => {
-    return MODULES_CONFIG.filter(m => m.id === 'config_master' || (m.roleAssignable !== false && m.masterAdminOnly !== true && m.category !== 'Master Admin'));
-  }, []);
+    return MODULES_CONFIG.filter(m => {
+      if (m.id === 'config_master') {
+        return Boolean(isMasterAdmin);
+      }
+      return m.roleAssignable !== false && m.masterAdminOnly !== true && m.category !== 'Master Admin';
+    });
+  }, [isMasterAdmin]);
 
   // Filter modules based on search
   const query = searchQuery.trim().toLowerCase();
