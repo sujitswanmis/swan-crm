@@ -59,7 +59,7 @@ export default function SettingsContainer({
         if (['order-pipeline', 'order_pipeline', 'order-config', 'order_config'].includes(sub)) return 'order_pipeline';
         if (['complaints', 'complaint-config', 'complaint_config', 'complaints_config', 'complaint-pipeline'].includes(sub)) return 'complaints_config';
         if (['crm-config', 'crm_config'].includes(sub)) return 'crm';
-        if (['business-profile', 'branches'].includes(sub)) return 'business';
+        if (['business', 'business-profile', 'branches', 'branch', 'headoffice', 'head-office'].includes(sub)) return 'business';
         if (['alerts', 'notification'].includes(sub)) return 'notifications';
         if (['manage-departments', 'dept'].includes(sub)) return 'departments';
         if (['performance', 'target'].includes(sub)) return 'targets';

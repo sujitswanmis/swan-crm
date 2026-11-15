@@ -310,6 +310,17 @@ export default function CRMConfig({ userCompany = '' }) {
     setArray(newArray);
   };
 
+  const reindexSubstages = (substagesList, stageIndex, stageName) => {
+    const stageNum = stageIndex + 1;
+    const cleanStageName = String(stageName || '').replace(/^\d+\s*-\s*/, '');
+    return (substagesList || []).map((sub, idx) => {
+      const subNum = String(idx + 1).padStart(2, '0');
+      const prefix = `${stageNum};${subNum}>${cleanStageName}>`;
+      const cleanSub = sub.includes('>') ? sub.split('>').pop() : sub;
+      return `${prefix}${cleanSub}`;
+    });
+  };
+
   const DraggableItem = ({ item, index, array, setArray, onRemove, editable = false }) => (
     <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '0.75rem 1rem', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '8px', fontSize: '0.95rem', color: 'var(--text-primary)' }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
@@ -572,6 +583,7 @@ export default function CRMConfig({ userCompany = '' }) {
                                     const temp = newStages[i].substages[j];
                                     newStages[i].substages[j] = newStages[i].substages[j-1];
                                     newStages[i].substages[j-1] = temp;
+                                    newStages[i].substages = reindexSubstages(newStages[i].substages, i, newStages[i].name);
                                     setStages(newStages);
                                   }} disabled={j === 0} style={{ padding: 0, background: 'none', border: 'none', cursor: j === 0 ? 'default' : 'pointer', color: j === 0 ? '#cbd5e1' : 'var(--text-secondary)' }}><ChevronUp size={14} /></button>
                                   <button onClick={() => {
@@ -580,6 +592,7 @@ export default function CRMConfig({ userCompany = '' }) {
                                     const temp = newStages[i].substages[j];
                                     newStages[i].substages[j] = newStages[i].substages[j+1];
                                     newStages[i].substages[j+1] = temp;
+                                    newStages[i].substages = reindexSubstages(newStages[i].substages, i, newStages[i].name);
                                     setStages(newStages);
                                   }} disabled={j === stageObj.substages.length - 1} style={{ padding: 0, background: 'none', border: 'none', cursor: j === stageObj.substages.length - 1 ? 'default' : 'pointer', color: j === stageObj.substages.length - 1 ? '#cbd5e1' : 'var(--text-secondary)' }}><ChevronDown size={14} /></button>
                                 </div>
@@ -602,6 +615,7 @@ export default function CRMConfig({ userCompany = '' }) {
                                   onClick={() => {
                                     const newStages = [...stages];
                                     newStages[i].substages.splice(j, 1);
+                                    newStages[i].substages = reindexSubstages(newStages[i].substages, i, newStages[i].name);
                                     setStages(newStages);
                                   }}
                                   style={{ padding: '4px', background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444' }}
@@ -803,8 +817,9 @@ export default function CRMConfig({ userCompany = '' }) {
                 style={{ flex: 1, padding: '0.6rem 1rem', border: '1px solid var(--border-light)', borderRadius: '8px', background: 'var(--bg-surface)', color: 'var(--text-primary)' }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && newBusinessType.trim()) {
-                    if (!businessTypes.includes(newBusinessType.trim())) {
-                      setBusinessTypes([...businessTypes, newBusinessType.trim()]);
+                    const trimmed = newBusinessType.trim();
+                    if (!businessTypes.some(b => b.toLowerCase() === trimmed.toLowerCase())) {
+                      setBusinessTypes([...businessTypes, trimmed]);
                     }
                     setNewBusinessType('');
                   }
@@ -813,8 +828,9 @@ export default function CRMConfig({ userCompany = '' }) {
               <button 
                 onClick={() => {
                   if (newBusinessType.trim()) {
-                    if (!businessTypes.includes(newBusinessType.trim())) {
-                      setBusinessTypes([...businessTypes, newBusinessType.trim()]);
+                    const trimmed = newBusinessType.trim();
+                    if (!businessTypes.some(b => b.toLowerCase() === trimmed.toLowerCase())) {
+                      setBusinessTypes([...businessTypes, trimmed]);
                     }
                     setNewBusinessType('');
                   }
@@ -828,12 +844,12 @@ export default function CRMConfig({ userCompany = '' }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
               {businessTypes.map((bt, i) => (
                 <DraggableItem 
-                  key={bt} 
+                  key={`bt-${i}`} 
                   item={bt} 
                   index={i} 
                   array={businessTypes} 
                   setArray={setBusinessTypes} 
-                  onRemove={(item) => setBusinessTypes(businessTypes.filter(b => b !== item))} 
+                  onRemove={() => setBusinessTypes(businessTypes.filter((_, idx) => idx !== i))} 
                   editable={true} 
                 />
               ))}
@@ -856,7 +872,10 @@ export default function CRMConfig({ userCompany = '' }) {
                 style={{ flex: 1, padding: '0.6rem 1rem', border: '1px solid var(--border-light)', borderRadius: '8px', background: 'var(--bg-surface)', color: 'var(--text-primary)' }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && newSource.trim()) {
-                    setSources([...sources, newSource.trim()]);
+                    const trimmed = newSource.trim();
+                    if (!sources.some(s => s.toLowerCase() === trimmed.toLowerCase())) {
+                      setSources([...sources, trimmed]);
+                    }
                     setNewSource('');
                   }
                 }}
@@ -864,7 +883,10 @@ export default function CRMConfig({ userCompany = '' }) {
               <button 
                 onClick={() => {
                   if (newSource.trim()) {
-                    setSources([...sources, newSource.trim()]);
+                    const trimmed = newSource.trim();
+                    if (!sources.some(s => s.toLowerCase() === trimmed.toLowerCase())) {
+                      setSources([...sources, trimmed]);
+                    }
                     setNewSource('');
                   }
                 }}
@@ -876,7 +898,15 @@ export default function CRMConfig({ userCompany = '' }) {
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
               {sources.map((src, i) => (
-                <DraggableItem key={src} item={src} index={i} array={sources} setArray={setSources} onRemove={(item) => setSources(sources.filter(s => s !== item))} editable={true} />
+                <DraggableItem 
+                  key={`source-${i}`} 
+                  item={src} 
+                  index={i} 
+                  array={sources} 
+                  setArray={setSources} 
+                  onRemove={() => setSources(sources.filter((_, idx) => idx !== i))} 
+                  editable={true} 
+                />
               ))}
             </div>
           </div>
@@ -897,7 +927,10 @@ export default function CRMConfig({ userCompany = '' }) {
                 style={{ flex: 1, padding: '0.6rem 1rem', border: '1px solid var(--border-light)', borderRadius: '8px', background: 'var(--bg-surface)', color: 'var(--text-primary)' }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && newClientStatus.trim()) {
-                    setClientStatuses([...clientStatuses, newClientStatus.trim()]);
+                    const trimmed = newClientStatus.trim();
+                    if (!clientStatuses.some(st => st.toLowerCase() === trimmed.toLowerCase())) {
+                      setClientStatuses([...clientStatuses, trimmed]);
+                    }
                     setNewClientStatus('');
                   }
                 }}
@@ -905,7 +938,10 @@ export default function CRMConfig({ userCompany = '' }) {
               <button 
                 onClick={() => {
                   if (newClientStatus.trim()) {
-                    setClientStatuses([...clientStatuses, newClientStatus.trim()]);
+                    const trimmed = newClientStatus.trim();
+                    if (!clientStatuses.some(st => st.toLowerCase() === trimmed.toLowerCase())) {
+                      setClientStatuses([...clientStatuses, trimmed]);
+                    }
                     setNewClientStatus('');
                   }
                 }}
@@ -917,7 +953,15 @@ export default function CRMConfig({ userCompany = '' }) {
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
               {clientStatuses.map((st, i) => (
-                <DraggableItem key={st} item={st} index={i} array={clientStatuses} setArray={setClientStatuses} onRemove={(item) => setClientStatuses(clientStatuses.filter(s => s !== item))} editable={true} />
+                <DraggableItem 
+                  key={`status-${i}`} 
+                  item={st} 
+                  index={i} 
+                  array={clientStatuses} 
+                  setArray={setClientStatuses} 
+                  onRemove={() => setClientStatuses(clientStatuses.filter((_, idx) => idx !== i))} 
+                  editable={true} 
+                />
               ))}
             </div>
           </div>
@@ -938,7 +982,10 @@ export default function CRMConfig({ userCompany = '' }) {
                 style={{ flex: 1, padding: '0.6rem 1rem', border: '1px solid var(--border-light)', borderRadius: '8px', background: 'var(--bg-surface)', color: 'var(--text-primary)' }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && newPriority.trim()) {
-                    setPriorities([...priorities, newPriority.trim()]);
+                    const trimmed = newPriority.trim();
+                    if (!priorities.some(p => p.toLowerCase() === trimmed.toLowerCase())) {
+                      setPriorities([...priorities, trimmed]);
+                    }
                     setNewPriority('');
                   }
                 }}
@@ -946,7 +993,10 @@ export default function CRMConfig({ userCompany = '' }) {
               <button 
                 onClick={() => {
                   if (newPriority.trim()) {
-                    setPriorities([...priorities, newPriority.trim()]);
+                    const trimmed = newPriority.trim();
+                    if (!priorities.some(p => p.toLowerCase() === trimmed.toLowerCase())) {
+                      setPriorities([...priorities, trimmed]);
+                    }
                     setNewPriority('');
                   }
                 }}
@@ -958,7 +1008,15 @@ export default function CRMConfig({ userCompany = '' }) {
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
               {priorities.map((p, i) => (
-                <DraggableItem key={p} item={p} index={i} array={priorities} setArray={setPriorities} onRemove={(item) => setPriorities(priorities.filter(pr => pr !== item))} editable={true} />
+                <DraggableItem 
+                  key={`priority-${i}`} 
+                  item={p} 
+                  index={i} 
+                  array={priorities} 
+                  setArray={setPriorities} 
+                  onRemove={() => setPriorities(priorities.filter((_, idx) => idx !== i))} 
+                  editable={true} 
+                />
               ))}
             </div>
           </div>

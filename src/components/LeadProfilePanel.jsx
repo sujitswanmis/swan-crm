@@ -215,7 +215,7 @@ function renderLeadStageOptgroups(stagesList, selectedVal, keyPrefix = 'stage') 
       {selectedVal && !hasSelected && (
         <option value={selectedVal}>{formatStatusWithNumbers(selectedVal, list)}</option>
       )}
-      {list.map((stageObj, i) => {
+      {list.filter(s => s && s.enabled !== false).map((stageObj, i) => {
         const stageNum = i + 1;
         const cleanStageName = stageObj.name.replace(/^\d+\s*-\s*/, '');
         return (
@@ -3949,7 +3949,7 @@ export default function LeadProfilePanel({
                     title={isLeadFrozen ? "Status locked for transferred party" : "Change status with remark"}
                   >
                     <option value="">{isLeadFrozen ? 'Locked (Transferred to Party)' : `Keep current (${formatStatusWithNumbers(currentStatus, stages)})`}</option>
-                    {stages.map((stageObj, i) => {
+                    {stages.filter(s => s && s.enabled !== false).map((stageObj, i) => {
                       const stageNum = i + 1;
                       const cleanStageName = stageObj.name.replace(/^\d+\s*-\s*/, '');
                       return (

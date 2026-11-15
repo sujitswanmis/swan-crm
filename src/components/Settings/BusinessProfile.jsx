@@ -10,6 +10,9 @@ import { logAuditAction } from '@/app/actions/audit';
 import { getTenantBranches, saveTenantBranch, deleteTenantBranch } from '@/app/actions/tenantBranches';
 import ProfilePhotoPolicy from './ProfilePhotoPolicy';
 import ErrorBoundary from '@/components/ErrorBoundary';
+import { TableViewToggle, useTableViewPreference } from '@/components/common/MobileTableView';
+import StandardTablePagination from '@/components/common/StandardTablePagination';
+import { useTableColumnResize, ColumnResizer } from '@/utils/tableColumnResize';
 
 const LOCATION_TYPES = [
   { id: 'Headquarters', label: 'Headquarters / Main Office', icon: Building },
@@ -21,7 +24,51 @@ const LOCATION_TYPES = [
 
 export default function BusinessProfile({ userCompany = '' }) {
   const effectiveCompany = userCompany || 'Swan Hosting';
-  const [subTab, setSubTab] = useState('profile'); // 'profile' | 'branches'
+
+  const resolveInitialSubTab = () => {
+    if (typeof window !== 'undefined') {
+      const path = (window.location.pathname || '').toLowerCase();
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = (params.get('tab') || params.get('subtab') || '').toLowerCase();
+
+      if (path.includes('/branch') || path.includes('/branches') || tabParam === 'branch' || tabParam === 'branches') {
+        return 'branches';
+      }
+      if (path.includes('/headoffice') || path.includes('/head-office') || tabParam === 'headoffice' || tabParam === 'head-office' || tabParam === 'profile') {
+        return 'profile';
+      }
+    }
+    return 'profile';
+  };
+
+  const [subTab, setSubTab] = useState(resolveInitialSubTab);
+
+  const handleSwitchSubTab = (newTab) => {
+    setSubTab(newTab);
+    if (typeof window !== 'undefined' && window.history && window.history.pushState) {
+      const targetRoute = newTab === 'branches' ? '/settings/business/branch' : '/settings/business/headoffice';
+      if (window.location.pathname !== targetRoute) {
+        window.history.pushState(null, '', targetRoute);
+      }
+    }
+  };
+
+  // Sync with browser back/forward buttons (popstate)
+  useEffect(() => {
+    const handlePopState = () => {
+      const path = (window.location.pathname || '').toLowerCase();
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = (params.get('tab') || params.get('subtab') || '').toLowerCase();
+      if (path.includes('/branch') || path.includes('/branches') || tabParam === 'branch' || tabParam === 'branches') {
+        setSubTab('branches');
+      } else if (path.includes('/headoffice') || path.includes('/head-office') || tabParam === 'headoffice' || tabParam === 'head-office' || tabParam === 'profile') {
+        setSubTab('profile');
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
   const [loading, setLoading] = useState(false);
   const [saveMessage, setSaveMessage] = useState(null);
 
@@ -227,6 +274,56 @@ export default function BusinessProfile({ userCompany = '' }) {
     });
   }, [branches, branchSearch, branchTypeFilter]);
 
+  // View mode preference: 'tiles' | 'table'
+  const [branchViewMode, setBranchViewMode] = useTableViewPreference('crm_branch_view_mode', { desktopKey: 'crm_branch_view_mode_desktop' });
+
+  // Draggable column resize hook for Table View
+  const DEFAULT_BRANCH_COL_WIDTHS = {
+    sr: 50,
+    name: 240,
+    uid: 165,
+    code: 110,
+    type: 140,
+    location: 210,
+    incharge: 180,
+    gstin: 150,
+    actions: 130
+  };
+
+  const MIN_BRANCH_COL_WIDTHS = {
+    sr: 40,
+    name: 150,
+    uid: 130,
+    code: 80,
+    type: 100,
+    location: 140,
+    incharge: 120,
+    gstin: 110,
+    actions: 110
+  };
+
+  const {
+    colWidths,
+    resizingCol,
+    handleResizeStart,
+    resetColWidth
+  } = useTableColumnResize('crm_branch_table_widths', DEFAULT_BRANCH_COL_WIDTHS, MIN_BRANCH_COL_WIDTHS);
+
+  // Unified Standard Table Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
+
+  // Auto reset to page 1 on search or filter change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [branchSearch, branchTypeFilter]);
+
+  const totalRecords = filteredBranches.length;
+  const startIndex = (currentPage - 1) * pageSize;
+  const paginatedBranches = useMemo(() => {
+    return filteredBranches.slice(startIndex, startIndex + pageSize);
+  }, [filteredBranches, startIndex, pageSize]);
+
   return (
     <div style={{ width: '100%', boxSizing: 'border-box' }}>
       {/* Header */}
@@ -250,7 +347,7 @@ export default function BusinessProfile({ userCompany = '' }) {
       }}>
         <button
           type="button"
-          onClick={() => setSubTab('profile')}
+          onClick={() => handleSwitchSubTab('profile')}
           style={{
             padding: '0.65rem 1.25rem',
             border: 'none',
@@ -272,7 +369,7 @@ export default function BusinessProfile({ userCompany = '' }) {
 
         <button
           type="button"
-          onClick={() => setSubTab('branches')}
+          onClick={() => handleSwitchSubTab('branches')}
           style={{
             padding: '0.65rem 1.25rem',
             border: 'none',
@@ -484,29 +581,33 @@ export default function BusinessProfile({ userCompany = '' }) {
               </select>
             </div>
 
-            <button
-              type="button"
-              onClick={handleOpenAddBranch}
-              style={{
-                padding: '0.55rem 1.15rem',
-                borderRadius: '6px',
-                border: 'none',
-                background: 'var(--accent-color)',
-                color: '#fff',
-                fontSize: '0.85rem',
-                fontWeight: 700,
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px'
-              }}
-            >
-              <Plus size={16} />
-              Add New Branch
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+              <TableViewToggle view={branchViewMode} onChange={setBranchViewMode} />
+
+              <button
+                type="button"
+                onClick={handleOpenAddBranch}
+                style={{
+                  padding: '0.55rem 1.15rem',
+                  borderRadius: '6px',
+                  border: 'none',
+                  background: 'var(--accent-color)',
+                  color: '#fff',
+                  fontSize: '0.85rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                <Plus size={16} />
+                Add New Branch
+              </button>
+            </div>
           </div>
 
-          {/* Branch Grid */}
+          {/* Branch Content */}
           {loadingBranches ? (
             <div style={{ padding: '3rem', textAlign: 'center', color: '#64748b', fontSize: '0.9rem' }}>
               Loading branches...
@@ -519,166 +620,360 @@ export default function BusinessProfile({ userCompany = '' }) {
                 Click "+ Add New Branch" to create branch offices, factories, or warehouses for {effectiveCompany}.
               </p>
             </div>
-          ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1rem' }}>
-              {filteredBranches.map((br) => {
-                const IconComp = LOCATION_TYPES.find(t => t.id === br.location_type)?.icon || Building;
-                return (
-                  <div
-                    key={br.id || br.branch_code}
-                    style={{
-                      background: 'var(--bg-surface)',
-                      border: '1px solid var(--border-light)',
-                      borderRadius: '10px',
-                      padding: '1.25rem',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      justifyContent: 'space-between',
-                      boxShadow: '0 2px 4px rgba(0,0,0,0.03)',
-                      transition: 'border-color 0.15s ease'
-                    }}
-                  >
-                    <div>
-                      {/* Top Header */}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.65rem' }}>
-                        <div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <IconComp size={16} color="var(--accent-color)" />
-                            <h4 style={{ margin: 0, fontSize: '0.96rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                              {br.branch_name}
-                            </h4>
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.35rem', flexWrap: 'wrap' }}>
-                            <span
-                              style={{
-                                fontSize: '0.72rem',
-                                background: '#f1f5f9',
-                                color: '#334155',
-                                padding: '1px 6px',
-                                borderRadius: '4px',
-                                fontWeight: 700,
-                                fontFamily: 'monospace',
-                                border: '1px solid #cbd5e1',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '3px'
-                              }}
-                              title="SaaS System Branch UID (Protected)"
-                            >
+          ) : branchViewMode === 'table' ? (
+            <div>
+              <div style={{
+                width: '100%',
+                overflow: 'auto',
+                maxHeight: 'calc(100vh - 310px)',
+                minHeight: '380px',
+                border: '1px solid var(--border-light, #e2e8f0)',
+                borderRadius: '10px',
+                background: 'var(--bg-surface, #ffffff)',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.02)'
+              }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem' }}>
+                  <thead>
+                    <tr style={{ background: 'var(--bg-secondary, #f8fafc)' }}>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-secondary, #f8fafc)', padding: '0.75rem 0.65rem', textAlign: 'center', fontWeight: 700, color: 'var(--text-secondary, #475569)', borderBottom: '1px solid var(--border-light, #e2e8f0)', boxShadow: 'inset 0 -1px 0 var(--border-light, #e2e8f0)', width: colWidths.sr }}>
+                        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <span>#</span>
+                          <ColumnResizer colKey="sr" isResizing={resizingCol === 'sr'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
+                        </div>
+                      </th>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-secondary, #f8fafc)', padding: '0.75rem 0.85rem', fontWeight: 700, color: 'var(--text-secondary, #475569)', borderBottom: '1px solid var(--border-light, #e2e8f0)', boxShadow: 'inset 0 -1px 0 var(--border-light, #e2e8f0)', width: colWidths.name }}>
+                        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <span>Branch / Plant Name</span>
+                          <ColumnResizer colKey="name" isResizing={resizingCol === 'name'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
+                        </div>
+                      </th>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-secondary, #f8fafc)', padding: '0.75rem 0.85rem', fontWeight: 700, color: 'var(--text-secondary, #475569)', borderBottom: '1px solid var(--border-light, #e2e8f0)', boxShadow: 'inset 0 -1px 0 var(--border-light, #e2e8f0)', width: colWidths.uid }}>
+                        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <span>System Branch UID</span>
+                          <ColumnResizer colKey="uid" isResizing={resizingCol === 'uid'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
+                        </div>
+                      </th>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-secondary, #f8fafc)', padding: '0.75rem 0.85rem', fontWeight: 700, color: 'var(--text-secondary, #475569)', borderBottom: '1px solid var(--border-light, #e2e8f0)', boxShadow: 'inset 0 -1px 0 var(--border-light, #e2e8f0)', width: colWidths.code }}>
+                        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <span>Custom Code</span>
+                          <ColumnResizer colKey="code" isResizing={resizingCol === 'code'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
+                        </div>
+                      </th>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-secondary, #f8fafc)', padding: '0.75rem 0.85rem', fontWeight: 700, color: 'var(--text-secondary, #475569)', borderBottom: '1px solid var(--border-light, #e2e8f0)', boxShadow: 'inset 0 -1px 0 var(--border-light, #e2e8f0)', width: colWidths.type }}>
+                        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <span>Location Type</span>
+                          <ColumnResizer colKey="type" isResizing={resizingCol === 'type'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
+                        </div>
+                      </th>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-secondary, #f8fafc)', padding: '0.75rem 0.85rem', fontWeight: 700, color: 'var(--text-secondary, #475569)', borderBottom: '1px solid var(--border-light, #e2e8f0)', boxShadow: 'inset 0 -1px 0 var(--border-light, #e2e8f0)', width: colWidths.location }}>
+                        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <span>City & Address</span>
+                          <ColumnResizer colKey="location" isResizing={resizingCol === 'location'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
+                        </div>
+                      </th>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-secondary, #f8fafc)', padding: '0.75rem 0.85rem', fontWeight: 700, color: 'var(--text-secondary, #475569)', borderBottom: '1px solid var(--border-light, #e2e8f0)', boxShadow: 'inset 0 -1px 0 var(--border-light, #e2e8f0)', width: colWidths.incharge }}>
+                        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <span>Incharge & Contact</span>
+                          <ColumnResizer colKey="incharge" isResizing={resizingCol === 'incharge'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
+                        </div>
+                      </th>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-secondary, #f8fafc)', padding: '0.75rem 0.85rem', fontWeight: 700, color: 'var(--text-secondary, #475569)', borderBottom: '1px solid var(--border-light, #e2e8f0)', boxShadow: 'inset 0 -1px 0 var(--border-light, #e2e8f0)', width: colWidths.gstin }}>
+                        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <span>GSTIN</span>
+                          <ColumnResizer colKey="gstin" isResizing={resizingCol === 'gstin'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
+                        </div>
+                      </th>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-secondary, #f8fafc)', padding: '0.75rem 0.85rem', textAlign: 'right', fontWeight: 700, color: 'var(--text-secondary, #475569)', borderBottom: '1px solid var(--border-light, #e2e8f0)', boxShadow: 'inset 0 -1px 0 var(--border-light, #e2e8f0)', width: colWidths.actions }}>
+                        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+                          <span>Actions</span>
+                          <ColumnResizer colKey="actions" isResizing={resizingCol === 'actions'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
+                        </div>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paginatedBranches.map((br, index) => {
+                      const IconComp = LOCATION_TYPES.find(t => t.id === br.location_type)?.icon || Building;
+                      return (
+                        <tr
+                          key={br.id || br.branch_code}
+                          style={{ borderBottom: '1px solid var(--border-light, #e2e8f0)', transition: 'background-color 0.15s' }}
+                          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-hover, #f8fafc)'}
+                          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                        >
+                          <td style={{ padding: '0.75rem 0.65rem', textAlign: 'center', color: '#64748b', fontWeight: 600 }}>
+                            {startIndex + index + 1}
+                          </td>
+                          <td style={{ padding: '0.75rem 0.85rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <div style={{ padding: '5px', borderRadius: '6px', background: '#eff6ff', color: 'var(--accent-color)' }}>
+                                <IconComp size={15} />
+                              </div>
+                              <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+                                {br.branch_name}
+                              </span>
+                            </div>
+                          </td>
+                          <td style={{ padding: '0.75rem 0.85rem' }}>
+                            <span style={{ fontSize: '0.74rem', background: '#f1f5f9', color: '#334155', padding: '2px 7px', borderRadius: '4px', fontWeight: 700, fontFamily: 'monospace', border: '1px solid #cbd5e1', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                               <Lock size={10} color="#64748b" />
                               {br.branch_code || br.id}
                             </span>
-                            {(br.custom_code || br.legacy_code) && (
+                          </td>
+                          <td style={{ padding: '0.75rem 0.85rem' }}>
+                            {(br.custom_code || br.legacy_code) ? (
+                              <span style={{ fontSize: '0.74rem', background: '#ecfdf5', color: '#047857', padding: '2px 7px', borderRadius: '4px', fontWeight: 700, fontFamily: 'monospace', border: '1px solid #a7f3d0' }}>
+                                {br.custom_code || br.legacy_code}
+                              </span>
+                            ) : (
+                              <span style={{ color: '#94a3b8' }}>-</span>
+                            )}
+                          </td>
+                          <td style={{ padding: '0.75rem 0.85rem' }}>
+                            <span style={{ padding: '2px 8px', borderRadius: '12px', fontSize: '0.72rem', fontWeight: 700, background: br.location_type === 'Headquarters' ? '#dbeafe' : '#f1f5f9', color: br.location_type === 'Headquarters' ? '#1e40af' : '#475569' }}>
+                              {br.location_type}
+                            </span>
+                          </td>
+                          <td style={{ padding: '0.75rem 0.85rem', color: 'var(--text-secondary)' }}>
+                            {br.city ? (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                <MapPin size={12} color="#64748b" />
+                                <span>{br.city}{br.state ? `, ${br.state}` : ''}</span>
+                              </div>
+                            ) : (
+                              <span style={{ color: '#94a3b8' }}>-</span>
+                            )}
+                          </td>
+                          <td style={{ padding: '0.75rem 0.85rem', color: 'var(--text-secondary)' }}>
+                            {br.incharge_name ? (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{br.incharge_name}</span>
+                                {br.phone && <span style={{ fontSize: '0.72rem' }}>{br.phone}</span>}
+                              </div>
+                            ) : br.phone ? (
+                              <span>{br.phone}</span>
+                            ) : (
+                              <span style={{ color: '#94a3b8' }}>-</span>
+                            )}
+                          </td>
+                          <td style={{ padding: '0.75rem 0.85rem', color: 'var(--text-secondary)', fontFamily: br.gstin ? 'monospace' : 'inherit' }}>
+                            {br.gstin || <span style={{ color: '#94a3b8' }}>-</span>}
+                          </td>
+                          <td style={{ padding: '0.75rem 0.85rem', textAlign: 'right' }}>
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.4rem' }}>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditBranch(br)}
+                                title="Edit Branch"
+                                style={{ padding: '0.3rem 0.55rem', borderRadius: '5px', border: '1px solid var(--border-light)', background: 'none', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
+                              >
+                                <Edit3 size={12} /> Edit
+                              </button>
+                              {br.location_type !== 'Headquarters' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteBranch(br.id, br.branch_name)}
+                                  title="Remove Branch"
+                                  style={{ padding: '0.3rem 0.55rem', borderRadius: '5px', border: '1px solid #fecaca', background: '#fef2f2', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600, color: '#b91c1c', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <StandardTablePagination
+                currentPage={currentPage}
+                totalRecords={totalRecords}
+                pageSize={pageSize}
+                onPageChange={setCurrentPage}
+                onPageSizeChange={(newSize) => {
+                  setPageSize(newSize);
+                  setCurrentPage(1);
+                }}
+                style={{ marginTop: '0.85rem' }}
+              />
+            </div>
+          ) : (
+            <div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1rem' }}>
+                {paginatedBranches.map((br) => {
+                  const IconComp = LOCATION_TYPES.find(t => t.id === br.location_type)?.icon || Building;
+                  return (
+                    <div
+                      key={br.id || br.branch_code}
+                      style={{
+                        background: 'var(--bg-surface)',
+                        border: '1px solid var(--border-light)',
+                        borderRadius: '10px',
+                        padding: '1.25rem',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between',
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.03)',
+                        transition: 'border-color 0.15s ease'
+                      }}
+                    >
+                      <div>
+                        {/* Top Header */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.65rem' }}>
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <IconComp size={16} color="var(--accent-color)" />
+                              <h4 style={{ margin: 0, fontSize: '0.96rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                {br.branch_name}
+                              </h4>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.35rem', flexWrap: 'wrap' }}>
                               <span
                                 style={{
                                   fontSize: '0.72rem',
-                                  background: '#ecfdf5',
-                                  color: '#047857',
+                                  background: '#f1f5f9',
+                                  color: '#334155',
                                   padding: '1px 6px',
                                   borderRadius: '4px',
                                   fontWeight: 700,
                                   fontFamily: 'monospace',
-                                  border: '1px solid #a7f3d0'
+                                  border: '1px solid #cbd5e1',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '3px'
                                 }}
-                                title="Tenant Custom Branch Code"
+                                title="SaaS System Branch UID (Protected)"
                               >
-                                Code: {br.custom_code || br.legacy_code}
+                                <Lock size={10} color="#64748b" />
+                                {br.branch_code || br.id}
                               </span>
-                            )}
+                              {(br.custom_code || br.legacy_code) && (
+                                <span
+                                  style={{
+                                    fontSize: '0.72rem',
+                                    background: '#ecfdf5',
+                                    color: '#047857',
+                                    padding: '1px 6px',
+                                    borderRadius: '4px',
+                                    fontWeight: 700,
+                                    fontFamily: 'monospace',
+                                    border: '1px solid #a7f3d0'
+                                  }}
+                                  title="Tenant Custom Branch Code"
+                                >
+                                  Code: {br.custom_code || br.legacy_code}
+                                </span>
+                              )}
+                            </div>
                           </div>
+
+                          <span style={{
+                            padding: '2px 8px',
+                            borderRadius: '12px',
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                            background: br.location_type === 'Headquarters' ? '#dbeafe' : '#f1f5f9',
+                            color: br.location_type === 'Headquarters' ? '#1e40af' : '#475569'
+                          }}>
+                            {br.location_type}
+                          </span>
                         </div>
 
-                        <span style={{
-                          padding: '2px 8px',
-                          borderRadius: '12px',
-                          fontSize: '0.72rem',
-                          fontWeight: 700,
-                          background: br.location_type === 'Headquarters' ? '#dbeafe' : '#f1f5f9',
-                          color: br.location_type === 'Headquarters' ? '#1e40af' : '#475569'
-                        }}>
-                          {br.location_type}
-                        </span>
+                        {/* Details */}
+                        <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '0.4rem', margin: '0.65rem 0' }}>
+                          {br.address && (
+                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
+                              <MapPin size={13} style={{ flexShrink: 0, marginTop: '2px' }} />
+                              <span>{br.address}{br.city ? `, ${br.city}` : ''}{br.state ? `, ${br.state}` : ''}{br.pincode ? ` - ${br.pincode}` : ''}</span>
+                            </div>
+                          )}
+
+                          {br.gstin && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <FileText size={13} />
+                              <span>GSTIN: <strong>{br.gstin}</strong></span>
+                            </div>
+                          )}
+
+                          {br.incharge_name && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <User size={13} />
+                              <span>Incharge: <strong>{br.incharge_name}</strong></span>
+                            </div>
+                          )}
+
+                          {br.phone && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <Phone size={13} />
+                              <span>{br.phone}</span>
+                            </div>
+                          )}
+                        </div>
                       </div>
 
-                      {/* Details */}
-                      <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '0.4rem', margin: '0.65rem 0' }}>
-                        {br.address && (
-                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
-                            <MapPin size={13} style={{ flexShrink: 0, marginTop: '2px' }} />
-                            <span>{br.address}{br.city ? `, ${br.city}` : ''}{br.state ? `, ${br.state}` : ''}{br.pincode ? ` - ${br.pincode}` : ''}</span>
-                          </div>
-                        )}
-
-                        {br.gstin && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <FileText size={13} />
-                            <span>GSTIN: <strong>{br.gstin}</strong></span>
-                          </div>
-                        )}
-
-                        {br.incharge_name && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <User size={13} />
-                            <span>Incharge: <strong>{br.incharge_name}</strong></span>
-                          </div>
-                        )}
-
-                        {br.phone && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <Phone size={13} />
-                            <span>{br.phone}</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Bottom Actions */}
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', borderTop: '1px solid var(--border-light)', paddingTop: '0.75rem', marginTop: '0.5rem' }}>
-                      <button
-                        type="button"
-                        onClick={() => handleOpenEditBranch(br)}
-                        style={{
-                          padding: '0.35rem 0.65rem',
-                          borderRadius: '5px',
-                          border: '1px solid var(--border-light)',
-                          background: 'none',
-                          cursor: 'pointer',
-                          fontSize: '0.75rem',
-                          fontWeight: 600,
-                          color: 'var(--text-primary)',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '4px'
-                        }}
-                      >
-                        <Edit3 size={12} /> Edit
-                      </button>
-
-                      {br.location_type !== 'Headquarters' && (
+                      {/* Bottom Actions */}
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', borderTop: '1px solid var(--border-light)', paddingTop: '0.75rem', marginTop: '0.5rem' }}>
                         <button
                           type="button"
-                          onClick={() => handleDeleteBranch(br.id, br.branch_name)}
+                          onClick={() => handleOpenEditBranch(br)}
                           style={{
                             padding: '0.35rem 0.65rem',
                             borderRadius: '5px',
-                            border: '1px solid #fecaca',
-                            background: '#fef2f2',
+                            border: '1px solid var(--border-light)',
+                            background: 'none',
                             cursor: 'pointer',
                             fontSize: '0.75rem',
                             fontWeight: 600,
-                            color: '#b91c1c',
+                            color: 'var(--text-primary)',
                             display: 'inline-flex',
                             alignItems: 'center',
                             gap: '4px'
                           }}
                         >
-                          <Trash2 size={12} /> Remove
+                          <Edit3 size={12} /> Edit
                         </button>
-                      )}
+
+                        {br.location_type !== 'Headquarters' && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteBranch(br.id, br.branch_name)}
+                            style={{
+                              padding: '0.35rem 0.65rem',
+                              borderRadius: '5px',
+                              border: '1px solid #fecaca',
+                              background: '#fef2f2',
+                              cursor: 'pointer',
+                              fontSize: '0.75rem',
+                              fontWeight: 600,
+                              color: '#b91c1c',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px'
+                            }}
+                          >
+                            <Trash2 size={12} /> Remove
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
+
+              <StandardTablePagination
+                currentPage={currentPage}
+                totalRecords={totalRecords}
+                pageSize={pageSize}
+                onPageChange={setCurrentPage}
+                onPageSizeChange={(newSize) => {
+                  setPageSize(newSize);
+                  setCurrentPage(1);
+                }}
+                style={{ marginTop: '1.25rem' }}
+              />
             </div>
           )}
         </div>

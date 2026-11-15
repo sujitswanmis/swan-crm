@@ -21,7 +21,14 @@ import PublicUserManagement from '../PublicUserManagement';
 import dynamic from 'next/dynamic';
 import ErrorBoundary from '../ErrorBoundary';
 import {CONFIG_MASTER_PAGES} from '@/config/integrationsConfig';
-const BroadcastNotificationPanel = dynamic(() => import('./BroadcastNotificationPanel'));
+const BroadcastNotificationPanel = dynamic(() => import('./BroadcastNotificationPanel'), {
+  ssr: false,
+  loading: () => (
+    <div style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>
+      Loading User Notifications...
+    </div>
+  )
+});
 const IntegrationAccessConfig = dynamic(() => import('./IntegrationAccessConfig'));
 
 const CONFIG_TABS = [
@@ -158,7 +165,23 @@ export default function ConfigMasterPanel({
 
       {/* Tab Panels */}
       <div style={{ width: '100%' }}>
-        {activeTab === 'notifications' && <BroadcastNotificationPanel />}
+        {activeTab === 'notifications' && (
+          <ErrorBoundary fallback={
+            <div style={{ padding: '24px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 12, color: '#b91c1c' }}>
+              <strong>User Notifications Panel encountered a temporary display issue.</strong>
+              <p style={{ margin: '6px 0 12px', fontSize: 13, color: '#475569' }}>Please click the button below to reload the notifications workspace.</p>
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                style={{ padding: '8px 14px', background: '#4f46e5', color: '#fff', border: 0, borderRadius: 8, cursor: 'pointer', fontWeight: 600, fontSize: 13 }}
+              >
+                Reload Notifications
+              </button>
+            </div>
+          }>
+            <BroadcastNotificationPanel />
+          </ErrorBoundary>
+        )}
         {activeTab === 'messages' && <AdminMessageConfig moduleAccess={moduleAccess} userRole={userRole || 'admin'} />}
         {activeTab === 'status' && (
           <SystemStatusHealth 

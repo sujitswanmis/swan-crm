@@ -109,19 +109,47 @@ export const DEFAULT_CRM_CONFIG = {
   client_form_fields: DEFAULT_CLIENT_FORM_FIELDS
 };
 
-function getTenantConfigId(company) {
-  if (!company || company === 'All' || company === 'all') return 'crm_main_config';
-  const slug = company.trim().toLowerCase().replace(/[^a-z0-9]/g, '_');
-  return `crm_config_${slug}`;
+const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'nse-1', 'nse1', 'new swan', 'new swan group'];
+const SWAN_TENANTS = ['00000000-0000-0000-0000-000000000001', 'tnt00002'];
+
+function resolveConfigIds(company = '', tenantId = '') {
+  const compLower = String(company || '').trim().toLowerCase();
+  const tenantLower = String(tenantId || '').trim().toLowerCase();
+
+  const isSwan = SWAN_TENANTS.includes(tenantLower) || 
+                 SWAN_COMPANIES.includes(compLower) || 
+                 compLower.includes('swan');
+
+  let primaryId = 'crm_main_config';
+  let tenantFallbackId = null;
+
+  if (compLower && compLower !== 'all') {
+    const slug = compLower.replace(/[^a-z0-9]/g, '_');
+    primaryId = `crm_config_${slug}`;
+  }
+
+  if (isSwan) {
+    tenantFallbackId = 'crm_config_new_swan_group';
+    if (!compLower || compLower === 'all' || compLower === 'new swan group' || compLower === 'new swan') {
+      primaryId = 'crm_config_new_swan_group';
+    }
+  }
+
+  return { primaryId, tenantFallbackId, isSwan };
+}
+
+function getTenantConfigId(company, tenantId = '') {
+  return resolveConfigIds(company, tenantId).primaryId;
 }
 
 /**
  * Server action to get CRM configurations from Supabase
  */
-export async function getCRMConfig(company = '') {
+export async function getCRMConfig(company = '', tenantId = '') {
   try {
     const adminClient = getAdminClient();
-    const configId = getTenantConfigId(company);
+    const { primaryId, tenantFallbackId } = resolveConfigIds(company, tenantId);
+    const configId = primaryId;
 
     let data = null;
     let error = null;
@@ -136,6 +164,19 @@ export async function getCRMConfig(company = '') {
       error = res.error;
     }
 
+    // Fallback to tenant config (e.g. crm_config_new_swan_group for Swan branches)
+    if (!data?.permissions && tenantFallbackId && tenantFallbackId !== configId) {
+      const tenantRes = await adminClient
+        .from('global_role_permissions')
+        .select('permissions')
+        .eq('id', tenantFallbackId)
+        .maybeSingle();
+      if (tenantRes.data?.permissions) {
+        data = tenantRes.data;
+        error = tenantRes.error;
+      }
+    }
+
     // Fallback to main config if company-specific config doesn't exist
     if (!data?.permissions) {
       const mainRes = await adminClient
@@ -145,6 +186,17 @@ export async function getCRMConfig(company = '') {
         .maybeSingle();
       data = mainRes.data;
       error = mainRes.error;
+    }
+
+    // Fallback to Swan config if main config is empty and it's a Swan user
+    if (!data?.permissions && tenantFallbackId) {
+      const swanRes = await adminClient
+        .from('global_role_permissions')
+        .select('permissions')
+        .eq('id', 'crm_config_new_swan_group')
+        .maybeSingle();
+      data = swanRes.data;
+      error = swanRes.error;
     }
 
     if (error || !data?.permissions) {
@@ -190,10 +242,11 @@ export async function getCRMConfig(company = '') {
 /**
  * Server action to save CRM configurations to Supabase
  */
-export async function saveCRMConfig(newConfig, company = '') {
+export async function saveCRMConfig(newConfig, company = '', tenantId = '') {
   try {
     const adminClient = getAdminClient();
-    const configId = getTenantConfigId(company);
+    const { primaryId, isSwan } = resolveConfigIds(company, tenantId);
+    const configId = primaryId;
     
     // Fetch existing
     let existingPermissions = {};
@@ -223,6 +276,20 @@ export async function saveCRMConfig(newConfig, company = '') {
 
     if (error) {
       return { success: false, error: error.message };
+    }
+
+    // Dual-sync: keep crm_main_config and crm_config_new_swan_group in sync for workspace-level updates
+    if (configId === 'crm_config_new_swan_group' || (!company || company.toLowerCase() === 'all' || isSwan)) {
+      try {
+        await adminClient
+          .from('global_role_permissions')
+          .upsert([
+            { id: 'crm_main_config', permissions: payload },
+            { id: 'crm_config_new_swan_group', permissions: payload }
+          ]);
+      } catch (syncErr) {
+        console.warn('Notice: Background sync between main & Swan config in server action:', syncErr);
+      }
     }
 
     try {

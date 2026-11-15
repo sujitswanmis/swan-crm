@@ -26,12 +26,35 @@ export async function GET(request) {
       if (!Array.isArray(locations) || locations.length > 500 || locations.some(id => typeof id !== 'string')) {
         return Response.json({ success: false, error: 'Invalid branch selection.' }, { status: 400, headers: PRIVATE_HEADERS });
       }
+
+      let departments = [];
+      try { if (params.get('departments')) departments = JSON.parse(params.get('departments')); } catch {}
+      let roles = [];
+      try { if (params.get('roles')) roles = JSON.parse(params.get('roles')); } catch {}
+      let employees = [];
+      try { if (params.get('employees')) employees = JSON.parse(params.get('employees')); } catch {}
+      const onlyOnline = params.get('onlyOnline') === 'true';
+
       result = await getBroadcastAudience(params.has('scope') ? {
-        scope: params.get('scope'), workspace: params.get('workspace') || '', locations
+        scope: params.get('scope'),
+        workspace: params.get('workspace') || '',
+        locations,
+        departments,
+        roles,
+        employees,
+        onlyOnline
       } : null);
       if (result.success) {
         // Preserve the action contract, but avoid sending the same user list twice over HTTP.
-        result = { success: true, directory: result.directory, recipientCount: result.recipients.length, fingerprint: result.fingerprint };
+        result = {
+          success: true,
+          directory: result.directory,
+          departments: result.departments || [],
+          roles: result.roles || [],
+          recipientCount: result.recipients.length,
+          recipients: result.recipients,
+          fingerprint: result.fingerprint
+        };
       }
     } else if (mode === 'report') {
       result = await getBroadcastReport(params.get('id') || null);

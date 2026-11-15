@@ -199,10 +199,14 @@ export async function getTenantBranches(companyOrTenantId = 'Default') {
           .select('*')
           .order('created_at', { ascending: true });
 
-        if (dbTenantCandidate && UUID_REGEX.test(dbTenantCandidate)) {
-          branchQuery = branchQuery.or(`company.ilike.${key},tenant_id.eq.${dbTenantCandidate}`);
-        } else {
-          branchQuery = branchQuery.ilike('company', key);
+        const orConditions = [];
+        if (resolvedTenantCode) orConditions.push(`tenant_code.eq.${resolvedTenantCode}`);
+        if (key) orConditions.push(`company.ilike.${key}`);
+        if (rawKey && rawKey !== key) orConditions.push(`company.ilike.${rawKey}`);
+        if (dbTenantCandidate && UUID_REGEX.test(dbTenantCandidate)) orConditions.push(`tenant_id.eq.${dbTenantCandidate}`);
+
+        if (orConditions.length > 0) {
+          branchQuery = branchQuery.or(orConditions.join(','));
         }
 
         const { data, error } = await branchQuery;
@@ -232,10 +236,10 @@ export async function getTenantBranches(companyOrTenantId = 'Default') {
     }
     localBranches = localBranches || [];
 
-    // Merge DB & Local branches (Local ID takes priority)
+    // Merge Local & DB branches (DB records take priority over local static fallback)
     const mergedMap = new Map();
-    dbBranches.forEach(b => mergedMap.set(b.id || b.branch_code, b));
     localBranches.forEach(b => mergedMap.set(b.id || b.branch_code, b));
+    dbBranches.forEach(b => mergedMap.set(b.id || b.branch_code, b));
 
     const finalBranches = Array.from(mergedMap.values()).map(b => ({
       ...b,
@@ -315,8 +319,8 @@ export async function getAllTenantBranches() {
     });
 
     const mergedMap = new Map();
-    dbBranches.forEach(b => mergedMap.set(b.id || b.branch_code, b));
     allLocal.forEach(b => mergedMap.set(b.id || b.branch_code, b));
+    dbBranches.forEach(b => mergedMap.set(b.id || b.branch_code, b));
 
     return {
       success: true,
@@ -394,8 +398,36 @@ export async function saveTenantBranch({
       resolvedTenantCode = 'TNT00001';
     }
 
+    // --- Query existing branches from Supabase DB to prevent ID collisions on serverless/cloud instances ---
+    let dbBranches = [];
+    if (admin) {
+      try {
+        let branchQuery = admin
+          .from('tenant_branches')
+          .select('id, branch_code, custom_code, legacy_code, legacy_id');
+
+        const orFilters = [];
+        if (resolvedTenantCode) orFilters.push(`tenant_code.eq.${resolvedTenantCode}`);
+        if (companyKey) orFilters.push(`company.ilike.${companyKey}`);
+        if (rawCompany && rawCompany !== companyKey) orFilters.push(`company.ilike.${rawCompany}`);
+        if (resolvedTenantId && UUID_REGEX.test(resolvedTenantId)) orFilters.push(`tenant_id.eq.${resolvedTenantId}`);
+
+        if (orFilters.length > 0) {
+          branchQuery = branchQuery.or(orFilters.join(','));
+        }
+
+        const { data: bData, error: bErr } = await branchQuery;
+        if (!bErr && Array.isArray(bData)) {
+          dbBranches = bData;
+        }
+      } catch (e) {
+        console.error('Error fetching existing branches from DB for sequence:', e);
+      }
+    }
+
     const localMap = await readLocalBranches();
     const existingList = [
+      ...dbBranches,
       ...(localMap[companyKey] || []),
       ...(localMap[rawCompany] || [])
     ];

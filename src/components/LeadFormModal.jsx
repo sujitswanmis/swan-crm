@@ -308,13 +308,14 @@ export default function LeadFormModal({
   ]);
 
   useEffect(() => {
+    let isMounted = true;
     const loadConfig = () => {
       const saved = localStorage.getItem('crm_config');
       if (saved) {
         try {
           const parsed = JSON.parse(saved);
-          if (parsed.sources) setSources(parsed.sources);
-          if (parsed.priorities) setPriorities(parsed.priorities);
+          if (parsed.sources && Array.isArray(parsed.sources)) setSources(parsed.sources);
+          if (parsed.priorities && Array.isArray(parsed.priorities)) setPriorities(parsed.priorities);
           if (parsed.stages && parsed.stages.length > 0 && typeof parsed.stages[0] === 'object' && parsed.stages[0].substages) {
             setStages(parsed.stages);
           }
@@ -324,11 +325,26 @@ export default function LeadFormModal({
     
     if (isOpen) {
       loadConfig();
+      // Tenant-aware background sync so all new lead sources display immediately
+      const crmUrl = `/api/settings/crm-config${userCompany ? `?company=${encodeURIComponent(userCompany)}` : ''}`;
+      fetch(crmUrl)
+        .then(res => res.json())
+        .then(data => {
+          if (!isMounted || !data?.config) return;
+          const cfg = data.config;
+          if (Array.isArray(cfg.sources) && cfg.sources.length > 0) setSources(cfg.sources);
+          if (Array.isArray(cfg.priorities) && cfg.priorities.length > 0) setPriorities(cfg.priorities);
+          if (Array.isArray(cfg.stages) && cfg.stages.length > 0) setStages(cfg.stages);
+        })
+        .catch(() => {});
     }
     
     window.addEventListener('crm_config_updated', loadConfig);
-    return () => window.removeEventListener('crm_config_updated', loadConfig);
-  }, [isOpen]);
+    return () => {
+      isMounted = false;
+      window.removeEventListener('crm_config_updated', loadConfig);
+    };
+  }, [isOpen, userCompany]);
 
   const [formData, setFormData] = useState({
     // Organization & Scope

@@ -445,6 +445,49 @@ export default function ChecklistModule({
 
     const userEmailClean = (userEmail || '').toLowerCase().trim();
 
+    // Calculate number of active calendar days in selected date range for scaling template slots
+    let daysCount = 1;
+    if (dashboardDatePreset !== 'all' && dashboardStartDate && dashboardEndDate) {
+      const dStart = new Date(dashboardStartDate + 'T00:00:00+05:30');
+      const dEnd = new Date(dashboardEndDate + 'T00:00:00+05:30');
+      if (!isNaN(dStart.getTime()) && !isNaN(dEnd.getTime())) {
+        const diffDays = Math.round((dEnd.getTime() - dStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+        daysCount = Math.max(1, diffDays);
+      }
+    } else if (dashboardDatePreset === 'all') {
+      daysCount = 30; // sensible benchmark for all-time view
+    }
+
+    // Helper to calculate total assigned slots for a template across the selected period
+    const getTemplateSlotsForPeriod = (t) => {
+      const slotsCount = (Array.isArray(t.daily_slots) && t.daily_slots.length > 0)
+        ? t.daily_slots.length
+        : (t.daily_repetition_count || 1);
+      const freq = (t.frequency || 'DAILY').toUpperCase();
+      if (freq === 'DAILY') {
+        return slotsCount * daysCount;
+      } else if (freq === 'WEEKLY') {
+        const weeks = Math.max(1, Math.ceil(daysCount / 7));
+        return slotsCount * weeks;
+      } else if (freq === 'FORTNIGHTLY') {
+        const fortnights = Math.max(1, Math.ceil(daysCount / 15));
+        return slotsCount * fortnights;
+      } else if (freq === 'MONTHLY') {
+        const months = Math.max(1, Math.ceil(daysCount / 30));
+        return slotsCount * months;
+      } else if (freq === 'QUARTERLY') {
+        const quarters = Math.max(1, Math.ceil(daysCount / 90));
+        return slotsCount * quarters;
+      } else if (freq === 'HALF_YEARLY') {
+        const halves = Math.max(1, Math.ceil(daysCount / 180));
+        return slotsCount * halves;
+      } else if (freq === 'YEARLY') {
+        const years = Math.max(1, Math.ceil(daysCount / 365));
+        return slotsCount * years;
+      }
+      return slotsCount * daysCount;
+    };
+
     // 1. Personal metrics for logged in user
     const myLogs = filteredLogs.filter(l => (l.employee_email || '').toLowerCase().trim() === userEmailClean);
     const myCompletedOnTime = myLogs.filter(l => l.status === 'COMPLETED' && !l.delayInfo?.isDelayed).length;
@@ -456,8 +499,7 @@ export default function ChecklistModule({
       const rawEmails = (t.assigned_employee_email || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
       const isAssigned = t.assigned_type === 'ALL' || rawEmails.includes(userEmailClean);
       if (isAssigned) {
-        const slotsCount = (Array.isArray(t.daily_slots) && t.daily_slots.length > 0) ? t.daily_slots.length : (t.daily_repetition_count || 1);
-        myAssignedSlots += slotsCount;
+        myAssignedSlots += getTemplateSlotsForPeriod(t);
       }
     });
 
@@ -535,7 +577,8 @@ export default function ChecklistModule({
       const eEmail = (emp.email || '').toLowerCase().trim();
       const offEmail = (emp.emp_official_mail_id || '').toLowerCase().trim();
       const cleanName = getCleanEmpName(emp) || eEmail;
-      const dept = emp.emp_department || emp.department || 'General';
+      let dept = emp.emp_department || emp.department || 'General';
+      if (dept.toLowerCase() === 'all' || !dept.trim()) dept = 'General';
 
       if (eEmail) {
         empMap.set(eEmail, {
@@ -545,7 +588,8 @@ export default function ChecklistModule({
           assigned: 0,
           completedOnTime: 0,
           completedLate: 0,
-          completed: 0
+          completed: 0,
+          isFromMaster: true
         });
       }
       if (offEmail && offEmail !== eEmail && !empMap.has(offEmail)) {
@@ -556,7 +600,8 @@ export default function ChecklistModule({
           assigned: 0,
           completedOnTime: 0,
           completedLate: 0,
-          completed: 0
+          completed: 0,
+          isFromMaster: true
         });
       }
     });
@@ -564,19 +609,20 @@ export default function ChecklistModule({
     // Calculate assigned slots per employee from active templates
     (templates || []).filter(t => t.is_active !== false).forEach(t => {
       const rawEmails = (t.assigned_employee_email || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
-      const rawNames = (t.assigned_employee_name || '').split(',').map(n => n.trim()).filter(Boolean);
-      const slotsCount = (Array.isArray(t.daily_slots) && t.daily_slots.length > 0) ? t.daily_slots.length : (t.daily_repetition_count || 1);
+      const periodSlots = getTemplateSlotsForPeriod(t);
+      const tDept = (t.department && t.department.toLowerCase() !== 'all') ? t.department : '';
 
       if (t.assigned_type === 'ALL') {
         empMap.forEach((val) => {
-          val.assigned += slotsCount;
+          val.assigned += periodSlots;
         });
       } else {
-        rawEmails.forEach((e, idx) => {
+        rawEmails.forEach((e) => {
           const matchedP = findEmployeeRecord(e);
-          const fallbackName = (rawNames[idx] && !rawNames[idx].includes('@')) ? rawNames[idx] : '';
-          const name = (matchedP ? getCleanEmpName(matchedP) : '') || fallbackName || e;
-          const dept = matchedP?.emp_department || matchedP?.department || t.department || 'General';
+          // Never use multi-user summary text (e.g. "16 Employees...") as individual employee name!
+          const name = (matchedP ? getCleanEmpName(matchedP) : '') || e;
+          let dept = matchedP?.emp_department || matchedP?.department || tDept || 'General';
+          if (dept.toLowerCase() === 'all' || !dept.trim()) dept = 'General';
 
           if (!empMap.has(e)) {
             empMap.set(e, {
@@ -586,18 +632,19 @@ export default function ChecklistModule({
               assigned: 0,
               completedOnTime: 0,
               completedLate: 0,
-              completed: 0
+              completed: 0,
+              isFromMaster: Boolean(matchedP)
             });
           } else {
             const existing = empMap.get(e);
             if ((!existing.name || existing.name === e || existing.name.includes('@')) && name && !name.includes('@')) {
               existing.name = name;
             }
-            if ((!existing.department || existing.department === 'General') && dept && dept !== 'General') {
+            if ((!existing.department || existing.department === 'General' || existing.department.toLowerCase() === 'all') && dept && dept.toLowerCase() !== 'all') {
               existing.department = dept;
             }
           }
-          empMap.get(e).assigned += slotsCount;
+          empMap.get(e).assigned += periodSlots;
         });
       }
     });
@@ -608,12 +655,13 @@ export default function ChecklistModule({
       if (!eEmail) return;
 
       const matchedP = findEmployeeRecord(eEmail);
-      const resolvedName = (l.employee_name && !l.employee_name.includes('@'))
+      const resolvedName = (l.employee_name && !l.employee_name.includes('@') && !l.employee_name.toLowerCase().includes('employee'))
         ? l.employee_name
         : ((matchedP ? getCleanEmpName(matchedP) : '') || l.employee_name || eEmail);
-      const resolvedDept = (l.department && l.department !== 'General')
+      let resolvedDept = (l.department && l.department !== 'General' && l.department.toLowerCase() !== 'all')
         ? l.department
         : ((matchedP ? (matchedP.emp_department || matchedP.department) : '') || l.department || 'General');
+      if (resolvedDept.toLowerCase() === 'all' || !resolvedDept.trim()) resolvedDept = 'General';
 
       if (!empMap.has(eEmail)) {
         empMap.set(eEmail, {
@@ -623,14 +671,15 @@ export default function ChecklistModule({
           assigned: 0,
           completedOnTime: 0,
           completedLate: 0,
-          completed: 0
+          completed: 0,
+          isFromMaster: Boolean(matchedP)
         });
       } else {
         const existing = empMap.get(eEmail);
         if ((!existing.name || existing.name === eEmail || existing.name.includes('@')) && resolvedName && !resolvedName.includes('@')) {
           existing.name = resolvedName;
         }
-        if ((!existing.department || existing.department === 'General') && resolvedDept && resolvedDept !== 'General') {
+        if ((!existing.department || existing.department === 'General' || existing.department.toLowerCase() === 'all') && resolvedDept && resolvedDept.toLowerCase() !== 'all') {
           existing.department = resolvedDept;
         }
       }
@@ -652,7 +701,11 @@ export default function ChecklistModule({
     let totalCompanyCompleted = 0;
 
     let leaderboard = Array.from(empMap.values())
-      .filter(emp => emp.assigned > 0 || emp.completed > 0)
+      .filter(emp => {
+        // Exclude unverified/resigned accounts that have 0 submissions in this period
+        if (emp.completed === 0 && !emp.isFromMaster) return false;
+        return emp.assigned > 0 || emp.completed > 0;
+      })
       .map(emp => {
         const assigned = Math.max(emp.assigned, emp.completed);
         const missed = Math.max(0, assigned - emp.completed);
@@ -685,10 +738,11 @@ export default function ChecklistModule({
     const companyScore = totalCompanyAssigned > 0 ? Math.round((totalCompanyCompleted / totalCompanyAssigned) * 100) : (totalCompanyCompleted > 0 ? 100 : 0);
     const companyMissed = Math.max(0, totalCompanyAssigned - totalCompanyCompleted);
 
-    // Department breakdown
+    // Department breakdown (Clean, no "All" department)
     const deptGroup = new Map();
     leaderboard.forEach(emp => {
-      const dept = emp.department || 'General';
+      let dept = emp.department || 'General';
+      if (dept.toLowerCase() === 'all' || !dept.trim()) dept = 'General';
       if (!deptGroup.has(dept)) {
         deptGroup.set(dept, { name: dept, totalAssigned: 0, totalCompleted: 0 });
       }
@@ -697,10 +751,12 @@ export default function ChecklistModule({
       entry.totalCompleted += emp.completed;
     });
 
-    const departmentStats = Array.from(deptGroup.values()).map(d => ({
-      ...d,
-      complianceRate: d.totalAssigned > 0 ? Math.round((d.totalCompleted / d.totalAssigned) * 100) : (d.totalCompleted > 0 ? 100 : 0)
-    })).sort((a, b) => b.totalAssigned - a.totalAssigned);
+    const departmentStats = Array.from(deptGroup.values())
+      .filter(d => d.name && d.name.toLowerCase() !== 'all')
+      .map(d => ({
+        ...d,
+        complianceRate: d.totalAssigned > 0 ? Math.round((d.totalCompleted / d.totalAssigned) * 100) : (d.totalCompleted > 0 ? 100 : 0)
+      })).sort((a, b) => b.totalAssigned - a.totalAssigned);
 
     // Filter leaderboard
     if (dashboardSearchEmployee.trim()) {
@@ -738,6 +794,8 @@ export default function ChecklistModule({
       myChecklistsBreakdown,
       myRecentLogs: myLogs.slice(0, 10),
       totalCompanyAssigned,
+      totalCompanyOnTime,
+      totalCompanyLate,
       totalCompanyCompleted,
       companyCompleted,
       companyMissed,
@@ -2070,7 +2128,7 @@ export default function ChecklistModule({
                   <CheckCircle2 size={16} color="#16a34a" /> ON-TIME SUBMISSIONS
                 </div>
                 <div style={{ fontSize: '2rem', fontWeight: 800, color: '#15803d' }}>
-                  {analyticsData.totalCompanyOnTime}
+                  {analyticsData.totalCompanyOnTime ?? 0}
                 </div>
                 <div style={{ fontSize: '0.75rem', color: '#166534' }}>
                   Completed inside buffer window
@@ -2079,8 +2137,8 @@ export default function ChecklistModule({
 
               {/* Card 4: Total Late Completed */}
               <div style={{
-                background: analyticsData.totalCompanyLate > 0 ? '#fffbeb' : 'var(--bg-secondary, #f8fafc)',
-                border: analyticsData.totalCompanyLate > 0 ? '1.5px solid #fde68a' : '1px solid var(--border-color, #e2e8f0)',
+                background: (analyticsData.totalCompanyLate || 0) > 0 ? '#fffbeb' : 'var(--bg-secondary, #f8fafc)',
+                border: (analyticsData.totalCompanyLate || 0) > 0 ? '1.5px solid #fde68a' : '1px solid var(--border-color, #e2e8f0)',
                 borderRadius: '12px',
                 padding: '1.2rem',
                 display: 'flex',
@@ -2088,11 +2146,11 @@ export default function ChecklistModule({
                 gap: '0.4rem',
                 boxShadow: '0 2px 4px rgba(0,0,0,0.03)'
               }}>
-                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: analyticsData.totalCompanyLate > 0 ? '#92400e' : 'var(--text-secondary, #64748b)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                  <Clock size={16} color={analyticsData.totalCompanyLate > 0 ? '#d97706' : '#94a3b8'} /> LATE / DELAYED
+                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: (analyticsData.totalCompanyLate || 0) > 0 ? '#92400e' : 'var(--text-secondary, #64748b)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <Clock size={16} color={(analyticsData.totalCompanyLate || 0) > 0 ? '#d97706' : '#94a3b8'} /> LATE / DELAYED
                 </div>
-                <div style={{ fontSize: '2rem', fontWeight: 800, color: analyticsData.totalCompanyLate > 0 ? '#d97706' : 'var(--text-primary, #0f172a)' }}>
-                  {analyticsData.totalCompanyLate}
+                <div style={{ fontSize: '2rem', fontWeight: 800, color: (analyticsData.totalCompanyLate || 0) > 0 ? '#d97706' : 'var(--text-primary, #0f172a)' }}>
+                  {analyticsData.totalCompanyLate ?? 0}
                 </div>
                 <div style={{ fontSize: '0.75rem', color: analyticsData.totalCompanyLate > 0 ? '#78350f' : 'var(--text-secondary, #64748b)' }}>
                   Submitted after buffer window
@@ -2260,25 +2318,27 @@ export default function ChecklistModule({
             /* Company / Team Visualizations */
             <>
               {/* Department Compliance Grid & Delay Bottlenecks */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '1.25rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '1.25rem', alignItems: 'stretch' }}>
                 {/* Department Compliance Distribution */}
                 <div style={{
                   background: 'var(--card-bg, #ffffff)',
                   border: '1px solid var(--border-color, #e2e8f0)',
                   borderRadius: '12px',
                   padding: '1.25rem',
-                  boxShadow: '0 2px 6px rgba(0,0,0,0.03)'
+                  boxShadow: '0 2px 6px rgba(0,0,0,0.03)',
+                  display: 'flex',
+                  flexDirection: 'column'
                 }}>
                   <h3 style={{ margin: '0 0 1rem', fontSize: '1rem', fontWeight: 800, color: 'var(--text-primary, #0f172a)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                     <Building size={18} color="#3b82f6" /> Department-wise Executions
                   </h3>
 
                   {analyticsData.departmentStats.length === 0 ? (
-                    <div style={{ textAlign: 'center', padding: '2.5rem 1rem', color: 'var(--text-secondary, #64748b)', fontSize: '0.88rem' }}>
+                    <div style={{ textAlign: 'center', padding: '2.5rem 1rem', color: 'var(--text-secondary, #64748b)', fontSize: '0.88rem', flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       No department data available in this timeframe.
                     </div>
                   ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', flex: 1, maxHeight: '340px', overflowY: 'auto' }}>
                       {analyticsData.departmentStats.map((dept, idx) => (
                         <div key={idx} style={{
                           background: 'var(--bg-secondary, #f8fafc)',
@@ -2296,7 +2356,7 @@ export default function ChecklistModule({
                             <span style={{
                               fontWeight: 800,
                               fontSize: '0.85rem',
-                              color: dept.complianceRate >= 90 ? '#16a34a' : dept.complianceRate >= 75 ? '#f59e0b' : '#dc2626'
+                              color: dept.complianceRate >= 90 ? '#16a34a' : dept.complianceRate >= 70 ? '#d97706' : '#dc2626'
                             }}>
                               {dept.totalCompleted} / {dept.totalAssigned} ({dept.complianceRate}%)
                             </span>
@@ -2306,7 +2366,7 @@ export default function ChecklistModule({
                             <div style={{
                               width: `${dept.complianceRate}%`,
                               height: '100%',
-                              background: dept.complianceRate >= 90 ? '#16a34a' : dept.complianceRate >= 75 ? '#f59e0b' : '#dc2626',
+                              background: dept.complianceRate >= 90 ? '#16a34a' : dept.complianceRate >= 70 ? '#f59e0b' : '#dc2626',
                               transition: 'width 0.3s ease'
                             }} />
                           </div>
@@ -2322,18 +2382,20 @@ export default function ChecklistModule({
                   border: '1px solid var(--border-color, #e2e8f0)',
                   borderRadius: '12px',
                   padding: '1.25rem',
-                  boxShadow: '0 2px 6px rgba(0,0,0,0.03)'
+                  boxShadow: '0 2px 6px rgba(0,0,0,0.03)',
+                  display: 'flex',
+                  flexDirection: 'column'
                 }}>
                   <h3 style={{ margin: '0 0 1rem', fontSize: '1rem', fontWeight: 800, color: 'var(--text-primary, #0f172a)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                     <Layers size={18} color="#3b82f6" /> Top Executed Checklist Templates
                   </h3>
 
                   {analyticsData.topChecklists.length === 0 ? (
-                    <div style={{ textAlign: 'center', padding: '2.5rem 1rem', color: 'var(--text-secondary, #64748b)', fontSize: '0.88rem' }}>
+                    <div style={{ textAlign: 'center', padding: '2.5rem 1rem', color: 'var(--text-secondary, #64748b)', fontSize: '0.88rem', flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       No checklists recorded in this timeframe.
                     </div>
                   ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', flex: 1, maxHeight: '340px', overflowY: 'auto' }}>
                       {analyticsData.topChecklists.map((item, idx) => (
                         <div key={idx} style={{
                           background: 'var(--bg-secondary, #f8fafc)',
@@ -2387,7 +2449,7 @@ export default function ChecklistModule({
                       <Award size={20} color="#f59e0b" /> Employee Compliance Leaderboard & Accountability Ranking
                     </h3>
                     <p style={{ margin: '0.2rem 0 0', fontSize: '0.8rem', color: 'var(--text-secondary, #64748b)' }}>
-                      Rankings based on on-time checklist completion vs total assigned slots in the selected timeframe
+                      Rankings based on overall checklist completion rate & on-time punctuality in the selected timeframe
                     </p>
                   </div>
 
@@ -2452,11 +2514,11 @@ export default function ChecklistModule({
                           <th style={{ padding: '0.75rem 1rem', fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-secondary, #64748b)' }}>RANK</th>
                           <th style={{ padding: '0.75rem 1rem', fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-secondary, #64748b)' }}>EMPLOYEE</th>
                           <th style={{ padding: '0.75rem 1rem', fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-secondary, #64748b)' }}>DEPARTMENT</th>
-                          <th style={{ padding: '0.75rem 1rem', fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-secondary, #64748b)', textAlign: 'center' }}>ASSIGNED</th>
-                          <th style={{ padding: '0.75rem 1rem', fontSize: '0.78rem', fontWeight: 800, color: '#166534', textAlign: 'center' }}>🟢 ON-TIME</th>
-                          <th style={{ padding: '0.75rem 1rem', fontSize: '0.78rem', fontWeight: 800, color: '#92400e', textAlign: 'center' }}>⚠️ DELAYED</th>
-                          <th style={{ padding: '0.75rem 1rem', fontSize: '0.78rem', fontWeight: 800, color: '#991b1b', textAlign: 'center' }}>❌ MISSED</th>
-                          <th style={{ padding: '0.75rem 1rem', fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-secondary, #64748b)' }}>COMPLIANCE SCORE</th>
+                          <th style={{ padding: '0.75rem 1rem', fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-secondary, #64748b)', textAlign: 'center', minWidth: '100px', whiteSpace: 'nowrap' }}>ASSIGNED</th>
+                          <th style={{ padding: '0.75rem 1rem', fontSize: '0.78rem', fontWeight: 800, color: '#166534', textAlign: 'center', minWidth: '95px', whiteSpace: 'nowrap' }}>🟢 ON-TIME</th>
+                          <th style={{ padding: '0.75rem 1rem', fontSize: '0.78rem', fontWeight: 800, color: '#92400e', textAlign: 'center', minWidth: '95px', whiteSpace: 'nowrap' }}>⚠️ DELAYED</th>
+                          <th style={{ padding: '0.75rem 1rem', fontSize: '0.78rem', fontWeight: 800, color: '#991b1b', textAlign: 'center', minWidth: '95px', whiteSpace: 'nowrap' }}>❌ MISSED</th>
+                          <th style={{ padding: '0.75rem 1rem', fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-secondary, #64748b)', minWidth: '160px' }}>COMPLIANCE SCORE</th>
                           <th style={{ padding: '0.75rem 1rem', fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-secondary, #64748b)', textAlign: 'center' }}>STATUS</th>
                         </tr>
                       </thead>

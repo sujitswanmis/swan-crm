@@ -2603,6 +2603,210 @@ export async function bulkRejectRegularizationRequests({
 }
 
 /**
+ * 9.3. Direct Manual Attendance Correction / Override (Admin / HOD)
+ */
+export async function directCorrectAttendanceRecord({
+  tenantId = DEFAULT_TENANT_ID,
+  userCompany = '',
+  email,
+  userId = null,
+  empName = '',
+  empCode = '',
+  department = '',
+  attendanceDate,
+  inTime = null,
+  outTime = null,
+  status = 'PRESENT',
+  isRegularized = true,
+  remarks = '',
+  correctedByName = 'Admin',
+  correctedByEmail = ''
+}) {
+  if (!email || !attendanceDate) {
+    return { success: false, error: 'Employee email and attendance date are required.' };
+  }
+
+  const effectiveTenantId = resolveTenantId(tenantId, userCompany);
+  const cleanEmail = email.trim().toLowerCase();
+  const adminClient = getAdminClient();
+  const nowIso = new Date().toISOString();
+
+  // Convert inTime to ISO in IST
+  let finalInIso = null;
+  if (inTime && status !== 'ABSENT' && status !== 'WEEK_OFF' && status !== 'LWP' && status !== 'CPL') {
+    if (typeof inTime === 'string' && inTime.includes('T')) {
+      const d = new Date(inTime);
+      finalInIso = isNaN(d.getTime()) ? null : d.toISOString();
+    } else if (typeof inTime === 'string' && inTime.trim()) {
+      const cleanIn = inTime.trim().length === 5 ? `${inTime.trim()}:00` : inTime.trim();
+      const inDateObj = new Date(`${attendanceDate}T${cleanIn}+05:30`);
+      finalInIso = isNaN(inDateObj.getTime()) ? null : inDateObj.toISOString();
+    }
+  }
+
+  // Convert outTime to ISO in IST
+  let finalOutIso = null;
+  if (outTime && status !== 'ABSENT' && status !== 'WEEK_OFF' && status !== 'LWP' && status !== 'CPL') {
+    if (typeof outTime === 'string' && outTime.includes('T')) {
+      const d = new Date(outTime);
+      finalOutIso = isNaN(d.getTime()) ? null : d.toISOString();
+    } else if (typeof outTime === 'string' && outTime.trim()) {
+      const cleanOut = outTime.trim().length === 5 ? `${outTime.trim()}:00` : outTime.trim();
+      let outDateObj = new Date(`${attendanceDate}T${cleanOut}+05:30`);
+      if (finalInIso && !isNaN(outDateObj.getTime())) {
+        const inDateObj = new Date(finalInIso);
+        if (outDateObj < inDateObj) {
+          outDateObj = new Date(outDateObj.getTime() + 24 * 60 * 60 * 1000);
+        }
+      }
+      finalOutIso = isNaN(outDateObj.getTime()) ? null : outDateObj.toISOString();
+    }
+  }
+
+  // Calculate working minutes
+  let totalMinutes = 0;
+  if (finalInIso && finalOutIso) {
+    totalMinutes = calculateMinutesBetween(finalInIso, finalOutIso);
+  }
+
+  // Fallback data
+  const local = await getFallbackData();
+  let attIdx = (local.records || []).findIndex(r => 
+    (r.email || '').toLowerCase() === cleanEmail && 
+    r.attendance_date === attendanceDate
+  );
+
+  let existingRecord = attIdx >= 0 ? local.records[attIdx] : null;
+  let recordId = existingRecord?.id || null;
+
+  // If not found in local, search Supabase
+  if (!recordId) {
+    try {
+      const { data: dbRec } = await adminClient
+        .from('attendance_records')
+        .select('*')
+        .eq('tenant_id', effectiveTenantId)
+        .eq('email', cleanEmail)
+        .eq('attendance_date', attendanceDate)
+        .maybeSingle();
+
+      if (dbRec) {
+        existingRecord = dbRec;
+        recordId = dbRec.id;
+        if (!userId && dbRec.user_id) userId = dbRec.user_id;
+        if (!empName && dbRec.emp_name) empName = dbRec.emp_name;
+        if (!empCode && dbRec.emp_code) empCode = dbRec.emp_code;
+        if (!department && dbRec.department) department = dbRec.department;
+      }
+    } catch (e) {
+      console.warn('Supabase lookup warning in directCorrectAttendanceRecord:', e);
+    }
+  }
+
+  // If still no user details, resolve from user_roles
+  if (!empName || !empCode || !department) {
+    try {
+      const { data: uData } = await adminClient
+        .from('user_roles')
+        .select('user_id, emp_name, emp_id, emp_department')
+        .eq('email', cleanEmail)
+        .maybeSingle();
+      if (uData) {
+        if (!userId && uData.user_id) userId = uData.user_id;
+        if (!empName && uData.emp_name) empName = uData.emp_name;
+        if (!empCode && uData.emp_id) empCode = uData.emp_id;
+        if (!department && uData.emp_department) department = uData.emp_department;
+      }
+    } catch {}
+  }
+
+  const finalRecordId = ensureUuid(recordId || undefined);
+
+  const isNoPunchStatus = status === 'ABSENT' || status === 'WEEK_OFF' || status === 'LWP' || status === 'CPL';
+
+  const defaultRemarks = status === 'LWP' 
+    ? `LWP (Leave Without Pay) applied by ${correctedByName || 'Admin'}` 
+    : status === 'CPL' 
+    ? `CPL (Compensatory Off) applied by ${correctedByName || 'Admin'}` 
+    : `Manually corrected by ${correctedByName || 'Admin'}`;
+
+  const updatedRecord = {
+    id: finalRecordId,
+    tenant_id: effectiveTenantId,
+    user_id: (userId && isValidUuid(userId)) ? userId : (existingRecord?.user_id && isValidUuid(existingRecord.user_id) ? existingRecord.user_id : null),
+    emp_code: empCode || existingRecord?.emp_code || '',
+    emp_name: empName || existingRecord?.emp_name || cleanEmail.split('@')[0],
+    email: cleanEmail,
+    department: department || existingRecord?.department || 'General',
+    attendance_date: attendanceDate,
+    in_time: isNoPunchStatus ? null : finalInIso,
+    out_time: isNoPunchStatus ? null : finalOutIso,
+    in_location: isNoPunchStatus ? null : 'Manual Correction (Admin/HOD)',
+    out_location: isNoPunchStatus ? null : (finalOutIso ? 'Manual Correction (Admin/HOD)' : null),
+    in_method: 'MANUAL_CORRECTION',
+    out_method: finalOutIso ? 'MANUAL_CORRECTION' : null,
+    total_working_minutes: isNoPunchStatus ? 0 : totalMinutes,
+    status: status,
+    short_leave_type: existingRecord?.short_leave_type || 'NONE',
+    is_grace_applied: existingRecord?.is_grace_applied || false,
+    shift_name: existingRecord?.shift_name || 'Regular Shift',
+    is_regularized: (status === 'LWP' || status === 'WEEK_OFF' || status === 'ABSENT') 
+      ? false 
+      : Boolean(status === 'REGULARIZED' || isRegularized),
+    regularization_id: existingRecord?.regularization_id && isValidUuid(existingRecord.regularization_id) ? existingRecord.regularization_id : null,
+    remarks: remarks || defaultRemarks,
+    created_at: existingRecord?.created_at || nowIso,
+    updated_at: nowIso
+  };
+
+  if (attIdx >= 0) {
+    local.records[attIdx] = updatedRecord;
+  } else {
+    local.records.unshift(updatedRecord);
+  }
+  await saveFallbackData(local);
+
+  // Upsert to Supabase
+  try {
+    const dbPayload = cleanAttendanceRecordForDb(updatedRecord, effectiveTenantId);
+    const { error: attErr } = await adminClient
+      .from('attendance_records')
+      .upsert(dbPayload, { onConflict: 'email,attendance_date' });
+
+    if (attErr) {
+      console.warn('Upsert by email,attendance_date failed, trying by id:', attErr);
+      const { error: idErr } = await adminClient
+        .from('attendance_records')
+        .upsert(dbPayload, { onConflict: 'id' });
+      if (idErr) {
+        console.error('Supabase directCorrectAttendanceRecord upsert error:', idErr);
+      }
+    }
+  } catch (dbErr) {
+    console.error('Supabase directCorrectAttendanceRecord exception:', dbErr);
+  }
+
+  // Audit Log
+  try {
+    const formattedIn = finalInIso ? new Date(finalInIso).toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) : 'None';
+    const formattedOut = finalOutIso ? new Date(finalOutIso).toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) : 'None';
+    await logAuditAction({
+      module: 'attendance',
+      action: 'ATTENDANCE_MANUALLY_CORRECTED',
+      details: `${correctedByName || correctedByEmail || 'Admin'} manually corrected attendance for ${updatedRecord.emp_name} (${cleanEmail}) on ${attendanceDate} to Status: ${status}, In: ${formattedIn}, Out: ${formattedOut}, Duration: ${formatMinutesToHours(totalMinutes)}. Remarks: ${updatedRecord.remarks}`,
+      userEmail: correctedByEmail,
+      userName: correctedByName
+    });
+  } catch {}
+
+  return {
+    success: true,
+    message: `Attendance for ${updatedRecord.emp_name} on ${attendanceDate} has been updated successfully.`,
+    record: updatedRecord
+  };
+}
+
+/**
  * 10. Get Master Team Attendance (for HOD / Admin Reports)
  */
 export async function getTeamAttendanceMaster({
@@ -2629,7 +2833,7 @@ export async function getTeamAttendanceMaster({
       : { matchesUserBranchMembership: null };
     const { data: usersData, error: uErr } = await adminClient
       .from('user_roles')
-      .select('user_id, emp_name, email, emp_id, emp_department, module_access, created_at, is_approved, role, company');
+      .select('user_id, emp_name, email, emp_id, emp_department, emp_designation, module_access, created_at, is_approved, role, company');
     if (!uErr && Array.isArray(usersData)) {
       const filteredUsers = usersData.filter(u => matchesEmployeeBranchFilter(u, company, branchScope, matchesUserBranchMembership));
 
@@ -2649,6 +2853,7 @@ export async function getTeamAttendanceMaster({
           emp_code: u.emp_id || '',
           emp_id: u.emp_id || '',
           department: u.emp_department || 'General',
+          designation: u.emp_designation || u.module_access?.emp_designation || u.role || 'Staff',
           emp_status: u.module_access?.emp_status || 'Active',
           created_at: u.created_at,
           module_access: u.module_access
@@ -2726,7 +2931,8 @@ export async function getTeamAttendanceMaster({
       remarks: r.remarks || localRec?.remarks || null,
       emp_code: r.emp_code || user?.emp_code || user?.emp_id || '',
       emp_name: r.emp_name || user?.emp_name || r.email?.split('@')[0],
-      department: r.department || user?.department || user?.emp_department || 'General'
+      department: r.department || user?.department || user?.emp_department || 'General',
+      designation: user?.designation || user?.emp_designation || user?.role || ''
     };
   });
 
@@ -2751,6 +2957,7 @@ export async function getTeamAttendanceMaster({
         emp_name: u.emp_name || u.email.split('@')[0],
         emp_code: u.emp_code || '',
         department: u.department || 'General',
+        designation: u.designation || '',
         attendance_date: effectiveStart,
         in_time: null,
         out_time: null,
@@ -2778,6 +2985,7 @@ export async function getTeamAttendanceMaster({
     endDate: effectiveEnd,
     isRange,
     records: combinedRecords,
+    roster: allUsers,
     summary: {
       totalEmployees: activeEmployeesCount > 0 ? activeEmployeesCount : combinedRecords.length,
       totalRecords: combinedRecords.length,
@@ -3237,7 +3445,22 @@ export async function getTeamMonthlyMatrix({
           totalShortLeaves++;
         }
 
-        if (rec.is_regularized || rec.status === 'REGULARIZED') {
+        const recRem = (rec.remarks || '').toLowerCase();
+        if (rec.status === 'LWP' || recRem.includes('leave without pay') || recRem.includes('lwp')) {
+          return {
+            code: 'LWP',
+            status: 'LWP',
+            label: rec.remarks || 'Leave Without Pay (LWP)',
+            record: rec
+          };
+        } else if (rec.status === 'CPL' || recRem.includes('compensatory') || recRem.includes('comp off') || recRem.includes('cpl')) {
+          return {
+            code: 'CPL',
+            status: 'CPL',
+            label: rec.remarks || 'Compensatory Off (CPL)',
+            record: rec
+          };
+        } else if (rec.is_regularized || rec.status === 'REGULARIZED') {
           totalPresent++;
           return {
             code: 'R',

@@ -36,7 +36,8 @@ import {
   getAllTenantLeavePolicies,
   getTeamLeaveReport,
   getTenantAttendancePolicy,
-  saveTenantAttendancePolicy
+  saveTenantAttendancePolicy,
+  directCorrectAttendanceRecord
 } from '@/app/actions/attendance';
 import { 
   formatMinutesToHours, 
@@ -77,7 +78,8 @@ const ATTENDANCE_TEAM_DEFAULT_COL_WIDTHS = {
   out_time: 110,
   duration: 110,
   status: 140,
-  regularization: 130
+  regularization: 130,
+  actions: 120
 };
 
 const ATTENDANCE_TEAM_MIN_COL_WIDTHS = {
@@ -90,7 +92,8 @@ const ATTENDANCE_TEAM_MIN_COL_WIDTHS = {
   out_time: 80,
   duration: 80,
   status: 100,
-  regularization: 90
+  regularization: 90,
+  actions: 90
 };
 
 const ATTENDANCE_SHIFTS_DEFAULT_COL_WIDTHS = {
@@ -1900,6 +1903,7 @@ export default function AttendanceModule({
       if (res.success) {
         setTeamMasterData({
           records: res.records || [],
+          roster: res.roster || [],
           summary: res.summary || {},
           isRange: res.isRange
         });
@@ -1931,6 +1935,239 @@ export default function AttendanceModule({
       console.error("Fetch Monthly Matrix Error:", err);
     } finally {
       setLoadingMonthlyMatrix(false);
+    }
+  };
+
+  // Helper to format Employee display name without duplicate Emp ID
+  const formatEmpDisplayName = useCallback((emp) => {
+    if (!emp) return '';
+    const name = (emp.emp_name || emp.email?.split('@')[0] || '').trim();
+    const code = (emp.emp_code || emp.emp_id || '').trim();
+    if (!code) return name;
+    if (name.toLowerCase().includes(code.toLowerCase())) {
+      return name;
+    }
+    return `${name} - ${code}`;
+  }, []);
+
+  // Helper to format Employee sub-details (Department • Designation instead of email)
+  const formatEmpSubDetails = useCallback((emp) => {
+    if (!emp) return '';
+    const dept = (emp.department || '').trim();
+    const desig = (emp.designation || '').trim();
+    if (dept && desig) {
+      return `${dept} • ${desig}`;
+    }
+    if (dept) return dept;
+    if (desig) return desig;
+    return 'General';
+  }, []);
+
+  // Available unique employees for manual attendance correction
+  const availableEmployees = useMemo(() => {
+    const map = new Map();
+    (teamMasterData.roster || []).forEach(u => {
+      if (u.email && !map.has(u.email.toLowerCase())) {
+        map.set(u.email.toLowerCase(), {
+          email: u.email.toLowerCase(),
+          emp_name: u.emp_name || u.email.split('@')[0],
+          emp_code: u.emp_code || u.emp_id || '',
+          department: u.department || 'General',
+          designation: u.designation || '',
+          user_id: u.user_id || null
+        });
+      }
+    });
+    (teamMasterData.records || []).forEach(r => {
+      if (r.email) {
+        const existing = map.get(r.email.toLowerCase());
+        if (!existing) {
+          map.set(r.email.toLowerCase(), {
+            email: r.email.toLowerCase(),
+            emp_name: r.emp_name || r.email.split('@')[0],
+            emp_code: r.emp_code || '',
+            department: r.department || 'General',
+            designation: r.designation || '',
+            user_id: r.user_id || null
+          });
+        } else if (!existing.designation && r.designation) {
+          existing.designation = r.designation;
+        }
+      }
+    });
+    (monthlyMatrixData?.rows || []).forEach(r => {
+      if (r.email) {
+        const existing = map.get(r.email.toLowerCase());
+        if (!existing) {
+          map.set(r.email.toLowerCase(), {
+            email: r.email.toLowerCase(),
+            emp_name: r.emp_name || r.email.split('@')[0],
+            emp_code: r.emp_code || '',
+            department: r.department || 'General',
+            designation: r.designation || '',
+            user_id: r.user_id || null
+          });
+        } else if (!existing.designation && r.designation) {
+          existing.designation = r.designation;
+        }
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => (a.emp_name || '').localeCompare(b.emp_name || ''));
+  }, [teamMasterData.roster, teamMasterData.records, monthlyMatrixData?.rows]);
+
+  // Direct Attendance Correction Modal State (Admin / HOD)
+  const [correctionModalOpen, setCorrectionModalOpen] = useState(false);
+  const [correctionTarget, setCorrectionTarget] = useState({
+    id: null,
+    email: '',
+    emp_name: '',
+    emp_code: '',
+    department: 'General',
+    designation: '',
+    attendance_date: getTodayDateString(),
+    in_time: '09:00',
+    out_time: '18:30',
+    status: 'PRESENT',
+    is_regularized: true,
+    remarks: ''
+  });
+  const [savingCorrection, setSavingCorrection] = useState(false);
+  const [correctionError, setCorrectionError] = useState(null);
+  const [empSearchQuery, setEmpSearchQuery] = useState('');
+  const [empDropdownOpen, setEmpDropdownOpen] = useState(false);
+  const empDropdownRef = useRef(null);
+
+  // Close employee search dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (empDropdownRef.current && !empDropdownRef.current.contains(e.target)) {
+        setEmpDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Filtered employees list for the Search & Select Combobox
+  const filteredEmployeesForModal = useMemo(() => {
+    if (!empSearchQuery || !empSearchQuery.trim()) {
+      return availableEmployees;
+    }
+    const q = empSearchQuery.toLowerCase().trim();
+    return availableEmployees.filter(emp => {
+      const name = (emp.emp_name || '').toLowerCase();
+      const code = (emp.emp_code || '').toLowerCase();
+      const dept = (emp.department || '').toLowerCase();
+      const desig = (emp.designation || '').toLowerCase();
+      const em = (emp.email || '').toLowerCase();
+      return name.includes(q) || code.includes(q) || dept.includes(q) || desig.includes(q) || em.includes(q);
+    });
+  }, [availableEmployees, empSearchQuery]);
+
+  const handleOpenDirectCorrectionModal = useCallback((record = null) => {
+    setCorrectionError(null);
+    setEmpDropdownOpen(false);
+    if (record) {
+      let inTimeStr = '';
+      let outTimeStr = '';
+      if (record.in_time) {
+        try {
+          const d = new Date(record.in_time);
+          if (!isNaN(d.getTime())) {
+            inTimeStr = d.toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false });
+          }
+        } catch {}
+      }
+      if (record.out_time) {
+        try {
+          const d = new Date(record.out_time);
+          if (!isNaN(d.getTime())) {
+            outTimeStr = d.toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false });
+          }
+        } catch {}
+      }
+
+      setCorrectionTarget({
+        id: record.id || null,
+        email: record.email || '',
+        emp_name: record.emp_name || '',
+        emp_code: record.emp_code || '',
+        department: record.department || 'General',
+        designation: record.designation || '',
+        attendance_date: record.attendance_date || teamStartDate || getTodayDateString(),
+        in_time: inTimeStr || (record.status === 'ABSENT' || record.status === 'WEEK_OFF' ? '' : '09:00'),
+        out_time: outTimeStr || (record.status === 'ABSENT' || record.status === 'WEEK_OFF' ? '' : '18:30'),
+        status: record.status || 'PRESENT',
+        is_regularized: record.is_regularized ?? true,
+        remarks: record.remarks || ''
+      });
+      setEmpSearchQuery(formatEmpDisplayName(record));
+    } else {
+      setCorrectionTarget({
+        id: null,
+        email: '',
+        emp_name: '',
+        emp_code: '',
+        department: 'General',
+        designation: '',
+        attendance_date: teamStartDate || getTodayDateString(),
+        in_time: '09:00',
+        out_time: '18:30',
+        status: 'PRESENT',
+        is_regularized: true,
+        remarks: 'Direct correction by Admin'
+      });
+      setEmpSearchQuery('');
+    }
+    setCorrectionModalOpen(true);
+  }, [teamStartDate, formatEmpDisplayName]);
+
+  const handleSaveCorrection = async () => {
+    if (!correctionTarget.email) {
+      setCorrectionError('Please select or specify an Employee Email.');
+      return;
+    }
+    if (!correctionTarget.attendance_date) {
+      setCorrectionError('Attendance Date is required.');
+      return;
+    }
+    setSavingCorrection(true);
+    setCorrectionError(null);
+    try {
+      const res = await directCorrectAttendanceRecord({
+        tenantId: effectiveTenantId,
+        userCompany,
+        email: correctionTarget.email,
+        empName: correctionTarget.emp_name,
+        empCode: correctionTarget.emp_code,
+        department: correctionTarget.department,
+        attendanceDate: correctionTarget.attendance_date,
+        inTime: correctionTarget.in_time,
+        outTime: correctionTarget.out_time,
+        status: correctionTarget.status,
+        isRegularized: correctionTarget.is_regularized,
+        remarks: correctionTarget.remarks,
+        correctedByName: userName || 'Admin',
+        correctedByEmail: userEmail || ''
+      });
+
+      if (res.success) {
+        setCorrectionModalOpen(false);
+        if (teamReportView === 'DAILY') {
+          fetchTeamMaster();
+        } else if (teamReportView === 'MONTHLY_MATRIX') {
+          fetchTeamMonthlyMatrix();
+        } else {
+          fetchTeamLeaveReport();
+        }
+        setLeaveToast({ type: 'success', message: res.message || 'Attendance updated successfully!' });
+      } else {
+        setCorrectionError(res.error || 'Failed to update attendance record.');
+      }
+    } catch (err) {
+      setCorrectionError(err.message || 'An error occurred while saving.');
+    } finally {
+      setSavingCorrection(false);
     }
   };
 
@@ -2557,11 +2794,15 @@ export default function AttendanceModule({
     let absent = 0;
     let regularized = 0;
     let weekOff = 0;
+    let lwp = 0;
+    let cpl = 0;
 
     list.forEach(r => {
       const rem = (r.remarks || '').toLowerCase();
-      if (r.is_regularized || r.status === 'REGULARIZED') {
-        regularized += 1;
+      if (r.status === 'LWP' || rem.includes('leave without pay') || rem.includes('lwp')) {
+        lwp += 1;
+      } else if (r.status === 'CPL' || rem.includes('compensatory') || rem.includes('comp off') || rem.includes('cpl')) {
+        cpl += 1;
       } else if (r.status === 'WEEK_OFF' || r.status === 'WO' || rem.includes('paid week off') || rem.includes('week off')) {
         weekOff += 1;
       } else if (r.status === 'PRESENT') {
@@ -2572,6 +2813,8 @@ export default function AttendanceModule({
         halfDay += 1;
       } else if (r.status === 'ABSENT' || r.status === 'MISSED_PUNCH') {
         absent += 1;
+      } else if (r.is_regularized || r.status === 'REGULARIZED') {
+        regularized += 1;
       }
     });
 
@@ -2583,7 +2826,9 @@ export default function AttendanceModule({
       totalHalfDay: halfDay,
       totalAbsent: absent,
       totalRegularized: regularized,
-      totalWeekOff: weekOff
+      totalWeekOff: weekOff,
+      totalLwp: lwp,
+      totalCpl: cpl
     };
   }, [filteredTeamRecords]);
 
@@ -2717,18 +2962,32 @@ export default function AttendanceModule({
 
   // Helper formatting for status badges
   const renderStatusBadge = (status, isRegularized = false, remarks = '') => {
-    if (isRegularized || status === 'REGULARIZED') {
+    const rem = (remarks || '').toLowerCase();
+    if (status === 'LWP' || rem.includes('leave without pay') || rem.includes('lwp')) {
       return (
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', padding: '0.2rem 0.6rem', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 600, background: '#e0e7ff', color: '#3730a3' }}>
-          <ShieldCheck size={12} /> Regularized
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', padding: '0.2rem 0.6rem', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 600, background: '#fef9c3', color: '#854d0e' }}>
+          <AlertCircle size={12} /> LWP (Leave Without Pay)
         </span>
       );
     }
-    const rem = (remarks || '').toLowerCase();
+    if (status === 'CPL' || rem.includes('compensatory') || rem.includes('comp off') || rem.includes('cpl')) {
+      return (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', padding: '0.2rem 0.6rem', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 600, background: '#ecfdf5', color: '#065f46' }}>
+          <Award size={12} /> CPL (Comp Off)
+        </span>
+      );
+    }
     if (status === 'WEEK_OFF' || status === 'WO' || rem.includes('paid week off') || rem.includes('week off')) {
       return (
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', padding: '0.2rem 0.6rem', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 600, background: '#f3e8ff', color: '#6b21a8' }}>
           <Calendar size={12} /> Week Off
+        </span>
+      );
+    }
+    if (status === 'REGULARIZED' || (isRegularized && status !== 'ABSENT' && status !== 'PRESENT' && status !== 'HALF_DAY')) {
+      return (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', padding: '0.2rem 0.6rem', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 600, background: '#e0e7ff', color: '#3730a3' }}>
+          <ShieldCheck size={12} /> Regularized
         </span>
       );
     }
@@ -5524,6 +5783,29 @@ export default function AttendanceModule({
                   <Download size={14} /> {teamReportView === 'DAILY' ? (teamStartDate !== teamEndDate ? 'Export Range CSV' : 'Export Daily CSV') : 'Export Monthly Excel / CSV'}
                 </button>
 
+                {(isAdmin || isHodOrManager) && (
+                  <button
+                    type="button"
+                    onClick={() => handleOpenDirectCorrectionModal(null)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.35rem',
+                      padding: '0.45rem 0.85rem',
+                      borderRadius: '8px',
+                      border: '1px solid var(--accent-color, #2563eb)',
+                      background: 'rgba(37, 99, 235, 0.08)',
+                      color: 'var(--accent-color, #2563eb)',
+                      fontSize: '0.82rem',
+                      fontWeight: 600,
+                      cursor: 'pointer'
+                    }}
+                    title="Add Manual Attendance / Direct Correction for Any Employee"
+                  >
+                    <Plus size={14} /> Add Manual Attendance
+                  </button>
+                )}
+
                 <TableViewToggle view={teamViewMode} onChange={setTeamViewMode} />
               </div>
             </div>
@@ -5571,6 +5853,14 @@ export default function AttendanceModule({
                 <div style={{ padding: '0.85rem', borderRadius: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', textAlign: 'center' }}>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', fontWeight: 600 }}>REGULARIZED</span>
                   <span style={{ fontSize: '1.35rem', fontWeight: 800, color: '#4f46e5' }}>{teamFilteredSummary.totalRegularized}</span>
+                </div>
+                <div style={{ padding: '0.85rem', borderRadius: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', textAlign: 'center' }}>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', fontWeight: 600 }}>LWP</span>
+                  <span style={{ fontSize: '1.35rem', fontWeight: 800, color: '#ca8a04' }}>{teamFilteredSummary.totalLwp || 0}</span>
+                </div>
+                <div style={{ padding: '0.85rem', borderRadius: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', textAlign: 'center' }}>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', fontWeight: 600 }}>CPL</span>
+                  <span style={{ fontSize: '1.35rem', fontWeight: 800, color: '#0d9488' }}>{teamFilteredSummary.totalCpl || 0}</span>
                 </div>
               </div>
 
@@ -5642,12 +5932,20 @@ export default function AttendanceModule({
                           </div>
                           <ColumnResizer colKey="regularization" isResizing={teamResizingCol === 'regularization'} onResizeStart={handleTeamResizeStart} onReset={resetTeamColWidth} />
                         </th>
+                        {(isAdmin || isHodOrManager) && (
+                          <th style={{ width: `${teamColWidths.actions || 120}px`, padding: '0.65rem 0.75rem', fontWeight: 600, position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle', textAlign: 'center' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', paddingRight: '8px' }}>
+                              <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25, fontSize: '0.78rem' }}>Action</span>
+                            </div>
+                            <ColumnResizer colKey="actions" isResizing={teamResizingCol === 'actions'} onResizeStart={handleTeamResizeStart} onReset={resetTeamColWidth} />
+                          </th>
+                        )}
                       </tr>
                     </thead>
                     <tbody>
                       {filteredTeamRecords.length === 0 ? (
                         <tr>
-                          <td colSpan={teamStartDate !== teamEndDate ? 10 : 9} style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                          <td colSpan={(teamStartDate !== teamEndDate ? 10 : 9) + ((isAdmin || isHodOrManager) ? 1 : 0)} style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
                             No records found for {teamStartDate === teamEndDate ? teamStartDate : `${teamStartDate} to ${teamEndDate}`}.
                           </td>
                         </tr>
@@ -5692,6 +5990,31 @@ export default function AttendanceModule({
                             <td style={{ width: `${teamColWidths.regularization}px`, padding: '0.75rem 1rem', fontSize: '0.75rem', color: 'var(--text-secondary)', boxSizing: 'border-box', wordBreak: 'break-word', whiteSpace: 'normal', lineHeight: 1.3, verticalAlign: 'top' }} title={r.is_regularized ? 'Yes (HOD Approved)' : 'No'}>
                               {r.is_regularized ? 'Yes (HOD Approved)' : 'No'}
                             </td>
+                            {(isAdmin || isHodOrManager) && (
+                              <td style={{ width: `${teamColWidths.actions || 120}px`, padding: '0.65rem 0.75rem', textAlign: 'center', verticalAlign: 'middle', boxSizing: 'border-box' }}>
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenDirectCorrectionModal(r)}
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '0.3rem',
+                                    padding: '0.35rem 0.65rem',
+                                    borderRadius: '6px',
+                                    border: '1px solid var(--accent-color, #2563eb)',
+                                    background: 'rgba(37, 99, 235, 0.08)',
+                                    color: 'var(--accent-color, #2563eb)',
+                                    fontSize: '0.76rem',
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    transition: 'all 0.15s ease'
+                                  }}
+                                  title="Directly correct this attendance record"
+                                >
+                                  <Edit2 size={12} /> Sahi Karein
+                                </button>
+                              </td>
+                            )}
                           </tr>
                         ))
                       )}
@@ -6289,8 +6612,12 @@ export default function AttendanceModule({
                                 cellColor = '#9333ea';
                                 cellFontWeight = 700;
                               } else if (day.code === 'LWP') {
-                                cellBg = '#f3f4f6';
-                                cellColor = '#4b5563';
+                                cellBg = '#fef9c3';
+                                cellColor = '#854d0e';
+                                cellFontWeight = 700;
+                              } else if (day.code === 'CPL') {
+                                cellBg = '#ecfdf5';
+                                cellColor = '#065f46';
                                 cellFontWeight = 700;
                               } else if (day.code === 'HD-L') {
                                 cellBg = '#ffedd5';
@@ -10213,6 +10540,448 @@ export default function AttendanceModule({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal 5: Direct Attendance Correction Modal (Admin / HOD) */}
+      {correctionModalOpen && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.65)',
+          zIndex: 9999,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '1rem',
+          backdropFilter: 'blur(3px)'
+        }}>
+          <div style={{
+            background: 'var(--bg-surface, #ffffff)',
+            borderRadius: '16px',
+            border: '1px solid var(--border-light, #e2e8f0)',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.08)',
+            width: '100%',
+            maxWidth: '560px',
+            maxHeight: '90vh',
+            overflowY: 'auto',
+            padding: '1.5rem',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '1.25rem'
+          }}>
+            {/* Modal Header */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', borderBottom: '1px solid var(--border-light, #e2e8f0)', paddingBottom: '0.85rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'rgba(37, 99, 235, 0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent-color, #2563eb)' }}>
+                  <Plus size={22} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                    + Add Manual Attendance
+                  </h3>
+                  <p style={{ margin: '0.15rem 0 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                    Admin / HOD Manual Attendance Entry & Override
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCorrectionModalOpen(false)}
+                disabled={savingCorrection}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--text-secondary)',
+                  cursor: 'pointer',
+                  padding: '0.25rem',
+                  borderRadius: '6px'
+                }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Error Banner */}
+            {correctionError && (
+              <div style={{
+                padding: '0.75rem 1rem',
+                borderRadius: '8px',
+                background: '#fef2f2',
+                border: '1px solid #fecaca',
+                color: '#b91c1c',
+                fontSize: '0.82rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem'
+              }}>
+                <AlertCircle size={15} />
+                <span>{correctionError}</span>
+              </div>
+            )}
+
+            {/* Employee Selection / Display with Search & Select Combobox */}
+            <div ref={empDropdownRef} style={{ position: 'relative' }}>
+              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>
+                Employee (Search & Select)
+              </label>
+
+              {/* Search input field */}
+              <div style={{ position: 'relative' }}>
+                <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)', pointerEvents: 'none' }} />
+                <input
+                  type="text"
+                  placeholder="Type name, Emp ID, department, or designation..."
+                  value={empSearchQuery}
+                  onFocus={() => setEmpDropdownOpen(true)}
+                  onChange={(e) => {
+                    setEmpSearchQuery(e.target.value);
+                    setEmpDropdownOpen(true);
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '0.55rem 2rem 0.55rem 2.1rem',
+                    borderRadius: '8px',
+                    border: '1px solid ' + (empDropdownOpen ? 'var(--accent-color, #2563eb)' : 'var(--border-light, #e2e8f0)'),
+                    background: 'var(--bg-primary, #f8fafc)',
+                    color: 'var(--text-primary)',
+                    fontSize: '0.85rem',
+                    outline: 'none',
+                    boxSizing: 'border-box'
+                  }}
+                />
+                {empSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEmpSearchQuery('');
+                      setCorrectionTarget(prev => ({ ...prev, email: '', emp_name: '', emp_code: '', department: '', designation: '' }));
+                      setEmpDropdownOpen(true);
+                    }}
+                    style={{
+                      position: 'absolute',
+                      right: '10px',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      background: 'transparent',
+                      border: 'none',
+                      color: 'var(--text-secondary)',
+                      cursor: 'pointer',
+                      padding: 0
+                    }}
+                    title="Clear search"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+
+              {/* Selected Employee summary card (Shows Name without duplicate ID, and Department • Designation) */}
+              {correctionTarget.email && (
+                <div style={{
+                  marginTop: '0.45rem',
+                  padding: '0.65rem 0.85rem',
+                  borderRadius: '8px',
+                  background: 'rgba(37, 99, 235, 0.08)',
+                  border: '1px solid rgba(37, 99, 235, 0.25)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '0.5rem'
+                }}>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--text-primary)' }}>
+                      {formatEmpDisplayName(correctionTarget)}
+                    </div>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--accent-color, #2563eb)', fontWeight: 600, marginTop: '0.1rem' }}>
+                      {formatEmpSubDetails(correctionTarget)}
+                    </div>
+                  </div>
+                  <span style={{ fontSize: '0.72rem', padding: '0.2rem 0.5rem', borderRadius: '6px', background: '#dcfce7', color: '#166534', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                    <Check size={12} /> Selected
+                  </span>
+                </div>
+              )}
+
+              {/* Floating filtered results dropdown */}
+              {empDropdownOpen && (
+                <div style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: 0,
+                  right: 0,
+                  marginTop: '4px',
+                  background: 'var(--bg-surface, #ffffff)',
+                  border: '1px solid var(--border-light, #e2e8f0)',
+                  borderRadius: '10px',
+                  boxShadow: '0 12px 24px -4px rgba(0, 0, 0, 0.15), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
+                  maxHeight: '220px',
+                  overflowY: 'auto',
+                  zIndex: 100
+                }}>
+                  {filteredEmployeesForModal.length === 0 ? (
+                    <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.82rem' }}>
+                      Koi employee nahi mila {empSearchQuery ? `("${empSearchQuery}")` : ''}
+                    </div>
+                  ) : (
+                    filteredEmployeesForModal.map(emp => {
+                      const isSelected = correctionTarget.email === emp.email;
+                      return (
+                        <div
+                          key={emp.email}
+                          onClick={() => {
+                            setCorrectionTarget(prev => ({
+                              ...prev,
+                              email: emp.email,
+                              emp_name: emp.emp_name,
+                              emp_code: emp.emp_code,
+                              department: emp.department,
+                              designation: emp.designation
+                            }));
+                            setEmpSearchQuery(formatEmpDisplayName(emp));
+                            setEmpDropdownOpen(false);
+                          }}
+                          style={{
+                            padding: '0.65rem 0.85rem',
+                            borderBottom: '1px solid var(--border-light, #f1f5f9)',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            backgroundColor: isSelected ? 'rgba(37, 99, 235, 0.08)' : 'transparent',
+                            transition: 'background-color 0.15s ease'
+                          }}
+                          onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.backgroundColor = 'var(--bg-primary, #f8fafc)'; }}
+                          onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.backgroundColor = 'transparent'; }}
+                        >
+                          <div>
+                            <div style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--text-primary)' }}>
+                              {formatEmpDisplayName(emp)}
+                            </div>
+                            <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
+                              {formatEmpSubDetails(emp)}
+                            </div>
+                          </div>
+                          {isSelected && (
+                            <Check size={15} color="var(--accent-color, #2563eb)" />
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Date & Status Grid */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.85rem' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>
+                  Attendance Date
+                </label>
+                <input
+                  type="date"
+                  value={correctionTarget.attendance_date}
+                  onChange={(e) => setCorrectionTarget(prev => ({ ...prev, attendance_date: e.target.value }))}
+                  style={{
+                    width: '100%',
+                    padding: '0.55rem 0.75rem',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-light, #e2e8f0)',
+                    background: 'var(--bg-primary, #f8fafc)',
+                    color: 'var(--text-primary)',
+                    fontSize: '0.85rem',
+                    outline: 'none',
+                    boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>
+                  Attendance Status
+                </label>
+                <select
+                  value={correctionTarget.status}
+                  onChange={(e) => {
+                    const st = e.target.value;
+                    const isNoPunch = st === 'ABSENT' || st === 'WEEK_OFF' || st === 'LWP' || st === 'CPL';
+                    setCorrectionTarget(prev => ({
+                      ...prev,
+                      status: st,
+                      in_time: isNoPunch ? '' : (prev.in_time || '09:00'),
+                      out_time: isNoPunch ? '' : (prev.out_time || '18:30')
+                    }));
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '0.55rem 0.75rem',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-light, #e2e8f0)',
+                    background: 'var(--bg-primary, #f8fafc)',
+                    color: 'var(--text-primary)',
+                    fontSize: '0.85rem',
+                    outline: 'none',
+                    boxSizing: 'border-box'
+                  }}
+                >
+                  <option value="PRESENT">🟢 Present (Full Day)</option>
+                  <option value="HALF_DAY">🟠 Half Day</option>
+                  <option value="ABSENT">🔴 Absent</option>
+                  <option value="REGULARIZED">🔵 Regularized (On Duty / Approved)</option>
+                  <option value="WEEK_OFF">🟣 Week Off</option>
+                  <option value="LWP">🟡 LWP (Leave Without Pay)</option>
+                  <option value="CPL">🌴 CPL (Compensatory Off / Leave)</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Punch In / Out Times (Enabled for Present / Half Day / Regularized) */}
+            {correctionTarget.status !== 'ABSENT' && correctionTarget.status !== 'WEEK_OFF' && correctionTarget.status !== 'LWP' && correctionTarget.status !== 'CPL' ? (
+              <div style={{
+                background: 'var(--bg-primary, #f8fafc)',
+                padding: '0.85rem',
+                borderRadius: '10px',
+                border: '1px solid var(--border-light, #e2e8f0)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.75rem'
+              }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.85rem' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#16a34a', marginBottom: '0.35rem' }}>
+                      Punch In Time (IST)
+                    </label>
+                    <input
+                      type="time"
+                      value={correctionTarget.in_time}
+                      onChange={(e) => setCorrectionTarget(prev => ({ ...prev, in_time: e.target.value }))}
+                      style={{
+                        width: '100%',
+                        padding: '0.55rem 0.75rem',
+                        borderRadius: '8px',
+                        border: '1px solid var(--border-light, #e2e8f0)',
+                        background: 'var(--bg-surface, #ffffff)',
+                        color: 'var(--text-primary)',
+                        fontSize: '0.85rem',
+                        outline: 'none',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#dc2626', marginBottom: '0.35rem' }}>
+                      Punch Out Time (IST)
+                    </label>
+                    <input
+                      type="time"
+                      value={correctionTarget.out_time}
+                      onChange={(e) => setCorrectionTarget(prev => ({ ...prev, out_time: e.target.value }))}
+                      style={{
+                        width: '100%',
+                        padding: '0.55rem 0.75rem',
+                        borderRadius: '8px',
+                        border: '1px solid var(--border-light, #e2e8f0)',
+                        background: 'var(--bg-surface, #ffffff)',
+                        color: 'var(--text-primary)',
+                        fontSize: '0.85rem',
+                        outline: 'none',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <Info size={13} />
+                  <span>Punch Out समय डालने पर working duration अपने आप कैलकुलेट हो जाएगा।</span>
+                </div>
+              </div>
+            ) : (
+              <div style={{ padding: '0.75rem 1rem', borderRadius: '8px', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                {correctionTarget.status === 'ABSENT' && '🔴 Absent स्टेटस में Punch In / Out समय खाली रखा जाएगा।'}
+                {correctionTarget.status === 'WEEK_OFF' && '🟣 Week Off स्टेटस में Punch In / Out समय खाली रखा जाएगा।'}
+                {correctionTarget.status === 'LWP' && '🟡 LWP (Leave Without Pay) स्टेटस में Punch In / Out समय खाली रखा जाएगा।'}
+                {correctionTarget.status === 'CPL' && '🌴 CPL (Compensatory Off / Leave) स्टेटस में Punch In / Out समय खाली रखा जाएगा।'}
+              </div>
+            )}
+
+            {/* Remarks / Reason */}
+            <div>
+              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>
+                Correction Reason / Admin Remarks
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. Biometric machine glitch / On-field duty / Admin approval"
+                value={correctionTarget.remarks}
+                onChange={(e) => setCorrectionTarget(prev => ({ ...prev, remarks: e.target.value }))}
+                style={{
+                  width: '100%',
+                  padding: '0.55rem 0.75rem',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-light, #e2e8f0)',
+                  background: 'var(--bg-primary, #f8fafc)',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.85rem',
+                  outline: 'none',
+                  boxSizing: 'border-box'
+                }}
+              />
+            </div>
+
+            {/* Modal Actions */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', borderTop: '1px solid var(--border-light, #e2e8f0)', paddingTop: '1rem' }}>
+              <button
+                type="button"
+                onClick={() => setCorrectionModalOpen(false)}
+                disabled={savingCorrection}
+                style={{
+                  padding: '0.5rem 1rem',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-light, #e2e8f0)',
+                  background: 'transparent',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSaveCorrection}
+                disabled={savingCorrection}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  padding: '0.5rem 1.25rem',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: 'var(--accent-color, #2563eb)',
+                  color: '#ffffff',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  cursor: savingCorrection ? 'not-allowed' : 'pointer',
+                  opacity: savingCorrection ? 0.7 : 1
+                }}
+              >
+                {savingCorrection ? (
+                  <>
+                    <RefreshCw size={14} className="animate-spin" /> Saving...
+                  </>
+                ) : (
+                  <>
+                    <Check size={15} /> Save & Sahi Karein
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

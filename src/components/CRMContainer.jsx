@@ -493,7 +493,7 @@ export default function CRMContainer({
       const firstAllowed = Object.keys(moduleAccess || {}).find(k => moduleAccess[k]?.view === true);
       return firstAllowed || 'leads';
     }
-    if (['sessions', 'shift-monitoring', 'shift-analytics', 'breakdown'].includes(path) || path === 'settings' || (path && path.startsWith('settings/'))) {
+    if (['sessions', 'shift-monitoring', 'shift-analytics', 'breakdown', 'branches', 'branch', 'headoffice', 'head-office'].includes(path) || path === 'settings' || (path && path.startsWith('settings/'))) {
       return 'settings';
     }
     if (path === 'location-master' || path === 'location_territory') {
@@ -840,7 +840,7 @@ export default function CRMContainer({
       if (['products', 'product-list', 'products-list'].includes(sub)) return 'products';
       if (['crm-config', 'crm_config'].includes(sub)) return 'crm';
       if (['custom-fields', 'custom_fields', 'message-templates', 'whatsapp-templates'].includes(sub)) return 'business';
-      if (['business-profile', 'branches'].includes(sub)) return 'business';
+      if (['business', 'business-profile', 'branches', 'branch', 'headoffice', 'head-office'].includes(sub)) return 'business';
       if (['alerts', 'notification'].includes(sub)) return 'notifications';
       if (['manage-departments', 'dept'].includes(sub)) return 'departments';
       if (['performance', 'target'].includes(sub)) return 'targets';
@@ -855,7 +855,7 @@ export default function CRMContainer({
       if (['products', 'product-list', 'products-list'].includes(queryTab)) return 'products';
       if (['crm-config', 'crm_config'].includes(queryTab)) return 'crm';
       if (['custom-fields', 'custom_fields', 'message-templates', 'whatsapp-templates'].includes(queryTab)) return 'business';
-      if (['business-profile', 'branches'].includes(queryTab)) return 'business';
+      if (['business', 'business-profile', 'branches', 'branch', 'headoffice', 'head-office'].includes(queryTab)) return 'business';
       if (['alerts', 'notification'].includes(queryTab)) return 'notifications';
       if (['manage-departments', 'dept'].includes(queryTab)) return 'departments';
       if (['performance', 'target'].includes(queryTab)) return 'targets';
@@ -1203,8 +1203,12 @@ export default function CRMContainer({
       }
     }
 
-    // Sync CRM & Lead Configurations from Supabase Database
-    fetch('/api/settings/crm-config')
+    // Sync CRM & Lead Configurations from Supabase Database (Tenant & Branch Aware)
+    const crmConfigParams = new URLSearchParams();
+    if (userCompany) crmConfigParams.set('company', userCompany);
+    if (effectiveTenantId) crmConfigParams.set('tenantId', effectiveTenantId);
+    const crmConfigUrl = `/api/settings/crm-config${crmConfigParams.toString() ? `?${crmConfigParams.toString()}` : ''}`;
+    fetch(crmConfigUrl)
       .then(res => res.json())
       .then(data => {
         if (data?.config) {
@@ -1249,7 +1253,7 @@ export default function CRMContainer({
         }
       })
       .catch(() => {});
-  }, []);
+  }, [userCompany, effectiveTenantId]);
 
   const DEFAULT_PIPELINE_STAGES = [
     '01 - New Stage', '02 - Contact Stage', '03 - Qualification Stage', 
@@ -3033,6 +3037,35 @@ export default function CRMContainer({
       }
       tab = 'workplace';
       setWorkflowMenuExpanded(true);
+    } else if (['saas-master', 'saas_master', 'saas-studio', 'saas_studio', 'saasstudio'].includes(tab) || (tab && (tab.startsWith('saas-master/') || tab.startsWith('saas_master/') || tab.startsWith('saas-studio/') || tab.startsWith('saas_studio/')))) {
+      let sub = '';
+      if (tab.includes('/')) {
+        sub = tab.split('/')[1] || '';
+      } else {
+        sub = params.get('tab') || params.get('subtab') || 'pricing';
+      }
+      if (sub) setSaasSubTab(sub.toLowerCase());
+      tab = isMasterAdmin ? 'saas_master' : 'dashboard';
+      if (isMasterAdmin) setSaasMenuExpanded(true);
+    } else if (tab === 'config-master' || tab === 'config_master' || tab === 'configmaster' || tab === 'admin_message_config' || tab === 'admin-message-config' || tab === 'system-health' || tab === 'system_health' || (tab && (tab.startsWith('config-master/') || tab.startsWith('config_master/') || tab.startsWith('system-health/') || tab.startsWith('system_health/')))) {
+      let sub = '';
+      let healthSub = '';
+      if (tab.startsWith('config-master/') || tab.startsWith('config_master/')) {
+        const parts = tab.split('/');
+        sub = parts[1] || '';
+        healthSub = parts[2] || '';
+      } else if (tab.startsWith('system-health/') || tab.startsWith('system_health/')) {
+        sub = 'status';
+        healthSub = tab.split('/')[1] || '';
+      } else {
+        sub = params.get('tab') || params.get('subtab') || 'messages';
+        healthSub = params.get('health_tab') || '';
+      }
+      if (sub === 'health' || sub === 'logs' || tab === 'system-health' || tab === 'system_health') sub = 'status';
+      if (sub) setConfigMasterSubTab(sub.toLowerCase());
+      if (healthSub) setConfigMasterHealthSubTab(healthSub.toLowerCase());
+      tab = isMasterAdmin ? 'config_master' : 'dashboard';
+      if (isMasterAdmin) setConfigMasterMenuExpanded(true);
     }
     if (tab) {
       setActiveTab(tab);
@@ -3178,7 +3211,17 @@ export default function CRMContainer({
         }
         tab = 'workplace';
         setWorkflowMenuExpanded(true);
-      } else if (tab === 'config-master' || tab === 'config_master' || tab === 'system-health' || tab === 'system_health' || (tab && (tab.startsWith('config-master/') || tab.startsWith('config_master/') || tab.startsWith('system-health/') || tab.startsWith('system_health/')))) {
+      } else if (['saas-master', 'saas_master', 'saas-studio', 'saas_studio', 'saasstudio'].includes(tab) || (tab && (tab.startsWith('saas-master/') || tab.startsWith('saas_master/') || tab.startsWith('saas-studio/') || tab.startsWith('saas_studio/')))) {
+        let sub = '';
+        if (tab.includes('/')) {
+          sub = tab.split('/')[1] || '';
+        } else {
+          sub = params.get('tab') || params.get('subtab') || 'pricing';
+        }
+        if (sub) setSaasSubTab(sub.toLowerCase());
+        tab = isMasterAdmin ? 'saas_master' : 'dashboard';
+        if (isMasterAdmin) setSaasMenuExpanded(true);
+      } else if (tab === 'config-master' || tab === 'config_master' || tab === 'configmaster' || tab === 'admin_message_config' || tab === 'admin-message-config' || tab === 'system-health' || tab === 'system_health' || (tab && (tab.startsWith('config-master/') || tab.startsWith('config_master/') || tab.startsWith('system-health/') || tab.startsWith('system_health/')))) {
         let sub = '';
         let healthSub = '';
         if (tab.startsWith('config-master/') || tab.startsWith('config_master/')) {
@@ -3195,8 +3238,8 @@ export default function CRMContainer({
         if (sub === 'health' || sub === 'logs' || tab === 'system-health' || tab === 'system_health') sub = 'status';
         if (sub) setConfigMasterSubTab(sub.toLowerCase());
         if (healthSub) setConfigMasterHealthSubTab(healthSub.toLowerCase());
-        tab = 'config_master';
-        setConfigMasterMenuExpanded(true);
+        tab = isMasterAdmin ? 'config_master' : 'dashboard';
+        if (isMasterAdmin) setConfigMasterMenuExpanded(true);
       }
       
       if (!tab) {
