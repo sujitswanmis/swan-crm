@@ -419,7 +419,7 @@ export default function RegisterEndCustomerModal({
     setErrorMsg('');
 
     if (!END_CUSTOMER_COMPANIES.includes(formData.our_company)) {
-      setErrorMsg('Please select Company Name (NSMLR or NSTLP).');
+      setErrorMsg('Please select Company / Branch Name.');
       return;
     }
     if (!formData.full_name.trim()) {

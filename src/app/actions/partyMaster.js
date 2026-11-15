@@ -462,7 +462,20 @@ export async function createPartyMaster(partyData, tenantId = DEFAULT_TENANT_ID,
 
   const resolvedTenantUuid = await resolveDbTenantUuid(tenantId);
   const rawComp = cleanPartyData.our_company || (typeof tenantId === 'string' && ['NSMLR', 'NSTLP', 'NSTL'].includes(tenantId.toUpperCase().trim()) ? tenantId : 'NSMLR');
-  const branchCode = ['NSTL', 'NSTLP'].includes(String(rawComp).toUpperCase().trim()) ? 'NSTLP' : 'NSMLR';
+  const cleanCompUpper = String(rawComp || '').toUpperCase().trim();
+  let branchCode = 'NSMLR';
+  if (['NSTL', 'NSTLP'].includes(cleanCompUpper)) {
+    branchCode = 'NSTLP';
+  } else if (cleanCompUpper.startsWith('NSE') || cleanCompUpper.includes('ENTERPRISES')) {
+    const digitMatch = cleanCompUpper.match(/\d+/);
+    branchCode = digitMatch ? `NSE${digitMatch[0]}` : cleanCompUpper.replace(/[^A-Z0-9]/g, '');
+  } else if (cleanCompUpper.includes('AUTOCOMP') || cleanCompUpper.startsWith('NSACPL')) {
+    branchCode = 'NSACPL1';
+  } else if (cleanCompUpper === 'NSG' || cleanCompUpper.includes('HEADQUARTER')) {
+    branchCode = 'NSG';
+  } else if (cleanCompUpper && cleanCompUpper !== 'NSMLR') {
+    branchCode = cleanCompUpper.replace(/[^A-Z0-9]/g, '').slice(0, 10) || 'NSMLR';
+  }
 
   // Generate branch-prefixed atomic PTY code (e.g., PTY-NSMLR-100001)
   const partyCode = await generateBranchPartyCode(adminClient, branchCode);

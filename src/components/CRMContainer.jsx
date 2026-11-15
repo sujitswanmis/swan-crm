@@ -46,6 +46,7 @@ import { sameLeadList } from '@/utils/sameLeadList';
 import { getReportingTeam, getLeadAssignees, isLeadInAssignmentScope, getLeadStageKey, getLeadStageAccess } from '@/utils/reportingHierarchy';
 import { isCompleteLeadCache, matchesLeadCacheContext, mergeLeadCacheForDisplay } from '@/utils/leadCachePolicy';
 import { getUserBranchAccess, evaluateLeadCompanyScope, matchesCompanyToken } from '@/utils/branchAccess';
+import { getTenantBranches } from '@/app/actions/tenantBranches';
 
 const OfflineBlockScreen = dynamic(() => import('./Offline/OfflineBlockScreen'));
 const AnalyticsDashboard = dynamic(() => import('@/components/AnalyticsDashboard'), { loading: () => <WorkspaceSkeleton variant="analytics" /> });
@@ -429,14 +430,38 @@ export default function CRMContainer({
   const isSwanWorkspace = useMemo(() => {
     return !userCompany || SWAN_COMPANIES.includes(String(userCompany).toLowerCase().trim()) || (userEmail && userEmail.toLowerCase().endsWith('@newswangroup.com'));
   }, [userCompany, userEmail]);
+
+  const [liveTenantBranches, setLiveTenantBranches] = useState([]);
+
+  const loadLiveTenantBranches = useCallback(async () => {
+    try {
+      const res = await getTenantBranches(userCompany || 'New Swan Group');
+      if (res?.success && Array.isArray(res.branches)) {
+        setLiveTenantBranches(res.branches.filter(b => b.is_active !== false));
+      }
+    } catch (e) {
+      console.warn('Failed to load live tenant branches in CRMContainer:', e);
+    }
+  }, [userCompany]);
+
+  useEffect(() => {
+    loadLiveTenantBranches();
+    const handleBranchesUpdated = () => {
+      loadLiveTenantBranches();
+    };
+    window.addEventListener('tenant_branches_updated', handleBranchesUpdated);
+    return () => window.removeEventListener('tenant_branches_updated', handleBranchesUpdated);
+  }, [loadLiveTenantBranches]);
+
   const userBranchAccess = useMemo(() => getUserBranchAccess({
     moduleAccess,
     userCompany,
     userBranchName: moduleAccess?.branch_name || '',
     userRole,
     isMasterAdmin,
-    isSwanWorkspace
-  }), [moduleAccess, userCompany, userRole, isMasterAdmin, isSwanWorkspace]);
+    isSwanWorkspace,
+    dynamicBranches: liveTenantBranches
+  }), [moduleAccess, userCompany, userRole, isMasterAdmin, isSwanWorkspace, liveTenantBranches]);
   const branchScopeKey = JSON.stringify({
     scope: userBranchAccess.scope,
     allowed: userBranchAccess.allowedCompanies
@@ -6273,20 +6298,31 @@ export default function CRMContainer({
                   style={{ padding: '0.38rem 0.65rem', borderRadius: '8px', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: 600, outline: 'none', cursor: 'pointer', flexShrink: 0 }}
                 >
                   {(() => {
-                    if (!isSwanWorkspace && !userBranchAccess.isMultiBranch && userCompany) {
+                    if (!isSwanWorkspace && !userBranchAccess.isMultiBranch && userCompany && liveTenantBranches.length <= 1) {
                       return <option value={userCompany}>{userCompany}</option>;
                     }
                     const opts = userBranchAccess.displayFilterOptions.length > 0
                       ? userBranchAccess.displayFilterOptions
-                      : ['NSMLR', 'NSTLP'];
+                      : ['NSG', 'NSMLR', 'NSTLP', 'NSE1', 'NSE2', 'NSE3', 'NSE4', 'NSACPL1'];
                     return (
                       <>
                         <option value="All">
                           {userBranchAccess.isAllBranches ? '🏢 All Companies' : `🏢 All Assigned (${opts.length})`}
                         </option>
-                        {opts.map(opt => (
-                          <option key={opt} value={opt}>{opt}</option>
-                        ))}
+                        {opts.map(opt => {
+                          const matchedBranch = liveTenantBranches.find(b => 
+                            b.custom_code === opt || b.branch_code === opt || b.legacy_code === opt || b.branch_name === opt
+                          );
+                          const cleanBranchName = matchedBranch?.branch_name
+                            ? matchedBranch.branch_name.replace(/^New Swan\s+/i, '').replace(/^SuPuja Creations?\s+/i, '')
+                            : '';
+                          const label = cleanBranchName && cleanBranchName !== opt
+                            ? `${opt} (${cleanBranchName})`
+                            : opt;
+                          return (
+                            <option key={opt} value={opt}>{label}</option>
+                          );
+                        })}
                       </>
                     );
                   })()}

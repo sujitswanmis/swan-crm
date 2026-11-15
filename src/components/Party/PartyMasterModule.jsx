@@ -233,7 +233,7 @@ export default function PartyMasterModule({
   }, [branchAccess, userCompany, moduleAccess, userRole, isSwanWorkspace, effectiveTenantId]);
 
   const scopedCompanyOptions = useMemo(() => (
-    getScopedBranchFilterOptions(effectiveBranchAccess, isSwanWorkspace ? ['NSMLR', 'NSTLP'] : [])
+    getScopedBranchFilterOptions(effectiveBranchAccess, isSwanWorkspace ? ['NSG', 'NSMLR', 'NSTLP', 'NSE1', 'NSE2', 'NSE3', 'NSE4', 'NSACPL1'] : [])
   ), [effectiveBranchAccess, isSwanWorkspace]);
 
   const defaultCompanyToken = scopedCompanyOptions[0] || effectiveBranchAccess?.primaryCompany || (isSwanWorkspace ? 'NSMLR' : '');

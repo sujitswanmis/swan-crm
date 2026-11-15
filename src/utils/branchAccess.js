@@ -18,18 +18,55 @@ export const SWAN_WORKSPACE_COMPANIES = [
 ];
 
 export const SWAN_ALL_LEAD_COMPANIES = [
+  'NSG',
+  'New Swan Group',
+  'New Swan Group (Headquarters)',
   'NSMLR',
+  'New Swan Multitech Limited Raian',
   'NSTLP',
   'NSTL',
-  'New Swan Group',
+  'New Swan Technologies Limited Paharuwal',
   'Swan Agro',
+  'NSE1',
   'NSE-1',
+  'NSE01',
+  'New Swan Enterprises - 1',
+  'NSE2',
   'NSE-2',
+  'New Swan Enterprises - 2',
+  'NSE3',
+  'NSE-3',
+  'New Swan Enterprises - 3',
+  'NSE4',
+  'NSE-4',
+  'New Swan Enterprises - 4',
   'NSE-6',
   'NSCPL',
+  'NSACPL1',
   'NSACPL',
+  'New Swan Autocomp Pvt. Ltd.',
+  'TNT00002-B0001',
+  'TNT00002-B0002',
+  'TNT00002-B0003',
+  'TNT00002-B0004',
+  'TNT00002-B0005',
+  'TNT00002-B0006',
+  'TNT00002-B0007',
+  'TNT00002-B0008',
   ''
 ];
+
+export const KNOWN_BRANCH_ALIAS_MAP = {
+  'NSG': ['NSG', 'NEW SWAN GROUP', 'NEW SWAN GROUP (HEADQUARTERS)', 'TNT00002-B0001', 'BR_NSG_HQ_001'],
+  'NSMLR': ['NSMLR', 'NEW SWAN MULTITECH LIMITED RAIAN', 'TNT00002-B0002', 'BR_NSMLR_001'],
+  'NSTLP': ['NSTLP', 'NSTL', 'NEW SWAN TECHNOLOGIES LIMITED PAHARUWAL', 'TNT00002-B0003', 'BR_NSTLP_001'],
+  'NSE1': ['NSE1', 'NSE-1', 'NSE01', 'NEW SWAN ENTERPRISES - 1', 'TNT00002-B0004', 'BR_NSE1_001'],
+  'NSE2': ['NSE2', 'NSE-2', 'NEW SWAN ENTERPRISES - 2', 'TNT00002-B0005', 'BR_NSE2_001'],
+  'NSE3': ['NSE3', 'NSE-3', 'NEW SWAN ENTERPRISES - 3', 'TNT00002-B0006', 'BR_NSE3_001'],
+  'NSE4': ['NSE4', 'NSE-4', 'NEW SWAN ENTERPRISES - 4', 'TNT00002-B0007', 'BR_NSE4_001'],
+  'NSACPL1': ['NSACPL1', 'NSACPL', 'NEW SWAN AUTOCOMP PVT. LTD.', 'TNT00002-B0008'],
+  'SUPUJA_CREATIONS': ['SUPUJA_CREATIONS', 'SUPUJA CREATIONS', 'SUPUJA CREATION', 'HQ-MAIN-01', 'TNT00001-B0001', 'BR_HQ_1791830835870', 'BR_HQ_1792173406378']
+};
 
 const TENANT_DEFAULT_CUSTOM_CODES = new Set(['HQ', 'HQ-MAIN-01', 'SUPUJA_CREATIONS', 'NSG']);
 
@@ -48,7 +85,12 @@ export function expandCompanyAliases(companyToken) {
   if (!raw) return [];
   const upper = raw.toUpperCase();
   if (upper === 'NSTL' || upper === 'NSTLP') {
-    return ['NSTL', 'NSTLP'];
+    return ['NSTL', 'NSTLP', 'New Swan Technologies Limited Paharuwal', 'TNT00002-B0003'];
+  }
+  for (const [canonical, aliases] of Object.entries(KNOWN_BRANCH_ALIAS_MAP)) {
+    if (canonical.toUpperCase() === upper || aliases.some(a => a.toUpperCase() === upper)) {
+      return Array.from(new Set([raw, canonical, ...aliases]));
+    }
   }
   return [raw];
 }
@@ -58,10 +100,13 @@ export function matchesCompanyToken(targetCompany, allowedTokens = []) {
   return allowedTokens.some(token => {
     const cleanToken = String(token || '').trim().toLowerCase();
     if (!cleanToken) return cleanTarget === '';
+    if (cleanToken === cleanTarget) return true;
     if (cleanToken === 'nstl' || cleanToken === 'nstlp') {
       return cleanTarget === 'nstl' || cleanTarget === 'nstlp';
     }
-    return cleanTarget === cleanToken;
+    // Check if target matches any alias of the allowed token
+    const tokenAliases = expandCompanyAliases(token).map(t => String(t || '').trim().toLowerCase());
+    return tokenAliases.includes(cleanTarget);
   });
 }
 
@@ -116,33 +161,51 @@ export function getUserBranchAccess(params = {}, tenantHint = null) {
   const primaryCompany = String(userCompany || '').trim();
   const primaryBranchName = String(userBranchName || moduleAccess?.branch_name || '').trim();
 
+  const dynamicBranches = Array.isArray(opts.dynamicBranches) && opts.dynamicBranches.length > 0
+    ? opts.dynamicBranches
+    : null;
+
+  let dynamicBranchTokens = [];
+  if (dynamicBranches) {
+    dynamicBranchTokens = Array.from(new Set(
+      dynamicBranches.map(b => String(b.custom_code || b.legacy_code || b.branch_code || '').trim()).filter(Boolean)
+    ));
+  }
+
   if (isAllBranches) {
-    const swanHeaderOptions = ['NSMLR', 'NSTLP'];
+    const swanHeaderOptions = dynamicBranchTokens.length > 0
+      ? dynamicBranchTokens
+      : (isSwanWorkspace
+          ? ['NSG', 'NSMLR', 'NSTLP', 'NSE1', 'NSE2', 'NSE3', 'NSE4', 'NSACPL1']
+          : (primaryCompany ? [primaryCompany] : []));
     const customOptions = [];
     for (const c of [primaryCompany, ...rawBranches]) {
       if (!c || c.toUpperCase() === 'ALL') continue;
       const upper = c.toUpperCase();
-      if (isSwanWorkspace && !['NSMLR', 'NSTLP', 'NSTL', 'NEW SWAN GROUP'].includes(upper)) {
+      if (!swanHeaderOptions.some(x => x.toUpperCase() === upper)) {
         if (!customOptions.some(x => x.toUpperCase() === upper)) customOptions.push(c);
       }
     }
+    const allAllowedCompanies = Array.from(new Set([
+      ...(isSwanWorkspace ? SWAN_ALL_LEAD_COMPANIES : expandCompanyAliases(primaryCompany)),
+      ...swanHeaderOptions,
+      ...customOptions,
+      ...(dynamicBranches ? dynamicBranches.map(b => b.branch_name).filter(Boolean) : []),
+      ...(dynamicBranches ? dynamicBranches.map(b => b.branch_code).filter(Boolean) : [])
+    ]));
+
     return {
       scope: 'ALL',
       isAdminUser,
       isAllBranches: true,
       isMultiBranch: true,
       primaryCompany,
-      allowedCompanies: isSwanWorkspace
-        ? [...SWAN_ALL_LEAD_COMPANIES, ...customOptions]
-        : expandCompanyAliases(primaryCompany),
+      allowedCompanies: allAllowedCompanies,
       allowedBranchNames: ['All Branches'],
       allowedBranchCodes: ['ALL'],
-      displayFilterOptions: isSwanWorkspace ? [...swanHeaderOptions, ...customOptions] : (primaryCompany ? [primaryCompany] : []),
+      displayFilterOptions: [...swanHeaderOptions, ...customOptions],
       matchesLeadCompany: (leadCompany) => {
-        if (isSwanWorkspace) {
-          return matchesCompanyToken(leadCompany, [...SWAN_ALL_LEAD_COMPANIES, ...customOptions]);
-        }
-        return !primaryCompany || matchesCompanyToken(leadCompany, expandCompanyAliases(primaryCompany));
+        return matchesCompanyToken(leadCompany, allAllowedCompanies);
       }
     };
   }
@@ -333,7 +396,7 @@ export function matchesUserBranchMembership(employeeRow, branchAccess = null, ac
 /**
  * Helper to return normalized Company/Branch dropdown options based on branchAccess.
  */
-export function getScopedBranchFilterOptions(branchAccess = null, fallbackOptions = ['NSMLR', 'NSTLP']) {
+export function getScopedBranchFilterOptions(branchAccess = null, fallbackOptions = ['NSG', 'NSMLR', 'NSTLP', 'NSE1', 'NSE2', 'NSE3', 'NSE4', 'NSACPL1']) {
   if (!branchAccess) return fallbackOptions;
   const opts = Array.isArray(branchAccess.displayFilterOptions)
     ? branchAccess.displayFilterOptions.filter(Boolean)

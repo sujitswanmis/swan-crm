@@ -235,6 +235,9 @@ export default function BusinessProfile({ userCompany = '' }) {
       if (res.success) {
         setShowBranchModal(false);
         await loadBranches();
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('tenant_branches_updated', { detail: { company: effectiveCompany } }));
+        }
       } else {
         setBranchModalError(res.error || 'Failed to save branch.');
       }
@@ -253,6 +256,9 @@ export default function BusinessProfile({ userCompany = '' }) {
       const res = await deleteTenantBranch(branchId, effectiveCompany);
       if (res.success) {
         await loadBranches();
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('tenant_branches_updated', { detail: { company: effectiveCompany } }));
+        }
       }
     } catch (err) {
       console.error('Delete branch error:', err);
@@ -715,7 +721,7 @@ export default function BusinessProfile({ userCompany = '' }) {
                             </div>
                           </td>
                           <td style={{ padding: '0.75rem 0.85rem' }}>
-                            <span style={{ fontSize: '0.74rem', background: '#f1f5f9', color: '#334155', padding: '2px 7px', borderRadius: '4px', fontWeight: 700, fontFamily: 'monospace', border: '1px solid #cbd5e1', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                            <span style={{ fontSize: '0.74rem', background: '#f1f5f9', color: '#334155', padding: '2px 7px', borderRadius: '4px', fontWeight: 700, fontFamily: 'monospace', border: '1px solid #cbd5e1', display: 'inline-flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}>
                               <Lock size={10} color="#64748b" />
                               {br.branch_code || br.id}
                             </span>

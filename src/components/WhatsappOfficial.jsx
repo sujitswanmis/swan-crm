@@ -344,11 +344,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
 
   // --- CLIENT & BRANCH ALLOCATION HELPERS (TIER 2) ---
   const allClients = React.useMemo(() => {
-    const list = [
-      { id: 'NEW_SWAN_GROUP', name: 'New Swan Group (Headquarters)', code: 'NEW_SWAN_GROUP', type: 'headquarters', hqCode: 'NEW_SWAN_GROUP', group: 'New Swan Group' },
-      { id: 'NSMLR', name: '🏢 NSMLR (Branch)', code: 'NSMLR', type: 'branch', hqCode: 'NEW_SWAN_GROUP', group: 'New Swan Group' },
-      { id: 'NSTLP', name: '🏢 NSTLP (Branch)', code: 'NSTLP', type: 'branch', hqCode: 'NEW_SWAN_GROUP', group: 'New Swan Group' }
-    ];
+    const list = [];
 
     // 1. Automatically import all Registered Tenants as Headquarters
     (tenantsList || []).forEach(t => {
@@ -358,7 +354,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
       
       const alreadyExists = list.some(x => 
         x.code?.toLowerCase() === lowerCode || 
-        x.name?.toLowerCase().includes(lowerName)
+        x.name?.toLowerCase().trim() === lowerName.trim()
       );
 
       if (!alreadyExists && code) {
@@ -368,27 +364,28 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
           code: code, 
           type: 'headquarters', 
           hqCode: code,
-          group: t.name 
+          group: t.name,
+          tenantCode: t.tenant_code || code
         });
       }
     });
 
-    // 2. Automatically import all dynamic Branches (both DB & Local config)
+    // 2. Automatically import all dynamic Branches strictly from system records
     (branches || []).forEach(b => {
-      const bCode = (b.branch_code || b.branch_name || '').trim();
+      const bCode = (b.branch_code || b.custom_code || b.id || '').trim();
       const lowerCode = bCode.toLowerCase();
       const lowerName = (b.branch_name || '').toLowerCase();
       const locType = (b.location_type || '').toLowerCase();
       const isHQ = locType === 'headquarters' || lowerName.includes('headquarter');
 
       const alreadyExists = list.some(x => 
+        x.id === b.id ||
         x.code?.toLowerCase() === lowerCode || 
-        x.name?.toLowerCase() === lowerName ||
-        (isHQ && b.company && x.name?.toLowerCase().includes(b.company.toLowerCase()) && x.type === 'headquarters')
+        (isHQ && x.type === 'headquarters' && (x.tenantCode === b.tenant_code || x.group?.toLowerCase() === b.company?.toLowerCase()))
       );
 
       if (!alreadyExists && bCode) {
-        let displayName = b.branch_name;
+        let displayName = b.branch_name || bCode;
         if (isHQ) {
           displayName = b.company 
             ? `${b.company} (Headquarters)` 
@@ -400,10 +397,13 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
           displayName = displayName.startsWith('🏢') ? displayName : `🏢 ${displayName}${displayName.includes('(') ? '' : suffix}`;
         }
 
-        // Determine parent HQ code
-        let parentHqCode = 'NEW_SWAN_GROUP';
+        // Determine parent HQ code strictly
+        let parentHqCode = b.tenant_code || b.company || 'NEW_SWAN_GROUP';
         if (b.company) {
-          const matchedTenant = (tenantsList || []).find(t => t.name?.toLowerCase() === b.company.toLowerCase() || t.tenant_code?.toLowerCase() === b.company.toLowerCase());
+          const matchedTenant = (tenantsList || []).find(t => 
+            t.name?.toLowerCase() === b.company.toLowerCase() || 
+            t.tenant_code?.toLowerCase() === b.company.toLowerCase()
+          );
           if (matchedTenant) {
             parentHqCode = matchedTenant.tenant_code || matchedTenant.name;
           } else {
@@ -417,7 +417,8 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
           code: bCode,
           type: isHQ ? 'headquarters' : 'branch',
           hqCode: parentHqCode,
-          group: b.company || 'Branch Office'
+          group: b.company || 'Branch Office',
+          tenantCode: b.tenant_code || ''
         });
       }
     });
@@ -445,9 +446,12 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
 
     return allClients.filter(c => {
       const cHq = (c.hqCode || '').toLowerCase();
+      const cTenant = (c.tenantCode || '').toLowerCase();
       const cGroup = (c.group || '').toLowerCase();
       const cCode = (c.code || '').toLowerCase();
-      return cHq === targetHq || cGroup === targetHq || cCode === targetHq || (hqName && cGroup.includes(hqName));
+      const matchesCode = cHq === targetHq || cTenant === targetHq || cCode === targetHq;
+      const matchesExactGroup = hqName && cGroup === hqName;
+      return matchesCode || matchesExactGroup;
     });
   }, [allClients, selectedHqForAllocation, hqOptions]);
 
@@ -459,9 +463,12 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
 
     const matching = allClients.filter(c => {
       const cHq = (c.hqCode || '').toLowerCase();
+      const cTenant = (c.tenantCode || '').toLowerCase();
       const cGroup = (c.group || '').toLowerCase();
       const cCode = (c.code || '').toLowerCase();
-      return cHq === targetHq || cGroup === targetHq || cCode === targetHq || (hqName && cGroup.includes(hqName));
+      const matchesCode = cHq === targetHq || cTenant === targetHq || cCode === targetHq;
+      const matchesExactGroup = hqName && cGroup === hqName;
+      return matchesCode || matchesExactGroup;
     });
 
     if (matching.length > 0) {
@@ -478,9 +485,12 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
 
     return allClients.filter(c => {
       const cHq = (c.hqCode || '').toLowerCase();
+      const cTenant = (c.tenantCode || '').toLowerCase();
       const cGroup = (c.group || '').toLowerCase();
       const cCode = (c.code || '').toLowerCase();
-      return cHq === targetHq || cGroup === targetHq || cCode === targetHq || (hqName && cGroup.includes(hqName));
+      const matchesCode = cHq === targetHq || cTenant === targetHq || cCode === targetHq;
+      const matchesExactGroup = hqName && cGroup === hqName;
+      return matchesCode || matchesExactGroup;
     });
   }, [allClients, selectedHqForCredentials, userCompany, hqOptions]);
 

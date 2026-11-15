@@ -3113,38 +3113,29 @@ export default function ClientRegistration({
                       <option value="">-- Select Company / Branch --</option>
                       {availableBranches.length > 0 ? (
                         (() => {
-                          const baseBranches = availableBranches.filter(br => {
-                            if (isSwanWorkspace) {
-                              const isHq = br.legacy_code === 'NEW_SWAN_GROUP' || br.location_type === 'Headquarters';
-                              return !isHq;
-                            }
-                            return true;
-                          });
+                          const baseBranches = availableBranches.filter(br => br.is_active !== false);
                           const scopedBranches = (!effectiveBranchAccess.isAllBranches && effectiveBranchAccess.allowedCompanies.length > 0)
                             ? baseBranches.filter(br => {
-                                const cleanName = (br.legacy_code && ['NSMLR', 'NSTLP', 'NSTL'].includes(br.legacy_code))
-                                  ? (br.legacy_code === 'NSTL' ? 'NSTLP' : br.legacy_code)
-                                  : (br.branch_name?.toLowerCase().includes('supuja') ? 'SuPuja Creations' : (br.branch_name || br.company));
-                                return matchesCompanyToken(cleanName, effectiveBranchAccess.allowedCompanies) ||
-                                  matchesCompanyToken(br.custom_code, effectiveBranchAccess.allowedCompanies);
+                                const code = br.custom_code || br.legacy_code || br.branch_code;
+                                const cleanName = br.branch_name || br.company || '';
+                                return matchesCompanyToken(code, effectiveBranchAccess.allowedCompanies) ||
+                                  matchesCompanyToken(cleanName, effectiveBranchAccess.allowedCompanies);
                               })
                             : baseBranches;
                           const displayBranches = scopedBranches.length > 0 ? scopedBranches : baseBranches;
                           return displayBranches
                             .sort((a, b) => {
-                              const nameA = String(a.legacy_code || a.branch_name || '');
-                              const nameB = String(b.legacy_code || b.branch_name || '');
-                              if (nameA.includes('NSMLR')) return -1;
-                              if (nameB.includes('NSMLR')) return 1;
-                              return nameA.localeCompare(nameB);
+                              const codeA = String(a.branch_code || a.id || '');
+                              const codeB = String(b.branch_code || b.id || '');
+                              return codeA.localeCompare(codeB, undefined, { numeric: true });
                             })
                             .map(br => {
-                              const cleanName = (br.legacy_code && ['NSMLR', 'NSTLP', 'NSTL'].includes(br.legacy_code))
-                                ? (br.legacy_code === 'NSTL' ? 'NSTLP' : br.legacy_code)
-                                : (br.branch_name?.toLowerCase().includes('supuja') ? 'SuPuja Creations' : (br.branch_name || br.company));
-                              const optVal = cleanName;
-                              const isAdminUser = userRole === 'admin' || userRole === 'Admin' || userRole === 'master_admin';
-                              const optLabel = isAdminUser && br.branch_code ? `${cleanName} (${br.branch_code})` : cleanName;
+                              const code = br.custom_code || br.legacy_code || br.branch_code;
+                              const optVal = code;
+                              const cleanName = br.branch_name || br.company || code;
+                              const optLabel = br.branch_code
+                                ? `${cleanName} (${code} - ${br.branch_code})`
+                                : `${cleanName} (${code})`;
                               return (
                                 <option key={br.id || br.branch_code} value={optVal}>
                                   {optLabel}
@@ -3155,8 +3146,14 @@ export default function ClientRegistration({
                       ) : (
                         isSwanWorkspace ? (
                           <>
-                            <option value="NSMLR">NSMLR{(userRole === 'admin' || userRole === 'Admin' || userRole === 'master_admin') ? ' (TNT00002-B0002)' : ''}</option>
-                            <option value="NSTLP">NSTLP{(userRole === 'admin' || userRole === 'Admin' || userRole === 'master_admin') ? ' (TNT00002-B0003)' : ''}</option>
+                            <option value="NSG">New Swan Group (NSG - TNT00002-B0001)</option>
+                            <option value="NSMLR">New Swan Multitech Limited Raian (NSMLR - TNT00002-B0002)</option>
+                            <option value="NSTLP">New Swan Technologies Limited Paharuwal (NSTLP - TNT00002-B0003)</option>
+                            <option value="NSE1">New Swan Enterprises - 1 (NSE1 - TNT00002-B0004)</option>
+                            <option value="NSE2">New Swan Enterprises - 2 (NSE2 - TNT00002-B0005)</option>
+                            <option value="NSE3">New Swan Enterprises - 3 (NSE3 - TNT00002-B0006)</option>
+                            <option value="NSE4">New Swan Enterprises - 4 (NSE4 - TNT00002-B0007)</option>
+                            <option value="NSACPL1">New Swan Autocomp Pvt. Ltd. (NSACPL1 - TNT00002-B0008)</option>
                           </>
                         ) : (
                           <option value={userCompany || 'Client Workspace'}>{userCompany || 'Client Workspace'}</option>

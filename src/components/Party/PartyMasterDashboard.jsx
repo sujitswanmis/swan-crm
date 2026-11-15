@@ -1,7 +1,9 @@
 'use client';
 
 import MobileTableView from '@/components/common/MobileTableView';
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { getTenantBranches } from '@/app/actions/tenantBranches';
+import { matchesCompanyToken, expandCompanyAliases } from '@/utils/branchAccess';
 import {
   Building2, Users, Plus, ArrowRight, CheckCircle2, Clock,
   AlertTriangle, ShieldCheck, DollarSign, RefreshCw, MapPin,
@@ -28,8 +30,21 @@ export default function PartyMasterDashboard({
   monthlyFeedbacks = [],
   complaints = []
 }) {
-  const [companyFilter, setCompanyFilter] = useState('ALL'); // 'ALL' | 'NSMLR' | 'NSTLP'
+  const [companyFilter, setCompanyFilter] = useState('ALL');
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [dynamicBranches, setDynamicBranches] = useState([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    getTenantBranches('New Swan Group')
+      .then(res => {
+        if (isMounted && res?.success && Array.isArray(res.branches)) {
+          setDynamicBranches(res.branches.filter(b => b.is_active !== false));
+        }
+      })
+      .catch(() => {});
+    return () => { isMounted = false; };
+  }, []);
 
   const handleRefreshAll = async () => {
     setIsRefreshing(true);
@@ -45,10 +60,11 @@ export default function PartyMasterDashboard({
   const filteredParties = useMemo(() => {
     if (!Array.isArray(parties)) return [];
     if (companyFilter === 'ALL') return parties;
+    const allowed = expandCompanyAliases(companyFilter);
     return parties.filter(p => {
-      const comp = (p.our_company || '').toUpperCase();
-      if (companyFilter === 'NSTLP' || companyFilter === 'NSTL') return comp === 'NSTL' || comp === 'NSTLP';
-      return comp === 'NSMLR';
+      const codeBranch = (p.party_universal_code || '').split('-')[1];
+      const comp = p.our_company || codeBranch || '';
+      return matchesCompanyToken(comp, allowed);
     });
   }, [parties, companyFilter]);
 
@@ -56,10 +72,10 @@ export default function PartyMasterDashboard({
   const filteredTransferred = useMemo(() => {
     if (!Array.isArray(transferredLeads)) return [];
     if (companyFilter === 'ALL') return transferredLeads;
+    const allowed = expandCompanyAliases(companyFilter);
     return transferredLeads.filter(l => {
-      const comp = (l.our_company || l.lead?.our_company || '').toUpperCase();
-      if (companyFilter === 'NSTLP' || companyFilter === 'NSTL') return comp === 'NSTL' || comp === 'NSTLP';
-      return comp === 'NSMLR';
+      const comp = l.our_company || l.lead?.our_company || '';
+      return matchesCompanyToken(comp, allowed);
     });
   }, [transferredLeads, companyFilter]);
 
@@ -255,9 +271,29 @@ export default function PartyMasterDashboard({
                 cursor: 'pointer'
               }}
             >
-              <option value="ALL">All Companies (NSMLR & NSTLP)</option>
-              <option value="NSMLR">NSMLR</option>
-              <option value="NSTLP">NSTLP</option>
+              <option value="ALL">🏢 All Companies / Branches</option>
+              {dynamicBranches.length > 0 ? (
+                dynamicBranches.map(b => {
+                  const code = b.custom_code || b.legacy_code || b.branch_code;
+                  const cleanName = (b.branch_name || '').replace(/^New Swan\s+/i, '').replace(/^SuPuja Creations?\s+/i, '');
+                  return (
+                    <option key={b.id || b.branch_code} value={code}>
+                      {code} ({cleanName})
+                    </option>
+                  );
+                })
+              ) : (
+                <>
+                  <option value="NSG">NSG (Headquarters)</option>
+                  <option value="NSMLR">NSMLR (Multitech Limited Raian)</option>
+                  <option value="NSTLP">NSTLP (Technologies Limited Paharuwal)</option>
+                  <option value="NSE1">NSE1 (Enterprises - 1)</option>
+                  <option value="NSE2">NSE2 (Enterprises - 2)</option>
+                  <option value="NSE3">NSE3 (Enterprises - 3)</option>
+                  <option value="NSE4">NSE4 (Enterprises - 4)</option>
+                  <option value="NSACPL1">NSACPL1 (Autocomp Pvt. Ltd.)</option>
+                </>
+              )}
             </select>
           </div>
 
@@ -1279,7 +1315,8 @@ export default function PartyMasterDashboard({
                 activePartners.slice(0, 6).map(p => {
                   const isDist = p.party_type === 'Distributor';
                   const isDealer = p.party_type === 'Dealer';
-                  const comp = (p.our_company === 'NSTL' || p.our_company === 'NSTLP') ? 'NSTLP' : 'NSMLR';
+                  const rawBranchFromCode = (p.party_universal_code || '').split('-')[1];
+                  const comp = (p.our_company === 'NSTL' || p.our_company === 'NSTLP') ? 'NSTLP' : (p.our_company || rawBranchFromCode || 'NSMLR');
                   const code = p.distributor_code || p.dealer_code || p.sub_dealer_code || p.party_universal_code;
 
                   return (

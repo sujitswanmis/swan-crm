@@ -12,6 +12,8 @@ import {
 import MaskedPhoneDisplay from '@/components/common/MaskedPhoneDisplay';
 import PartyImportModal from './PartyImportModal';
 import { B2B_OPERATIONAL_STATUSES } from './StageConfigModal';
+import { getTenantBranches } from '@/app/actions/tenantBranches';
+import { matchesCompanyToken, expandCompanyAliases } from '@/utils/branchAccess';
 
 const STAGE_CONFIGS = {
   s01: {
@@ -121,7 +123,20 @@ export default function StageDataTable({
   const [showImportModal, setShowImportModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'PENDING' | 'APPROVED'
-  const [companyFilter, setCompanyFilter] = useState('ALL'); // 'ALL' | 'NSMLR' | 'NSTLP'
+  const [companyFilter, setCompanyFilter] = useState('ALL');
+  const [dynamicBranches, setDynamicBranches] = useState([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    getTenantBranches('New Swan Group')
+      .then(res => {
+        if (isMounted && res?.success && Array.isArray(res.branches)) {
+          setDynamicBranches(res.branches.filter(b => b.is_active !== false));
+        }
+      })
+      .catch(() => {});
+    return () => { isMounted = false; };
+  }, []);
   const [onlyStageTier, setOnlyStageTier] = useState(Boolean(meta.filterTiers));
   const [pageSize, setPageSize] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -199,7 +214,11 @@ export default function StageDataTable({
       if (statusFilter === 'APPROVED' && !isApproved) return false;
 
       // Company Filter
-      if (companyFilter !== 'ALL' && (p.our_company || 'NSMLR') !== companyFilter) return false;
+      if (companyFilter !== 'ALL') {
+        const rawCodeBranch = (p.party_universal_code || '').split('-')[1];
+        const partyComp = p.our_company || rawCodeBranch || 'NSMLR';
+        if (!matchesCompanyToken(partyComp, expandCompanyAliases(companyFilter))) return false;
+      }
 
       // Search Term Filter
       if (!term) return true;
@@ -914,9 +933,29 @@ export default function StageDataTable({
               fontWeight: 600
             }}
           >
-            <option value="ALL">All Companies (Our Company)</option>
-            <option value="NSMLR">NSMLR</option>
-            <option value="NSTLP">NSTLP</option>
+            <option value="ALL">🏢 All Companies / Branches</option>
+            {dynamicBranches.length > 0 ? (
+              dynamicBranches.map(b => {
+                const code = b.custom_code || b.legacy_code || b.branch_code;
+                const cleanName = (b.branch_name || '').replace(/^New Swan\s+/i, '').replace(/^SuPuja Creations?\s+/i, '');
+                return (
+                  <option key={b.id || b.branch_code} value={code}>
+                    {code} ({cleanName})
+                  </option>
+                );
+              })
+            ) : (
+              <>
+                <option value="NSG">NSG</option>
+                <option value="NSMLR">NSMLR</option>
+                <option value="NSTLP">NSTLP</option>
+                <option value="NSE1">NSE1</option>
+                <option value="NSE2">NSE2</option>
+                <option value="NSE3">NSE3</option>
+                <option value="NSE4">NSE4</option>
+                <option value="NSACPL1">NSACPL1</option>
+              </>
+            )}
           </select>
         </div>
       </div>

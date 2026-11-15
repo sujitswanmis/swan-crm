@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { getTenantBranches } from '@/app/actions/tenantBranches';
 import {
   X,
   Check,
@@ -888,6 +889,20 @@ export default function StageConfigModal({
 
   const currentTheme = STAGE_THEME_MAP[activeTab] || STAGE_THEME_MAP.s01;
   const [productSearch, setProductSearch] = useState('');
+  const [tenantBranches, setTenantBranches] = useState([]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let isMounted = true;
+    getTenantBranches(s00Form?.our_company || 'New Swan Group')
+      .then(res => {
+        if (isMounted && res?.success && Array.isArray(res.branches)) {
+          setTenantBranches(res.branches.filter(b => b.is_active !== false));
+        }
+      })
+      .catch(() => {});
+    return () => { isMounted = false; };
+  }, [isOpen, s00Form?.our_company]);
 
   // Reusable theme-adaptive style tokens for all modal forms
   const cardStyle = {
@@ -1190,16 +1205,38 @@ export default function StageConfigModal({
                         </select>
                       </div>
                       <div>
-                        <label style={{ ...labelStyle, color: '#f59e0b', fontWeight: 700 }}>Our Company Name *</label>
+                        <label style={{ ...labelStyle, color: '#f59e0b', fontWeight: 700 }}>Our Company / Branch *</label>
                         <select
-                          value={(s00Form.our_company || '').startsWith('NSTL') ? 'NSTLP' : (s00Form.our_company || 'NSMLR')}
+                          value={s00Form.our_company || (tenantBranches[0]?.custom_code || 'NSMLR')}
                           onChange={e => setS00Form({ ...s00Form, our_company: e.target.value })}
-                          style={{ ...inputStyle, borderColor: 'rgba(245, 158, 11, 0.4)', background: 'rgba(245, 158, 11, 0.05)' }}
+                          style={{ ...inputStyle, borderColor: 'rgba(245, 158, 11, 0.4)', background: 'rgba(245, 158, 11, 0.05)', fontWeight: 600 }}
                           required
                         >
-                          <option value="">Select Company</option>
-                          <option value="NSMLR">NSMLR</option>
-                          <option value="NSTLP">NSTLP</option>
+                          <option value="">Select Company / Branch</option>
+                          {tenantBranches.length > 0 ? (
+                            tenantBranches.map(b => {
+                              const code = b.custom_code || b.legacy_code || b.branch_code;
+                              const label = b.branch_name && code && b.branch_name !== code
+                                ? `${b.branch_name} (${code} - ${b.branch_code})`
+                                : (b.branch_name || code);
+                              return (
+                                <option key={b.id || b.branch_code} value={code}>
+                                  {label}
+                                </option>
+                              );
+                            })
+                          ) : (
+                            <>
+                              <option value="NSG">New Swan Group (NSG - TNT00002-B0001)</option>
+                              <option value="NSMLR">New Swan Multitech Limited Raian (NSMLR - TNT00002-B0002)</option>
+                              <option value="NSTLP">New Swan Technologies Limited Paharuwal (NSTLP - TNT00002-B0003)</option>
+                              <option value="NSE1">New Swan Enterprises - 1 (NSE1 - TNT00002-B0004)</option>
+                              <option value="NSE2">New Swan Enterprises - 2 (NSE2 - TNT00002-B0005)</option>
+                              <option value="NSE3">New Swan Enterprises - 3 (NSE3 - TNT00002-B0006)</option>
+                              <option value="NSE4">New Swan Enterprises - 4 (NSE4 - TNT00002-B0007)</option>
+                              <option value="NSACPL1">New Swan Autocomp Pvt. Ltd. (NSACPL1 - TNT00002-B0008)</option>
+                            </>
+                          )}
                         </select>
                       </div>
                       <div>

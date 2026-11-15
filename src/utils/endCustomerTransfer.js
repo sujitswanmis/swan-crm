@@ -1,11 +1,17 @@
 // Shared by the directory, import preview and server-side import validation.
 export const MAX_IMPORT_ROWS = 1000;
 export const IMPORT_BATCH_SIZE = 25;
-export const END_CUSTOMER_COMPANIES = ['NSMLR', 'NSTLP'];
+export const END_CUSTOMER_COMPANIES = ['NSG', 'NSMLR', 'NSTLP', 'NSE1', 'NSE2', 'NSE3', 'NSE4', 'NSACPL1'];
 
 export function normalizeEndCustomerCompany(value) {
   const company = String(value ?? '').trim().toUpperCase();
-  return company === 'NSTL' ? 'NSTLP' : company;
+  if (company === 'NSTL') return 'NSTLP';
+  if (company === 'NSE-1' || company === 'NSE01') return 'NSE1';
+  if (company === 'NSE-2') return 'NSE2';
+  if (company === 'NSE-3') return 'NSE3';
+  if (company === 'NSE-4') return 'NSE4';
+  if (company === 'NSACPL') return 'NSACPL1';
+  return company;
 }
 
 export function endCustomerDealerCompany(party) {
