@@ -2415,18 +2415,29 @@ export default function AttendanceModule({
         if (await saveOfflinePunch('IN', offlineRecord, punchLocation, scope)) accepted = offlineRecord;
         return;
       }
-      // Instant GPS check: Use cached pre-warmed GPS or quick 1000ms lookup with 5-min cache
+      // Instant GPS resolution: Zero blocking on web desktop when GPS is not strictly required
+      const isGpsStrictlyRequired = Boolean(
+        geofenceSettings?.require_gps === 'ON' ||
+        geofenceSettings?.require_gps === 'STRICT' ||
+        geofenceSettings?.enable_geofence
+      );
       const nowTs = Date.now();
       if (gpsCacheRef.current.location && (nowTs - gpsCacheRef.current.timestamp) < 300000) {
         punchLocation = gpsCacheRef.current.location;
-      } else {
+      } else if (isGpsStrictlyRequired) {
+        // Only await GPS if policy strictly demands it (clamped to max 1200ms)
         try {
-          const gps = await getCurrentGPSLocation({ timeout: 1000, enableHighAccuracy: false, maximumAge: 300000 });
+          const gps = await getCurrentGPSLocation({ timeout: 1200, enableHighAccuracy: false, maximumAge: 300000 });
           if (gps?.success) {
             punchLocation = `GPS (${gps.latitude.toFixed(4)}, ${gps.longitude.toFixed(4)})`;
             gpsCacheRef.current = { location: punchLocation, timestamp: Date.now() };
           }
         } catch (e) {}
+      } else {
+        // GPS is OFF or AUTO (Standard Web Desktop): Punch INSTANTLY with 'Office Web Terminal' without 1ms delay!
+        punchLocation = 'Office Web Terminal';
+        // Non-blocking background fetch so subsequent punches might have GPS if available
+        preWarmGPSLocation();
       }
 
       const res = await punchIn({
@@ -2514,18 +2525,28 @@ export default function AttendanceModule({
         accepted = await saveOfflinePunch('OUT', offlineRecord, punchLocation, scope);
         return;
       }
-      // Instant GPS check: Use cached pre-warmed GPS or quick 1000ms lookup with 5-min cache
+      // Instant GPS resolution: Zero blocking on web desktop when GPS is not strictly required
+      const isGpsStrictlyRequired = Boolean(
+        geofenceSettings?.require_gps === 'ON' ||
+        geofenceSettings?.require_gps === 'STRICT' ||
+        geofenceSettings?.enable_geofence
+      );
       const nowTsOut = Date.now();
       if (gpsCacheRef.current.location && (nowTsOut - gpsCacheRef.current.timestamp) < 300000) {
         punchLocation = gpsCacheRef.current.location;
-      } else {
+      } else if (isGpsStrictlyRequired) {
+        // Only await GPS if policy strictly demands it (clamped to max 1200ms)
         try {
-          const gps = await getCurrentGPSLocation({ timeout: 1000, enableHighAccuracy: false, maximumAge: 300000 });
+          const gps = await getCurrentGPSLocation({ timeout: 1200, enableHighAccuracy: false, maximumAge: 300000 });
           if (gps?.success) {
             punchLocation = `GPS (${gps.latitude.toFixed(4)}, ${gps.longitude.toFixed(4)})`;
             gpsCacheRef.current = { location: punchLocation, timestamp: Date.now() };
           }
         } catch (e) {}
+      } else {
+        // GPS is OFF or AUTO (Standard Web Desktop): Punch INSTANTLY with 'Office Web Terminal' without 1ms delay!
+        punchLocation = 'Office Web Terminal';
+        preWarmGPSLocation();
       }
       const res = await punchOut({
         email: userEmail,
