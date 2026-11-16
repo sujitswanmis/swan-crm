@@ -19,14 +19,52 @@ import MultiColumnFilterModal from '@/components/TableControls/MultiColumnFilter
 import ErrorBoundary from '@/components/ErrorBoundary';
 import orgStructureConfig from '@/config/org_structure_config.json';
 
+function formatISTDateTime(isoString) {
+  if (!isoString) return '—';
+  try {
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return String(isoString);
+    return new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    }).format(d);
+  } catch (e) {
+    return String(isoString);
+  }
+}
+
+function formatISTDateOnly(dateString) {
+  if (!dateString) return '—';
+  try {
+    const d = new Date(dateString);
+    if (isNaN(d.getTime())) return String(dateString);
+    return new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric'
+    }).format(d);
+  } catch (e) {
+    return String(dateString);
+  }
+}
+
 const DEFAULT_USER_MANAGE_COL_WIDTHS = {
   user_employee: 210,
   dept_role: 140,
   location: 110,
   reporting: 130,
-  status: 100,
-  approval_status: 105,
+  status: 115,
+  approval_status: 115,
   role: 140,
+  last_updated: 140,
+  last_updated_by: 125,
+  update_details: 180,
   actions: 140
 };
 
@@ -38,6 +76,9 @@ const USER_MANAGE_COL_MIN_WIDTHS = {
   status: 80,
   approval_status: 85,
   role: 110,
+  last_updated: 100,
+  last_updated_by: 90,
+  update_details: 120,
   actions: 90
 };
 
@@ -49,11 +90,14 @@ const ALL_USER_MANAGE_COLUMNS = [
   { key: 'status', label: 'Status' },
   { key: 'approval_status', label: 'Approval Status' },
   { key: 'role', label: 'Role' },
+  { key: 'last_updated', label: 'Last Updated' },
+  { key: 'last_updated_by', label: 'Updated By' },
+  { key: 'update_details', label: 'Update Details' },
   { key: 'actions', label: 'Actions' }
 ];
 
 const DEFAULT_VISIBLE_COLUMNS = [
-  'user_employee', 'dept_role', 'location', 'reporting', 'status', 'approval_status', 'role', 'actions'
+  'user_employee', 'dept_role', 'location', 'reporting', 'status', 'approval_status', 'role', 'last_updated', 'last_updated_by', 'update_details', 'actions'
 ];
 
 const USER_FILTER_COLUMNS = [
@@ -71,7 +115,11 @@ const USER_FILTER_COLUMNS = [
   { key: 'hod_person', label: 'HOD' },
   { key: 'emp_status', label: 'Status' },
   { key: 'approval_status', label: 'Approval Status' },
-  { key: 'role', label: 'Role / Template' }
+  { key: 'role', label: 'Role / Template' },
+  { key: 'last_updated_by', label: 'Updated By' },
+  { key: 'update_details', label: 'Update Details' },
+  { key: 'status_remarks', label: 'Status Remarks' },
+  { key: 'approval_remarks', label: 'Approval Remarks' }
 ];
 
 export default function UserManageTab({
@@ -470,6 +518,27 @@ export default function UserManageTab({
             <ColumnResizer columnKey="role" isResizing={isUserResizing('role')} onMouseDown={(e) => handleUserResizeStart('role', e)} onTouchStart={(e) => handleUserTouchStart('role', e)} onDoubleClick={() => handleUserReset('role')} />
           </th>
         );
+      case 'last_updated':
+        return (
+          <th key="last_updated" style={{ position: 'sticky', top: 0, zIndex: 2, padding: '0.75rem 1rem', width, backgroundColor: 'var(--bg-primary, #f1f5f9)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Last Updated</div>
+            <ColumnResizer columnKey="last_updated" isResizing={isUserResizing('last_updated')} onMouseDown={(e) => handleUserResizeStart('last_updated', e)} onTouchStart={(e) => handleUserTouchStart('last_updated', e)} onDoubleClick={() => handleUserReset('last_updated')} />
+          </th>
+        );
+      case 'last_updated_by':
+        return (
+          <th key="last_updated_by" style={{ position: 'sticky', top: 0, zIndex: 2, padding: '0.75rem 1rem', width, backgroundColor: 'var(--bg-primary, #f1f5f9)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Updated By</div>
+            <ColumnResizer columnKey="last_updated_by" isResizing={isUserResizing('last_updated_by')} onMouseDown={(e) => handleUserResizeStart('last_updated_by', e)} onTouchStart={(e) => handleUserTouchStart('last_updated_by', e)} onDoubleClick={() => handleUserReset('last_updated_by')} />
+          </th>
+        );
+      case 'update_details':
+        return (
+          <th key="update_details" style={{ position: 'sticky', top: 0, zIndex: 2, padding: '0.75rem 1rem', width, backgroundColor: 'var(--bg-primary, #f1f5f9)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', width: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Update Details</div>
+            <ColumnResizer columnKey="update_details" isResizing={isUserResizing('update_details')} onMouseDown={(e) => handleUserResizeStart('update_details', e)} onTouchStart={(e) => handleUserTouchStart('update_details', e)} onDoubleClick={() => handleUserReset('update_details')} />
+          </th>
+        );
       case 'actions':
         return (
           <th key="actions" style={{ position: 'sticky', top: 0, zIndex: 2, padding: '0.75rem 1rem', width, textAlign: 'center', backgroundColor: 'var(--bg-primary, #f1f5f9)' }}>
@@ -642,28 +711,40 @@ export default function UserManageTab({
             {(() => {
               const currentStatus = u.emp_status || (u.module_access?.emp_status) || 'Active';
               const style = getStatusBadgeStyle(currentStatus);
+              const effDate = u.status_effective_date || u.module_access?.status_effective_date;
+              const remarks = u.status_remarks || u.module_access?.status_remarks;
               return (
-                <select
-                  value={currentStatus}
-                  onChange={(e) => onChangeStatus(u, e.target.value)}
-                  style={{
-                    padding: '0.28rem 0.55rem',
-                    borderRadius: '6px',
-                    fontSize: '0.75rem',
-                    fontWeight: 600,
-                    backgroundColor: style.bg,
-                    color: style.color,
-                    border: `1px solid ${style.border}`,
-                    cursor: 'pointer',
-                    outline: 'none',
-                    width: '100%',
-                    maxWidth: '115px'
-                  }}
-                >
-                  {EMP_STATUS_OPTIONS.map(opt => (
-                    <option key={opt} value={opt} style={{ background: '#fff', color: '#000' }}>{opt}</option>
-                  ))}
-                </select>
+                <div>
+                  <select
+                    value={currentStatus}
+                    onChange={(e) => onChangeStatus(u, e.target.value)}
+                    style={{
+                      padding: '0.28rem 0.55rem',
+                      borderRadius: '6px',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      backgroundColor: style.bg,
+                      color: style.color,
+                      border: `1px solid ${style.border}`,
+                      cursor: 'pointer',
+                      outline: 'none',
+                      width: '100%',
+                      maxWidth: '115px'
+                    }}
+                  >
+                    {EMP_STATUS_OPTIONS.map(opt => (
+                      <option key={opt} value={opt} style={{ background: '#fff', color: '#000' }}>{opt}</option>
+                    ))}
+                  </select>
+                  {effDate && (
+                    <div 
+                      style={{ fontSize: '0.67rem', color: 'var(--text-secondary, #64748b)', marginTop: '0.2rem', whiteSpace: 'nowrap' }} 
+                      title={remarks ? `Effective: ${effDate} — Remarks: ${remarks}` : `Effective: ${effDate}`}
+                    >
+                      Eff: {formatISTDateOnly(effDate)}
+                    </div>
+                  )}
+                </div>
               );
             })()}
           </td>
@@ -672,28 +753,73 @@ export default function UserManageTab({
       case 'approval_status':
         return (
           <td key="approval_status" style={{ padding: '0.75rem 0.65rem' }}>
-            <button
-              type="button"
-              onClick={() => onToggleApproval(u)}
-              disabled={isMaster}
-              title={isMaster ? 'Master Admin approval is permanent' : (u.is_approved ? 'Click to mark as Pending' : 'Click to Approve user')}
-              style={{
-                padding: '0.28rem 0.65rem',
-                borderRadius: '99px',
-                fontSize: '0.74rem',
-                fontWeight: 700,
-                border: 'none',
-                cursor: isMaster ? 'not-allowed' : 'pointer',
-                backgroundColor: u.is_approved ? '#dcfce7' : '#fee2e2',
-                color: u.is_approved ? '#166534' : '#991b1b',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.25rem',
-                whiteSpace: 'nowrap'
-              }}
-            >
-              {u.is_approved ? '✓ Approved' : '⏳ Pending'}
-            </button>
+            {(() => {
+              const rawApproval = String(u.approval_status || u.module_access?.approval_status || '').toLowerCase().trim();
+              let approvalState = 'Pending';
+              let badgeBg = '#fef3c7';
+              let badgeColor = '#92400e';
+              let badgeBorder = '#fde68a';
+              let badgeLabel = '⏳ Pending';
+
+              if (rawApproval === 'rejected') {
+                approvalState = 'Rejected';
+                badgeBg = '#fee2e2';
+                badgeColor = '#991b1b';
+                badgeBorder = '#fecaca';
+                badgeLabel = '✕ Rejected';
+              } else if (rawApproval === 'approved' || u.is_approved === true || u.module_access?.is_approved === true) {
+                approvalState = 'Approved';
+                badgeBg = '#dcfce7';
+                badgeColor = '#166534';
+                badgeBorder = '#bbf7d0';
+                badgeLabel = '✓ Approved';
+              }
+
+              const approvalRemarks = u.approval_remarks || u.module_access?.approval_remarks;
+
+              return (
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => onToggleApproval(u)}
+                    disabled={isMaster}
+                    title={isMaster ? 'Master Admin approval is permanent' : (approvalRemarks ? `Status: ${approvalState} — Remarks: ${approvalRemarks}` : `Click to change approval status (${approvalState})`)}
+                    style={{
+                      padding: '0.28rem 0.65rem',
+                      borderRadius: '99px',
+                      fontSize: '0.74rem',
+                      fontWeight: 700,
+                      border: `1px solid ${badgeBorder}`,
+                      cursor: isMaster ? 'not-allowed' : 'pointer',
+                      backgroundColor: badgeBg,
+                      color: badgeColor,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.25rem',
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    {badgeLabel}
+                  </button>
+                  {approvalRemarks && (
+                    <div 
+                      style={{ 
+                        fontSize: '0.67rem', 
+                        color: 'var(--text-secondary, #64748b)', 
+                        marginTop: '0.2rem', 
+                        maxWidth: '120px', 
+                        overflow: 'hidden', 
+                        textOverflow: 'ellipsis', 
+                        whiteSpace: 'nowrap' 
+                      }} 
+                      title={approvalRemarks}
+                    >
+                      {approvalRemarks}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </td>
         );
 
@@ -793,6 +919,70 @@ export default function UserManageTab({
           </td>
         );
       }
+
+      case 'last_updated':
+        return (
+          <td key="last_updated" style={{ padding: '0.75rem 0.65rem', fontSize: '0.75rem', color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+            {(() => {
+              const iso = u.last_updated_at || u.module_access?.last_updated_at || u.updated_at;
+              return iso ? formatISTDateTime(iso) : '—';
+            })()}
+          </td>
+        );
+
+      case 'last_updated_by':
+        return (
+          <td key="last_updated_by" style={{ padding: '0.75rem 0.65rem', fontSize: '0.76rem', color: 'var(--text-primary)' }}>
+            {(() => {
+              const by = u.last_updated_by || u.module_access?.last_updated_by || u.module_access?.updated_by;
+              if (!by) return <span style={{ color: 'var(--text-secondary)' }}>—</span>;
+              return (
+                <span style={{ 
+                  display: 'inline-flex', 
+                  alignItems: 'center', 
+                  gap: '0.3rem',
+                  padding: '0.2rem 0.5rem',
+                  borderRadius: '6px',
+                  backgroundColor: 'var(--bg-primary, #f8fafc)',
+                  border: '1px solid var(--border-light, #e2e8f0)',
+                  fontWeight: 600,
+                  fontSize: '0.73rem',
+                  color: 'var(--text-primary)',
+                  maxWidth: '130px',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap'
+                }} title={by}>
+                  {by}
+                </span>
+              );
+            })()}
+          </td>
+        );
+
+      case 'update_details':
+        return (
+          <td key="update_details" style={{ padding: '0.75rem 0.65rem', fontSize: '0.74rem', maxWidth: '200px' }}>
+            {(() => {
+              const details = u.last_update_details || u.module_access?.last_update_details || (u.status_remarks ? `${u.emp_status}: ${u.status_remarks}` : '') || '';
+              if (!details) return <span style={{ color: 'var(--text-secondary)' }}>—</span>;
+              return (
+                <div 
+                  title={details}
+                  style={{
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    color: 'var(--text-secondary)',
+                    lineHeight: 1.3
+                  }}
+                >
+                  {details}
+                </div>
+              );
+            })()}
+          </td>
+        );
 
       case 'actions':
         return (

@@ -71,8 +71,6 @@ function deferred() {
 
 const template = { id: 'template-1', name: 'Support Staff' };
 const cases = [
-  { name: 'employee status', handler: 'onChangeStatus', value: 'InActive', action: 'updateEmpStatus', field: 'emp_status', result: 'InActive', labels: ['Active', 'InActive'] },
-  { name: 'approval status', handler: 'onToggleApproval', action: 'toggleUserApproval', field: 'is_approved', result: true, labels: ['Pending', 'Approved'] },
   { name: 'system role', handler: 'onChangeRole', value: 'Manager', action: 'updateUserRole', field: 'role', result: 'Manager', labels: ['agent', 'Manager'] },
   { name: 'custom role', handler: 'onAssignRole', value: template, action: 'assignRoleTemplate', field: 'module_access', labels: ['Support Staff', 'permissions will be replaced'] }
 ];
@@ -123,7 +121,8 @@ function containerHarness({ gate, fail = false, broadcastFails = false } = {}) {
   const stubs = Object.fromEntries([
     'UserManageTab', 'RolesPermissionsTab', 'OrgHierarchyTab', 'ActiveSessionsTab', 'AuditLogsTab',
     'AddEditUserModal', 'PermissionMatrixModal', 'RoleTemplateModal', 'ResetPasswordModal',
-    'SendResetEmailModal', 'ViewChatModal', 'ImpersonateModal', 'BulkImportExportModal', 'ConfirmActionModal'
+    'SendResetEmailModal', 'ViewChatModal', 'ImpersonateModal', 'BulkImportExportModal', 'ConfirmActionModal',
+    'StatusChangeModal', 'ApprovalStatusModal'
   ].map(name => [name, () => null]));
   const dependencies = {
     react,
@@ -131,6 +130,7 @@ function containerHarness({ gate, fail = false, broadcastFails = false } = {}) {
     '@/app/actions/team': {
       getTeamMembers: async () => [structuredClone(backend)],
       updateEmpStatus: (...args) => write('updateEmpStatus', ...args),
+      updateUserApprovalStatus: (...args) => write('updateUserApprovalStatus', ...args),
       toggleUserApproval: (...args) => write('toggleUserApproval', ...args),
       updateUserRole: (...args) => write('updateUserRole', ...args)
     },
@@ -241,10 +241,34 @@ test('unchanged status and role do not open a confirmation or write', () => {
 
 test('a permission broadcast failure does not undo a successful custom role assignment', async () => {
   const harness = containerHarness({ broadcastFails: true });
-  await harness.request(cases[3]).modal.onConfirm();
+  const customRoleCase = cases.find(c => c.name === 'custom role');
+  await harness.request(customRoleCase).modal.onConfirm();
   assert.equal(harness.render().modal.isOpen, false);
   assert.equal(harness.render().user.module_access.role_template_id, template.id);
   assert.equal(harness.writes.length, 1);
+});
+
+test('employee status change opens dedicated StatusChangeModal for effective date & remarks', () => {
+  const harness = containerHarness();
+  const { tab, user } = harness.render();
+  tab.onChangeStatus(user, 'InActive');
+  const all = nodes(harness.render().tree);
+  const statusModal = all.find(node => node.props && node.props.targetStatus !== undefined)?.props;
+  assert.ok(statusModal, 'StatusChangeModal should be rendered');
+  assert.equal(statusModal.isOpen, true);
+  assert.equal(statusModal.user.user_id, user.user_id);
+  assert.equal(statusModal.targetStatus, 'InActive');
+});
+
+test('approval toggle opens dedicated ApprovalStatusModal for tri-state & remarks', () => {
+  const harness = containerHarness();
+  const { tab, user } = harness.render();
+  tab.onToggleApproval(user);
+  const all = nodes(harness.render().tree);
+  const approvalModal = all.find(node => node.props && node.props.currentApproval !== undefined)?.props;
+  assert.ok(approvalModal, 'ApprovalStatusModal should be rendered');
+  assert.equal(approvalModal.isOpen, true);
+  assert.equal(approvalModal.user.user_id, user.user_id);
 });
 
 function modalHarness(document) {

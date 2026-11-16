@@ -9,7 +9,7 @@ import {
   getTeamMembers, createAccountAdmin, updateEmployeeDetailsAdmin, 
   updateModuleAccess, updateEmpStatus, moveToTrashUser, 
   restoreUserFromTrash, deleteUserAdmin, toggleUserApproval,
-  updateUserRole
+  updateUserApprovalStatus, updateUserRole
 } from '@/app/actions/team';
 import { createClient } from '@/utils/supabase/client';
 import { getRoleTemplates, createRoleTemplate, assignRoleTemplate, updateRoleTemplate, deleteRoleTemplate } from '@/app/actions/roleTemplates';
@@ -31,6 +31,8 @@ import ViewChatModal from './modals/ViewChatModal';
 import ImpersonateModal from './modals/ImpersonateModal';
 import BulkImportExportModal from './modals/BulkImportExportModal';
 import ConfirmActionModal from './modals/ConfirmActionModal';
+import StatusChangeModal from './modals/StatusChangeModal';
+import ApprovalStatusModal from './modals/ApprovalStatusModal';
 
 import { isFeatureEntitled } from '@/utils/saasEntitlements';
 import { DEFAULT_DEPARTMENTS } from './utils/userManagementUtils';
@@ -170,6 +172,22 @@ export default function UserManagementContainer({
   });
   const [confirmLoading, setConfirmLoading] = useState(false);
   const confirmationPendingRef = useRef(false);
+
+  // Status Change Modal State (Effective Date & Remarks)
+  const [statusChangeModal, setStatusChangeModal] = useState({
+    isOpen: false,
+    user: null,
+    targetStatus: 'InActive'
+  });
+  const [statusChangeLoading, setStatusChangeLoading] = useState(false);
+
+  // Approval Status Modal State (Approved / Rejected / Pending & Remarks)
+  const [approvalModal, setApprovalModal] = useState({
+    isOpen: false,
+    user: null,
+    currentApproval: 'Pending'
+  });
+  const [approvalLoading, setApprovalLoading] = useState(false);
 
   // Notification Toast state
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
@@ -672,41 +690,125 @@ export default function UserManagementContainer({
     }
   };
 
-  // Handler: Change Status (supports direct select from EMP_STATUS_OPTIONS or toggle)
+  // Handler: Change Status (prompts StatusChangeModal for Effective Date & Remarks)
   const handleChangeStatus = (targetUser, newStatus) => {
     if (!targetUser?.user_id) return;
     const current = targetUser.emp_status || (targetUser.module_access?.emp_status) || 'Active';
     const nextStatus = newStatus || (current.toLowerCase() === 'active' ? 'InActive' : 'Active');
     if (current === nextStatus) return;
 
-    confirmUserChange({
-      title: 'Change Employee Status?',
-      message: `Change the employee status of ${targetUser.emp_name || targetUser.email} from "${current}" to "${nextStatus}"?`,
-      confirmText: 'Change Status',
-      action: async () => {
-        await updateEmpStatus(targetUser.user_id, nextStatus);
-        setUsers(previous => previous.map(member => member.user_id === targetUser.user_id ? { ...member, emp_status: nextStatus } : member));
-        showToast(`Status updated to "${nextStatus}" for ${targetUser.emp_name || targetUser.email}`, 'success');
-        fetchUsers(false);
-      }
+    setStatusChangeModal({
+      isOpen: true,
+      user: targetUser,
+      targetStatus: nextStatus
     });
   };
 
-  // Handler: Toggle Approval Status
+  const handleConfirmStatusChange = async ({ status, effectiveDate, remarks }) => {
+    if (!statusChangeModal.user?.user_id) return;
+    setStatusChangeLoading(true);
+    try {
+      const actorName = moduleAccess?.emp_name || userEmail?.split('@')[0] || 'Admin';
+      await updateEmpStatus(statusChangeModal.user.user_id, status, {
+        effectiveDate,
+        remarks,
+        updatedByName: actorName,
+        updatedByEmail: userEmail || ''
+      });
+
+      const nowIso = new Date().toISOString();
+      const detailSummary = remarks 
+        ? `Status: ${status} (Eff: ${effectiveDate || 'Immediate'}) — ${remarks}`
+        : `Status: ${status}`;
+
+      setUsers(previous => previous.map(member => member.user_id === statusChangeModal.user.user_id ? {
+        ...member,
+        emp_status: status,
+        status_effective_date: effectiveDate,
+        status_remarks: remarks,
+        last_updated_at: nowIso,
+        last_updated_by: actorName,
+        last_update_details: detailSummary,
+        module_access: {
+          ...(member.module_access || {}),
+          emp_status: status,
+          status_effective_date: effectiveDate,
+          status_remarks: remarks,
+          last_updated_at: nowIso,
+          last_updated_by: actorName,
+          last_update_details: detailSummary
+        }
+      } : member));
+
+      showToast(`Status updated to "${status}" for ${statusChangeModal.user.emp_name || statusChangeModal.user.email}`, 'success');
+      setStatusChangeModal({ isOpen: false, user: null, targetStatus: 'InActive' });
+      fetchUsers(false);
+    } catch (error) {
+      showToast(error.message || 'Could not update employee status.', 'error');
+    } finally {
+      setStatusChangeLoading(false);
+    }
+  };
+
+  // Handler: Open Approval Status Modal (Approved / Rejected / Pending & Remarks)
   const handleToggleApproval = (targetUser) => {
     if (!targetUser?.user_id) return;
-    const nextApproved = !targetUser.is_approved;
-    confirmUserChange({
-      title: 'Change Approval Status?',
-      message: `Change the approval status of ${targetUser.emp_name || targetUser.email} from "${targetUser.is_approved ? 'Approved' : 'Pending'}" to "${nextApproved ? 'Approved' : 'Pending'}"?`,
-      confirmText: nextApproved ? 'Approve User' : 'Mark as Pending',
-      action: async () => {
-        await toggleUserApproval(targetUser.user_id, nextApproved);
-        setUsers(previous => previous.map(member => member.user_id === targetUser.user_id ? { ...member, is_approved: nextApproved } : member));
-        showToast(`Approval status set to ${nextApproved ? 'Approved' : 'Pending'} for ${targetUser.emp_name || targetUser.email}`, 'success');
-        fetchUsers(false);
-      }
+    const raw = String(targetUser.approval_status || targetUser.module_access?.approval_status || '').toLowerCase().trim();
+    let current = 'Pending';
+    if (raw === 'rejected') current = 'Rejected';
+    else if (raw === 'approved' || targetUser.is_approved === true || targetUser.module_access?.is_approved === true) current = 'Approved';
+
+    setApprovalModal({
+      isOpen: true,
+      user: targetUser,
+      currentApproval: current
     });
+  };
+
+  const handleConfirmApprovalChange = async ({ approvalStatus, remarks }) => {
+    if (!approvalModal.user?.user_id) return;
+    setApprovalLoading(true);
+    try {
+      const actorName = moduleAccess?.emp_name || userEmail?.split('@')[0] || 'Admin';
+      await updateUserApprovalStatus(approvalModal.user.user_id, approvalStatus, {
+        remarks,
+        updatedByName: actorName,
+        updatedByEmail: userEmail || ''
+      });
+
+      const nowIso = new Date().toISOString();
+      const isApproved = approvalStatus === 'Approved';
+      const detailSummary = remarks 
+        ? `Approval: ${approvalStatus} — ${remarks}`
+        : `Approval: ${approvalStatus}`;
+
+      setUsers(previous => previous.map(member => member.user_id === approvalModal.user.user_id ? {
+        ...member,
+        is_approved: isApproved,
+        approval_status: approvalStatus,
+        approval_remarks: remarks,
+        last_updated_at: nowIso,
+        last_updated_by: actorName,
+        last_update_details: detailSummary,
+        module_access: {
+          ...(member.module_access || {}),
+          is_approved: isApproved,
+          approval_status: approvalStatus,
+          approval_remarks: remarks,
+          last_updated_at: nowIso,
+          last_updated_by: actorName,
+          last_update_details: detailSummary
+        }
+      } : member));
+
+      showToast(`Approval status set to "${approvalStatus}" for ${approvalModal.user.emp_name || approvalModal.user.email}`, 'success');
+      setApprovalModal({ isOpen: false, user: null, currentApproval: 'Pending' });
+      fetchUsers(false);
+    } catch (error) {
+      showToast(error.message || 'Could not update approval status.', 'error');
+    } finally {
+      setApprovalLoading(false);
+    }
   };
 
   // Handler: Save User as Draft (Partial creation)
@@ -823,9 +925,10 @@ export default function UserManagementContainer({
     }
 
     const headers = [
-      'Emp ID', 'Name', 'Email', 'Role', 'Status', 'Department', 'Sub Department',
+      'Emp ID', 'Name', 'Email', 'Role', 'Status', 'Approval Status', 'Department', 'Sub Department',
       'Designation', 'Mobile', 'Alt Mobile', 'Company', 'Location Type',
-      'Location Name', 'Primary Reporting', 'HOD', 'Created At'
+      'Location Name', 'Primary Reporting', 'HOD', 'Status Effective Date', 'Status Remarks',
+      'Last Updated', 'Updated By', 'Update Details', 'Created At'
     ];
 
     const rows = internalUsers.map(u => [
@@ -834,6 +937,7 @@ export default function UserManagementContainer({
       `"${u.email || ''}"`,
       `"${u.role || 'agent'}"`,
       `"${u.emp_status || 'Active'}"`,
+      `"${u.approval_status || (u.is_approved ? 'Approved' : 'Pending')}"`,
       `"${u.emp_department || ''}"`,
       `"${u.emp_sub_department || ''}"`,
       `"${u.emp_designation || ''}"`,
@@ -844,6 +948,11 @@ export default function UserManagementContainer({
       `"${u.work_location_name || ''}"`,
       `"${u.primary_reporting_person || ''}"`,
       `"${u.hod_person || ''}"`,
+      `"${u.status_effective_date || u.module_access?.status_effective_date || ''}"`,
+      `"${(u.status_remarks || u.module_access?.status_remarks || '').replace(/"/g, '""')}"`,
+      `"${u.last_updated_at || u.module_access?.last_updated_at || u.updated_at || ''}"`,
+      `"${(u.last_updated_by || u.module_access?.last_updated_by || '').replace(/"/g, '""')}"`,
+      `"${(u.last_update_details || u.module_access?.last_update_details || '').replace(/"/g, '""')}"`,
       `"${u.created_at || ''}"`
     ]);
 
@@ -1118,6 +1227,32 @@ export default function UserManagementContainer({
         confirmText={confirmModal.confirmText}
         type={confirmModal.type}
         loading={confirmLoading}
+      />
+
+      <StatusChangeModal
+        isOpen={statusChangeModal.isOpen}
+        onClose={() => {
+          if (!statusChangeLoading) {
+            setStatusChangeModal(prev => ({ ...prev, isOpen: false }));
+          }
+        }}
+        onConfirm={handleConfirmStatusChange}
+        user={statusChangeModal.user}
+        targetStatus={statusChangeModal.targetStatus}
+        loading={statusChangeLoading}
+      />
+
+      <ApprovalStatusModal
+        isOpen={approvalModal.isOpen}
+        onClose={() => {
+          if (!approvalLoading) {
+            setApprovalModal(prev => ({ ...prev, isOpen: false }));
+          }
+        }}
+        onConfirm={handleConfirmApprovalChange}
+        user={approvalModal.user}
+        currentApproval={approvalModal.currentApproval}
+        loading={approvalLoading}
       />
     </div>
   );

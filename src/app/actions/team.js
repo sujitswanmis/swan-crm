@@ -286,6 +286,67 @@ export async function toggleUserApproval(userId, isApproved) {
   return true;
 }
 
+export async function updateUserApprovalStatus(userId, approvalStatus, meta = {}) {
+  const adminClient = getAdminClient();
+  const nowIso = new Date().toISOString();
+  const statusStr = String(approvalStatus || 'Pending');
+  const isApproved = statusStr.toLowerCase() === 'approved';
+  const remarks = meta.remarks ? String(meta.remarks).trim() : '';
+  const updatedByName = meta.updatedByName || meta.updatedByEmail || 'Admin';
+
+  const detailSummary = remarks 
+    ? `Approval: ${statusStr} — ${remarks}`
+    : `Approval: ${statusStr}`;
+
+  const { data: user } = await adminClient
+    .from('user_roles')
+    .select('module_access, emp_name, email')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  const currentAccess = user?.module_access || {};
+  const updatedModuleAccess = {
+    ...currentAccess,
+    is_approved: isApproved,
+    approval_status: statusStr,
+    approval_remarks: remarks,
+    approved_by: updatedByName,
+    approved_at: nowIso,
+    last_updated_at: nowIso,
+    last_updated_by: updatedByName,
+    last_update_details: detailSummary
+  };
+
+  const { error } = await adminClient
+    .from('user_roles')
+    .update({
+      is_approved: isApproved,
+      module_access: updatedModuleAccess
+    })
+    .eq('user_id', userId);
+
+  if (error) {
+    const { error: fallbackErr } = await adminClient
+      .from('user_roles')
+      .update({ module_access: updatedModuleAccess })
+      .eq('user_id', userId);
+
+    if (fallbackErr) throw new Error(fallbackErr.message);
+  }
+
+  try {
+    const actorInfo = user?.emp_name || user?.email || userId;
+    const auditMsg = remarks 
+      ? `Approval status set to "${statusStr}" for ${actorInfo} (Remarks: "${remarks}") by ${updatedByName}`
+      : `Approval status set to "${statusStr}" for ${actorInfo} by ${updatedByName}`;
+    await logAuditAction('Update User Approval', auditMsg);
+  } catch (e) {
+    console.error('Audit Log failed', e);
+  }
+
+  return { success: true };
+}
+
 export async function toggleUserPermissions(userId, canImportExport) {
   const adminClient = getAdminClient();
   const { error } = await adminClient
@@ -631,9 +692,12 @@ export async function updateEmployeeDetailsAdmin(userId, details) {
     hod_person: details.hod_person || ''
   };
 
-  if (hasBranchScopePatch || details.branch_name !== undefined || trackingPolicy !== undefined) {
-    updateData.module_access = mergedAccess;
-  }
+  const nowIso = new Date().toISOString();
+  const updaterName = details.updatedByName || details.updatedByEmail || 'Admin';
+  mergedAccess.last_updated_at = nowIso;
+  mergedAccess.last_updated_by = updaterName;
+  mergedAccess.last_update_details = details.last_update_details || 'Profile & Job details updated';
+  updateData.module_access = mergedAccess;
 
   if (details.tenant_id && isUuidStr(details.tenant_id)) {
     updateData.tenant_id = String(details.tenant_id).trim();
@@ -738,24 +802,48 @@ export async function updateEmployeeDetailsAdmin(userId, details) {
   return { success: true };
 }
 
-export async function updateEmpStatus(userId, empStatus) {
+export async function updateEmpStatus(userId, empStatus, meta = {}) {
   const adminClient = getAdminClient();
-  const { error } = await adminClient
+  const nowIso = new Date().toISOString();
+  const effectiveDate = meta.effectiveDate || null;
+  const remarks = meta.remarks ? String(meta.remarks).trim() : null;
+  const updatedByName = meta.updatedByName || meta.updatedByEmail || 'Admin';
+
+  const detailSummary = remarks 
+    ? `Status: ${empStatus} (Eff: ${effectiveDate || 'Immediate'}) — ${remarks}`
+    : `Status: ${empStatus}`;
+
+  const { data: user } = await adminClient
     .from('user_roles')
-    .update({ emp_status: empStatus })
+    .select('module_access, emp_name, email')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  const currentAccess = user?.module_access || {};
+  const updatedModuleAccess = {
+    ...currentAccess,
+    emp_status: empStatus,
+    status_effective_date: effectiveDate,
+    status_remarks: remarks,
+    last_updated_at: nowIso,
+    last_updated_by: updatedByName,
+    last_update_details: detailSummary
+  };
+
+  const topLevelPayload = {
+    emp_status: empStatus,
+    module_access: updatedModuleAccess
+  };
+
+  let { error } = await adminClient
+    .from('user_roles')
+    .update(topLevelPayload)
     .eq('user_id', userId);
 
-  if (error && (error.message.includes('emp_status') || error.code === 'PGRST204')) {
-    const { data: user } = await adminClient
-      .from('user_roles')
-      .select('module_access')
-      .eq('user_id', userId)
-      .single();
-      
-    const currentAccess = user?.module_access || {};
+  if (error && (error.message?.includes('emp_status') || error.code === 'PGRST204')) {
     const { error: fallbackErr } = await adminClient
       .from('user_roles')
-      .update({ module_access: { ...currentAccess, emp_status: empStatus } })
+      .update({ module_access: updatedModuleAccess })
       .eq('user_id', userId);
 
     if (fallbackErr) throw new Error(fallbackErr.message);
@@ -764,8 +852,11 @@ export async function updateEmpStatus(userId, empStatus) {
   }
 
   try {
-    const { data: userRole } = await adminClient.from('user_roles').select('emp_name, email').eq('user_id', userId).maybeSingle();
-    await logAuditAction('Update User Status', `Changed status of user ${userRole?.emp_name || userRole?.email || userId} to "${empStatus}"`);
+    const actorInfo = user?.emp_name || user?.email || userId;
+    const auditMsg = remarks 
+      ? `Changed status of user ${actorInfo} to "${empStatus}" (Effective: ${effectiveDate || 'Immediate'}, Remarks: "${remarks}") by ${updatedByName}`
+      : `Changed status of user ${actorInfo} to "${empStatus}" by ${updatedByName}`;
+    await logAuditAction('Update User Status', auditMsg);
   } catch (e) {
     console.error('Audit Log failed', e);
   }
