@@ -1724,6 +1724,7 @@ export default function AttendanceModule({
   const [teamMasterData, setTeamMasterData] = useState({ records: [], summary: {} });
   const [loadingTeamMaster, setLoadingTeamMaster] = useState(false);
   const [teamSearchQuery, setTeamSearchQuery] = useState('');
+  const [attendanceFilterMode, setAttendanceFilterMode] = useState('ALL'); // 'ALL' | 'ACTIVE_PUNCH_ONLY' | 'NO_PUNCH_ONLY'
 
   // Monthly Matrix State
   const [matrixMonth, setMatrixMonth] = useState(new Date().getMonth() + 1);
@@ -2916,20 +2917,78 @@ export default function AttendanceModule({
     });
   }, [hodRequests, hodStatusFilter, hodSearchQuery]);
 
+  // Dynamic punch count statistics for dropdown labels
+  const matrixPunchCounts = useMemo(() => {
+    const rows = monthlyMatrixData?.rows || [];
+    let active = 0;
+    rows.forEach(r => {
+      const hasPunch = (r.summary?.totalMinutesWorked || 0) > 0 ||
+        (r.summary?.totalPresent || 0) > 0 ||
+        (r.summary?.totalHalfDays || 0) > 0 ||
+        (r.summary?.totalShortLeaves || 0) > 0 ||
+        (r.days || []).some(d => {
+          const code = typeof d?.code === 'string' ? d.code : '';
+          return code === 'P' || code === 'HD' || code === 'R' || code.startsWith('SL') || code === 'WO-P' || code === 'H-P' || (d?.record && (d.record.in_time || d.record.out_time || (d.record.total_working_minutes || 0) > 0));
+        });
+      if (hasPunch) active++;
+    });
+    return {
+      total: rows.length,
+      active,
+      inactive: rows.length - active
+    };
+  }, [monthlyMatrixData?.rows]);
+
+  const dailyPunchCounts = useMemo(() => {
+    const records = teamMasterData?.records || [];
+    let active = 0;
+    records.forEach(r => {
+      const hasPunch = Boolean(
+        r.in_time ||
+        r.out_time ||
+        (r.total_working_minutes || 0) > 0 ||
+        r.is_regularized ||
+        ['PRESENT', 'LATE', 'HALF_DAY', 'REGULARIZED', 'SHORT_LEAVE'].includes((r.status || '').toUpperCase())
+      );
+      if (hasPunch) active++;
+    });
+    return {
+      total: records.length,
+      active,
+      inactive: records.length - active
+    };
+  }, [teamMasterData?.records]);
+
   // Filter Team Master Records (Daily)
   const filteredTeamRecords = useMemo(() => {
     return (teamMasterData.records || []).filter(r => {
-      if (!teamSearchQuery) return true;
-      const q = teamSearchQuery.toLowerCase();
-      return (
-        r.emp_name?.toLowerCase().includes(q) ||
-        r.email?.toLowerCase().includes(q) ||
-        r.emp_code?.toLowerCase().includes(q) ||
-        r.department?.toLowerCase().includes(q) ||
-        r.status?.toLowerCase().includes(q)
-      );
+      if (teamSearchQuery) {
+        const q = teamSearchQuery.toLowerCase();
+        const matches = (
+          r.emp_name?.toLowerCase().includes(q) ||
+          r.email?.toLowerCase().includes(q) ||
+          r.emp_code?.toLowerCase().includes(q) ||
+          r.department?.toLowerCase().includes(q) ||
+          r.status?.toLowerCase().includes(q)
+        );
+        if (!matches) return false;
+      }
+
+      if (attendanceFilterMode !== 'ALL') {
+        const hasPunch = Boolean(
+          r.in_time ||
+          r.out_time ||
+          (r.total_working_minutes || 0) > 0 ||
+          r.is_regularized ||
+          ['PRESENT', 'LATE', 'HALF_DAY', 'REGULARIZED', 'SHORT_LEAVE'].includes((r.status || '').toUpperCase())
+        );
+        if (attendanceFilterMode === 'ACTIVE_PUNCH_ONLY' && !hasPunch) return false;
+        if (attendanceFilterMode === 'NO_PUNCH_ONLY' && hasPunch) return false;
+      }
+
+      return true;
     });
-  }, [teamMasterData.records, teamSearchQuery]);
+  }, [teamMasterData.records, teamSearchQuery, attendanceFilterMode]);
 
   // Dynamic KPI Summary for Team Attendance based on search and filters
   const teamFilteredSummary = useMemo(() => {
@@ -2981,16 +3040,33 @@ export default function AttendanceModule({
   // Filter Monthly Matrix Records
   const filteredMatrixRows = useMemo(() => {
     return (monthlyMatrixData?.rows || []).filter(r => {
-      if (!teamSearchQuery) return true;
-      const q = teamSearchQuery.toLowerCase();
-      return (
-        r.emp_name?.toLowerCase().includes(q) ||
-        r.email?.toLowerCase().includes(q) ||
-        r.emp_id?.toLowerCase().includes(q) ||
-        r.department?.toLowerCase().includes(q)
-      );
+      if (teamSearchQuery) {
+        const q = teamSearchQuery.toLowerCase();
+        const matches = (
+          r.emp_name?.toLowerCase().includes(q) ||
+          r.email?.toLowerCase().includes(q) ||
+          r.emp_id?.toLowerCase().includes(q) ||
+          r.department?.toLowerCase().includes(q)
+        );
+        if (!matches) return false;
+      }
+
+      if (attendanceFilterMode !== 'ALL') {
+        const hasPunch = (r.summary?.totalMinutesWorked || 0) > 0 ||
+          (r.summary?.totalPresent || 0) > 0 ||
+          (r.summary?.totalHalfDays || 0) > 0 ||
+          (r.summary?.totalShortLeaves || 0) > 0 ||
+          (r.days || []).some(d => {
+            const code = typeof d?.code === 'string' ? d.code : '';
+            return code === 'P' || code === 'HD' || code === 'R' || code.startsWith('SL') || code === 'WO-P' || code === 'H-P' || (d?.record && (d.record.in_time || d.record.out_time || (d.record.total_working_minutes || 0) > 0));
+          });
+        if (attendanceFilterMode === 'ACTIVE_PUNCH_ONLY' && !hasPunch) return false;
+        if (attendanceFilterMode === 'NO_PUNCH_ONLY' && hasPunch) return false;
+      }
+
+      return true;
     });
-  }, [monthlyMatrixData?.rows, teamSearchQuery]);
+  }, [monthlyMatrixData?.rows, teamSearchQuery, attendanceFilterMode]);
 
   // Export Daily / Range Team Attendance to CSV (Filter & Search aware)
   const handleExportCSV = () => {
@@ -3027,9 +3103,10 @@ export default function AttendanceModule({
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
     const searchSuffix = teamSearchQuery ? `_${teamSearchQuery.replace(/[^a-zA-Z0-9]/g, '_')}` : '';
+    const filterSuffix = attendanceFilterMode === 'ACTIVE_PUNCH_ONLY' ? '_PunchedOnly' : (attendanceFilterMode === 'NO_PUNCH_ONLY' ? '_InactiveOnly' : '');
     const fileName = isRange 
-      ? `Team_Attendance_Report_${teamStartDate}_to_${teamEndDate}${searchSuffix}.csv`
-      : `Team_Attendance_Report_${teamStartDate}${searchSuffix}.csv`;
+      ? `Team_Attendance_Report_${teamStartDate}_to_${teamEndDate}${filterSuffix}${searchSuffix}.csv`
+      : `Team_Attendance_Report_${teamStartDate}${filterSuffix}${searchSuffix}.csv`;
     link.setAttribute('download', fileName);
     document.body.appendChild(link);
     link.click();
@@ -3102,9 +3179,10 @@ export default function AttendanceModule({
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
     const searchSuffix = teamSearchQuery ? `_${teamSearchQuery.replace(/[^a-zA-Z0-9]/g, '_')}` : '';
+    const filterSuffix = attendanceFilterMode === 'ACTIVE_PUNCH_ONLY' ? '_PunchedOnly' : (attendanceFilterMode === 'NO_PUNCH_ONLY' ? '_InactiveOnly' : '');
     const monthName = new Date(matrixYear, matrixMonth - 1, 1).toLocaleString('en-US', { month: 'long' });
     const adjustTag = withLeavesAdjusted ? '_LeaveAdjusted' : '_RawAttendance';
-    link.setAttribute('download', `Monthly_Attendance_Matrix_${monthName}_${matrixYear}${adjustTag}${searchSuffix}.csv`);
+    link.setAttribute('download', `Monthly_Attendance_Matrix_${monthName}_${matrixYear}${adjustTag}${filterSuffix}${searchSuffix}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -5928,6 +6006,36 @@ export default function AttendanceModule({
                     </option>
                   ))}
                 </select>
+
+                {/* Attendance Punch Filter: All Staff vs Punched Only vs Zero Punch */}
+                {teamReportView !== 'LEAVE_LEDGER' && (
+                  <select
+                    value={attendanceFilterMode}
+                    onChange={(e) => setAttendanceFilterMode(e.target.value)}
+                    style={{
+                      padding: '0.45rem 0.75rem',
+                      borderRadius: '8px',
+                      border: '1px solid ' + (attendanceFilterMode === 'ACTIVE_PUNCH_ONLY' ? '#86efac' : (attendanceFilterMode === 'NO_PUNCH_ONLY' ? '#fca5a5' : 'var(--border-light)')),
+                      background: attendanceFilterMode === 'ACTIVE_PUNCH_ONLY' ? '#f0fdf4' : (attendanceFilterMode === 'NO_PUNCH_ONLY' ? '#fef2f2' : 'var(--bg-primary)'),
+                      color: attendanceFilterMode === 'ACTIVE_PUNCH_ONLY' ? '#166534' : (attendanceFilterMode === 'NO_PUNCH_ONLY' ? '#991b1b' : 'var(--text-primary)'),
+                      fontSize: '0.82rem',
+                      fontWeight: attendanceFilterMode !== 'ALL' ? 700 : 500,
+                      outline: 'none',
+                      cursor: 'pointer'
+                    }}
+                    title="Attendance Filter: All Employees, Only Punched (Attendance lagane wale), or Zero Punch"
+                  >
+                    <option value="ALL">
+                      👥 All Employees ({teamReportView === 'MONTHLY_MATRIX' ? (monthlyMatrixData?.rows?.length || 0) : (teamMasterData?.records?.length || 0)})
+                    </option>
+                    <option value="ACTIVE_PUNCH_ONLY">
+                      🟢 Attendance Lagane Wale Only ({teamReportView === 'MONTHLY_MATRIX' ? matrixPunchCounts.active : dailyPunchCounts.active})
+                    </option>
+                    <option value="NO_PUNCH_ONLY">
+                      ⚪ Bina Attendance Wale ({teamReportView === 'MONTHLY_MATRIX' ? matrixPunchCounts.inactive : dailyPunchCounts.inactive})
+                    </option>
+                  </select>
+                )}
               </div>
 
               {/* Action Buttons: Refresh, CSV Export & View Toggle */}
@@ -6616,8 +6724,17 @@ export default function AttendanceModule({
                 gap: '0.75rem'
               }}>
                 <div style={{ padding: '0.85rem', borderRadius: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', textAlign: 'center' }}>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', fontWeight: 600 }}>TOTAL EMPLOYEES</span>
-                  <span style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--text-primary)' }}>{monthlyMatrixData?.summary?.totalEmployees || 0}</span>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', fontWeight: 600 }}>
+                    {attendanceFilterMode === 'ACTIVE_PUNCH_ONLY' ? 'ATTENDANCE LAGANE WALE' : (attendanceFilterMode === 'NO_PUNCH_ONLY' ? 'BINA ATTENDANCE WALE' : 'TOTAL EMPLOYEES')}
+                  </span>
+                  <span style={{ fontSize: '1.35rem', fontWeight: 800, color: attendanceFilterMode === 'ACTIVE_PUNCH_ONLY' ? '#16a34a' : (attendanceFilterMode === 'NO_PUNCH_ONLY' ? '#dc2626' : 'var(--text-primary)') }}>
+                    {filteredMatrixRows.length}
+                    {attendanceFilterMode !== 'ALL' && (
+                      <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', marginLeft: '0.35rem' }}>
+                        / {monthlyMatrixData?.summary?.totalEmployees || monthlyMatrixData?.rows?.length || 0}
+                      </span>
+                    )}
+                  </span>
                 </div>
                 <div style={{ padding: '0.85rem', borderRadius: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', textAlign: 'center' }}>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', fontWeight: 600 }}>DAYS IN MONTH</span>
