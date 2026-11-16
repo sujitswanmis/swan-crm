@@ -11,6 +11,7 @@ import { getTenantAttendancePolicy } from '@/app/actions/attendance';
 import { getAllTenantsWithSubscriptions } from '@/app/actions/saasSubscription';
 import { getTeamMembers } from '@/app/actions/team';
 import { resolveCompanyTokenForBranch, matchesCompanyToken } from '@/utils/branchAccess';
+import UniversalBranchSelect from '@/components/common/UniversalBranchSelect';
 
 function getTenantPlaceholderEmail(tenantInfo) {
   const name = String(tenantInfo?.companyName || '').toLowerCase();
@@ -285,6 +286,10 @@ export default function AddEditUserModal({
   const [customBranchNameInput, setCustomBranchNameInput] = useState(false);
   const [customBranchDraft, setCustomBranchDraft] = useState('');
   const [customLocationInput, setCustomLocationInput] = useState(false);
+  const [customDesignationInput, setCustomDesignationInput] = useState(() => {
+    const curDesig = user?.emp_designation || '';
+    return Boolean(curDesig && !DESIGNATIONS.includes(curDesig));
+  });
 
   const [formData, setFormData] = useState(() => buildInitialFormData(user, departments, tenantId, currentUserCompany));
 
@@ -305,6 +310,9 @@ export default function AddEditUserModal({
       setCustomBranchNameInput(false);
       setCustomBranchDraft('');
       setCustomLocationInput(false);
+      const curDesig = user?.emp_designation || '';
+      const isCustomDesig = Boolean(curDesig && !DESIGNATIONS.includes(curDesig));
+      setCustomDesignationInput(isCustomDesig);
       setActiveStep('personal');
       setErrorMsg('');
       setFormData(initialState);
@@ -1099,27 +1107,73 @@ export default function AddEditUserModal({
                   </div>
 
                   <div>
-                    <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, marginBottom: '0.35rem', color: 'var(--text-primary)' }}>
-                      Designation
-                    </label>
-                    <select
-                      value={formData.emp_designation}
-                      onChange={e => handleChange('emp_designation', e.target.value)}
-                      style={{
-                        width: '100%',
-                        padding: '0.55rem 0.75rem',
-                        borderRadius: '8px',
-                        border: '1px solid var(--border-light)',
-                        backgroundColor: 'var(--bg-surface)',
-                        color: 'var(--text-primary)',
-                        fontSize: '0.85rem'
-                      }}
-                    >
-                      <option value="">-- Select Designation --</option>
-                      {DESIGNATIONS.map(d => (
-                        <option key={d} value={d}>{d}</option>
-                      ))}
-                    </select>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem', gap: '0.5rem' }}>
+                      <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
+                        Designation
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setCustomDesignationInput(v => !v)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: 'var(--accent-color, #2563eb)',
+                          fontSize: '0.72rem',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          padding: 0
+                        }}
+                      >
+                        {customDesignationInput ? '← Select from List' : '+ Type Custom'}
+                      </button>
+                    </div>
+                    {customDesignationInput ? (
+                      <input
+                        type="text"
+                        value={formData.emp_designation || ''}
+                        onChange={e => handleChange('emp_designation', e.target.value)}
+                        placeholder="e.g. MIS Executive / Quality Engineer / Plant Head"
+                        style={{
+                          width: '100%',
+                          padding: '0.55rem 0.75rem',
+                          borderRadius: '8px',
+                          border: '1px solid var(--border-light)',
+                          backgroundColor: 'var(--bg-surface)',
+                          color: 'var(--text-primary)',
+                          fontSize: '0.85rem'
+                        }}
+                      />
+                    ) : (
+                      <select
+                        value={formData.emp_designation}
+                        onChange={e => {
+                          const val = e.target.value;
+                          if (val === '__custom__') {
+                            setCustomDesignationInput(true);
+                            return;
+                          }
+                          handleChange('emp_designation', val);
+                        }}
+                        style={{
+                          width: '100%',
+                          padding: '0.55rem 0.75rem',
+                          borderRadius: '8px',
+                          border: '1px solid var(--border-light)',
+                          backgroundColor: 'var(--bg-surface)',
+                          color: 'var(--text-primary)',
+                          fontSize: '0.85rem'
+                        }}
+                      >
+                        <option value="">-- Select Designation --</option>
+                        {formData.emp_designation && !DESIGNATIONS.includes(formData.emp_designation) && (
+                          <option value={formData.emp_designation}>{formData.emp_designation} (Current)</option>
+                        )}
+                        {DESIGNATIONS.map(d => (
+                          <option key={d} value={d}>{d}</option>
+                        ))}
+                        <option value="__custom__">+ Type Custom Designation...</option>
+                      </select>
+                    )}
                   </div>
 
                   <div>
@@ -1360,7 +1414,7 @@ export default function AddEditUserModal({
                             const isAdded = !isAllBranchesSelected && branchChips.some(c => c.key === brKey);
                             return (
                               <option key={br.id || br.branch_code} value={br.branch_name}>
-                                {isAdded ? '✓ ' : ''}{br.custom_code ? `${br.custom_code} · ` : ''}{br.branch_name} ({br.branch_code}){isAdded ? ' (Remove)' : ''}
+                                {isAdded ? '✓ ' : ''}{br.branch_code ? `${br.branch_code} — ` : ''}{br.branch_name}{isAdded ? ' (Remove)' : ''}
                               </option>
                             );
                           })}
@@ -1472,38 +1526,24 @@ export default function AddEditUserModal({
                     <div style={{ position: 'relative' }}>
                       <MapPin size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
                       {!customLocationInput && availableBranches.length > 0 ? (
-                        <select
-                          value={formData.work_location_name || ''}
-                          onChange={e => {
-                            const val = e.target.value;
-                            if (val === '__custom__') {
-                              setCustomLocationInput(true);
-                            } else {
-                              handleChange('work_location_name', val);
-                              const matched = availableBranches.find(b => b.branch_name === val);
-                              if (matched?.location_type) {
-                                handleChange('work_location_type', matched.location_type);
-                              }
+                        <UniversalBranchSelect
+                          value={formData.work_location_name}
+                          onChange={val => {
+                            handleChange('work_location_name', val);
+                            const matched = availableBranches.find(b => b.branch_name === val || b.custom_code === val || b.branch_code === val);
+                            if (matched?.location_type) {
+                              handleChange('work_location_type', matched.location_type);
                             }
                           }}
-                          style={{
-                            width: '100%',
-                            padding: '0.55rem 0.75rem 0.55rem 2.2rem',
-                            borderRadius: '8px',
-                            border: '1px solid var(--border-light)',
-                            backgroundColor: 'var(--bg-surface)',
-                            color: 'var(--text-primary)',
-                            fontSize: '0.85rem'
+                          branches={availableBranches}
+                          placeholder="Select Branch Office / Plant"
+                          title="BRANCH OFFICE / PLANT"
+                          triggerStyle={{
+                            paddingLeft: '2.2rem',
+                            minHeight: '38px',
+                            borderRadius: '8px'
                           }}
-                        >
-                          <option value="">-- Select Branch Office / Plant --</option>
-                          {availableBranches.map(br => (
-                            <option key={br.id || br.branch_code} value={br.branch_name}>
-                              {br.branch_name} ({br.branch_code}) - {br.location_type}
-                            </option>
-                          ))}
-                          <option value="__custom__">+ Enter Custom Location...</option>
-                        </select>
+                        />
                       ) : (
                         <input
                           type="text"

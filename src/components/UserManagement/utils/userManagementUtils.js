@@ -22,7 +22,11 @@ export const DESIGNATIONS = [
   'Operations Manager', 'Team Lead', 'Supervisor',
   'Director', 'General Manager', 'Assistant Manager',
   'IT Manager', 'System Administrator', 'Data Analyst',
-  'Accountant', 'Finance Manager', 'Other'
+  'Accountant', 'Finance Manager',
+  'Plant Head', 'Production Manager', 'Quality Manager', 'Quality Engineer',
+  'Maintenance Engineer', 'MIS Executive', 'Dispatch Executive', 'Store Executive',
+  'Executive', 'Engineer', 'Officer', 'Operator',
+  'Other'
 ];
 
 export const WORK_LOCATION_TYPES = [

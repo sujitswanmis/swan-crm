@@ -300,6 +300,7 @@ test('liveTracking.js getDeviceHealthFleetReport isolates employees and branches
     '@/utils/supabase/server': { createClient: async () => fakeDb },
     '@/utils/fieldTelemetryToken': {},
     '@/utils/routeGeometryMatcher': {},
+    '@/components/FieldForce/trackingActivityTimeline': {},
     '@/utils/branchAccess': branchAccessExports,
     '@/app/actions/tenantBranches': {
       resolveKnownTenant: async () => ({ tenantId: '00000000-0000-0000-0000-000000000001', tenantCode: 'TNT00002', companyName: 'New Swan Group' }),

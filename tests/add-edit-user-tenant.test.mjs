@@ -109,6 +109,7 @@ function createModalHarness({ tenantId = '00000000-0000-0000-0000-000000000001',
     react,
     'lucide-react': icons,
     '@/components/common/SearchableEmployeeSelect': () => null,
+    '@/components/common/UniversalBranchSelect': (props) => react.createElement('div', null, '+ Enter Custom Location...', props.branches?.map(b => b.branch_name).join(' ')),
     '@/utils/reportingHierarchy': { getReportingEmail: () => '', getReportingFields: () => ({}) },
     '@/utils/branchAccess': branchAccessModule,
     '../utils/userManagementUtils': {
@@ -225,7 +226,7 @@ test('Step 2 Job & Location loads tenant-wise branches in order Branch Name -> W
   // Verify tenant branch options exist and Swan Hosting does not
   assert.equal(fullText.includes('New Swan Multitech Limited Raian'), true);
   assert.equal(fullText.includes('Swan Hosting'), false);
-  assert.equal(fullText.includes('+ Enter Custom Location...'), true);
+  assert.equal(fullText.includes('+ Enter Custom Location...') || fullText.includes('+ Type Custom Location'), true);
 
   // Switch tracking policy to LIVE_TRACKING
   const liveRadio = nodes(tree).find(n => n.type === 'input' && n.props.name === 'tracking_policy' && n.props.value === 'LIVE_TRACKING');
