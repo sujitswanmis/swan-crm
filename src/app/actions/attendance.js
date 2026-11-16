@@ -3193,6 +3193,44 @@ export async function resetTodayPunchForTesting(email) {
 }
 
 /**
+ * Helper to match an official holiday against an employee based on company / branch scope.
+ * Handles both "All Branches" (applies to all employees of tenant) and single branch (e.g. NSMLR, NSTLP, branch codes, work location).
+ */
+function matchesHolidayForEmployee(holiday, employee) {
+  if (!holiday) return false;
+  const isOfficial = holiday.is_holiday !== false && holiday.is_holiday !== 'false';
+  if (!isOfficial) return false;
+
+  const holidayBranch = String(holiday.branch_name || 'All Branches').trim();
+  if (
+    !holidayBranch || 
+    holidayBranch === 'All Branches' || 
+    holidayBranch.toLowerCase() === 'all' || 
+    holidayBranch.toLowerCase() === 'all branches (default)'
+  ) {
+    return true;
+  }
+
+  const cleanHb = holidayBranch.toLowerCase();
+  const empBranchTokens = [
+    employee.branch_name,
+    employee.branch_code,
+    employee.work_location_name,
+    employee.company,
+    employee.company_name,
+    ...(Array.isArray(employee.assigned_branch_names) ? employee.assigned_branch_names : []),
+    ...(Array.isArray(employee.assigned_branch_codes) ? employee.assigned_branch_codes : []),
+    ...(Array.isArray(employee.module_access?.assigned_branch_names) ? employee.module_access.assigned_branch_names : []),
+    ...(Array.isArray(employee.module_access?.assigned_branch_codes) ? employee.module_access.assigned_branch_codes : []),
+    ...(Array.isArray(employee.module_access?.assigned_branches) ? employee.module_access.assigned_branches : []),
+    employee.module_access?.branch_name,
+    employee.module_access?.work_location_name
+  ].map(v => String(v || '').trim().toLowerCase()).filter(Boolean);
+
+  return empBranchTokens.some(tok => tok === cleanHb || tok.includes(cleanHb) || cleanHb.includes(tok));
+}
+
+/**
  * Evaluate Sunday Policy:
  * Rule 1: Minimum 3 days Present mandatory in that week (Monday to Saturday); otherwise Sunday is Absent (Unpaid).
  * Rule 2: Sandwich Leave Rule: If employee is Absent/On Leave on BOTH Saturday (day before) AND Monday (day after), Sunday is Absent.
@@ -3203,10 +3241,33 @@ function evaluateSundayEligibility({
   todayStr,
   policy = null
 }) {
-  const sunday = new Date(`${sundayDateStr}T00:00:00`);
-  
-  // 1. If employee actually punched / worked on Sunday
+  const getOffsetDateStr = (baseDateStr, dayOffset) => {
+    const [y, m, d] = baseDateStr.split('-').map(Number);
+    const dt = new Date(Date.UTC(y, m - 1, d + dayOffset, 12, 0, 0));
+    return dt.toISOString().split('T')[0];
+  };
+
   const sunRec = recordsMapByDate.get(sundayDateStr);
+  const sunRemarks = (sunRec?.remarks || '').toLowerCase();
+
+  // 1. Explicit Week Off / Approved Manual Entry Override
+  const isExplicitWeekOff = sunRec && (
+    sunRec.status === 'WEEK_OFF' ||
+    sunRemarks.includes('[week_off]') ||
+    sunRemarks.includes('week off')
+  );
+  if (isExplicitWeekOff) {
+    return {
+      isPaid: true,
+      code: 'WO',
+      status: 'WEEK_OFF',
+      label: sunRec.remarks || 'Paid Week Off (Approved/Manual)',
+      reason: null,
+      record: sunRec
+    };
+  }
+
+  // 2. If employee actually punched / worked on Sunday
   if (sunRec && (sunRec.status === 'PRESENT' || (sunRec.total_working_minutes || 0) > 0 || (sunRec.in_time && sunRec.out_time))) {
     return {
       isPaid: true,
@@ -3218,7 +3279,7 @@ function evaluateSundayEligibility({
     };
   }
 
-  // If Sunday is in the future
+  // 3. If Sunday is in the future
   if (sundayDateStr > todayStr) {
     return {
       isPaid: true,
@@ -3230,7 +3291,7 @@ function evaluateSundayEligibility({
     };
   }
 
-  // 2. Rule 1: Weekly Min Working Days Rule (OPTIONAL TOGGLE: Configurable by company)
+  // 4. Rule 1: Weekly Min Working Days Rule (OPTIONAL TOGGLE: Configurable by company)
   const minWeeklyEnabled = policy?.leave_policy?.enable_min_weekly_days_for_sunday === true;
   const minRequiredSetting = Number(policy?.leave_policy?.min_weekly_working_days ?? 3);
 
@@ -3239,16 +3300,23 @@ function evaluateSundayEligibility({
     let totalDaysEvaluated = 0;
 
     for (let offset = 6; offset >= 1; offset--) {
-      const dayDate = new Date(sunday);
-      dayDate.setDate(sunday.getDate() - offset);
-      const dayDateStr = dayDate.toISOString().split('T')[0];
+      const dayDateStr = getOffsetDateStr(sundayDateStr, -offset);
 
-      // Only evaluate days in the current month / up to today
-      if (dayDate.getMonth() === sunday.getMonth() && dayDateStr <= todayStr) {
+      // Only evaluate days up to today
+      if (dayDateStr <= todayStr) {
         totalDaysEvaluated++;
         const dayRec = recordsMapByDate.get(dayDateStr);
         if (dayRec) {
-          if (dayRec.status === 'PRESENT' || dayRec.status === 'LATE' || dayRec.status === 'REGULARIZED' || dayRec.is_regularized || dayRec.is_paid_leave) {
+          const dRem = (dayRec.remarks || '').toLowerCase();
+          if (
+            dayRec.status === 'PRESENT' || 
+            dayRec.status === 'LATE' || 
+            dayRec.status === 'REGULARIZED' || 
+            dayRec.is_regularized || 
+            dayRec.is_paid_leave ||
+            dayRec.status === 'WEEK_OFF' ||
+            dRem.includes('[week_off]')
+          ) {
             weeklyPresentDays += 1;
           } else if (dayRec.status === 'HALF_DAY') {
             weeklyPresentDays += 0.5;
@@ -3258,7 +3326,7 @@ function evaluateSundayEligibility({
     }
 
     const requiredMinDays = Math.min(minRequiredSetting, totalDaysEvaluated);
-    if (totalDaysEvaluated > 0 && weeklyPresentDays < requiredMinDays) {
+    if (totalDaysEvaluated >= requiredMinDays && weeklyPresentDays < requiredMinDays) {
       return {
         isPaid: false,
         code: 'A',
@@ -3270,16 +3338,11 @@ function evaluateSundayEligibility({
     }
   }
 
-  // 3. Rule 2: Sandwich Rule
+  // 5. Rule 2: Sandwich Rule
   const sandwichMode = policy?.leave_policy?.sandwich_mode || (policy?.leave_policy?.enable_sandwich_rule !== false ? 'UNAPPROVED_ONLY' : 'OFF');
   if (sandwichMode !== 'OFF') {
-    const satDate = new Date(sunday);
-    satDate.setDate(sunday.getDate() - 1);
-    const satDateStr = satDate.toISOString().split('T')[0];
-
-    const monDate = new Date(sunday);
-    monDate.setDate(sunday.getDate() + 1);
-    const monDateStr = monDate.toISOString().split('T')[0];
+    const satDateStr = getOffsetDateStr(sundayDateStr, -1);
+    const monDateStr = getOffsetDateStr(sundayDateStr, 1);
 
     const satRec = recordsMapByDate.get(satDateStr);
     const monRec = recordsMapByDate.get(monDateStr);
@@ -3288,7 +3351,12 @@ function evaluateSundayEligibility({
     let isMonAbsent = false;
 
     if (satDateStr <= todayStr) {
-      if (!satRec || (!satRec.in_time && !satRec.out_time)) {
+      const sundayMonth = sundayDateStr.slice(0, 7);
+      const satMonth = satDateStr.slice(0, 7);
+      // If Saturday was in previous month and no record exists in loaded history, do NOT assume absent
+      if (!satRec && satMonth !== sundayMonth) {
+        isSatAbsent = false;
+      } else if (!satRec || (!satRec.in_time && !satRec.out_time)) {
         isSatAbsent = true;
       } else if (satRec.status === 'ABSENT' || satRec.status === 'LWP') {
         isSatAbsent = true;
@@ -3319,7 +3387,7 @@ function evaluateSundayEligibility({
     }
   }
 
-  // 4. Default: Eligible for Paid Sunday Week Off
+  // 6. Default: Eligible for Paid Sunday Week Off
   return {
     isPaid: true,
     code: 'WO',
@@ -3352,6 +3420,10 @@ export async function getTeamMonthlyMatrix({
   const startDateStr = `${targetYear}-${String(targetMonth).padStart(2, '0')}-01`;
   const endDateStr = `${targetYear}-${String(targetMonth).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`;
 
+  // 7-day lookback before month start to evaluate Sunday min-days & sandwich rules across month boundary
+  const lookbackStart = new Date(Date.UTC(targetYear, targetMonth - 1, 1 - 7, 12, 0, 0));
+  const queryStartDateStr = lookbackStart.toISOString().split('T')[0];
+
   let allUsers = [];
   try {
     const { matchesUserBranchMembership } = (branchScope && typeof branchScope === 'object')
@@ -3381,6 +3453,12 @@ export async function getTeamMonthlyMatrix({
           department: u.emp_department || 'General',
           created_at: u.created_at,
           module_access: u.module_access,
+          company: u.company,
+          branch_name: u.branch_name || u.work_location_name || u.module_access?.branch_name || u.module_access?.work_location_name || '',
+          branch_code: u.branch_code || (Array.isArray(u.assigned_branch_codes) ? u.assigned_branch_codes[0] : (u.module_access?.assigned_branch_codes?.[0] || '')),
+          assigned_branch_codes: Array.isArray(u.assigned_branch_codes) ? u.assigned_branch_codes : (u.module_access?.assigned_branch_codes || []),
+          assigned_branch_names: Array.isArray(u.assigned_branch_names) ? u.assigned_branch_names : (u.module_access?.assigned_branch_names || []),
+          work_location_name: u.work_location_name || u.module_access?.work_location_name || '',
           salary_amount: Number(u.salary_amount || u.module_access?.emp_salary || 0)
         }));
     }
@@ -3395,7 +3473,7 @@ export async function getTeamMonthlyMatrix({
       .from('attendance_records')
       .select('*')
       .eq('tenant_id', effectiveTenantId)
-      .gte('attendance_date', startDateStr)
+      .gte('attendance_date', queryStartDateStr)
       .lte('attendance_date', endDateStr);
 
     if (!error && data && data.length > 0) {
@@ -3410,7 +3488,7 @@ export async function getTeamMonthlyMatrix({
   const local = await getFallbackData();
   const localMonthRecs = (local.records || []).filter(r => {
     if ((r.tenant_id || DEFAULT_TENANT_ID) !== effectiveTenantId) return false;
-    if (r.attendance_date < startDateStr || r.attendance_date > endDateStr) return false;
+    if (r.attendance_date < queryStartDateStr || r.attendance_date > endDateStr) return false;
     if (r.user_id && approvedUserIds.has(r.user_id)) return true;
     if (r.email && approvedUserEmails.has((r.email || '').toLowerCase())) return true;
     return false;
@@ -3443,7 +3521,9 @@ export async function getTeamMonthlyMatrix({
         emp_name: sample?.emp_name || em.split('@')[0],
         email: em,
         emp_code: sample?.emp_code || '',
-        department: sample?.department || 'General'
+        department: sample?.department || 'General',
+        company: sample?.company || '',
+        branch_name: sample?.branch_name || ''
       };
     });
   }
@@ -3459,18 +3539,40 @@ export async function getTeamMonthlyMatrix({
     endDay = daysInMonth;
   }
 
+  // Load official company holidays for target month from Holidays Calendar Config
+  let monthHolidays = [];
+  try {
+    const { getCompanyHolidays } = await import('./checklist');
+    const holRes = await getCompanyHolidays(effectiveTenantId, 'All Branches');
+    const allHols = Array.isArray(holRes?.data) ? holRes.data : (Array.isArray(holRes?.allTenantHolidays) ? holRes.allTenantHolidays : []);
+    monthHolidays = allHols.filter(h => {
+      if (!h || !h.date) return false;
+      const isOfficial = h.is_holiday !== false && h.is_holiday !== 'false';
+      if (!isOfficial) return false;
+      return h.date >= startDateStr && h.date <= endDateStr;
+    });
+  } catch (hErr) {
+    console.warn('Error fetching company holidays in getTeamMonthlyMatrix:', hErr);
+  }
+
   // Build dates array for the chosen period
   const monthDates = [];
   for (let day = startDay; day <= endDay; day++) {
     const dateStr = `${targetYear}-${String(targetMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     const d = new Date(`${dateStr}T12:00:00+05:30`);
     const dayOfWeek = d.getDay(); // 0 is Sunday
+    const dayHolidays = monthHolidays.filter(h => h.date === dateStr);
+    const isHoliday = dayHolidays.length > 0;
+    const holidayName = dayHolidays.map(h => h.name).filter(Boolean).join(', ');
     monthDates.push({
       dayNumber: day,
       dateStr,
       dayOfWeek,
       dayNameShort: d.toLocaleDateString('en-US', { timeZone: 'Asia/Kolkata', weekday: 'narrow' }),
-      isSunday: dayOfWeek === 0
+      isSunday: dayOfWeek === 0,
+      isHoliday,
+      holidayName,
+      holidays: dayHolidays
     });
   }
 
@@ -3540,6 +3642,7 @@ export async function getTeamMonthlyMatrix({
     let totalShortLeaves = 0;
     let totalPaidSundays = 0;
     let totalDisallowedSundays = 0;
+    let totalPaidHolidays = 0;
     let totalMinutesWorked = 0;
     let totalApprovedLeaves = 0;
     let totalLeavePayableDays = 0;
@@ -3548,6 +3651,9 @@ export async function getTeamMonthlyMatrix({
       const rec = recordsMapByDate.get(mDate.dateStr);
       const isPastOrToday = mDate.dateStr <= todayStr;
       const isBeforeJoin = effectiveJoinDate && mDate.dateStr < effectiveJoinDate;
+
+      // 1. Check if date is an Official Paid Holiday for this employee's branch / tenant
+      const empHoliday = (mDate.holidays || []).find(h => matchesHolidayForEmployee(h, user));
 
       if (mDate.isSunday) {
         // If Sunday is before employee's joining date, do not penalize as Absent
@@ -3558,6 +3664,31 @@ export async function getTeamMonthlyMatrix({
             label: 'Not Joined Yet (Sunday)',
             reason: 'Before joining date',
             record: null
+          };
+        }
+
+        // If employee actually punched / worked on Sunday
+        if (rec && (rec.status === 'PRESENT' || (rec.total_working_minutes || 0) > 0 || (rec.in_time && rec.out_time))) {
+          totalPresent++;
+          totalMinutesWorked += (rec.total_working_minutes || 0);
+          return {
+            code: empHoliday ? 'H-P' : 'WO-P',
+            status: 'PRESENT',
+            label: empHoliday ? `Holiday & Sunday Work: Present (${empHoliday.name})` : 'Sunday Work (Present)',
+            reason: null,
+            record: rec
+          };
+        }
+
+        // If Sunday is also an official holiday for this employee and employee did NOT work
+        if (empHoliday) {
+          totalPaidHolidays++;
+          return {
+            code: 'H',
+            status: 'HOLIDAY',
+            label: `Paid Holiday (Sunday): ${empHoliday.name}`,
+            isPaid: true,
+            record: rec || null
           };
         }
 
@@ -3589,7 +3720,58 @@ export async function getTeamMonthlyMatrix({
         };
       }
 
-      // Check if employee has an Approved Leave for this date
+      // 2. Weekday Official Holiday Check (Monday to Saturday)
+      if (empHoliday) {
+        if (isBeforeJoin && !rec) {
+          return {
+            code: '—',
+            status: 'NOT_JOINED',
+            label: `Not Joined Yet (Holiday: ${empHoliday.name})`,
+            record: null
+          };
+        }
+
+        // If employee punched / worked on this holiday
+        if (rec && (rec.status === 'PRESENT' || (rec.total_working_minutes || 0) > 0 || (rec.in_time && rec.out_time))) {
+          totalPresent++;
+          totalMinutesWorked += (rec.total_working_minutes || 0);
+          if (rec.short_leave_type && rec.short_leave_type !== 'NONE') {
+            totalShortLeaves++;
+          }
+          return {
+            code: 'H-P',
+            status: 'PRESENT',
+            label: `Holiday Work: Present (${empHoliday.name})`,
+            isPaid: true,
+            record: rec
+          };
+        }
+
+        // If employee has a manual week off or approved leave on holiday
+        const recRem = (rec?.remarks || '').toLowerCase();
+        if (rec && (rec.status === 'WEEK_OFF' || recRem.includes('[week_off]') || recRem.includes('week off'))) {
+          totalPaidHolidays++;
+          return {
+            code: 'H',
+            status: 'HOLIDAY',
+            label: `Holiday: ${empHoliday.name} (${rec.remarks || 'Week Off'})`,
+            isPaid: true,
+            record: rec
+          };
+        }
+
+        // Employee did not punch on this official holiday -> Paid Holiday!
+        totalPaidHolidays++;
+        return {
+          code: 'H',
+          status: 'HOLIDAY',
+          label: `Official Paid Holiday: ${empHoliday.name}`,
+          isPaid: true,
+          record: rec || null
+        };
+      }
+
+      // 3. Check if employee has an Approved Leave for this date
       const approvedLeave = leavesByEmpDate.get(`${userEmail}_${mDate.dateStr}`);
       if (approvedLeave) {
         const isPaidLeave = approvedLeave.leave_type !== 'LWP';
@@ -3610,6 +3792,7 @@ export async function getTeamMonthlyMatrix({
         };
       }
 
+      // 4. Regular Attendance Record on Weekday
       if (rec) {
         totalMinutesWorked += (rec.total_working_minutes || 0);
         if (rec.short_leave_type && rec.short_leave_type !== 'NONE') {
@@ -3617,7 +3800,16 @@ export async function getTeamMonthlyMatrix({
         }
 
         const recRem = (rec.remarks || '').toLowerCase();
-        if (rec.status === 'LWP' || recRem.includes('leave without pay') || recRem.includes('lwp')) {
+        if (rec.status === 'WEEK_OFF' || recRem.includes('[week_off]') || recRem.includes('week off')) {
+          totalPaidSundays++; // Counts as Paid Week Off
+          return {
+            code: 'WO',
+            status: 'WEEK_OFF',
+            label: rec.remarks || 'Paid Week Off (Approved/Manual)',
+            isPaid: true,
+            record: rec
+          };
+        } else if (rec.status === 'LWP' || recRem.includes('leave without pay') || recRem.includes('lwp')) {
           return {
             code: 'LWP',
             status: 'LWP',
@@ -3716,7 +3908,7 @@ export async function getTeamMonthlyMatrix({
       }
     });
 
-    const totalPayableDays = totalPresent + (totalHalfDays * 0.5) + totalPaidSundays + (adjustLeaves ? totalLeavePayableDays : 0);
+    const totalPayableDays = totalPresent + (totalHalfDays * 0.5) + totalPaidSundays + totalPaidHolidays + (adjustLeaves ? totalLeavePayableDays : 0);
     const baseSalary = Number(user.salary_amount || 0);
     const perDayRate = baseSalary > 0 ? (baseSalary / daysInMonth) : 0;
     const calculatedSalary = Math.round(perDayRate * totalPayableDays);
@@ -3734,6 +3926,7 @@ export async function getTeamMonthlyMatrix({
         totalShortLeaves,
         totalSundays: totalPaidSundays,
         totalDisallowedSundays,
+        totalHolidays: totalPaidHolidays,
         totalApprovedLeaves,
         totalLeavePayableDays,
         leavesAdjusted: adjustLeaves,
@@ -3773,6 +3966,7 @@ export async function getTeamMonthlyMatrix({
       totalAdvanceAmount: periodType === 'ADVANCE_HALF' ? totalPayrollAmount : 0,
       totalPayrollAmount,
       totalApprovedLeavesCount,
+      totalHolidaysCount: monthHolidays.length,
       leavesAdjustedInReport: adjustLeaves
     }
   };

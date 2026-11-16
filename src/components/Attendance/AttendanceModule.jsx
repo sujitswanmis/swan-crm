@@ -3060,6 +3060,8 @@ export default function AttendanceModule({
       'Total Absent',
       'Total Half Days',
       'Total Short Leaves',
+      'Paid Holidays',
+      'Paid Week Offs',
       'Approved Leaves (Days)',
       'Total Payable Days',
       'Total Hours Logged'
@@ -3087,6 +3089,8 @@ export default function AttendanceModule({
         `"${r.summary?.totalAbsent || 0}"`,
         `"${r.summary?.totalHalfDays || 0}"`,
         `"${r.summary?.totalShortLeaves || 0}"`,
+        `"${r.summary?.totalHolidays || 0}"`,
+        `"${r.summary?.totalSundays || 0}"`,
         `"${approvedLeavesCount}"`,
         `"${payableDays}"`,
         `"${r.summary?.totalHoursFormatted || '0h'}"`
@@ -6622,13 +6626,19 @@ export default function AttendanceModule({
                 <div style={{ padding: '0.85rem', borderRadius: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', textAlign: 'center' }}>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', fontWeight: 600 }}>WORKING DAYS</span>
                   <span style={{ fontSize: '1.35rem', fontWeight: 800, color: '#16a34a' }}>
-                    {(monthlyMatrixData?.monthDates || []).filter(d => !d.isSunday).length}
+                    {(monthlyMatrixData?.monthDates || []).filter(d => !d.isSunday && !d.isHoliday).length}
                   </span>
                 </div>
                 <div style={{ padding: '0.85rem', borderRadius: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', textAlign: 'center' }}>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', fontWeight: 600 }}>SUNDAYS / OFF DAYS</span>
                   <span style={{ fontSize: '1.35rem', fontWeight: 800, color: '#64748b' }}>
                     {(monthlyMatrixData?.monthDates || []).filter(d => d.isSunday).length}
+                  </span>
+                </div>
+                <div style={{ padding: '0.85rem', borderRadius: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', textAlign: 'center' }}>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', fontWeight: 600 }}>OFFICIAL HOLIDAYS</span>
+                  <span style={{ fontSize: '1.35rem', fontWeight: 800, color: '#0284c7' }}>
+                    {monthlyMatrixData?.summary?.totalHolidaysCount ?? (monthlyMatrixData?.monthDates || []).filter(d => d.isHoliday).length}
                   </span>
                 </div>
               </div>
@@ -6662,7 +6672,13 @@ export default function AttendanceModule({
                     <span style={{ padding: '0.15rem 0.45rem', borderRadius: '4px', background: '#e0e7ff', color: '#3730a3', fontWeight: 700 }}>R</span> Regularized
                   </span>
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
-                    <span style={{ padding: '0.15rem 0.45rem', borderRadius: '4px', background: '#f1f5f9', color: '#64748b', fontWeight: 700 }}>WO</span> Paid Week Off
+                    <span style={{ padding: '0.15rem 0.45rem', borderRadius: '4px', background: '#f1f5f9', color: '#475569', fontWeight: 700 }}>WO</span> Paid Week Off
+                  </span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                    <span style={{ padding: '0.15rem 0.45rem', borderRadius: '4px', background: '#e0f2fe', color: '#0369a1', fontWeight: 700 }}>H</span> Paid Holiday
+                  </span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                    <span style={{ padding: '0.15rem 0.45rem', borderRadius: '4px', background: '#ecfdf5', color: '#047857', fontWeight: 700 }}>H-P</span> Holiday Work
                   </span>
                 </div>
                 <div style={{ 
@@ -6701,13 +6717,14 @@ export default function AttendanceModule({
                               padding: '0.4rem 0.25rem',
                               fontWeight: 700,
                               minWidth: '34px',
-                              background: d.isSunday ? 'rgba(239, 68, 68, 0.08)' : 'var(--bg-primary)',
-                              color: d.isSunday ? '#dc2626' : 'var(--text-primary)',
+                              background: d.isHoliday ? 'rgba(14, 165, 233, 0.12)' : (d.isSunday ? 'rgba(239, 68, 68, 0.08)' : 'var(--bg-primary)'),
+                              color: d.isHoliday ? '#0284c7' : (d.isSunday ? '#dc2626' : 'var(--text-primary)'),
                               borderLeft: '1px solid var(--border-light)'
                             }}
+                            title={d.isHoliday ? `Official Holiday: ${d.holidayName}` : (d.isSunday ? 'Sunday Week Off' : d.dateStr)}
                           >
                             <div style={{ fontSize: '0.8rem' }}>{d.dayNumber}</div>
-                            <div style={{ fontSize: '0.65rem', fontWeight: 500, color: d.isSunday ? '#dc2626' : 'var(--text-secondary)' }}>{d.dayNameShort}</div>
+                            <div style={{ fontSize: '0.65rem', fontWeight: 500, color: d.isHoliday ? '#0284c7' : (d.isSunday ? '#dc2626' : 'var(--text-secondary)') }}>{d.dayNameShort}</div>
                           </th>
                         ))}
 
@@ -6716,6 +6733,8 @@ export default function AttendanceModule({
                         <th style={{ padding: '0.65rem 0.5rem', fontWeight: 700, color: '#ef4444', minWidth: '45px' }}>A</th>
                         <th style={{ padding: '0.65rem 0.5rem', fontWeight: 700, color: '#ea580c', minWidth: '45px' }}>HD</th>
                         <th style={{ padding: '0.65rem 0.5rem', fontWeight: 700, color: '#7e22ce', minWidth: '45px' }}>SL</th>
+                        <th style={{ padding: '0.65rem 0.5rem', fontWeight: 700, color: '#0284c7', minWidth: '45px' }} title="Paid Holidays (Holidays Calendar Config)">H</th>
+                        <th style={{ padding: '0.65rem 0.5rem', fontWeight: 700, color: '#475569', minWidth: '45px' }} title="Paid Week Offs (Sundays / Approved)">WO</th>
                         <th style={{ padding: '0.65rem 0.5rem', fontWeight: 700, color: '#059669', minWidth: '45px' }} title="Approved Paid Leaves (CL/SL/EL)">L</th>
                         <th style={{ padding: '0.65rem 0.75rem', fontWeight: 800, color: '#16a34a', background: 'rgba(22, 163, 74, 0.08)', minWidth: '70px' }}>Payable</th>
                         <th style={{ padding: '0.65rem 0.75rem', fontWeight: 700, color: 'var(--accent-color)', minWidth: '75px' }}>Hours</th>
@@ -6724,7 +6743,7 @@ export default function AttendanceModule({
                     <tbody>
                       {filteredMatrixRows.length === 0 ? (
                         <tr>
-                          <td colSpan={(monthlyMatrixData?.monthDates?.length || 31) + 9} style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                          <td colSpan={(monthlyMatrixData?.monthDates?.length || 31) + 11} style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
                             No employee records found for {matrixMonth}/{matrixYear}.
                           </td>
                         </tr>
@@ -6777,11 +6796,19 @@ export default function AttendanceModule({
                                 cellFontWeight = 700;
                               } else if (day.code === 'WO') {
                                 cellBg = '#f1f5f9';
-                                cellColor = '#64748b';
-                                cellFontWeight = 600;
+                                cellColor = '#475569';
+                                cellFontWeight = 700;
                               } else if (day.code === 'WO-P') {
                                 cellBg = '#dcfce7';
                                 cellColor = '#166534';
+                                cellFontWeight = 700;
+                              } else if (day.code === 'H') {
+                                cellBg = '#e0f2fe';
+                                cellColor = '#0369a1';
+                                cellFontWeight = 700;
+                              } else if (day.code === 'H-P') {
+                                cellBg = '#ecfdf5';
+                                cellColor = '#047857';
                                 cellFontWeight = 700;
                               } else if (day.code === 'CL') {
                                 cellBg = '#eff6ff';
@@ -6816,7 +6843,7 @@ export default function AttendanceModule({
                                   style={{
                                     padding: '0.35rem 0.2rem',
                                     borderLeft: '1px solid var(--border-light)',
-                                    background: day.code === 'WO' ? 'rgba(0,0,0,0.02)' : 'transparent'
+                                    background: day.code === 'WO' ? 'rgba(0,0,0,0.02)' : (day.code === 'H' ? 'rgba(14, 165, 233, 0.05)' : 'transparent')
                                   }}
                                 >
                                   {day.code === '—' ? (
@@ -6851,6 +6878,12 @@ export default function AttendanceModule({
                             </td>
                             <td style={{ padding: '0.55rem 0.5rem', fontWeight: 700, color: '#7e22ce' }}>
                               {row.summary?.totalShortLeaves || 0}
+                            </td>
+                            <td style={{ padding: '0.55rem 0.5rem', fontWeight: 700, color: '#0284c7' }} title="Paid Holidays">
+                              {row.summary?.totalHolidays || 0}
+                            </td>
+                            <td style={{ padding: '0.55rem 0.5rem', fontWeight: 700, color: '#475569' }} title="Paid Week Offs">
+                              {row.summary?.totalSundays || 0}
                             </td>
                             <td style={{ padding: '0.55rem 0.5rem', fontWeight: 700, color: '#059669', fontSize: '0.82rem' }}>
                               {row.summary?.totalApprovedLeaves || 0}
