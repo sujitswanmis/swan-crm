@@ -675,8 +675,41 @@ export default function CRMContainer({
   }, [userCompany, adminCompanyFilter, isSwanWorkspace, userBranchAccess]);
   const [messageMenuExpanded, setMessageMenuExpanded] = useState(false);
   const [aiMenuExpanded, setAiMenuExpanded] = useState(false);
+  const resolveAttendanceSubTab = (rawSub) => {
+    if (!rawSub) return 'my_attendance';
+    const clean = String(rawSub).toLowerCase().trim().replace(/^\/+|\/+$/g, '');
+    if (['my_attendance', 'daily_punch', 'daily-punch', 'punch', 'station'].includes(clean)) return 'my_attendance';
+    if (['monthly_logs', 'monthly-logs', 'monthly', 'my_monthly'].includes(clean)) return 'monthly_logs';
+    if (['regularization', 'missing_punch', 'missing-punch', 'regularize'].includes(clean)) return 'regularization';
+    if (['my_leaves', 'my-leaves', 'leaves', 'leave'].includes(clean)) return 'my_leaves';
+    if (['hod_approvals', 'hod-approvals', 'approvals', 'approval'].includes(clean)) return 'hod_approvals';
+    if (['team_report', 'team-report', 'team', 'reports', 'report', 'matrix', 'timesheet'].includes(clean)) return 'team_report';
+    if (['shift_rules', 'shift-rules', 'shifts', 'shift'].includes(clean)) return 'shift_rules';
+    if (['leave_policy', 'leave-policy', 'policy'].includes(clean)) return 'leave_policy';
+    if (['geofencing', 'geofence', 'office_geofence', 'office-geofencing'].includes(clean)) return 'geofencing';
+    return clean;
+  };
+
   const [attendanceMenuExpanded, setAttendanceMenuExpanded] = useState(false);
-  const [attendanceSubTab, setAttendanceSubTab] = useState('my_attendance');
+  const [attendanceSubTab, setAttendanceSubTab] = useState(() => {
+    const raw = (initialRoute || pathname || '');
+    let cleanPath = (typeof raw === 'string' ? raw : '').replace(/^\/+|\/+$/g, '').toLowerCase();
+    let queryTab = (searchParams?.get('tab') || searchParams?.get('subtab') || initialSearchParams?.tab || initialSearchParams?.subtab || '').toLowerCase();
+    if (typeof window !== 'undefined' && !queryTab) {
+      try {
+        const urlParams = new URLSearchParams(window.location.search);
+        queryTab = (urlParams.get('tab') || urlParams.get('subtab') || '').toLowerCase();
+      } catch (_) {}
+    }
+    if (cleanPath && cleanPath.startsWith('attendance/')) {
+      const sub = cleanPath.split('/')[1];
+      if (sub) return resolveAttendanceSubTab(sub);
+    }
+    if (queryTab) {
+      return resolveAttendanceSubTab(queryTab);
+    }
+    return 'my_attendance';
+  });
   const [checklistMenuExpanded, setChecklistMenuExpanded] = useState(false);
   const [checklistSubTab, setChecklistSubTab] = useState('dashboard');
   const [delegationMenuExpanded, setDelegationMenuExpanded] = useState(false);
@@ -969,8 +1002,7 @@ export default function CRMContainer({
       }
       const attTab = search.get('tab') || search.get('subtab');
       if (attTab && (path === 'attendance' || (path && path.startsWith('attendance/')))) {
-        const isPermitted = getSubItemPermissions(moduleAccess, userRole, 'attendance', attTab.toLowerCase()).view;
-        setAttendanceSubTab(isPermitted ? attTab.toLowerCase() : 'my_attendance');
+        setAttendanceSubTab(resolveAttendanceSubTab(attTab));
       }
       if (attTab && (path === 'checklist' || (path && path.startsWith('checklist/')))) {
         setChecklistSubTab(attTab);
@@ -3030,8 +3062,7 @@ export default function CRMContainer({
     } else if (tab === 'attendance' || (tab && tab.startsWith('attendance/'))) {
       let sub = tab.startsWith('attendance/') ? tab.split('/')[1] : (params.get('tab') || params.get('subtab'));
       if (sub) {
-        const isPermitted = getSubItemPermissions(moduleAccess, userRole, 'attendance', sub.toLowerCase()).view;
-        setAttendanceSubTab(isPermitted ? sub.toLowerCase() : 'my_attendance');
+        setAttendanceSubTab(resolveAttendanceSubTab(sub));
       }
       tab = 'attendance';
       setAttendanceMenuExpanded(true);
@@ -3211,8 +3242,7 @@ export default function CRMContainer({
       } else if (tab === 'attendance' || (tab && tab.startsWith('attendance/'))) {
         let sub = tab.startsWith('attendance/') ? tab.split('/')[1] : (params.get('tab') || params.get('subtab'));
         if (sub) {
-          const isPermitted = getSubItemPermissions(moduleAccess, userRole, 'attendance', sub.toLowerCase()).view;
-          setAttendanceSubTab(isPermitted ? sub.toLowerCase() : 'my_attendance');
+          setAttendanceSubTab(resolveAttendanceSubTab(sub));
         }
         tab = 'attendance';
         setAttendanceMenuExpanded(true);
@@ -3518,6 +3548,16 @@ export default function CRMContainer({
       return;
     }
 
+    if (tabId === 'attendance') {
+      setActiveTab('attendance');
+      const targetSub = attendanceSubTab || 'my_attendance';
+      window.history.pushState(null, '', `/attendance?tab=${targetSub}`);
+      if (window.innerWidth <= 768) {
+        setIsSidebarOpen(false);
+      }
+      return;
+    }
+
     setActiveTab(tabId);
     
     const newPath = `/${tabId}`;
@@ -3555,7 +3595,7 @@ export default function CRMContainer({
 
   const handleAttendanceSubTabChange = (subTabId) => {
     const isPermitted = getSubItemPermissions(moduleAccess, userRole, 'attendance', subTabId).view;
-    const targetSub = isPermitted ? subTabId : 'my_attendance';
+    const targetSub = resolveAttendanceSubTab(isPermitted ? subTabId : 'my_attendance');
     setAttendanceSubTab(targetSub);
     if (activeTab !== 'attendance') {
       setActiveTab('attendance');

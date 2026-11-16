@@ -345,7 +345,18 @@ export default function AttendanceModule({
   }, [moduleAccess, userRole]);
 
   const [activeTab, setActiveTab] = useState(() => {
-    if (initialSubTab && visibleTabs.some(t => t.id === initialSubTab)) {
+    let candidate = initialSubTab;
+    if (typeof window !== 'undefined') {
+      try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlTab = urlParams.get('tab') || urlParams.get('subtab');
+        if (urlTab) candidate = urlTab.toLowerCase().trim();
+      } catch (_) {}
+    }
+    if (candidate && ALL_ATTENDANCE_TABS.some(t => t.id === candidate)) {
+      return candidate;
+    }
+    if (initialSubTab && ALL_ATTENDANCE_TABS.some(t => t.id === initialSubTab)) {
       return initialSubTab;
     }
     return visibleTabs[0]?.id || 'my_attendance';
@@ -777,6 +788,16 @@ export default function AttendanceModule({
   const handleTabSelect = (tab) => {
     if (!visibleTabs.some(t => t.id === tab)) return;
     setActiveTab(tab);
+    if (typeof window !== 'undefined') {
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.set('tab', tab);
+        if (tab !== 'team_report') {
+          url.searchParams.delete('view');
+        }
+        window.history.replaceState(null, '', url.pathname + url.search);
+      } catch (_) {}
+    }
     if (onSubTabChange) onSubTabChange(tab);
   };
 
@@ -1716,7 +1737,33 @@ export default function AttendanceModule({
   const [bulkRemarks, setBulkRemarks] = useState('');
 
   // Team Master Attendance State (with Quick Date Presets)
-  const [teamReportView, setTeamReportView] = useState('DAILY'); // 'DAILY' | 'MONTHLY_MATRIX'
+  const [teamReportView, setTeamReportView] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const v = (urlParams.get('view') || urlParams.get('reportView') || '').toUpperCase();
+        if (v === 'MONTHLY_MATRIX' || v === 'MATRIX' || v === 'MONTHLY') return 'MONTHLY_MATRIX';
+        if (v === 'MONTHLY_TIMESHEET' || v === 'TIMESHEET') return 'MONTHLY_TIMESHEET';
+        if (v === 'LEAVE_LEDGER' || v === 'LEDGER') return 'LEAVE_LEDGER';
+      } catch (_) {}
+    }
+    return 'DAILY';
+  }); // 'DAILY' | 'MONTHLY_MATRIX' | 'MONTHLY_TIMESHEET' | 'LEAVE_LEDGER'
+
+  const syncTeamReportViewURL = (viewKey) => {
+    setTeamReportView(viewKey);
+    if (typeof window !== 'undefined') {
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.set('tab', 'team_report');
+        if (viewKey === 'MONTHLY_MATRIX') url.searchParams.set('view', 'matrix');
+        else if (viewKey === 'MONTHLY_TIMESHEET') url.searchParams.set('view', 'timesheet');
+        else if (viewKey === 'LEAVE_LEDGER') url.searchParams.set('view', 'ledger');
+        else url.searchParams.delete('view');
+        window.history.replaceState(null, '', url.pathname + url.search);
+      } catch (_) {}
+    }
+  };
   const [teamDatePreset, setTeamDatePreset] = useState('today');
   const [teamStartDate, setTeamStartDate] = useState(getTodayDateString());
   const [teamEndDate, setTeamEndDate] = useState(getTodayDateString());
@@ -1737,6 +1784,12 @@ export default function AttendanceModule({
   const [timesheetEmployeeFilter, setTimesheetEmployeeFilter] = useState('ALL');
   const [timesheetPage, setTimesheetPage] = useState(1);
   const [timesheetPageSize, setTimesheetPageSize] = useState(50);
+
+  // In-flight & cache refs for fast instant loading (< 1s)
+  const matrixInFlightRef = useRef(false);
+  const lastFetchedParamsRef = useRef('');
+  const teamMasterInFlightRef = useRef(false);
+  const lastTeamMasterParamsRef = useRef('');
 
   // Dynamic Departments extracted from active records/matrix
   const availableDepartments = useMemo(() => {
@@ -2002,9 +2055,15 @@ export default function AttendanceModule({
     }
   };
 
-  // 7. Load Team Master Attendance (Single Date or Range via Quick Date Presets)
-  const fetchTeamMaster = async () => {
+  // 7. Load Team Master Attendance (Single Date or Range via Quick Date Presets) - Fast Deduplicated
+  const fetchTeamMaster = async (force = false) => {
     if (!isHodOrManager) return;
+    const currentParamsKey = `${effectiveTenantId}_${userCompany}_${teamStartDate}_${teamEndDate}_${teamMasterDepartment}_${adminCompanyFilter}`;
+    if (!force && lastTeamMasterParamsRef.current === currentParamsKey && teamMasterData?.records?.length > 0) {
+      return;
+    }
+    if (teamMasterInFlightRef.current) return;
+    teamMasterInFlightRef.current = true;
     setLoadingTeamMaster(true);
     try {
       const res = await getTeamAttendanceMaster({
@@ -2023,16 +2082,24 @@ export default function AttendanceModule({
           summary: res.summary || {},
           isRange: res.isRange
         });
+        lastTeamMasterParamsRef.current = currentParamsKey;
       }
     } catch (e) {
       console.error(e);
     } finally {
+      teamMasterInFlightRef.current = false;
       setLoadingTeamMaster(false);
     }
   };
 
-  // Fetch Team Monthly Matrix
-  const fetchTeamMonthlyMatrix = async () => {
+  // Fetch Team Monthly Matrix - Fast In-Memory Cache & In-Flight Guard (< 1s load)
+  const fetchTeamMonthlyMatrix = async (force = false) => {
+    const currentParamsKey = `${effectiveTenantId}_${userCompany}_${matrixYear}_${matrixMonth}_${teamMasterDepartment}_${matrixPeriodType}_${matrixCustomStartDay}_${matrixCustomEndDay}_${adjustLeavesInReport}_${adminCompanyFilter}`;
+    if (!force && lastFetchedParamsRef.current === currentParamsKey && monthlyMatrixData?.rows?.length > 0) {
+      return;
+    }
+    if (matrixInFlightRef.current) return;
+    matrixInFlightRef.current = true;
     setLoadingMonthlyMatrix(true);
     try {
       const res = await getTeamMonthlyMatrix({
@@ -2049,10 +2116,12 @@ export default function AttendanceModule({
       });
       if (res.success) {
         setMonthlyMatrixData(res);
+        lastFetchedParamsRef.current = currentParamsKey;
       }
     } catch (err) {
       console.error("Fetch Monthly Matrix Error:", err);
     } finally {
+      matrixInFlightRef.current = false;
       setLoadingMonthlyMatrix(false);
     }
   };
@@ -2310,8 +2379,6 @@ export default function AttendanceModule({
     setHodLeavesError(null);
     setTeamLeaveReportData(null);
     setHodPendingCount(0);
-    setTeamMasterData({ records: [], summary: {}, isRange: false });
-    setMonthlyMatrixData({ rows: [], monthDates: [], summary: {} });
 
     fetchTodayAttendance();
     fetchHistory();
@@ -2321,7 +2388,6 @@ export default function AttendanceModule({
     if (isHodOrManager) {
       fetchHodRequests();
       fetchHodLeaves();
-      fetchTeamLeaveReport();
     }
   }, [userEmail, historyYear, historyMonth, effectiveTenantId, userCompany, attendanceDate, adminCompanyFilter, effectiveBranchAccess?.scope]);
 
@@ -3077,140 +3143,134 @@ export default function AttendanceModule({
     });
   }, [monthlyMatrixData?.rows, teamSearchQuery, attendanceFilterMode]);
 
-  // Flatten & filter timesheet records for the Monthly Timesheet view
-  const timesheetRecords = useMemo(() => {
+  // Format Punch Timestamp helper for Timesheet cells (e.g. 09:10 AM, 06:32 PM)
+  const formatPunchTime = useCallback((val) => {
+    if (!val) return '';
+    if (typeof val === 'string' && val.includes('T')) {
+      try {
+        const d = new Date(val);
+        let h = d.getHours();
+        const m = String(d.getMinutes()).padStart(2, '0');
+        const ampm = h >= 12 ? 'PM' : 'AM';
+        h = h % 12 || 12;
+        return `${String(h).padStart(2, '0')}:${m} ${ampm}`;
+      } catch { return val; }
+    }
+    const parts = String(val).split(':');
+    if (parts.length >= 2) {
+      let h = parseInt(parts[0], 10);
+      const m = parts[1];
+      const ampm = h >= 12 ? 'PM' : 'AM';
+      h = h % 12 || 12;
+      return `${String(h).padStart(2, '0')}:${m} ${ampm}`;
+    }
+    return val;
+  }, []);
+
+  // Filtered rows for Columnar Monthly Timesheet
+  const timesheetRows = useMemo(() => {
     const rows = filteredMatrixRows || [];
-    const list = [];
-
-    rows.forEach(emp => {
-      if (timesheetEmployeeFilter !== 'ALL') {
-        const matchEmp = (emp.email && emp.email.toLowerCase() === timesheetEmployeeFilter.toLowerCase()) ||
-          (emp.emp_id && emp.emp_id === timesheetEmployeeFilter);
-        if (!matchEmp) return;
-      }
-
-      (emp.days || []).forEach(day => {
-        const rec = day.record;
-        list.push({
-          emp_id: emp.emp_id,
-          emp_name: emp.emp_name,
-          email: emp.email,
-          department: emp.department,
-          date: day.dateStr,
-          dayNumber: day.dayNumber,
-          dayNameShort: day.dayNameShort,
-          isSunday: day.isSunday,
-          isHoliday: day.isHoliday,
-          holidayName: day.holidayName || (day.holidays && day.holidays[0]?.name) || '',
-          code: day.code,
-          label: day.label,
-          in_time: rec?.in_time || null,
-          out_time: rec?.out_time || null,
-          total_working_minutes: rec?.total_working_minutes || 0,
-          status: rec?.status || (day.code === 'P' ? 'PRESENT' : (day.code === 'HD' ? 'HALF_DAY' : (day.code === 'R' ? 'REGULARIZED' : (day.code === 'WO' ? 'WEEK_OFF' : (day.code === 'H' ? 'HOLIDAY' : (day.code === 'A' ? 'ABSENT' : day.code)))))),
-          is_regularized: Boolean(rec?.is_regularized || rec?.status === 'REGULARIZED' || day.code === 'R'),
-          remarks: rec?.remarks || (day.label !== 'Absent (No Punch)' ? day.label : ''),
-          record: rec
-        });
-      });
-    });
-
-    list.sort((a, b) => {
-      if (a.date !== b.date) return a.date.localeCompare(b.date);
-      return (a.emp_name || '').localeCompare(b.emp_name || '');
-    });
-
-    return list;
+    if (timesheetEmployeeFilter === 'ALL') return rows;
+    return rows.filter(emp =>
+      (emp.email && emp.email.toLowerCase() === timesheetEmployeeFilter.toLowerCase()) ||
+      (emp.emp_id && emp.emp_id === timesheetEmployeeFilter)
+    );
   }, [filteredMatrixRows, timesheetEmployeeFilter]);
 
-  // Dynamic KPI summary for the Monthly Timesheet
+  // Dynamic KPI summary for the Columnar Monthly Timesheet
   const timesheetSummary = useMemo(() => {
+    const rows = timesheetRows || [];
     let totalMinutes = 0;
     let presentCount = 0;
-    let lateCount = 0;
     let halfDayCount = 0;
     let absentCount = 0;
     let weekOffCount = 0;
     let holidayCount = 0;
-    let regularizedCount = 0;
-    let punchedCount = 0;
 
-    timesheetRecords.forEach(r => {
-      totalMinutes += (r.total_working_minutes || 0);
-      if (r.in_time || r.out_time || (r.total_working_minutes || 0) > 0) {
-        punchedCount++;
-      }
-      const st = (r.status || '').toUpperCase();
-      if (r.code === 'P' || st === 'PRESENT') presentCount++;
-      else if (st === 'LATE') lateCount++;
-      else if (r.code === 'HD' || st === 'HALF_DAY') halfDayCount++;
-      else if (r.code === 'A' || st === 'ABSENT') absentCount++;
-      else if (r.code === 'WO' || st === 'WEEK_OFF') weekOffCount++;
-      else if (r.code === 'H' || st === 'HOLIDAY') holidayCount++;
-      if (r.is_regularized) regularizedCount++;
+    rows.forEach(r => {
+      totalMinutes += (r.summary?.totalMinutesWorked || 0);
+      presentCount += (r.summary?.totalPresent || 0);
+      halfDayCount += ((r.summary?.totalHalfDays || 0) + (r.summary?.totalShortLeaves || 0));
+      absentCount += (r.summary?.totalAbsent || 0);
+      weekOffCount += (r.summary?.totalSundays || 0);
+      holidayCount += (r.summary?.totalHolidays || 0);
     });
 
-    const uniqueEmployees = new Set(timesheetRecords.map(r => r.email)).size;
+    const periodDays = monthlyMatrixData?.periodDays || monthlyMatrixData?.daysInMonth || 30;
 
     return {
-      totalRecords: timesheetRecords.length,
-      uniqueEmployees,
+      totalEmployees: rows.length,
+      periodDays,
+      totalEntries: rows.length * periodDays,
       totalMinutes,
       totalHoursFormatted: formatMinutesToHours(totalMinutes),
       presentCount,
-      lateCount,
       halfDayCount,
       absentCount,
       weekOffCount,
-      holidayCount,
-      regularizedCount,
-      punchedCount
+      holidayCount
     };
-  }, [timesheetRecords]);
+  }, [timesheetRows, monthlyMatrixData?.periodDays, monthlyMatrixData?.daysInMonth]);
 
-  // Paginated timesheet records
-  const paginatedTimesheetRecords = useMemo(() => {
-    if (timesheetPageSize === -1) return timesheetRecords;
+  // Paginated rows for Columnar Monthly Timesheet
+  const paginatedTimesheetRows = useMemo(() => {
+    if (timesheetPageSize === -1) return timesheetRows;
     const start = (timesheetPage - 1) * timesheetPageSize;
-    return timesheetRecords.slice(start, start + timesheetPageSize);
-  }, [timesheetRecords, timesheetPage, timesheetPageSize]);
+    return timesheetRows.slice(start, start + timesheetPageSize);
+  }, [timesheetRows, timesheetPage, timesheetPageSize]);
 
-  // Export Monthly Timesheet to CSV
+  // Export Column-wise Monthly Timesheet to CSV
   const handleExportMonthlyTimesheetCSV = () => {
-    const records = timesheetRecords || [];
-    if (records.length === 0) return;
+    const rowsToExport = timesheetRows || [];
+    if (rowsToExport.length === 0) return;
 
+    const datesHeaders = (monthlyMatrixData?.monthDates || []).map(d => `"${d.dayNumber} (${d.dayNameShort}) In - Out [Duration] Status"`);
     const headers = [
       'Emp ID',
       'Employee Name',
       'Email',
       'Department',
-      'Date',
-      'Day',
-      'Punch In',
-      'Punch Out',
-      'Duration Minutes',
-      'Duration Formatted',
-      'Status',
-      'Regularized',
-      'Remarks'
+      ...datesHeaders,
+      'Total Present',
+      'Total Half Days',
+      'Paid Week Offs',
+      'Paid Holidays',
+      'Total Absent',
+      'Total Working Hours Logged',
+      'Average Daily Hours'
     ];
 
-    const rows = records.map(r => [
-      `"${r.emp_id || ''}"`,
-      `"${r.emp_name || ''}"`,
-      `"${r.email || ''}"`,
-      `"${r.department || ''}"`,
-      `"${r.date || ''}"`,
-      `"${r.dayNameShort || ''}"`,
-      `"${r.in_time ? formatTimeIST(r.in_time) : ''}"`,
-      `"${r.out_time ? formatTimeIST(r.out_time) : ''}"`,
-      `"${r.total_working_minutes || 0}"`,
-      `"${formatMinutesToHours(r.total_working_minutes)}"`,
-      `"${r.status || ''}"`,
-      `"${r.is_regularized ? 'Yes' : 'No'}"`,
-      `"${(r.remarks || '').replace(/"/g, '""')}"`
-    ]);
+    const rows = rowsToExport.map(r => {
+      const dayValues = (r.days || []).map(d => {
+        if (!d) return '"—"';
+        const inStr = d.record?.in_time ? formatPunchTime(d.record.in_time) : '';
+        const outStr = d.record?.out_time ? formatPunchTime(d.record.out_time) : '';
+        const durStr = d.record?.total_working_minutes > 0 ? formatMinutesToHours(d.record.total_working_minutes) : '';
+        if (inStr) {
+          return `"${inStr} - ${outStr || 'Working...'} [${durStr || '0h'}] (${d.code})"`;
+        }
+        return `"${d.code === 'WO' ? 'Week Off' : (d.code === 'H' ? 'Holiday' : (d.code === 'A' ? 'Absent' : d.code))}"`;
+      });
+
+      const avgHours = (r.summary?.totalMinutesWorked && r.summary?.totalPresent)
+        ? formatMinutesToHours(Math.round(r.summary.totalMinutesWorked / r.summary.totalPresent))
+        : '0h';
+
+      return [
+        `"${r.emp_id || ''}"`,
+        `"${r.emp_name || ''}"`,
+        `"${r.email || ''}"`,
+        `"${r.department || ''}"`,
+        ...dayValues,
+        `"${r.summary?.totalPresent || 0}"`,
+        `"${(r.summary?.totalHalfDays || 0) + (r.summary?.totalShortLeaves || 0)}"`,
+        `"${r.summary?.totalSundays || 0}"`,
+        `"${r.summary?.totalHolidays || 0}"`,
+        `"${r.summary?.totalAbsent || 0}"`,
+        `"${r.summary?.totalHoursFormatted || '0h'}"`,
+        `"${avgHours}"`
+      ];
+    });
 
     const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
     const encodedUri = encodeURI(csvContent);
@@ -5972,7 +6032,7 @@ export default function AttendanceModule({
               }}>
                 <button
                   type="button"
-                  onClick={() => setTeamReportView('DAILY')}
+                  onClick={() => syncTeamReportViewURL('DAILY')}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -5993,7 +6053,7 @@ export default function AttendanceModule({
                 <button
                   type="button"
                   onClick={() => {
-                    setTeamReportView('MONTHLY_MATRIX');
+                    syncTeamReportViewURL('MONTHLY_MATRIX');
                     if (teamStartDate) {
                       const [y, m] = teamStartDate.split('-').map(Number);
                       if (y && m) {
@@ -6023,7 +6083,7 @@ export default function AttendanceModule({
                 <button
                   type="button"
                   onClick={() => {
-                    setTeamReportView('MONTHLY_TIMESHEET');
+                    syncTeamReportViewURL('MONTHLY_TIMESHEET');
                     if (teamStartDate) {
                       const [y, m] = teamStartDate.split('-').map(Number);
                       if (y && m) {
@@ -6053,7 +6113,7 @@ export default function AttendanceModule({
                 <button
                   type="button"
                   onClick={() => {
-                    setTeamReportView('LEAVE_LEDGER');
+                    syncTeamReportViewURL('LEAVE_LEDGER');
                     fetchTeamLeaveReport();
                   }}
                   style={{
@@ -6258,7 +6318,7 @@ export default function AttendanceModule({
                   ))}
                 </select>
 
-                {/* Attendance Punch Filter: All Staff vs Punched Only vs Zero Punch */}
+                {/* 1st Filter: Attendance Punch Status */}
                 {teamReportView !== 'LEAVE_LEDGER' && (
                   <select
                     value={attendanceFilterMode}
@@ -6274,13 +6334,13 @@ export default function AttendanceModule({
                       outline: 'none',
                       cursor: 'pointer'
                     }}
-                    title="Attendance Filter: All Employees, Only Punched (Attendance lagane wale), or Zero Punch"
+                    title="1st Filter: Attendance Status (All Employees, Only Punched, or Zero Punch)"
                   >
                     <option value="ALL">
-                      👥 All Employees ({(teamReportView === 'MONTHLY_MATRIX' || teamReportView === 'MONTHLY_TIMESHEET') ? (monthlyMatrixData?.rows?.length || 0) : (teamMasterData?.records?.length || 0)})
+                      📊 Attendance: All Status ({(teamReportView === 'MONTHLY_MATRIX' || teamReportView === 'MONTHLY_TIMESHEET') ? (monthlyMatrixData?.rows?.length || 0) : (teamMasterData?.records?.length || 0)})
                     </option>
                     <option value="ACTIVE_PUNCH_ONLY">
-                      🟢 Attendance Lagane Wale Only ({(teamReportView === 'MONTHLY_MATRIX' || teamReportView === 'MONTHLY_TIMESHEET') ? matrixPunchCounts.active : dailyPunchCounts.active})
+                      🟢 Attendance Lagane Wale ({(teamReportView === 'MONTHLY_MATRIX' || teamReportView === 'MONTHLY_TIMESHEET') ? matrixPunchCounts.active : dailyPunchCounts.active})
                     </option>
                     <option value="NO_PUNCH_ONLY">
                       ⚪ Bina Attendance Wale ({(teamReportView === 'MONTHLY_MATRIX' || teamReportView === 'MONTHLY_TIMESHEET') ? matrixPunchCounts.inactive : dailyPunchCounts.inactive})
@@ -6288,35 +6348,62 @@ export default function AttendanceModule({
                   </select>
                 )}
 
-                {/* Employee Filter Dropdown for Monthly Timesheet */}
+                {/* 2nd Filter: Employee Search & Selection */}
                 {teamReportView === 'MONTHLY_TIMESHEET' && (
-                  <select
-                    value={timesheetEmployeeFilter}
-                    onChange={(e) => {
-                      setTimesheetEmployeeFilter(e.target.value);
-                      setTimesheetPage(1);
-                    }}
-                    style={{
-                      padding: '0.45rem 0.75rem',
-                      borderRadius: '8px',
-                      border: '1px solid ' + (timesheetEmployeeFilter !== 'ALL' ? 'var(--accent-color, #2563eb)' : 'var(--border-light)'),
-                      background: timesheetEmployeeFilter !== 'ALL' ? 'rgba(37, 99, 235, 0.08)' : 'var(--bg-primary)',
-                      color: timesheetEmployeeFilter !== 'ALL' ? 'var(--accent-color, #2563eb)' : 'var(--text-primary)',
-                      fontSize: '0.82rem',
-                      fontWeight: timesheetEmployeeFilter !== 'ALL' ? 700 : 500,
-                      outline: 'none',
-                      cursor: 'pointer',
-                      maxWidth: '220px'
-                    }}
-                    title="Filter Monthly Timesheet by specific Employee"
-                  >
-                    <option value="ALL">👤 All Employees ({filteredMatrixRows.length})</option>
-                    {filteredMatrixRows.map(emp => (
-                      <option key={emp.email || emp.emp_id} value={emp.email || emp.emp_id}>
-                        {emp.emp_id ? `${emp.emp_id} - ${emp.emp_name}` : emp.emp_name}
-                      </option>
-                    ))}
-                  </select>
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                    <select
+                      value={timesheetEmployeeFilter}
+                      onChange={(e) => {
+                        setTimesheetEmployeeFilter(e.target.value);
+                        setTimesheetPage(1);
+                      }}
+                      style={{
+                        padding: '0.45rem 0.75rem',
+                        borderRadius: '8px',
+                        border: '1px solid ' + (timesheetEmployeeFilter !== 'ALL' ? 'var(--accent-color, #2563eb)' : 'var(--border-light)'),
+                        background: timesheetEmployeeFilter !== 'ALL' ? 'rgba(37, 99, 235, 0.08)' : 'var(--bg-primary)',
+                        color: timesheetEmployeeFilter !== 'ALL' ? 'var(--accent-color, #2563eb)' : 'var(--text-primary)',
+                        fontSize: '0.82rem',
+                        fontWeight: timesheetEmployeeFilter !== 'ALL' ? 700 : 500,
+                        outline: 'none',
+                        cursor: 'pointer',
+                        maxWidth: '220px'
+                      }}
+                      title="2nd Filter: Specific Employee Selection (Choose staff to focus timesheet)"
+                    >
+                      <option value="ALL">👤 Employee: All Staff ({filteredMatrixRows.length})</option>
+                      {filteredMatrixRows.map(emp => (
+                        <option key={emp.email || emp.emp_id} value={emp.email || emp.emp_id}>
+                          {emp.emp_id ? `${emp.emp_id} - ${emp.emp_name}` : emp.emp_name}
+                        </option>
+                      ))}
+                    </select>
+                    {timesheetEmployeeFilter !== 'ALL' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTimesheetEmployeeFilter('ALL');
+                          setTimesheetPage(1);
+                        }}
+                        style={{
+                          padding: '0.35rem 0.55rem',
+                          borderRadius: '6px',
+                          border: '1px solid var(--border-light)',
+                          background: 'var(--bg-surface)',
+                          color: 'var(--text-secondary)',
+                          fontSize: '0.72rem',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.2rem'
+                        }}
+                        title="Clear employee filter"
+                      >
+                        ✕ Clear
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
 
@@ -6324,7 +6411,7 @@ export default function AttendanceModule({
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                 <button
                   type="button"
-                  onClick={teamReportView === 'DAILY' ? fetchTeamMaster : (teamReportView === 'LEAVE_LEDGER' ? fetchTeamLeaveReport : fetchTeamMonthlyMatrix)}
+                  onClick={() => teamReportView === 'DAILY' ? fetchTeamMaster(true) : (teamReportView === 'LEAVE_LEDGER' ? fetchTeamLeaveReport() : fetchTeamMonthlyMatrix(true))}
                   style={{
                     padding: '0.45rem 0.75rem',
                     borderRadius: '8px',
@@ -7322,7 +7409,7 @@ export default function AttendanceModule({
           )}
 
           {/* ========================================================================= */}
-          {/* VIEW 3: MONTHLY TIMESHEET (IN/OUT TIME, DURATION & STATUS) */}
+          {/* VIEW 3: COLUMNAR MONTHLY TIMESHEET (EMPLOYEE ROWS x DAY COLUMNS) */}
           {/* ========================================================================= */}
           {teamReportView === 'MONTHLY_TIMESHEET' && (
             <>
@@ -7333,12 +7420,12 @@ export default function AttendanceModule({
                 gap: '0.75rem'
               }}>
                 <div style={{ padding: '0.85rem', borderRadius: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', textAlign: 'center' }}>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', fontWeight: 600 }}>TOTAL ENTRIES</span>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', fontWeight: 600 }}>TOTAL EMPLOYEES</span>
                   <span style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                    {timesheetSummary.totalRecords}
+                    {timesheetSummary.totalEmployees}
                   </span>
                   <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', display: 'block' }}>
-                    ({timesheetSummary.uniqueEmployees} Staff)
+                    ({timesheetSummary.totalEntries} Day Entries)
                   </span>
                 </div>
 
@@ -7347,7 +7434,7 @@ export default function AttendanceModule({
                     {monthlyMatrixData?.periodDays ? `DAYS IN PERIOD (${monthlyMatrixData?.startDay || 1}-${monthlyMatrixData?.endDay || 15})` : 'DAYS IN MONTH'}
                   </span>
                   <span style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--accent-color)' }}>
-                    {monthlyMatrixData?.periodDays || monthlyMatrixData?.daysInMonth || 15}
+                    {timesheetSummary.periodDays}
                   </span>
                 </div>
 
@@ -7387,26 +7474,59 @@ export default function AttendanceModule({
                 </div>
               </div>
 
-              {/* Monthly Timesheet Table Card */}
+              {/* Status Guide & Instructions */}
+              <div style={{
+                background: 'var(--bg-surface)',
+                borderRadius: '12px',
+                padding: '0.75rem 1rem',
+                border: '1px solid var(--border-light)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.5rem',
+                fontSize: '0.75rem'
+              }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.85rem' }}>
+                  <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>Timesheet Key:</span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                    <span style={{ padding: '0.15rem 0.45rem', borderRadius: '4px', background: '#dcfce7', color: '#166534', fontWeight: 700 }}>P</span> Present (Duration + In/Out)
+                  </span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                    <span style={{ padding: '0.15rem 0.45rem', borderRadius: '4px', background: '#ffedd5', color: '#9a3412', fontWeight: 700 }}>HD</span> Half Day
+                  </span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                    <span style={{ padding: '0.15rem 0.45rem', borderRadius: '4px', background: '#f3e8ff', color: '#7e22ce', fontWeight: 700 }}>SL</span> Short Leave
+                  </span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                    <span style={{ padding: '0.15rem 0.45rem', borderRadius: '4px', background: '#f1f5f9', color: '#475569', fontWeight: 700 }}>WO</span> Week Off
+                  </span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                    <span style={{ padding: '0.15rem 0.45rem', borderRadius: '4px', background: '#e0f2fe', color: '#0369a1', fontWeight: 700 }}>H</span> Holiday
+                  </span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                    <span style={{ padding: '0.15rem 0.45rem', borderRadius: '4px', background: '#fee2e2', color: '#991b1b', fontWeight: 700 }}>A</span> Absent
+                  </span>
+                </div>
+                <div style={{ color: 'var(--text-secondary)', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <Sparkles size={13} color="var(--accent-color)" />
+                  <span>Har date column mein <strong>In &amp; Out Punch Timestamps</strong> aur <strong>Daily Duration</strong> display ho raha hai. Kisi bhi date cell par click karke direct <strong>Sahi Karein</strong> (Punch Correction) modal open karein.</span>
+                </div>
+              </div>
+
+              {/* Columnar Monthly Timesheet Grid Table Card */}
               <div className="card" style={{ padding: '1.25rem', background: 'var(--bg-surface)', borderRadius: '16px', border: '1px solid var(--border-light)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.85rem', flexWrap: 'wrap', gap: '0.5rem' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                     <Clock size={18} color="var(--accent-color)" />
                     <h3 style={{ fontSize: '0.95rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
-                      Monthly Timesheet Logs ({new Date(matrixYear, matrixMonth - 1, 1).toLocaleString('en-US', { month: 'long' })} {matrixYear})
+                      All-Employee Columnar Monthly Timesheet ({new Date(matrixYear, matrixMonth - 1, 1).toLocaleString('en-US', { month: 'long' })} {matrixYear})
                     </h3>
                     <span style={{ fontSize: '0.75rem', padding: '0.15rem 0.5rem', borderRadius: '20px', background: 'rgba(37,99,235,0.08)', color: 'var(--accent-color)', fontWeight: 600 }}>
                       Days {monthlyMatrixData?.startDay || 1} to {monthlyMatrixData?.endDay || monthlyMatrixData?.daysInMonth || 15}
                     </span>
-                    {timesheetEmployeeFilter !== 'ALL' && (
-                      <span style={{ fontSize: '0.75rem', padding: '0.15rem 0.5rem', borderRadius: '20px', background: '#dcfce7', color: '#166534', fontWeight: 600 }}>
-                        Filtered Employee: {timesheetEmployeeFilter}
-                      </span>
-                    )}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                     <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                      Showing <strong>{timesheetRecords.length === 0 ? 0 : (timesheetPage - 1) * (timesheetPageSize === -1 ? timesheetRecords.length : timesheetPageSize) + 1}</strong> to <strong>{timesheetPageSize === -1 ? timesheetRecords.length : Math.min(timesheetPage * timesheetPageSize, timesheetRecords.length)}</strong> of <strong>{timesheetRecords.length}</strong> entries
+                      Showing <strong>{timesheetRows.length === 0 ? 0 : (timesheetPage - 1) * (timesheetPageSize === -1 ? timesheetRows.length : timesheetPageSize) + 1}</strong> to <strong>{timesheetPageSize === -1 ? timesheetRows.length : Math.min(timesheetPage * timesheetPageSize, timesheetRows.length)}</strong> of <strong>{timesheetRows.length}</strong> staff
                     </span>
                     <select
                       value={timesheetPageSize}
@@ -7427,155 +7547,220 @@ export default function AttendanceModule({
                       <option value={25}>25 / page</option>
                       <option value={50}>50 / page</option>
                       <option value={100}>100 / page</option>
-                      <option value={250}>250 / page</option>
-                      <option value={-1}>All records</option>
+                      <option value={-1}>All staff</option>
                     </select>
                   </div>
                 </div>
 
                 <div style={{ overflowX: 'auto', borderRadius: '10px', border: '1px solid var(--border-light)', maxHeight: '680px', overflowY: 'auto' }}>
-                  <table style={{ width: '100%', minWidth: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem' }}>
+                  <table style={{ width: '100%', minWidth: '100%', borderCollapse: 'collapse', textAlign: 'center', fontSize: '0.78rem' }}>
                     <thead style={{ position: 'sticky', top: 0, zIndex: 3, background: 'var(--bg-primary)' }}>
-                      <tr style={{ borderBottom: '2px solid var(--border-light)', color: 'var(--text-secondary)', fontSize: '0.78rem' }}>
-                        <th style={{ padding: '0.65rem 0.75rem', fontWeight: 700, width: '90px' }}>Emp ID</th>
-                        <th style={{ padding: '0.65rem 0.75rem', fontWeight: 700, minWidth: '150px' }}>Employee Name</th>
-                        <th style={{ padding: '0.65rem 0.75rem', fontWeight: 600, minWidth: '110px' }}>Department</th>
-                        <th style={{ padding: '0.65rem 0.75rem', fontWeight: 700, minWidth: '105px' }}>Date</th>
-                        <th style={{ padding: '0.65rem 0.5rem', fontWeight: 700, textAlign: 'center', width: '60px' }}>Day</th>
-                        <th style={{ padding: '0.65rem 0.75rem', fontWeight: 700, minWidth: '100px' }}>Punch In</th>
-                        <th style={{ padding: '0.65rem 0.75rem', fontWeight: 700, minWidth: '100px' }}>Punch Out</th>
-                        <th style={{ padding: '0.65rem 0.75rem', fontWeight: 700, minWidth: '95px' }}>Duration</th>
-                        <th style={{ padding: '0.65rem 0.75rem', fontWeight: 700, minWidth: '120px' }}>Status</th>
-                        <th style={{ padding: '0.65rem 0.75rem', fontWeight: 600, minWidth: '130px' }}>Regularization / Notes</th>
-                        {(isAdmin || isHodOrManager) && (
-                          <th style={{ padding: '0.65rem 0.75rem', fontWeight: 700, textAlign: 'center', width: '110px' }}>Action</th>
-                        )}
+                      <tr style={{ borderBottom: '2px solid var(--border-light)', color: 'var(--text-secondary)' }}>
+                        <th style={{ padding: '0.65rem 0.75rem', fontWeight: 700, textAlign: 'left', minWidth: '85px', position: 'sticky', left: 0, background: 'var(--bg-primary)', zIndex: 4 }}>Emp ID</th>
+                        <th style={{ padding: '0.65rem 0.75rem', fontWeight: 700, textAlign: 'left', minWidth: '140px', position: 'sticky', left: '85px', background: 'var(--bg-primary)', zIndex: 4 }}>Employee Name</th>
+                        <th style={{ padding: '0.65rem 0.75rem', fontWeight: 700, textAlign: 'left', minWidth: '95px' }}>Dept</th>
+
+                        {/* Date Columns (1 to 30 or selected period) */}
+                        {(monthlyMatrixData?.monthDates || []).map(d => (
+                          <th 
+                            key={d.dateStr} 
+                            style={{
+                              padding: '0.45rem 0.35rem',
+                              fontWeight: 700,
+                              minWidth: '96px',
+                              maxWidth: '120px',
+                              background: d.isHoliday ? 'rgba(14, 165, 233, 0.12)' : (d.isSunday ? 'rgba(239, 68, 68, 0.08)' : 'var(--bg-primary)'),
+                              color: d.isHoliday ? '#0284c7' : (d.isSunday ? '#dc2626' : 'var(--text-primary)'),
+                              borderLeft: '1px solid var(--border-light)'
+                            }}
+                            title={d.isHoliday ? `Official Holiday: ${d.holidayName}` : (d.isSunday ? 'Sunday Week Off' : d.dateStr)}
+                          >
+                            <div style={{ fontSize: '0.82rem' }}>Day {d.dayNumber}</div>
+                            <div style={{ fontSize: '0.68rem', fontWeight: 600, color: d.isHoliday ? '#0284c7' : (d.isSunday ? '#dc2626' : 'var(--text-secondary)') }}>
+                              {d.dayNameShort} • {d.dateStr?.slice(5)}
+                            </div>
+                          </th>
+                        ))}
+
+                        {/* Summary Column Headers */}
+                        <th style={{ padding: '0.65rem 0.75rem', fontWeight: 800, color: '#2563eb', borderLeft: '2px solid var(--border-light)', minWidth: '85px', background: 'rgba(37, 99, 235, 0.06)' }}>Total Hours</th>
+                        <th style={{ padding: '0.65rem 0.5rem', fontWeight: 700, color: '#16a34a', minWidth: '65px' }}>Present</th>
+                        <th style={{ padding: '0.65rem 0.5rem', fontWeight: 700, color: '#0284c7', minWidth: '75px' }}>Avg/Day</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {paginatedTimesheetRecords.length === 0 ? (
+                      {loadingMonthlyMatrix ? (
                         <tr>
-                          <td colSpan={(isAdmin || isHodOrManager) ? 11 : 10} style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
-                            No timesheet records match the selected filters.
+                          <td colSpan={(monthlyMatrixData?.monthDates?.length || 30) + 6} style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
+                              <RefreshCw size={18} className="animate-spin" color="var(--accent-color)" />
+                              <span>Loading monthly timesheet data...</span>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : paginatedTimesheetRows.length === 0 ? (
+                        <tr>
+                          <td colSpan={(monthlyMatrixData?.monthDates?.length || 30) + 6} style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                            No timesheet records found for {matrixMonth}/{matrixYear}.
                           </td>
                         </tr>
                       ) : (
-                        paginatedTimesheetRecords.map((r, idx) => {
-                          const isSun = r.isSunday;
-                          const isHol = r.isHoliday;
+                        paginatedTimesheetRows.map((row, idx) => {
+                          const avgDailyHours = (row.summary?.totalMinutesWorked && row.summary?.totalPresent)
+                            ? formatMinutesToHours(Math.round(row.summary.totalMinutesWorked / row.summary.totalPresent))
+                            : '0h';
+
                           return (
-                            <tr
-                              key={`${r.email}_${r.date}_${idx}`}
-                              style={{
-                                borderBottom: '1px solid var(--border-light)',
-                                backgroundColor: isSun ? 'rgba(239, 68, 68, 0.02)' : (isHol ? 'rgba(14, 165, 233, 0.03)' : (idx % 2 === 0 ? 'transparent' : 'var(--table-alt-row, rgba(0,0,0,0.01))'))
+                            <tr 
+                              key={row.email || idx} 
+                              style={{ 
+                                borderBottom: '1px solid var(--border-light)', 
+                                backgroundColor: idx % 2 === 0 ? 'transparent' : 'var(--table-alt-row, rgba(0,0,0,0.01))' 
                               }}
                             >
-                              <td style={{ padding: '0.6rem 0.75rem', fontWeight: 700, color: 'var(--accent-color)', fontFamily: 'monospace' }}>
-                                {r.emp_id || '—'}
+                              <td style={{ padding: '0.55rem 0.75rem', fontWeight: 700, color: 'var(--accent-color)', fontFamily: 'monospace', textAlign: 'left', position: 'sticky', left: 0, background: 'var(--bg-surface)', zIndex: 2 }}>
+                                {row.emp_id || '—'}
                               </td>
-                              <td style={{ padding: '0.6rem 0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                  <span>{r.emp_name}</span>
-                                  <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{r.email}</span>
+                              <td style={{ padding: '0.55rem 0.75rem', fontWeight: 600, textAlign: 'left', position: 'sticky', left: '85px', background: 'var(--bg-surface)', zIndex: 2 }}>
+                                <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '135px' }} title={row.emp_name}>
+                                  {row.emp_name}
+                                </div>
+                                <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '135px' }}>
+                                  {row.email}
                                 </div>
                               </td>
-                              <td style={{ padding: '0.6rem 0.75rem', color: 'var(--text-secondary)' }}>
-                                {r.department || 'General'}
+                              <td style={{ padding: '0.55rem 0.75rem', color: 'var(--text-secondary)', textAlign: 'left' }}>
+                                {row.department}
                               </td>
-                              <td style={{ padding: '0.6rem 0.75rem', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
-                                {r.date}
-                              </td>
-                              <td style={{ padding: '0.6rem 0.5rem', textAlign: 'center', fontWeight: 700, color: isSun ? '#dc2626' : (isHol ? '#0284c7' : 'var(--text-secondary)') }}>
-                                <span style={{
-                                  padding: '0.15rem 0.45rem',
-                                  borderRadius: '4px',
-                                  background: isSun ? 'rgba(239, 68, 68, 0.08)' : (isHol ? 'rgba(14, 165, 233, 0.1)' : 'transparent'),
-                                  fontSize: '0.75rem'
-                                }}>
-                                  {r.dayNameShort}
-                                </span>
-                              </td>
-                              <td style={{ padding: '0.6rem 0.75rem', whiteSpace: 'nowrap' }}>
-                                {r.in_time ? (
-                                  <span style={{ fontWeight: 600, color: '#16a34a' }}>
-                                    {formatTimeIST(r.in_time)}
-                                  </span>
-                                ) : (
-                                  <span style={{ color: 'var(--text-secondary)', opacity: 0.5 }}>—</span>
-                                )}
-                              </td>
-                              <td style={{ padding: '0.6rem 0.75rem', whiteSpace: 'nowrap' }}>
-                                {r.out_time ? (
-                                  <span style={{ fontWeight: 600, color: '#2563eb' }}>
-                                    {formatTimeIST(r.out_time)}
-                                  </span>
-                                ) : (
-                                  <span style={{ color: 'var(--text-secondary)', opacity: 0.5 }}>—</span>
-                                )}
-                              </td>
-                              <td style={{ padding: '0.6rem 0.75rem', whiteSpace: 'nowrap' }}>
-                                {(r.total_working_minutes || 0) > 0 ? (
-                                  <span style={{
-                                    display: 'inline-block',
-                                    padding: '0.15rem 0.5rem',
-                                    borderRadius: '6px',
-                                    background: (r.total_working_minutes >= 480) ? '#dcfce7' : '#ffedd5',
-                                    color: (r.total_working_minutes >= 480) ? '#166534' : '#9a3412',
-                                    fontWeight: 700,
-                                    fontSize: '0.78rem'
-                                  }}>
-                                    {formatMinutesToHours(r.total_working_minutes)}
-                                  </span>
-                                ) : (
-                                  <span style={{ color: 'var(--text-secondary)', opacity: 0.5 }}>0h</span>
-                                )}
-                              </td>
-                              <td style={{ padding: '0.6rem 0.75rem' }}>
-                                {renderStatusBadge(r.status, r.is_regularized, r.remarks)}
-                              </td>
-                              <td style={{ padding: '0.6rem 0.75rem', fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
-                                {r.is_regularized && (
-                                  <span style={{ display: 'inline-block', padding: '0.1rem 0.4rem', borderRadius: '4px', background: '#e0e7ff', color: '#3730a3', fontWeight: 600, marginRight: '0.35rem' }}>
-                                    HOD Regularized
-                                  </span>
-                                )}
-                                {r.holidayName && (
-                                  <span style={{ display: 'inline-block', padding: '0.1rem 0.4rem', borderRadius: '4px', background: '#e0f2fe', color: '#0369a1', fontWeight: 600, marginRight: '0.35rem' }}>
-                                    🎉 {r.holidayName}
-                                  </span>
-                                )}
-                                <span>{r.remarks || '—'}</span>
-                              </td>
-                              {(isAdmin || isHodOrManager) && (
-                                <td style={{ padding: '0.6rem 0.75rem', textAlign: 'center', whiteSpace: 'nowrap' }}>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleOpenDirectCorrectionModal({
-                                      emp_id: r.emp_id,
-                                      emp_name: r.emp_name,
-                                      email: r.email,
-                                      attendance_date: r.date,
-                                      in_time: r.in_time,
-                                      out_time: r.out_time,
-                                      status: r.status,
-                                      remarks: r.remarks
-                                    })}
+
+                              {/* Day Columns (Column-wise In/Out + Duration Cell) */}
+                              {(row.days || []).map((day, dIdx) => {
+                                let cellBg = 'transparent';
+                                let cellBorder = 'var(--border-light)';
+                                let tagBg = '#f1f5f9';
+                                let tagColor = '#475569';
+                                const minutes = day.record?.total_working_minutes || 0;
+                                const inTimeFormatted = formatPunchTime(day.record?.in_time);
+                                const outTimeFormatted = formatPunchTime(day.record?.out_time);
+
+                                if (day.code === 'P') {
+                                  cellBg = 'rgba(22, 163, 74, 0.06)';
+                                  cellBorder = '#bbf7d0';
+                                  tagBg = '#dcfce7';
+                                  tagColor = '#166534';
+                                } else if (day.code === 'HD') {
+                                  cellBg = 'rgba(234, 88, 12, 0.06)';
+                                  cellBorder = '#fed7aa';
+                                  tagBg = '#ffedd5';
+                                  tagColor = '#9a3412';
+                                } else if (typeof day.code === 'string' && day.code.startsWith('SL')) {
+                                  cellBg = 'rgba(126, 34, 206, 0.06)';
+                                  cellBorder = '#e9d5ff';
+                                  tagBg = '#f3e8ff';
+                                  tagColor = '#7e22ce';
+                                } else if (day.code === 'R') {
+                                  cellBg = 'rgba(55, 48, 163, 0.06)';
+                                  cellBorder = '#c7d2fe';
+                                  tagBg = '#e0e7ff';
+                                  tagColor = '#3730a3';
+                                } else if (day.code === 'WO' || day.code === 'WO-P') {
+                                  cellBg = 'rgba(71, 85, 105, 0.04)';
+                                  cellBorder = '#e2e8f0';
+                                  tagBg = '#f1f5f9';
+                                  tagColor = '#475569';
+                                } else if (day.code === 'H' || day.code === 'H-P') {
+                                  cellBg = 'rgba(2, 132, 199, 0.06)';
+                                  cellBorder = '#bae6fd';
+                                  tagBg = '#e0f2fe';
+                                  tagColor = '#0369a1';
+                                } else if (day.code === 'A') {
+                                  cellBg = 'rgba(239, 68, 68, 0.05)';
+                                  cellBorder = '#fecaca';
+                                  tagBg = '#fee2e2';
+                                  tagColor = '#991b1b';
+                                }
+
+                                const isClickable = (isAdmin || isHodOrManager) && day.code !== '—';
+
+                                return (
+                                  <td 
+                                    key={day.dateStr || dIdx} 
                                     style={{
-                                      padding: '0.25rem 0.6rem',
-                                      borderRadius: '6px',
-                                      border: '1px solid #bfdbfe',
-                                      background: '#eff6ff',
-                                      color: '#1d4ed8',
-                                      fontSize: '0.75rem',
-                                      fontWeight: 600,
-                                      cursor: 'pointer'
+                                      padding: '0.35rem 0.25rem',
+                                      borderLeft: '1px solid var(--border-light)',
+                                      minWidth: '96px',
+                                      maxWidth: '120px',
+                                      verticalAlign: 'middle'
                                     }}
                                   >
-                                    Sahi Karein
-                                  </button>
-                                </td>
-                              )}
+                                    <div
+                                      onClick={() => {
+                                        if (!isClickable) return;
+                                        handleOpenDirectCorrectionModal({
+                                          emp_id: row.emp_id,
+                                          emp_name: row.emp_name,
+                                          email: row.email,
+                                          attendance_date: day.dateStr,
+                                          in_time: day.record?.in_time,
+                                          out_time: day.record?.out_time,
+                                          status: day.record?.status || (day.code === 'P' ? 'PRESENT' : day.code),
+                                          remarks: day.record?.remarks
+                                        });
+                                      }}
+                                      style={{
+                                        padding: '0.35rem 0.3rem',
+                                        borderRadius: '8px',
+                                        background: cellBg,
+                                        border: `1px solid ${cellBorder}`,
+                                        textAlign: 'center',
+                                        cursor: isClickable ? 'pointer' : 'default',
+                                        transition: 'all 0.15s ease'
+                                      }}
+                                      title={`Date: ${day.dateStr}\nIn: ${inTimeFormatted || '—'}\nOut: ${outTimeFormatted || '—'}\nDuration: ${minutes > 0 ? formatMinutesToHours(minutes) : '0h'}\nStatus: ${day.label || day.code}${isClickable ? '\n(Click to correct punch)' : ''}`}
+                                    >
+                                      {/* Line 1: Code Tag + Working Hours */}
+                                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.25rem', fontSize: '0.72rem', fontWeight: 700 }}>
+                                        <span style={{ fontSize: '0.65rem', padding: '0.05rem 0.25rem', borderRadius: '4px', background: tagBg, color: tagColor }}>
+                                          {day.code}
+                                        </span>
+                                        <span style={{ color: minutes > 0 ? (minutes >= 480 ? '#166534' : '#9a3412') : 'inherit' }}>
+                                          {minutes > 0 
+                                            ? formatMinutesToHours(minutes) 
+                                            : (day.code === 'WO' ? 'Week Off' : (day.code === 'H' ? 'Holiday' : (day.code === 'A' ? '0h' : '—')))}
+                                        </span>
+                                      </div>
+
+                                      {/* Line 2: In - Out Timestamps */}
+                                      <div style={{ fontSize: '0.65rem', marginTop: '0.15rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                        {inTimeFormatted ? (
+                                          <>
+                                            <span style={{ color: '#16a34a', fontWeight: 600 }}>{inTimeFormatted}</span>
+                                            <span style={{ margin: '0 0.15rem', color: 'var(--text-secondary)' }}>-</span>
+                                            <span style={{ color: outTimeFormatted ? '#2563eb' : '#ea580c', fontWeight: 600 }}>
+                                              {outTimeFormatted || 'Work...'}
+                                            </span>
+                                          </>
+                                        ) : (
+                                          <span style={{ color: 'var(--text-secondary)', opacity: 0.6 }}>
+                                            {day.code === 'WO' ? 'Sunday' : (day.code === 'H' ? 'Holiday' : 'No Punch')}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </td>
+                                );
+                              })}
+
+                              {/* Summary Columns */}
+                              <td style={{ padding: '0.55rem 0.75rem', fontWeight: 800, color: '#2563eb', background: 'rgba(37, 99, 235, 0.06)', borderLeft: '2px solid var(--border-light)', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>
+                                {row.summary?.totalHoursFormatted || '0h'}
+                              </td>
+                              <td style={{ padding: '0.55rem 0.5rem', fontWeight: 700, color: '#16a34a', fontSize: '0.82rem' }}>
+                                {row.summary?.totalPresent || 0}
+                              </td>
+                              <td style={{ padding: '0.55rem 0.5rem', fontWeight: 700, color: '#0284c7', fontSize: '0.78rem', whiteSpace: 'nowrap' }}>
+                                {avgDailyHours}
+                              </td>
                             </tr>
                           );
                         })
@@ -7584,11 +7769,11 @@ export default function AttendanceModule({
                   </table>
                 </div>
 
-                {/* Timesheet Pagination Navigation */}
-                {timesheetRecords.length > 0 && timesheetPageSize !== -1 && (
+                {/* Columnar Timesheet Pagination Controls */}
+                {timesheetRows.length > 0 && timesheetPageSize !== -1 && (
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
                     <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                      Page <strong>{timesheetPage}</strong> of <strong>{Math.ceil(timesheetRecords.length / timesheetPageSize)}</strong>
+                      Page <strong>{timesheetPage}</strong> of <strong>{Math.ceil(timesheetRows.length / timesheetPageSize)}</strong> ({timesheetRows.length} total staff)
                     </span>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
                       <button
@@ -7610,17 +7795,17 @@ export default function AttendanceModule({
                       </button>
                       <button
                         type="button"
-                        disabled={timesheetPage >= Math.ceil(timesheetRecords.length / timesheetPageSize)}
+                        disabled={timesheetPage >= Math.ceil(timesheetRows.length / timesheetPageSize)}
                         onClick={() => setTimesheetPage(p => p + 1)}
                         style={{
                           padding: '0.35rem 0.75rem',
                           borderRadius: '6px',
                           border: '1px solid var(--border-light)',
                           background: 'var(--bg-primary)',
-                          color: timesheetPage >= Math.ceil(timesheetRecords.length / timesheetPageSize) ? 'var(--text-secondary)' : 'var(--text-primary)',
-                          cursor: timesheetPage >= Math.ceil(timesheetRecords.length / timesheetPageSize) ? 'not-allowed' : 'pointer',
+                          color: timesheetPage >= Math.ceil(timesheetRows.length / timesheetPageSize) ? 'var(--text-secondary)' : 'var(--text-primary)',
+                          cursor: timesheetPage >= Math.ceil(timesheetRows.length / timesheetPageSize) ? 'not-allowed' : 'pointer',
                           fontSize: '0.78rem',
-                          opacity: timesheetPage >= Math.ceil(timesheetRecords.length / timesheetPageSize) ? 0.5 : 1
+                          opacity: timesheetPage >= Math.ceil(timesheetRows.length / timesheetPageSize) ? 0.5 : 1
                         }}
                       >
                         Next
