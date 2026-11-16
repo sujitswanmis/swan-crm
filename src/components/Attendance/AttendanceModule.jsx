@@ -1729,6 +1729,9 @@ export default function AttendanceModule({
   // Monthly Matrix State
   const [matrixMonth, setMatrixMonth] = useState(new Date().getMonth() + 1);
   const [matrixYear, setMatrixYear] = useState(new Date().getFullYear());
+  const [matrixPeriodType, setMatrixPeriodType] = useState('FULL_MONTH'); // 'FULL_MONTH' | 'FIRST_HALF' | 'SECOND_HALF' | 'TILL_TODAY' | 'CUSTOM_DAYS'
+  const [matrixCustomStartDay, setMatrixCustomStartDay] = useState(1);
+  const [matrixCustomEndDay, setMatrixCustomEndDay] = useState(15);
   const [monthlyMatrixData, setMonthlyMatrixData] = useState({ rows: [], monthDates: [], summary: {} });
   const [loadingMonthlyMatrix, setLoadingMonthlyMatrix] = useState(false);
 
@@ -2035,6 +2038,9 @@ export default function AttendanceModule({
         department: teamMasterDepartment,
         tenantId: effectiveTenantId,
         company: userCompany,
+        periodType: matrixPeriodType,
+        customStartDay: matrixCustomStartDay,
+        customEndDay: matrixCustomEndDay,
         adjustLeaves: adjustLeavesInReport,
         branchScope: activeBranchScope
       });
@@ -2334,7 +2340,7 @@ export default function AttendanceModule({
         fetchTeamMonthlyMatrix();
       }
     }
-  }, [activeTab, teamReportView, teamDatePreset, teamStartDate, teamEndDate, teamMasterDepartment, matrixYear, matrixMonth, effectiveTenantId, userCompany, adjustLeavesInReport, leaveReportDept, adminCompanyFilter, effectiveBranchAccess?.scope]);
+  }, [activeTab, teamReportView, teamDatePreset, teamStartDate, teamEndDate, teamMasterDepartment, matrixYear, matrixMonth, matrixPeriodType, matrixCustomStartDay, matrixCustomEndDay, effectiveTenantId, userCompany, adjustLeavesInReport, leaveReportDept, adminCompanyFilter, effectiveBranchAccess?.scope]);
 
   // Handle Punch In click — instant 1-click reaction, show confirm popup first & pre-warm GPS
   const handlePunchIn = () => {
@@ -3181,8 +3187,11 @@ export default function AttendanceModule({
     const searchSuffix = teamSearchQuery ? `_${teamSearchQuery.replace(/[^a-zA-Z0-9]/g, '_')}` : '';
     const filterSuffix = attendanceFilterMode === 'ACTIVE_PUNCH_ONLY' ? '_PunchedOnly' : (attendanceFilterMode === 'NO_PUNCH_ONLY' ? '_InactiveOnly' : '');
     const monthName = new Date(matrixYear, matrixMonth - 1, 1).toLocaleString('en-US', { month: 'long' });
+    const periodSuffix = (monthlyMatrixData?.startDay && monthlyMatrixData?.endDay && (monthlyMatrixData.startDay !== 1 || monthlyMatrixData.endDay !== monthlyMatrixData.daysInMonth))
+      ? `_Day${monthlyMatrixData.startDay}to${monthlyMatrixData.endDay}`
+      : '';
     const adjustTag = withLeavesAdjusted ? '_LeaveAdjusted' : '_RawAttendance';
-    link.setAttribute('download', `Monthly_Attendance_Matrix_${monthName}_${matrixYear}${adjustTag}${filterSuffix}${searchSuffix}.csv`);
+    link.setAttribute('download', `Monthly_Attendance_Matrix_${monthName}_${matrixYear}${periodSuffix}${adjustTag}${filterSuffix}${searchSuffix}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -5961,6 +5970,53 @@ export default function AttendanceModule({
                       ))}
                     </select>
 
+                    {/* Calculation Period Selector: 1-15, Full Month, 16-End, 1-Today, Custom */}
+                    <select
+                      value={matrixPeriodType}
+                      onChange={(e) => setMatrixPeriodType(e.target.value)}
+                      style={{
+                        padding: '0.45rem 0.75rem',
+                        borderRadius: '8px',
+                        border: '1px solid ' + (matrixPeriodType !== 'FULL_MONTH' ? 'var(--accent-color, #2563eb)' : 'var(--border-light)'),
+                        background: matrixPeriodType !== 'FULL_MONTH' ? 'rgba(37, 99, 235, 0.08)' : 'var(--bg-primary)',
+                        color: matrixPeriodType !== 'FULL_MONTH' ? 'var(--accent-color, #2563eb)' : 'var(--text-primary)',
+                        fontSize: '0.82rem',
+                        fontWeight: matrixPeriodType !== 'FULL_MONTH' ? 700 : 500,
+                        outline: 'none',
+                        cursor: 'pointer'
+                      }}
+                      title="Attendance Calculation Period: 1 to 15th, Full Month, 16th to End, or Custom Day Range"
+                    >
+                      <option value="FULL_MONTH">📅 Full Month (1st - {new Date(matrixYear, matrixMonth, 0).getDate()}th)</option>
+                      <option value="FIRST_HALF">📅 1st to 15th (1-15 Cycle)</option>
+                      <option value="SECOND_HALF">📅 16th to End (16 - {new Date(matrixYear, matrixMonth, 0).getDate()}th)</option>
+                      <option value="TILL_TODAY">📅 1st to Today (1 - {new Date().getDate()}th)</option>
+                      <option value="CUSTOM_DAYS">⚙️ Custom Days (Range)</option>
+                    </select>
+
+                    {matrixPeriodType === 'CUSTOM_DAYS' && (
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', background: 'var(--bg-primary)', padding: '0.2rem 0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', fontSize: '0.78rem' }}>
+                        <span style={{ color: 'var(--text-secondary)' }}>Day</span>
+                        <input
+                          type="number"
+                          min="1"
+                          max={new Date(matrixYear, matrixMonth, 0).getDate()}
+                          value={matrixCustomStartDay}
+                          onChange={(e) => setMatrixCustomStartDay(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                          style={{ width: '40px', padding: '0.2rem', borderRadius: '4px', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', color: 'var(--text-primary)', textAlign: 'center', fontSize: '0.78rem' }}
+                        />
+                        <span style={{ color: 'var(--text-secondary)' }}>to</span>
+                        <input
+                          type="number"
+                          min="1"
+                          max={new Date(matrixYear, matrixMonth, 0).getDate()}
+                          value={matrixCustomEndDay}
+                          onChange={(e) => setMatrixCustomEndDay(Math.min(new Date(matrixYear, matrixMonth, 0).getDate(), parseInt(e.target.value, 10) || 15))}
+                          style={{ width: '40px', padding: '0.2rem', borderRadius: '4px', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', color: 'var(--text-primary)', textAlign: 'center', fontSize: '0.78rem' }}
+                        />
+                      </div>
+                    )}
+
                     {/* Leave Adjustment in Salary Toggle Button */}
                     <button
                       type="button"
@@ -6737,8 +6793,14 @@ export default function AttendanceModule({
                   </span>
                 </div>
                 <div style={{ padding: '0.85rem', borderRadius: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', textAlign: 'center' }}>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', fontWeight: 600 }}>DAYS IN MONTH</span>
-                  <span style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--accent-color)' }}>{monthlyMatrixData?.daysInMonth || new Date(matrixYear, matrixMonth, 0).getDate()}</span>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', fontWeight: 600 }}>
+                    {monthlyMatrixData?.periodDays && monthlyMatrixData.periodDays !== monthlyMatrixData.daysInMonth 
+                      ? `DAYS IN PERIOD (${monthlyMatrixData.startDay || 1}-${monthlyMatrixData.endDay || 15})`
+                      : 'DAYS IN MONTH'}
+                  </span>
+                  <span style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--accent-color)' }}>
+                    {monthlyMatrixData?.periodDays || monthlyMatrixData?.daysInMonth || new Date(matrixYear, matrixMonth, 0).getDate()}
+                  </span>
                 </div>
                 <div style={{ padding: '0.85rem', borderRadius: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', textAlign: 'center' }}>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', fontWeight: 600 }}>WORKING DAYS</span>

@@ -3409,7 +3409,9 @@ export async function getTeamMonthlyMatrix({
   company = '',
   periodType = 'FULL_MONTH',
   adjustLeaves = true,
-  branchScope = null
+  branchScope = null,
+  customStartDay = 1,
+  customEndDay = null
 }) {
   const adminClient = getAdminClient();
   const targetYear = parseInt(year, 10);
@@ -3528,15 +3530,28 @@ export async function getTeamMonthlyMatrix({
     });
   }
 
-  // Period boundaries: FULL_MONTH (1 to daysInMonth), ADVANCE_HALF (1 to 15), SECOND_HALF (16 to daysInMonth)
+  // Period boundaries: FULL_MONTH (1 to daysInMonth), ADVANCE_HALF / FIRST_HALF (1 to 15), SECOND_HALF (16 to daysInMonth), TILL_TODAY, CUSTOM_DAYS
   let startDay = 1;
   let endDay = daysInMonth;
-  if (periodType === 'ADVANCE_HALF' || periodType === 'FIRST_HALF') {
+  if (periodType === 'ADVANCE_HALF' || periodType === 'FIRST_HALF' || periodType === '1_TO_15') {
     startDay = 1;
     endDay = Math.min(15, daysInMonth);
-  } else if (periodType === 'SECOND_HALF') {
+  } else if (periodType === 'SECOND_HALF' || periodType === '16_TO_END') {
     startDay = 16;
     endDay = daysInMonth;
+  } else if (periodType === 'TILL_TODAY') {
+    startDay = 1;
+    const nowIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+    if (nowIST.getFullYear() === targetYear && (nowIST.getMonth() + 1) === targetMonth) {
+      endDay = Math.min(nowIST.getDate(), daysInMonth);
+    } else {
+      endDay = daysInMonth;
+    }
+  } else if (periodType === 'CUSTOM_DAYS') {
+    const s = parseInt(customStartDay, 10);
+    const e = parseInt(customEndDay, 10);
+    startDay = Number.isInteger(s) ? Math.max(1, Math.min(s, daysInMonth)) : 1;
+    endDay = Number.isInteger(e) ? Math.max(startDay, Math.min(e, daysInMonth)) : daysInMonth;
   }
 
   // Load official company holidays for target month from Holidays Calendar Config
@@ -3966,7 +3981,10 @@ export async function getTeamMonthlyMatrix({
       totalAdvanceAmount: periodType === 'ADVANCE_HALF' ? totalPayrollAmount : 0,
       totalPayrollAmount,
       totalApprovedLeavesCount,
-      totalHolidaysCount: monthHolidays.length,
+      totalHolidaysCount: monthDates.filter(d => d.isHoliday).length,
+      totalSundaysCount: monthDates.filter(d => d.isSunday).length,
+      startDay,
+      endDay,
       leavesAdjustedInReport: adjustLeaves
     }
   };
