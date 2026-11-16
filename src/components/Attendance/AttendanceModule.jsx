@@ -3219,17 +3219,18 @@ export default function AttendanceModule({
     return timesheetRows.slice(start, start + timesheetPageSize);
   }, [timesheetRows, timesheetPage, timesheetPageSize]);
 
-  // Export Column-wise Monthly Timesheet to CSV
+  // Export Column-wise Monthly Timesheet to CSV (Option A: 4 rows per employee: Status, In Time, Out Time, Work Duration)
   const handleExportMonthlyTimesheetCSV = () => {
     const rowsToExport = timesheetRows || [];
     if (rowsToExport.length === 0) return;
 
-    const datesHeaders = (monthlyMatrixData?.monthDates || []).map(d => `"${d.dayNumber} (${d.dayNameShort}) In - Out [Duration] Status"`);
+    const datesHeaders = (monthlyMatrixData?.monthDates || []).map(d => `"${d.dayNumber} (${d.dayNameShort})"`);
     const headers = [
       'Emp ID',
       'Employee Name',
       'Email',
       'Department',
+      'Metric',
       ...datesHeaders,
       'Total Present',
       'Total Half Days',
@@ -3240,42 +3241,111 @@ export default function AttendanceModule({
       'Average Daily Hours'
     ];
 
-    const rows = rowsToExport.map(r => {
-      const dayValues = (r.days || []).map(d => {
-        if (!d) return '"—"';
-        const inStr = d.record?.in_time ? formatPunchTime(d.record.in_time) : '';
-        const outStr = d.record?.out_time ? formatPunchTime(d.record.out_time) : '';
-        const durStr = d.record?.total_working_minutes > 0 ? formatMinutesToHours(d.record.total_working_minutes) : '';
-        if (inStr) {
-          return `"${inStr} - ${outStr || 'Working...'} [${durStr || '0h'}] (${d.code})"`;
-        }
-        return `"${d.code === 'WO' ? 'Week Off' : (d.code === 'H' ? 'Holiday' : (d.code === 'A' ? 'Absent' : d.code))}"`;
-      });
+    const exportRows = [];
 
+    rowsToExport.forEach(r => {
       const avgHours = (r.summary?.totalMinutesWorked && r.summary?.totalPresent)
         ? formatMinutesToHours(Math.round(r.summary.totalMinutesWorked / r.summary.totalPresent))
         : '0h';
 
-      return [
+      // 1. Row 1: STATUS (Date ke turant niche pehli row Status)
+      const statusDayValues = (r.days || []).map(d => {
+        if (!d) return '"—"';
+        const code = d.code === 'WO' ? 'Week Off' : (d.code === 'H' ? 'Holiday' : (d.code === 'A' ? 'Absent' : (d.code || '—')));
+        return `"${code}"`;
+      });
+      exportRows.push([
         `"${r.emp_id || ''}"`,
         `"${r.emp_name || ''}"`,
         `"${r.email || ''}"`,
         `"${r.department || ''}"`,
-        ...dayValues,
+        `"Status"`,
+        ...statusDayValues,
         `"${r.summary?.totalPresent || 0}"`,
         `"${(r.summary?.totalHalfDays || 0) + (r.summary?.totalShortLeaves || 0)}"`,
         `"${r.summary?.totalSundays || 0}"`,
         `"${r.summary?.totalHolidays || 0}"`,
         `"${r.summary?.totalAbsent || 0}"`,
+        `"—"`,
+        `"—"`
+      ]);
+
+      // 2. Row 2: IN TIME
+      const inDayValues = (r.days || []).map(d => {
+        if (!d) return '"—"';
+        const inStr = d.record?.in_time ? formatPunchTime(d.record.in_time) : '';
+        return `"${inStr || '—'}"`;
+      });
+      exportRows.push([
+        `"${r.emp_id || ''}"`,
+        `"${r.emp_name || ''}"`,
+        `"${r.email || ''}"`,
+        `"${r.department || ''}"`,
+        `"In Time"`,
+        ...inDayValues,
+        `"—"`,
+        `"—"`,
+        `"—"`,
+        `"—"`,
+        `"—"`,
+        `"—"`,
+        `"—"`
+      ]);
+
+      // 3. Row 3: OUT TIME
+      const outDayValues = (r.days || []).map(d => {
+        if (!d) return '"—"';
+        const outStr = d.record?.out_time ? formatPunchTime(d.record.out_time) : '';
+        if (outStr) return `"${outStr}"`;
+        if (d.record?.in_time) return '"Working..."';
+        return '"—"';
+      });
+      exportRows.push([
+        `"${r.emp_id || ''}"`,
+        `"${r.emp_name || ''}"`,
+        `"${r.email || ''}"`,
+        `"${r.department || ''}"`,
+        `"Out Time"`,
+        ...outDayValues,
+        `"—"`,
+        `"—"`,
+        `"—"`,
+        `"—"`,
+        `"—"`,
+        `"—"`,
+        `"—"`
+      ]);
+
+      // 4. Row 4: WORK DURATION
+      const durationDayValues = (r.days || []).map(d => {
+        if (!d) return '"—"';
+        const durStr = d.record?.total_working_minutes > 0 ? formatMinutesToHours(d.record.total_working_minutes) : '';
+        if (durStr) return `"${durStr}"`;
+        if (d.record?.in_time) return '"0h 00m"';
+        return '"—"';
+      });
+      exportRows.push([
+        `"${r.emp_id || ''}"`,
+        `"${r.emp_name || ''}"`,
+        `"${r.email || ''}"`,
+        `"${r.department || ''}"`,
+        `"Work Duration"`,
+        ...durationDayValues,
+        `"—"`,
+        `"—"`,
+        `"—"`,
+        `"—"`,
+        `"—"`,
         `"${r.summary?.totalHoursFormatted || '0h'}"`,
         `"${avgHours}"`
-      ];
+      ]);
     });
 
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
+    const csvContent = '\uFEFF' + [headers.join(','), ...exportRows.map(e => e.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
+    link.setAttribute('href', url);
     const searchSuffix = teamSearchQuery ? `_${teamSearchQuery.replace(/[^a-zA-Z0-9]/g, '_')}` : '';
     const filterSuffix = attendanceFilterMode === 'ACTIVE_PUNCH_ONLY' ? '_PunchedOnly' : (attendanceFilterMode === 'NO_PUNCH_ONLY' ? '_InactiveOnly' : '');
     const monthName = new Date(matrixYear, matrixMonth - 1, 1).toLocaleString('en-US', { month: 'long' });
@@ -3287,6 +3357,7 @@ export default function AttendanceModule({
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   // Export Daily / Range Team Attendance to CSV (Filter & Search aware)
@@ -7557,7 +7628,7 @@ export default function AttendanceModule({
                     <thead style={{ position: 'sticky', top: 0, zIndex: 3, background: 'var(--bg-primary)' }}>
                       <tr style={{ borderBottom: '2px solid var(--border-light)', color: 'var(--text-secondary)' }}>
                         <th style={{ padding: '0.65rem 0.75rem', fontWeight: 700, textAlign: 'left', minWidth: '85px', position: 'sticky', left: 0, background: 'var(--bg-primary)', zIndex: 4 }}>Emp ID</th>
-                        <th style={{ padding: '0.65rem 0.75rem', fontWeight: 700, textAlign: 'left', minWidth: '140px', position: 'sticky', left: '85px', background: 'var(--bg-primary)', zIndex: 4 }}>Employee Name</th>
+                        <th style={{ padding: '0.65rem 0.75rem', fontWeight: 700, textAlign: 'left', minWidth: '175px', position: 'sticky', left: '85px', background: 'var(--bg-primary)', zIndex: 4 }}>Employee Name</th>
                         <th style={{ padding: '0.65rem 0.75rem', fontWeight: 700, textAlign: 'left', minWidth: '95px' }}>Dept</th>
 
                         {/* Date Columns (1 to 30 or selected period) */}
@@ -7618,14 +7689,14 @@ export default function AttendanceModule({
                                 backgroundColor: idx % 2 === 0 ? 'transparent' : 'var(--table-alt-row, rgba(0,0,0,0.01))' 
                               }}
                             >
-                              <td style={{ padding: '0.55rem 0.75rem', fontWeight: 700, color: 'var(--accent-color)', fontFamily: 'monospace', textAlign: 'left', position: 'sticky', left: 0, background: 'var(--bg-surface)', zIndex: 2 }}>
+                              <td style={{ padding: '0.55rem 0.75rem', fontWeight: 700, color: 'var(--accent-color)', fontFamily: 'inherit', letterSpacing: '0.02em', textAlign: 'left', position: 'sticky', left: 0, background: 'var(--bg-surface)', zIndex: 2 }}>
                                 {row.emp_id || '—'}
                               </td>
-                              <td style={{ padding: '0.55rem 0.75rem', fontWeight: 600, textAlign: 'left', position: 'sticky', left: '85px', background: 'var(--bg-surface)', zIndex: 2 }}>
-                                <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '135px' }} title={row.emp_name}>
+                              <td style={{ padding: '0.55rem 0.75rem', fontWeight: 600, textAlign: 'left', position: 'sticky', left: '85px', background: 'var(--bg-surface)', zIndex: 2, minWidth: '175px' }}>
+                                <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '170px' }} title={row.emp_name}>
                                   {row.emp_name}
                                 </div>
-                                <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '135px' }}>
+                                <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '170px' }}>
                                   {row.email}
                                 </div>
                               </td>
@@ -7635,6 +7706,7 @@ export default function AttendanceModule({
 
                               {/* Day Columns (Column-wise In/Out + Duration Cell) */}
                               {(row.days || []).map((day, dIdx) => {
+                                const cellDateStr = day.dateStr || monthlyMatrixData?.monthDates?.[dIdx]?.dateStr || '';
                                 let cellBg = 'transparent';
                                 let cellBorder = 'var(--border-light)';
                                 let tagBg = '#f1f5f9';
@@ -7680,11 +7752,11 @@ export default function AttendanceModule({
                                   tagColor = '#991b1b';
                                 }
 
-                                const isClickable = (isAdmin || isHodOrManager) && day.code !== '—';
+                                const isClickable = (isAdmin || isHodOrManager) && day.code !== '—' && Boolean(cellDateStr);
 
                                 return (
                                   <td 
-                                    key={day.dateStr || dIdx} 
+                                    key={cellDateStr || dIdx} 
                                     style={{
                                       padding: '0.35rem 0.25rem',
                                       borderLeft: '1px solid var(--border-light)',
@@ -7700,7 +7772,7 @@ export default function AttendanceModule({
                                           emp_id: row.emp_id,
                                           emp_name: row.emp_name,
                                           email: row.email,
-                                          attendance_date: day.dateStr,
+                                          attendance_date: cellDateStr,
                                           in_time: day.record?.in_time,
                                           out_time: day.record?.out_time,
                                           status: day.record?.status || (day.code === 'P' ? 'PRESENT' : day.code),
@@ -7716,7 +7788,7 @@ export default function AttendanceModule({
                                         cursor: isClickable ? 'pointer' : 'default',
                                         transition: 'all 0.15s ease'
                                       }}
-                                      title={`Date: ${day.dateStr}\nIn: ${inTimeFormatted || '—'}\nOut: ${outTimeFormatted || '—'}\nDuration: ${minutes > 0 ? formatMinutesToHours(minutes) : '0h'}\nStatus: ${day.label || day.code}${isClickable ? '\n(Click to correct punch)' : ''}`}
+                                      title={`Date: ${cellDateStr || '—'}\nIn: ${inTimeFormatted || '—'}\nOut: ${outTimeFormatted || (day.record?.in_time ? 'Working...' : '—')}\nDuration: ${minutes > 0 ? formatMinutesToHours(minutes) : (day.record?.in_time ? '0h' : '0h')}\nStatus: ${day.label || day.code}${isClickable ? '\n(Click to correct punch)' : ''}`}
                                     >
                                       {/* Line 1: Code Tag + Working Hours */}
                                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.25rem', fontSize: '0.72rem', fontWeight: 700 }}>

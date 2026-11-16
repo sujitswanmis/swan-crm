@@ -3662,7 +3662,7 @@ export async function getTeamMonthlyMatrix({
     let totalApprovedLeaves = 0;
     let totalLeavePayableDays = 0;
 
-    const days = monthDates.map(mDate => {
+    const rawDays = monthDates.map(mDate => {
       const rec = recordsMapByDate.get(mDate.dateStr);
       const isPastOrToday = mDate.dateStr <= todayStr;
       const isBeforeJoin = effectiveJoinDate && mDate.dateStr < effectiveJoinDate;
@@ -3922,6 +3922,13 @@ export async function getTeamMonthlyMatrix({
         }
       }
     });
+
+    const days = rawDays.map((d, dIdx) => ({
+      ...d,
+      dateStr: monthDates[dIdx]?.dateStr || '',
+      dayNumber: monthDates[dIdx]?.dayNumber,
+      dayNameShort: monthDates[dIdx]?.dayNameShort
+    }));
 
     const totalPayableDays = totalPresent + (totalHalfDays * 0.5) + totalPaidSundays + totalPaidHolidays + (adjustLeaves ? totalLeavePayableDays : 0);
     const baseSalary = Number(user.salary_amount || 0);
