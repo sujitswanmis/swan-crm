@@ -3841,9 +3841,9 @@ export async function getTeamMonthlyMatrix({
         } else if (rec.is_regularized || rec.status === 'REGULARIZED') {
           totalPresent++;
           return {
-            code: 'R',
+            code: 'PR',
             status: 'REGULARIZED',
-            label: 'Regularized by HOD',
+            label: 'Present (Regularized)',
             record: rec
           };
         } else if (rec.status === 'ON_LEAVE') {

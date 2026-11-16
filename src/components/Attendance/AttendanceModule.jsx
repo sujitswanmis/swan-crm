@@ -3003,7 +3003,7 @@ export default function AttendanceModule({
         (r.summary?.totalShortLeaves || 0) > 0 ||
         (r.days || []).some(d => {
           const code = typeof d?.code === 'string' ? d.code : '';
-          return code === 'P' || code === 'HD' || code === 'R' || code.startsWith('SL') || code === 'WO-P' || code === 'H-P' || (d?.record && (d.record.in_time || d.record.out_time || (d.record.total_working_minutes || 0) > 0));
+          return code === 'P' || code === 'HD' || code === 'PR' || code === 'R' || code.startsWith('SL') || code === 'WO-P' || code === 'H-P' || (d?.record && (d.record.in_time || d.record.out_time || (d.record.total_working_minutes || 0) > 0));
         });
       if (hasPunch) active++;
     });
@@ -3133,7 +3133,7 @@ export default function AttendanceModule({
           (r.summary?.totalShortLeaves || 0) > 0 ||
           (r.days || []).some(d => {
             const code = typeof d?.code === 'string' ? d.code : '';
-            return code === 'P' || code === 'HD' || code === 'R' || code.startsWith('SL') || code === 'WO-P' || code === 'H-P' || (d?.record && (d.record.in_time || d.record.out_time || (d.record.total_working_minutes || 0) > 0));
+            return code === 'P' || code === 'HD' || code === 'PR' || code === 'R' || code.startsWith('SL') || code === 'WO-P' || code === 'H-P' || (d?.record && (d.record.in_time || d.record.out_time || (d.record.total_working_minutes || 0) > 0));
           });
         if (attendanceFilterMode === 'ACTIVE_PUNCH_ONLY' && !hasPunch) return false;
         if (attendanceFilterMode === 'NO_PUNCH_ONLY' && hasPunch) return false;
@@ -3251,7 +3251,7 @@ export default function AttendanceModule({
       // 1. Row 1: STATUS (Date ke turant niche pehli row Status)
       const statusDayValues = (r.days || []).map(d => {
         if (!d) return '"—"';
-        const code = d.code === 'WO' ? 'Week Off' : (d.code === 'H' ? 'Holiday' : (d.code === 'A' ? 'Absent' : (d.code || '—')));
+        const code = d.code === 'WO' ? 'Week Off' : (d.code === 'H' ? 'Holiday' : (d.code === 'A' ? 'Absent' : (d.code === 'R' ? 'PR' : (d.code || '—'))));
         return `"${code}"`;
       });
       exportRows.push([
@@ -3437,7 +3437,7 @@ export default function AttendanceModule({
     ];
 
     const rows = rowsToExport.map(r => {
-      const dayCodes = (r.days || []).map(d => `"${d.code}"`);
+      const dayCodes = (r.days || []).map(d => `"${d.code === 'R' ? 'PR' : d.code}"`);
       const approvedLeavesCount = r.summary?.totalApprovedLeaves || 0;
       
       let payableDays = r.summary?.totalPayableDays || 0;
@@ -3466,10 +3466,11 @@ export default function AttendanceModule({
       ];
     });
 
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
+    const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
+    link.setAttribute('href', url);
     const searchSuffix = teamSearchQuery ? `_${teamSearchQuery.replace(/[^a-zA-Z0-9]/g, '_')}` : '';
     const filterSuffix = attendanceFilterMode === 'ACTIVE_PUNCH_ONLY' ? '_PunchedOnly' : (attendanceFilterMode === 'NO_PUNCH_ONLY' ? '_InactiveOnly' : '');
     const monthName = new Date(matrixYear, matrixMonth - 1, 1).toLocaleString('en-US', { month: 'long' });
@@ -3481,6 +3482,7 @@ export default function AttendanceModule({
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   // Helper formatting for status badges
@@ -7244,7 +7246,7 @@ export default function AttendanceModule({
                     <span style={{ padding: '0.15rem 0.45rem', borderRadius: '4px', background: '#f3e8ff', color: '#7e22ce', fontWeight: 700 }}>SL</span> Short Leave
                   </span>
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
-                    <span style={{ padding: '0.15rem 0.45rem', borderRadius: '4px', background: '#e0e7ff', color: '#3730a3', fontWeight: 700 }}>R</span> Regularized
+                    <span style={{ padding: '0.15rem 0.45rem', borderRadius: '4px', background: '#e0e7ff', color: '#3730a3', fontWeight: 700 }}>PR</span> Present Regularized
                   </span>
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
                     <span style={{ padding: '0.15rem 0.45rem', borderRadius: '4px', background: '#f1f5f9', color: '#475569', fontWeight: 700 }}>WO</span> Paid Week Off
@@ -7281,7 +7283,7 @@ export default function AttendanceModule({
                     <thead style={{ position: 'sticky', top: 0, zIndex: 3, background: 'var(--bg-primary)' }}>
                       <tr style={{ borderBottom: '2px solid var(--border-light)', color: 'var(--text-secondary)' }}>
                         <th style={{ padding: '0.65rem 0.75rem', fontWeight: 700, textAlign: 'left', minWidth: '90px', position: 'sticky', left: 0, background: 'var(--bg-primary)', zIndex: 4 }}>Emp ID</th>
-                        <th style={{ padding: '0.65rem 0.75rem', fontWeight: 700, textAlign: 'left', minWidth: '140px', position: 'sticky', left: '90px', background: 'var(--bg-primary)', zIndex: 4 }}>Employee Name</th>
+                        <th style={{ padding: '0.65rem 0.75rem', fontWeight: 700, textAlign: 'left', minWidth: '175px', position: 'sticky', left: '90px', background: 'var(--bg-primary)', zIndex: 4 }}>Employee Name</th>
                         <th style={{ padding: '0.65rem 0.75rem', fontWeight: 700, textAlign: 'left', minWidth: '100px' }}>Dept</th>
 
                         {/* Date Columns 1 to Last Day */}
@@ -7331,11 +7333,11 @@ export default function AttendanceModule({
                               backgroundColor: idx % 2 === 0 ? 'transparent' : 'var(--table-alt-row, rgba(0,0,0,0.01))' 
                             }}
                           >
-                            <td style={{ padding: '0.55rem 0.75rem', fontWeight: 700, color: 'var(--accent-color)', fontFamily: 'monospace', textAlign: 'left', position: 'sticky', left: 0, background: 'var(--bg-surface)', zIndex: 2 }}>
+                            <td style={{ padding: '0.55rem 0.75rem', fontWeight: 700, color: 'var(--accent-color)', fontFamily: 'inherit', letterSpacing: '0.02em', textAlign: 'left', position: 'sticky', left: 0, background: 'var(--bg-surface)', zIndex: 2 }}>
                               {row.emp_id || '—'}
                             </td>
-                            <td style={{ padding: '0.55rem 0.75rem', fontWeight: 600, textAlign: 'left', position: 'sticky', left: '90px', background: 'var(--bg-surface)', zIndex: 2 }}>
-                              <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '130px' }} title={row.emp_name}>
+                            <td style={{ padding: '0.55rem 0.75rem', fontWeight: 600, textAlign: 'left', position: 'sticky', left: '90px', background: 'var(--bg-surface)', zIndex: 2, minWidth: '175px' }}>
+                              <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '170px' }} title={row.emp_name}>
                                 {row.emp_name}
                               </div>
                             </td>
@@ -7365,7 +7367,7 @@ export default function AttendanceModule({
                                 cellBg = '#f3e8ff';
                                 cellColor = '#7e22ce';
                                 cellFontWeight = 700;
-                              } else if (day.code === 'R') {
+                              } else if (day.code === 'PR' || day.code === 'R') {
                                 cellBg = '#e0e7ff';
                                 cellColor = '#3730a3';
                                 cellFontWeight = 700;
@@ -7730,7 +7732,7 @@ export default function AttendanceModule({
                                   cellBorder = '#e9d5ff';
                                   tagBg = '#f3e8ff';
                                   tagColor = '#7e22ce';
-                                } else if (day.code === 'R') {
+                                } else if (day.code === 'PR' || day.code === 'R') {
                                   cellBg = 'rgba(55, 48, 163, 0.06)';
                                   cellBorder = '#c7d2fe';
                                   tagBg = '#e0e7ff';
