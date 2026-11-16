@@ -364,6 +364,17 @@ test('UserManageTab renders new Last Updated, Updated By, Update Details columns
       last_updated_at: '2026-11-16T19:00:00.000Z',
       last_updated_by: 'Super Admin',
       last_update_details: 'Approval: Rejected — Wrong branch code and invalid ID'
+    },
+    {
+      user_id: 'u_3',
+      emp_id: '50481',
+      emp_name: 'Pooja Verma',
+      email: 'pooja@example.com',
+      role: 'agent',
+      emp_status: 'Active',
+      last_updated_at: '2026-11-16T19:15:00.000Z',
+      last_updated_by: 'sujit@example.com',
+      last_update_details: 'Status: Active'
     }
   ];
 
@@ -384,6 +395,7 @@ test('UserManageTab renders new Last Updated, Updated By, Update Details columns
   // 2. Cell values must be rendered
   assert.ok(allText.includes('Admin Sujit'), 'Must render Updated By actor');
   assert.ok(allText.includes('Super Admin'), 'Must render Updated By actor 2');
+  assert.ok(allText.includes('Sujit Kumar Gupta - 50479'), 'Must resolve email/emp_id to Name - Emp ID');
   assert.ok(allText.includes('Status: Resigned (Eff: 2026-11-10)'), 'Must render Update Details');
   assert.ok(allText.includes('Eff: 10 Nov 2026'), 'Must render formatted IST effective date under status');
   assert.ok(allText.includes('✕ Rejected'), 'Must render Rejected badge');

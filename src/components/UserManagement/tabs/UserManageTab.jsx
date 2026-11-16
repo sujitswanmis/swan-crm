@@ -62,9 +62,9 @@ const DEFAULT_USER_MANAGE_COL_WIDTHS = {
   status: 115,
   approval_status: 115,
   role: 140,
-  last_updated: 140,
-  last_updated_by: 125,
-  update_details: 180,
+  last_updated: 130,
+  last_updated_by: 145,
+  update_details: 220,
   actions: 140
 };
 
@@ -76,7 +76,7 @@ const USER_MANAGE_COL_MIN_WIDTHS = {
   status: 80,
   approval_status: 85,
   role: 110,
-  last_updated: 100,
+  last_updated: 90,
   last_updated_by: 90,
   update_details: 120,
   actions: 90
@@ -922,38 +922,92 @@ export default function UserManageTab({
 
       case 'last_updated':
         return (
-          <td key="last_updated" style={{ padding: '0.75rem 0.65rem', fontSize: '0.75rem', color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+          <td key="last_updated" style={{ 
+            padding: '0.75rem 0.65rem', 
+            fontSize: '0.75rem', 
+            color: 'var(--text-primary)', 
+            whiteSpace: 'normal', 
+            wordBreak: 'break-word',
+            lineHeight: 1.35
+          }}>
             {(() => {
               const iso = u.last_updated_at || u.module_access?.last_updated_at || u.updated_at;
-              return iso ? formatISTDateTime(iso) : '—';
+              if (!iso) return <span style={{ color: 'var(--text-secondary)' }}>—</span>;
+              const formatted = formatISTDateTime(iso);
+              const parts = formatted.split(', ');
+              if (parts.length === 2) {
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.12rem', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>
+                    <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{parts[0]}</span>
+                    <span style={{ fontSize: '0.71rem', color: 'var(--text-secondary)' }}>{parts[1]}</span>
+                  </div>
+                );
+              }
+              return <span style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>{formatted}</span>;
             })()}
           </td>
         );
 
       case 'last_updated_by':
         return (
-          <td key="last_updated_by" style={{ padding: '0.75rem 0.65rem', fontSize: '0.76rem', color: 'var(--text-primary)' }}>
+          <td key="last_updated_by" style={{ 
+            padding: '0.75rem 0.65rem', 
+            fontSize: '0.76rem', 
+            color: 'var(--text-primary)',
+            whiteSpace: 'normal',
+            wordBreak: 'break-word',
+            lineHeight: 1.35
+          }}>
             {(() => {
               const by = u.last_updated_by || u.module_access?.last_updated_by || u.module_access?.updated_by;
               if (!by) return <span style={{ color: 'var(--text-secondary)' }}>—</span>;
+
+              let displayName = String(by).trim();
+
+              // If not already in format "Name - EmpID"
+              const hasNameAndId = displayName.includes(' - ') || /\(\d+\)/.test(displayName);
+              if (!hasNameAndId) {
+                const byLower = displayName.toLowerCase();
+                const matched = (users || []).find(m => {
+                  if (!m) return false;
+                  if (m.user_id && String(m.user_id) === displayName) return true;
+                  if (m.emp_id && String(m.emp_id).toLowerCase() === byLower) return true;
+                  if (m.email && m.email.toLowerCase() === byLower) return true;
+                  if (m.email && m.email.toLowerCase().split('@')[0] === byLower) return true;
+                  if (m.emp_name && m.emp_name.toLowerCase() === byLower) return true;
+                  if (byLower === 'admin' && (m.role === 'master_admin' || m.role === 'admin' || m.module_access?.is_master_admin || m.emp_name?.toLowerCase().includes('admin'))) return true;
+                  return false;
+                });
+
+                if (matched) {
+                  if (matched.emp_name && matched.emp_id) {
+                    displayName = `${matched.emp_name} - ${matched.emp_id}`;
+                  } else if (matched.emp_name) {
+                    displayName = matched.emp_name;
+                  } else if (matched.emp_id) {
+                    displayName = `${displayName} - ${matched.emp_id}`;
+                  }
+                }
+              }
+
               return (
-                <span style={{ 
-                  display: 'inline-flex', 
-                  alignItems: 'center', 
-                  gap: '0.3rem',
-                  padding: '0.2rem 0.5rem',
-                  borderRadius: '6px',
-                  backgroundColor: 'var(--bg-primary, #f8fafc)',
-                  border: '1px solid var(--border-light, #e2e8f0)',
-                  fontWeight: 600,
-                  fontSize: '0.73rem',
-                  color: 'var(--text-primary)',
-                  maxWidth: '130px',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap'
-                }} title={by}>
-                  {by}
+                <span 
+                  style={{ 
+                    display: 'inline-block', 
+                    padding: '0.22rem 0.5rem',
+                    borderRadius: '6px',
+                    backgroundColor: 'var(--bg-primary, #f8fafc)',
+                    border: '1px solid var(--border-light, #e2e8f0)',
+                    fontWeight: 600,
+                    fontSize: '0.73rem',
+                    color: 'var(--text-primary)',
+                    whiteSpace: 'normal',
+                    wordBreak: 'break-word',
+                    lineHeight: 1.3
+                  }} 
+                  title={displayName}
+                >
+                  {displayName}
                 </span>
               );
             })()}
@@ -962,7 +1016,13 @@ export default function UserManageTab({
 
       case 'update_details':
         return (
-          <td key="update_details" style={{ padding: '0.75rem 0.65rem', fontSize: '0.74rem', maxWidth: '200px' }}>
+          <td key="update_details" style={{ 
+            padding: '0.75rem 0.65rem', 
+            fontSize: '0.74rem', 
+            whiteSpace: 'normal', 
+            wordBreak: 'break-word',
+            lineHeight: 1.35
+          }}>
             {(() => {
               const details = u.last_update_details || u.module_access?.last_update_details || (u.status_remarks ? `${u.emp_status}: ${u.status_remarks}` : '') || '';
               if (!details) return <span style={{ color: 'var(--text-secondary)' }}>—</span>;
@@ -970,11 +1030,10 @@ export default function UserManageTab({
                 <div 
                   title={details}
                   style={{
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
+                    whiteSpace: 'normal',
+                    wordBreak: 'break-word',
                     color: 'var(--text-secondary)',
-                    lineHeight: 1.3
+                    lineHeight: 1.35
                   }}
                 >
                   {details}

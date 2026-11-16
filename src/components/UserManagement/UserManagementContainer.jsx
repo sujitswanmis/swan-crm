@@ -488,6 +488,29 @@ export default function UserManagementContainer({
     fetchDepartments();
   }, [fetchUsers, fetchDepartments, initialUsers]);
 
+  // Helper: Resolve current updater name with Emp ID (e.g. "Sujit Kumar Gupta - 50479")
+  const resolveCurrentActorName = useCallback(() => {
+    const actorUser = (users || []).find(u => 
+      (userId && u.user_id === userId) ||
+      (userEmail && u.email && u.email.toLowerCase() === userEmail.toLowerCase())
+    );
+    if (actorUser) {
+      if (actorUser.emp_name && actorUser.emp_id) {
+        return `${actorUser.emp_name} - ${actorUser.emp_id}`;
+      }
+      if (actorUser.emp_name) return actorUser.emp_name;
+    }
+    if (moduleAccess?.emp_name && moduleAccess?.emp_id) {
+      return `${moduleAccess.emp_name} - ${moduleAccess.emp_id}`;
+    }
+    if (moduleAccess?.emp_name) return moduleAccess.emp_name;
+    if (userEmail) {
+      const username = userEmail.split('@')[0];
+      return username ? username : 'Admin';
+    }
+    return 'Admin';
+  }, [users, userId, userEmail, moduleAccess]);
+
   // Handler: Confirm a system role change before saving.
   const handleChangeRole = (targetUser, newRole) => {
     if (!targetUser?.user_id || !newRole) return;
@@ -498,8 +521,24 @@ export default function UserManagementContainer({
       message: `Change the system role of ${targetUser.emp_name || targetUser.email} from "${current}" to "${newRole}"?`,
       confirmText: 'Change Role',
       action: async () => {
+        const actorName = resolveCurrentActorName();
+        const nowIso = new Date().toISOString();
+        const roleDetail = `Role changed to "${newRole}"`;
         await updateUserRole(targetUser.user_id, newRole);
-        setUsers(previous => previous.map(member => member.user_id === targetUser.user_id ? { ...member, role: newRole } : member));
+        setUsers(previous => previous.map(member => member.user_id === targetUser.user_id ? {
+          ...member,
+          role: newRole,
+          last_updated_at: nowIso,
+          last_updated_by: actorName,
+          last_update_details: roleDetail,
+          module_access: {
+            ...(member.module_access || {}),
+            role: newRole,
+            last_updated_at: nowIso,
+            last_updated_by: actorName,
+            last_update_details: roleDetail
+          }
+        } : member));
         showToast(`Role updated to "${newRole}" for ${targetUser.emp_name || targetUser.email}`, 'success');
         fetchUsers(false);
       }
@@ -513,8 +552,11 @@ export default function UserManagementContainer({
       const { role, role_template_id, role_preset_key, ...profileData } = formData;
       if (addEditModal.user) {
         // Edit Mode
+        const actorName = resolveCurrentActorName();
         const editPayload = {
           ...profileData,
+          updatedByName: actorName,
+          last_update_details: 'Profile & Job details updated',
           tenant_id: profileData.tenant_id || addEditModal.user.tenant_id || tenantId || null,
           company: profileData.company || addEditModal.user.company || currentUserCompany || ''
         };
@@ -708,7 +750,7 @@ export default function UserManagementContainer({
     if (!statusChangeModal.user?.user_id) return;
     setStatusChangeLoading(true);
     try {
-      const actorName = moduleAccess?.emp_name || userEmail?.split('@')[0] || 'Admin';
+      const actorName = resolveCurrentActorName();
       await updateEmpStatus(statusChangeModal.user.user_id, status, {
         effectiveDate,
         remarks,
@@ -769,7 +811,7 @@ export default function UserManagementContainer({
     if (!approvalModal.user?.user_id) return;
     setApprovalLoading(true);
     try {
-      const actorName = moduleAccess?.emp_name || userEmail?.split('@')[0] || 'Admin';
+      const actorName = resolveCurrentActorName();
       await updateUserApprovalStatus(approvalModal.user.user_id, approvalStatus, {
         remarks,
         updatedByName: actorName,
