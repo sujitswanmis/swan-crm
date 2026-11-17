@@ -6074,7 +6074,7 @@ export default function AttendanceModule({
             gap: '1rem'
           }}>
             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '1rem' }}>
-              <div>
+              <div style={{ flex: '1 1 320px', minWidth: 0 }}>
                 <h2 style={{ fontSize: '1.2rem', fontWeight: 700, margin: 0 }}>
                   {teamReportView === 'DAILY' 
                     ? 'Team Daily Attendance Report' 
@@ -6098,6 +6098,8 @@ export default function AttendanceModule({
               {/* View Toggle Buttons */}
               <div style={{
                 display: 'inline-flex',
+                flexShrink: 0,
+                marginLeft: 'auto',
                 background: 'var(--bg-primary)',
                 padding: '0.25rem',
                 borderRadius: '10px',

@@ -80,6 +80,52 @@ export function resolveCompanyTokenForBranch(branch, tenantCompanyName = '') {
   return tenantCompanyName || branch.company || branch.branch_name || '';
 }
 
+export const STANDARD_SWAN_BRANCH_MAP = {
+  'NSG': { branch_code: 'TNT00002-B0001', branch_name: 'New Swan Group (Headquarters)', custom_code: 'HQ' },
+  'NSMLR': { branch_code: 'TNT00002-B0002', branch_name: 'New Swan Multitech Limited Raian', custom_code: 'NSMLR' },
+  'NSTLP': { branch_code: 'TNT00002-B0003', branch_name: 'New Swan Technologies Limited Paharuwal', custom_code: 'NSTLP' },
+  'NSE1': { branch_code: 'TNT00002-B0004', branch_name: 'New Swan Enterprises - 1', custom_code: 'NSE1' },
+  'NSE2': { branch_code: 'TNT00002-B0005', branch_name: 'New Swan Enterprises - 2', custom_code: 'NSE2' },
+  'NSE3': { branch_code: 'TNT00002-B0006', branch_name: 'New Swan Enterprises - 3', custom_code: 'NSE3' },
+  'NSE4': { branch_code: 'TNT00002-B0007', branch_name: 'New Swan Enterprises - 4', custom_code: 'NSE4' },
+  'NSACPL1': { branch_code: 'TNT00002-B0008', branch_name: 'New Swan Autocomp Pvt. Ltd.', custom_code: 'NSACPL1' }
+};
+
+export const STANDARD_SWAN_BRANCH_LIST = Object.values(STANDARD_SWAN_BRANCH_MAP);
+
+/**
+ * Universal standard branch display formatter matching WhatsApp Official standard:
+ * Returns `${branch_code} — ${branch_name}`
+ * Example: "TNT00002-B0002 — New Swan Multitech Limited Raian"
+ */
+export function formatBranchStandard(branch) {
+  if (!branch) return '';
+  if (typeof branch === 'string') {
+    const raw = branch.trim();
+    if (!raw) return '';
+    if (/^TNT\d+-B\d+\s*—/i.test(raw)) return raw;
+    const upper = raw.toUpperCase();
+    for (const [key, info] of Object.entries(STANDARD_SWAN_BRANCH_MAP)) {
+      if (key === upper || info.branch_code.toUpperCase() === upper) {
+        return `${info.branch_code} — ${info.branch_name}`;
+      }
+    }
+    for (const [key, aliases] of Object.entries(KNOWN_BRANCH_ALIAS_MAP)) {
+      if (key === upper || aliases.some(a => a.toUpperCase() === upper)) {
+        const info = STANDARD_SWAN_BRANCH_MAP[key];
+        if (info) return `${info.branch_code} — ${info.branch_name}`;
+      }
+    }
+    return raw;
+  }
+  const uid = branch.branch_code || '';
+  const name = branch.branch_name || branch.name || branch.company || '';
+  if (uid && name) {
+    return `${uid} — ${name}`;
+  }
+  return uid || name || branch.custom_code || '';
+}
+
 export function expandCompanyAliases(companyToken) {
   const raw = String(companyToken || '').trim();
   if (!raw) return [];
@@ -182,6 +228,8 @@ export function getUserBranchAccess(params = {}, tenantHint = null) {
     for (const c of [primaryCompany, ...rawBranches]) {
       if (!c || c.toUpperCase() === 'ALL') continue;
       const upper = c.toUpperCase();
+      const isParentTenantGroup = isSwanWorkspace && ['NEW SWAN GROUP', 'NSG', 'SUPUJA CREATIONS', 'SUPUJA CREATION'].includes(upper);
+      if (isParentTenantGroup && swanHeaderOptions.length > 0) continue;
       if (!swanHeaderOptions.some(x => x.toUpperCase() === upper)) {
         if (!customOptions.some(x => x.toUpperCase() === upper)) customOptions.push(c);
       }
