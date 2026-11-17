@@ -1,6 +1,6 @@
 {
   "name": "crm",
-  "version": "2.5.1220",
+  "version": "2.5.1221",
   "private": true,
   "main": "desktop/main.js",
   "scripts": {
@@ -52,7 +52,8 @@
     "electron-builder": "^26.18.0",
     "eslint": "^9",
     "eslint-config-next": "16.4.6",
-    "tailwindcss": "4.3.5"
+    "tailwindcss": "4.3.5",
+    "typescript": "5.9.3"
   },
   "build": {
     "appId": "com.supujacreations.workspace",
