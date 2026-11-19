@@ -51,9 +51,17 @@ public class MainActivity extends BridgeActivity {
                 if (url == null || url.trim().isEmpty() || "about:blank".equalsIgnoreCase(url.trim())) {
                     webView.loadUrl("https://app.supujacreations.com");
                 }
+                // Ensure in-app file downloads open in external system browser/download manager
+                webView.setDownloadListener((downloadUrl, userAgent, contentDisposition, mimetype, contentLength) -> {
+                    try {
+                        android.content.Intent i = new android.content.Intent(android.content.Intent.ACTION_VIEW);
+                        i.setData(android.net.Uri.parse(downloadUrl));
+                        startActivity(i);
+                    } catch (Exception ignored) {}
+                });
                 // Inject native versionCode for in-app OTA version detector
                 webView.evaluateJavascript(
-                    "try { window.localStorage.setItem('spc_android_version_code', '8'); } catch(e){}",
+                    "try { window.localStorage.setItem('spc_android_version_code', '9'); } catch(e){}",
                     null
                 );
             }

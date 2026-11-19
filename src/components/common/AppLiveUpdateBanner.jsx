@@ -174,9 +174,17 @@ export default function AppLiveUpdateBanner() {
   };
 
   // Action: 1-Click Native APK Download & Install
-  const handleDownloadApk = () => {
-    const url = apkInfo?.download_url || '/api/public/android-apk';
-    window.location.href = url;
+  const handleDownloadApk = (e) => {
+    const url = apkInfo?.download_url || 'https://tinyurl.com/2buz39h3';
+    try {
+      window.open(url, '_system');
+    } catch {}
+    try {
+      window.open(url, '_blank');
+    } catch {}
+    try {
+      window.location.href = url;
+    } catch {}
   };
 
   // Pull-to-refresh spinner indicator
@@ -243,7 +251,10 @@ export default function AppLiveUpdateBanner() {
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}>
-          <button
+          <a
+            href={apkInfo.download_url || 'https://tinyurl.com/2buz39h3'}
+            target="_blank"
+            rel="noopener noreferrer"
             onClick={handleDownloadApk}
             style={{
               background: '#ffffff',
@@ -256,12 +267,13 @@ export default function AppLiveUpdateBanner() {
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
-              gap: '0.35rem'
+              gap: '0.35rem',
+              textDecoration: 'none'
             }}
           >
             <Download size={13} />
             Update
-          </button>
+          </a>
           <button
             onClick={() => setDismissed(true)}
             style={{ background: 'transparent', border: 'none', color: '#ffffff', opacity: 0.7, cursor: 'pointer', padding: '4px' }}

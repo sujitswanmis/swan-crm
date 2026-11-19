@@ -167,8 +167,14 @@ export default function GlobalMobileTelemetryTracker({
             clearInterval(heartbeatTimer);
             heartbeatTimer = null;
           }
-          setGpsAlert(null);
-          setShowMandatoryPermissionModal(false);
+          // Only dismiss modal if background location is genuinely verified as all the time
+          try {
+            const diag = typeof statusFn === 'function' ? await statusFn.call(plugin) : null;
+            if (diag?.locationMode === 'all_the_time' || diag?.hasBackgroundLocation === true) {
+              setGpsAlert(null);
+              setShowMandatoryPermissionModal(false);
+            }
+          } catch {}
           return true;
         }
         if (startRes?.permissionDenied) {
@@ -463,7 +469,6 @@ export default function GlobalMobileTelemetryTracker({
         }
         nativeServiceActive = false;
         setGpsAlert(null);
-        setShowMandatoryPermissionModal(false);
         return;
       }
 
@@ -568,6 +573,9 @@ export default function GlobalMobileTelemetryTracker({
         }
       }
     } catch {}
+    if (typeof window !== 'undefined') {
+      alert('⚠️ Location permission abhi bhi "Allow all the time" nahi mili hai.\n\nKripya phone settings me jakar Permissions ➔ Location ➔ "Allow all the time" select karein.');
+    }
     handleSelfHealClick('app');
   };
 
