@@ -37,15 +37,25 @@ export default function AppLiveUpdateBanner() {
 
       // Check if Android native APK needs upgrade
       if (typeof window !== 'undefined' && data.android) {
-        const isAndroidApp = Boolean(
-          window.Capacitor?.isNativePlatform() ||
-          navigator.userAgent.includes('Capacitor') ||
-          (navigator.userAgent.includes('Android') && navigator.userAgent.includes('wv'))
+        const ua = navigator.userAgent || '';
+        const cap = window.Capacitor;
+        const isCapacitor = Boolean(
+          (typeof cap?.isNativePlatform === 'function' ? cap.isNativePlatform() : cap?.isNative) ||
+          ua.includes('Capacitor')
         );
+        const isAndroidWebView = /Android/i.test(ua) && (
+          /;\s*wv\)/i.test(ua) ||
+          /Version\/[\d.]+/i.test(ua) ||
+          /spcworkspace/i.test(ua) ||
+          document.referrer.includes('android-app://')
+        );
+        const isAndroidApp = isCapacitor || isAndroidWebView;
+
         if (isAndroidApp && data.android.latest_version_code) {
           // Compare with locally known version code
           const localCode = Number(window.localStorage?.getItem('spc_android_version_code') || 0);
-          if (localCode > 0 && localCode < data.android.latest_version_code) {
+          // If localCode is less than latest_version_code (e.g. 0 for legacy v4/v5/v6/v7), prompt to update to v8!
+          if (localCode < Number(data.android.latest_version_code)) {
             setHasNewApk(true);
             setApkInfo(data.android);
           }
