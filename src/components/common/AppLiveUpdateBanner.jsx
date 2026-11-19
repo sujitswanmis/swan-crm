@@ -17,6 +17,8 @@ export default function AppLiveUpdateBanner() {
   const initialVersionRef = useRef('');
   const touchStartYRef = useRef(0);
   const touchStartXRef = useRef(0);
+  const touchStartTimeRef = useRef(0);
+  const readyStartTimeRef = useRef(0);
   const isPullingRef = useRef(false);
   const isReadyRef = useRef(false);
 
@@ -108,7 +110,7 @@ export default function AppLiveUpdateBanner() {
     }
   }, [checkVersion]);
 
-  // Mobile Pull-to-Refresh Gesture Handler (Deliberate 2-Stage Pull with Strict Cancellation)
+  // Mobile Pull-to-Refresh Gesture Handler (Deliberate 2-Stage Pull with Anti-Flick Protection)
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
@@ -118,6 +120,8 @@ export default function AppLiveUpdateBanner() {
       if (docTop <= 0 && e.touches.length === 1) {
         touchStartYRef.current = e.touches[0].clientY;
         touchStartXRef.current = e.touches[0].clientX;
+        touchStartTimeRef.current = Date.now();
+        readyStartTimeRef.current = 0;
         isPullingRef.current = true;
         isReadyRef.current = false;
       } else {
@@ -133,6 +137,7 @@ export default function AppLiveUpdateBanner() {
       if (docTop > 0) {
         isPullingRef.current = false;
         isReadyRef.current = false;
+        readyStartTimeRef.current = 0;
         setPullProgress(0);
         setIsReadyToRefresh(false);
         return;
@@ -147,28 +152,38 @@ export default function AppLiveUpdateBanner() {
       if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 15) {
         isPullingRef.current = false;
         isReadyRef.current = false;
+        readyStartTimeRef.current = 0;
         setPullProgress(0);
         setIsReadyToRefresh(false);
         return;
       }
 
-      // Dead-zone: less than 35px downward movement is completely ignored (no visual flicker, no reload)
-      if (deltaY <= 35) {
+      // Generous dead-zone: less than 60px downward movement is completely ignored (no visual flicker, no reload)
+      if (deltaY <= 60) {
         setPullProgress(0);
         isReadyRef.current = false;
+        readyStartTimeRef.current = 0;
         setIsReadyToRefresh(false);
         return;
       }
 
-      // Active pull range from 35px to 135px (requires 100px deliberate downward drag)
-      const pullDist = deltaY - 35;
-      const PULL_THRESHOLD = 100;
+      // Active pull range from 60px to 210px (requires 150px deliberate downward drag beyond dead-zone)
+      const pullDist = deltaY - 60;
+      const PULL_THRESHOLD = 150;
       const progress = Math.min(100, Math.round((pullDist / PULL_THRESHOLD) * 100));
       setPullProgress(progress);
 
       const ready = progress >= 100;
       isReadyRef.current = ready;
       setIsReadyToRefresh(ready);
+
+      if (ready) {
+        if (!readyStartTimeRef.current) {
+          readyStartTimeRef.current = Date.now();
+        }
+      } else {
+        readyStartTimeRef.current = 0;
+      }
     };
 
     const onTouchEnd = async (e) => {
@@ -176,16 +191,25 @@ export default function AppLiveUpdateBanner() {
       isPullingRef.current = false;
 
       const wasReady = isReadyRef.current;
+      const totalDuration = Date.now() - (touchStartTimeRef.current || 0);
+      const holdDuration = readyStartTimeRef.current > 0 ? (Date.now() - readyStartTimeRef.current) : 0;
+
       isReadyRef.current = false;
+      readyStartTimeRef.current = 0;
+      touchStartTimeRef.current = 0;
       setPullProgress(0);
       setIsReadyToRefresh(false);
 
-      // CRITICAL: If user released finger BEFORE reaching 100%, CANCEL! DO NOT REFRESH!
-      if (!wasReady) {
+      // ANTI-FLICK (JHATKA) FILTER:
+      // 1. Must have reached 100% threshold
+      // 2. Gesture must not be a fast jerk (totalDuration >= 450ms)
+      // 3. User must have held finger at 100% ready state for at least 150ms
+      // If any condition fails, CANCEL CLEANLY with zero refresh!
+      if (!wasReady || totalDuration < 450 || holdDuration < 150) {
         return;
       }
 
-      // Only refresh if deliberately pulled to 100% and released
+      // Only refresh if deliberately pulled and held at 100%
       setIsPullRefreshing(true);
       try {
         if ('caches' in window) {
