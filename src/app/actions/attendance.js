@@ -58,7 +58,7 @@ function cleanAttendanceRecordForDb(rec, tenantId = DEFAULT_TENANT_ID) {
     }
   }
 
-  const isNoPunch = rec.status === 'WEEK_OFF' || rec.status === 'WO' || rec.status === 'LWP' || rec.status === 'CPL' || rec.status === 'ABSENT';
+  const isNoPunch = rec.status === 'WEEK_OFF' || rec.status === 'WO' || rec.status === 'LWP' || rec.status === 'CPL' || (rec.status === 'ABSENT' && !rec.in_time && !rec.out_time);
 
   return {
     id: ensureUuid(rec.id),
