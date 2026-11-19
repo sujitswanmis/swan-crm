@@ -8,7 +8,7 @@ import {
   UserCheck, ShieldCheck, FileSpreadsheet, Filter, Search, ChevronLeft,
   ChevronRight, ChevronsLeft, ChevronsRight, ArrowRight, Check, X, Building, MapPin, Laptop, Smartphone,
   Info, AlertTriangle, FileText, User, Users, Download, Volume2, VolumeX, Play, Sparkles, BookOpen,
-  Award, Sliders, Settings, Plus, Edit2, Trash2, Navigation
+  Award, Sliders, Settings, Plus, Edit2, Trash2, Navigation, ShieldAlert
 } from 'lucide-react';
 import DateRangePicker from '@/components/common/DateRangePicker';
 import {
@@ -896,6 +896,37 @@ export default function AttendanceModule({
 
   // Punch Confirm Modal state (prevents accidental punch)
   const [punchConfirm, setPunchConfirm] = useState(null); // null | 'IN' | 'OUT'
+  const [showLiveTrackingPermissionModal, setShowLiveTrackingPermissionModal] = useState(false);
+
+  const checkFieldTrackerBackgroundPermission = useCallback(async () => {
+    try {
+      if (typeof window === 'undefined') return { native: false, hasBg: false };
+      const plugin = window.Capacitor?.Plugins?.FieldTracker;
+      if (!plugin) return { native: false, hasBg: false };
+      const statusFn = plugin.getStatus || plugin.getDiagnostics;
+      if (typeof statusFn !== 'function') return { native: true, hasBg: false };
+      const res = await statusFn.call(plugin);
+      const hasBg = res?.hasBackgroundLocation === true || res?.locationMode === 'all_the_time';
+      return { native: true, hasBg, locationMode: res?.locationMode || 'unknown', details: res };
+    } catch (e) {
+      return { native: false, hasBg: false, error: e };
+    }
+  }, []);
+
+  const handleOpenLocationSettings = useCallback(async () => {
+    try {
+      const plugin = typeof window !== 'undefined' ? window.Capacitor?.Plugins?.FieldTracker : null;
+      if (plugin && typeof plugin.openAppSettings === 'function') {
+        await plugin.openAppSettings();
+        return;
+      }
+      if (plugin && typeof plugin.openLocationSettings === 'function') {
+        await plugin.openLocationSettings();
+        return;
+      }
+    } catch {}
+    alert('Phone Settings ➔ Apps ➔ SPC Workspace ➔ Permissions ➔ Location me jakar "Allow all the time" select karein.');
+  }, []);
 
   // Helper to update todayRecord state + persist to localStorage
   const updateTodayRecord = useCallback((record, scope = attendanceScope) => {
@@ -2511,8 +2542,40 @@ export default function AttendanceModule({
       if (userTrackingPolicy === 'ATTENDANCE_ONLY') {
         // Tier 1: Only Attendance - Zero GPS permission required, instant web/desk punch
         punchLocation = 'Office Web Terminal';
+      } else if (userTrackingPolicy === 'LIVE_TRACKING') {
+        // Tier 3: Live Tracking (Field Force) - STRICTLY MANDATORY "Allow all the time"
+        const isNative = typeof window !== 'undefined' && Boolean(window.Capacitor?.isNativePlatform?.());
+        if (isNative) {
+          const perm = await checkFieldTrackerBackgroundPermission();
+          if (!perm.hasBg) {
+            setPunchingIn(false);
+            setLoadingToday(false);
+            setShowLiveTrackingPermissionModal(true);
+            setPunchError('🚗 Live Tracking (Field Force) ke liye Phone Settings me Location permission ko "Allow all the time" karna anivarya hai.');
+            return;
+          }
+        }
+        try {
+          const gps = await getCurrentGPSLocation({ timeout: 5000, enableHighAccuracy: true });
+          if (gps?.success) {
+            punchLocation = `GPS (${gps.latitude.toFixed(4)}, ${gps.longitude.toFixed(4)})`;
+            gpsCacheRef.current = { location: punchLocation, timestamp: Date.now() };
+          } else {
+            setPunchingIn(false);
+            setLoadingToday(false);
+            setShowLiveTrackingPermissionModal(true);
+            setPunchError('🚗 Live Tracking (Field Force) ke liye Location permission anivarya hai. Kripya Phone Settings me "Allow all the time" allow karein.');
+            return;
+          }
+        } catch (e) {
+          setPunchingIn(false);
+          setLoadingToday(false);
+          setShowLiveTrackingPermissionModal(true);
+          setPunchError('🚗 Live Tracking (Field Force) ke liye Location permission anivarya hai. Kripya Phone Settings me "Allow all the time" allow karein.');
+          return;
+        }
       } else {
-        // Tier 2 & 3: Punch GPS Only (Office/Plant) & Live Tracking (Field Force)
+        // Tier 2: Punch GPS Only (Office/Plant)
         // Rule: "ye dont allow pr kam na kare baki sab pr kam kare"
         if (gpsCacheRef.current.location && (nowTs - gpsCacheRef.current.timestamp) < 300000) {
           punchLocation = gpsCacheRef.current.location;
@@ -2634,8 +2697,40 @@ export default function AttendanceModule({
       if (userTrackingPolicy === 'ATTENDANCE_ONLY') {
         // Tier 1: Only Attendance - Zero GPS permission required, instant web/desk punch
         punchLocation = 'Office Web Terminal';
+      } else if (userTrackingPolicy === 'LIVE_TRACKING') {
+        // Tier 3: Live Tracking (Field Force) - STRICTLY MANDATORY "Allow all the time"
+        const isNative = typeof window !== 'undefined' && Boolean(window.Capacitor?.isNativePlatform?.());
+        if (isNative) {
+          const perm = await checkFieldTrackerBackgroundPermission();
+          if (!perm.hasBg) {
+            setPunchingOut(false);
+            setLoadingToday(false);
+            setShowLiveTrackingPermissionModal(true);
+            setPunchError('🚗 Live Tracking (Field Force) ke liye Phone Settings me Location permission ko "Allow all the time" karna anivarya hai.');
+            return;
+          }
+        }
+        try {
+          const gps = await getCurrentGPSLocation({ timeout: 5000, enableHighAccuracy: true });
+          if (gps?.success) {
+            punchLocation = `GPS (${gps.latitude.toFixed(4)}, ${gps.longitude.toFixed(4)})`;
+            gpsCacheRef.current = { location: punchLocation, timestamp: Date.now() };
+          } else {
+            setPunchingOut(false);
+            setLoadingToday(false);
+            setShowLiveTrackingPermissionModal(true);
+            setPunchError('🚗 Live Tracking (Field Force) ke liye Location permission anivarya hai. Kripya Phone Settings me "Allow all the time" allow karein.');
+            return;
+          }
+        } catch (e) {
+          setPunchingOut(false);
+          setLoadingToday(false);
+          setShowLiveTrackingPermissionModal(true);
+          setPunchError('🚗 Live Tracking (Field Force) ke liye Location permission anivarya hai. Kripya Phone Settings me "Allow all the time" allow karein.');
+          return;
+        }
       } else {
-        // Tier 2 & 3: Punch GPS Only (Office/Plant) & Live Tracking (Field Force)
+        // Tier 2: Punch GPS Only (Office/Plant)
         // Rule: "ye dont allow pr kam na kare baki sab pr kam kare"
         if (gpsCacheRef.current.location && (nowTsOut - gpsCacheRef.current.timestamp) < 300000) {
           punchLocation = gpsCacheRef.current.location;
@@ -3664,6 +3759,171 @@ export default function AttendanceModule({
   return (
     <div style={{ padding: 0, width: '100%', color: 'var(--text-primary)' }}>
 
+      {/* ===================== Dedicated Live Tracking Mandatory Modal ===================== */}
+      {showLiveTrackingPermissionModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 99999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'rgba(15, 23, 42, 0.90)',
+            backdropFilter: 'blur(8px)',
+            padding: '1rem',
+            fontFamily: 'system-ui, -apple-system, sans-serif'
+          }}
+        >
+          <div
+            style={{
+              background: '#ffffff',
+              borderRadius: '20px',
+              boxShadow: '0 25px 60px -15px rgba(0, 0, 0, 0.45)',
+              padding: '1.75rem 1.75rem',
+              width: '100%',
+              maxWidth: '430px',
+              textAlign: 'center',
+              border: '1px solid #e2e8f0',
+              animation: 'fadeInScale 0.18s ease'
+            }}
+          >
+            <div
+              style={{
+                width: '64px',
+                height: '64px',
+                borderRadius: '50%',
+                background: '#fef3c7',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 1.15rem auto'
+              }}
+            >
+              <ShieldAlert size={34} color="#d97706" />
+            </div>
+
+            <h2 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#0f172a', margin: '0 0 0.5rem 0' }}>
+              ⚠️ Live Tracking (Field Force)
+            </h2>
+
+            <div
+              style={{
+                background: '#fef2f2',
+                border: '1px solid #fecaca',
+                borderRadius: '10px',
+                padding: '12px 14px',
+                margin: '0 0 1rem 0'
+              }}
+            >
+              <p style={{ margin: '0 0 6px 0', fontSize: '0.92rem', fontWeight: 700, color: '#dc2626', lineHeight: 1.45 }}>
+                Official duty ke liye "Allow all the time" permission anivarya hai.
+              </p>
+              <p style={{ margin: 0, fontSize: '0.82rem', fontWeight: 600, color: '#991b1b', lineHeight: 1.45 }}>
+                Aapke account par 🚗 Live Tracking policy active hai. Punch In/Out aur field tracking ke liye phone settings me jakar Location ko "Allow all the time" (Hamesha allow) karna zaroori hai.
+              </p>
+            </div>
+
+            <div
+              style={{
+                textAlign: 'left',
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                borderRadius: '10px',
+                padding: '12px 14px',
+                margin: '0 0 1.25rem 0',
+                fontSize: '0.83rem',
+                color: '#334155',
+                lineHeight: 1.6
+              }}
+            >
+              <p style={{ margin: '0 0 6px 0', fontWeight: 700, color: '#0f172a' }}>
+                Settings allow karne ke 3 asaan steps:
+              </p>
+              <ol style={{ margin: 0, paddingLeft: '18px' }}>
+                <li style={{ marginBottom: '4px' }}>Neeche <strong>"Open App Settings"</strong> button dabayein</li>
+                <li style={{ marginBottom: '4px' }}>Settings me <strong>Permissions ➔ Location</strong> kholein</li>
+                <li><strong>"Allow all the time"</strong> select karein aur wapas app me aayein</li>
+              </ol>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <button
+                type="button"
+                onClick={handleOpenLocationSettings}
+                style={{
+                  width: '100%',
+                  padding: '12px 18px',
+                  borderRadius: '10px',
+                  background: '#2563eb',
+                  color: '#ffffff',
+                  fontSize: '0.94rem',
+                  fontWeight: 700,
+                  border: 'none',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  boxShadow: '0 4px 14px rgba(37, 99, 235, 0.35)'
+                }}
+              >
+                <Settings size={17} /> Open App Settings (Settings Kholein)
+              </button>
+
+              <button
+                type="button"
+                onClick={async () => {
+                  const perm = await checkFieldTrackerBackgroundPermission();
+                  if (perm.hasBg) {
+                    setShowLiveTrackingPermissionModal(false);
+                    setPunchError(null);
+                    fetchTodayAttendance(true);
+                  } else {
+                    handleOpenLocationSettings();
+                  }
+                }}
+                style={{
+                  width: '100%',
+                  padding: '11px 16px',
+                  borderRadius: '10px',
+                  background: '#f1f5f9',
+                  color: '#334155',
+                  fontSize: '0.86rem',
+                  fontWeight: 600,
+                  border: '1px solid #cbd5e1',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px'
+                }}
+              >
+                <RefreshCw size={14} /> Maine "Allow all the time" kar diya — Recheck &amp; Punch
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowLiveTrackingPermissionModal(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#64748b',
+                  fontSize: '0.78rem',
+                  cursor: 'pointer',
+                  marginTop: '4px',
+                  textDecoration: 'underline'
+                }}
+              >
+                Close (Punch blocked until permission granted)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ===================== Punch Confirm Modal ===================== */}
       {punchConfirm && (
         <div style={{
@@ -4386,9 +4646,52 @@ export default function AttendanceModule({
                 </div>
               )}
               {punchError && (
-                <div style={{ padding: '0.5rem', borderRadius: '8px', background: '#fee2e2', color: '#991b1b', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                  <AlertCircle size={14} /> {punchError}
-                  <button type="button" onClick={() => fetchTodayAttendance(true)} disabled={loadingToday || punchingIn || punchingOut}>Retry Status</button>
+                <div style={{ padding: '0.65rem 0.85rem', borderRadius: '10px', background: '#fee2e2', color: '#991b1b', fontSize: '0.82rem', display: 'flex', flexDirection: 'column', gap: '0.45rem', border: '1px solid #fecaca' }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', lineHeight: 1.45 }}>
+                    <AlertCircle size={16} style={{ flexShrink: 0, marginTop: '2px', color: '#dc2626' }} />
+                    <span style={{ fontWeight: 600 }}>{punchError}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.2rem' }}>
+                    {(moduleAccess?.tracking_policy === 'LIVE_TRACKING' || punchError.includes('Live Tracking')) && (
+                      <button
+                        type="button"
+                        onClick={handleOpenLocationSettings}
+                        style={{
+                          padding: '5px 12px',
+                          borderRadius: '6px',
+                          background: '#dc2626',
+                          color: '#ffffff',
+                          border: 'none',
+                          fontWeight: 700,
+                          fontSize: '0.76rem',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          boxShadow: '0 2px 6px rgba(220, 38, 38, 0.25)'
+                        }}
+                      >
+                        <Settings size={13} /> App Settings Me Jayein
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => fetchTodayAttendance(true)}
+                      disabled={loadingToday || punchingIn || punchingOut}
+                      style={{
+                        padding: '5px 12px',
+                        borderRadius: '6px',
+                        background: '#ffffff',
+                        color: '#334155',
+                        border: '1px solid #cbd5e1',
+                        fontWeight: 600,
+                        fontSize: '0.76rem',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Retry Status
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

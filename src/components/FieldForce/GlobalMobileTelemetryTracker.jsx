@@ -111,12 +111,13 @@ export default function GlobalMobileTelemetryTracker({
     // Forcibly require "Allow all the time" before opening the app
     const checkImmediateFieldPermission = async () => {
       const plugin = getNativeTrackerPlugin();
-      if (!plugin || typeof plugin.getDiagnostics !== 'function') return;
+      const statusFn = plugin?.getStatus || plugin?.getDiagnostics;
+      if (!plugin || typeof statusFn !== 'function') return;
       try {
-        const diag = await plugin.getDiagnostics();
-        if (diag && (diag.locationMode === 'while_using' || diag.locationMode === 'denied')) {
+        const diag = await statusFn.call(plugin);
+        if (diag && (diag.locationMode === 'while_using' || diag.locationMode === 'denied' || diag.hasBackgroundLocation === false)) {
           setShowMandatoryPermissionModal(true);
-        } else if (diag && diag.locationMode === 'all_the_time') {
+        } else if (diag && (diag.locationMode === 'all_the_time' || diag.hasBackgroundLocation === true)) {
           setShowMandatoryPermissionModal(false);
           setGpsAlert(null);
         }
@@ -557,9 +558,10 @@ export default function GlobalMobileTelemetryTracker({
   const handleManualCheckUnlock = async () => {
     try {
       const plugin = typeof window !== 'undefined' ? window.Capacitor?.Plugins?.FieldTracker : null;
-      if (plugin && typeof plugin.getDiagnostics === 'function') {
-        const diag = await plugin.getDiagnostics();
-        if (diag?.locationMode === 'all_the_time') {
+      const statusFn = plugin?.getStatus || plugin?.getDiagnostics;
+      if (plugin && typeof statusFn === 'function') {
+        const diag = await statusFn.call(plugin);
+        if (diag?.locationMode === 'all_the_time' || diag?.hasBackgroundLocation === true) {
           setShowMandatoryPermissionModal(false);
           setGpsAlert(null);
           return;
@@ -621,8 +623,8 @@ export default function GlobalMobileTelemetryTracker({
               <ShieldAlert size={34} color="#d97706" />
             </div>
 
-            <h2 style={{ fontSize: '1.22rem', fontWeight: 800, color: '#0f172a', margin: '0 0 0.75rem 0' }}>
-              ⚠️ Mandatory Permission
+            <h2 style={{ fontSize: '1.22rem', fontWeight: 800, color: '#0f172a', margin: '0 0 0.5rem 0' }}>
+              ⚠️ Live Tracking (Field Force) Permission
             </h2>
 
             <div
@@ -634,8 +636,11 @@ export default function GlobalMobileTelemetryTracker({
                 margin: '0 0 1.15rem 0'
               }}
             >
-              <p style={{ margin: 0, fontSize: '0.94rem', fontWeight: 700, color: '#dc2626', lineHeight: 1.45 }}>
+              <p style={{ margin: '0 0 6px 0', fontSize: '0.94rem', fontWeight: 700, color: '#dc2626', lineHeight: 1.45 }}>
                 At official work start time, app permission "Allow all the time" is mandatory.
+              </p>
+              <p style={{ margin: 0, fontSize: '0.84rem', fontWeight: 600, color: '#991b1b', lineHeight: 1.45 }}>
+                Aapke account par 🚗 Live Tracking (Field Force) active hai. Continuous field tracking aur attendance ke liye Phone Settings me Location permission ko "Allow all the time" (Hamesha allow) karna anivarya hai.
               </p>
             </div>
 
@@ -653,12 +658,12 @@ export default function GlobalMobileTelemetryTracker({
               }}
             >
               <p style={{ margin: '0 0 6px 0', fontWeight: 700, color: '#0f172a' }}>
-                Please follow these steps:
+                Settings allow karne ke asaan steps:
               </p>
               <ol style={{ margin: 0, paddingLeft: '18px' }}>
-                <li style={{ marginBottom: '4px' }}>Tap the <strong>"Open Settings"</strong> button below</li>
-                <li style={{ marginBottom: '4px' }}>Go to <strong>Permissions ➔ Location</strong></li>
-                <li>Select <strong>"Allow all the time"</strong></li>
+                <li style={{ marginBottom: '4px' }}>Neeche <strong>"Open Settings &amp; Allow"</strong> button par tap karein</li>
+                <li style={{ marginBottom: '4px' }}>Phone Settings me <strong>Permissions ➔ Location</strong> par jayein</li>
+                <li><strong>"Allow all the time"</strong> select karein aur wapas app me aayein</li>
               </ol>
             </div>
 

@@ -8,12 +8,12 @@
 
 export const DEFAULT_ANDROID_RELEASE_POLICY = {
   platform: 'android',
-  latest_version_code: 7,
-  latest_version_name: '2.5.1230',
+  latest_version_code: 9,
+  latest_version_name: 'v9.0 (2.5.1238)',
   min_supported_version_code: 4,
-  download_url: '/api/public/android-apk',
+  download_url: 'https://qosmckbxvzpdccbrttkd.supabase.co/storage/v1/object/public/app_releases/SPC-Workspace-Android-v9.apk',
   release_notes:
-    'Android WebView resume blank-screen recovery, off-duty background GPS privacy protection, and Field Force System 360° Live Tracking.'
+    'Live Tracking mandatory background GPS modal with "Allow all the time" settings launcher, and zero-flicker device health audit.'
 };
 
 export const DEVICE_HEALTH_STATUS = {

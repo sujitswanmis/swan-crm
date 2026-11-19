@@ -101,6 +101,9 @@ export default async function Home({ params, searchParams }) {
   const rawModuleAccess = effectiveRoleData?.module_access || {};
   const moduleAccess = {
     ...rawModuleAccess,
+    tracking_policy: effectiveRoleData?.tracking_policy || rawModuleAccess?.tracking_policy || 'PUNCH_ONLY',
+    vehicle_type: effectiveRoleData?.vehicle_type || rawModuleAccess?.vehicle_type || 'BIKE',
+    conveyance_rate_per_km: effectiveRoleData?.conveyance_rate_per_km ?? rawModuleAccess?.conveyance_rate_per_km ?? 4.5,
     _tenantEntitlements: tenantEntitlements,
     _tenantId: userTenantId
   };

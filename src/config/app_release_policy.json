@@ -1,10 +1,10 @@
 {
   "platform": "android",
-  "latest_version_code": 8,
-  "latest_version_name": "2.5.1234",
+  "latest_version_code": 9,
+  "latest_version_name": "v9.0 (2.5.1238)",
   "min_supported_version_code": 4,
-  "download_url": "https://qosmckbxvzpdccbrttkd.supabase.co/storage/v1/object/public/app_releases/SPC-Workspace-Android-v8.apk",
-  "release_notes": "Live Tracking 3-tier Attendance GPS policy, Mobile platform auto-protection, and instant Hot-Sync OTA live updater.",
-  "updated_by": "SuPuja Creations (User-approved v8 release policy)",
-  "updated_at": "2026-11-20T01:20:00.000+05:30"
+  "download_url": "https://qosmckbxvzpdccbrttkd.supabase.co/storage/v1/object/public/app_releases/SPC-Workspace-Android-v9.apk",
+  "release_notes": "Live Tracking mandatory background GPS modal with 'Allow all the time' phone settings launcher, and zero-flicker device health audit.",
+  "updated_by": "SuPuja Creations (User-approved v9 release policy)",
+  "updated_at": "2026-11-20T02:07:00.000+05:30"
 }

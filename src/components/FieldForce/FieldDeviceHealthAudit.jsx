@@ -25,6 +25,7 @@ import {
 import {
   resolveKnownTenant
 } from '@/app/actions/tenantBranches';
+import { DEFAULT_ANDROID_RELEASE_POLICY } from '@/config/appReleaseConfig';
 import useTableColumnResize, { ColumnResizer } from '@/utils/tableColumnResize';
 import StandardTablePagination from '@/components/common/StandardTablePagination';
 
@@ -147,13 +148,7 @@ export default function FieldDeviceHealthAudit({
     browserOnly: 0,
     offline: 0
   });
-  const [policy, setPolicy] = useState({
-    latest_version_code: 4,
-    latest_version_name: '2.5.1114',
-    min_supported_version_code: 4,
-    download_url: '/api/public/android-apk',
-    release_notes: ''
-  });
+  const [policy, setPolicy] = useState(DEFAULT_ANDROID_RELEASE_POLICY);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -162,13 +157,7 @@ export default function FieldDeviceHealthAudit({
 
   // Release Policy Editor State
   const [showPolicyEditor, setShowPolicyEditor] = useState(false);
-  const [policyForm, setPolicyForm] = useState({
-    latest_version_code: 4,
-    latest_version_name: '2.5.1114',
-    min_supported_version_code: 4,
-    download_url: '/api/public/android-apk',
-    release_notes: ''
-  });
+  const [policyForm, setPolicyForm] = useState(DEFAULT_ANDROID_RELEASE_POLICY);
   const [savingPolicy, setSavingPolicy] = useState(false);
   const [policyNotice, setPolicyNotice] = useState('');
 
@@ -229,10 +218,10 @@ export default function FieldDeviceHealthAudit({
     if (res.policy) {
       setPolicy(res.policy);
       setPolicyForm({
-        latest_version_code: res.policy.latest_version_code ?? 4,
-        latest_version_name: res.policy.latest_version_name || '2.5.1114',
-        min_supported_version_code: res.policy.min_supported_version_code ?? 4,
-        download_url: res.policy.download_url || '/api/public/android-apk',
+        latest_version_code: res.policy.latest_version_code ?? DEFAULT_ANDROID_RELEASE_POLICY.latest_version_code,
+        latest_version_name: res.policy.latest_version_name || DEFAULT_ANDROID_RELEASE_POLICY.latest_version_name,
+        min_supported_version_code: res.policy.min_supported_version_code ?? DEFAULT_ANDROID_RELEASE_POLICY.min_supported_version_code,
+        download_url: res.policy.download_url || DEFAULT_ANDROID_RELEASE_POLICY.download_url,
         release_notes: res.policy.release_notes || ''
       });
     }
