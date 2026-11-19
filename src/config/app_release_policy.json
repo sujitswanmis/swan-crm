@@ -3,7 +3,7 @@
   "latest_version_code": 8,
   "latest_version_name": "2.5.1234",
   "min_supported_version_code": 4,
-  "download_url": "/api/public/android-apk",
+  "download_url": "https://qosmckbxvzpdccbrttkd.supabase.co/storage/v1/object/public/app_releases/SPC-Workspace-Android-v8.apk",
   "release_notes": "Live Tracking 3-tier Attendance GPS policy, Mobile platform auto-protection, and instant Hot-Sync OTA live updater.",
   "updated_by": "SuPuja Creations (User-approved v8 release policy)",
   "updated_at": "2026-11-20T01:20:00.000+05:30"
