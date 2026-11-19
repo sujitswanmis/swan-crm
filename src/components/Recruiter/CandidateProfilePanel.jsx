@@ -27,7 +27,16 @@ const getStatusOptions = (stage) => {
   }
 };
 
-export default function CandidateProfilePanel({ candidate, isOpen, onClose, onCandidateUpdate, userName, canEdit = true }) {
+export default function CandidateProfilePanel({ 
+  candidate, 
+  isOpen, 
+  onClose, 
+  onCandidateUpdate, 
+  userName, 
+  canEdit = true,
+  stagesConfig = null,
+  pipelineConfig = null
+}) {
   const supabase = useMemo(() => createClient(), []);
   const [notes, setNotes] = useState([]);
   const [newNote, setNewNote] = useState('');
@@ -70,16 +79,78 @@ export default function CandidateProfilePanel({ candidate, isOpen, onClose, onCa
   };
 
 
-  const STAGES = [
-    { id: 'S02', label: 'S02 - Resume Filtered' },
-    { id: 'S03', label: 'S03 - Interview Executed' },
-    { id: 'S04', label: 'S04 - Test Result Updated' },
-    { id: 'S05', label: 'S05 - ED Approval Pending' },
-    { id: 'S06', label: 'S06 - Salary Negotiating' },
-    { id: 'S07', label: 'S07 - Structure Confirmed / Shortlisted' },
-    { id: 'S08', label: 'S08 - LOI Offer Letter Released' },
-    { id: 'S09', label: 'S09 - Joining Formalities' }
-  ];
+  const STAGES = useMemo(() => {
+    if (Array.isArray(stagesConfig) && stagesConfig.length > 0) {
+      return stagesConfig.map(s => ({
+        id: s.id,
+        label: s.label || s.name || s.id,
+        tat_hours: s.tat_hours || 24,
+        status_options: s.status_options || []
+      }));
+    }
+    return [
+      { id: 'S02', label: 'S02 - Resume Filtered', tat_hours: 24 },
+      { id: 'S03', label: 'S03 - Interview Executed', tat_hours: 48 },
+      { id: 'S04', label: 'S04 - Test Result Updated', tat_hours: 24 },
+      { id: 'S05', label: 'S05 - ED Approval Pending', tat_hours: 48 },
+      { id: 'S06', label: 'S06 - Salary Negotiating', tat_hours: 24 },
+      { id: 'S07', label: 'S07 - Structure Confirmed / Shortlisted', tat_hours: 24 },
+      { id: 'S08', label: 'S08 - LOI Offer Letter Released', tat_hours: 24 },
+      { id: 'S09', label: 'S09 - Joining Formalities', tat_hours: 48 }
+    ];
+  }, [stagesConfig]);
+
+  const currentStageObj = useMemo(() => {
+    return STAGES.find(s => s.id === (editForm.current_stage || 'S02')) || STAGES[0];
+  }, [STAGES, editForm.current_stage]);
+
+  const nextStageObj = useMemo(() => {
+    const idx = STAGES.findIndex(s => s.id === (editForm.current_stage || 'S02'));
+    if (idx >= 0 && idx < STAGES.length - 1) {
+      return STAGES[idx + 1];
+    }
+    return null;
+  }, [STAGES, editForm.current_stage]);
+
+  // Compute Planned vs Actual dates in IST (Models 1 & 2)
+  const timelineData = useMemo(() => {
+    const createdTime = candidate?.created_at ? new Date(candidate.created_at).getTime() : Date.now();
+    const currentTatHours = currentStageObj?.tat_hours || 24;
+    const nextTatHours = nextStageObj?.tat_hours || 24;
+
+    // Model 1: Planned Stage Target (Candidate Registration + Stage TAT)
+    const plannedTargetDate = new Date(createdTime + (currentTatHours * 60 * 60 * 1000));
+
+    // Model 2: Actual completion / in-progress variance
+    const now = Date.now();
+    const isOverdue = now > plannedTargetDate.getTime();
+    const diffHours = Math.round(Math.abs(now - plannedTargetDate.getTime()) / (1000 * 60 * 60));
+
+    // Model 2 Cascading: Next stage planned = Actual / Target completion + Next Stage TAT
+    const nextStagePlanned = new Date(now + (nextTatHours * 60 * 60 * 1000));
+
+    const formatIST = (dateObj) => {
+      if (!dateObj || isNaN(dateObj.getTime())) return 'N/A';
+      return new Intl.DateTimeFormat('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+      }).format(dateObj);
+    };
+
+    return {
+      currentTatHours,
+      nextTatHours,
+      plannedTargetStr: formatIST(plannedTargetDate),
+      isOverdue,
+      diffHours,
+      nextStagePlannedStr: formatIST(nextStagePlanned)
+    };
+  }, [candidate, currentStageObj, nextStageObj]);
 
   useEffect(() => {
     if (!candidate || !isOpen) return;
@@ -341,6 +412,47 @@ export default function CandidateProfilePanel({ candidate, isOpen, onClose, onCa
                   <option key={opt} value={opt}>{opt}</option>
                 ))}
               </select>
+            </div>
+
+            {/* Planned vs Actual TAT SLA Timeline Widget (Models 1 & 2) */}
+            <div style={{
+              background: 'var(--bg-primary)',
+              border: '1px solid var(--border-light)',
+              borderRadius: '8px',
+              padding: '0.85rem',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.5rem',
+              marginTop: '0.25rem'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
+                  ⏱️ Stage TAT SLA &amp; Timeline (IST)
+                </span>
+                <span style={{
+                  fontSize: '0.72rem',
+                  fontWeight: 700,
+                  padding: '0.15rem 0.5rem',
+                  borderRadius: '10px',
+                  background: timelineData.isOverdue ? '#fee2e2' : '#dcfce7',
+                  color: timelineData.isOverdue ? '#991b1b' : '#166534'
+                }}>
+                  {timelineData.isOverdue ? `⚠️ Delayed by ${timelineData.diffHours}h` : `✓ On Track (TAT: ${timelineData.currentTatHours}h)`}
+                </span>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', fontSize: '0.75rem' }}>
+                <div style={{ background: 'var(--bg-surface)', padding: '0.4rem 0.6rem', borderRadius: '6px', border: '1px solid var(--border-light)' }}>
+                  <div style={{ color: 'var(--text-secondary)', fontSize: '0.68rem', fontWeight: 600 }}>Planned Stage Target</div>
+                  <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{timelineData.plannedTargetStr}</div>
+                </div>
+                {nextStageObj && (
+                  <div style={{ background: 'var(--bg-surface)', padding: '0.4rem 0.6rem', borderRadius: '6px', border: '1px solid var(--border-light)' }}>
+                    <div style={{ color: 'var(--text-secondary)', fontSize: '0.68rem', fontWeight: 600 }}>Next Stage Auto-Planned ({nextStageObj.id})</div>
+                    <div style={{ fontWeight: 700, color: 'var(--accent-color)' }}>{timelineData.nextStagePlannedStr}</div>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* S03 Details */}

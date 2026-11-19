@@ -36,7 +36,7 @@ import ApprovalStatusModal from './modals/ApprovalStatusModal';
 
 import { isFeatureEntitled } from '@/utils/saasEntitlements';
 import { DEFAULT_DEPARTMENTS } from './utils/userManagementUtils';
-import { filterVisibleSubTabs, getSubItemPermissions } from '@/utils/permissionUtils';
+import { filterVisibleSubTabs, getSubItemPermissions, enforcePolicyPlatformSafety } from '@/utils/permissionUtils';
 import { MODULES_CONFIG } from '@/config/modulesConfig';
 import { ROLE_PRESETS } from './utils/rolePresets';
 import { getUserBranchAccess, matchesUserBranchMembership } from '@/utils/branchAccess';
@@ -590,7 +590,8 @@ export default function UserManagementContainer({
                 };
                 delete nextAccess.role_template_id;
                 delete nextAccess.role_template_name;
-                await updateModuleAccess(addEditModal.user.user_id, nextAccess);
+                const safeAccess = enforcePolicyPlatformSafety(nextAccess, formData.tracking_policy);
+                await updateModuleAccess(addEditModal.user.user_id, safeAccess);
               } catch (e) {
                 console.warn('Role preset assign notice:', e);
               }
@@ -650,7 +651,8 @@ export default function UserManagementContainer({
                     role_preset_key: preset.key,
                     role_preset_name: preset.name
                   };
-                  await updateModuleAccess(newUserId, nextAccess);
+                  const safeAccess = enforcePolicyPlatformSafety(nextAccess, addPayload.tracking_policy);
+                  await updateModuleAccess(newUserId, safeAccess);
                 } catch (e) {
                   console.warn('Role preset assign notice:', e);
                 }
@@ -675,10 +677,12 @@ export default function UserManagementContainer({
   const handleSavePermissions = async (userId, updatedAccess) => {
     setSavingPermissions(true);
     try {
+      // Auto-enforce platform safety for Live Tracking field employees
+      const safeAccess = enforcePolicyPlatformSafety(updatedAccess, updatedAccess?.tracking_policy);
       // Save directly via updateModuleAccess so any fine-tuned checkbox selections are preserved
-      const res = await updateModuleAccess(userId, updatedAccess);
+      const res = await updateModuleAccess(userId, safeAccess);
       if (res && res.success) {
-        const savedAccess = res.moduleAccess || updatedAccess;
+        const savedAccess = res.moduleAccess || safeAccess;
         // Realtime broadcast to active user sessions
         try {
           const supabase = createClient();

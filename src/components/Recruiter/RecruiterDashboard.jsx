@@ -15,6 +15,7 @@ import {
   deleteCandidate, 
   addCandidateNote 
 } from '@/app/actions/recruitment';
+import { getRecruiterPipelineConfig } from '@/app/actions/recruiterConfig';
 import { useTableColumnResize, ColumnResizer } from '@/utils/tableColumnResize';
 
 const RECRUITER_POSITIONS_DEFAULT_COL_WIDTHS = {
@@ -111,7 +112,8 @@ export default function RecruiterDashboard({
   recruiterAccess = null, 
   isAdmin = false,
   userCompany = '',
-  tenantId = null
+  tenantId = null,
+  adminCompanyFilter = 'All'
 }) {
   const supabase = useMemo(() => createClient(), []);
 
@@ -241,21 +243,72 @@ export default function RecruiterDashboard({
   };
 
 
-  const STAGES = [
-    { id: 'S02', label: 'S02: Resume Filtered', color: '#cbd5e1', textColor: '#334155' },
-    { id: 'S03', label: 'S03: Interview Executed', color: '#fef9c3', textColor: '#854d0e' },
-    { id: 'S04', label: 'S04: Test Results', color: '#dbeafe', textColor: '#1e40af' },
-    { id: 'S05', label: 'S05: ED Approval Pending', color: '#ffedd5', textColor: '#c2410c' },
-    { id: 'S06', label: 'S06: Salary Negotiating', color: '#f5d0fe', textColor: '#86198f' },
-    { id: 'S07', label: 'S07: Shortlisted', color: '#e0e7ff', textColor: '#3730a3' },
-    { id: 'S08', label: 'S08: LOI Released', color: '#e0f2fe', textColor: '#0369a1' },
-    { id: 'S09', label: 'S09: Joined', color: '#dcfce7', textColor: '#166534' }
-  ];
+  const [pipelineConfig, setPipelineConfig] = useState(null);
+
+  // Load dynamic pipeline config from Settings > Recruiter Config
+  useEffect(() => {
+    async function fetchPipelineConfig() {
+      try {
+        const res = await getRecruiterPipelineConfig(effectiveTenantId, adminCompanyFilter);
+        if (res?.success && res.config) {
+          setPipelineConfig(res.config);
+        }
+      } catch (err) {
+        console.warn('Failed to load recruiter pipeline config:', err);
+      }
+    }
+    fetchPipelineConfig();
+  }, [effectiveTenantId, adminCompanyFilter]);
+
+  const STAGES = useMemo(() => {
+    if (pipelineConfig?.stages && Array.isArray(pipelineConfig.stages)) {
+      return pipelineConfig.stages
+        .filter(s => s.is_enabled !== false)
+        .map(s => ({
+          id: s.id,
+          label: s.name || `${s.id} — ${s.short_code}`,
+          color: s.color || '#cbd5e1',
+          textColor: s.textColor || '#334155',
+          tat_hours: s.tat_hours || 24,
+          status_options: s.status_options || []
+        }));
+    }
+    return [
+      { id: 'S02', label: 'S02: Resume Filtered', color: '#cbd5e1', textColor: '#334155', tat_hours: 24 },
+      { id: 'S03', label: 'S03: Interview Executed', color: '#fef9c3', textColor: '#854d0e', tat_hours: 48 },
+      { id: 'S04', label: 'S04: Test Results', color: '#dbeafe', textColor: '#1e40af', tat_hours: 24 },
+      { id: 'S05', label: 'S05: ED Approval Pending', color: '#ffedd5', textColor: '#c2410c', tat_hours: 48 },
+      { id: 'S06', label: 'S06: Salary Negotiating', color: '#f5d0fe', textColor: '#86198f', tat_hours: 24 },
+      { id: 'S07', label: 'S07: Shortlisted', color: '#e0e7ff', textColor: '#3730a3', tat_hours: 24 },
+      { id: 'S08', label: 'S08: LOI Released', color: '#e0f2fe', textColor: '#0369a1', tat_hours: 24 },
+      { id: 'S09', label: 'S09: Joined', color: '#dcfce7', textColor: '#166534', tat_hours: 48 }
+    ];
+  }, [pipelineConfig]);
+
+  const getStatusOptions = useCallback((stageId) => {
+    const found = STAGES.find(s => s.id === stageId);
+    if (found?.status_options && Array.isArray(found.status_options) && found.status_options.length > 0) {
+      return found.status_options;
+    }
+    switch (stageId) {
+      case 'S00': return ['Pending Review', 'Requirement Verified', 'Hold', 'Cancelled'];
+      case 'S01': return ['Drafting JD', 'JD Approved', 'Posted on Job Boards', 'Application Window Open'];
+      case 'S02': return ['Awaiting Screening', 'Resume Selected', 'Resume Rejected', 'No Response', 'ReSchedule'];
+      case 'S03': return ['Interview Scheduled', 'Interview Cleared', 'Interview Rejected', 'No Response', 'ReSchedule'];
+      case 'S04': return ['Test Pending', 'Test Passed', 'Test Failed', 'No Response', 'ReSchedule'];
+      case 'S05': return ['Pending ED', 'ED Approved', 'ED Rejected', 'No Response', 'ReSchedule'];
+      case 'S06': return ['Negotiation Pending', 'Salary Agreed', 'Salary Rejected', 'No Response', 'ReSchedule'];
+      case 'S07': return ['Shortlisted', 'Dropped', 'No Response', 'ReSchedule'];
+      case 'S08': return ['LOI Released', 'LOI Accepted', 'LOI Declined', 'No Response', 'ReSchedule'];
+      case 'S09': return ['Joining Pending', 'Joined', 'No Show', 'No Response', 'ReSchedule'];
+      default: return ['Pending', 'No Response', 'ReSchedule'];
+    }
+  }, [STAGES]);
 
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const posData = await getPositions(effectiveTenantId, userCompany);
+      const posData = await getPositions(effectiveTenantId, userCompany, null, adminCompanyFilter);
       setPositions(posData || []);
 
       const posIds = (posData || []).map(p => p.id);
@@ -266,7 +319,7 @@ export default function RecruiterDashboard({
     } finally {
       setLoading(false);
     }
-  }, [effectiveTenantId, userCompany]);
+  }, [effectiveTenantId, userCompany, adminCompanyFilter]);
 
   // Load recruiters list using server action (bypasses RLS)
   const loadRecruiters = useCallback(async () => {
@@ -1310,14 +1363,9 @@ export default function RecruiterDashboard({
                               opacity: !canEditStage(cand.current_stage) ? 0.7 : 1
                             }}
                           >
-                            <option value="S02">S02</option>
-                            <option value="S03">S03</option>
-                            <option value="S04">S04</option>
-                            <option value="S05">S05</option>
-                            <option value="S06">S06</option>
-                            <option value="S07">S07</option>
-                            <option value="S08">S08</option>
-                            <option value="S09">S09</option>
+                            {STAGES.map(s => (
+                              <option key={s.id} value={s.id}>{s.id}</option>
+                            ))}
                           </select>
                         </td>
                         <td style={{ width: `${candColWidths.status}px`, padding: '0.85rem 1rem', boxSizing: 'border-box' }}>
@@ -1388,6 +1436,8 @@ export default function RecruiterDashboard({
           onCandidateUpdate={() => { loadData(); }}
           userName={userName}
           canEdit={canEditStage(selectedCandidate.current_stage)}
+          stagesConfig={STAGES}
+          pipelineConfig={pipelineConfig}
         />
       )}
 

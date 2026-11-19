@@ -1,6 +1,56 @@
 import { NextResponse } from 'next/server';
+import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { verifyFieldTelemetryToken } from '@/utils/fieldTelemetryToken';
 import { recordLocationPingBatch, reportFieldDeviceHeartbeat } from '@/app/actions/liveTracking';
+
+function getAdminClient() {
+  return createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY
+  );
+}
+
+// In-memory cache to avoid querying attendance_records on every high-frequency ping (40s TTL):
+const attendanceDutyCache = new Map();
+
+async function checkUserOnDuty(userId) {
+  if (!userId) return false;
+  const now = Date.now();
+  const cached = attendanceDutyCache.get(userId);
+  if (cached && now < cached.expiresAt) {
+    return cached.isPunchedIn;
+  }
+  try {
+    const admin = getAdminClient();
+    const todayIST = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(new Date());
+
+    const { data, error } = await admin
+      .from('attendance_records')
+      .select('id, in_time, out_time')
+      .eq('user_id', userId)
+      .eq('attendance_date', todayIST)
+      .order('in_time', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      console.warn('[telemetry/route] checkUserOnDuty error:', error.message);
+      return true; // Fail-safe: don't block valid tracking on temporary DB read error
+    }
+
+    const isPunchedIn = Boolean(data && data.in_time && !data.out_time);
+    attendanceDutyCache.set(userId, { isPunchedIn, expiresAt: now + 40000 });
+    return isPunchedIn;
+  } catch (err) {
+    console.warn('[telemetry/route] checkUserOnDuty exception:', err?.message || err);
+    return true; // Fail-safe fallback
+  }
+}
 
 export async function POST(request) {
   try {
@@ -27,6 +77,19 @@ export async function POST(request) {
     const rawPings = Array.isArray(body.pings) ? body.pings : [];
     if (rawPings.length === 0) {
       return NextResponse.json({ success: true, count: 0, ...(statusAccepted !== undefined ? { statusAccepted } : {}) });
+    }
+
+    // Verify whether the employee is on official duty (punched in today without punch-out)
+    const isOnDuty = await checkUserOnDuty(claims.uid);
+    if (!isOnDuty) {
+      // User is off-duty (not punched in, or already punched out). Diagnostics accepted, but coordinates ignored.
+      return NextResponse.json({
+        success: true,
+        count: 0,
+        dutyStatus: 'OFF_DUTY',
+        message: 'Tracking inactive outside official punch-in duty hours',
+        ...(statusAccepted !== undefined ? { statusAccepted } : {})
+      });
     }
 
     // Bind every ping strictly to the authenticated token's userId and tenant metadata

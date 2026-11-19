@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import PWAInstallPrompt from '@/components/PWAInstallPrompt';
 import DesktopZoomControl from '@/components/DesktopZoomControl';
 import ClientPlatformSync from '@/components/ClientPlatformSync';
+import AppLiveUpdateBanner from '@/components/common/AppLiveUpdateBanner';
 
 export const metadata = {
   title: 'SuPuja Creations',
@@ -57,6 +58,7 @@ export default async function RootLayout({ children }) {
         <link rel="apple-touch-icon" href="/icon-192x192.png" />
       </head>
       <body suppressHydrationWarning>
+        <AppLiveUpdateBanner />
         {children}
         <ClientPlatformSync />
         <PWAInstallPrompt />

@@ -18,12 +18,11 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(FieldTrackerPlugin.class);
         super.onCreate(savedInstanceState);
 
-        // Request essential foreground permissions (Audio, Notifications on API 33+, & GPS Location)
+        // Request essential foreground permissions (Audio & Notifications on API 33+)
+        // Note: Location permissions are requested on-demand according to user's assigned policy
         List<String> requiredPermissions = new ArrayList<>();
         requiredPermissions.add(Manifest.permission.RECORD_AUDIO);
         requiredPermissions.add(Manifest.permission.MODIFY_AUDIO_SETTINGS);
-        requiredPermissions.add(Manifest.permission.ACCESS_FINE_LOCATION);
-        requiredPermissions.add(Manifest.permission.ACCESS_COARSE_LOCATION);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             requiredPermissions.add(Manifest.permission.POST_NOTIFICATIONS);
         }
@@ -39,5 +38,25 @@ public class MainActivity extends BridgeActivity {
         if (needsRequest) {
             ActivityCompat.requestPermissions(this, requiredPermissions.toArray(new String[0]), PERMISSION_REQ_CODE);
         }
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        // Prevent frozen white screen if Android OS killed the WebView render process in background
+        try {
+            if (getBridge() != null && getBridge().getWebView() != null) {
+                android.webkit.WebView webView = getBridge().getWebView();
+                String url = webView.getUrl();
+                if (url == null || url.trim().isEmpty() || "about:blank".equalsIgnoreCase(url.trim())) {
+                    webView.loadUrl("https://app.supujacreations.com");
+                }
+                // Inject native versionCode for in-app OTA version detector
+                webView.evaluateJavascript(
+                    "try { window.localStorage.setItem('spc_android_version_code', '8'); } catch(e){}",
+                    null
+                );
+            }
+        } catch (Exception ignored) {}
     }
 }

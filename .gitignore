@@ -48,5 +48,8 @@ backups/
 /CRM-Backups Plivo Calling Perfect 2.1/
 *.apk
 dist-*/
+.notification-verification-*
+*.bak_*
+SPC-APPS/
 release-builds/
 SPC-APPS/

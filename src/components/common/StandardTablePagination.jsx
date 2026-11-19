@@ -21,10 +21,11 @@ export default function StandardTablePagination({
   onPageChange,
   onPageSizeChange,
   style = {},
-  className = ''
+  className = '',
+  hasMore = false
 }) {
   const [pageJump, setPageJump] = useState(() => {
-    let jump = 7;
+    let jump = 3;
     if (typeof window !== 'undefined') {
       try {
         const settings = JSON.parse(localStorage.getItem('crmPageNavSettings') || '{}');
@@ -35,7 +36,7 @@ export default function StandardTablePagination({
   });
 
   const [availablePageSizes, setAvailablePageSizes] = useState(() => {
-    let sizes = [5, 10, 15, 20, 25, 50, 100];
+    let sizes = [3, 5, 10, 15, 20, 50, 100, 500, 1000];
     if (typeof window !== 'undefined') {
       try {
         const settings = JSON.parse(localStorage.getItem('crmPageNavSettings') || '{}');
@@ -83,6 +84,7 @@ export default function StandardTablePagination({
       } catch (e) {}
     };
 
+    handleNavUpdate();
     window.addEventListener('crm_page_nav_updated', handleNavUpdate);
     window.addEventListener('crm_config_updated', handleNavUpdate);
     return () => {

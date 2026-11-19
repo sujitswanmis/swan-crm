@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { INDIAN_STATES, getDistrictsForState } from '@/constants/indianLocations';
 import { getTenantBranches } from '@/app/actions/tenantBranches';
+import UniversalBranchSelect from '@/components/common/UniversalBranchSelect';
 
 // 🔍 Searchable & Selectable Assignee Dropdown
 function SearchableAssignToDropdown({ value, onChange, teamMembers, disabled }) {
@@ -1003,37 +1004,20 @@ export default function LeadFormModal({
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '0.85rem' }}>
                   <div style={{ minWidth: 0 }}>
-                    <label style={labelStyle}>Our Company / Branch</label>
-                    <select 
-                      name="our_company" 
-                      value={formData.our_company} 
-                      onChange={handleChange} 
-                      style={inputStyle}
-                    >
-                      {availableBranches.length > 0 ? (
-                        availableBranches.map(b => {
-                          const code = b.custom_code || b.legacy_code || b.branch_code;
-                          const cleanName = b.branch_name || b.company || code;
-                          const label = b.branch_code
-                            ? `${cleanName} (${code} - ${b.branch_code})`
-                            : `${cleanName} (${code})`;
-                          return (
-                            <option key={b.id || b.branch_code} value={code}>{label}</option>
-                          );
-                        })
-                      ) : (
-                        <>
-                          <option value="NSG">New Swan Group (NSG - TNT00002-B0001)</option>
-                          <option value="NSMLR">New Swan Multitech Limited Raian (NSMLR - TNT00002-B0002)</option>
-                          <option value="NSTLP">New Swan Technologies Limited Paharuwal (NSTLP - TNT00002-B0003)</option>
-                          <option value="NSE1">New Swan Enterprises - 1 (NSE1 - TNT00002-B0004)</option>
-                          <option value="NSE2">New Swan Enterprises - 2 (NSE2 - TNT00002-B0005)</option>
-                          <option value="NSE3">New Swan Enterprises - 3 (NSE3 - TNT00002-B0006)</option>
-                          <option value="NSE4">New Swan Enterprises - 4 (NSE4 - TNT00002-B0007)</option>
-                          <option value="NSACPL1">New Swan Autocomp Pvt. Ltd. (NSACPL1 - TNT00002-B0008)</option>
-                        </>
-                      )}
-                    </select>
+                    <UniversalBranchSelect
+                      label="Our Company / Branch"
+                      value={formData.our_company}
+                      onChange={(val) => setFormData(prev => ({ ...prev, our_company: val }))}
+                      branches={availableBranches}
+                      placeholder="Select Company / Branch"
+                      triggerStyle={{
+                        borderRadius: '6px',
+                        border: '1px solid var(--border-light, #cbd5e1)',
+                        padding: '0.5rem 0.75rem',
+                        minHeight: '38px',
+                        fontSize: '0.86rem'
+                      }}
+                    />
                   </div>
 
                   {/* 🔍 Searchable Assign To Dropdown with Logged-in User Default */}

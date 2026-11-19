@@ -4863,15 +4863,15 @@ export default function PartyMasterModule({
       {/* 360 DEGREE PROFILE & RELATIONSHIP AUDIT MODAL */}
       {/* ========================================================= */}
       {view360Party && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }}>
-          <div style={{ background: '#0b1329', border: '1px solid rgba(255,255,255,0.18)', borderRadius: '16px', padding: '1.75rem', width: '100%', maxWidth: '960px', maxHeight: '92vh', overflowY: 'auto', color: '#ffffff', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.9)' }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }}>
+          <div style={{ background: 'var(--bg-surface, #ffffff)', border: '1px solid var(--border-light, #e2e8f0)', borderRadius: '16px', padding: '1.75rem', width: '100%', maxWidth: '960px', maxHeight: '92vh', overflowY: 'auto', color: 'var(--text-primary, #0f172a)', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' }}>
             
             {/* 1. MODAL HEADER WITH BADGES & CLOSE */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid rgba(255,255,255,0.12)', paddingBottom: '1rem', marginBottom: '1.25rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid var(--border-light, #e2e8f0)', paddingBottom: '1rem', marginBottom: '1.25rem' }}>
               <div>
                 <div style={{ display: 'flex', gap: '0.45rem', alignItems: 'center', flexWrap: 'wrap', marginBottom: '0.35rem' }}>
                   {/* Channel / Universal Code */}
-                  <span style={{ fontSize: '0.8rem', fontWeight: 800, padding: '0.2rem 0.65rem', background: 'rgba(16,185,129,0.25)', color: '#34d399', borderRadius: '6px', border: '1px solid rgba(16,185,129,0.4)', fontFamily: 'monospace' }}>
+                  <span style={{ fontSize: '0.8rem', fontWeight: 800, padding: '0.2rem 0.65rem', background: 'rgba(16,185,129,0.15)', color: '#059669', borderRadius: '6px', border: '1px solid rgba(16,185,129,0.3)', fontFamily: 'monospace' }}>
                     {view360Party.distributor_code || view360Party.dealer_code || view360Party.sub_dealer_code || view360Party.party_universal_code || 'UNASSIGNED'}
                   </span>
                   
@@ -4881,9 +4881,9 @@ export default function PartyMasterModule({
                     fontWeight: 800,
                     padding: '0.2rem 0.6rem',
                     borderRadius: '6px',
-                    background: view360Party.party_type === 'Distributor' ? 'rgba(56,189,248,0.25)' : view360Party.party_type === 'Dealer' ? 'rgba(16,185,129,0.25)' : 'rgba(245,158,11,0.25)',
-                    color: view360Party.party_type === 'Distributor' ? '#38bdf8' : view360Party.party_type === 'Dealer' ? '#34d399' : '#fbbf24',
-                    border: `1px solid ${view360Party.party_type === 'Distributor' ? '#38bdf840' : view360Party.party_type === 'Dealer' ? '#34d39940' : '#fbbf2440'}`
+                    background: view360Party.party_type === 'Distributor' ? 'rgba(37,99,235,0.12)' : view360Party.party_type === 'Dealer' ? 'rgba(16,185,129,0.12)' : 'rgba(217,119,6,0.12)',
+                    color: view360Party.party_type === 'Distributor' ? '#2563eb' : view360Party.party_type === 'Dealer' ? '#059669' : '#d97706',
+                    border: `1px solid ${view360Party.party_type === 'Distributor' ? 'rgba(37,99,235,0.25)' : view360Party.party_type === 'Dealer' ? 'rgba(16,185,129,0.25)' : 'rgba(217,119,6,0.25)'}`
                   }}>
                     {view360Party.party_type === 'Distributor' ? '👑 Level 1: Distributor' : view360Party.party_type === 'Dealer' ? '🏪 Level 2: Dealer' : '🛒 Level 3: Sub-Dealer'}
                   </span>
@@ -4894,9 +4894,9 @@ export default function PartyMasterModule({
                     fontWeight: 800,
                     padding: '0.18rem 0.55rem',
                     borderRadius: '6px',
-                    background: (view360Party.our_company === 'NSTL' || view360Party.our_company === 'NSTLP') ? 'rgba(236,72,153,0.2)' : 'rgba(245,158,11,0.2)',
-                    color: (view360Party.our_company === 'NSTL' || view360Party.our_company === 'NSTLP') ? '#f472b6' : '#fbbf24',
-                    border: `1px solid ${(view360Party.our_company === 'NSTL' || view360Party.our_company === 'NSTLP') ? '#f472b640' : '#fbbf2440'}`
+                    background: (view360Party.our_company === 'NSTL' || view360Party.our_company === 'NSTLP') ? 'rgba(219,39,119,0.12)' : 'rgba(217,119,6,0.12)',
+                    color: (view360Party.our_company === 'NSTL' || view360Party.our_company === 'NSTLP') ? '#db2777' : '#d97706',
+                    border: `1px solid ${(view360Party.our_company === 'NSTL' || view360Party.our_company === 'NSTLP') ? 'rgba(219,39,119,0.25)' : 'rgba(217,119,6,0.25)'}`
                   }}>
                     {(view360Party.our_company === 'NSTL' || view360Party.our_company === 'NSTLP') ? 'NSTLP' : (view360Party.our_company || 'NSMLR')}
                   </span>
@@ -4906,18 +4906,18 @@ export default function PartyMasterModule({
 
                   {/* Onboarding Stage */}
                   {view360Party.onboarding_stage && (
-                    <span style={{ fontSize: '0.72rem', fontWeight: 600, padding: '0.18rem 0.5rem', background: 'rgba(148,163,184,0.15)', color: '#94a3b8', borderRadius: '6px' }}>
+                    <span style={{ fontSize: '0.72rem', fontWeight: 600, padding: '0.18rem 0.5rem', background: 'var(--bg-primary, #f1f5f9)', color: 'var(--text-secondary, #64748b)', borderRadius: '6px', border: '1px solid var(--border-light, #e2e8f0)' }}>
                       Stage: {view360Party.onboarding_stage}
                     </span>
                   )}
                 </div>
 
-                <h2 style={{ fontSize: '1.6rem', fontWeight: 800, margin: '0.2rem 0', color: '#f8fafc' }}>
+                <h2 style={{ fontSize: '1.6rem', fontWeight: 800, margin: '0.2rem 0', color: 'var(--text-primary, #0f172a)' }}>
                   {view360Party.firm_name}
                 </h2>
                 {view360Party.legal_name && view360Party.legal_name !== view360Party.firm_name && (
-                  <div style={{ fontSize: '0.86rem', color: '#94a3b8' }}>
-                    Legal Registered Name: <strong style={{ color: '#cbd5e1' }}>{view360Party.legal_name}</strong>
+                  <div style={{ fontSize: '0.86rem', color: 'var(--text-secondary, #64748b)' }}>
+                    Legal Registered Name: <strong style={{ color: 'var(--text-primary, #0f172a)' }}>{view360Party.legal_name}</strong>
                   </div>
                 )}
               </div>
@@ -4929,10 +4929,10 @@ export default function PartyMasterModule({
                   alignItems: 'center',
                   gap: '0.4rem',
                   padding: '0.5rem 1.1rem',
-                  background: 'rgba(255,255,255,0.08)',
-                  border: '1px solid rgba(255,255,255,0.2)',
+                  background: 'var(--bg-primary, #f1f5f9)',
+                  border: '1px solid var(--border-light, #e2e8f0)',
                   borderRadius: '8px',
-                  color: '#fff',
+                  color: 'var(--text-primary, #0f172a)',
                   fontWeight: 700,
                   fontSize: '0.85rem',
                   cursor: 'pointer'
@@ -4943,40 +4943,40 @@ export default function PartyMasterModule({
             </div>
 
             {/* 2. STRICT CHANNEL HIERARCHY CHAIN */}
-            <div style={{ background: '#131e36', padding: '1rem', borderRadius: '12px', marginBottom: '1.25rem', border: '1px solid rgba(56,189,248,0.25)' }}>
-              <div style={{ fontSize: '0.75rem', color: '#38bdf8', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '0.4rem' }}>
+            <div style={{ background: 'var(--bg-primary, #f8fafc)', padding: '1rem', borderRadius: '12px', marginBottom: '1.25rem', border: '1px solid var(--border-light, #e2e8f0)' }}>
+              <div style={{ fontSize: '0.75rem', color: 'var(--accent-color, #2563eb)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '0.4rem' }}>
                 Channel Hierarchy Chain (Who Under Whom)
               </div>
               <div style={{ fontSize: '1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                 {view360Party.party_type === 'Distributor' ? (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: '#38bdf8' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--accent-color, #2563eb)' }}>
                     <span style={{ fontSize: '1.2rem' }}>👑</span>
                     <span>{view360Party.firm_name}</span>
-                    <span style={{ fontSize: '0.78rem', color: '#94a3b8', fontWeight: 500 }}>(Master Regional Hub)</span>
+                    <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary, #64748b)', fontWeight: 500 }}>(Master Regional Hub)</span>
                   </div>
                 ) : view360Party.party_type === 'Dealer' ? (
                   <>
-                    <span style={{ color: '#60a5fa' }}>
+                    <span style={{ color: 'var(--accent-color, #2563eb)' }}>
                       👑 {view360Party.parent_distributor?.firm_name || view360Party.parent_distributor_name || 'Swan Direct / Open Territory'}
                     </span>
-                    <ArrowRight size={14} style={{ color: '#94a3b8' }} />
-                    <span style={{ color: '#34d399' }}>🏪 {view360Party.firm_name}</span>
+                    <ArrowRight size={14} style={{ color: 'var(--text-secondary, #64748b)' }} />
+                    <span style={{ color: '#059669' }}>🏪 {view360Party.firm_name}</span>
                   </>
                 ) : (
                   <>
                     {(view360Party.parent_distributor?.firm_name || view360Party.parent_distributor_name) && (
                       <>
-                        <span style={{ color: '#60a5fa' }} title="Master Distributor">
+                        <span style={{ color: 'var(--accent-color, #2563eb)' }} title="Master Distributor">
                           👑 {view360Party.parent_distributor?.firm_name || view360Party.parent_distributor_name}
                         </span>
-                        <ArrowRight size={14} style={{ color: '#94a3b8' }} />
+                        <ArrowRight size={14} style={{ color: 'var(--text-secondary, #64748b)' }} />
                       </>
                     )}
-                    <span style={{ color: '#34d399' }} title="Parent Dealer">
+                    <span style={{ color: '#059669' }} title="Parent Dealer">
                       🏪 {view360Party.parent_dealer?.firm_name || view360Party.parent_dealer_name || 'Parent Dealer'}
                     </span>
-                    <ArrowRight size={14} style={{ color: '#94a3b8' }} />
-                    <span style={{ color: '#fbbf24' }}>🛒 {view360Party.firm_name}</span>
+                    <ArrowRight size={14} style={{ color: 'var(--text-secondary, #64748b)' }} />
+                    <span style={{ color: '#d97706' }}>🛒 {view360Party.firm_name}</span>
                   </>
                 )}
               </div>
@@ -4985,52 +4985,52 @@ export default function PartyMasterModule({
             {/* 3. FIRM & TAX IDENTIFICATION + REGISTERED LOCATION */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1rem', marginBottom: '1.25rem' }}>
               {/* Firm Master Details */}
-              <div style={{ background: '#131e36', padding: '1.1rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.08)' }}>
-                <div style={{ fontSize: '0.82rem', fontWeight: 800, color: '#38bdf8', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <div style={{ background: 'var(--bg-primary, #f8fafc)', padding: '1.1rem', borderRadius: '12px', border: '1px solid var(--border-light, #e2e8f0)' }}>
+                <div style={{ fontSize: '0.82rem', fontWeight: 800, color: 'var(--accent-color, #2563eb)', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                   <Building2 size={16} /> Firm & Tax Identification
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem', fontSize: '0.83rem' }}>
                   <div>
-                    <span style={{ color: '#94a3b8', display: 'block', fontSize: '0.74rem' }}>Constitution Type</span>
-                    <strong style={{ color: '#e2e8f0' }}>{view360Party.constitution_type || 'PROPRIETORSHIP'}</strong>
+                    <span style={{ color: 'var(--text-secondary, #64748b)', display: 'block', fontSize: '0.74rem' }}>Constitution Type</span>
+                    <strong style={{ color: 'var(--text-primary, #0f172a)' }}>{view360Party.constitution_type || 'PROPRIETORSHIP'}</strong>
                   </div>
                   <div>
-                    <span style={{ color: '#94a3b8', display: 'block', fontSize: '0.74rem' }}>Operating Company</span>
-                    <strong style={{ color: (view360Party.our_company === 'NSTL' || view360Party.our_company === 'NSTLP') ? '#f472b6' : '#fbbf24' }}>
+                    <span style={{ color: 'var(--text-secondary, #64748b)', display: 'block', fontSize: '0.74rem' }}>Operating Company</span>
+                    <strong style={{ color: (view360Party.our_company === 'NSTL' || view360Party.our_company === 'NSTLP') ? '#db2777' : '#d97706' }}>
                       {(view360Party.our_company === 'NSTL' || view360Party.our_company === 'NSTLP') ? 'NSTLP' : (view360Party.our_company || 'NSMLR')}
                     </strong>
                   </div>
                   <div>
-                    <span style={{ color: '#94a3b8', display: 'block', fontSize: '0.74rem' }}>GSTIN</span>
-                    <span style={{ color: '#38bdf8', fontFamily: 'monospace', fontWeight: 700 }}>
+                    <span style={{ color: 'var(--text-secondary, #64748b)', display: 'block', fontSize: '0.74rem' }}>GSTIN</span>
+                    <span style={{ color: 'var(--accent-color, #2563eb)', fontFamily: 'monospace', fontWeight: 700 }}>
                       {view360Party.gstin || 'NOT REGISTERED'}
                     </span>
                   </div>
                   <div>
-                    <span style={{ color: '#94a3b8', display: 'block', fontSize: '0.74rem' }}>PAN Number</span>
-                    <span style={{ color: '#fbbf24', fontFamily: 'monospace', fontWeight: 700 }}>
+                    <span style={{ color: 'var(--text-secondary, #64748b)', display: 'block', fontSize: '0.74rem' }}>PAN Number</span>
+                    <span style={{ color: '#d97706', fontFamily: 'monospace', fontWeight: 700 }}>
                       {view360Party.pan || '-'}
                     </span>
                   </div>
                   {view360Party.cin && (
                     <div>
-                      <span style={{ color: '#94a3b8', display: 'block', fontSize: '0.74rem' }}>CIN</span>
-                      <span style={{ color: '#cbd5e1', fontFamily: 'monospace' }}>{view360Party.cin}</span>
+                      <span style={{ color: 'var(--text-secondary, #64748b)', display: 'block', fontSize: '0.74rem' }}>CIN</span>
+                      <span style={{ color: 'var(--text-primary, #0f172a)', fontFamily: 'monospace' }}>{view360Party.cin}</span>
                     </div>
                   )}
                   {view360Party.udyam_number && (
                     <div>
-                      <span style={{ color: '#94a3b8', display: 'block', fontSize: '0.74rem' }}>Udyam No</span>
-                      <span style={{ color: '#cbd5e1', fontFamily: 'monospace' }}>{view360Party.udyam_number}</span>
+                      <span style={{ color: 'var(--text-secondary, #64748b)', display: 'block', fontSize: '0.74rem' }}>Udyam No</span>
+                      <span style={{ color: 'var(--text-primary, #0f172a)', fontFamily: 'monospace' }}>{view360Party.udyam_number}</span>
                     </div>
                   )}
                   <div>
-                    <span style={{ color: '#94a3b8', display: 'block', fontSize: '0.74rem' }}>Source of Origin</span>
-                    <span style={{ color: '#94a3b8' }}>{view360Party.acquisition_source || 'Direct Onboarding'}</span>
+                    <span style={{ color: 'var(--text-secondary, #64748b)', display: 'block', fontSize: '0.74rem' }}>Source of Origin</span>
+                    <span style={{ color: 'var(--text-secondary, #64748b)' }}>{view360Party.acquisition_source || 'Direct Onboarding'}</span>
                   </div>
                   <div>
-                    <span style={{ color: '#94a3b8', display: 'block', fontSize: '0.74rem' }}>Created Date (IST)</span>
-                    <span style={{ color: '#94a3b8' }}>
+                    <span style={{ color: 'var(--text-secondary, #64748b)', display: 'block', fontSize: '0.74rem' }}>Created Date (IST)</span>
+                    <span style={{ color: 'var(--text-secondary, #64748b)' }}>
                       {view360Party.created_at ? new Date(view360Party.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : '-'}
                     </span>
                   </div>
@@ -5038,31 +5038,31 @@ export default function PartyMasterModule({
               </div>
 
               {/* Registered Address & Location Master */}
-              <div style={{ background: '#131e36', padding: '1.1rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.08)' }}>
-                <div style={{ fontSize: '0.82rem', fontWeight: 800, color: '#34d399', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <div style={{ background: 'var(--bg-primary, #f8fafc)', padding: '1.1rem', borderRadius: '12px', border: '1px solid var(--border-light, #e2e8f0)' }}>
+                <div style={{ fontSize: '0.82rem', fontWeight: 800, color: '#059669', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                   <MapPin size={16} /> Registered Address & Geography
                 </div>
                 <div style={{ fontSize: '0.83rem', display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
                   <div>
-                    <span style={{ color: '#94a3b8', display: 'block', fontSize: '0.74rem' }}>Premises / Street Address</span>
-                    <strong style={{ color: '#e2e8f0' }}>{view360Party.address || 'Address on file'}</strong>
+                    <span style={{ color: 'var(--text-secondary, #64748b)', display: 'block', fontSize: '0.74rem' }}>Premises / Street Address</span>
+                    <strong style={{ color: 'var(--text-primary, #0f172a)' }}>{view360Party.address || 'Address on file'}</strong>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem', marginTop: '0.2rem' }}>
                     <div>
-                      <span style={{ color: '#94a3b8', display: 'block', fontSize: '0.74rem' }}>State</span>
-                      <strong style={{ color: '#38bdf8' }}>{view360Party.state_name || 'Punjab'}</strong>
+                      <span style={{ color: 'var(--text-secondary, #64748b)', display: 'block', fontSize: '0.74rem' }}>State</span>
+                      <strong style={{ color: 'var(--accent-color, #2563eb)' }}>{view360Party.state_name || 'Punjab'}</strong>
                     </div>
                     <div>
-                      <span style={{ color: '#94a3b8', display: 'block', fontSize: '0.74rem' }}>Primary District</span>
-                      <strong style={{ color: '#e2e8f0' }}>{view360Party.district_name || '-'}</strong>
+                      <span style={{ color: 'var(--text-secondary, #64748b)', display: 'block', fontSize: '0.74rem' }}>Primary District</span>
+                      <strong style={{ color: 'var(--text-primary, #0f172a)' }}>{view360Party.district_name || '-'}</strong>
                     </div>
                     <div>
-                      <span style={{ color: '#94a3b8', display: 'block', fontSize: '0.74rem' }}>Tehsil / Taluka</span>
-                      <span style={{ color: '#cbd5e1' }}>{view360Party.tehsil || '-'}</span>
+                      <span style={{ color: 'var(--text-secondary, #64748b)', display: 'block', fontSize: '0.74rem' }}>Tehsil / Taluka</span>
+                      <span style={{ color: 'var(--text-primary, #0f172a)' }}>{view360Party.tehsil || '-'}</span>
                     </div>
                     <div>
-                      <span style={{ color: '#94a3b8', display: 'block', fontSize: '0.74rem' }}>City / Village & Pin</span>
-                      <span style={{ color: '#cbd5e1' }}>
+                      <span style={{ color: 'var(--text-secondary, #64748b)', display: 'block', fontSize: '0.74rem' }}>City / Village & Pin</span>
+                      <span style={{ color: 'var(--text-primary, #0f172a)' }}>
                         {view360Party.city_village || '-'} {view360Party.pincode ? `(${view360Party.pincode})` : ''}
                       </span>
                     </div>
@@ -5072,8 +5072,8 @@ export default function PartyMasterModule({
             </div>
 
             {/* 4. COMPLETE CONTACT CHANNELS ("Firm & Contact Details sara data aaye") */}
-            <div style={{ background: '#131e36', padding: '1.25rem', borderRadius: '12px', marginBottom: '1.25rem', border: '1px solid rgba(255,255,255,0.08)' }}>
-              <div style={{ fontSize: '0.86rem', fontWeight: 800, color: '#fbbf24', marginBottom: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+            <div style={{ background: 'var(--bg-primary, #f8fafc)', padding: '1.25rem', borderRadius: '12px', marginBottom: '1.25rem', border: '1px solid var(--border-light, #e2e8f0)' }}>
+              <div style={{ fontSize: '0.86rem', fontWeight: 800, color: '#d97706', marginBottom: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
                 <Phone size={16} /> Complete Contact Channels & Personnel Records
               </div>
 
@@ -5081,122 +5081,122 @@ export default function PartyMasterModule({
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '0.9rem' }}>
                 
                 {/* Card A: Official Business Channels */}
-                <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '0.85rem' }}>
-                  <div style={{ fontSize: '0.76rem', fontWeight: 800, color: '#60a5fa', textTransform: 'uppercase', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <div style={{ background: 'var(--bg-surface, #ffffff)', border: '1px solid var(--border-light, #e2e8f0)', borderRadius: '10px', padding: '0.85rem' }}>
+                  <div style={{ fontSize: '0.76rem', fontWeight: 800, color: 'var(--accent-color, #2563eb)', textTransform: 'uppercase', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                     🏢 Official Business Channels
                   </div>
                   <div style={{ fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-                      <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Biz Contact:</span>
+                      <span style={{ color: 'var(--text-secondary, #64748b)', fontSize: '0.72rem' }}>Biz Contact:</span>
                       <MaskedPhoneDisplay phone={view360Party.biz_contact_no_1 || view360Party.primary_mobile || view360Party.biz_contact_no_2} size="sm" />
                     </div>
                     {(view360Party.biz_alt_no_1 || view360Party.biz_alt_no_2) && (
                       <div>
-                        <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Biz Alt Phone(s):</span>{' '}
-                        <span style={{ color: '#cbd5e1' }}>{[view360Party.biz_alt_no_1, view360Party.biz_alt_no_2].filter(Boolean).join(', ')}</span>
+                        <span style={{ color: 'var(--text-secondary, #64748b)', fontSize: '0.72rem' }}>Biz Alt Phone(s):</span>{' '}
+                        <span style={{ color: 'var(--text-primary, #0f172a)' }}>{[view360Party.biz_alt_no_1, view360Party.biz_alt_no_2].filter(Boolean).join(', ')}</span>
                       </div>
                     )}
                     <div>
-                      <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Official Email 1:</span>{' '}
-                      <span style={{ color: '#38bdf8' }}>{view360Party.biz_email_1 || view360Party.official_email || '-'}</span>
+                      <span style={{ color: 'var(--text-secondary, #64748b)', fontSize: '0.72rem' }}>Official Email 1:</span>{' '}
+                      <span style={{ color: 'var(--accent-color, #2563eb)' }}>{view360Party.biz_email_1 || view360Party.official_email || '-'}</span>
                     </div>
                     {view360Party.biz_email_2 && (
                       <div>
-                        <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Official Email 2:</span>{' '}
-                        <span style={{ color: '#38bdf8' }}>{view360Party.biz_email_2}</span>
+                        <span style={{ color: 'var(--text-secondary, #64748b)', fontSize: '0.72rem' }}>Official Email 2:</span>{' '}
+                        <span style={{ color: 'var(--accent-color, #2563eb)' }}>{view360Party.biz_email_2}</span>
                       </div>
                     )}
                     {(view360Party.biz_alt_email_1 || view360Party.biz_alt_email_2) && (
                       <div>
-                        <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Alt Biz Email(s):</span>{' '}
-                        <span style={{ color: '#94a3b8' }}>{[view360Party.biz_alt_email_1, view360Party.biz_alt_email_2].filter(Boolean).join(', ')}</span>
+                        <span style={{ color: 'var(--text-secondary, #64748b)', fontSize: '0.72rem' }}>Alt Biz Email(s):</span>{' '}
+                        <span style={{ color: 'var(--text-secondary, #64748b)' }}>{[view360Party.biz_alt_email_1, view360Party.biz_alt_email_2].filter(Boolean).join(', ')}</span>
                       </div>
                     )}
                   </div>
                 </div>
 
                 {/* Card B: Contact Person 1 (Primary Key Person / Owner) */}
-                <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '0.85rem' }}>
-                  <div style={{ fontSize: '0.76rem', fontWeight: 800, color: '#34d399', textTransform: 'uppercase', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <div style={{ background: 'var(--bg-surface, #ffffff)', border: '1px solid var(--border-light, #e2e8f0)', borderRadius: '10px', padding: '0.85rem' }}>
+                  <div style={{ fontSize: '0.76rem', fontWeight: 800, color: '#059669', textTransform: 'uppercase', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                     👤 Contact Person 1 (Primary / Owner)
                   </div>
                   <div style={{ fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
                     <div>
-                      <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Name:</span>{' '}
-                      <strong style={{ color: '#f8fafc' }}>{view360Party.contact_person_name_1 || view360Party.owner_name || 'Principal'}</strong>
+                      <span style={{ color: 'var(--text-secondary, #64748b)', fontSize: '0.72rem' }}>Name:</span>{' '}
+                      <strong style={{ color: 'var(--text-primary, #0f172a)' }}>{view360Party.contact_person_name_1 || view360Party.owner_name || 'Principal'}</strong>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-                      <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Mobile:</span>
+                      <span style={{ color: 'var(--text-secondary, #64748b)', fontSize: '0.72rem' }}>Mobile:</span>
                       <MaskedPhoneDisplay phone={view360Party.contact_mobile_1_1 || view360Party.primary_mobile || view360Party.contact_mobile_1_2} size="sm" />
                     </div>
                     {(view360Party.contact_alt_mobile_1_1 || view360Party.contact_alt_mobile_1_2) && (
                       <div>
-                        <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Alt Mobile(s):</span>{' '}
-                        <span style={{ color: '#cbd5e1' }}>{[view360Party.contact_alt_mobile_1_1, view360Party.contact_alt_mobile_1_2].filter(Boolean).join(', ')}</span>
+                        <span style={{ color: 'var(--text-secondary, #64748b)', fontSize: '0.72rem' }}>Alt Mobile(s):</span>{' '}
+                        <span style={{ color: 'var(--text-primary, #0f172a)' }}>{[view360Party.contact_alt_mobile_1_1, view360Party.contact_alt_mobile_1_2].filter(Boolean).join(', ')}</span>
                       </div>
                     )}
                     {(view360Party.contact_email_1_2 || view360Party.contact_alt_email_1_1) && (
                       <div>
-                        <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Email:</span>{' '}
-                        <span style={{ color: '#38bdf8' }}>{[view360Party.contact_email_1_2, view360Party.contact_alt_email_1_1].filter(Boolean).join(', ')}</span>
+                        <span style={{ color: 'var(--text-secondary, #64748b)', fontSize: '0.72rem' }}>Email:</span>{' '}
+                        <span style={{ color: 'var(--accent-color, #2563eb)' }}>{[view360Party.contact_email_1_2, view360Party.contact_alt_email_1_1].filter(Boolean).join(', ')}</span>
                       </div>
                     )}
                   </div>
                 </div>
 
                 {/* Card C: Contact Person 2 (Partner / General Manager) */}
-                <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '0.85rem' }}>
-                  <div style={{ fontSize: '0.76rem', fontWeight: 800, color: '#fbbf24', textTransform: 'uppercase', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <div style={{ background: 'var(--bg-surface, #ffffff)', border: '1px solid var(--border-light, #e2e8f0)', borderRadius: '10px', padding: '0.85rem' }}>
+                  <div style={{ fontSize: '0.76rem', fontWeight: 800, color: '#d97706', textTransform: 'uppercase', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                     👤 Contact Person 2 (Partner / Manager)
                   </div>
                   {view360Party.contact_person_name_2 || view360Party.contact_mobile_2_1 ? (
                     <div style={{ fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
                       <div>
-                        <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Name:</span>{' '}
-                        <strong style={{ color: '#f8fafc' }}>{view360Party.contact_person_name_2 || '-'}</strong>
+                        <span style={{ color: 'var(--text-secondary, #64748b)', fontSize: '0.72rem' }}>Name:</span>{' '}
+                        <strong style={{ color: 'var(--text-primary, #0f172a)' }}>{view360Party.contact_person_name_2 || '-'}</strong>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-                        <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Mobile:</span>
+                        <span style={{ color: 'var(--text-secondary, #64748b)', fontSize: '0.72rem' }}>Mobile:</span>
                         <MaskedPhoneDisplay phone={view360Party.contact_mobile_2_1 || view360Party.contact_mobile_2_2} size="sm" />
                       </div>
                       {(view360Party.contact_email_2_2 || view360Party.contact_alt_email_2_1) && (
                         <div>
-                          <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Email:</span>{' '}
-                          <span style={{ color: '#38bdf8' }}>{view360Party.contact_email_2_2 || view360Party.contact_alt_email_2_1}</span>
+                          <span style={{ color: 'var(--text-secondary, #64748b)', fontSize: '0.72rem' }}>Email:</span>{' '}
+                          <span style={{ color: 'var(--accent-color, #2563eb)' }}>{view360Party.contact_email_2_2 || view360Party.contact_alt_email_2_1}</span>
                         </div>
                       )}
                     </div>
                   ) : (
-                    <div style={{ fontSize: '0.78rem', color: '#64748b', fontStyle: 'italic', padding: '0.5rem 0' }}>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary, #64748b)', fontStyle: 'italic', padding: '0.5rem 0' }}>
                       No secondary contact person recorded.
                     </div>
                   )}
                 </div>
 
                 {/* Card D: Contact Person 3 (Accountant / Operations) */}
-                <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '0.85rem' }}>
-                  <div style={{ fontSize: '0.76rem', fontWeight: 800, color: '#c084fc', textTransform: 'uppercase', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <div style={{ background: 'var(--bg-surface, #ffffff)', border: '1px solid var(--border-light, #e2e8f0)', borderRadius: '10px', padding: '0.85rem' }}>
+                  <div style={{ fontSize: '0.76rem', fontWeight: 800, color: '#7c3aed', textTransform: 'uppercase', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                     👤 Contact Person 3 (Accounts / Ops)
                   </div>
                   {view360Party.contact_person_name_3 || view360Party.contact_mobile_3_1 ? (
                     <div style={{ fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
                       <div>
-                        <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Name:</span>{' '}
-                        <strong style={{ color: '#f8fafc' }}>{view360Party.contact_person_name_3 || '-'}</strong>
+                        <span style={{ color: 'var(--text-secondary, #64748b)', fontSize: '0.72rem' }}>Name:</span>{' '}
+                        <strong style={{ color: 'var(--text-primary, #0f172a)' }}>{view360Party.contact_person_name_3 || '-'}</strong>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-                        <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Mobile:</span>
+                        <span style={{ color: 'var(--text-secondary, #64748b)', fontSize: '0.72rem' }}>Mobile:</span>
                         <MaskedPhoneDisplay phone={view360Party.contact_mobile_3_1 || view360Party.contact_mobile_3_2} size="sm" />
                       </div>
                       {(view360Party.contact_email_3_1 || view360Party.contact_email_3_2) && (
                         <div>
-                          <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Email:</span>{' '}
-                          <span style={{ color: '#38bdf8' }}>{view360Party.contact_email_3_1 || view360Party.contact_email_3_2}</span>
+                          <span style={{ color: 'var(--text-secondary, #64748b)', fontSize: '0.72rem' }}>Email:</span>{' '}
+                          <span style={{ color: 'var(--accent-color, #2563eb)' }}>{view360Party.contact_email_3_1 || view360Party.contact_email_3_2}</span>
                         </div>
                       )}
                     </div>
                   ) : (
-                    <div style={{ fontSize: '0.78rem', color: '#64748b', fontStyle: 'italic', padding: '0.5rem 0' }}>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary, #64748b)', fontStyle: 'italic', padding: '0.5rem 0' }}>
                       No tertiary contact person recorded.
                     </div>
                   )}
@@ -5206,16 +5206,16 @@ export default function PartyMasterModule({
             </div>
 
             {/* 5. COMMERCIAL SECURITY TERMS & BILLING (NO CREDIT LIMIT / SANCTIONED LIMIT AS REQUESTED) */}
-            <div style={{ background: '#131e36', padding: '1.25rem', borderRadius: '12px', marginBottom: '1.25rem', border: '1px solid rgba(255,255,255,0.08)' }}>
-              <div style={{ fontSize: '0.86rem', fontWeight: 800, color: '#10b981', marginBottom: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <div style={{ background: 'var(--bg-primary, #f8fafc)', padding: '1.25rem', borderRadius: '12px', marginBottom: '1.25rem', border: '1px solid var(--border-light, #e2e8f0)' }}>
+              <div style={{ fontSize: '0.86rem', fontWeight: 800, color: '#059669', marginBottom: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                 <DollarSign size={16} /> Commercial Terms, Security Deposit & Billing Route
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.85rem', fontSize: '0.83rem' }}>
                 {/* Billing Route */}
-                <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.75rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)' }}>
-                  <span style={{ color: '#94a3b8', display: 'block', fontSize: '0.74rem' }}>Configured Billing Route</span>
+                <div style={{ background: 'var(--bg-surface, #ffffff)', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-light, #e2e8f0)' }}>
+                  <span style={{ color: 'var(--text-secondary, #64748b)', display: 'block', fontSize: '0.74rem' }}>Configured Billing Route</span>
                   <strong style={{
-                    color: view360Party.billing_route_type === 'DIRECT_COMPANY_BILLING' ? '#34d399' : view360Party.billing_route_type === 'DEALER_BILLED' ? '#f59e0b' : '#60a5fa',
+                    color: view360Party.billing_route_type === 'DIRECT_COMPANY_BILLING' ? '#059669' : view360Party.billing_route_type === 'DEALER_BILLED' ? '#d97706' : 'var(--accent-color, #2563eb)',
                     fontSize: '0.9rem',
                     display: 'block',
                     marginTop: '0.2rem'
@@ -5229,58 +5229,58 @@ export default function PartyMasterModule({
                 </div>
 
                 {/* Security Deposit Amount */}
-                <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.75rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)' }}>
-                  <span style={{ color: '#94a3b8', display: 'block', fontSize: '0.74rem' }}>Security Deposit Amount</span>
-                  <strong style={{ color: '#34d399', fontSize: '1.05rem', display: 'block', marginTop: '0.2rem' }}>
+                <div style={{ background: 'var(--bg-surface, #ffffff)', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-light, #e2e8f0)' }}>
+                  <span style={{ color: 'var(--text-secondary, #64748b)', display: 'block', fontSize: '0.74rem' }}>Security Deposit Amount</span>
+                  <strong style={{ color: '#059669', fontSize: '1.05rem', display: 'block', marginTop: '0.2rem' }}>
                     ₹{Number(view360Party.security_deposit_amount || 0).toLocaleString('en-IN')}
                   </strong>
                 </div>
 
                 {/* Security Mode & Receipt */}
-                <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.75rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)' }}>
-                  <span style={{ color: '#94a3b8', display: 'block', fontSize: '0.74rem' }}>Payment Mode & Voucher</span>
+                <div style={{ background: 'var(--bg-surface, #ffffff)', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-light, #e2e8f0)' }}>
+                  <span style={{ color: 'var(--text-secondary, #64748b)', display: 'block', fontSize: '0.74rem' }}>Payment Mode & Voucher</span>
                   <div style={{ marginTop: '0.2rem' }}>
-                    <strong style={{ color: '#e2e8f0' }}>{view360Party.security_mode || 'Cheque'}</strong>
+                    <strong style={{ color: 'var(--text-primary, #0f172a)' }}>{view360Party.security_mode || 'Cheque'}</strong>
                     {view360Party.receipt_no && (
-                      <span style={{ color: '#94a3b8', fontSize: '0.75rem', display: 'block' }}>
-                        Receipt: <span style={{ color: '#38bdf8', fontFamily: 'monospace' }}>{view360Party.receipt_no}</span>
+                      <span style={{ color: 'var(--text-secondary, #64748b)', fontSize: '0.75rem', display: 'block' }}>
+                        Receipt: <span style={{ color: 'var(--accent-color, #2563eb)', fontFamily: 'monospace' }}>{view360Party.receipt_no}</span>
                       </span>
                     )}
                   </div>
                 </div>
 
                 {/* Deposit Date */}
-                <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.75rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)' }}>
-                  <span style={{ color: '#94a3b8', display: 'block', fontSize: '0.74rem' }}>Security Deposit Date</span>
-                  <strong style={{ color: '#e2e8f0', display: 'block', marginTop: '0.2rem' }}>
+                <div style={{ background: 'var(--bg-surface, #ffffff)', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-light, #e2e8f0)' }}>
+                  <span style={{ color: 'var(--text-secondary, #64748b)', display: 'block', fontSize: '0.74rem' }}>Security Deposit Date</span>
+                  <strong style={{ color: 'var(--text-primary, #0f172a)', display: 'block', marginTop: '0.2rem' }}>
                     {view360Party.security_deposit_date || '-'}
                   </strong>
                 </div>
 
                 {/* Distributor Margin */}
-                <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.75rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)' }}>
-                  <span style={{ color: '#94a3b8', display: 'block', fontSize: '0.74rem' }}>Distributor Commission %</span>
-                  <strong style={{ color: '#fbbf24', fontSize: '0.95rem', display: 'block', marginTop: '0.2rem' }}>
+                <div style={{ background: 'var(--bg-surface, #ffffff)', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-light, #e2e8f0)' }}>
+                  <span style={{ color: 'var(--text-secondary, #64748b)', display: 'block', fontSize: '0.74rem' }}>Distributor Commission %</span>
+                  <strong style={{ color: '#d97706', fontSize: '0.95rem', display: 'block', marginTop: '0.2rem' }}>
                     {view360Party.distributor_commission_percent ?? 2.5}%
                   </strong>
                 </div>
 
                 {/* 1st Billing Milestone */}
-                <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.75rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)' }}>
-                  <span style={{ color: '#94a3b8', display: 'block', fontSize: '0.74rem' }}>1st Billing Milestone</span>
+                <div style={{ background: 'var(--bg-surface, #ffffff)', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-light, #e2e8f0)' }}>
+                  <span style={{ color: 'var(--text-secondary, #64748b)', display: 'block', fontSize: '0.74rem' }}>1st Billing Milestone</span>
                   <div style={{ marginTop: '0.2rem' }}>
                     {view360Party.billing_first_amount ? (
                       <div>
-                        <strong style={{ color: '#38bdf8' }}>₹{Number(view360Party.billing_first_amount).toLocaleString('en-IN')}</strong>
-                        <span style={{ fontSize: '0.75rem', color: '#94a3b8', marginLeft: '0.3rem' }}>
+                        <strong style={{ color: 'var(--accent-color, #2563eb)' }}>₹{Number(view360Party.billing_first_amount).toLocaleString('en-IN')}</strong>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary, #64748b)', marginLeft: '0.3rem' }}>
                           ({view360Party.billing_first_status || 'Pending'})
                         </span>
                         {view360Party.billing_first_date && (
-                          <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>Date: {view360Party.billing_first_date}</div>
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary, #64748b)' }}>Date: {view360Party.billing_first_date}</div>
                         )}
                       </div>
                     ) : (
-                      <span style={{ color: '#64748b' }}>Pending 1st Order Dispatch</span>
+                      <span style={{ color: 'var(--text-secondary, #64748b)' }}>Pending 1st Order Dispatch</span>
                     )}
                   </div>
                 </div>
@@ -5291,13 +5291,13 @@ export default function PartyMasterModule({
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1rem', marginBottom: '1.25rem' }}>
               
               {/* Product Authorization */}
-              <div style={{ background: '#131e36', padding: '1.1rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.08)' }}>
-                <div style={{ fontSize: '0.82rem', fontWeight: 800, color: '#c084fc', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <div style={{ background: 'var(--bg-primary, #f8fafc)', padding: '1.1rem', borderRadius: '12px', border: '1px solid var(--border-light, #e2e8f0)' }}>
+                <div style={{ fontSize: '0.82rem', fontWeight: 800, color: '#7c3aed', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                   <Package size={16} /> Authorized Product Machinery
                 </div>
                 <div style={{ marginBottom: '0.5rem' }}>
-                  <span style={{ color: '#94a3b8', fontSize: '0.74rem' }}>Product Category: </span>
-                  <strong style={{ color: '#e2e8f0', fontSize: '0.84rem' }}>
+                  <span style={{ color: 'var(--text-secondary, #64748b)', fontSize: '0.74rem' }}>Product Category: </span>
+                  <strong style={{ color: 'var(--text-primary, #0f172a)', fontSize: '0.84rem' }}>
                     {view360Party.product_category || 'Implement & Spare Parts'}
                   </strong>
                 </div>
@@ -5315,9 +5315,9 @@ export default function PartyMasterModule({
                         fontSize: '0.74rem',
                         fontWeight: 700,
                         padding: '0.2rem 0.6rem',
-                        background: 'rgba(167,139,250,0.15)',
-                        color: '#c084fc',
-                        border: '1px solid rgba(167,139,250,0.3)',
+                        background: 'rgba(124,58,237,0.12)',
+                        color: '#7c3aed',
+                        border: '1px solid rgba(124,58,237,0.25)',
                         borderRadius: '6px'
                       }}>
                         ⚙️ {pName}
@@ -5328,14 +5328,14 @@ export default function PartyMasterModule({
               </div>
 
               {/* Territory Allocation & Area Jurisdiction */}
-              <div style={{ background: '#131e36', padding: '1.1rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.08)' }}>
-                <div style={{ fontSize: '0.82rem', fontWeight: 800, color: '#38bdf8', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <div style={{ background: 'var(--bg-primary, #f8fafc)', padding: '1.1rem', borderRadius: '12px', border: '1px solid var(--border-light, #e2e8f0)' }}>
+                <div style={{ fontSize: '0.82rem', fontWeight: 800, color: 'var(--accent-color, #2563eb)', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                   <MapPin size={16} /> Territory Jurisdiction & Area Coverage
                 </div>
                 <div style={{ fontSize: '0.82rem', display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
                   <div>
-                    <span style={{ color: '#94a3b8', fontSize: '0.74rem' }}>Jurisdiction Zone: </span>
-                    <strong style={{ color: '#e2e8f0' }}>{view360Party.zone || 'North Zone'}</strong>
+                    <span style={{ color: 'var(--text-secondary, #64748b)', fontSize: '0.74rem' }}>Jurisdiction Zone: </span>
+                    <strong style={{ color: 'var(--text-primary, #0f172a)' }}>{view360Party.zone || 'North Zone'}</strong>
                   </div>
 
                   {/* Assigned districts chips for distributors */}
@@ -5348,12 +5348,12 @@ export default function PartyMasterModule({
                     if (distList.length > 0) {
                       return (
                         <div>
-                          <span style={{ color: '#94a3b8', fontSize: '0.74rem', display: 'block', marginBottom: '0.25rem' }}>
+                          <span style={{ color: 'var(--text-secondary, #64748b)', fontSize: '0.74rem', display: 'block', marginBottom: '0.25rem' }}>
                             Assigned Headquarter Districts:
                           </span>
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
                             {distList.map((d, i) => (
-                              <span key={i} style={{ fontSize: '0.72rem', background: 'rgba(56,189,248,0.15)', color: '#38bdf8', padding: '0.12rem 0.45rem', borderRadius: '4px', border: '1px solid rgba(56,189,248,0.3)' }}>
+                              <span key={i} style={{ fontSize: '0.72rem', background: 'rgba(37,99,235,0.12)', color: 'var(--accent-color, #2563eb)', padding: '0.12rem 0.45rem', borderRadius: '4px', border: '1px solid rgba(37,99,235,0.25)' }}>
                                 📍 {d}
                               </span>
                             ))}
@@ -5368,12 +5368,12 @@ export default function PartyMasterModule({
                   {view360Party.party_type === 'Dealer' && (
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginTop: '0.2rem' }}>
                       <div>
-                        <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Showroom Area</span>
-                        <strong style={{ color: '#e2e8f0', display: 'block' }}>{view360Party.showroom_area_sqft || 2500} sq.ft.</strong>
+                        <span style={{ color: 'var(--text-secondary, #64748b)', fontSize: '0.72rem' }}>Showroom Area</span>
+                        <strong style={{ color: 'var(--text-primary, #0f172a)', display: 'block' }}>{view360Party.showroom_area_sqft || 2500} sq.ft.</strong>
                       </div>
                       <div>
-                        <span style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Dealership Type</span>
-                        <strong style={{ color: '#34d399', display: 'block' }}>{view360Party.dealership_type || 'EXCLUSIVE_SWAN'}</strong>
+                        <span style={{ color: 'var(--text-secondary, #64748b)', fontSize: '0.72rem' }}>Dealership Type</span>
+                        <strong style={{ color: '#059669', display: 'block' }}>{view360Party.dealership_type || 'EXCLUSIVE_SWAN'}</strong>
                       </div>
                     </div>
                   )}
@@ -5383,8 +5383,8 @@ export default function PartyMasterModule({
             </div>
 
             {/* 7. DEDICATED SWAN SALES & SERVICE TEAM (ALL 8 ROLES) */}
-            <div style={{ background: '#131e36', padding: '1.25rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.08)' }}>
-              <div style={{ fontSize: '0.86rem', fontWeight: 800, color: '#a78bfa', marginBottom: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <div style={{ background: 'var(--bg-primary, #f8fafc)', padding: '1.25rem', borderRadius: '12px', border: '1px solid var(--border-light, #e2e8f0)' }}>
+              <div style={{ fontSize: '0.86rem', fontWeight: 800, color: 'var(--accent-color, #4f46e5)', marginBottom: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                 <Users size={16} /> Dedicated Swan Company Personnel (8 Assigned Roles)
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.75rem' }}>
@@ -5395,19 +5395,19 @@ export default function PartyMasterModule({
                     .map(a => a.employee_name);
 
                   return (
-                    <div key={role.id} style={{ background: 'rgba(255,255,255,0.03)', padding: '0.7rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)' }}>
-                      <span style={{ color: '#94a3b8', fontSize: '0.73rem', display: 'block', fontWeight: 600 }}>
+                    <div key={role.id} style={{ background: 'var(--bg-surface, #ffffff)', padding: '0.7rem', borderRadius: '8px', border: '1px solid var(--border-light, #e2e8f0)' }}>
+                      <span style={{ color: 'var(--text-secondary, #64748b)', fontSize: '0.73rem', display: 'block', fontWeight: 600 }}>
                         {role.id}
                       </span>
                       <div style={{ marginTop: '0.25rem' }}>
                         {assigned.length > 0 ? (
                           assigned.map((name, i) => (
-                            <span key={i} style={{ display: 'inline-block', fontSize: '0.76rem', color: '#f8fafc', fontWeight: 700 }}>
+                            <span key={i} style={{ display: 'inline-block', fontSize: '0.76rem', color: 'var(--text-primary, #0f172a)', fontWeight: 700 }}>
                               {name}
                             </span>
                           ))
                         ) : (
-                          <span style={{ fontSize: '0.74rem', color: '#64748b', fontStyle: 'italic' }}>Unassigned</span>
+                          <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary, #64748b)', fontStyle: 'italic' }}>Unassigned</span>
                         )}
                       </div>
                     </div>

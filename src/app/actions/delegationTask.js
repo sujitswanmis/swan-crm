@@ -82,9 +82,10 @@ export async function getDelegatedTasks({
   status = 'ALL',
   priority = 'ALL',
   search = '',
-  tenantId = DEFAULT_TENANT_ID
+  tenantId = null
 } = {}) {
-  tenantId = await resolveDbTenantUuid(tenantId);
+  const isAllTenants = String(tenantId || '').toUpperCase() === 'ALL';
+  const resolvedTenantUuid = isAllTenants ? null : await resolveDbTenantUuid(tenantId || DEFAULT_TENANT_ID);
   const adminClient = getAdminClient();
   const emailClean = (userEmail || '').trim().toLowerCase();
   const teamEmailsClean = (teamMemberEmails || []).map(e => (e || '').trim().toLowerCase()).filter(Boolean);
@@ -93,8 +94,11 @@ export async function getDelegatedTasks({
     let query = adminClient
       .from('delegation_tasks')
       .select('*')
-      .eq('tenant_id', tenantId)
       .order('deadline', { ascending: true });
+
+    if (!isAllTenants && resolvedTenantUuid) {
+      query = query.eq('tenant_id', resolvedTenantUuid);
+    }
 
     if (viewType === 'to_me' && emailClean) {
       query = query.ilike('assigned_to_email', emailClean);
@@ -124,6 +128,12 @@ export async function getDelegatedTasks({
       });
     }
 
+    const resolveTenantCode = (tid) => {
+      if (tid === '0a37b8e8-1c28-4e19-8891-951fc3f8f8af') return 'TNT00001';
+      if (tid === '922d3e72-6588-457f-a562-4f1bdbf10d98') return 'TNT00003';
+      return 'TNT00002';
+    };
+
     // Calculate overdue status dynamically
     const now = new Date();
     tasks = tasks.map(t => {
@@ -132,6 +142,7 @@ export async function getDelegatedTasks({
       const isOverdue = !isClosed && isPastDeadline;
       return {
         ...t,
+        tenant_code: resolveTenantCode(t.tenant_id),
         is_overdue: isOverdue
       };
     });

@@ -103,10 +103,29 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
   3. **Reset on Double-Click**: Double-clicking the resizer handle resets that column back to its default width.
   4. **Persistence & Safe Constraints**: Enforce sensible minimum widths (`minWidth`, e.g. 60px–110px) to prevent column collapse, and persist user-adjusted column widths in `localStorage` so settings survive page navigation and refresh.
 
-# Mandatory Standardized Tenant Code & Branch Code Identification Rule
+# Mandatory Standardized Tenant Code & Branch Code Identification Rule (Universal AI Enforcement)
 - **Standardized Identification Across All CRM UI & Displays**: Every tenant/company and branch/plant across the CRM (headers, badges, filter dropdowns, tabular lists, directories, handoff forms, tooltips, exports) MUST be primarily identified, displayed, and navigated using their standardized **Tenant Code** (`TNT00001` for SuPuja Creations, `TNT00002` for New Swan Group, `TNT00003` for Testing NSG, `TNT00004+` for upcoming clients) and **Branch Code** (`TNT00002-B0001`, `TNT00002-B0002`, `TNT00002-B0003`, etc.).
 - **Zero Exposure of Raw Database UUIDs in UI**: Under NO circumstances should raw database UUIDs (e.g., `00000000-0000-0000-0000-000000000001`, `0a37b8e8-1c28-4e19-8891-951fc3f8f8af`, etc.) EVER be displayed to human users in tables, badges, cards, or directories. UUIDs are strictly reserved for internal backend database relations, primary keys, and foreign keys.
 - **Mandatory Dual Company & Branch Configuration Scope**: In all operational and enterprise configuration modules (Shift Rules, Company Leave Policy, Office Geofencing Policy, Attendance Rules, etc.), both Company/Tenant level AND Branch/Plant level selectors must always be provided side-by-side, allowing users to configure both tenant-wide defaults (`All Branches`) and branch-specific customizations.
+- **Strict Prohibition of Raw HTML `<select>` for Branches/Companies**:
+  - Every AI agent MUST NEVER use native `<select>` tags or unstandardized custom dropdowns for Company, Tenant, or Branch selection in ANY new page, modal, form, or filter.
+  - MUST ALWAYS use the universal reusable component `UniversalBranchSelect` (`src/components/common/UniversalBranchSelect.jsx`) for in-page/form branch selection, and `HeaderBranchFilter` (`src/components/common/HeaderBranchFilter.jsx`) for top navbar filters.
+- **Universal Branch Display Standard (`formatBranchStandard`)**:
+  - All tabular columns, badges, tooltips, and readouts representing a branch MUST format using `formatBranchStandard(branch)` from `@/utils/branchAccess`:
+    `[Standard Branch Code] — [Full Official Branch Name]` (e.g. `TNT00002-B0002 — New Swan Multitech Limited Raian`).
+- **Dynamic Multi-Tenant Branch Scoping (Zero Hardcoding)**:
+  - NEVER hardcode static fallback codes like `'NSMLR'`, `'NSTLP'`, or `'New Swan Group'` as defaults in new forms or components.
+  - ALWAYS resolve branches dynamically from the active workspace tenant via `getTenantBranches(tenantId)` or `liveTenantBranches`, ensuring non-Swan tenants (`TNT00001`, `TNT00003`, etc.) only see their own branches.
+  - Modals (e.g. customer registration, party stages, leads, user creation) MUST explicitly pass `branches={availableBranches}` into `UniversalBranchSelect`.
+- **Top Header Filter Synchronization (`adminCompanyFilter`)**:
+  - Whenever creating a new page or process that displays company/branch-scoped data, the page MUST accept `adminCompanyFilter` from `CRMContainer.jsx` (or sync with it).
+  - NEVER create an isolated or duplicate branch filter on the page without syncing it with the top navbar `HeaderBranchFilter`.
+- **Safe Data Binding & Value Resolution**:
+  - In user profile / employee creation (`AddEditUserModal`), distinguish clearly between:
+    - `work_location_name`: Full official branch name (`opt.name`, e.g. `"New Swan Multitech Limited Raian"`).
+    - `assigned_branch_codes`: Standardized UID array (`[opt.code]`, e.g. `["TNT00002-B0002"]`).
+- **Clean Backend API Parameter Scoping (Zero Header Overflow)**:
+  - When passing viewer or scoping details to API routes or server actions, NEVER serialize entire permission/module access objects into query strings (prevents HTTP 431). Always pass clean `tenant_id` and `viewer: userId`.
 
 # User-Confirmed Fixed CRM Softphone v2.16 Baseline & AI Agent Restrictions
 - **Current Fixed Baseline (7 November 2026, IST)**: The user explicitly approved protecting CRM Softphone `v2.16` and taking its golden backup. Treat this exact implementation as the current fixed, approved baseline. This section supersedes older statements about which Softphone version is current; all historical golden backups and architecture safeguards remain permanently protected.

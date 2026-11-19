@@ -209,6 +209,27 @@ export async function createFieldTask(taskPayload) {
 
     await logAuditAction('Field Task Created', `Task ${data.task_code} assigned to user ${assigned_to_user_id} for party "${party_name}"`);
 
+    // Realtime instant push broadcast to the assigned field executive's mobile device
+    try {
+      const channel = supabase.channel(`crm-field-tasks:${assigned_to_user_id}`);
+      await channel.subscribe();
+      await channel.send({
+        type: 'broadcast',
+        event: 'NEW_FIELD_TASK',
+        payload: {
+          taskId: data.id,
+          taskCode: data.task_code,
+          partyName: party_name,
+          priority: priority,
+          taskType: task_type,
+          scheduledStartTime: scheduled_start_time || new Date().toISOString()
+        }
+      });
+      supabase.removeChannel(channel).catch(() => {});
+    } catch (broadcastErr) {
+      console.warn('[createFieldTask] Non-blocking push broadcast warning:', broadcastErr?.message || broadcastErr);
+    }
+
     return { success: true, task: data };
   } catch (err) {
     console.error('Field task creation exception:', err);

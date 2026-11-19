@@ -1,7 +1,11 @@
 'use client';
 
 import MobileTableView from '@/components/common/MobileTableView';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
+import StandardTablePagination from '@/components/common/StandardTablePagination';
+import { useTableColumnResize, ColumnResizer } from '@/utils/tableColumnResize';
+import { saasDateKey, saasInvoiceTotals, SAAS_INTERNAL_KEYS } from '@/lib/saasBilling';
 import {
   ShieldCheck,
   DollarSign,
@@ -48,6 +52,7 @@ import {
   Phone
 } from 'lucide-react';
 import {
+  getSaasMasterSnapshot,
   getProcessCatalog,
   getCycleDiscounts,
   updateProcessRate,
@@ -76,14 +81,55 @@ import {
 } from '@/app/actions/saasSubscription';
 import PlanPricingCalculator from './PlanPricingCalculator';
 
-export default function SuperAdminSaasPanel({ initialTab = 'pricing', activeSubTab, onSubTabChange }) {
-  const [activeTab, setActiveTab] = useState(activeSubTab || initialTab || 'pricing'); // 'pricing' | 'tenants'
 
-  useEffect(() => {
-    if (activeSubTab && activeSubTab !== activeTab) {
-      setActiveTab(activeSubTab);
+export function SaasDataTable({ id, children, paginate = true }) {
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(() => {
+    try { const size = JSON.parse(localStorage.getItem('crmPageNavSettings') || '{}').defaultPageSize; return size === 'All' ? 100000 : (Number(size) || 25); } catch { return 25; }
+  });
+  const table = React.Children.only(children);
+  const sections = React.Children.toArray(table.props.children);
+  const head = sections.find(section => section.type === 'thead');
+  const headerRow = React.Children.toArray(head?.props.children)[0];
+  const headers = React.Children.toArray(headerRow?.props.children);
+  const defaults = Object.fromEntries(headers.map((header, index) => [String(index), Number(header.props.style?.width) || 180]));
+  const { colWidths, resizingCol, handleResizeStart, resetColWidth } = useTableColumnResize('saas-columns:' + id, defaults);
+  const body = sections.find(section => section.type === 'tbody');
+  const rows = React.Children.toArray(body?.props.children);
+  const empty = rows.length === 1 && React.Children.toArray(rows[0]?.props.children).some(cell => cell.props?.colSpan > 1);
+  const total = empty ? 0 : rows.length;
+  const currentPage = Math.min(page, Math.max(1, Math.ceil(total / pageSize)));
+  const changeSize = useCallback(size => { setPageSize(size); setPage(1); }, []);
+  const rendered = React.cloneElement(table, { style: { ...table.props.style, tableLayout: 'fixed', minWidth: Object.values(colWidths).reduce((a,b) => a+b,0) } }, sections.map(section => {
+    if (section.type === 'thead') return React.cloneElement(section, { style: { ...section.props.style, position:'sticky', top:0, zIndex:10 } }, React.cloneElement(headerRow, {}, headers.map((header,index) => React.cloneElement(header, { key:index, style:{...header.props.style, width:colWidths[String(index)], minWidth:70, position:'sticky', top:0, zIndex:10, backgroundColor:'var(--bg-surface)', boxShadow:'inset 0 -1px 0 var(--border-light)' } }, header.props.children, <ColumnResizer colKey={String(index)} isResizing={resizingCol===String(index)} onResizeStart={handleResizeStart} onReset={resetColWidth} />))));
+    if (section.type === 'tbody' && paginate && !empty) return React.cloneElement(section, {}, rows.slice((currentPage-1)*pageSize,currentPage*pageSize));
+    return section;
+  }));
+  return <div data-saas-table={id}>
+    <div style={{overflow:'auto',maxHeight:'calc(100vh - 310px)',minHeight:paginate?'380px':undefined}}>
+      <MobileTableView id={'SaaS/'+id}>{rendered}</MobileTableView>
+    </div>
+    {paginate && <StandardTablePagination currentPage={currentPage} totalRecords={total} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={changeSize} />}
+  </div>;
+}
+
+export default function SuperAdminSaasPanel({ initialTab = 'pricing', activeSubTab, onSubTabChange }) {
+  const router = useRouter();
+  const [localTab, setActiveTab] = useState(initialTab || 'pricing');
+  const activeTab = activeSubTab || localTab;
+  const operationRequests = useRef(new Map());
+  const operationBusy = useRef(new Set());
+  const requestFor = (operation, details) => {
+    const fingerprint = operation + ':' + JSON.stringify(details);
+    if (!operationRequests.current.has(fingerprint)) {
+      let key;
+      try { key = sessionStorage.getItem('saas-request:' + fingerprint); } catch { /* Storage is optional. */ }
+      key = key || crypto.randomUUID();
+      operationRequests.current.set(fingerprint,key);
+      try { sessionStorage.setItem('saas-request:' + fingerprint,key); } catch { /* The in-memory key still protects retries. */ }
     }
-  }, [activeSubTab]);
+    return operationRequests.current.get(fingerprint);
+  }; // 'pricing' | 'tenants'
 
   const handleTabSwitch = (tab) => {
     setActiveTab(tab);
@@ -247,7 +293,7 @@ export default function SuperAdminSaasPanel({ initialTab = 'pricing', activeSubT
     const impersonateUrl = `/?view_as=${encodeURIComponent(targetUser.user_id)}`;
     const newTab = window.open(impersonateUrl, '_blank');
     if (!newTab || newTab.closed || typeof newTab.closed === 'undefined') {
-      window.location.href = impersonateUrl;
+      router.push(impersonateUrl);
     }
     setTimeout(() => {
       setLaunchingUserId(null);
@@ -288,12 +334,9 @@ export default function SuperAdminSaasPanel({ initialTab = 'pricing', activeSubT
   const loadData = async () => {
     setLoading(true);
     try {
-      const [catRes, cycleRes, tenantsRes, masterInvRes] = await Promise.all([
-        getProcessCatalog(),
-        getCycleDiscounts(),
-        getAllTenantsWithSubscriptions(),
-        getAllMasterInvoices()
-      ]);
+      const snapshot = await getSaasMasterSnapshot();
+      if (!snapshot.success) throw new Error(snapshot.error);
+      const [catRes, cycleRes, tenantsRes, masterInvRes] = snapshot.data;
 
       if (catRes.success) {
         setCatalog(catRes.catalog || []);
@@ -322,6 +365,7 @@ export default function SuperAdminSaasPanel({ initialTab = 'pricing', activeSubT
       }
     } catch (err) {
       console.error('Failed to load SaaS admin data:', err);
+      setStatusMessage({text:err.message||'SaaS data could not be loaded. Please retry.',isError:true});
     } finally {
       setLoading(false);
     }
@@ -331,12 +375,9 @@ export default function SuperAdminSaasPanel({ initialTab = 'pricing', activeSubT
     let isMounted = true;
     const initData = async () => {
       try {
-        const [catRes, cycleRes, tenantsRes, masterInvRes] = await Promise.all([
-          getProcessCatalog(),
-          getCycleDiscounts(),
-          getAllTenantsWithSubscriptions(),
-          getAllMasterInvoices()
-        ]);
+        const snapshot = await getSaasMasterSnapshot();
+      if (!snapshot.success) throw new Error(snapshot.error);
+      const [catRes, cycleRes, tenantsRes, masterInvRes] = snapshot.data;
 
         if (!isMounted) return;
 
@@ -367,6 +408,7 @@ export default function SuperAdminSaasPanel({ initialTab = 'pricing', activeSubT
         }
       } catch (err) {
         console.error('Failed to load SaaS admin data:', err);
+      setStatusMessage({text:err.message||'SaaS data could not be loaded. Please retry.',isError:true});
       } finally {
         if (isMounted) setLoading(false);
       }
@@ -391,6 +433,7 @@ export default function SuperAdminSaasPanel({ initialTab = 'pricing', activeSubT
       const res = await updateProcessRate(processCode, rate);
       if (res.success) {
         showNotification(res.message);
+        setCatalog(current => current.map(item => item.process_code === processCode ? {...item,monthly_rate_per_user:rate} : item));
       } else {
         showNotification(res.error || 'Failed to update process rate', true);
       }
@@ -412,6 +455,7 @@ export default function SuperAdminSaasPanel({ initialTab = 'pricing', activeSubT
       const res = await updateCycleDiscount(cycleCode, disc);
       if (res.success) {
         showNotification(res.message);
+        setCycles(current => current.map(cycle => cycle.cycle_code === cycleCode ? {...cycle,discount_percent:disc} : cycle));
       } else {
         showNotification(res.error, true);
       }
@@ -444,15 +488,14 @@ export default function SuperAdminSaasPanel({ initialTab = 'pricing', activeSubT
     const currSeats = tenant.user_seat_limit || 5;
     const addSeats = Math.max(0, targetSeats - currSeats);
     const sub = tenant.subscription;
-    const expiry = sub?.valid_until ? new Date(sub.valid_until) : new Date(Date.now() + 30 * 86400000);
-    const daysRemaining = Math.max(1, Math.ceil((expiry.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+    const daysRemaining = Math.max(0, Number(sub?.days_remaining) || 0);
 
     let monthlyRatePerUser = 0;
     (tenant.entitlements || []).forEach(m => {
       const mod = catalog.find(c => c.process_code === m);
-      monthlyRatePerUser += (mod?.monthly_rate_per_user || 99);
+      monthlyRatePerUser += (tenant.module_rates?.[m] ?? mod?.monthly_rate_per_user ?? 0);
     });
-    if (monthlyRatePerUser === 0) monthlyRatePerUser = 299;
+
 
     if (mode === 'SAME_EXPIRY') {
       return Math.round(addSeats * monthlyRatePerUser * (daysRemaining / 30));
@@ -500,97 +543,96 @@ export default function SuperAdminSaasPanel({ initialTab = 'pricing', activeSubT
   };
 
   const handleUpdateSeats = async () => {
-    if (!seatModalTenant) return;
-    try {
-      const res = await updateTenantSeats(seatModalTenant.id, newSeatValue);
-      if (res.success) {
-        showNotification(res.message);
-        setSeatModalTenant(null);
-        await loadData();
-      } else {
-        showNotification(res.error, true);
-      }
-    } catch (err) {
-      showNotification(err.message, true);
-    }
-  };
+  if (!seatModalTenant || operationBusy.current.has('seats')) return;
+  operationBusy.current.add('seats');
+  setProcessingSeats(true);
+  try {
+    const res = await updateTenantSeats(seatModalTenant.id, newSeatValue, requestFor('quick-seats', [seatModalTenant.id, newSeatValue, seatModalTenant.user_seat_limit]));
+    if (!res.success) throw new Error(res.error);
+    showNotification(res.message);
+    setSeatModalTenant(null);
+    await loadData();
+  } catch (err) {
+    showNotification(err.message, true);
+  } finally {
+    operationBusy.current.delete('seats');
+    setProcessingSeats(false);
+  }
+};
 
   const handleProcessDowngradeSeats = async () => {
-    if (!seatModalTenant) return;
-    const currSeats = seatModalTenant.user_seat_limit || 5;
-    const targetSeats = parseInt(newSeatValue, 10) || 1;
-    const excessUsers = Math.max(0, tenantActiveUsers.length - targetSeats);
+  if (!seatModalTenant || operationBusy.current.has('seats')) return;
+  const excess = Math.max(0, tenantActiveUsers.length - Number(newSeatValue));
+  if (selectedHoldUserIds.length < excess) {
+    showNotification('Select enough eligible users for HOLD.', true);
+    return;
+  }
+  operationBusy.current.add('seats');
+  setProcessingDowngrade(true);
+  try {
+    const details = {
+      tenantId: seatModalTenant.id,
+      currentSeats: seatModalTenant.user_seat_limit,
+      newSeats: Number(newSeatValue),
+      holdUserIds: [...selectedHoldUserIds].sort(),
+      reason: downgradeReason
+    };
+    const res = await reduceTenantSeatsAndHoldUsers({
+      ...details,
+      requestId: requestFor('downgrade', details)
+    });
+    if (!res.success) throw new Error(res.error);
+    showNotification(res.message);
+    setSeatModalTenant(null);
+    setSelectedHoldUserIds([]);
+    await loadData();
+  } catch (err) {
+    showNotification(err.message, true);
+  } finally {
+    operationBusy.current.delete('seats');
+    setProcessingDowngrade(false);
+  }
+};
 
-    if (excessUsers > 0 && selectedHoldUserIds.length < excessUsers) {
-      showNotification(`कृपया कम से कम ${excessUsers} users को HOLD करने के लिए सेलेक्ट करें!`, true);
-      return;
-    }
-
-    setProcessingDowngrade(true);
-    try {
-      const res = await reduceTenantSeatsAndHoldUsers({
-        tenantId: seatModalTenant.id,
-        currentSeats: currSeats,
-        newSeats: targetSeats,
-        holdUserIds: selectedHoldUserIds,
-        reason: downgradeReason
-      });
-
-      if (res.success) {
-        showNotification(res.message);
-        setSeatModalTenant(null);
-        setSelectedHoldUserIds([]);
-        setDowngradeReason('');
-        await loadData();
-      } else {
-        showNotification(res.error, true);
-      }
-    } catch (err) {
-      showNotification(err.message, true);
-    } finally {
-      setProcessingDowngrade(false);
-    }
-  };
-
-  const handleProcessAddonSeats = async (invType) => {
-    if (!seatModalTenant) return;
-    setProcessingSeats(true);
-    try {
-      const currSeats = seatModalTenant.user_seat_limit || 5;
-      const targetSeats = parseInt(newSeatValue, 10) || currSeats;
-      const res = await processAddonSeatsAndInvoice({
-        tenantId: seatModalTenant.id,
-        currentSeats: currSeats,
-        newSeats: targetSeats,
-        billingMode: seatBillingMode,
-        monthsToAdd: seatExtendMonths,
-        dealPrice: seatDealPrice,
-        invoiceType: invType,
-        paymentMode: seatPaymentMode,
-        transactionId: seatTransactionId,
-        gstType: seatGstType
-      });
-
-      if (res.success) {
-        showNotification(res.message);
-        const tenantCopy = { ...seatModalTenant, user_seat_limit: res.newSeatLimit };
-        setSeatModalTenant(null);
-        await loadData();
-
-        // Open generated invoice modal
-        setActiveInvoiceData(res.invoice);
-        setInvoiceTenant(tenantCopy);
-        setInvoiceType(invType);
-        setInvoiceGstMode(seatGstType);
-      } else {
-        showNotification(res.error, true);
-      }
-    } catch (err) {
-      showNotification(err.message, true);
-    } finally {
-      setProcessingSeats(false);
-    }
-  };
+  const handleProcessAddonSeats = async invType => {
+  if (!seatModalTenant || operationBusy.current.has('seats')) return;
+  operationBusy.current.add('seats');
+  setProcessingSeats(true);
+  try {
+    const details = {
+      tenantId: seatModalTenant.id,
+      currentSeats: seatModalTenant.user_seat_limit,
+      newSeats: Number(newSeatValue),
+      billingMode: seatBillingMode,
+      monthsToAdd: seatExtendMonths,
+      dealPrice: seatDealPrice,
+      invoiceType: invType,
+      paymentMode: seatPaymentMode,
+      transactionId: seatTransactionId,
+      gstType: seatGstType
+    };
+    const res = await processAddonSeatsAndInvoice({
+      ...details,
+      requestId: requestFor('addon', details)
+    });
+    if (!res.success) throw new Error(res.error);
+    showNotification(res.message);
+    setSeatModalTenant(null);
+    await loadData();
+    setActiveInvoiceData(res.invoice);
+    setInvoiceTenant({
+      ...seatModalTenant,
+      user_seat_limit: res.newSeatLimit
+    });
+    setInvoiceType(invType);
+    setInvoiceGstMode(res.invoice.gst_type);
+  } catch (err) {
+    showNotification(err.message, true);
+  } finally {
+    operationBusy.current.delete('seats');
+    setProcessingSeats(false);
+  }
+};
 
   const handleOpenBillingHistory = async (t) => {
     setHistoryModalTenant(t);
@@ -617,6 +659,7 @@ export default function SuperAdminSaasPanel({ initialTab = 'pricing', activeSubT
     setInvoiceTenant(historyModalTenant);
     setInvoiceType(inv.invoice_type || (inv.status === 'PAID' ? 'tax_invoice' : 'proforma'));
     setInvoiceGstMode(inv.gst_type || (inv.tax_amount === 0 ? 'NON_GST' : 'IGST'));
+    setPayAmount(inv.amount ?? 0);
   };
 
   const handleShareWhatsApp = (inv, tenant) => {
@@ -654,12 +697,15 @@ Thank you for choosing New Swan CRM!`;
   };
 
   const handleCreateClientWorkspace = async (planData, isDraft = false) => {
+    if (operationBusy.current.has('create')) return;
+    operationBusy.current.add('create');
     setCreateLoading(true);
     setCreateError(null);
     setCreateSuccess(null);
 
     try {
       const res = await createTenantWorkspace({
+        requestId: requestFor('create', [newCompanyName,newAdminName,newAdminEmail,newAdminMobile,planData,createTrialDays,isDraft]),
         companyName: newCompanyName,
         adminEmail: newAdminEmail,
         adminPassword: newAdminPassword,
@@ -697,13 +743,14 @@ Thank you for choosing New Swan CRM!`;
     } catch (err) {
       setCreateError(err.message || 'An error occurred.');
     } finally {
+      operationBusy.current.delete('create');
       setCreateLoading(false);
     }
   };
 
   const handleOpenModulesModal = (t) => {
     setModulesModalTenant(t);
-    setSelectedModuleKeys(new Set(t.entitlements || []));
+    setSelectedModuleKeys(new Set((t.entitlements || []).filter(key => !SAAS_INTERNAL_KEYS.has(key) && catalog.some(p => p.process_code === key))));
     setSmtpLimitInput(t.smtp_accounts_limit || 1);
   };
 
@@ -814,39 +861,56 @@ Thank you for choosing New Swan CRM!`;
     }
   };
 
-  const handleOpenInvoice = (t, type = 'proforma') => {
-    setActiveInvoiceData(null);
-    setInvoiceGstMode('IGST');
-    setInvoiceTenant(t);
-    setInvoiceType(type);
-    setPayAmount(t.subscription?.amount || 0);
-  };
+  const handleOpenInvoice = (tenant, type = 'proforma') => {
+  setActiveInvoiceData(null);
+  setInvoiceGstMode('IGST');
+  setInvoiceTenant(tenant);
+  setInvoiceType(type === 'tax_invoice' ? 'proforma' : type);
+  setPayAmount(tenant.subscription?.amount ?? 0);
+  setPayMode('UPI');
+  setPayUtr('');
+  setPayMonths(12);
+};
 
   const handleRecordPayment = async () => {
-    if (!invoiceTenant) return;
-    setRecordingPay(true);
-    try {
-      const res = await recordPaymentAndGenerateInvoice({
-        tenantId: invoiceTenant.id,
-        amount: payAmount || invoiceTenant.subscription?.amount || 0,
-        paymentMode: payMode,
-        transactionId: payUtr,
-        months: payMonths,
-        gstType: invoiceGstMode
-      });
-      if (res.success) {
-        showNotification(res.message);
-        await loadData();
-        setInvoiceType('tax_invoice');
-      } else {
-        showNotification(res.error, true);
+  if (!invoiceTenant || operationBusy.current.has('payment')) return;
+  operationBusy.current.add('payment');
+  setRecordingPay(true);
+  try {
+    const details = {
+      tenantId: invoiceTenant.id,
+      amount: payAmount === '' ? invoiceTenant.subscription?.amount ?? 0 : payAmount,
+      paymentMode: payMode,
+      transactionId: payUtr,
+      months: payMonths,
+      gstType: invoiceGstMode,
+      sourceInvoiceNumber: activeInvoiceData?.invoice_type === 'proforma' ? activeInvoiceData.invoice_number : null
+    };
+    const res = await recordPaymentAndGenerateInvoice({
+      ...details,
+      requestId: requestFor('payment', [details, invoiceTenant.subscription?.valid_until])
+    });
+    if (!res.success) throw new Error(res.error);
+    showNotification(res.message);
+    setActiveInvoiceData(res.invoice);
+    setInvoiceGstMode(res.invoice.gst_type);
+    setInvoiceTenant({
+      ...invoiceTenant,
+      subscription: {
+        ...invoiceTenant.subscription,
+        valid_until: res.newExpiry,
+        amount: res.invoice.amount
       }
-    } catch (err) {
-      showNotification(err.message, true);
-    } finally {
-      setRecordingPay(false);
-    }
-  };
+    });
+    setInvoiceType('tax_invoice');
+    await loadData();
+  } catch (err) {
+    showNotification(err.message, true);
+  } finally {
+    operationBusy.current.delete('payment');
+    setRecordingPay(false);
+  }
+};
 
   const handleSoftDelete = async () => {
     if (!deleteConfirmTenant) return;
@@ -900,24 +964,13 @@ Thank you for choosing New Swan CRM!`;
     }
   };
 
-  const handleOpenEditValidity = (t) => {
-    setEditValidityTenant(t);
-    setValidityError(null);
-    let dateStr = '';
-    if (t.subscription?.valid_until) {
-      const d = new Date(t.subscription.valid_until);
-      const year = d.getFullYear();
-      const month = String(d.getMonth() + 1).padStart(2, '0');
-      const day = String(d.getDate()).padStart(2, '0');
-      dateStr = `${year}-${month}-${day}`;
-    } else {
-      const d = new Date();
-      d.setDate(d.getDate() + 7);
-      dateStr = d.toISOString().split('T')[0];
-    }
-    setInputValidityDate(dateStr);
-    setInputValidityStatus(t.status || 'ACTIVE');
-  };
+  const handleOpenEditValidity = tenant => {
+  setEditValidityTenant(tenant);
+  setValidityError(null);
+  const expiry = tenant.subscription?.valid_until || new Date(Date.now() + 7 * 86400000);
+  setInputValidityDate(saasDateKey(expiry));
+  setInputValidityStatus(tenant.raw_status === 'SUSPENDED' ? 'SUSPENDED' : tenant.subscription?.status === 'EXPIRING_SOON' ? 'ACTIVE' : tenant.status || 'ACTIVE');
+};
 
   const handleSaveValidity = async () => {
     if (!editValidityTenant) return;
@@ -979,6 +1032,9 @@ Thank you for choosing New Swan CRM!`;
     }
   };
 
+  const invoiceBase = Number(activeInvoiceData?.amount ?? (payAmount === '' ? invoiceTenant?.subscription?.amount : payAmount)) || 0;
+  const invoiceTotals = saasInvoiceTotals(Math.max(0,invoiceBase),activeInvoiceData?.gst_type || invoiceGstMode,activeInvoiceData);
+
   const activeTenants = tenants.filter(t => t.status !== 'DRAFT' && t.status !== 'DELETED');
   const draftTenants = tenants.filter(t => t.status === 'DRAFT');
   const deletedTenants = tenants.filter(t => t.status === 'DELETED');
@@ -1001,7 +1057,7 @@ Thank you for choosing New Swan CRM!`;
             </span>
           </div>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', margin: '0.3rem 0 0 0' }}>
-            Live product pricing, 8-module catalog, discount rules, and central tenant management
+            Product pricing, module catalog, discount rules, and client workspace management
           </p>
         </div>
 
@@ -1174,7 +1230,7 @@ Thank you for choosing New Swan CRM!`;
             </div>
 
             <div style={{ overflowX: 'auto' }}>
-              <MobileTableView id="SaaS/SuperAdminSaasPanel-1"><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+              <SaasDataTable id="pricing"><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid var(--border-light)', textAlign: 'left', color: 'var(--text-secondary)' }}>
                     <th style={{ padding: '0.75rem 1rem' }}>Code</th>
@@ -1245,7 +1301,7 @@ Thank you for choosing New Swan CRM!`;
                     </tr>
                   ))}
                 </tbody>
-              </table></MobileTableView>
+              </table></SaasDataTable>
             </div>
           </div>
 
@@ -1405,7 +1461,7 @@ Thank you for choosing New Swan CRM!`;
           </div>
 
           <div style={{ overflowX: 'auto' }}>
-            <MobileTableView id="SaaS/SuperAdminSaasPanel-2"><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+            <SaasDataTable id="tenants" key={workspaceSubTab}><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border-light)', textAlign: 'left', color: 'var(--text-secondary)' }}>
                   <th style={{ padding: '0.75rem 1rem' }}>Company / Workspace</th>
@@ -1852,7 +1908,7 @@ Thank you for choosing New Swan CRM!`;
                   </tr>
                 )}
               </tbody>
-            </table></MobileTableView>
+            </table></SaasDataTable>
           </div>
         </div>
       )}
@@ -2019,7 +2075,7 @@ Thank you for choosing New Swan CRM!`;
 
               return (
                 <div style={{ overflowX: 'auto' }}>
-                  <table className="data-table" style={{ width: '100%', fontSize: '0.85rem' }}>
+                  <SaasDataTable id="billing" key={invoiceSearchQuery+":"+invoiceStatusFilter}><table className="data-table" style={{ width: '100%', fontSize: '0.85rem' }}>
                     <thead>
                       <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
                         <th style={{ padding: '0.75rem', textAlign: 'left' }}>Invoice # & Date</th>
@@ -2156,7 +2212,7 @@ Thank you for choosing New Swan CRM!`;
                         })
                       )}
                     </tbody>
-                  </table>
+                  </table></SaasDataTable>
                 </div>
               );
             })()}
@@ -2574,15 +2630,16 @@ Thank you for choosing New Swan CRM!`;
                           </div>
                         ) : (
                           tenantActiveUsers.map((u) => {
-                            const isSelected = selectedHoldUserIds.includes(u.id);
+                            const isSelected = selectedHoldUserIds.includes(u.user_id);
                             return (
                               <div
-                                key={u.id}
+                                key={u.user_id}
                                 onClick={() => {
+                                  if (!u.can_hold) return;
                                   if (isSelected) {
-                                    setSelectedHoldUserIds(selectedHoldUserIds.filter(id => id !== u.id));
+                                    setSelectedHoldUserIds(selectedHoldUserIds.filter(id => id !== u.user_id));
                                   } else {
-                                    setSelectedHoldUserIds([...selectedHoldUserIds, u.id]);
+                                    setSelectedHoldUserIds([...selectedHoldUserIds, u.user_id]);
                                   }
                                 }}
                                 style={{
@@ -2600,15 +2657,16 @@ Thank you for choosing New Swan CRM!`;
                                   <input
                                     type="checkbox"
                                     checked={isSelected}
+                                    disabled={!u.can_hold}
                                     onChange={() => {}}
                                     style={{ cursor: 'pointer', width: '16px', height: '16px' }}
                                   />
                                   <div>
                                     <div style={{ fontSize: '0.84rem', fontWeight: 700, color: isSelected ? '#991b1b' : '#1e293b' }}>
-                                      {u.name || u.full_name || 'Unnamed Employee'}
+                                      {u.emp_name || u.emp_id || 'Employee'}
                                     </div>
                                     <div style={{ fontSize: '0.74rem', color: '#64748b' }}>
-                                      {u.email} {u.mobile_number ? `• ${u.mobile_number}` : ''}
+                                      {u.email || u.emp_official_mail_id} {!u.can_hold ? '• Protected administrator' : ''}
                                     </div>
                                   </div>
                                 </div>
@@ -2883,6 +2941,7 @@ Thank you for choosing New Swan CRM!`;
                     <button
                       type="button"
                       onClick={handleUpdateSeats}
+                      disabled={processingSeats || processingDowngrade}
                       style={{
                         padding: '0.5rem 0.85rem',
                         borderRadius: '6px',
@@ -3153,7 +3212,7 @@ Thank you for choosing New Swan CRM!`;
               </div>
             ) : (
               <div>
-                <PlanPricingCalculator
+                <PlanPricingCalculator catalogOverride={catalog} cyclesOverride={cycles}
                   initialProcessCodes={['LEADS_WITH_CALLING']}
                   initialSeats={5}
                   initialCycle="YEARLY"
@@ -3553,6 +3612,7 @@ Thank you for choosing New Swan CRM!`;
                 <button
                   type="button"
                   onClick={() => setInvoiceType('tax_invoice')}
+                  disabled={!activeInvoiceData || activeInvoiceData.status !== 'PAID'}
                   style={{
                     padding: '0.4rem 0.9rem',
                     borderRadius: '6px',
@@ -3613,7 +3673,7 @@ Thank you for choosing New Swan CRM!`;
                   onClick={() => {
                     setInvoiceTenant(null);
                     setActiveInvoiceData(null);
-                    setShowGstSplit(false);
+
                   }}
                   style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6b7280' }}
                 >
@@ -3734,12 +3794,12 @@ Thank you for choosing New Swan CRM!`;
               </div>
 
               {/* Itemized Table */}
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem', marginBottom: '1.25rem', background: '#fff' }}>
+              <SaasDataTable id="invoice" paginate={false}><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem', marginBottom: '1.25rem', background: '#fff' }}>
                 <thead>
                   <tr style={{ background: '#f3f4f6', borderBottom: '1px solid #d1d5db', textAlign: 'left' }}>
                     <th style={{ padding: '0.6rem 0.75rem' }}>Item / Module Description</th>
                     <th style={{ padding: '0.6rem 0.75rem', textAlign: 'center' }}>Seats</th>
-                    <th style={{ padding: '0.6rem 0.75rem', textAlign: 'right' }}>Monthly Rate</th>
+                    <th style={{ padding: '0.6rem 0.75rem', textAlign: 'right' }}>Agreed Amount</th>
                     <th style={{ padding: '0.6rem 0.75rem', textAlign: 'right' }}>Total</th>
                   </tr>
                 </thead>
@@ -3751,13 +3811,13 @@ Thank you for choosing New Swan CRM!`;
                           {activeInvoiceData.description || 'Add-on User Seats Expansion'}
                         </div>
                         <div style={{ fontSize: '0.73rem', color: '#6b7280', marginTop: '2px' }}>
-                          {activeInvoiceData.billing_mode === 'EXTEND_VALIDITY'
+                          {activeInvoiceData.category === 'RENEWAL_PAYMENT' ? 'Subscription renewal for ' + activeInvoiceData.months_added + ' months' : activeInvoiceData.billing_mode === 'EXTEND_VALIDITY'
                             ? `Seat limit expansion (+${activeInvoiceData.additional_seats} seats) with ${activeInvoiceData.months_added || 12} months validity extension`
                             : `Coterminous prorated seat expansion (+${activeInvoiceData.additional_seats} seats, valid till current contract expiry)`}
                         </div>
                       </td>
                       <td style={{ padding: '0.65rem 0.75rem', textAlign: 'center', fontWeight: 700, color: '#2563eb' }}>
-                        +{activeInvoiceData.additional_seats || 0} Seats
+                        {activeInvoiceData.category === 'RENEWAL_PAYMENT' ? activeInvoiceData.total_seats : (activeInvoiceData.additional_seats > 0 ? '+' : '') + (activeInvoiceData.additional_seats || 0)} Seats
                       </td>
                       <td style={{ padding: '0.65rem 0.75rem', textAlign: 'right' }}>
                         ₹{Number(activeInvoiceData.amount || 0).toLocaleString('en-IN')}
@@ -3767,25 +3827,10 @@ Thank you for choosing New Swan CRM!`;
                       </td>
                     </tr>
                   ) : (
-                    invoiceTenant.entitlements.map(modKey => {
-                      const modObj = catalog.find(c => c.process_code === modKey);
-                      const rate = modObj?.monthly_rate_per_user || 99;
-                      const seats = invoiceTenant.user_seat_limit || 5;
-                      return (
-                        <tr key={modKey} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                          <td style={{ padding: '0.55rem 0.75rem' }}>
-                            <div style={{ fontWeight: 600 }}>{modObj?.display_name || modKey}</div>
-                            <div style={{ fontSize: '0.72rem', color: '#6b7280' }}>{modObj?.description}</div>
-                          </td>
-                          <td style={{ padding: '0.55rem 0.75rem', textAlign: 'center' }}>{seats}</td>
-                          <td style={{ padding: '0.55rem 0.75rem', textAlign: 'right' }}>₹{rate}</td>
-                          <td style={{ padding: '0.55rem 0.75rem', textAlign: 'right', fontWeight: 600 }}>₹{rate * seats}</td>
-                        </tr>
-                      );
-                    })
+                    <tr style={{borderBottom:'1px solid #f3f4f6'}}><td style={{padding:'0.65rem 0.75rem'}}>Subscription renewal ({payMonths} months)<div style={{fontSize:'0.72rem',color:'#6b7280'}}>{(invoiceTenant.entitlements || []).map(key => catalog.find(p => p.process_code === key)?.display_name).filter(Boolean).join(', ')}</div></td><td style={{padding:'0.65rem 0.75rem',textAlign:'center'}}>{invoiceTenant.user_seat_limit || 5}</td><td style={{padding:'0.65rem 0.75rem',textAlign:'right'}}>₹{invoiceTotals.amount.toLocaleString('en-IN')}</td><td style={{padding:'0.65rem 0.75rem',textAlign:'right'}}>₹{invoiceTotals.amount.toLocaleString('en-IN')}</td></tr>
                   )}
                 </tbody>
-              </table>
+              </table></SaasDataTable>
 
               {/* Totals & Bank Details */}
               <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '1rem', fontSize: '0.8rem' }}>
@@ -3806,6 +3851,7 @@ Thank you for choosing New Swan CRM!`;
                     <span style={{ fontSize: '0.73rem', fontWeight: 700, color: '#475569' }}>Billing Mode:</span>
                     <select
                       value={invoiceGstMode}
+                      disabled={!!activeInvoiceData}
                       onChange={(e) => setInvoiceGstMode(e.target.value)}
                       style={{
                         padding: '2px 8px',
@@ -3826,7 +3872,7 @@ Thank you for choosing New Swan CRM!`;
 
                   <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0' }}>
                     <span style={{ color: '#6b7280' }}>Subtotal:</span>
-                    <span>₹{(activeInvoiceData ? Number(activeInvoiceData.amount || 0) : Number(invoiceTenant.subscription?.amount || 0)).toLocaleString('en-IN')}</span>
+                    <span>₹{invoiceTotals.amount.toLocaleString('en-IN')}</span>
                   </div>
 
                   {invoiceGstMode === 'NON_GST' ? (
@@ -3838,29 +3884,24 @@ Thank you for choosing New Swan CRM!`;
                     <>
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0', fontSize: '0.78rem' }}>
                         <span style={{ color: '#6b7280' }}>CGST (9% Intra-state):</span>
-                        <span>₹{Math.round((activeInvoiceData ? Number(activeInvoiceData.amount || 0) : Number(invoiceTenant.subscription?.amount || 0)) * 0.09).toLocaleString('en-IN')}</span>
+                        <span>₹{invoiceTotals.cgst.toLocaleString('en-IN')}</span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0', fontSize: '0.78rem' }}>
                         <span style={{ color: '#6b7280' }}>SGST (9% Intra-state):</span>
-                        <span>₹{Math.round((activeInvoiceData ? Number(activeInvoiceData.amount || 0) : Number(invoiceTenant.subscription?.amount || 0)) * 0.09).toLocaleString('en-IN')}</span>
+                        <span>₹{invoiceTotals.sgst.toLocaleString('en-IN')}</span>
                       </div>
                     </>
                   ) : (
                     <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0' }}>
                       <span style={{ color: '#6b7280' }}>IGST (18% Inter-state):</span>
-                      <span>₹{(activeInvoiceData?.tax_amount != null && activeInvoiceData.gst_type !== 'NON_GST' ? Number(activeInvoiceData.tax_amount) : Math.round((activeInvoiceData ? Number(activeInvoiceData.amount || 0) : Number(invoiceTenant.subscription?.amount || 0)) * 0.18)).toLocaleString('en-IN')}</span>
+                      <span>₹{(invoiceTotals.tax_amount).toLocaleString('en-IN')}</span>
                     </div>
                   )}
 
                   <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderTop: '2px solid #111827', marginTop: '4px', fontWeight: 800, fontSize: '0.95rem', color: '#1e1b4b' }}>
                     <span>Grand Total:</span>
                     <span>
-                      ₹{(invoiceGstMode === 'NON_GST'
-                        ? (activeInvoiceData ? Number(activeInvoiceData.amount || 0) : Number(invoiceTenant.subscription?.amount || 0))
-                        : (activeInvoiceData?.total_payable != null && activeInvoiceData.gst_type !== 'NON_GST'
-                          ? Number(activeInvoiceData.total_payable)
-                          : Math.round((activeInvoiceData ? Number(activeInvoiceData.amount || 0) : Number(invoiceTenant.subscription?.amount || 0)) * 1.18)
-                        )
+                      ₹{(invoiceTotals.total_payable
                       ).toLocaleString('en-IN')}
                     </span>
                   </div>
@@ -3869,7 +3910,7 @@ Thank you for choosing New Swan CRM!`;
             </div>
 
             {/* Offline Payment Confirmation Form for Super Admin */}
-            {invoiceType === 'proforma' && (
+            {invoiceType === 'proforma' && (!activeInvoiceData || activeInvoiceData.status === 'PENDING') && (
               <div style={{ marginTop: '1.25rem', padding: '1rem', background: '#ecfdf5', borderRadius: '8px', border: '1px solid #a7f3d0' }}>
                 <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', color: '#065f46', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
                   <Sparkles size={16} /> Mark Payment Received & Generate Official Tax Invoice
@@ -3880,6 +3921,7 @@ Thank you for choosing New Swan CRM!`;
                     <input
                       type="number"
                       value={payAmount}
+                      disabled={!!activeInvoiceData}
                       onChange={(e) => setPayAmount(e.target.value)}
                       placeholder="Amount"
                       style={{ width: '100%', padding: '0.4rem 0.6rem', borderRadius: '6px', border: '1px solid #6ee7b7', fontSize: '0.85rem' }}
@@ -3978,7 +4020,7 @@ Thank you for choosing New Swan CRM!`;
                 No invoices generated yet for this workspace.
               </div>
             ) : (
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+              <SaasDataTable id="history"><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
                 <thead>
                   <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', textAlign: 'left' }}>
                     <th style={{ padding: '0.6rem 0.75rem' }}>Date</th>
@@ -4057,7 +4099,7 @@ Thank you for choosing New Swan CRM!`;
                     );
                   })}
                 </tbody>
-              </table>
+              </table></SaasDataTable>
             )}
 
             <div style={{ marginTop: '1.5rem', display: 'flex', justifyContent: 'flex-end' }}>
@@ -4307,7 +4349,7 @@ Thank you for choosing New Swan CRM!`;
                   onClick={() => {
                     const d = new Date();
                     d.setDate(d.getDate() + preset.days);
-                    setInputValidityDate(d.toISOString().split('T')[0]);
+                    setInputValidityDate(saasDateKey(d));
                   }}
                   style={{
                     padding: '0.4rem 0.5rem',
@@ -4690,7 +4732,7 @@ Thank you for choosing New Swan CRM!`;
                 }
 
                 return (
-                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
+                  <SaasDataTable id="impersonation"><table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
                     <thead style={{ backgroundColor: 'var(--th-bg, #f8fafc)', position: 'sticky', top: 0, zIndex: 1 }}>
                       <tr style={{ borderBottom: '1px solid var(--border-light)' }}>
                         <th style={{ padding: '0.65rem 0.85rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Employee / User</th>
@@ -4793,7 +4835,7 @@ Thank you for choosing New Swan CRM!`;
                         );
                       })}
                     </tbody>
-                  </table>
+                  </table></SaasDataTable>
                 );
               })()}
             </div>

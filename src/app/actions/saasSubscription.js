@@ -3,6 +3,10 @@
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import fs from 'fs/promises';
 import path from 'path';
+import { randomUUID } from 'node:crypto';
+import { formatBranchStandard } from '@/utils/branchAccess';
+import { requireSaasMaster, requireSaasTenant, userBelongsToSaasTenant, isSaasUserActive, SAAS_UUID } from '@/lib/saasAccess';
+import { saasNumber, saasEndOfDay, saasAddMonths, calculateSaasPrice, SAAS_CYCLE_MONTHS, SAAS_INTERNAL_KEYS } from '@/lib/saasBilling';
 import {
   DEFAULT_TENANT_ID,
   DEFAULT_PROCESS_CATALOG,
@@ -37,29 +41,14 @@ function isValidUuid(val) {
 }
 
 async function resolveSaasTenantUuid(admin, tenantId) {
-  if (!tenantId) return DEFAULT_TENANT_ID;
-  const raw = String(tenantId).trim();
-  if (!raw || raw.toLowerCase() === 'undefined' || raw.toLowerCase() === 'null') return DEFAULT_TENANT_ID;
+  const raw = String(tenantId || '').trim();
   if (isValidUuid(raw)) return raw;
-
-  const lower = raw.toLowerCase();
-  if (lower.includes('supuja') || lower === 'tnt00001') return '0a37b8e8-1c28-4e19-8891-951fc3f8f8af';
-  if (lower.includes('testing') || lower === 'tnt00003') return '922d3e72-6588-457f-a562-4f1bdbf10d98';
-  if (lower.includes('swan') || lower.includes('nsmlr') || lower.includes('nstl') || lower === 'tnt00002' || lower === 'default') {
-    return DEFAULT_TENANT_ID;
-  }
-
-  try {
-    const { data: row } = await admin
-      .from('tenants')
-      .select('id')
-      .or(`tenant_code.eq.${raw.toUpperCase()},name.ilike.${raw}`)
-      .limit(1)
-      .maybeSingle();
-    if (row?.id && isValidUuid(row.id)) return row.id;
-  } catch (_) {}
-
-  return DEFAULT_TENANT_ID;
+  if (!raw || /[(),]/.test(raw)) throw new Error('A valid workspace is required.');
+  const { data, error } = await admin.from('tenants').select('id, name, tenant_code');
+  if (error) throw error;
+  const matches = (data || []).filter(t => [t.name, t.tenant_code].some(value => String(value || '').trim().toLowerCase() === raw.toLowerCase()));
+  if (matches.length !== 1) throw new Error('Workspace could not be resolved uniquely.');
+  return matches[0].id;
 }
 
 const getAdminClient = () => {
@@ -74,19 +63,21 @@ const CONFIG_ENTITLEMENT_KEY = 'SAAS_PRICING_CONFIG';
 /**
  * Fetch dynamic pricing config from DB or fallback
  */
-async function getDynamicConfig(adminClient) {
+async function getDynamicConfig(adminClient, strict = false) {
   try {
-    const { data } = await adminClient
+    const { data, error } = await adminClient
       .from('tenant_entitlements')
       .select('config_json')
       .eq('tenant_id', DEFAULT_TENANT_ID)
       .eq('module_key', CONFIG_ENTITLEMENT_KEY)
       .maybeSingle();
 
+    if (error) throw error;
     if (data?.config_json) {
       return data.config_json;
     }
   } catch (err) {
+    if (strict) throw err;
     console.warn('getDynamicConfig fallback notice:', err.message);
   }
   return null;
@@ -162,15 +153,18 @@ export async function addNewProcessModule({
 }) {
   try {
     const admin = getAdminClient();
+    await requireSaasMaster(admin);
     if (!processCode || !displayName) {
       throw new Error('Module Code और Display Name आवश्यक हैं।');
     }
 
     const cleanCode = String(processCode).trim().toUpperCase().replace(/[^A-Z0-9_]/g, '_');
     const cleanName = String(displayName).trim();
-    const rate = Math.max(0, Number(monthlyRate) || 0);
+    if (!cleanName || !/^[A-Z][A-Z0-9_]{1,63}$/.test(cleanCode) || SAAS_INTERNAL_KEYS.has(cleanCode)) throw new Error('Choose a valid business module code and name.');
+    if (DEFAULT_PROCESS_CATALOG.some(p => p.process_code === cleanCode)) throw new Error('This module already exists. Use its rate editor.');
+    const rate = saasNumber(monthlyRate, 'Monthly rate');
 
-    const config = (await getDynamicConfig(admin)) || {};
+    const config = (await getDynamicConfig(admin, true)) || {};
     const customModules = config.custom_modules || [];
     const rates = config.rates || {};
 
@@ -244,40 +238,57 @@ export async function getCycleDiscounts() {
 /**
  * Calculate dynamic plan pricing
  */
-export async function calculatePlanPrice({ processCodes = [], userSeats = 1, cycleCode = 'MONTHLY', tenantId = null }) {
+export async function calculatePlanPrice({
+  processCodes = [],
+  userSeats = 1,
+  cycleCode = 'MONTHLY',
+  tenantId = null
+}) {
   try {
-    const { catalog } = await getProcessCatalog(tenantId);
-    const { cycles } = await getCycleDiscounts();
-
-    const selectedItems = catalog.filter(p => processCodes.includes(p.process_code) && p.is_active);
-    const ratePerSeatMonthly = selectedItems.reduce((acc, p) => acc + Number(p.monthly_rate_per_user || 0), 0);
-
-    const cycleInfo = cycles.find(c => c.cycle_code === cycleCode) || cycles[0];
-    const months = cycleInfo.months_count || 1;
-    const discountPercent = cycleInfo.discount_percent || 0;
-
-    const seats = Math.max(1, parseInt(userSeats, 10) || 1);
-    const monthlyTotal = ratePerSeatMonthly * seats;
-    const grossTotal = monthlyTotal * months;
-    const discountAmount = Math.round((grossTotal * (discountPercent / 100)) * 100) / 100;
-    const finalAmount = Math.max(0, Math.round((grossTotal - discountAmount) * 100) / 100);
-
+    const {
+      success,
+      catalog,
+      error
+    } = await getProcessCatalog(tenantId);
+    if (!success) throw new Error(error || 'Pricing unavailable.');
+    const {
+      cycles
+    } = await getCycleDiscounts();
+    const cycle = cycles.find(c => c.cycle_code === cycleCode);
+    if (!cycle) throw new Error('Invalid billing cycle.');
+    const codes = [...new Set(processCodes)];
+    const items = catalog.filter(p => codes.includes(p.process_code) && p.is_active !== false && !SAAS_INTERNAL_KEYS.has(p.process_code));
+    if (!codes.length || items.length !== codes.length) throw new Error('Choose valid active modules.');
+    if (codes.includes('LEADS_WITH_CALLING') && codes.some(c => ['LEADS_ONLY', 'CALLING_STANDALONE'].includes(c))) throw new Error('Choose the CRM combo or standalone modules, not both.');
+    const seats = saasNumber(userSeats, 'Seats', {
+      min: 1,
+      max: 100000,
+      integer: true
+    });
+    const price = calculateSaasPrice({
+      items,
+      seats,
+      months: cycle.months_count,
+      discountPercent: cycle.discount_percent
+    });
     return {
       success: true,
-      selected_count: selectedItems.length,
+      selected_count: items.length,
       seats,
-      cycle_code: cycleInfo.cycle_code,
-      months,
-      discount_percent: discountPercent,
-      rate_per_seat_monthly: ratePerSeatMonthly,
-      monthly_total: monthlyTotal,
-      gross_total: grossTotal,
-      discount_amount: discountAmount,
-      final_amount: finalAmount
+      cycle_code: cycle.cycle_code,
+      months: cycle.months_count,
+      discount_percent: cycle.discount_percent,
+      rate_per_seat_monthly: price.rate,
+      monthly_total: price.rate * seats,
+      gross_total: price.gross,
+      discount_amount: price.discountAmount,
+      final_amount: price.amount
     };
   } catch (err) {
-    console.error('calculatePlanPrice error:', err);
-    return { success: false, error: err.message };
+    return {
+      success: false,
+      error: err.message
+    };
   }
 }
 
@@ -287,68 +298,37 @@ export async function calculatePlanPrice({ processCodes = [], userSeats = 1, cyc
 export async function getTenantSubscription(tenantId = DEFAULT_TENANT_ID) {
   try {
     const admin = getAdminClient();
-    const targetTenantId = await resolveSaasTenantUuid(admin, tenantId);
-
-    const { data: sub, error } = await admin
-      .from('tenant_subscriptions')
-      .select('*')
-      .eq('tenant_id', targetTenantId)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (error || !sub) {
-      // Safe fallback for New Swan Group
-      if (targetTenantId === DEFAULT_TENANT_ID) {
-        return {
-          success: true,
-          subscription: {
-            tenant_id: DEFAULT_TENANT_ID,
-            plan_name: 'ENTERPRISE_ALL_MODULES',
-            user_seat_limit: 200,
-            valid_from: '2026-10-01T00:00:00+05:30',
-            valid_until: '2027-10-01T23:59:59+05:30',
-            status: 'ACTIVE',
-            days_remaining: 354,
-            is_expiring_soon: false,
-            is_expired: false
-          }
-        };
-      }
-      return { success: false, error: 'Subscription not found', subscription: null };
-    }
-
-    const now = new Date();
-    const expiry = new Date(sub.valid_until);
-    const msDiff = expiry.getTime() - now.getTime();
-    const daysRemaining = Math.ceil(msDiff / (1000 * 60 * 60 * 24));
-    const isExpired = daysRemaining <= 0;
-    const isExpiringSoon = daysRemaining > 0 && daysRemaining <= 7;
-
+    const target = await resolveSaasTenantUuid(admin, tenantId);
+    await requireSaasTenant(admin, target);
+    const {
+      data: sub,
+      error
+    } = await admin.from('tenant_subscriptions').select('*').eq('tenant_id', target).order('created_at', {
+      ascending: false
+    }).limit(1).maybeSingle();
+    if (error) throw error;
+    if (!sub) return {
+      success: false,
+      error: 'Subscription not found',
+      subscription: null
+    };
+    const ms = new Date(sub.valid_until).getTime() - Date.now();
+    const days = Math.ceil(ms / 86400000);
     return {
       success: true,
       subscription: {
         ...sub,
-        days_remaining: daysRemaining,
-        is_expiring_soon: isExpiringSoon,
-        is_expired: isExpired,
-        status: isExpired ? 'EXPIRED' : (isExpiringSoon ? 'EXPIRING_SOON' : sub.status || 'ACTIVE')
+        days_remaining: days,
+        is_expired: ms <= 0,
+        is_expiring_soon: ms > 0 && days <= 7,
+        status: ms <= 0 ? 'EXPIRED' : days <= 7 && sub.status === 'ACTIVE' ? 'EXPIRING_SOON' : sub.status
       }
     };
   } catch (err) {
-    console.error('getTenantSubscription error:', err);
     return {
       success: false,
       error: err.message,
-      subscription: {
-        tenant_id: DEFAULT_TENANT_ID,
-        plan_name: 'ENTERPRISE_ALL_MODULES',
-        user_seat_limit: 200,
-        status: 'ACTIVE',
-        days_remaining: 354,
-        is_expiring_soon: false,
-        is_expired: false
-      }
+      subscription: null
     };
   }
 }
@@ -359,35 +339,27 @@ export async function getTenantSubscription(tenantId = DEFAULT_TENANT_ID) {
 export async function getTenantEntitlements(tenantId = DEFAULT_TENANT_ID) {
   try {
     const admin = getAdminClient();
-    const targetTenantId = await resolveSaasTenantUuid(admin, tenantId);
-
-    const { data: rows, error } = await admin
-      .from('tenant_entitlements')
-      .select('module_key, is_enabled')
-      .eq('tenant_id', targetTenantId);
-
+    const target = await resolveSaasTenantUuid(admin, tenantId);
+    await requireSaasTenant(admin, target);
+    const {
+      data: rows,
+      error
+    } = await admin.from('tenant_entitlements').select('module_key,is_enabled').eq('tenant_id', target);
     if (error) throw error;
-
-    const entitlements = {};
-    if (rows && rows.length > 0) {
-      rows.forEach(row => {
-        entitlements[row.module_key] = !!row.is_enabled;
-      });
-    } else if (targetTenantId === DEFAULT_TENANT_ID) {
-      // Safe fallback for initial setup if no DB rows configured yet
-      DEFAULT_PROCESS_CATALOG.forEach(p => {
-        entitlements[p.process_code] = true;
-      });
-      return { success: true, entitlements };
-    }
-
-    return { success: true, entitlements };
+    const entitlements = Object.fromEntries((rows || []).map(r => [r.module_key, r.is_enabled === true]));
+    if (!rows?.length && target === DEFAULT_TENANT_ID) DEFAULT_PROCESS_CATALOG.forEach(p => {
+      entitlements[p.process_code] = true;
+    });
+    return {
+      success: true,
+      entitlements
+    };
   } catch (err) {
-    console.error('getTenantEntitlements error:', err);
-    // Safe fallback: enable all to prevent blocking
-    const allEnabled = {};
-    DEFAULT_PROCESS_CATALOG.forEach(p => { allEnabled[p.process_code] = true; });
-    return { success: true, entitlements: allEnabled };
+    return {
+      success: false,
+      error: err.message,
+      entitlements: {}
+    };
   }
 }
 
@@ -397,9 +369,11 @@ export async function getTenantEntitlements(tenantId = DEFAULT_TENANT_ID) {
 export async function updateProcessRate(processCode, newMonthlyRate) {
   try {
     const admin = getAdminClient();
-    const config = (await getDynamicConfig(admin)) || {};
+    await requireSaasMaster(admin);
+    const config = (await getDynamicConfig(admin, true)) || {};
     const rates = config.rates || {};
-    rates[processCode] = Number(newMonthlyRate);
+    if (![...DEFAULT_PROCESS_CATALOG, ...(config.custom_modules || [])].some(p => p.process_code === processCode)) throw new Error('Unknown module.');
+    rates[processCode] = saasNumber(newMonthlyRate, 'Monthly rate');
 
     config.rates = rates;
     config.updated_at = new Date().toISOString();
@@ -427,9 +401,11 @@ export async function updateProcessRate(processCode, newMonthlyRate) {
 export async function updateCycleDiscount(cycleCode, newDiscountPercent) {
   try {
     const admin = getAdminClient();
-    const config = (await getDynamicConfig(admin)) || {};
+    await requireSaasMaster(admin);
+    const config = (await getDynamicConfig(admin, true)) || {};
     const discounts = config.discounts || {};
-    discounts[cycleCode] = Number(newDiscountPercent);
+    if (!SAAS_CYCLE_MONTHS[cycleCode]) throw new Error('Invalid billing cycle.');
+    discounts[cycleCode] = saasNumber(newDiscountPercent, 'Discount', {max:100});
 
     config.discounts = discounts;
     config.updated_at = new Date().toISOString();
@@ -457,25 +433,29 @@ export async function updateCycleDiscount(cycleCode, newDiscountPercent) {
 export async function getAllTenantsWithSubscriptions() {
   try {
     const admin = getAdminClient();
+    await requireSaasMaster(admin);
     const { data: tenantsList, error: tErr } = await admin
       .from('tenants')
       .select('*')
       .order('created_at', { ascending: false });
 
     if (tErr) throw tErr;
+    const {catalog: billableCatalog} = await getProcessCatalog();
+    const pricingConfig = await getDynamicConfig(admin);
+    const billableKeys = new Set((billableCatalog || []).map(p => p.process_code));
 
-    const { data: subsList } = await admin
+    const { data: subsList, error: subsError } = await admin
       .from('tenant_subscriptions')
       .select('*')
       .order('created_at', { ascending: false });
 
-    const { data: entitlementsList } = await admin
+    const { data: entitlementsList, error: entitlementsError } = await admin
       .from('tenant_entitlements')
       .select('tenant_id, module_key, is_enabled, config_json');
 
-    const { data: userCounts } = await admin
+    const { data: userCounts, error: userCountError } = await admin
       .from('user_roles')
-      .select('company, user_id, role, emp_official_mail_id');
+      .select('tenant_id, company, user_id, role, emp_official_mail_id, is_approved, emp_status');
 
     // Load telephony & forward settings from call_agents for enrichment
     const { data: systemAgents } = await admin
@@ -517,24 +497,16 @@ export async function getAllTenantsWithSubscriptions() {
       localBranchMap = JSON.parse(bContent || '{}');
     } catch (_) {}
 
+    if (subsError || entitlementsError || userCountError) throw subsError || entitlementsError || userCountError;
     const now = new Date();
 
     const enriched = (tenantsList || []).map(t => {
       const sub = (subsList || []).find(s => s.tenant_id === t.id);
       const tEntitlements = (entitlementsList || [])
-        .filter(e => e.tenant_id === t.id && e.is_enabled)
+        .filter(e => e.tenant_id === t.id && e.is_enabled && billableKeys.has(e.module_key))
         .map(e => e.module_key);
 
-      const activeUserCount = (userCounts || []).filter(u => {
-        if (u.role === 'customer') return false;
-        const comp = String(u.company || '').trim().toLowerCase();
-        const tName = String(t.name || '').trim().toLowerCase();
-        const tCode = String(t.tenant_code || '').trim().toLowerCase();
-        if (t.id === DEFAULT_TENANT_ID || tCode === 'tnt00002') {
-          return comp === 'nstlp' || comp === 'nsmlr' || comp === 'new swan group' || comp === 'swan agro' || !comp;
-        }
-        return comp === tName || comp === tCode || (u.emp_official_mail_id && u.emp_official_mail_id.toLowerCase() === (t.primary_contact_email || '').toLowerCase());
-      }).length;
+      const activeUserCount = (userCounts || []).filter(u => userBelongsToSaasTenant(u,t,tenantsList) && isSaasUserActive(u)).length;
 
       let daysRemaining = null;
       let isExpired = false;
@@ -553,6 +525,10 @@ export async function getAllTenantsWithSubscriptions() {
         resolvedStatus = 'DELETED';
       } else if (t.status === 'DRAFT') {
         resolvedStatus = 'DRAFT';
+      } else if (['SUSPENDED','READ_ONLY','GRACE_PERIOD'].includes(t.status)) {
+        resolvedStatus = t.status;
+      } else if (['SUSPENDED','READ_ONLY','ARCHIVED'].includes(sub?.status)) {
+        resolvedStatus = sub.status;
       } else if (t.status === 'TRIAL' || sub?.status === 'TRIAL' || String(sub?.billing_cycle || '').startsWith('TRIAL')) {
         resolvedStatus = isExpired ? 'EXPIRED' : 'TRIAL';
       } else if (isExpired) {
@@ -567,11 +543,11 @@ export async function getAllTenantsWithSubscriptions() {
       let branches = [];
       const branchList = localBranchMap[t.name] || (t.id === DEFAULT_TENANT_ID ? localBranchMap['New Swan Group'] : null) || [];
       if (Array.isArray(branchList) && branchList.length > 0) {
-        branches = branchList.map(b => b.branch_code || b.id || b.branch_name);
+        branches = branchList.map(formatBranchStandard);
       } else if (t.id === DEFAULT_TENANT_ID || t.tenant_code === 'TNT00002') {
-        branches = ['TNT00002-B0001 (HQ)', 'TNT00002-B0002 (NSMLR)', 'TNT00002-B0003 (NSTLP)'];
+        branches = ['TNT00002-B0001', 'TNT00002-B0002', 'TNT00002-B0003'].map(formatBranchStandard);
       } else {
-        branches = t.branches || [];
+        branches = (t.branches || []).map(formatBranchStandard);
       }
 
       const isMasterHq = t.name === 'SuPuja Creations' || t.tenant_code === 'SUPUJA_CREATIONS' || t.tenant_code === 'TNT00001' || t.id === '0a37b8e8-1c28-4e19-8891-951fc3f8f8af' || t.id === 'e7d483b2-3fcb-4eb2-9d39-e932b7bb5ff4';
@@ -611,6 +587,7 @@ export async function getAllTenantsWithSubscriptions() {
         } : null,
         entitlements: tEntitlements,
         active_users_count: activeUserCount,
+        module_rates: Object.fromEntries((billableCatalog || []).map(p => [p.process_code, pricingConfig?.tenant_rates?.[t.id]?.[p.process_code] ?? p.monthly_rate_per_user])),
         user_seat_limit: sub?.user_seat_limit || (t.id === DEFAULT_TENANT_ID ? 200 : 5),
         smtp_accounts_limit: smtpLimit,
         calling_seats_limit: callingSeatLimit,
@@ -640,6 +617,7 @@ export async function getAllTenantsWithSubscriptions() {
 export async function extendTenantSubscription(tenantId, monthsToAdd = 1) {
   try {
     const admin = getAdminClient();
+    await requireSaasMaster(admin);
     const { data: existing } = await admin
       .from('tenant_subscriptions')
       .select('*')
@@ -648,7 +626,7 @@ export async function extendTenantSubscription(tenantId, monthsToAdd = 1) {
       .limit(1)
       .maybeSingle();
 
-    const months = Math.max(1, parseInt(monthsToAdd, 10) || 1);
+    const months = saasNumber(monthsToAdd, 'Months', {min:1,max:120,integer:true});
     let baseDate = new Date();
     if (existing?.valid_until) {
       const currentExpiry = new Date(existing.valid_until);
@@ -657,8 +635,7 @@ export async function extendTenantSubscription(tenantId, monthsToAdd = 1) {
       }
     }
 
-    const newExpiry = new Date(baseDate);
-    newExpiry.setMonth(newExpiry.getMonth() + months);
+    const newExpiry = saasAddMonths(baseDate, months);
 
     if (existing) {
       const { error } = await admin
@@ -686,7 +663,7 @@ export async function extendTenantSubscription(tenantId, monthsToAdd = 1) {
 
     return {
       success: true,
-      message: `वैलिडिटी सफलतापूर्वक ${months} महीने आगे बढ़ाई गई! (New Expiry: ${newExpiry.toLocaleDateString('en-IN')})`
+      message: `वैलिडिटी सफलतापूर्वक ${months} महीने आगे बढ़ाई गई! (New Expiry: ${newExpiry.toLocaleDateString('en-IN', {timeZone:'Asia/Kolkata'})})`
     };
   } catch (err) {
     console.error('extendTenantSubscription error:', err);
@@ -697,44 +674,29 @@ export async function extendTenantSubscription(tenantId, monthsToAdd = 1) {
 /**
  * Super Admin: Update a tenant's purchased seat limit
  */
-export async function updateTenantSeats(tenantId, newSeatLimit) {
+export async function updateTenantSeats(tenantId, newSeatLimit, requestId = null) {
   try {
     const admin = getAdminClient();
-    const seats = Math.max(1, parseInt(newSeatLimit, 10) || 1);
-
-    const { data: existing } = await admin
-      .from('tenant_subscriptions')
-      .select('id')
-      .eq('tenant_id', tenantId)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (existing) {
-      const { error } = await admin
-        .from('tenant_subscriptions')
-        .update({ user_seat_limit: seats })
-        .eq('id', existing.id);
-      if (error) throw error;
-    } else {
-      const { error } = await admin
-        .from('tenant_subscriptions')
-        .insert([{
-          tenant_id: tenantId,
-          plan_name: 'STANDARD',
-          user_seat_limit: seats,
-          valid_from: new Date().toISOString(),
-          valid_until: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-          status: 'ACTIVE',
-          billing_cycle: 'MONTHLY'
-        }]);
-      if (error) throw error;
-    }
-
-    return { success: true, message: `सीट लिमिट अपडेट होकर ${seats} हो गई है!` };
+    const actor = await requireSaasMaster(admin);
+    const result = await applySaasBilling(admin, actor, tenantId, requestId, 'SEATS_ONLY', {
+      new_seats: saasNumber(newSeatLimit, 'Seats', {
+        min: 1,
+        max: 100000,
+        integer: true
+      }),
+      amount: 0,
+      gst_type: 'NON_GST'
+    });
+    return {
+      success: true,
+      ...result,
+      message: 'Seat limit updated.'
+    };
   } catch (err) {
-    console.error('updateTenantSeats error:', err);
-    return { success: false, error: err.message };
+    return {
+      success: false,
+      error: err.message
+    };
   }
 }
 
@@ -744,12 +706,13 @@ export async function updateTenantSeats(tenantId, newSeatLimit) {
 export async function updateTenantCustomRate(tenantId, processCode, customRate) {
   try {
     const admin = getAdminClient();
-    const config = (await getDynamicConfig(admin)) || {};
+    await requireSaasMaster(admin);
+    const config = (await getDynamicConfig(admin, true)) || {};
     const tenantRates = config.tenant_rates || {};
     if (!tenantRates[tenantId]) {
       tenantRates[tenantId] = {};
     }
-    tenantRates[tenantId][processCode] = Number(customRate);
+    tenantRates[tenantId][processCode] = saasNumber(customRate, 'Negotiated rate');
     config.tenant_rates = tenantRates;
     config.updated_at = new Date().toISOString();
 
@@ -776,6 +739,7 @@ export async function updateTenantCustomRate(tenantId, processCode, customRate) 
 export async function getNextTenantCode(adminClient = null) {
   try {
     const admin = adminClient || getAdminClient();
+    await requireSaasMaster(admin);
     const { data: allTenants } = await admin
       .from('tenants')
       .select('tenant_code');
@@ -798,7 +762,7 @@ export async function getNextTenantCode(adminClient = null) {
     return `TNT${String(nextNum).padStart(5, '0')}`;
   } catch (err) {
     console.error('getNextTenantCode error:', err);
-    return `TNT00004`;
+    throw new Error('Unable to allocate a tenant code. Please retry.');
   }
 }
 
@@ -819,307 +783,262 @@ export async function createTenantWorkspace({
   dealPrice = null,
   discountPercent = null,
   planPrice = null,
-  dealNotes = ''
+  dealNotes = '',
+  requestId
 }) {
   try {
     const admin = getAdminClient();
-
-    if (!companyName || !adminEmail || !adminPassword || !adminName) {
-      return { success: false, error: 'कृपया कंपनी का नाम, एडमिन का नाम, ईमेल और पासवर्ड भरें।' };
-    }
-
-    const cleanEmail = adminEmail.trim().toLowerCase();
-    const cleanCompany = companyName.trim();
-    const cleanName = adminName.trim();
-    const cleanMobile = adminMobile ? adminMobile.trim() : '';
-    const initialStatus = isDraft ? 'DRAFT' : (Number(trialDays) > 0 ? 'TRIAL' : 'ACTIVE');
-
-    // Generate standardized sequential tenant code (e.g. TNT00004)
-    const tenantCode = await getNextTenantCode(admin);
-
-    // 1. Create tenant row
-    const { data: newTenant, error: tenantErr } = await admin
-      .from('tenants')
-      .insert([{
-        tenant_code: tenantCode,
-        name: cleanCompany,
-        primary_contact_email: cleanEmail,
-        primary_contact_mobile: cleanMobile || null,
-        status: initialStatus
-      }])
-      .select()
-      .single();
-
-    if (tenantErr) {
-      console.error('Tenant creation error:', tenantErr);
-      throw new Error(`कंपनी रजिस्टर करने में त्रुटि: ${tenantErr.message}`);
-    }
-
-    // 2. Create Auth User
-    let userId = null;
-    const { data: authData, error: authError } = await admin.auth.admin.createUser({
-      email: cleanEmail,
+    const actor = await requireSaasMaster(admin);
+    const email = String(adminEmail || '').trim().toLowerCase(),
+      company = String(companyName || '').trim(),
+      name = String(adminName || '').trim();
+    if (!company || !name || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Enter company, administrator name and a valid email.');
+    if (String(adminPassword || '').length < 8) throw new Error('Administrator password must have at least 8 characters.');
+    const seats = saasNumber(userSeats, 'Seats', {
+        min: 1,
+        max: 100000,
+        integer: true
+      }),
+      days = saasNumber(trialDays, 'Trial days', {
+        max: 365,
+        integer: true
+      });
+    if (!SAAS_CYCLE_MONTHS[cycleCode]) throw new Error('Invalid billing cycle.');
+    const pricing = await calculatePlanPrice({
+      processCodes,
+      userSeats: seats,
+      cycleCode
+    });
+    if (!pricing.success) throw new Error(pricing.error);
+    const amount = days ? 0 : dealPrice === null || dealPrice === undefined ? pricing.final_amount : saasNumber(dealPrice, 'Agreed amount');
+    if (discountPercent !== null) saasNumber(discountPercent, 'Discount', {
+      max: 100
+    });
+    if (planPrice !== null) saasNumber(planPrice, 'Catalog amount');
+    const key = requestId || randomUUID();
+    if (!SAAS_UUID.test(key)) throw new Error('Invalid provisioning request ID.');
+    const payload = {
+      company,
+      email,
+      admin_name: name,
+      mobile: String(adminMobile || '').trim(),
+      process_codes: [...new Set(processCodes)].sort(),
+      seats,
+      cycle: cycleCode,
+      trial_days: days,
+      is_draft: !!isDraft,
+      amount,
+      discount_percent: discountPercent,
+      plan_price: planPrice,
+      deal_notes: String(dealNotes)
+    };
+    const prepared = await callSaasRpc(admin, 'saas_prepare_workspace', {
+        p_actor_id: actor.user.id,
+        p_request_id: key,
+        p_payload: payload
+      }),
+      tenant = prepared.tenant;
+    if (prepared.complete) return {
+      success: true,
+      tenantId: tenant.id,
+      tenantCode: tenant.tenant_code,
+      adminEmail: email,
+      message: 'Workspace was already provisioned successfully.'
+    };
+    const {
+      data: authData,
+      error: authError
+    } = await admin.auth.admin.createUser({
+      email,
       password: adminPassword,
       email_confirm: true,
       user_metadata: {
-        name: cleanName,
-        mobile: cleanMobile,
-        company: cleanCompany
+        name,
+        mobile: payload.mobile,
+        company,
+        saas_provisioning_request: key,
+        tenant_id: tenant.id
       }
     });
-
+    let user = authData?.user;
     if (authError) {
-      if (authError.message?.toLowerCase().includes('already registered')) {
-        const { data: userList } = await admin.auth.admin.listUsers();
-        const existing = userList?.users?.find(
-          u => u.email?.toLowerCase() === cleanEmail
-        );
-        if (existing) {
-          userId = existing.id;
-        } else {
-          throw new Error(`ईमेल पहले से सिस्टम में मौजूद है: ${authError.message}`);
-        }
-      } else {
-        throw new Error(`यूज़र क्रेडेंशियल बनाने में त्रुटि: ${authError.message}`);
-      }
-    } else if (authData?.user) {
-      userId = authData.user.id;
-    }
-
-    // 3. Setup Administrator in user_roles (uses company column)
-    const userRolePayload = {
-      user_id: userId,
-      role: 'admin',
-      is_approved: true,
-      can_read: true,
-      can_write: true,
-      emp_id: 'ADM-001',
-      emp_name: cleanName,
-      emp_official_mail_id: cleanEmail,
-      emp_mobile: cleanMobile,
-      emp_designation: 'Chief Administrator',
-      emp_department: 'Administration',
-      company: cleanCompany,
-      emp_status: 'Active'
-    };
-
-    const { error: roleError } = await admin
-      .from('user_roles')
-      .upsert(userRolePayload, { onConflict: 'user_id' });
-
-    if (roleError) {
-      console.warn('user_roles setup notice:', roleError.message);
-    }
-
-    // 4. Calculate Subscription Dates strictly in IST
-    const now = new Date();
-    const isTrial = Number(trialDays) > 0;
-    let expiryDate;
-    let finalAmount = 0;
-    let assignedCycle = cycleCode;
-
-    if (isTrial) {
-      const tDays = Math.max(1, parseInt(trialDays, 10));
-      expiryDate = new Date(now.getTime() + tDays * 24 * 60 * 60 * 1000);
-      assignedCycle = `TRIAL_${tDays}D`;
-      finalAmount = 0;
-    } else {
-      let monthsToAdd = 1;
-      if (cycleCode === 'QUARTERLY') monthsToAdd = 3;
-      else if (cycleCode === 'HALF_YEARLY') monthsToAdd = 6;
-      else if (cycleCode === 'YEARLY') monthsToAdd = 12;
-
-      expiryDate = new Date(now);
-      expiryDate.setMonth(expiryDate.getMonth() + monthsToAdd);
-
-      if (dealPrice !== null && !isNaN(Number(dealPrice)) && Number(dealPrice) >= 0) {
-        finalAmount = Number(dealPrice);
-      } else {
-        const priceRes = await calculatePlanPrice({
-          processCodes,
-          userSeats,
-          cycleCode,
-          tenantId: newTenant.id
+      if (!/already|registered/i.test(authError.message)) throw new Error(authError.message);
+      for (let page = 1; page <= 100 && !user; page++) {
+        const {
+          data,
+          error
+        } = await admin.auth.admin.listUsers({
+          page,
+          perPage: 1000
         });
-        finalAmount = priceRes.success ? priceRes.final_amount : 0;
-      }
-    }
-
-    // 5. Insert Subscription Record
-    const { error: subError } = await admin
-      .from('tenant_subscriptions')
-      .insert([{
-        tenant_id: newTenant.id,
-        plan_name: isTrial ? 'FREE_TRIAL' : 'SAAS_MODULAR',
-        user_seat_limit: Math.max(1, parseInt(userSeats, 10) || 5),
-        valid_from: now.toISOString(),
-        valid_until: expiryDate.toISOString(),
-        status: initialStatus,
-        billing_cycle: assignedCycle,
-        amount: finalAmount
-      }]);
-
-    if (subError) {
-      console.warn('Subscription creation notice:', subError.message);
-    }
-
-    // 6. Insert Tenant Entitlements for Chosen Modules with deal terms
-    const entitlementsRows = (processCodes || []).map((code) => ({
-      tenant_id: newTenant.id,
-      module_key: code,
-      is_enabled: true,
-      config_json: {
-        activated_at: now.toISOString(),
-        plan: 'SAAS_MODULAR',
-        billing_cycle: cycleCode,
-        deal_terms: {
-          catalog_price: Number(planPrice) || null,
-          discount_percent: Number(discountPercent) || null,
-          deal_price: finalAmount,
-          deal_notes: dealNotes || null
+        if (error) throw error;
+        const found = data?.users?.find(u => u.email?.toLowerCase() === email);
+        if (found) {
+          if (found.user_metadata?.saas_provisioning_request !== key || found.user_metadata?.tenant_id !== tenant.id) throw new Error('Email belongs to an existing account. No existing account was changed.');
+          user = found;
+          break;
         }
+        if (!data?.users?.length || data.users.length < 1000) break;
       }
-    }));
-
-    if (entitlementsRows.length > 0) {
-      const { error: entError } = await admin
-        .from('tenant_entitlements')
-        .upsert(entitlementsRows, { onConflict: 'tenant_id,module_key' });
-      if (entError) console.warn('Entitlements insert notice:', entError.message);
     }
-
-    // 7. Insert default company record and initial Headquarters branch
-    try {
-      await admin.from('companies').insert([{
-        tenant_id: newTenant.id,
-        code: `${tenantCode}_MAIN`,
-        name: cleanCompany,
-        status: initialStatus
-      }]);
-    } catch (compErr) {
-      console.warn('Default company insert note:', compErr.message);
-    }
-
-    try {
-      const { saveTenantBranch } = await import('@/app/actions/tenantBranches');
-      await saveTenantBranch({
-        id: `${tenantCode}-B0001`,
-        company: cleanCompany,
-        tenantId: newTenant.id,
-        branchName: `${cleanCompany} (Headquarters)`,
-        branchCode: `${tenantCode}-B0001`,
-        locationType: 'Headquarters',
-        email: cleanEmail,
-        phone: cleanMobile,
-        inchargeName: cleanName
-      });
-    } catch (brErr) {
-      console.warn('Initial branch setup note:', brErr.message);
-    }
-
-    const successMessage = isDraft
-      ? `कंपनी वर्कस्पेस '${cleanCompany}' (${tenantCode}) ड्राफ्ट के रूप में सुरक्षित सेव हो गया!`
-      : `कंपनी वर्कस्पेस '${cleanCompany}' (${tenantCode}) सफलतापूर्वक सक्रिय हो गया!`;
-
+    if (!user?.id) throw new Error('Administrator could not be verified. Retry this provisioning request.');
+    const {
+      saveTenantBranch
+    } = await import('@/app/actions/tenantBranches');
+    const branch = await saveTenantBranch({
+      id: tenant.tenant_code + '-B0001',
+      company,
+      tenantId: tenant.id,
+      branchName: company + ' (Headquarters)',
+      branchCode: tenant.tenant_code + '-B0001',
+      locationType: 'Headquarters',
+      email,
+      phone: payload.mobile,
+      inchargeName: name
+    });
+    if (!branch?.success) throw new Error(branch?.error || 'Headquarters setup failed. Workspace remains draft; retry this request.');
+    const now = new Date(),
+      status = isDraft ? 'DRAFT' : days ? 'TRIAL' : 'ACTIVE',
+      expiry = days ? new Date(now.getTime() + days * 86400000) : saasAddMonths(now, SAAS_CYCLE_MONTHS[cycleCode]);
+    await callSaasRpc(admin, 'saas_finalize_workspace', {
+      p_actor_id: actor.user.id,
+      p_request_id: key,
+      p_admin_user_id: user.id,
+      p_subscription: {
+        plan_name: days ? 'FREE_TRIAL' : 'SAAS_MODULAR',
+        user_seat_limit: seats,
+        valid_from: now.toISOString(),
+        valid_until: expiry.toISOString(),
+        status,
+        billing_cycle: days ? 'TRIAL_' + days + 'D' : cycleCode,
+        amount
+      },
+      p_entitlements: payload.process_codes.map(module_key => ({
+        module_key,
+        config_json: {
+          activated_at: now.toISOString(),
+          billing_cycle: cycleCode,
+          deal_terms: {
+            catalog_price: planPrice,
+            discount_percent: discountPercent,
+            deal_price: amount,
+            deal_notes: dealNotes
+          }
+        }
+      }))
+    });
     return {
       success: true,
-      tenantId: newTenant.id,
-      tenantCode,
-      adminEmail: cleanEmail,
-      message: successMessage
+      tenantId: tenant.id,
+      tenantCode: tenant.tenant_code,
+      adminEmail: email,
+      message: 'Workspace ' + tenant.tenant_code + ' provisioned successfully.'
     };
   } catch (err) {
-    console.error('createTenantWorkspace error:', err);
-    return { success: false, error: err.message || 'कंपनी वर्कस्पेस बनाने में समस्या आई।' };
+    return {
+      success: false,
+      error: err.message
+    };
   }
 }
 
 /**
  * Tenant Self-Serve / Add-on: Purchase additional user seats
  */
-export async function purchaseAddonSeats(tenantId, additionalSeats) {
+export async function purchaseAddonSeats(tenantId, additionalSeats, requestId = null) {
   try {
     const admin = getAdminClient();
-    const addSeats = Math.max(1, parseInt(additionalSeats, 10) || 1);
-
-    const { data: sub, error: subErr } = await admin
-      .from('tenant_subscriptions')
-      .select('*')
-      .eq('tenant_id', tenantId)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (subErr) throw subErr;
-
-    const currentSeats = sub?.user_seat_limit || 5;
-    const newLimit = currentSeats + addSeats;
-
-    if (sub) {
-      const { error } = await admin
-        .from('tenant_subscriptions')
-        .update({
-          user_seat_limit: newLimit
-        })
-        .eq('id', sub.id);
-      if (error) throw error;
-    } else {
-      const { error } = await admin
-        .from('tenant_subscriptions')
-        .insert([{
-          tenant_id: tenantId,
-          plan_name: 'SAAS_CUSTOM',
-          user_seat_limit: newLimit,
-          valid_from: new Date().toISOString(),
-          valid_until: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-          status: 'ACTIVE',
-          billing_cycle: 'MONTHLY'
-        }]);
-      if (error) throw error;
-    }
-
+    const actor = await requireSaasTenant(admin, tenantId, {
+      manage: true
+    });
+    const add = saasNumber(additionalSeats, 'Additional seats', {
+      min: 1,
+      max: 100000,
+      integer: true
+    });
+    const {
+      data: sub,
+      error
+    } = await admin.from('tenant_subscriptions').select('*').eq('tenant_id', tenantId).order('created_at', {
+      ascending: false
+    }).limit(1).maybeSingle();
+    if (error) throw error;
+    if (!sub) throw new Error('An active subscription is required.');
+    const {
+      data: ent,
+      error: entError
+    } = await admin.from('tenant_entitlements').select('module_key,is_enabled').eq('tenant_id', tenantId);
+    if (entError) throw entError;
+    const pricing = await getProcessCatalog(tenantId);
+    if (!pricing.success) throw new Error(pricing.error);
+    const rate = pricing.catalog.filter(p => p.is_active !== false && (ent || []).some(e => e.module_key === p.process_code && e.is_enabled)).reduce((sum, p) => sum + Number(p.monthly_rate_per_user), 0);
+    const days = Math.max(0, Math.ceil((new Date(sub.valid_until) - Date.now()) / 86400000));
+    if (!days) throw new Error('Renew before requesting additional seats.');
+    const result = await applySaasBilling(admin, actor, tenantId, requestId, 'ADDON_PROFORMA', {
+      current_seats: sub.user_seat_limit,
+      new_seats: sub.user_seat_limit + add,
+      months: 0,
+      billing_mode: 'SAME_EXPIRY',
+      amount: Math.round(add * rate * days / 30 * 100) / 100,
+      gst_type: 'IGST'
+    });
     return {
       success: true,
-      newLimit,
-      message: `सफलतापूर्वक ${addSeats} अतिरिक्त सीट्स जोड़ दी गईं! कुल सीमा: ${newLimit} Users.`
+      ...result,
+      newLimit: sub.user_seat_limit,
+      message: 'Add-on request and proforma saved. Payment confirmation is required before seats change.'
     };
   } catch (err) {
-    console.error('purchaseAddonSeats error:', err);
-    return { success: false, error: err.message };
+    return {
+      success: false,
+      error: err.message
+    };
   }
 }
 
 /**
  * Tenant Self-Serve / Add-on: Unlock an additional business process module
  */
-export async function purchaseAddonModule(tenantId, processCode) {
+export async function purchaseAddonModule(tenantId, processCode, requestId = null) {
   try {
     const admin = getAdminClient();
-    if (!tenantId || !processCode) {
-      return { success: false, error: 'Tenant ID or process code missing.' };
-    }
-
-    const { error } = await admin
-      .from('tenant_entitlements')
-      .upsert({
-        tenant_id: tenantId,
-        module_key: processCode,
-        is_enabled: true,
-        config_json: {
-          is_addon: true,
-          activated_at: new Date().toISOString()
-        }
-      }, { onConflict: 'tenant_id,module_key' });
-
+    const actor = await requireSaasTenant(admin, tenantId, {
+      manage: true
+    });
+    const pricing = await getProcessCatalog(tenantId);
+    const item = pricing.catalog?.find(p => p.process_code === processCode && p.is_active !== false && !SAAS_INTERNAL_KEYS.has(p.process_code));
+    if (!pricing.success || !item) throw new Error('Choose a valid active module.');
+    const {
+      data: sub,
+      error
+    } = await admin.from('tenant_subscriptions').select('*').eq('tenant_id', tenantId).order('created_at', {
+      ascending: false
+    }).limit(1).maybeSingle();
     if (error) throw error;
-
+    if (!sub) throw new Error('An active subscription is required.');
+    const {
+      data: ent,
+      error: entError
+    } = await admin.from('tenant_entitlements').select('is_enabled').eq('tenant_id', tenantId).eq('module_key', processCode).maybeSingle();
+    if (entError) throw entError;
+    if (ent?.is_enabled) throw new Error('This module is already active.');
+    const days = Math.max(0, Math.ceil((new Date(sub.valid_until) - Date.now()) / 86400000));
+    if (!days) throw new Error('Renew before requesting modules.');
+    const result = await applySaasBilling(admin, actor, tenantId, requestId, 'MODULE_PROFORMA', {
+      module_key: processCode,
+      amount: Math.round(item.monthly_rate_per_user * sub.user_seat_limit * days / 30 * 100) / 100,
+      gst_type: 'IGST'
+    });
     return {
       success: true,
-      message: `मॉड्यूल '${processCode}' सफलतापूर्वक अनलॉक हो गया है!`
+      ...result,
+      message: 'Module request and proforma saved. Master Admin must approve activation.'
     };
   } catch (err) {
-    console.error('purchaseAddonModule error:', err);
-    return { success: false, error: err.message };
+    return {
+      success: false,
+      error: err.message
+    };
   }
 }
 
@@ -1129,31 +1048,46 @@ export async function purchaseAddonModule(tenantId, processCode) {
 export async function updateTenantEntitlements(tenantId, enabledModuleKeys = []) {
   try {
     const admin = getAdminClient();
-    if (!tenantId) throw new Error('Tenant ID missing.');
-
-    const allModules = DEFAULT_PROCESS_CATALOG.map(p => p.process_code);
-    const updates = allModules.map(code => ({
+    await requireSaasMaster(admin);
+    if (!SAAS_UUID.test(String(tenantId))) throw new Error('Invalid workspace.');
+    const {
+      success,
+      catalog,
+      error
+    } = await getProcessCatalog();
+    if (!success) throw new Error(error);
+    if (!Array.isArray(enabledModuleKeys)) throw new Error('Invalid module selection.');
+    const keys = new Set(enabledModuleKeys);
+    const items = catalog.filter(p => !SAAS_INTERNAL_KEYS.has(p.process_code));
+    if ([...keys].some(key => !items.some(p => p.process_code === key && p.is_active !== false))) throw new Error('Unknown or inactive module.');
+    const {
+      data: existing,
+      error: readError
+    } = await admin.from('tenant_entitlements').select('module_key,config_json').eq('tenant_id', tenantId);
+    if (readError) throw readError;
+    const updates = items.map(p => ({
       tenant_id: tenantId,
-      module_key: code,
-      is_enabled: enabledModuleKeys.includes(code),
+      module_key: p.process_code,
+      is_enabled: keys.has(p.process_code),
       config_json: {
+        ...((existing || []).find(r => r.module_key === p.process_code)?.config_json || {}),
         updated_at: new Date().toISOString(),
         manual_override: true
       }
     }));
-
-    const { error } = await admin
-      .from('tenant_entitlements')
-      .upsert(updates, { onConflict: 'tenant_id,module_key' });
-
-    if (error) throw error;
+    const result = await admin.from('tenant_entitlements').upsert(updates, {
+      onConflict: 'tenant_id,module_key'
+    });
+    if (result.error) throw result.error;
     return {
       success: true,
-      message: 'कंपनी के मॉड्यूल्स सफलतापूर्वक अपडेट हो गए!'
+      message: 'Workspace modules updated successfully.'
     };
   } catch (err) {
-    console.error('updateTenantEntitlements error:', err);
-    return { success: false, error: err.message };
+    return {
+      success: false,
+      error: err.message
+    };
   }
 }
 
@@ -1163,43 +1097,40 @@ export async function updateTenantEntitlements(tenantId, enabledModuleKeys = [])
 export async function updateTenantSmtpLimit(tenantId, limit = 1) {
   try {
     const admin = getAdminClient();
-    if (!tenantId) throw new Error('Tenant ID missing.');
-    const parsedLimit = Math.max(1, parseInt(limit, 10) || 1);
-
-    // 1. Update persistent local JSON file backup
-    const localLimits = await readLocalSmtpLimits();
-    localLimits[tenantId] = parsedLimit;
-    await writeLocalSmtpLimits(localLimits);
-
-    // 2. Upsert to Supabase tenant_entitlements (module_key: 'SMTP_SERVER_LIMIT')
-    try {
-      const { error } = await admin
-        .from('tenant_entitlements')
-        .upsert({
-          tenant_id: tenantId,
-          module_key: 'SMTP_SERVER_LIMIT',
-          is_enabled: true,
-          config_json: {
-            limit: parsedLimit,
-            updated_at: new Date().toISOString()
-          }
-        }, { onConflict: 'tenant_id,module_key' });
-
-      if (error) {
-        console.warn('Could not sync SMTP limit to tenant_entitlements, local storage updated:', error.message);
+    await requireSaasMaster(admin);
+    if (!SAAS_UUID.test(String(tenantId))) throw new Error('Invalid workspace.');
+    const value = saasNumber(limit, 'SMTP quota', {
+      min: 1,
+      max: 100000,
+      integer: true
+    });
+    const {
+      error
+    } = await admin.from('tenant_entitlements').upsert({
+      tenant_id: tenantId,
+      module_key: 'SMTP_SERVER_LIMIT',
+      is_enabled: true,
+      config_json: {
+        limit: value,
+        updated_at: new Date().toISOString()
       }
-    } catch (dbErr) {
-      console.warn('DB upsert error for SMTP limit, local storage updated:', dbErr.message);
-    }
-
+    }, {
+      onConflict: 'tenant_id,module_key'
+    });
+    if (error) throw error;
+    const limits = await readLocalSmtpLimits();
+    limits[tenantId] = value;
+    await writeLocalSmtpLimits(limits);
     return {
       success: true,
-      message: `SMTP Server Addon Quota updated to ${parsedLimit} account(s)!`,
-      limit: parsedLimit
+      limit: value,
+      message: 'SMTP account quota saved.'
     };
   } catch (err) {
-    console.error('updateTenantSmtpLimit error:', err);
-    return { success: false, error: err.message };
+    return {
+      success: false,
+      error: err.message
+    };
   }
 }
 
@@ -1469,7 +1400,8 @@ export async function getTenantSmtpLimitsMap() {
 export async function extendTenantSubscriptionTrial(tenantId, trialDays = 7) {
   try {
     const admin = getAdminClient();
-    const days = Math.max(1, parseInt(trialDays, 10) || 7);
+    await requireSaasMaster(admin);
+    const days = saasNumber(trialDays, 'Trial days', {min:1,max:365,integer:true});
     const now = new Date();
     const newExpiry = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
 
@@ -1508,7 +1440,8 @@ export async function extendTenantSubscriptionTrial(tenantId, trialDays = 7) {
     }
 
     // Sync tenants table status to TRIAL
-    await admin.from('tenants').update({ status: 'TRIAL', updated_at: now.toISOString() }).eq('id', tenantId);
+    const {error:tenantError}=await admin.from('tenants').update({ status: 'TRIAL', updated_at: now.toISOString() }).eq('id', tenantId);
+    if(tenantError)throw tenantError;
 
     return {
       success: true,
@@ -1531,76 +1464,46 @@ export async function updateTenantValidityAndStatus({
 }) {
   try {
     const admin = getAdminClient();
-    if (!tenantId) throw new Error('Tenant ID missing.');
-
-    const now = new Date();
-    let expiryIso;
-    if (validUntil) {
-      const parsed = new Date(validUntil);
-      expiryIso = isNaN(parsed.getTime()) ? now.toISOString() : parsed.toISOString();
-    } else {
-      expiryIso = now.toISOString();
-    }
-
-    const normalizedStatus = status === 'FREE TRIAL' ? 'TRIAL' : status;
-
-    // Determine safe status for tenants table (must satisfy tenants_status_check: 'DRAFT', 'TRIAL', 'ACTIVE', 'GRACE_PERIOD', 'READ_ONLY', 'SUSPENDED', 'ARCHIVED')
-    let tenantTableStatus = 'ACTIVE';
-    if (normalizedStatus === 'DRAFT') tenantTableStatus = 'DRAFT';
-    else if (normalizedStatus === 'TRIAL') tenantTableStatus = 'TRIAL';
-    else if (normalizedStatus === 'DELETED' || normalizedStatus === 'ARCHIVED') tenantTableStatus = 'ARCHIVED';
-    else if (normalizedStatus === 'EXPIRED') tenantTableStatus = 'SUSPENDED';
-    else tenantTableStatus = 'ACTIVE';
-
-    // 1. Update tenants table
-    await admin.from('tenants').update({
-      status: tenantTableStatus,
-      updated_at: now.toISOString()
+    await requireSaasMaster(admin);
+    if (!SAAS_UUID.test(String(tenantId))) throw new Error('Invalid workspace.');
+    const normalized = status === 'FREE TRIAL' ? 'TRIAL' : status;
+    if (!['ACTIVE', 'TRIAL', 'DRAFT', 'EXPIRED', 'SUSPENDED', 'GRACE_PERIOD', 'READ_ONLY'].includes(normalized)) throw new Error('Invalid status.');
+    if (billingCycle && !SAAS_CYCLE_MONTHS[billingCycle] && !/^TRIAL_[0-9]+D$/.test(billingCycle)) throw new Error('Invalid billing cycle.');
+    const expiry = saasEndOfDay(validUntil).toISOString();
+    const {
+      data: existing,
+      error
+    } = await admin.from('tenant_subscriptions').select('*').eq('tenant_id', tenantId).order('created_at', {
+      ascending: false
+    }).limit(1).maybeSingle();
+    if (error) throw error;
+    if (!existing) throw new Error('Complete workspace provisioning first.');
+    const {
+      error: subError
+    } = await admin.from('tenant_subscriptions').update({
+      valid_until: expiry,
+      status: normalized,
+      ...(billingCycle ? {
+        billing_cycle: billingCycle
+      } : {})
+    }).eq('id', existing.id);
+    if (subError) throw subError;
+    const {
+      error: tenantError
+    } = await admin.from('tenants').update({
+      status: normalized === 'EXPIRED' ? 'SUSPENDED' : normalized,
+      updated_at: new Date().toISOString()
     }).eq('id', tenantId);
-
-    // 2. Update subscription record (NO updated_at column in tenant_subscriptions)
-    const { data: existing } = await admin
-      .from('tenant_subscriptions')
-      .select('*')
-      .eq('tenant_id', tenantId)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    const subPayload = {
-      valid_until: expiryIso,
-      status: normalizedStatus
-    };
-    if (billingCycle) {
-      subPayload.billing_cycle = billingCycle;
-    }
-
-    if (existing) {
-      const { error } = await admin
-        .from('tenant_subscriptions')
-        .update(subPayload)
-        .eq('id', existing.id);
-      if (error) throw error;
-    } else {
-      const { error } = await admin
-        .from('tenant_subscriptions')
-        .insert([{
-          tenant_id: tenantId,
-          plan_name: 'CUSTOM_PLAN',
-          user_seat_limit: 5,
-          valid_from: now.toISOString(),
-          ...subPayload
-        }]);
-      if (error) throw error;
-    }
-
+    if (tenantError) throw new Error('Subscription saved but workspace status could not sync. Please retry.');
     return {
       success: true,
-      message: `वैलिडिटी और स्टेटस सफलतापूर्वक अपडेट हो गया! (New Expiry: ${new Date(expiryIso).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })})`
+      message: 'Expiry and status updated.'
     };
   } catch (err) {
-    console.error('updateTenantValidityAndStatus error:', err);
-    return { success: false, error: err.message };
+    return {
+      success: false,
+      error: err.message
+    };
   }
 }
 
@@ -1610,6 +1513,7 @@ export async function updateTenantValidityAndStatus({
 export async function softDeleteTenantWorkspace(tenantId) {
   try {
     const admin = getAdminClient();
+    await requireSaasMaster(admin);
     if (!tenantId) throw new Error('Tenant ID missing.');
     if (tenantId === DEFAULT_TENANT_ID) {
       throw new Error('New Swan Group (Master Workspace) को डिलीट नहीं किया जा सकता!');
@@ -1644,6 +1548,7 @@ export async function softDeleteTenantWorkspace(tenantId) {
 export async function restoreTenantWorkspace(tenantId) {
   try {
     const admin = getAdminClient();
+    await requireSaasMaster(admin);
     if (!tenantId) throw new Error('Tenant ID missing.');
     if (tenantId === DEFAULT_TENANT_ID) throw new Error('Action not allowed.');
 
@@ -1676,6 +1581,7 @@ export async function restoreTenantWorkspace(tenantId) {
 export async function permanentDeleteTenantWorkspace(tenantId) {
   try {
     const admin = getAdminClient();
+    await requireSaasMaster(admin);
     if (!tenantId) throw new Error('Tenant ID missing.');
     if (tenantId === DEFAULT_TENANT_ID) {
       throw new Error('New Swan Group (Master Workspace) को स्थायी रूप से डिलीट नहीं किया जा सकता!');
@@ -1716,106 +1622,53 @@ export async function recordPaymentAndGenerateInvoice({
   paymentMode = 'UPI',
   transactionId = '',
   months = 12,
-  gstType = 'IGST'
+  gstType = 'IGST',
+  requestId,
+  sourceInvoiceNumber = null
 }) {
   try {
-    const admin = getAdminClient();
-    const now = new Date();
-    const newExpiry = new Date(now);
-    newExpiry.setMonth(newExpiry.getMonth() + Number(months || 12));
-
-    const { data: sub } = await admin
-      .from('tenant_subscriptions')
-      .select('*')
-      .eq('tenant_id', tenantId)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    const invoiceNumber = `INV-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}-${Math.floor(1000 + Math.random() * 9000)}`;
-
-    if (sub) {
-      await admin
-        .from('tenant_subscriptions')
-        .update({
-          valid_until: newExpiry.toISOString(),
-          status: 'ACTIVE',
-          amount: Number(amount || 0),
-          billing_cycle: Number(months) === 12 ? 'YEARLY' : (Number(months) === 6 ? 'HALF_YEARLY' : 'MONTHLY')
-        })
-        .eq('id', sub.id);
-    } else {
-      await admin
-        .from('tenant_subscriptions')
-        .insert([{
-          tenant_id: tenantId,
-          plan_name: 'SAAS_MODULAR',
-          user_seat_limit: 5,
-          valid_from: now.toISOString(),
-          valid_until: newExpiry.toISOString(),
-          status: 'ACTIVE',
-          billing_cycle: Number(months) === 12 ? 'YEARLY' : 'MONTHLY',
-          amount: Number(amount || 0)
-        }]);
-    }
-
-    await admin.from('tenants').update({ status: 'ACTIVE', updated_at: now.toISOString() }).eq('id', tenantId);
-
-    // Log to TENANT_BILLING_HISTORY
-    try {
-      const isNonGst = gstType === 'NON_GST';
-      const taxAmount = isNonGst ? 0 : Math.round(Number(amount || 0) * 0.18);
-      const totalPayable = isNonGst ? Number(amount || 0) : Math.round(Number(amount || 0) * 1.18);
-
-      const invRecord = {
-        id: `PAY-${Date.now()}`,
-        invoice_number: invoiceNumber,
-        invoice_type: 'tax_invoice',
-        category: 'RENEWAL_PAYMENT',
-        description: `Full Plan Subscription Renewal / Payment (${sub?.user_seat_limit || 5} User Seats)`,
-        additional_seats: 0,
-        total_seats: sub?.user_seat_limit || 5,
-        billing_mode: 'RENEWAL',
-        months_added: Number(months || 12),
-        valid_until: newExpiry.toISOString(),
-        amount: Number(amount || 0),
-        gst_type: gstType || 'IGST',
-        gst_rate: isNonGst ? 0 : 18,
-        tax_amount: taxAmount,
-        total_payable: totalPayable,
-        payment_mode: paymentMode || 'UPI',
-        transaction_id: transactionId || '',
-        status: 'PAID',
-        created_at: now.toISOString()
+    const admin = getAdminClient(),
+      actor = await requireSaasMaster(admin);
+    let kind = 'RENEWAL';
+    let payload = {
+      amount: saasNumber(amount, 'Amount'),
+      months: saasNumber(months, 'Months', {
+        min: 1,
+        max: 120,
+        integer: true
+      }),
+      gst_type: gstType,
+      payment_mode: paymentMode,
+      transaction_id: String(transactionId).trim()
+    };
+    if (sourceInvoiceNumber) {
+      const {
+        data: source,
+        error
+      } = await admin.from('saas_billing_events').select('tenant_id,operation,request_payload,invoice').eq('tenant_id', tenantId).eq('invoice_number', String(sourceInvoiceNumber)).maybeSingle();
+      if (error) throw error;
+      if (!source || !['ADDON_PROFORMA', 'MODULE_PROFORMA'].includes(source.operation)) throw new Error('This invoice cannot be paid through the add-on confirmation flow.');
+      kind = source.operation === 'MODULE_PROFORMA' ? 'MODULE_PAYMENT' : 'ADDON_PAYMENT';
+      payload = {
+        ...source.request_payload,
+        payment_mode: paymentMode,
+        transaction_id: String(transactionId).trim(),
+        source_invoice_number: source.invoice.invoice_number
       };
-      const { data: entRow } = await admin
-        .from('tenant_entitlements')
-        .select('config_json')
-        .eq('tenant_id', tenantId)
-        .eq('module_key', 'TENANT_BILLING_HISTORY')
-        .maybeSingle();
-      const existingInvoices = Array.isArray(entRow?.config_json?.invoices) ? entRow.config_json.invoices : [];
-      existingInvoices.unshift(invRecord);
-      await admin.from('tenant_entitlements').upsert({
-        tenant_id: tenantId,
-        module_key: 'TENANT_BILLING_HISTORY',
-        is_enabled: true,
-        config_json: { invoices: existingInvoices, updated_at: now.toISOString() }
-      }, { onConflict: 'tenant_id,module_key' });
-    } catch (_hErr) {
-      console.warn('Billing history log notice:', _hErr.message);
     }
-
+    const result = await applySaasBilling(admin, actor, tenantId, requestId, kind, payload);
     return {
       success: true,
-      invoiceNumber,
-      paidAt: now.toISOString(),
-      newExpiry: newExpiry.toISOString(),
-      message: `भुगतान रिकॉर्ड हो गया! Tax Invoice #${invoiceNumber} जनरेट हो गया।`
+      ...result,
+      invoiceNumber: result.invoice.invoice_number,
+      paidAt: result.invoice.created_at,
+      message: 'Payment recorded and invoice saved.'
     };
   } catch (err) {
-    console.error('recordPaymentAndGenerateInvoice error:', err);
-    return { success: false, error: err.message };
+    return {
+      success: false,
+      error: err.message
+    };
   }
 }
 
@@ -1827,57 +1680,31 @@ const BILLING_HISTORY_MODULE_KEY = 'TENANT_BILLING_HISTORY';
 export async function getTenantBillingHistory(tenantId) {
   try {
     const admin = getAdminClient();
-    if (!tenantId) throw new Error('Tenant ID missing.');
-
-    const [{ data: tenant }, { data: sub }] = await Promise.all([
-      admin.from('tenants').select('*').eq('id', tenantId).maybeSingle(),
-      admin.from('tenant_subscriptions').select('*').eq('tenant_id', tenantId).order('created_at', { ascending: false }).limit(1).maybeSingle()
-    ]);
-
-    const { data: entRow } = await admin
-      .from('tenant_entitlements')
-      .select('config_json')
-      .eq('tenant_id', tenantId)
-      .eq('module_key', BILLING_HISTORY_MODULE_KEY)
-      .maybeSingle();
-
-    let invoices = Array.isArray(entRow?.config_json?.invoices) ? entRow.config_json.invoices : [];
-
-    if (invoices.length === 0 && sub) {
-      const isPaid = sub.status === 'ACTIVE';
-      const initialInvoice = {
-        id: `INIT-${tenant?.id || '01'}`,
-        invoice_number: isPaid ? `INV-${tenant?.tenant_code || 'WS'}-01` : `PI-${tenant?.tenant_code || 'WS'}-01`,
-        invoice_type: isPaid ? 'tax_invoice' : 'proforma',
-        category: 'INITIAL_SUBSCRIPTION',
-        description: `Initial Workspace Setup & Onboarding (${sub.user_seat_limit || 5} User Seats)`,
-        additional_seats: 0,
-        total_seats: sub.user_seat_limit || 5,
-        billing_mode: 'INITIAL',
-        amount: Number(sub.amount || 0),
-        gst_type: 'IGST',
-        gst_rate: 18,
-        tax_amount: Math.round(Number(sub.amount || 0) * 0.18),
-        total_payable: Math.round(Number(sub.amount || 0) * 1.18),
-        payment_mode: 'UPI',
-        transaction_id: 'ONBOARDING-DIRECT',
-        status: isPaid ? 'PAID' : 'PENDING',
-        created_at: sub.created_at || tenant?.created_at || new Date().toISOString()
-      };
-      invoices.push(initialInvoice);
-    }
-
-    invoices.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
-
+    await requireSaasMaster(admin);
+    if (!SAAS_UUID.test(String(tenantId))) throw new Error('Invalid workspace.');
+    const [{
+      data: tenant,
+      error: tError
+    }, {
+      data: subscription,
+      error: sError
+    }, invoices] = await Promise.all([admin.from('tenants').select('*').eq('id', tenantId).maybeSingle(), admin.from('tenant_subscriptions').select('*').eq('tenant_id', tenantId).order('created_at', {
+      ascending: false
+    }).limit(1).maybeSingle(), readSaasInvoices(admin, tenantId)]);
+    if (tError || sError) throw tError || sError;
+    if (!tenant) throw new Error('Workspace not found.');
     return {
       success: true,
       tenant,
-      subscription: sub,
+      subscription,
       invoices
     };
   } catch (err) {
-    console.error('getTenantBillingHistory error:', err);
-    return { success: false, error: err.message, invoices: [] };
+    return {
+      success: false,
+      error: err.message,
+      invoices: []
+    };
   }
 }
 
@@ -1888,147 +1715,52 @@ export async function processAddonSeatsAndInvoice({
   tenantId,
   currentSeats = 5,
   newSeats = 10,
-  billingMode = 'SAME_EXPIRY', // 'SAME_EXPIRY' | 'EXTEND_VALIDITY'
+  billingMode = 'SAME_EXPIRY',
   monthsToAdd = 0,
   dealPrice = 0,
-  invoiceType = 'tax_invoice', // 'proforma' | 'tax_invoice'
+  invoiceType = 'tax_invoice',
   paymentMode = 'UPI',
   transactionId = '',
-  gstType = 'IGST' // 'IGST' | 'CGST_SGST'
+  gstType = 'IGST',
+  requestId
 }) {
   try {
     const admin = getAdminClient();
-    if (!tenantId) throw new Error('Tenant ID missing.');
-
-    const now = new Date();
-    const cSeats = Math.max(1, parseInt(currentSeats, 10) || 1);
-    const nSeats = Math.max(cSeats, parseInt(newSeats, 10) || cSeats);
-    const addSeats = Math.max(0, nSeats - cSeats);
-    const finalAmount = Math.max(0, Number(dealPrice) || 0);
-
-    const { data: sub, error: subErr } = await admin
-      .from('tenant_subscriptions')
-      .select('*')
-      .eq('tenant_id', tenantId)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (subErr) throw subErr;
-
-    const { data: tenant } = await admin
-      .from('tenants')
-      .select('*')
-      .eq('id', tenantId)
-      .maybeSingle();
-
-    let newExpiry = sub?.valid_until ? new Date(sub.valid_until) : new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-    if (billingMode === 'EXTEND_VALIDITY' && Number(monthsToAdd) > 0) {
-      const baseDate = newExpiry > now ? newExpiry : now;
-      newExpiry = new Date(baseDate);
-      newExpiry.setMonth(newExpiry.getMonth() + Number(monthsToAdd));
-    }
-
-    const updateSubPayload = {
-      user_seat_limit: nSeats
-    };
-    if (billingMode === 'EXTEND_VALIDITY') {
-      updateSubPayload.valid_until = newExpiry.toISOString();
-    }
-    if (invoiceType === 'tax_invoice') {
-      updateSubPayload.status = 'ACTIVE';
-    }
-
-    if (sub) {
-      const { error: updErr } = await admin
-        .from('tenant_subscriptions')
-        .update(updateSubPayload)
-        .eq('id', sub.id);
-      if (updErr) throw updErr;
-    } else {
-      const { error: insErr } = await admin
-        .from('tenant_subscriptions')
-        .insert([{
-          tenant_id: tenantId,
-          plan_name: 'SAAS_MODULAR',
-          user_seat_limit: nSeats,
-          valid_from: now.toISOString(),
-          valid_until: newExpiry.toISOString(),
-          status: invoiceType === 'tax_invoice' ? 'ACTIVE' : 'TRIAL',
-          billing_cycle: 'YEARLY',
-          amount: finalAmount
-        }]);
-      if (insErr) throw insErr;
-    }
-
-    if (invoiceType === 'tax_invoice') {
-      await admin.from('tenants').update({ status: 'ACTIVE', updated_at: now.toISOString() }).eq('id', tenantId);
-    }
-
-    const code = tenant?.tenant_code || 'WS';
-    const stamp = String(Math.floor(Date.now() / 1000)).slice(-4);
-    const invoiceNumber = invoiceType === 'tax_invoice'
-      ? `INV-ADD-${code}-${stamp}`
-      : `PI-ADD-${code}-${stamp}`;
-
-    const isNonGst = gstType === 'NON_GST';
-    const taxAmount = isNonGst ? 0 : Math.round(finalAmount * 0.18);
-    const totalPayable = isNonGst ? finalAmount : Math.round(finalAmount * 1.18);
-
-    const invoiceRecord = {
-      id: `INV-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      invoice_number: invoiceNumber,
-      invoice_type: invoiceType,
-      category: 'ADDON_SEATS',
-      description: `Add-on User Seats Expansion (+${addSeats} Users; Total Limit: ${nSeats} Users)`,
-      additional_seats: addSeats,
-      total_seats: nSeats,
+    const actor = await requireSaasMaster(admin);
+    if (!['proforma', 'tax_invoice'].includes(invoiceType)) throw new Error('Invalid invoice type.');
+    if (!['SAME_EXPIRY', 'EXTEND_VALIDITY'].includes(billingMode)) throw new Error('Invalid billing mode.');
+    const result = await applySaasBilling(admin, actor, tenantId, requestId, invoiceType === 'proforma' ? 'ADDON_PROFORMA' : 'ADDON_PAYMENT', {
+      current_seats: saasNumber(currentSeats, 'Current seats', {
+        min: 1,
+        max: 100000,
+        integer: true
+      }),
+      new_seats: saasNumber(newSeats, 'Seats', {
+        min: 1,
+        max: 100000,
+        integer: true
+      }),
+      months: billingMode === 'EXTEND_VALIDITY' ? saasNumber(monthsToAdd, 'Months', {
+        min: 1,
+        max: 120,
+        integer: true
+      }) : 0,
       billing_mode: billingMode,
-      months_added: billingMode === 'EXTEND_VALIDITY' ? Number(monthsToAdd) : 0,
-      valid_until: newExpiry.toISOString(),
-      amount: finalAmount,
-      gst_type: gstType || 'IGST',
-      gst_rate: isNonGst ? 0 : 18,
-      tax_amount: taxAmount,
-      total_payable: totalPayable,
-      payment_mode: paymentMode || 'UPI',
-      transaction_id: transactionId || '',
-      status: invoiceType === 'tax_invoice' ? 'PAID' : 'PENDING',
-      created_at: now.toISOString()
-    };
-
-    const { data: entRow } = await admin
-      .from('tenant_entitlements')
-      .select('config_json')
-      .eq('tenant_id', tenantId)
-      .eq('module_key', BILLING_HISTORY_MODULE_KEY)
-      .maybeSingle();
-
-    const existingInvoices = Array.isArray(entRow?.config_json?.invoices) ? entRow.config_json.invoices : [];
-    existingInvoices.unshift(invoiceRecord);
-
-    await admin
-      .from('tenant_entitlements')
-      .upsert({
-        tenant_id: tenantId,
-        module_key: BILLING_HISTORY_MODULE_KEY,
-        is_enabled: true,
-        config_json: {
-          invoices: existingInvoices,
-          updated_at: now.toISOString()
-        }
-      }, { onConflict: 'tenant_id,module_key' });
-
+      amount: saasNumber(dealPrice, 'Amount'),
+      gst_type: gstType,
+      payment_mode: paymentMode,
+      transaction_id: String(transactionId).trim()
+    });
     return {
       success: true,
-      invoice: invoiceRecord,
-      newSeatLimit: nSeats,
-      additionalSeats: addSeats,
-      message: `सफलतापूर्वक ${addSeats} अतिरिक्त सीट्स जोड़ दी गईं! कुल सीमा: ${nSeats} Users. Invoice #${invoiceNumber} जनरेट हो गया।`
+      ...result,
+      message: invoiceType === 'proforma' ? 'Proforma saved. Seats and validity remain unchanged until payment confirmation.' : 'Seats updated and paid invoice saved.'
     };
   } catch (err) {
-    console.error('processAddonSeatsAndInvoice error:', err);
-    return { success: false, error: err.message };
+    return {
+      success: false,
+      error: err.message
+    };
   }
 }
 
@@ -2038,69 +1770,39 @@ export async function processAddonSeatsAndInvoice({
 export async function getTenantActiveUsers(tenantId) {
   try {
     const admin = getAdminClient();
-    if (!tenantId) throw new Error('Tenant ID missing.');
-
-    const { data: tenant } = await admin
-      .from('tenants')
-      .select('id, name, tenant_code, primary_contact_email')
-      .eq('id', tenantId)
-      .maybeSingle();
-
-    const { data: users, error } = await admin
-      .from('user_roles')
-      .select('user_id, emp_id, emp_name, emp_official_mail_id, email, role, is_approved, company, created_at')
-      .order('emp_name', { ascending: true });
-
-    if (error) throw error;
-
-    const tCode = (tenant?.tenant_code || '').toLowerCase().trim();
-    const tName = (tenant?.name || '').toLowerCase().trim();
-    const adminEmail = (tenant?.primary_contact_email || '').toLowerCase().trim();
-    const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl'];
-
-    const tenantUsers = (users || []).filter(u => {
-      if (u.role === 'customer') return false;
-      const comp = (u.company || '').toLowerCase().trim();
-      const uEmail = (u.email || '').toLowerCase().trim();
-      const uOfficialEmail = (u.emp_official_mail_id || '').toLowerCase().trim();
-
-      // Check admin email match
-      if (adminEmail && (uEmail === adminEmail || uOfficialEmail === adminEmail)) {
-        return true;
-      }
-
-      if (tenantId === DEFAULT_TENANT_ID || tCode === 'new_swan_group') {
-        return SWAN_COMPANIES.includes(comp) || (!comp && (uEmail.endsWith('@newswangroup.com') || !uEmail.includes('@')));
-      }
-
-      return comp === tName || comp === tCode;
-    });
-
-    tenantUsers.sort((a, b) => {
-      const aEmail = (a.email || a.emp_official_mail_id || '').toLowerCase();
-      const bEmail = (b.email || b.emp_official_mail_id || '').toLowerCase();
-      if (adminEmail && aEmail === adminEmail) return -1;
-      if (adminEmail && bEmail === adminEmail) return 1;
-      const aIsAdmin = a.role === 'admin' || a.role === 'Admin';
-      const bIsAdmin = b.role === 'admin' || b.role === 'Admin';
-      if (aIsAdmin && !bIsAdmin) return -1;
-      if (!aIsAdmin && bIsAdmin) return 1;
-      return (a.emp_name || '').localeCompare(b.emp_name || '');
-    });
-
-    const activeUsers = tenantUsers.filter(u => u.is_approved !== false);
-    const heldUsers = tenantUsers.filter(u => u.is_approved === false);
-
+    await requireSaasMaster(admin);
+    if (!SAAS_UUID.test(String(tenantId))) throw new Error('Invalid workspace.');
+    const [{
+      data: tenants,
+      error: tError
+    }, {
+      data: users,
+      error: uError
+    }] = await Promise.all([admin.from('tenants').select('id,name,tenant_code,primary_contact_email'), admin.from('user_roles').select('user_id,tenant_id,emp_id,emp_name,emp_official_mail_id,email,role,is_approved,emp_status,company,module_access,created_at').order('emp_name', {
+      ascending: true
+    })]);
+    if (tError || uError) throw tError || uError;
+    const tenant = tenants?.find(t => t.id === tenantId);
+    if (!tenant) throw new Error('Workspace not found.');
+    const scoped = (users || []).filter(u => userBelongsToSaasTenant(u, tenant, tenants)).map(u => ({
+      ...u,
+      can_hold: !['admin', 'tenant_admin', 'superadmin', 'super_admin', 'masteradmin', 'master_admin'].includes(String(u.role).toLowerCase()) && !u.module_access?.is_master_admin && [u.email, u.emp_official_mail_id].every(e => !e || String(e).toLowerCase() !== String(tenant.primary_contact_email || '').toLowerCase()),
+      module_access: undefined
+    }));
     return {
       success: true,
       tenant,
-      totalUsers: tenantUsers.length,
-      activeUsers,
-      heldUsers
+      totalUsers: scoped.length,
+      activeUsers: scoped.filter(isSaasUserActive),
+      heldUsers: scoped.filter(u => !isSaasUserActive(u))
     };
   } catch (err) {
-    console.error('getTenantActiveUsers error:', err);
-    return { success: false, error: err.message, activeUsers: [], heldUsers: [] };
+    return {
+      success: false,
+      error: err.message,
+      activeUsers: [],
+      heldUsers: []
+    };
   }
 }
 
@@ -2112,128 +1814,40 @@ export async function reduceTenantSeatsAndHoldUsers({
   currentSeats = 5,
   newSeats = 1,
   holdUserIds = [],
-  reason = ''
+  reason = '',
+  requestId
 }) {
   try {
     const admin = getAdminClient();
-    if (!tenantId) throw new Error('Tenant ID missing.');
-
-    const cSeats = Math.max(1, parseInt(currentSeats, 10) || 1);
-    const nSeats = Math.max(1, parseInt(newSeats, 10) || 1);
-    if (nSeats >= cSeats) {
-      throw new Error(`New seat limit (${nSeats}) must be less than current limit (${cSeats}) for downgrade.`);
-    }
-
-    const now = new Date();
-
-    // 1. If any user IDs are selected to be put on HOLD, update user_roles
-    if (Array.isArray(holdUserIds) && holdUserIds.length > 0) {
-      const { error: holdErr } = await admin
-        .from('user_roles')
-        .update({
-          is_approved: false
-        })
-        .in('user_id', holdUserIds);
-
-      if (holdErr) {
-        console.warn('Failed to put some users on hold:', holdErr);
-      }
-    }
-
-    // 2. Update tenant_subscriptions with new reduced user_seat_limit
-    const { data: sub, error: subErr } = await admin
-      .from('tenant_subscriptions')
-      .select('*')
-      .eq('tenant_id', tenantId)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (subErr) throw subErr;
-
-    if (sub) {
-      const { error: updErr } = await admin
-        .from('tenant_subscriptions')
-        .update({
-          user_seat_limit: nSeats
-        })
-        .eq('id', sub.id);
-      if (updErr) throw updErr;
-    } else {
-      const { error: insErr } = await admin
-        .from('tenant_subscriptions')
-        .insert([{
-          tenant_id: tenantId,
-          plan_name: 'SAAS_MODULAR',
-          user_seat_limit: nSeats,
-          valid_from: now.toISOString(),
-          valid_until: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-          status: 'ACTIVE',
-          billing_cycle: 'YEARLY'
-        }]);
-      if (insErr) throw insErr;
-    }
-
-    // 3. Record SEAT_DOWNGRADE entry in billing ledger
-    const { data: tenant } = await admin
-      .from('tenants')
-      .select('*')
-      .eq('id', tenantId)
-      .maybeSingle();
-
-    const reductionRecord = {
-      id: `RED-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      invoice_number: `ADJ-${tenant?.tenant_code || 'WS'}-${Date.now().toString().slice(-4)}`,
-      invoice_type: 'seat_reduction',
-      category: 'SEAT_REDUCTION',
-      description: `User Seats Reduced from ${cSeats} to ${nSeats} (-${cSeats - nSeats} Seats)${reason ? ' | Note: ' + reason : ''}`,
-      additional_seats: -(cSeats - nSeats),
-      total_seats: nSeats,
-      held_users_count: Array.isArray(holdUserIds) ? holdUserIds.length : 0,
-      billing_mode: 'DOWNGRADE',
+    const actor = await requireSaasMaster(admin);
+    if (!Array.isArray(holdUserIds) || holdUserIds.some(id => !SAAS_UUID.test(String(id)))) throw new Error('Invalid HOLD selection.');
+    const result = await applySaasBilling(admin, actor, tenantId, requestId, 'DOWNGRADE', {
+      current_seats: saasNumber(currentSeats, 'Current seats', {
+        min: 1,
+        max: 100000,
+        integer: true
+      }),
+      new_seats: saasNumber(newSeats, 'Seats', {
+        min: 1,
+        max: 100000,
+        integer: true
+      }),
+      hold_user_ids: [...new Set(holdUserIds)],
+      reason: String(reason).trim(),
       amount: 0,
-      gst_type: 'NON_GST',
-      gst_rate: 0,
-      tax_amount: 0,
-      total_payable: 0,
-      payment_mode: 'ADJUSTMENT',
-      transaction_id: 'SYSTEM-REDUCTION',
-      status: 'COMPLETED',
-      created_at: now.toISOString()
-    };
-
-    const { data: entRow } = await admin
-      .from('tenant_entitlements')
-      .select('config_json')
-      .eq('tenant_id', tenantId)
-      .eq('module_key', BILLING_HISTORY_MODULE_KEY)
-      .maybeSingle();
-
-    const existingInvoices = Array.isArray(entRow?.config_json?.invoices) ? entRow.config_json.invoices : [];
-    existingInvoices.unshift(reductionRecord);
-
-    await admin
-      .from('tenant_entitlements')
-      .upsert({
-        tenant_id: tenantId,
-        module_key: BILLING_HISTORY_MODULE_KEY,
-        is_enabled: true,
-        config_json: {
-          invoices: existingInvoices,
-          updated_at: now.toISOString()
-        }
-      }, { onConflict: 'tenant_id,module_key' });
-
+      gst_type: 'NON_GST'
+    });
     return {
       success: true,
-      newSeatLimit: nSeats,
-      reducedCount: cSeats - nSeats,
-      heldUsersCount: holdUserIds.length,
-      message: `सीट लिमिट सफलतापूर्वक कम करके ${nSeats} कर दी गई! (${holdUserIds.length > 0 ? `${holdUserIds.length} users ko HOLD par rakha gaya` : 'Seats already freed'})`
+      ...result,
+      reducedCount: currentSeats - newSeats,
+      message: 'Seat limit and selected eligible accounts updated.'
     };
   } catch (err) {
-    console.error('reduceTenantSeatsAndHoldUsers error:', err);
-    return { success: false, error: err.message };
+    return {
+      success: false,
+      error: err.message
+    };
   }
 }
 
@@ -2243,46 +1857,105 @@ export async function reduceTenantSeatsAndHoldUsers({
 export async function getAllMasterInvoices() {
   try {
     const admin = getAdminClient();
-
-    const [{ data: tenants }, { data: entRows }] = await Promise.all([
-      admin.from('tenants').select('id, name, tenant_code, primary_contact_email, phone, address, gstin'),
-      admin.from('tenant_entitlements').select('tenant_id, config_json').eq('module_key', BILLING_HISTORY_MODULE_KEY)
-    ]);
-
-    const tenantMap = {};
-    (tenants || []).forEach(t => {
-      tenantMap[t.id] = t;
-    });
-
-    let allInvoices = [];
-    (entRows || []).forEach(row => {
-      const tenant = tenantMap[row.tenant_id] || { id: row.tenant_id, name: 'Unknown Client', tenant_code: 'WS' };
-      const invoices = Array.isArray(row?.config_json?.invoices) ? row.config_json.invoices : [];
-      invoices.forEach(inv => {
-        allInvoices.push({
-          ...inv,
-          tenant_id: tenant.id,
-          tenant_name: tenant.name,
-          tenant_code: tenant.tenant_code,
-          tenant_email: tenant.primary_contact_email,
-          tenant_phone: tenant.phone,
-          tenant_gstin: tenant.gstin
-        });
-      });
-    });
-
-    allInvoices.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
-
+    await requireSaasMaster(admin);
+    const [{
+      data: tenants,
+      error
+    }, invoices] = await Promise.all([admin.from('tenants').select('id,name,tenant_code,primary_contact_email,primary_contact_mobile'), readSaasInvoices(admin)]);
+    if (error) throw error;
+    const directory = new Map((tenants || []).map(t => [t.id, t]));
     return {
       success: true,
-      invoices: allInvoices
+      invoices: invoices.map(inv => {
+        const t = directory.get(inv.tenant_id);
+        return {
+          ...inv,
+          tenant_name: t?.name || 'Unavailable workspace',
+          tenant_code: t?.tenant_code || '',
+          tenant_email: t?.primary_contact_email,
+          tenant_phone: t?.primary_contact_mobile
+        };
+      })
     };
   } catch (err) {
-    console.error('getAllMasterInvoices error:', err);
-    return { success: false, error: err.message, invoices: [] };
+    return {
+      success: false,
+      error: err.message,
+      invoices: []
+    };
   }
 }
 
 
 
 
+
+async function callSaasRpc(admin, name, args) {
+  const {
+    data,
+    error
+  } = await admin.rpc(name, args);
+  if (error) {
+    if (['PGRST202', '42P01', '42883'].includes(error.code)) throw new Error('SaaS safety migration 54 must be reviewed and applied before this operation. No payment or seat change was recorded.');
+    throw new Error(error.message || 'SaaS operation failed.');
+  }
+  if (!data) throw new Error('SaaS operation returned no confirmation. Please retry with the same request.');
+  return data;
+}
+
+async function applySaasBilling(admin, actor, tenantId, requestId, kind, payload) {
+  if (!SAAS_UUID.test(String(tenantId || ''))) throw new Error('A valid workspace is required.');
+  const key = requestId || randomUUID();
+  if (!SAAS_UUID.test(key)) throw new Error('A valid request ID is required.');
+  return callSaasRpc(admin, 'saas_apply_billing_operation', {
+    p_tenant_id: tenantId,
+    p_actor_id: actor.user.id,
+    p_request_id: key,
+    p_kind: kind,
+    p_payload: payload
+  });
+}
+
+async function readSaasInvoices(admin, tenantId = null) {
+  let legacyQuery = admin.from('tenant_entitlements').select('tenant_id, config_json').eq('module_key', 'TENANT_BILLING_HISTORY');
+  let eventsQuery = admin.from('saas_billing_events').select('tenant_id, invoice, created_at').order('created_at', {
+    ascending: false
+  });
+  if (tenantId) {
+    legacyQuery = legacyQuery.eq('tenant_id', tenantId);
+    eventsQuery = eventsQuery.eq('tenant_id', tenantId);
+  }
+  const [legacy, events] = await Promise.all([legacyQuery, eventsQuery]);
+  if (legacy.error) throw legacy.error;
+  if (events.error && !['42P01', 'PGRST205'].includes(events.error.code)) throw events.error;
+  const invoices = new Map();
+  for (const row of legacy.data || []) for (const invoice of Array.isArray(row.config_json?.invoices) ? row.config_json.invoices : []) {
+    invoices.set(row.tenant_id + ':' + (invoice.invoice_number || invoice.id), {
+      ...invoice,
+      tenant_id: row.tenant_id
+    });
+  }
+  for (const row of events.data || []) invoices.set(row.tenant_id + ':' + row.invoice.invoice_number, {
+    ...row.invoice,
+    tenant_id: row.tenant_id
+  });
+  return [...invoices.values()].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+}
+
+export async function getSaasMasterSnapshot() {
+  try {
+    await requireSaasMaster(getAdminClient());
+    const data = await Promise.all([getProcessCatalog(), getCycleDiscounts(), getAllTenantsWithSubscriptions(), getAllMasterInvoices()]);
+    const failed = data.find(result => !result.success);
+    if (failed) throw new Error(failed.error || 'SaaS data is unavailable.');
+    return {
+      success: true,
+      data
+    };
+  } catch (err) {
+    return {
+      success: false,
+      error: err.message
+    };
+  }
+}

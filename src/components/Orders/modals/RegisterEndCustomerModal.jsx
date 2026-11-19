@@ -15,6 +15,8 @@ import SearchableProductSelect from '@/components/common/SearchableProductSelect
 import { createEndCustomer } from '@/app/actions/endCustomers';
 import { calculateWarrantyStatus } from '@/utils/warrantyUtils';
 import { END_CUSTOMER_COMPANIES, endCustomerDealerCompany, filterEndCustomerDealers, partyCode } from '@/utils/endCustomerTransfer';
+import { formatBranchStandard } from '@/utils/branchAccess';
+import UniversalBranchSelect from '@/components/common/UniversalBranchSelect';
 
 /**
  * Client-side file compressor to guarantee file size is strictly <= 100 KB
@@ -548,14 +550,21 @@ export default function RegisterEndCustomerModal({
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.75rem' }}>
               <div style={{ gridColumn: '1 / -1', maxWidth: '350px', width: '100%' }}>
-                <label htmlFor="end-customer-company" style={{ display: 'block', fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
-                  Company Name <span style={{ color: '#ef4444' }}>*</span>
-                </label>
-                <select id="end-customer-company" required value={formData.our_company} onChange={e => handleCompanyChange(e.target.value)}
-                  style={{ width: '100%', padding: '0.5rem 0.65rem', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '6px', color: 'var(--text-primary)', fontSize: '0.82rem' }}>
-                  <option value="">Select Company</option>
-                  {END_CUSTOMER_COMPANIES.map(company => <option key={company} value={company}>{company}</option>)}
-                </select>
+                <UniversalBranchSelect
+                  label="Company Name"
+                  required
+                  value={formData.our_company}
+                  onChange={handleCompanyChange}
+                  placeholder="Select Company"
+                  triggerStyle={{
+                    padding: '0.5rem 0.65rem',
+                    background: 'var(--bg-surface)',
+                    border: '1px solid var(--border-light)',
+                    borderRadius: '6px',
+                    fontSize: '0.82rem',
+                    minHeight: '38px'
+                  }}
+                />
               </div>
               <div>
                 <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>

@@ -14,6 +14,7 @@ import MultiColumnFilterModal from './TableControls/MultiColumnFilterModal';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import { upsertLeadsLocally } from '@/utils/offlineSync';
 import useTableColumnResize, { ColumnResizer } from '@/utils/tableColumnResize';
+import { formatBranchStandard } from '@/utils/branchAccess';
 
 export const EDITABLE_COLUMNS = [
   { key: 'state_name', label: 'State' },
@@ -1936,6 +1937,7 @@ export default function ClientReport({
                 {visibleReportCols.map(col => {
                   let val = lead[col.key];
                   if (col.key === 'created_at' && val) val = new Date(val).toLocaleString();
+                  if (col.key === 'our_company' && val) val = formatBranchStandard(val);
                   return (
                     <td 
                       key={col.key} 

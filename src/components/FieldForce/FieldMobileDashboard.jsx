@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Layers, FileText, Navigation, Phone, MessageSquare, Mail } from 'lucide-react';
+import { createClient as createBrowserSupabase } from '@/utils/supabase/client';
 import {
   performCheckIn,
   performCheckOutWithOutput,
@@ -111,6 +112,37 @@ function formatDutyDuration(inTime, isPunchedIn, nowMs, outTime = null, totalMin
   return `${hrs}h ${mins}m ${String(secs).padStart(2, '0')}s`;
 }
 
+function playTaskArrivalChime() {
+  try {
+    if (typeof window === 'undefined') return;
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const now = ctx.currentTime;
+    const osc1 = ctx.createOscillator();
+    const gain1 = ctx.createGain();
+    osc1.type = 'sine';
+    osc1.frequency.setValueAtTime(587.33, now);
+    gain1.gain.setValueAtTime(0.25, now);
+    gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+    osc1.connect(gain1);
+    gain1.connect(ctx.destination);
+    osc1.start(now);
+    osc1.stop(now + 0.22);
+
+    const osc2 = ctx.createOscillator();
+    const gain2 = ctx.createGain();
+    osc2.type = 'sine';
+    osc2.frequency.setValueAtTime(880, now + 0.12);
+    gain2.gain.setValueAtTime(0.3, now + 0.12);
+    gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+    osc2.connect(gain2);
+    gain2.connect(ctx.destination);
+    osc2.start(now + 0.12);
+    osc2.stop(now + 0.45);
+  } catch {}
+}
+
 export default function FieldMobileDashboard({
   currentUserId,
   company = 'TNT00001',
@@ -122,6 +154,7 @@ export default function FieldMobileDashboard({
   onNavigateToAttendance = null,
 }) {
   const [activeTab, setActiveTab] = useState('SCHEDULED_TASKS'); // 'SCHEDULED_TASKS' | 'ACTIVE_VISIT'
+  const [incomingTaskAlert, setIncomingTaskAlert] = useState(null);
 
   const [attendanceStatus, setAttendanceStatus] = useState({
     checked: false,
@@ -472,6 +505,51 @@ export default function FieldMobileDashboard({
     }, 0);
     return () => clearTimeout(timer);
   }, [loadTodayTasks, loadPublishedForms, loadCompletedVisits, loadAttendanceStatus]);
+
+  useEffect(() => {
+    if (!currentUserId || typeof window === 'undefined') return;
+    let channel = null;
+    let supabase = null;
+    try {
+      supabase = createBrowserSupabase();
+      channel = supabase.channel(`crm-field-tasks:${currentUserId}`)
+        .on('broadcast', { event: 'NEW_FIELD_TASK' }, (msg) => {
+          playTaskArrivalChime();
+          setIncomingTaskAlert(msg.payload);
+          void loadTodayTasks();
+        })
+        .on('postgres_changes', {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'field_tasks',
+          filter: `assigned_to_user_id=eq.${currentUserId}`
+        }, (payload) => {
+          playTaskArrivalChime();
+          setIncomingTaskAlert({
+            taskCode: payload?.new?.task_code,
+            partyName: payload?.new?.party_name,
+            priority: payload?.new?.priority,
+            taskType: payload?.new?.task_type
+          });
+          void loadTodayTasks();
+        })
+        .subscribe();
+    } catch (err) {
+      console.warn('Realtime task listener fallback:', err);
+    }
+
+    return () => {
+      if (channel && supabase) {
+        supabase.removeChannel(channel).catch(() => {});
+      }
+    };
+  }, [currentUserId, loadTodayTasks]);
+
+  useEffect(() => {
+    if (!incomingTaskAlert) return;
+    const t = setTimeout(() => setIncomingTaskAlert(null), 8000);
+    return () => clearTimeout(t);
+  }, [incomingTaskAlert]);
 
   // Tenant-isolated entity search across Leads, Party Master & Assigned Itinerary
   const loadModuleEntities = useCallback(async (modType = selectedModule, searchStr = searchQuery) => {
@@ -1188,6 +1266,57 @@ export default function FieldMobileDashboard({
 
   return (
     <div className={styles.console}>
+      {incomingTaskAlert && (
+        <div
+          role="alert"
+          style={{
+            position: 'fixed',
+            top: '16px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 99999,
+            width: '92vw',
+            maxWidth: '430px',
+            background: '#0f172a',
+            color: '#ffffff',
+            borderRadius: '12px',
+            padding: '12px 16px',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.45), 0 8px 10px -6px rgba(0, 0, 0, 0.35)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '12px',
+            border: '1px solid #38bdf8'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span style={{ fontSize: '1.4rem' }}>📋</span>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: '0.86rem', color: '#38bdf8' }}>
+                New Task Assigned: {incomingTaskAlert.taskCode}
+              </div>
+              <div style={{ fontSize: '0.78rem', color: '#cbd5e1' }}>
+                {incomingTaskAlert.partyName} ({incomingTaskAlert.priority})
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIncomingTaskAlert(null)}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: '#94a3b8',
+              cursor: 'pointer',
+              fontSize: '1.1rem',
+              padding: '4px'
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       <ConsoleHeader
         userName={userName}
         company={company}

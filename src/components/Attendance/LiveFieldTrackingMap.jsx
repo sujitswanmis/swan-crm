@@ -25,6 +25,7 @@ import {
   TrackingMapToolbar, TrackingRouteDock, TrackingPlaybackControls, TrackingRangeOverview
 } from '@/components/FieldForce/FieldTrackingDashboardUI';
 import trackingStyles from '@/components/FieldForce/LiveTrackingDashboard.module.css';
+import LiveFleetTrackingTab from '@/components/FieldForce/LiveFleetTrackingTab';
 import { deriveTrackingDeviceStatus } from '@/components/FieldForce/trackingDeviceStatus';
 import {
   resolveTrackingDateRange, enumerateTrackingDates, fetchTrackingDay, peekTrackingDay,
@@ -592,6 +593,33 @@ function computeEmployeeLiveDeviceStatus(routeData, selectedDate, nowMs, fallbac
   };
 }
 
+const RADAR_TAB_KEYS = {
+  LIVE_TRACKING: 'live_tracking',
+  '360_PLAYBACK': '360_playback',
+  ALL_INDIA_RADAR: 'all_india_radar',
+  CONVEYANCE_VOUCHERS: 'conveyance_vouchers'
+};
+
+function parseRadarTabFromUrl() {
+  if (typeof window === 'undefined') return 'LIVE_TRACKING';
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const view = (params.get('view') || params.get('subtab') || params.get('radar_tab') || '').toLowerCase().trim();
+    if (view) {
+      if (['live_tracking', 'live', 'livetracking', 'fleet'].includes(view)) return 'LIVE_TRACKING';
+      if (['360_playback', 'playback', 'route', 'route_playback', '360'].includes(view)) return '360_PLAYBACK';
+      if (['all_india_radar', 'cluster_radar', 'radar', 'all_india', 'clusters'].includes(view)) return 'ALL_INDIA_RADAR';
+      if (['conveyance_vouchers', 'vouchers', 'tada', 'daily_vouchers'].includes(view)) return 'CONVEYANCE_VOUCHERS';
+    }
+    const tabParam = (params.get('tab') || '').toLowerCase().trim();
+    if (['playback', '360_playback', 'route'].includes(tabParam)) return '360_PLAYBACK';
+    if (['cluster_radar', 'all_india_radar'].includes(tabParam)) return 'ALL_INDIA_RADAR';
+    if (['vouchers', 'conveyance_vouchers', 'tada'].includes(tabParam)) return 'CONVEYANCE_VOUCHERS';
+    if (['live_tracking', 'live_fleet'].includes(tabParam)) return 'LIVE_TRACKING';
+  } catch {}
+  return 'LIVE_TRACKING';
+}
+
 export default function LiveFieldTrackingMap({ company = 'New Swan Group', branchCode = null, currentUserRole = 'ADMIN', tenantId = null, onOpenDeviceHealth = null, presentation = 'legacy', branchAccess = null, adminCompanyFilter = 'All' }) {
   const isFieldForcePresentation = presentation === 'field-force';
   const effectiveBranchAccess = useMemo(() => {
@@ -602,7 +630,32 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
   const [activityExpanded, setActivityExpanded] = useState(false);
   const [selectedTimelineEvent, setSelectedTimelineEvent] = useState(null);
   const [routeLoadError, setRouteLoadError] = useState(false);
-  const [activeMainTab, setActiveMainTab] = useState('360_PLAYBACK'); // '360_PLAYBACK', 'ALL_INDIA_RADAR', 'CONVEYANCE_VOUCHERS'
+  const [activeMainTab, setActiveMainTab] = useState(() => parseRadarTabFromUrl()); // 'LIVE_TRACKING', '360_PLAYBACK', 'ALL_INDIA_RADAR', 'CONVEYANCE_VOUCHERS'
+
+  // URL Deep-Linking & Browser Popstate Sync
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const handlePopState = () => {
+      const targetTab = parseRadarTabFromUrl();
+      setActiveMainTab((prev) => (prev !== targetTab ? targetTab : prev));
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  // Ensure initial URL cleanly reflects the active radar view
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const url = new URL(window.location.href);
+      const currentTab = (url.searchParams.get('tab') || '').toLowerCase();
+      const currentView = url.searchParams.get('view');
+      if (currentTab === 'live_radar' && !currentView) {
+        url.searchParams.set('view', RADAR_TAB_KEYS[activeMainTab] || 'live_tracking');
+        window.history.replaceState({ radarTab: activeMainTab }, '', url.toString());
+      }
+    } catch {}
+  }, []);
 
   // Global Filter State
   const [selectedDate, setSelectedDate] = useState(() => {
@@ -970,6 +1023,8 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
             name: (m.emp_name || m.name || m.email || id).trim(),
             role: m.role || 'Field Staff',
             phone: m.emp_mobile || m.phone || '',
+            emp_code: m.emp_code || m.employee_id || m.code || null,
+            branch_name: m.branch_name || m.work_location_name || 'Main Branch',
             hasPings: Boolean(pingMatch),
             battery_pct: pingMatch?.battery_pct,
             last_ping: pingMatch?.recorded_at || pingMatch?.last_ping || null
@@ -2429,17 +2484,46 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
     stopRangePlayback();
     setIsPlaying(false);
     setActiveMainTab(tab);
-    if (tab === '360_PLAYBACK' && (selectedDate < trackingRange.startDate || selectedDate > trackingRange.endDate)) setSelectedDate(trackingRange.startDate);
+    if (tab === '360_PLAYBACK' && (selectedDate < trackingRange.startDate || selectedDate > trackingRange.endDate)) {
+      setSelectedDate(trackingRange.startDate);
+    }
+    if (typeof window !== 'undefined') {
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.set('tab', 'live_radar');
+        const viewSlug = RADAR_TAB_KEYS[tab] || 'live_tracking';
+        url.searchParams.set('view', viewSlug);
+        if (url.toString() !== window.location.href) {
+          window.history.pushState({ radarTab: tab }, '', url.toString());
+        }
+      } catch (err) {
+        console.warn('[LiveRadar] URL sync error:', err);
+      }
+    }
   }, [stopRangePlayback, selectedDate, trackingRange.startDate, trackingRange.endDate]);
+  const handleSelectEmployeeForHistory = useCallback((targetUserId) => {
+    if (targetUserId) {
+      setSelectedUserId(targetUserId);
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem(`crm_last_field_exec_${selectedCompany}`, targetUserId);
+        } catch (_) {}
+      }
+    }
+    handlePresentationMainTab('360_PLAYBACK');
+    setTrackingViewMode('latest');
+  }, [handlePresentationMainTab, selectedCompany]);
+
   const handlePresentationRefresh = useCallback(() => {
-    if (activeMainTab === '360_PLAYBACK' && selectedUserId) {
+    if (activeMainTab === 'LIVE_TRACKING' || activeMainTab === 'ALL_INDIA_RADAR') {
+      loadRadarAndEmployees();
+    } else if (activeMainTab === '360_PLAYBACK' && selectedUserId) {
       if (hasTrackingRange) setRangeRefreshRequest({ key: rangeKey, nonce: Date.now() });
       delete routeCacheRef.current[`${selectedUserId}_${selectedDate}`];
       lastFitRouteKeyRef.current = '';
       loadEmployeeRoute(selectedUserId, selectedDate, { forceFresh: true });
       loadRadarAndEmployees({ silent: true });
-    } else if (activeMainTab === 'ALL_INDIA_RADAR') loadRadarAndEmployees();
-    else if (activeMainTab === 'CONVEYANCE_VOUCHERS') loadVouchers();
+    } else if (activeMainTab === 'CONVEYANCE_VOUCHERS') loadVouchers();
   }, [activeMainTab, selectedUserId, selectedDate, hasTrackingRange, rangeKey, loadEmployeeRoute, loadRadarAndEmployees, loadVouchers]);
   const handlePresentationMode = useCallback((mode) => {
     stopRangePlayback();
@@ -2661,7 +2745,28 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
         {/* Tab Buttons */}
         <div style={{ display: 'flex', background: '#f1f5f9', padding: 3, borderRadius: 8, gap: 2 }}>
           <button
-            onClick={() => setActiveMainTab('360_PLAYBACK')}
+            onClick={() => handlePresentationMainTab('LIVE_TRACKING')}
+            style={{
+              padding: '6px 14px',
+              fontSize: 12,
+              fontWeight: 700,
+              borderRadius: 6,
+              border: 'none',
+              background: activeMainTab === 'LIVE_TRACKING' ? '#ffffff' : 'transparent',
+              color: activeMainTab === 'LIVE_TRACKING' ? '#2563eb' : '#64748b',
+              boxShadow: activeMainTab === 'LIVE_TRACKING' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6
+            }}
+          >
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#22c55e', display: 'inline-block' }}></span>
+            Live Tracking
+          </button>
+
+          <button
+            onClick={() => handlePresentationMainTab('360_PLAYBACK')}
             style={{
               padding: '6px 14px',
               fontSize: 12,
@@ -2682,7 +2787,7 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
           </button>
 
           <button
-            onClick={() => setActiveMainTab('ALL_INDIA_RADAR')}
+            onClick={() => handlePresentationMainTab('ALL_INDIA_RADAR')}
             style={{
               padding: '6px 14px',
               fontSize: 12,
@@ -2703,7 +2808,7 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
           </button>
 
           <button
-            onClick={() => setActiveMainTab('CONVEYANCE_VOUCHERS')}
+            onClick={() => handlePresentationMainTab('CONVEYANCE_VOUCHERS')}
             style={{
               padding: '6px 14px',
               fontSize: 12,
@@ -2778,6 +2883,26 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
           onDayChange={handleRangeDay} completed={rangeSummary.loadedDays + rangeSummary.failedDays} loading={rangeIsLoading}
           failed={rangeSummary.failedDays} showAll={showAllRangeDays} onShowAll={handleToggleRangeDays} onFit={handleFitRange}
           onPlayRange={handlePlayRange} playingRange={rangePlaybackActive} playableDays={rangeSummary.movementDays.length} />
+      )}
+
+      {/* ============================================================= */}
+      {/* VIEW 0: DEDICATED LIVE FLEET GPS TRACKING (NEW & DEFAULT)     */}
+      {/* ============================================================= */}
+      {activeMainTab === 'LIVE_TRACKING' && (
+        <LiveFleetTrackingTab
+          radarEmployees={radarEmployees}
+          activeEmployeesList={activeEmployeesList}
+          selectedCompany={selectedCompany}
+          selectedBranch={selectedBranch}
+          tenantId={tenantId}
+          effectiveBranchAccess={effectiveBranchAccess}
+          adminCompanyFilter={adminCompanyFilter}
+          loadingRadar={loadingRadar}
+          onRefresh={loadRadarAndEmployees}
+          onSelectEmployeeForHistory={handleSelectEmployeeForHistory}
+          leafletReady={leafletReady}
+          liveNowMs={liveNowMs}
+        />
       )}
 
       {/* ============================================================= */}

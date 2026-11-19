@@ -13,6 +13,7 @@ import {
 } from '@/app/actions/checklist';
 import { getTenantBranches } from '@/app/actions/tenantBranches';
 import StandardTablePagination from '@/components/common/StandardTablePagination';
+import UniversalBranchSelect from '@/components/common/UniversalBranchSelect';
 
 const KNOWN_TENANTS = [
   { id: '00000000-0000-0000-0000-000000000001', code: 'TNT00002', name: 'New Swan Group' },
@@ -47,6 +48,7 @@ export default function HolidaysConfig({ userCompany = '', isMasterAdmin = false
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTypeFilter, setSelectedTypeFilter] = useState('ALL');
   const [timeFilter, setTimeFilter] = useState('ALL'); // 'ALL' | 'UPCOMING' | 'PAST'
+  const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'YES' | 'NO'
 
   // 3. Modal State
   const [modalOpen, setModalOpen] = useState(false);
@@ -61,7 +63,8 @@ export default function HolidaysConfig({ userCompany = '', isMasterAdmin = false
     name: '',
     type: 'COMPANY',
     branch_name: 'All Branches',
-    description: ''
+    description: '',
+    is_holiday: true
   });
 
   // 4. Pagination State
@@ -131,6 +134,13 @@ export default function HolidaysConfig({ userCompany = '', isMasterAdmin = false
       if (selectedTypeFilter !== 'ALL' && (h.type || 'COMPANY') !== selectedTypeFilter) {
         return false;
       }
+      // Status Filter (YES = Official Holiday Off, NO = Working Day)
+      if (statusFilter === 'YES' && h.is_holiday === false) {
+        return false;
+      }
+      if (statusFilter === 'NO' && h.is_holiday !== false) {
+        return false;
+      }
       // Time Filter
       if (timeFilter === 'UPCOMING' && h.date < todayStr) return false;
       if (timeFilter === 'PAST' && h.date >= todayStr) return false;
@@ -146,7 +156,7 @@ export default function HolidaysConfig({ userCompany = '', isMasterAdmin = false
       }
       return true;
     });
-  }, [holidaysList, searchQuery, selectedTypeFilter, timeFilter]);
+  }, [holidaysList, searchQuery, selectedTypeFilter, timeFilter, statusFilter]);
 
   const totalRecords = filteredHolidays.length;
   const effectivePageSize = pageSize === 'All' ? 100000 : Number(pageSize || 20);
@@ -166,7 +176,8 @@ export default function HolidaysConfig({ userCompany = '', isMasterAdmin = false
       name: '',
       type: 'COMPANY',
       branch_name: selectedBranch === 'All Branches' ? 'All Branches' : selectedBranch,
-      description: ''
+      description: '',
+      is_holiday: true
     });
     setModalOpen(true);
   };
@@ -179,7 +190,8 @@ export default function HolidaysConfig({ userCompany = '', isMasterAdmin = false
       name: h.name,
       type: h.type || 'COMPANY',
       branch_name: h.branch_name || 'All Branches',
-      description: h.description || ''
+      description: h.description || '',
+      is_holiday: h.is_holiday !== false
     });
     setModalOpen(true);
   };
@@ -196,6 +208,7 @@ export default function HolidaysConfig({ userCompany = '', isMasterAdmin = false
       if (res.success) {
         setHolidaysList(res.data || []);
         setModalOpen(false);
+        setCurrentPage(1);
         showToast('success', `🎉 Holiday "${form.name}" saved successfully!`);
       } else {
         showToast('error', res.error || 'Failed to save holiday');
@@ -356,34 +369,20 @@ export default function HolidaysConfig({ userCompany = '', isMasterAdmin = false
           )}
 
           {/* Branch / Plant Selector */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-            <MapPin size={15} style={{ color: 'var(--text-secondary, #64748b)' }} />
-            <select
+          <div style={{ minWidth: '220px', maxWidth: '300px' }}>
+            <UniversalBranchSelect
+              mode="filter"
               value={selectedBranch}
-              onChange={(e) => setSelectedBranch(e.target.value)}
-              style={{
-                padding: '0.45rem 0.75rem',
-                borderRadius: '8px',
-                border: '1px solid var(--border-color, #cbd5e1)',
-                background: 'var(--card-bg, #ffffff)',
-                color: 'var(--text-primary, #0f172a)',
-                fontSize: '0.82rem',
-                fontWeight: 600,
-                cursor: 'pointer'
+              onChange={(val) => setSelectedBranch(val || 'All Branches')}
+              branches={availableBranches}
+              allValue="All Branches"
+              allLabel="All Branches"
+              title="BRANCH / PLANT SCOPE"
+              triggerStyle={{
+                minHeight: '36px',
+                borderRadius: '8px'
               }}
-              title="Select Branch / Plant Scope"
-            >
-              <option value="All Branches">All Branches (Tenant-wide Default)</option>
-              {availableBranches.map((b) => {
-                const bName = typeof b === 'string' ? b : (b.name || b.branch_name || b.code);
-                const bCode = b?.branch_code || '';
-                return (
-                  <option key={b.id || bName} value={bName}>
-                    {bName} {bCode ? `(${bCode})` : ''}
-                  </option>
-                );
-              })}
-            </select>
+            />
           </div>
 
           <button
@@ -524,51 +523,108 @@ export default function HolidaysConfig({ userCompany = '', isMasterAdmin = false
           </div>
         </div>
 
-        {/* Row 2: Type Filter Pills */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap', borderTop: '1px solid var(--border-color, #f1f5f9)', paddingTop: '0.45rem' }}>
-          <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#64748b', marginRight: '0.25rem' }}>
-            Category Filter:
-          </span>
-          <button
-            type="button"
-            onClick={() => setSelectedTypeFilter('ALL')}
-            style={{
-              padding: '0.22rem 0.65rem',
-              borderRadius: '20px',
-              border: selectedTypeFilter === 'ALL' ? '1.5px solid #2563eb' : '1px solid var(--border-color, #e2e8f0)',
-              background: selectedTypeFilter === 'ALL' ? '#2563eb' : 'var(--bg-secondary, #f8fafc)',
-              color: selectedTypeFilter === 'ALL' ? '#ffffff' : 'var(--text-secondary, #475569)',
-              fontSize: '0.75rem',
-              fontWeight: selectedTypeFilter === 'ALL' ? 700 : 500,
-              cursor: 'pointer'
-            }}
-          >
-            All Types ({holidaysList.length})
-          </button>
+        {/* Row 2: Type Filter Pills & Off Status Filter */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap', borderTop: '1px solid var(--border-color, #f1f5f9)', paddingTop: '0.45rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#64748b', marginRight: '0.25rem' }}>
+              Category Filter:
+            </span>
+            <button
+              type="button"
+              onClick={() => setSelectedTypeFilter('ALL')}
+              style={{
+                padding: '0.22rem 0.65rem',
+                borderRadius: '20px',
+                border: selectedTypeFilter === 'ALL' ? '1.5px solid #2563eb' : '1px solid var(--border-color, #e2e8f0)',
+                background: selectedTypeFilter === 'ALL' ? '#2563eb' : 'var(--bg-secondary, #f8fafc)',
+                color: selectedTypeFilter === 'ALL' ? '#ffffff' : 'var(--text-secondary, #475569)',
+                fontSize: '0.75rem',
+                fontWeight: selectedTypeFilter === 'ALL' ? 700 : 500,
+                cursor: 'pointer'
+              }}
+            >
+              All Types ({holidaysList.length})
+            </button>
 
-          {HOLIDAY_TYPES.map(t => {
-            const count = holidaysList.filter(h => (h.type || 'COMPANY') === t.id).length;
-            const isSelected = selectedTypeFilter === t.id;
-            return (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => setSelectedTypeFilter(t.id)}
-                style={{
-                  padding: '0.22rem 0.65rem',
-                  borderRadius: '20px',
-                  border: isSelected ? `1.5px solid ${t.color}` : '1px solid var(--border-color, #e2e8f0)',
-                  background: isSelected ? t.color : 'var(--bg-secondary, #f8fafc)',
-                  color: isSelected ? '#ffffff' : 'var(--text-secondary, #475569)',
-                  fontSize: '0.75rem',
-                  fontWeight: isSelected ? 700 : 500,
-                  cursor: 'pointer'
-                }}
-              >
-                {t.label} ({count})
-              </button>
-            );
-          })}
+            {HOLIDAY_TYPES.map(t => {
+              const count = holidaysList.filter(h => (h.type || 'COMPANY') === t.id).length;
+              const isSelected = selectedTypeFilter === t.id;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setSelectedTypeFilter(t.id)}
+                  style={{
+                    padding: '0.22rem 0.65rem',
+                    borderRadius: '20px',
+                    border: isSelected ? `1.5px solid ${t.color}` : '1px solid var(--border-color, #e2e8f0)',
+                    background: isSelected ? t.color : 'var(--bg-secondary, #f8fafc)',
+                    color: isSelected ? '#ffffff' : 'var(--text-secondary, #475569)',
+                    fontSize: '0.75rem',
+                    fontWeight: isSelected ? 700 : 500,
+                    cursor: 'pointer'
+                  }}
+                >
+                  {t.label} ({count})
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Quick Status Filter Pills */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#64748b', marginRight: '0.25rem' }}>
+              Status:
+            </span>
+            <button
+              type="button"
+              onClick={() => setStatusFilter('ALL')}
+              style={{
+                padding: '0.22rem 0.65rem',
+                borderRadius: '20px',
+                border: statusFilter === 'ALL' ? '1.5px solid #475569' : '1px solid #cbd5e1',
+                background: statusFilter === 'ALL' ? '#475569' : '#ffffff',
+                color: statusFilter === 'ALL' ? '#ffffff' : '#475569',
+                fontSize: '0.74rem',
+                fontWeight: statusFilter === 'ALL' ? 700 : 500,
+                cursor: 'pointer'
+              }}
+            >
+              All ({holidaysList.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter('YES')}
+              style={{
+                padding: '0.22rem 0.65rem',
+                borderRadius: '20px',
+                border: statusFilter === 'YES' ? '1.5px solid #16a34a' : '1px solid #a7f3d0',
+                background: statusFilter === 'YES' ? '#16a34a' : '#f0fdf4',
+                color: statusFilter === 'YES' ? '#ffffff' : '#15803d',
+                fontSize: '0.74rem',
+                fontWeight: statusFilter === 'YES' ? 700 : 600,
+                cursor: 'pointer'
+              }}
+            >
+              🟢 Off Days ({holidaysList.filter(h => h.is_holiday !== false).length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter('NO')}
+              style={{
+                padding: '0.22rem 0.65rem',
+                borderRadius: '20px',
+                border: statusFilter === 'NO' ? '1.5px solid #64748b' : '1px solid #e2e8f0',
+                background: statusFilter === 'NO' ? '#64748b' : '#f8fafc',
+                color: statusFilter === 'NO' ? '#ffffff' : '#475569',
+                fontSize: '0.74rem',
+                fontWeight: statusFilter === 'NO' ? 700 : 600,
+                cursor: 'pointer'
+              }}
+            >
+              💼 Working Days ({holidaysList.filter(h => h.is_holiday === false).length})
+            </button>
+          </div>
         </div>
       </div>
 
@@ -583,28 +639,31 @@ export default function HolidaysConfig({ userCompany = '', isMasterAdmin = false
         borderRadius: '12px',
         position: 'relative'
       }}>
-        <table style={{ width: '100%', minWidth: '850px', tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.88rem' }}>
+        <table style={{ width: '100%', minWidth: '950px', tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.88rem' }}>
           <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-secondary, #f8fafc)' }}>
             <tr style={{ background: 'var(--bg-secondary, #f8fafc)', borderBottom: '1px solid var(--border-color, #e2e8f0)', color: 'var(--text-secondary, #64748b)' }}>
-              <th style={{ position: 'sticky', top: 0, zIndex: 10, width: '60px', padding: '0.75rem 0.5rem', textAlign: 'center', background: 'var(--bg-secondary, #f8fafc)', boxShadow: 'inset 0 -1px 0 var(--border-color, #e2e8f0)' }}>
+              <th style={{ position: 'sticky', top: 0, zIndex: 10, width: '55px', padding: '0.75rem 0.5rem', textAlign: 'center', background: 'var(--bg-secondary, #f8fafc)', boxShadow: 'inset 0 -1px 0 var(--border-color, #e2e8f0)' }}>
                 #
               </th>
-              <th style={{ position: 'sticky', top: 0, zIndex: 10, width: '180px', padding: '0.75rem 1rem', background: 'var(--bg-secondary, #f8fafc)', boxShadow: 'inset 0 -1px 0 var(--border-color, #e2e8f0)' }}>
+              <th style={{ position: 'sticky', top: 0, zIndex: 10, width: '175px', padding: '0.75rem 1rem', background: 'var(--bg-secondary, #f8fafc)', boxShadow: 'inset 0 -1px 0 var(--border-color, #e2e8f0)' }}>
                 Holiday Date & Day
               </th>
-              <th style={{ position: 'sticky', top: 0, zIndex: 10, width: '240px', padding: '0.75rem 1rem', background: 'var(--bg-secondary, #f8fafc)', boxShadow: 'inset 0 -1px 0 var(--border-color, #e2e8f0)' }}>
+              <th style={{ position: 'sticky', top: 0, zIndex: 10, width: '230px', padding: '0.75rem 1rem', background: 'var(--bg-secondary, #f8fafc)', boxShadow: 'inset 0 -1px 0 var(--border-color, #e2e8f0)' }}>
                 Holiday Name & Notes
               </th>
-              <th style={{ position: 'sticky', top: 0, zIndex: 10, width: '170px', padding: '0.75rem 1rem', background: 'var(--bg-secondary, #f8fafc)', boxShadow: 'inset 0 -1px 0 var(--border-color, #e2e8f0)' }}>
+              <th style={{ position: 'sticky', top: 0, zIndex: 10, width: '165px', padding: '0.75rem 1rem', background: 'var(--bg-secondary, #f8fafc)', boxShadow: 'inset 0 -1px 0 var(--border-color, #e2e8f0)' }}>
                 Holiday Category
               </th>
-              <th style={{ position: 'sticky', top: 0, zIndex: 10, width: '180px', padding: '0.75rem 1rem', background: 'var(--bg-secondary, #f8fafc)', boxShadow: 'inset 0 -1px 0 var(--border-color, #e2e8f0)' }}>
+              <th style={{ position: 'sticky', top: 0, zIndex: 10, width: '150px', padding: '0.75rem 1rem', background: 'var(--bg-secondary, #f8fafc)', boxShadow: 'inset 0 -1px 0 var(--border-color, #e2e8f0)' }}>
+                Holiday Status
+              </th>
+              <th style={{ position: 'sticky', top: 0, zIndex: 10, width: '175px', padding: '0.75rem 1rem', background: 'var(--bg-secondary, #f8fafc)', boxShadow: 'inset 0 -1px 0 var(--border-color, #e2e8f0)' }}>
                 Branch / Plant Scope
               </th>
-              <th style={{ position: 'sticky', top: 0, zIndex: 10, width: '120px', padding: '0.75rem 1rem', background: 'var(--bg-secondary, #f8fafc)', boxShadow: 'inset 0 -1px 0 var(--border-color, #e2e8f0)' }}>
+              <th style={{ position: 'sticky', top: 0, zIndex: 10, width: '115px', padding: '0.75rem 1rem', background: 'var(--bg-secondary, #f8fafc)', boxShadow: 'inset 0 -1px 0 var(--border-color, #e2e8f0)' }}>
                 Timeline
               </th>
-              <th style={{ position: 'sticky', top: 0, zIndex: 10, width: '120px', padding: '0.75rem 1rem', textAlign: 'right', background: 'var(--bg-secondary, #f8fafc)', boxShadow: 'inset 0 -1px 0 var(--border-color, #e2e8f0)' }}>
+              <th style={{ position: 'sticky', top: 0, zIndex: 10, width: '115px', padding: '0.75rem 1rem', textAlign: 'right', background: 'var(--bg-secondary, #f8fafc)', boxShadow: 'inset 0 -1px 0 var(--border-color, #e2e8f0)' }}>
                 Actions
               </th>
             </tr>
@@ -612,7 +671,7 @@ export default function HolidaysConfig({ userCompany = '', isMasterAdmin = false
           <tbody>
             {paginatedHolidays.length === 0 && (
               <tr>
-                <td colSpan={7} style={{ padding: '3.5rem 1rem', textAlign: 'center', color: 'var(--text-secondary, #64748b)' }}>
+                <td colSpan={8} style={{ padding: '3.5rem 1rem', textAlign: 'center', color: 'var(--text-secondary, #64748b)' }}>
                   <Calendar size={38} style={{ opacity: 0.35, margin: '0 auto 0.5rem' }} />
                   <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary, #0f172a)' }}>No Holidays Found</div>
                   <div style={{ fontSize: '0.82rem', marginTop: '0.2rem' }}>
@@ -701,6 +760,43 @@ export default function HolidaysConfig({ userCompany = '', isMasterAdmin = false
                     }}>
                       <Tag size={11} /> {meta.label}
                     </span>
+                  </td>
+
+                  {/* Holiday Status Badge (Off vs Working Day) */}
+                  <td style={{ padding: '0.85rem 1rem', verticalAlign: 'top' }}>
+                    {h.is_holiday !== false ? (
+                      <span style={{
+                        background: '#ecfdf5',
+                        color: '#059669',
+                        border: '1px solid #a7f3d0',
+                        padding: '0.2rem 0.55rem',
+                        borderRadius: '20px',
+                        fontSize: '0.74rem',
+                        fontWeight: 700,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.35rem'
+                      }}>
+                        <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#059669' }} />
+                        YES (Holiday Off)
+                      </span>
+                    ) : (
+                      <span style={{
+                        background: '#f8fafc',
+                        color: '#475569',
+                        border: '1px solid #cbd5e1',
+                        padding: '0.2rem 0.55rem',
+                        borderRadius: '20px',
+                        fontSize: '0.74rem',
+                        fontWeight: 700,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.35rem'
+                      }}>
+                        <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#94a3b8' }} />
+                        NO (Working Day)
+                      </span>
+                    )}
                   </td>
 
                   {/* Branch Scope */}
@@ -907,6 +1003,48 @@ export default function HolidaysConfig({ userCompany = '', isMasterAdmin = false
                 </div>
               </div>
 
+              {/* Holiday Status (Yes / No) Toggle */}
+              <div style={{
+                padding: '0.75rem 0.9rem',
+                borderRadius: '8px',
+                background: form.is_holiday ? '#f0fdf4' : '#f8fafc',
+                border: form.is_holiday ? '1.5px solid #86efac' : '1px solid #cbd5e1',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.45rem'
+              }}>
+                <label style={{ fontWeight: 700, fontSize: '0.82rem', color: 'var(--text-primary, #0f172a)' }}>
+                  🔔 Holiday Status: Is Company Closed / Paid Off?
+                </label>
+                <div style={{ display: 'flex', gap: '1.25rem', flexWrap: 'wrap' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 700, color: form.is_holiday ? '#15803d' : '#64748b' }}>
+                    <input
+                      type="radio"
+                      name="is_holiday_status"
+                      checked={form.is_holiday === true}
+                      onChange={() => setForm(prev => ({ ...prev, is_holiday: true }))}
+                      style={{ cursor: 'pointer', accentColor: '#16a34a' }}
+                    />
+                    <span>🟢 YES — Official Holiday (Paid Off / Company Closed)</span>
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 700, color: !form.is_holiday ? '#0f172a' : '#64748b' }}>
+                    <input
+                      type="radio"
+                      name="is_holiday_status"
+                      checked={form.is_holiday === false}
+                      onChange={() => setForm(prev => ({ ...prev, is_holiday: false }))}
+                      style={{ cursor: 'pointer', accentColor: '#475569' }}
+                    />
+                    <span>⚪ NO — Working Day (Festival Only / Company Open)</span>
+                  </label>
+                </div>
+                <div style={{ fontSize: '0.73rem', color: form.is_holiday ? '#15803d' : '#64748b', fontStyle: 'italic' }}>
+                  {form.is_holiday
+                    ? '✓ Company is officially closed. Attendance marks holiday & checklists are deferred.'
+                    : '✓ Normal working day. Displayed on calendar for awareness/greetings, but office/plant is open.'}
+                </div>
+              </div>
+
               {/* Holiday Name */}
               <div>
                 <label style={{ fontWeight: 700, fontSize: '0.82rem', display: 'block', marginBottom: '0.35rem' }}>
@@ -930,33 +1068,21 @@ export default function HolidaysConfig({ userCompany = '', isMasterAdmin = false
 
               {/* Branch Scope */}
               <div>
-                <label style={{ fontWeight: 700, fontSize: '0.82rem', display: 'block', marginBottom: '0.35rem' }}>
-                  📍 Branch / Plant Scope
-                </label>
-                <select
-                  value={form.branch_name}
-                  onChange={(e) => setForm(prev => ({ ...prev, branch_name: e.target.value }))}
-                  style={{
-                    width: '100%',
-                    padding: '0.5rem 0.75rem',
+                <UniversalBranchSelect
+                  mode="filter"
+                  label="📍 Branch / Plant Scope"
+                  value={form.branch_name || 'All Branches'}
+                  onChange={(val) => setForm(prev => ({ ...prev, branch_name: val || 'All Branches' }))}
+                  branches={availableBranches}
+                  allValue="All Branches"
+                  allLabel="All Branches (Tenant-wide Default)"
+                  title="TARGET BRANCH"
+                  triggerStyle={{
                     borderRadius: '8px',
                     border: '1px solid var(--border-color, #cbd5e1)',
-                    fontSize: '0.82rem',
-                    fontWeight: 600,
-                    cursor: 'pointer'
+                    minHeight: '38px'
                   }}
-                >
-                  <option value="All Branches">All Branches (Tenant-wide Default)</option>
-                  {availableBranches.map((b) => {
-                    const bName = typeof b === 'string' ? b : (b.name || b.branch_name || b.code);
-                    const bCode = b?.branch_code || '';
-                    return (
-                      <option key={b.id || bName} value={bName}>
-                        {bName} {bCode ? `(${bCode})` : ''}
-                      </option>
-                    );
-                  })}
-                </select>
+                />
                 <div style={{ fontSize: '0.74rem', color: '#64748b', marginTop: '0.25rem' }}>
                   Choose "All Branches" for company-wide holidays, or target a specific manufacturing unit/plant.
                 </div>

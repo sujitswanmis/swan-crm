@@ -90,7 +90,10 @@ export default function AnalyticsDashboard({
   isSyncing = false,
   syncLoadedCount = 0,
   onNavigateTab,
-  initialSubTab = ''
+  initialSubTab = '',
+  tenantId = null,
+  userCompany = '',
+  adminCompanyFilter = 'All'
 }) {
   const [activeTab, setActiveTabState] = useState(() => {
     let initial = initialSubTab;
@@ -744,7 +747,10 @@ export default function AnalyticsDashboard({
         userEmail,
         targetEmail: effectiveTargetEmail,
         isAllSelected: selectedEmployee === 'All',
-        targetDate: startDate || new Date()
+        targetDate: startDate || new Date(),
+        tenantId,
+        userCompany,
+        adminCompanyFilter
       });
       if (res?.success) setAssignedWork(res.data);
     } catch (err) {
@@ -754,13 +760,20 @@ export default function AnalyticsDashboard({
     }
   };
 
-  useEffect(() => { fetchAssignedWork(); }, [userEmail, effectiveTargetEmail, selectedEmployee, startDate]);
+  useEffect(() => { 
+    fetchAssignedWork(); 
+  }, [userEmail, effectiveTargetEmail, selectedEmployee, startDate, tenantId, userCompany, adminCompanyFilter]);
 
   // Load attendance, checklist compliance, recruitment summaries
   const fetchDashboardSummaries = async () => {
     setLoadingSummaries(true);
     try {
-      const res = await getDashboardSummaries({ targetDate: startDate });
+      const res = await getDashboardSummaries({ 
+        targetDate: startDate,
+        tenantId,
+        userCompany,
+        adminCompanyFilter
+      });
       if (res?.success) setDashboardSummaries(res.data);
     } catch (e) {
       console.warn('Dashboard summaries error:', e);
@@ -771,7 +784,7 @@ export default function AnalyticsDashboard({
 
   useEffect(() => {
     fetchDashboardSummaries();
-  }, [startDate]);
+  }, [startDate, tenantId, userCompany, adminCompanyFilter]);
 
   // Combined attendance records with CRM activity intelligence (defined before Scorecard so Scorecard can use attendance)
   const enrichedAttendanceRecords = useMemo(() => {
@@ -2390,7 +2403,25 @@ export default function AnalyticsDashboard({
                   <tbody>
                     {delegationTasksList.map(task => (
                       <tr key={task.id} style={{ borderBottom: '1px solid var(--border-light)' }}>
-                        <td style={{ padding: '0.6rem 0.85rem', fontWeight: 700, color: 'var(--text-secondary)', fontSize: '0.75rem' }}>{task.task_code || '—'}</td>
+                        <td style={{ padding: '0.6rem 0.85rem' }}>
+                          <div style={{ fontWeight: 700, color: 'var(--text-secondary)', fontSize: '0.75rem' }}>
+                            {task.task_code || '—'}
+                          </div>
+                          {task.tenant_code && (
+                            <span style={{
+                              fontSize: '0.62rem',
+                              fontWeight: 700,
+                              padding: '0.05rem 0.3rem',
+                              borderRadius: '3px',
+                              backgroundColor: 'var(--th-bg)',
+                              color: 'var(--text-secondary)',
+                              marginTop: '0.15rem',
+                              display: 'inline-block'
+                            }}>
+                              {task.tenant_code}
+                            </span>
+                          )}
+                        </td>
                         <td style={{ padding: '0.6rem 0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>{task.title}</td>
                         <td style={{ textAlign: 'center', padding: '0.6rem 0.65rem' }}>
                           <span style={{
@@ -3358,7 +3389,23 @@ export default function AnalyticsDashboard({
                         <tr key={pos.id || idx} style={{ borderBottom: '1px solid var(--border-light)' }}>
                           <td style={{ padding: '0.65rem 0.85rem' }}>
                             <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{pos.title}</div>
-                            <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', fontFamily: 'monospace' }}>{pos.id?.substring(0, 8)}</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '0.2rem', flexWrap: 'wrap' }}>
+                              <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', fontFamily: 'monospace' }}>
+                                {pos.id?.substring(0, 8) ? `POS-${pos.id.substring(0, 8).toUpperCase()}` : ''}
+                              </span>
+                              {pos.workspace_branch_code && (
+                                <span style={{
+                                  fontSize: '0.65rem',
+                                  fontWeight: 700,
+                                  padding: '0.1rem 0.35rem',
+                                  borderRadius: '4px',
+                                  backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                                  color: 'var(--accent-color, #2563eb)'
+                                }} title={`Tenant: ${pos.workspace_tenant_code || 'TNT00002'} | Branch: ${pos.workspace_branch_code}`}>
+                                  {pos.workspace_branch_code} ({pos.workspace_company || 'NSMLR'})
+                                </span>
+                              )}
+                            </div>
                           </td>
                           <td style={{ padding: '0.65rem 0.85rem' }}>
                             <span style={{
@@ -3507,18 +3554,46 @@ export default function AnalyticsDashboard({
                         <tr key={cand.id || idx} style={{ borderBottom: '1px solid var(--border-light)' }}>
                           <td style={{ padding: '0.65rem 0.85rem' }}>
                             <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{cand.name}</div>
-                            {cand.candidate_code && (
-                              <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', fontFamily: 'monospace' }}>
-                                {cand.candidate_code}
-                              </div>
-                            )}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', marginTop: '0.15rem', flexWrap: 'wrap' }}>
+                              {cand.candidate_code && (
+                                <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', fontFamily: 'monospace' }}>
+                                  {cand.candidate_code}
+                                </span>
+                              )}
+                              {cand.workspace_tenant_code && (
+                                <span style={{
+                                  fontSize: '0.63rem',
+                                  fontWeight: 700,
+                                  padding: '0.05rem 0.3rem',
+                                  borderRadius: '3px',
+                                  backgroundColor: 'var(--th-bg)',
+                                  color: 'var(--text-secondary)'
+                                }} title={`Tenant Code: ${cand.workspace_tenant_code}`}>
+                                  {cand.workspace_tenant_code}
+                                </span>
+                              )}
+                            </div>
                           </td>
                           <td style={{ padding: '0.65rem 0.85rem' }}>
                             <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.8rem' }}>
                               {cand.recruitment_positions?.title || 'General Position'}
                             </div>
-                            <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
-                              {cand.recruitment_positions?.department || '—'}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '0.15rem', flexWrap: 'wrap' }}>
+                              <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
+                                {cand.recruitment_positions?.department || '—'}
+                              </span>
+                              {cand.workspace_branch_code && (
+                                <span style={{
+                                  fontSize: '0.65rem',
+                                  fontWeight: 700,
+                                  padding: '0.1rem 0.35rem',
+                                  borderRadius: '4px',
+                                  backgroundColor: 'rgba(139, 92, 246, 0.1)',
+                                  color: '#8b5cf6'
+                                }} title={`Branch: ${cand.workspace_branch_code} | Company: ${cand.workspace_company || 'NSMLR'}`}>
+                                  {cand.workspace_branch_code} ({cand.workspace_company || 'NSMLR'})
+                                </span>
+                              )}
                             </div>
                           </td>
                           <td style={{ padding: '0.65rem 0.85rem' }}>

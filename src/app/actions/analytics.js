@@ -130,7 +130,10 @@ export async function getUserAssignedWorkSummary({
   userEmail = '',
   targetEmail = '',
   isAllSelected = false,
-  targetDate = new Date()
+  targetDate = new Date(),
+  tenantId = null,
+  userCompany = null,
+  adminCompanyFilter = null
 } = {}) {
   try {
     const { getDelegatedTasks, getDelegationAnalytics } = await import('@/app/actions/delegationTask');
@@ -138,12 +141,38 @@ export async function getUserAssignedWorkSummary({
 
     const effectiveEmail = (targetEmail || userEmail || '').trim().toLowerCase();
 
+    // Determine target tenant
+    let effectiveTenantId = tenantId;
+    if (!effectiveTenantId) {
+      const compLower = String(userCompany || '').toLowerCase().trim();
+      if (compLower.includes('supuja')) {
+        effectiveTenantId = '0a37b8e8-1c28-4e19-8891-951fc3f8f8af';
+      } else if (compLower.includes('testing')) {
+        effectiveTenantId = '922d3e72-6588-457f-a562-4f1bdbf10d98';
+      } else {
+        effectiveTenantId = '00000000-0000-0000-0000-000000000001';
+      }
+    }
+
+    // If specific company / branch filter selected in navbar
+    if (adminCompanyFilter && adminCompanyFilter !== 'All') {
+      const filtLower = String(adminCompanyFilter).toLowerCase().trim();
+      if (filtLower.includes('supuja') || filtLower === 'tnt00001') {
+        effectiveTenantId = '0a37b8e8-1c28-4e19-8891-951fc3f8f8af';
+      } else if (filtLower.includes('testing') || filtLower === 'tnt00003') {
+        effectiveTenantId = '922d3e72-6588-457f-a562-4f1bdbf10d98';
+      } else if (filtLower.includes('nsmlr') || filtLower.includes('swan') || filtLower.includes('nstl') || filtLower === 'tnt00002') {
+        effectiveTenantId = '00000000-0000-0000-0000-000000000001';
+      }
+    }
+
     // 1. Fetch Delegation Tasks
     let delegationRes = { success: true, data: [] };
     try {
       delegationRes = await getDelegatedTasks({
         userEmail: effectiveEmail,
-        viewType: isAllSelected && !targetEmail ? 'all' : 'to_me'
+        viewType: isAllSelected && !targetEmail ? 'all' : 'to_me',
+        tenantId: effectiveTenantId
       });
     } catch (e) {
       console.warn('Error fetching delegated tasks for analytics:', e.message);
@@ -172,6 +201,7 @@ export async function getUserAssignedWorkSummary({
         category: t.category || 'GENERAL',
         deadline: t.deadline,
         status: t.status,
+        tenant_code: t.tenant_code || (t.tenant_id === '0a37b8e8-1c28-4e19-8891-951fc3f8f8af' ? 'TNT00001' : 'TNT00002'),
         is_overdue: !['COMPLETED', 'CANCELLED'].includes(t.status) && (t.is_overdue || (t.deadline && new Date(t.deadline) < now)),
         delegated_by_name: t.delegated_by_name || 'Delegator',
         delegated_by_email: t.delegated_by_email,
@@ -185,7 +215,8 @@ export async function getUserAssignedWorkSummary({
     try {
       checklistRes = await getEmployeeChecklistDashboard({
         employeeEmail: isAllSelected && !targetEmail ? '' : effectiveEmail,
-        targetDate: targetDate || new Date()
+        targetDate: targetDate || new Date(),
+        tenantId: effectiveTenantId
       });
     } catch (e) {
       console.warn('Error fetching employee checklists for analytics:', e.message);
@@ -248,11 +279,26 @@ export async function getUserAssignedWorkSummary({
 /**
  * Fetch Attendance + Checklist Compliance + Recruitment summaries for Dashboard
  */
-export async function getDashboardSummaries({ targetDate = null } = {}) {
+export async function getDashboardSummaries({ targetDate = null, tenantId = null, userCompany = null, branchCode = null, adminCompanyFilter = null } = {}) {
   try {
     const { getTeamAttendanceMaster } = await import('@/app/actions/attendance');
     const { getEmployeeChecklistDashboard } = await import('@/app/actions/checklist');
     const { createClient: createAdminClient } = await import('@/utils/supabase/server');
+
+    const parsePositionWorkspace = (pos) => {
+      const text = pos.jd_text || '';
+      const match = text.match(/<!--WORKSPACE:(\{.*?\})-->/);
+      let meta = {};
+      if (match) {
+        try { meta = JSON.parse(match[1]); } catch (_) {}
+      }
+      const tenant_id = pos.tenant_id || meta.tenant_id || '00000000-0000-0000-0000-000000000001';
+      const tenant_code = pos.tenant_code || meta.tenant_code || (tenant_id === '0a37b8e8-1c28-4e19-8891-951fc3f8f8af' ? 'TNT00001' : (tenant_id === '922d3e72-6588-457f-a562-4f1bdbf10d98' ? 'TNT00003' : 'TNT00002'));
+      const company = pos.company || meta.company || (tenant_code === 'TNT00001' ? 'SuPuja Creations' : 'NSMLR');
+      const branch_code = pos.branch_code || meta.branch_code || (company === 'NSMLR' ? 'TNT00002-B0002' : `${tenant_code}-B0001`);
+      const cleanJd = match ? text.replace(match[0], '').trim() : text;
+      return { tenant_id, tenant_code, branch_code, company, cleanJd };
+    };
 
     // IST today date
     const istNow = new Date(new Date().toLocaleString('en-CA', { timeZone: 'Asia/Kolkata' }));
@@ -280,8 +326,35 @@ export async function getDashboardSummaries({ targetDate = null } = {}) {
     // 2. Real Checklist compliance for useDate
     let checklistSummary = { totalSlots: 0, completed: 0, pending: 0, complianceRate: 0, submissionsByEmail: {}, items: [] };
     try {
+      let checklistTenantId = tenantId;
+      if (!checklistTenantId) {
+        const compLower = String(userCompany || '').toLowerCase().trim();
+        if (compLower.includes('supuja')) {
+          checklistTenantId = '0a37b8e8-1c28-4e19-8891-951fc3f8f8af';
+        } else if (compLower.includes('testing')) {
+          checklistTenantId = '922d3e72-6588-457f-a562-4f1bdbf10d98';
+        } else {
+          checklistTenantId = '00000000-0000-0000-0000-000000000001';
+        }
+      }
+      if (adminCompanyFilter && adminCompanyFilter !== 'All') {
+        const filtLower = String(adminCompanyFilter).toLowerCase().trim();
+        if (filtLower.includes('supuja') || filtLower === 'tnt00001') {
+          checklistTenantId = '0a37b8e8-1c28-4e19-8891-951fc3f8f8af';
+        } else if (filtLower.includes('testing') || filtLower === 'tnt00003') {
+          checklistTenantId = '922d3e72-6588-457f-a562-4f1bdbf10d98';
+        } else if (filtLower.includes('nsmlr') || filtLower.includes('swan') || filtLower.includes('nstl') || filtLower === 'tnt00002') {
+          checklistTenantId = '00000000-0000-0000-0000-000000000001';
+        }
+      }
+
+      let tmplsQuery = supabase.from('checklist_templates').select('id, tenant_id, title, department, frequency, assigned_type, assigned_employee_email, due_time, description').eq('is_active', true);
+      if (checklistTenantId) {
+        tmplsQuery = tmplsQuery.eq('tenant_id', checklistTenantId);
+      }
+
       const [tmplsRes, subsRes] = await Promise.all([
-        supabase.from('checklist_templates').select('id, title, department, frequency, assigned_type, assigned_employee_email, due_time, description').eq('is_active', true),
+        tmplsQuery,
         supabase.from('checklist_submissions').select('id, template_id, period_key, status, employee_email, submitted_at').like('period_key', `${useDate}%`)
       ]);
 
@@ -365,16 +438,70 @@ export async function getDashboardSummaries({ targetDate = null } = {}) {
       const [posRes, canRes] = await Promise.all([
         supabase
           .from('recruitment_positions')
-          .select('id, title, department, openings, status, recruiter_assigned, interviewer_name, salary_min, salary_max, deadline_date, created_at')
+          .select('id, title, department, openings, status, recruiter_assigned, interviewer_name, salary_min, salary_max, deadline_date, created_at, jd_text')
           .order('created_at', { ascending: false }),
         supabase
           .from('recruitment_candidates')
-          .select('id, name, email, phone, candidate_code, current_stage, candidate_status, position_id, resume_url, created_by, created_at, actual_joining_date, expected_salary_min, expected_salary_max, recruitment_positions(title, department)')
+          .select('id, name, email, phone, candidate_code, current_stage, candidate_status, position_id, resume_url, created_by, created_at, actual_joining_date, expected_salary_min, expected_salary_max, recruitment_positions(title, department, jd_text)')
           .order('created_at', { ascending: false })
       ]);
 
-      const positions = posRes.data || [];
-      const candidates = canRes.data || [];
+      const rawPositions = posRes.data || [];
+      const rawCandidates = canRes.data || [];
+
+      // Parse workspace metadata on positions
+      const parsedPositions = rawPositions.map(pos => {
+        const meta = parsePositionWorkspace(pos);
+        return {
+          ...pos,
+          cleanJd: meta.cleanJd,
+          workspace_tenant_id: meta.tenant_id,
+          workspace_tenant_code: meta.tenant_code,
+          workspace_company: meta.company,
+          workspace_branch_code: meta.branch_code
+        };
+      });
+
+      // Filter positions based on active company / branch / tenant scope
+      const effectiveFilter = String(adminCompanyFilter || '').trim();
+      const isAllCompanies = !effectiveFilter || effectiveFilter.toLowerCase() === 'all';
+
+      const filteredPositions = parsedPositions.filter(p => {
+        // If specific company or branch filter is selected in navbar
+        if (!isAllCompanies) {
+          const filtLower = effectiveFilter.toLowerCase();
+          const matchCompany = String(p.workspace_company || '').toLowerCase() === filtLower;
+          const matchBranch = String(p.workspace_branch_code || '').toLowerCase() === filtLower;
+          const matchTenant = String(p.workspace_tenant_code || '').toLowerCase() === filtLower;
+          return matchCompany || matchBranch || matchTenant;
+        }
+
+        // If 'All Companies' is active:
+        // Single-tenant users who are strictly scoped to SuPuja Creations only see their tenant
+        if (tenantId && tenantId === '0a37b8e8-1c28-4e19-8891-951fc3f8f8af' && userCompany && String(userCompany).toLowerCase().includes('supuja')) {
+          // If adminCompanyFilter is not explicitly set to All, keep strictly isolated
+          if (adminCompanyFilter && adminCompanyFilter !== 'All') {
+            return p.workspace_tenant_id === tenantId || p.workspace_tenant_code === 'TNT00001';
+          }
+        }
+        return true;
+      });
+
+      const allowedPosIds = new Set(filteredPositions.map(p => p.id));
+      const candidates = rawCandidates
+        .filter(c => allowedPosIds.has(c.position_id))
+        .map(c => {
+          const parentPos = parsedPositions.find(p => p.id === c.position_id);
+          return {
+            ...c,
+            workspace_tenant_id: parentPos?.workspace_tenant_id,
+            workspace_tenant_code: parentPos?.workspace_tenant_code || 'TNT00002',
+            workspace_company: parentPos?.workspace_company || 'NSMLR',
+            workspace_branch_code: parentPos?.workspace_branch_code || 'TNT00002-B0002'
+          };
+        });
+
+      const positions = filteredPositions;
 
       const openPositions = positions.filter(p => p.status !== 'CLOSED');
       const inInterview = candidates.filter(c => c.current_stage === 'S03' || (c.candidate_status || '').toLowerCase().includes('interview'));

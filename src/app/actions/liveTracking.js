@@ -1329,6 +1329,38 @@ export async function reportEmployeeDeviceHealth(snapshot = {}) {
       if (error && !isMissingHealthRelationError(error)) {
         console.warn('[reportEmployeeDeviceHealth] Supabase upsert warning:', error.message);
       }
+
+      // Realtime alert broadcast if on-duty field employee turns OFF GPS
+      if (dbPayload.gps_provider_enabled === false || dbPayload.location_mode === 'denied') {
+        try {
+          const todayIST = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+          const { data: att } = await admin.from('attendance_records').select('id, in_time, out_time').eq('user_id', effectiveUserId).eq('attendance_date', todayIST).order('in_time', { ascending: false }).limit(1).maybeSingle();
+
+          if (att && att.in_time && !att.out_time) {
+            const { data: userRow } = await admin.from('user_roles').select('name').eq('user_id', effectiveUserId).maybeSingle();
+            const empName = userRow?.name || 'Field Executive';
+            const alertChan = admin.channel(`crm-tenant-alerts:${canonicalCompany}`);
+            await alertChan.subscribe();
+            await alertChan.send({
+              type: 'broadcast',
+              event: 'FIELD_GPS_TAMPER_ALERT',
+              payload: {
+                userId: effectiveUserId,
+                userName: empName,
+                company: canonicalCompany,
+                timeIST: new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+                alertType: dbPayload.gps_provider_enabled === false ? 'GPS_TOGGLE_OFF' : 'PERMISSION_DENIED',
+                message: dbPayload.gps_provider_enabled === false
+                  ? `${empName} has turned OFF Phone GPS during official duty hours.`
+                  : `${empName} has denied Location permission during official duty hours.`
+              }
+            });
+            admin.removeChannel(alertChan).catch(() => {});
+          }
+        } catch (alertErr) {
+          console.warn('[reportEmployeeDeviceHealth] Non-blocking alert broadcast warning:', alertErr?.message || alertErr);
+        }
+      }
     }
 
     return { success: true, record: dbPayload, evaluation, policy };
@@ -1399,6 +1431,38 @@ export async function reportFieldDeviceHeartbeat(token, snapshot = {}) {
       try {
         const { error } = await admin.from('employee_device_health').upsert(record, { onConflict: 'user_id,company' });
         persisted = !error;
+
+        // Realtime alert broadcast if on-duty field employee turns OFF GPS
+        if (record.gps_provider_enabled === false || record.location_mode === 'denied') {
+          try {
+            const todayIST = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+            const { data: att } = await admin.from('attendance_records').select('id, in_time, out_time').eq('user_id', claims.uid).eq('attendance_date', todayIST).order('in_time', { ascending: false }).limit(1).maybeSingle();
+
+            if (att && att.in_time && !att.out_time) {
+              const { data: userRow } = await admin.from('user_roles').select('name').eq('user_id', claims.uid).maybeSingle();
+              const empName = userRow?.name || 'Field Executive';
+              const alertChan = admin.channel(`crm-tenant-alerts:${company}`);
+              await alertChan.subscribe();
+              await alertChan.send({
+                type: 'broadcast',
+                event: 'FIELD_GPS_TAMPER_ALERT',
+                payload: {
+                  userId: claims.uid,
+                  userName: empName,
+                  company,
+                  timeIST: new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+                  alertType: record.gps_provider_enabled === false ? 'GPS_TOGGLE_OFF' : 'PERMISSION_DENIED',
+                  message: record.gps_provider_enabled === false
+                    ? `${empName} has turned OFF Phone GPS during official duty hours.`
+                    : `${empName} has denied Location permission during official duty hours.`
+                }
+              });
+              admin.removeChannel(alertChan).catch(() => {});
+            }
+          } catch (alertErr) {
+            console.warn('[reportFieldDeviceHeartbeat] Non-blocking alert broadcast warning:', alertErr?.message || alertErr);
+          }
+        }
       } catch { /* The JSON fallback remains available. */ }
     }
     // Re-read just before writing so other employees' fallback rows are retained.

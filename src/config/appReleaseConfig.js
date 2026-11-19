@@ -8,12 +8,12 @@
 
 export const DEFAULT_ANDROID_RELEASE_POLICY = {
   platform: 'android',
-  latest_version_code: 4,
-  latest_version_name: '2.5.1114',
+  latest_version_code: 7,
+  latest_version_name: '2.5.1230',
   min_supported_version_code: 4,
   download_url: '/api/public/android-apk',
   release_notes:
-    'Added Android background GPS & battery optimization diagnostics, 1-tap self-heal settings shortcuts, and foreground GPS accuracy improvements.'
+    'Android WebView resume blank-screen recovery, off-duty background GPS privacy protection, and Field Force System 360° Live Tracking.'
 };
 
 export const DEVICE_HEALTH_STATUS = {
@@ -197,7 +197,7 @@ export function classifyDeviceHealth(record = null, policyInput = DEFAULT_ANDROI
     issues.push('Location permission DENIED');
     hasPermissionBlocker = true;
   } else if (locationMode === 'while_using') {
-    issues.push('Location set to "While using app" — needs "Allow all the time"');
+    issues.push('At official work start time, app permission "Allow all the time" is mandatory');
     hasPermissionBlocker = true;
   }
 

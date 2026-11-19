@@ -16,7 +16,7 @@ import {
 import { MODULES_CONFIG } from '@/config/modulesConfig';
 import { ROLE_PRESETS } from '../utils/rolePresets';
 import { INTEGRATION_PAGE_IDS } from '@/config/integrationsConfig';
-import { getSubItemPermissions } from '@/utils/permissionUtils';
+import { getSubItemPermissions, enforcePolicyPlatformSafety } from '@/utils/permissionUtils';
 import { WHATSAPP_LOG_VIEW_IDS } from '@/config/whatsappMessageLogsConfig';
 import {
   AllowedPlatformsBar,
@@ -387,8 +387,16 @@ export default function PermissionMatrixModal({
     });
   };
 
+  const userTrackingPolicy = user?.tracking_policy || user?.module_access?.tracking_policy || accessForm?.tracking_policy || 'PUNCH_ONLY';
+  const isLiveTrackingUser = userTrackingPolicy === 'LIVE_TRACKING';
+
   // Layer 1: Allowed Login Platforms (User Global)
   const handleToggleAllowedPlatform = (platformKey) => {
+    if (isLiveTrackingUser && (platformKey === 'android' || platformKey === 'ios')) {
+      setError('Live Tracking Policy active: Mobile platform access (Android/iOS) is required and cannot be disabled.');
+      return;
+    }
+    setError('');
     setAccessForm(prev => {
       const nextMap = togglePlatformKeyInMap(prev.allowed_platforms, platformKey);
       const next = { ...prev };
@@ -399,6 +407,7 @@ export default function PermissionMatrixModal({
   };
 
   const handleAllowAllPlatforms = () => {
+    setError('');
     setAccessForm(prev => {
       const next = { ...prev };
       delete next.allowed_platforms;
@@ -409,6 +418,11 @@ export default function PermissionMatrixModal({
   // Layer 2: Module & Sub-Item Row Platforms
   const handleToggleModulePlatform = (module, platformKey) => {
     if (module.roleAssignable === false || module.masterAdminOnly === true) return;
+    if (isLiveTrackingUser && (platformKey === 'android' || platformKey === 'ios') && (module.id === 'field_force' || module.id === 'attendance')) {
+      setError(`Live Tracking Policy active: ${module.label} mobile access (${platformKey.toUpperCase()}) is required.`);
+      return;
+    }
+    setError('');
     setAccessForm(prev => {
       const current = prev[module.id] || {};
       const nextPlatforms = togglePlatformKeyInMap(current.platforms, platformKey);
@@ -664,8 +678,10 @@ export default function PermissionMatrixModal({
       updatedForm.recruiter.assigned_steps = Object.keys(updatedForm.recruiter.sub_items).filter(k => updatedForm.recruiter.sub_items[k]?.view === true);
     }
 
+    const safeForm = enforcePolicyPlatformSafety(updatedForm, userTrackingPolicy);
+
     try {
-      await onSave(user.user_id, updatedForm);
+      await onSave(user.user_id, safeForm);
     } catch (saveErr) {
       setError(saveErr.message || 'Could not save permissions.');
     }
@@ -870,6 +886,26 @@ export default function PermissionMatrixModal({
               })}
             </div>
           </div>
+
+          {isLiveTrackingUser && (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              padding: '0.45rem 0.8rem',
+              borderRadius: '8px',
+              background: '#f0fdf4',
+              border: '1px solid #bbf7d0',
+              fontSize: '0.78rem',
+              color: '#166534',
+              fontWeight: 600
+            }}>
+              <span>🚗 Live Tracking Policy Active:</span>
+              <span style={{ fontWeight: 400, color: '#15803d' }}>
+                Android & iOS mobile platform access is auto-protected and required for continuous field tracking.
+              </span>
+            </div>
+          )}
 
           {/* Layer 1: Allowed Login Platforms (Web / Windows / Android / iOS) */}
           <AllowedPlatformsBar

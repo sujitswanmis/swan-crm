@@ -895,7 +895,7 @@ export async function getCompanyHolidays(tenantId = DEFAULT_TENANT_ID, branchNam
 
   const cleanBranch = branchName && branchName !== 'All Branches' ? branchName.trim() : '';
 
-  // 1. Try local JSON first or Supabase
+  // 1. Try local JSON first
   let list = [];
   try {
     const raw = await fs.readFile(HOLIDAYS_FILE_PATH, 'utf8');
@@ -913,48 +913,75 @@ export async function getCompanyHolidays(tenantId = DEFAULT_TENANT_ID, branchNam
       .eq('tenant_id', tenantId)
       .order('holiday_date', { ascending: true });
 
-    if (!error && Array.isArray(dbHolidays) && dbHolidays.length > 0) {
-      // Merge with local branch metadata if available
-      const localMap = new Map(list.map(l => [l.id || l.date, l]));
-      list = dbHolidays.map(h => {
-        const local = localMap.get(h.id) || localMap.get(h.holiday_date) || {};
-        return {
-          id: h.id,
-          date: h.holiday_date,
-          name: h.holiday_name,
-          type: h.holiday_type || 'NATIONAL',
-          branch_name: local.branch_name || h.branch_name || 'All Branches',
-          description: local.description || h.description || ''
-        };
+    if (!error && Array.isArray(dbHolidays)) {
+      // Map existing local list for branch and description metadata
+      const localMap = new Map();
+      list.forEach(l => {
+        if (l.id) localMap.set(l.id, l);
+        if (l.date) localMap.set(l.date, l);
       });
-      try {
-        await fs.writeFile(HOLIDAYS_FILE_PATH, JSON.stringify(list, null, 2), 'utf8');
-      } catch (_) {}
-    } else if (!error && Array.isArray(dbHolidays) && dbHolidays.length === 0 && list.length === 0) {
-      // Seed if completely empty
-      const seedPayload = DEFAULT_HOLIDAYS_LIST.map(h => ({
-        tenant_id: tenantId,
-        holiday_date: h.date,
-        holiday_name: h.name,
-        holiday_type: h.type || 'NATIONAL'
-      }));
-      const { data: seeded, error: seedErr } = await adminClient
-        .from('holiday_master')
-        .insert(seedPayload)
-        .select();
 
-      if (!seedErr && Array.isArray(seeded) && seeded.length > 0) {
-        list = seeded.map(h => ({
-          id: h.id,
-          date: h.holiday_date,
-          name: h.holiday_name,
-          type: h.holiday_type || 'NATIONAL',
-          branch_name: 'All Branches',
-          description: ''
-        }));
+      // Deduplicate DB rows by holiday_date so multiple duplicate entries don't clutter the UI
+      const seenDates = new Set();
+      const dedupedDb = [];
+      for (const h of dbHolidays) {
+        if (!seenDates.has(h.holiday_date)) {
+          seenDates.add(h.holiday_date);
+          dedupedDb.push(h);
+        }
+      }
+
+      if (dedupedDb.length > 0) {
+        list = dedupedDb.map(h => {
+          const local = localMap.get(h.id) || localMap.get(h.holiday_date) || {};
+          const isHolidayVal = h.is_holiday !== undefined && h.is_holiday !== null
+            ? (h.is_holiday === true || h.is_holiday === 'true')
+            : (local.is_holiday !== undefined && local.is_holiday !== null ? (local.is_holiday === true || local.is_holiday === 'true') : true);
+
+          return {
+            id: h.id,
+            tenant_id: tenantId,
+            date: h.holiday_date,
+            name: h.holiday_name,
+            type: local.type || h.holiday_type || 'COMPANY',
+            branch_name: h.branch_name || local.branch_name || 'All Branches',
+            description: h.description || local.description || '',
+            is_holiday: isHolidayVal
+          };
+        });
+
+        list.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
         try {
           await fs.writeFile(HOLIDAYS_FILE_PATH, JSON.stringify(list, null, 2), 'utf8');
         } catch (_) {}
+      } else if (list.length === 0) {
+        // Seed if completely empty
+        const seedPayload = DEFAULT_HOLIDAYS_LIST.map(h => ({
+          tenant_id: tenantId,
+          holiday_date: h.date,
+          holiday_name: h.name,
+          holiday_type: 'NATIONAL'
+        }));
+        const { data: seeded, error: seedErr } = await adminClient
+          .from('holiday_master')
+          .insert(seedPayload)
+          .select();
+
+        if (!seedErr && Array.isArray(seeded) && seeded.length > 0) {
+          list = seeded.map(h => ({
+            id: h.id,
+            tenant_id: tenantId,
+            date: h.holiday_date,
+            name: h.holiday_name,
+            type: h.holiday_type || 'NATIONAL',
+            branch_name: 'All Branches',
+            description: '',
+            is_holiday: true
+          }));
+          try {
+            await fs.writeFile(HOLIDAYS_FILE_PATH, JSON.stringify(list, null, 2), 'utf8');
+          } catch (_) {}
+        }
       }
     }
   } catch (dbErr) {
@@ -962,7 +989,7 @@ export async function getCompanyHolidays(tenantId = DEFAULT_TENANT_ID, branchNam
   }
 
   if (list.length === 0) {
-    list = DEFAULT_HOLIDAYS_LIST.map(h => ({ ...h, branch_name: 'All Branches', description: '' }));
+    list = DEFAULT_HOLIDAYS_LIST.map(h => ({ ...h, branch_name: 'All Branches', description: '', is_holiday: true }));
   }
 
   // Filter by branch if specific branch requested
@@ -987,36 +1014,106 @@ export async function saveCompanyHoliday(holidayData, tenantId = DEFAULT_TENANT_
     }
 
     const assignedBranch = holidayData.branch_name || branchName || 'All Branches';
-    const payload = {
-      tenant_id: tenantId,
-      holiday_date: holidayData.date,
-      holiday_name: (holidayData.name || '').trim(),
-      holiday_type: holidayData.type || 'COMPANY'
-    };
+    const requestedType = (holidayData.type || 'COMPANY').toUpperCase();
+    const cleanName = (holidayData.name || '').trim();
+    const cleanDate = holidayData.date;
+    const cleanDesc = holidayData.description || '';
+    const isHoliday = holidayData.is_holiday !== false && holidayData.is_holiday !== 'false';
 
-    if (holidayData.id && typeof holidayData.id === 'string' && holidayData.id.includes('-')) {
-      payload.id = holidayData.id;
-    }
+    // 1. Dual-Write to Supabase
+    let savedDbId = holidayData.id;
 
-    // 1. Save to Supabase table
-    try {
-      const { error: upsertErr } = await adminClient
-        .from('holiday_master')
-        .upsert(payload, { onConflict: 'id' });
+    if (adminClient) {
+      try {
+        // Check if row already exists for this tenant and date (or given id)
+        let existingQuery = adminClient
+          .from('holiday_master')
+          .select('id, holiday_date, holiday_type')
+          .eq('tenant_id', tenantId);
 
-      if (upsertErr) {
-        await adminClient.from('holiday_master').insert({
+        if (savedDbId && typeof savedDbId === 'string' && savedDbId.includes('-')) {
+          existingQuery = existingQuery.eq('id', savedDbId);
+        } else {
+          existingQuery = existingQuery.eq('holiday_date', cleanDate);
+        }
+
+        const { data: existingRows } = await existingQuery;
+        const existingRow = existingRows && existingRows.length > 0 ? existingRows[0] : null;
+
+        // Prepare full payload
+        const fullPayload = {
           tenant_id: tenantId,
-          holiday_date: holidayData.date,
-          holiday_name: (holidayData.name || '').trim(),
-          holiday_type: holidayData.type || 'COMPANY'
-        });
+          holiday_date: cleanDate,
+          holiday_name: cleanName,
+          holiday_type: requestedType,
+          branch_name: assignedBranch,
+          description: cleanDesc,
+          is_holiday: isHoliday
+        };
+
+        const executeSupabaseWrite = async (payloadToUse) => {
+          if (existingRow?.id) {
+            return await adminClient
+              .from('holiday_master')
+              .update(payloadToUse)
+              .eq('id', existingRow.id)
+              .select('*')
+              .single();
+          } else {
+            return await adminClient
+              .from('holiday_master')
+              .insert(payloadToUse)
+              .select('*')
+              .single();
+          }
+        };
+
+        // Attempt 1: Full payload with is_holiday, branch_name, description
+        let dbRes = await executeSupabaseWrite(fullPayload);
+
+        // Attempt 2: If column error 42703 (e.g. is_holiday column doesn't exist yet on DB)
+        if (dbRes?.error && dbRes.error.code === '42703') {
+          const corePayload = {
+            tenant_id: tenantId,
+            holiday_date: cleanDate,
+            holiday_name: cleanName,
+            holiday_type: requestedType,
+            branch_name: assignedBranch,
+            description: cleanDesc
+          };
+          dbRes = await executeSupabaseWrite(corePayload);
+
+          if (dbRes?.error && dbRes.error.code === '42703') {
+            const minPayload = {
+              tenant_id: tenantId,
+              holiday_date: cleanDate,
+              holiday_name: cleanName,
+              holiday_type: requestedType
+            };
+            dbRes = await executeSupabaseWrite(minPayload);
+          }
+        }
+
+        // Attempt 3: If check constraint error 23514 (COMPANY not allowed by legacy check constraint)
+        if (dbRes?.error && dbRes.error.code === '23514') {
+          const fallbackPayload = {
+            tenant_id: tenantId,
+            holiday_date: cleanDate,
+            holiday_name: cleanName,
+            holiday_type: 'OPTIONAL'
+          };
+          dbRes = await executeSupabaseWrite(fallbackPayload);
+        }
+
+        if (dbRes?.data?.id) {
+          savedDbId = dbRes.data.id;
+        }
+      } catch (dbErr) {
+        console.warn('Supabase holiday_master save error:', dbErr.message);
       }
-    } catch (dbErr) {
-      console.warn('Supabase holiday_master save error:', dbErr.message);
     }
 
-    // 2. Persist to local JSON with branch_name and description
+    // 2. Persist to local JSON with exact DB ID, branch_name, description, original type and is_holiday
     let localList = [];
     try {
       const raw = await fs.readFile(HOLIDAYS_FILE_PATH, 'utf8');
@@ -1024,27 +1121,44 @@ export async function saveCompanyHoliday(holidayData, tenantId = DEFAULT_TENANT_
       if (!Array.isArray(localList)) localList = [];
     } catch (_) {}
 
+    const resolvedId = savedDbId || holidayData.id || crypto.randomUUID();
     const holidayItem = {
-      id: holidayData.id || crypto.randomUUID(),
+      id: resolvedId,
       tenant_id: tenantId,
-      date: holidayData.date,
-      name: (holidayData.name || '').trim(),
-      type: holidayData.type || 'COMPANY',
+      date: cleanDate,
+      name: cleanName,
+      type: requestedType,
       branch_name: assignedBranch,
-      description: holidayData.description || ''
+      description: cleanDesc,
+      is_holiday: isHoliday
     };
 
-    const existingIdx = localList.findIndex(h => (h.id && h.id === holidayItem.id) || (h.date === holidayItem.date && h.name === holidayItem.name));
+    // Deduplicate in localList: match by id or by (date + tenant)
+    const existingIdx = localList.findIndex(h => 
+      (h.id && h.id === resolvedId) || 
+      (h.date === cleanDate && (!h.tenant_id || h.tenant_id === tenantId))
+    );
+
     if (existingIdx >= 0) {
       localList[existingIdx] = { ...localList[existingIdx], ...holidayItem };
     } else {
       localList.push(holidayItem);
     }
-    // Sort chronologically
-    localList.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+
+    // Clean duplicate rows with same date for same tenant in localList if any
+    const uniqueLocal = [];
+    const seenLocalKeys = new Set();
+    for (const item of localList) {
+      const k = `${item.tenant_id || tenantId}:${item.date}`;
+      if (!seenLocalKeys.has(k)) {
+        seenLocalKeys.add(k);
+        uniqueLocal.push(item);
+      }
+    }
+    uniqueLocal.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
 
     try {
-      await fs.writeFile(HOLIDAYS_FILE_PATH, JSON.stringify(localList, null, 2), 'utf8');
+      await fs.writeFile(HOLIDAYS_FILE_PATH, JSON.stringify(uniqueLocal, null, 2), 'utf8');
     } catch (_) {}
 
     holidaysCache.clear();
@@ -1059,18 +1173,20 @@ export async function deleteCompanyHoliday(holidayId, tenantId = DEFAULT_TENANT_
   tenantId = await resolveDbTenantUuid(tenantId);
   const adminClient = getAdminClient();
   try {
-    if (holidayId && typeof holidayId === 'string' && holidayId.includes('-')) {
-      await adminClient
-        .from('holiday_master')
-        .delete()
-        .eq('tenant_id', tenantId)
-        .eq('id', holidayId);
-    } else {
-      await adminClient
-        .from('holiday_master')
-        .delete()
-        .eq('tenant_id', tenantId)
-        .eq('holiday_date', holidayId);
+    if (adminClient) {
+      if (holidayId && typeof holidayId === 'string' && holidayId.includes('-')) {
+        await adminClient
+          .from('holiday_master')
+          .delete()
+          .eq('tenant_id', tenantId)
+          .eq('id', holidayId);
+      } else {
+        await adminClient
+          .from('holiday_master')
+          .delete()
+          .eq('tenant_id', tenantId)
+          .eq('holiday_date', holidayId);
+      }
     }
 
     // Also remove from local JSON

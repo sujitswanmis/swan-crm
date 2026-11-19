@@ -19,6 +19,16 @@ import { filterVisibleSubTabs, getSubItemPermissions } from '@/utils/permissionU
 import { useTableColumnResize, ColumnResizer } from '@/utils/tableColumnResize';
 import DateRangePicker, { computeDateRange } from '@/components/common/DateRangePicker';
 
+const getCrmDefaultPageSize = () => {
+  if (typeof window !== 'undefined') {
+    try {
+      const s = JSON.parse(localStorage.getItem('crmPageNavSettings') || '{}');
+      if (s.defaultPageSize) return s.defaultPageSize === 'All' ? 100000 : parseInt(s.defaultPageSize, 10) || 15;
+    } catch {}
+  }
+  return 15;
+};
+
 const CALL_ADMIN_DB_DEFAULT_COL_WIDTHS = {
   time: 170,
   call_uuid: 130,
@@ -241,7 +251,7 @@ function TabAgents({ agents, endpoints, endpointsReady = true, users, onRefresh,
   const [rowFeedback, setRowFeedback] = useState({});
   const [callerIdDrafts, setCallerIdDrafts] = useState({});
   const [page, setPage] = useState(0);
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = useState(getCrmDefaultPageSize);
   const [agentSearch, setAgentSearch] = useState('');
   const [selectedUserId, setSelectedUserId] = useState('');
   const [userSearch, setUserSearch] = useState('');
@@ -837,7 +847,7 @@ function TabAgents({ agents, endpoints, endpointsReady = true, users, onRefresh,
 }
 
 // ── Tab: SIP Endpoints ────────────────────────────────────────
-function TabEndpoints({ scope = '', initialEndpoints = [], userCompany = '', tenantId = null, agents = [], onRefresh = null, seatQuota = null, isMasterAdmin = false }) {
+function TabEndpoints({ scope = '', initialEndpoints = [], userCompany = '', tenantId = null, agents = [], onRefresh = null, seatQuota = null, isMasterAdmin = false, userId = '' }) {
   const [endpointView, setEndpointView] = useTableViewPreference('CallCenter/CallAdminModule-2');
   const [endpoints, setEndpoints] = useState(() => readViewCache(scope, 'endpoints')?.endpoints || initialEndpoints);
   const [verified, setVerified] = useState(false);
@@ -848,7 +858,7 @@ function TabEndpoints({ scope = '', initialEndpoints = [], userCompany = '', ten
   const endpointRequest = useRef(0);
   const [endpointSearch, setEndpointSearch] = useState('');
   const [page, setPage] = useState(0);
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = useState(getCrmDefaultPageSize);
   const filteredEndpoints = useMemo(() => {
     const terms = endpointSearch.trim().toLowerCase().split(/\s+/).filter(Boolean);
     if (!terms.length) return endpoints;
@@ -977,7 +987,7 @@ function TabEndpoints({ scope = '', initialEndpoints = [], userCompany = '', ten
     const request = ++endpointRequest.current;
     setLoading(true); setEndpointError('');
     try {
-      const q = new URLSearchParams({ company: userCompany, tenant_id: tenantId || '', viewer: scope });
+      const q = new URLSearchParams({ company: userCompany, tenant_id: tenantId || '', viewer: userId || '' });
       const data = await fetchPageData(`/api/plivo/admin/endpoints?${q}`, { fresh });
       if (request !== endpointRequest.current) return;
       setEndpoints(data.endpoints || []); setVerified(true);
@@ -990,7 +1000,7 @@ function TabEndpoints({ scope = '', initialEndpoints = [], userCompany = '', ten
       setEndpointError(error.message); setVerified(false);
       if ([401, 403].includes(error.status)) { setEndpoints([]); clearViewCache(scope, 'endpoints'); }
     } finally { if (request === endpointRequest.current) setLoading(false); }
-  }, [userCompany, tenantId, scope]);
+  }, [userCompany, tenantId, scope, userId]);
 
   useEffect(() => {
     fetchEndpoints({ fresh: false });
@@ -1455,7 +1465,8 @@ function TabEndpoints({ scope = '', initialEndpoints = [], userCompany = '', ten
 }
 
 // ── Tab: Call Logs ────────────────────────────────────────────
-function TabCallLogs({ scope = '', userCompany = '', tenantId = null }) {
+function TabCallLogs({ scope = '', userCompany = '', tenantId = null, userId = '' }) {
+  const [logsView, setLogsView] = useTableViewPreference('CallCenter/CallAdminModule-3');
   const [calls, setCalls] = useState([]);
   const [total, setTotal] = useState(0);
   const [hasMore, setHasMore] = useState(false);
@@ -1477,7 +1488,7 @@ function TabCallLogs({ scope = '', userCompany = '', tenantId = null }) {
     CALL_ADMIN_PLIVO_MIN_COL_WIDTHS
   );
 
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = useState(getCrmDefaultPageSize);
   const [logsError, setLogsError] = useState('');
   const logsRequest = useRef(0);
 
@@ -1545,7 +1556,7 @@ function TabCallLogs({ scope = '', userCompany = '', tenantId = null }) {
     const limitParam = isAll ? 'all' : String(pSize);
     const offsetParam = isAll ? '0' : String(pg * (Number(pSize) || 25));
     const q = new URLSearchParams({ source: src, limit: limitParam, offset: offsetParam, company: userCompany,
-      tenant_id: tenantId || '', start_date: startDate, end_date: endDate, search: src === 'db' ? term : '', viewer: scope });
+      tenant_id: tenantId || '', start_date: startDate, end_date: endDate, search: src === 'db' ? term : '', viewer: userId || '' });
     const cacheKey = `logs:${q}`;
     const cached = readViewCache(scope, cacheKey);
     setCalls(cached?.calls || []); setTotal(cached?.total || 0);
@@ -1562,7 +1573,7 @@ function TabCallLogs({ scope = '', userCompany = '', tenantId = null }) {
       setLogsError(error.message);
       if ([401, 403].includes(error.status)) { setCalls([]); setTotal(0); setHasMore(false); clearViewCache(scope, cacheKey); }
     } finally { if (request === logsRequest.current) setLoading(false); }
-  }, [userCompany, tenantId, scope]);
+  }, [userCompany, tenantId, scope, userId]);
 
   useEffect(() => {
     const timer = setTimeout(() => fetchLogs(source, page, pageSize, datePreset, customStartDate, customEndDate, search), search.trim() ? 200 : 0);
@@ -1841,6 +1852,9 @@ function TabCallLogs({ scope = '', userCompany = '', tenantId = null }) {
           <FileSpreadsheet size={14} /> {exportingExcel ? 'Exporting...' : 'Export Excel'}
         </button>
 
+        {/* View Toggle (Table / Tiles) */}
+        <TableViewToggle view={logsView} onChange={setLogsView} style={{ marginLeft: 0, height: 38, boxSizing: 'border-box' }} />
+
         {/* Refresh Button */}
         <button 
           onClick={() => fetchLogs(source, page, pageSize, datePreset, customStartDate, customEndDate, search)}
@@ -1855,7 +1869,7 @@ function TabCallLogs({ scope = '', userCompany = '', tenantId = null }) {
 
         {/* Total Records Badge */}
         <span style={{ color:'#64748b', fontSize:'0.82rem', background:'#f1f5f9', padding:'0.4rem 0.75rem', borderRadius:'6px' }}>
-          Total: <strong style={{ color:'#0f172a' }}>{source === 'plivo' && hasMore ? `${Math.max(calls.length, total - 1)}+` : total}</strong>
+          Total: <strong style={{ color:'#0f172a' }}>{total}</strong>
         </span>
       </div>
 
@@ -1942,7 +1956,7 @@ function TabCallLogs({ scope = '', userCompany = '', tenantId = null }) {
         {/* Main Table */}
         <div style={{ background:'white', borderRadius:'12px', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0', overflow:'hidden' }}>
           <div style={tableScroll}>
-            <MobileTableView id="CallCenter/CallAdminModule-3"><table style={{ width: '100%', minWidth: source === 'db' ? `${Math.max(1400, dbColResize.getTotalTableWidth() + 40)}px` : `${Math.max(900, plivoColResize.getTotalTableWidth())}px`, tableLayout: 'fixed', borderCollapse:'collapse' }}>
+            <MobileTableView id="CallCenter/CallAdminModule-3" view={logsView} hideToggle={true}><table style={{ width: '100%', minWidth: source === 'db' ? `${Math.max(1400, dbColResize.getTotalTableWidth() + 40)}px` : `${Math.max(900, plivoColResize.getTotalTableWidth())}px`, tableLayout: 'fixed', borderCollapse:'collapse' }}>
               <thead style={stickyHeader}>
                 <tr style={{ fontSize:'0.78rem', textTransform:'uppercase', color:'var(--text-secondary, #64748b)', borderBottom:'1px solid #e2e8f0' }}>
                   {source === 'db' && (
@@ -2095,7 +2109,7 @@ function TabCallLogs({ scope = '', userCompany = '', tenantId = null }) {
           </table></MobileTableView>
         </div>
 
-        <CallCenterPagination total={total} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} disabled={loading} />
+        <CallCenterPagination total={total} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} disabled={loading} hasMore={source === 'plivo' && hasMore} />
       </div>
 
       {/* Parallel Download Speed Selector Modal */}
@@ -4248,9 +4262,9 @@ function CallAdminPage({
             seatQuota={seatQuota}
           /></fieldset>
         )}
-        {activeTab === 'endpoints' && <TabEndpoints key={scope} scope={scope} initialEndpoints={endpoints} userCompany={userCompany} tenantId={tenantId} agents={agents} onRefresh={fetchData} seatQuota={seatQuota} isMasterAdmin={isMasterAdmin} />}
+        {activeTab === 'endpoints' && <TabEndpoints key={scope} scope={scope} userId={userId} initialEndpoints={endpoints} userCompany={userCompany} tenantId={tenantId} agents={agents} onRefresh={fetchData} seatQuota={seatQuota} isMasterAdmin={isMasterAdmin} />}
         {activeTab === 'telephony' && <TabTelephonyGateway userCompany={userCompany} tenantId={tenantId} onRefresh={fetchData} isMasterAdmin={isMasterAdmin} />}
-        {activeTab === 'calllogs' && <TabCallLogs scope={scope} userCompany={userCompany} tenantId={tenantId} />}
+        {activeTab === 'calllogs' && <TabCallLogs scope={scope} userId={userId} userCompany={userCompany} tenantId={tenantId} />}
         {activeTab === 'monitor' && <TabMonitor agents={agents} onRefresh={fetchData} />}
         {activeTab === 'settings' && <TabSettings agents={agents} userCompany={userCompany} tenantId={tenantId} />}
       </div>

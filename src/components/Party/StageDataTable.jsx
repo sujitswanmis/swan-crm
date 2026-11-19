@@ -14,6 +14,7 @@ import PartyImportModal from './PartyImportModal';
 import { B2B_OPERATIONAL_STATUSES } from './StageConfigModal';
 import { getTenantBranches } from '@/app/actions/tenantBranches';
 import { matchesCompanyToken, expandCompanyAliases } from '@/utils/branchAccess';
+import UniversalBranchSelect from '@/components/common/UniversalBranchSelect';
 
 const STAGE_CONFIGS = {
   s01: {
@@ -920,43 +921,22 @@ export default function StageDataTable({
             </button>
           </div>
 
-          <select
-            value={companyFilter}
-            onChange={e => setCompanyFilter(e.target.value)}
-            style={{
-              padding: '0.35rem 0.65rem',
-              background: 'var(--bg-primary)',
-              border: '1px solid var(--border-light)',
-              borderRadius: '8px',
-              color: 'var(--text-primary)',
-              fontSize: '0.78rem',
-              fontWeight: 600
-            }}
-          >
-            <option value="ALL">🏢 All Companies / Branches</option>
-            {dynamicBranches.length > 0 ? (
-              dynamicBranches.map(b => {
-                const code = b.custom_code || b.legacy_code || b.branch_code;
-                const cleanName = (b.branch_name || '').replace(/^New Swan\s+/i, '').replace(/^SuPuja Creations?\s+/i, '');
-                return (
-                  <option key={b.id || b.branch_code} value={code}>
-                    {code} ({cleanName})
-                  </option>
-                );
-              })
-            ) : (
-              <>
-                <option value="NSG">NSG</option>
-                <option value="NSMLR">NSMLR</option>
-                <option value="NSTLP">NSTLP</option>
-                <option value="NSE1">NSE1</option>
-                <option value="NSE2">NSE2</option>
-                <option value="NSE3">NSE3</option>
-                <option value="NSE4">NSE4</option>
-                <option value="NSACPL1">NSACPL1</option>
-              </>
-            )}
-          </select>
+          <div style={{ minWidth: '220px', maxWidth: '300px' }}>
+            <UniversalBranchSelect
+              mode="filter"
+              value={companyFilter}
+              onChange={val => setCompanyFilter(val || 'ALL')}
+              branches={dynamicBranches}
+              allValue="ALL"
+              allLabel="All Branches"
+              title="FILTER BY BRANCH"
+              triggerStyle={{
+                minHeight: '34px',
+                padding: '0.25rem 0.6rem',
+                borderRadius: '8px'
+              }}
+            />
+          </div>
         </div>
       </div>
 

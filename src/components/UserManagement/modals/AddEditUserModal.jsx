@@ -1729,6 +1729,25 @@ export default function AddEditUserModal({
                     </div>
 
                     {formData.tracking_policy === 'LIVE_TRACKING' && (
+                      <div style={{
+                        marginTop: '0.4rem',
+                        marginBottom: '0.4rem',
+                        padding: '0.4rem 0.65rem',
+                        borderRadius: '6px',
+                        background: '#f0fdf4',
+                        border: '1px solid #bbf7d0',
+                        fontSize: '0.74rem',
+                        color: '#166534',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.45rem'
+                      }}>
+                        <span>📱</span>
+                        <span><strong>Auto-Protected:</strong> Android & iOS mobile app access is automatically guaranteed for Field Force tracking.</span>
+                      </div>
+                    )}
+
+                    {formData.tracking_policy === 'LIVE_TRACKING' && (
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem', marginTop: '0.4rem', paddingTop: '0.5rem', borderTop: '1px dashed var(--border-light)' }}>
                         <div>
                           <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 600, marginBottom: '0.2rem', color: 'var(--text-secondary)' }}>

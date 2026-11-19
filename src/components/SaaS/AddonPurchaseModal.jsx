@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   X,
   UserPlus,
@@ -46,6 +46,18 @@ export default function AddonPurchaseModal({
   onClose = null
 }) {
   const [modalOpen, setModalOpen] = useState(isOpen);
+  const inFlight = useRef(false);
+  const requests = useRef(new Map());
+  const requestFor = details => {
+    const key=JSON.stringify([tenantId,subscription?.user_seat_limit,details]);
+    if(!requests.current.has(key)) {
+      let request;
+      try {request=sessionStorage.getItem('saas-addon:'+key);} catch { /* Storage is optional. */ }
+      request=request||crypto.randomUUID();requests.current.set(key,request);
+      try {sessionStorage.setItem('saas-addon:'+key,request);} catch { /* Keep the in-memory request. */ }
+    }
+    return requests.current.get(key);
+  };
   const [activeTab, setActiveTab] = useState('SEATS'); // 'SEATS' | 'MODULES'
 
   const [catalog, setCatalog] = useState([]);
@@ -75,7 +87,7 @@ export default function AddonPurchaseModal({
       try {
         const res = await getProcessCatalog(tenantId);
         if (isMounted && res.success) {
-          setCatalog(res.catalog);
+          setCatalog(res.catalog.filter(p => p.is_active !== false));
         }
       } catch (err) {
         console.error('Addon modal catalog fetch error:', err);
@@ -92,7 +104,7 @@ export default function AddonPurchaseModal({
   if (!isModalActive) return null;
 
   const currentSeatLimit = subscription?.user_seat_limit || 5;
-  const daysRemaining = subscription?.days_remaining || 30;
+  const daysRemaining = Math.max(0, Number(subscription?.days_remaining) || 0);
 
   // Calculate monthly rate per user across currently active modules
   const activeModuleKeys = entitlements ? Object.keys(entitlements).filter((k) => entitlements[k]) : [];
@@ -101,9 +113,9 @@ export default function AddonPurchaseModal({
     .reduce((sum, p) => sum + Number(p.monthly_rate_per_user || 0), 0);
 
   // Prorated add-on seat cost for remaining days
-  const effectiveMonthlyRate = activeRatePerUser > 0 ? activeRatePerUser : 199;
-  const proratedMultiplier = Math.max(0.1, daysRemaining / 30);
-  const estimatedSeatAddonCost = Math.round(additionalSeats * effectiveMonthlyRate * proratedMultiplier);
+  const effectiveMonthlyRate = activeRatePerUser;
+  const proratedMultiplier = Math.max(0, daysRemaining / 30);
+  const estimatedSeatAddonCost = Math.round(additionalSeats * effectiveMonthlyRate * proratedMultiplier * 100) / 100;
 
   const handleClose = () => {
     setModalOpen(false);
@@ -115,23 +127,23 @@ export default function AddonPurchaseModal({
       setErrorMsg('Tenant ID missing. Please refresh.');
       return;
     }
+    if (inFlight.current) return;
+    inFlight.current = true;
     setLoading(true);
     setErrorMsg(null);
     setSuccessMsg(null);
 
     try {
-      const res = await purchaseAddonSeats(tenantId, additionalSeats);
+      const res = await purchaseAddonSeats(tenantId, additionalSeats, requestFor(['seats',additionalSeats,subscription?.valid_until]));
       if (res.success) {
         setSuccessMsg(res.message);
-        setTimeout(() => {
-          window.location.reload();
-        }, 1200);
       } else {
         setErrorMsg(res.error || 'Failed to add seats.');
       }
     } catch (err) {
       setErrorMsg(err.message || 'An unexpected error occurred.');
     } finally {
+      inFlight.current = false;
       setLoading(false);
     }
   };
@@ -146,18 +158,16 @@ export default function AddonPurchaseModal({
     setSuccessMsg(null);
 
     try {
-      const res = await purchaseAddonModule(tenantId, procCode);
+      const res = await purchaseAddonModule(tenantId, procCode, requestFor(['module',procCode,subscription?.valid_until]));
       if (res.success) {
         setSuccessMsg(res.message);
-        setTimeout(() => {
-          window.location.reload();
-        }, 1200);
       } else {
         setErrorMsg(res.error || 'Failed to unlock module.');
       }
     } catch (err) {
       setErrorMsg(err.message || 'An unexpected error occurred.');
     } finally {
+      inFlight.current = false;
       setLoading(false);
     }
   };
@@ -492,7 +502,7 @@ export default function AddonPurchaseModal({
                   }}
                 >
                   {loading ? <RefreshCw size={16} className="animate-spin" /> : <UserPlus size={16} />}
-                  {loading ? 'Processing...' : `Add Seats (+${additionalSeats})`}
+                  {loading ? 'Processing...' : `Request Seats (+${additionalSeats})`}
                 </button>
               </div>
             </div>
@@ -501,7 +511,7 @@ export default function AddonPurchaseModal({
           {activeTab === 'MODULES' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
               <div style={{ fontSize: '0.82rem', color: '#64748b', marginBottom: '0.25rem' }}>
-                Unlock features instantly for your entire workspace:
+                Request a proforma for additional features. Master Admin confirms payment and activation.
               </div>
 
               {catalog.map((proc) => {
@@ -582,7 +592,7 @@ export default function AddonPurchaseModal({
                           gap: '0.35rem'
                         }}
                       >
-                        <Sparkles size={14} /> Unlock Module
+                        <Sparkles size={14} /> Request Module
                       </button>
                     )}
                   </div>

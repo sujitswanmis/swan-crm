@@ -944,7 +944,7 @@ for (const preset of ROLE_PRESETS) {
     ...(settings || { view: false, add: false, edit: false, delete: false }),
     sub_items: {
       ...(settings?.sub_items || Object.fromEntries([
-        'business', 'products', 'order_pipeline', 'complaints_config', 'crm',
+        'business', 'products', 'order_pipeline', 'complaints_config', 'crm', 'recruiter_config',
         'notifications', 'departments', 'targets', 'sessions', 'holidays', 'data', 'media',
       ].map(id => [id, { view: settings?.view === true, add: manages, edit: manages, delete: false }]))),
       ...Object.fromEntries(INTEGRATION_TABS.map(tab => [tab.id, {
@@ -952,6 +952,13 @@ for (const preset of ROLE_PRESETS) {
       }])),
     },
   };
+}
+
+// SaaS administration is always explicit and limited to Master Admin.
+for (const preset of ROLE_PRESETS) {
+  const allowed = preset.key === 'master_admin';
+  preset.presetData.saas_master = {view:allowed,add:allowed,edit:allowed,delete:allowed,
+    sub_items:Object.fromEntries(['pricing','tenants','billing'].map(id=>[id,{view:allowed,add:allowed,edit:allowed,delete:allowed}]))};
 }
 
 export function getRolePreset(roleKey) {

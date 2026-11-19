@@ -130,7 +130,7 @@ export function isDateHoliday(dateInput = new Date(), companyHolidays = null) {
   const list = Array.isArray(companyHolidays)
     ? companyHolidays
     : (companyHolidays === null || companyHolidays === undefined ? DEFAULT_HOLIDAYS_LIST : []);
-  return list.find(h => h.date === dateStr) || null;
+  return list.find(h => h.date === dateStr && h.is_holiday !== false && h.is_holiday !== 'false') || null;
 }
 
 export function isDateSunday(dateInput = new Date()) {

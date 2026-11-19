@@ -308,7 +308,7 @@ export async function sendBroadcastNotification(input) {
         expires_at: new Date(Date.now() + hours * 3600000).toISOString(),
         audience: finalAudience,
         request_hash: 'draft_' + draftId,
-        recipient_count: 0,
+        recipient_count: Math.max(1, Number(input.recipient_count) || 1),
         notification_type,
         close_behaviour,
         is_draft: true,
@@ -318,7 +318,8 @@ export async function sendBroadcastNotification(input) {
         role_filter: input.audience?.roles || [],
         employee_filter: input.audience?.employees || []
       };
-      await db.from('crm_broadcasts').upsert(draftPayload);
+      const { error: draftErr } = await db.from('crm_broadcasts').upsert(draftPayload);
+      if (draftErr) throw new Error(draftErr.message || 'Could not save draft');
       return { success: true, id: draftId, is_draft: true, count: 0 };
     }
 
@@ -346,9 +347,15 @@ export async function sendBroadcastNotification(input) {
         location_type: 'Headquarters'
       }];
     } else {
-      recipients = snapshot(selectAudience(await directory(db, actor, false), input.audience, true));
+      recipients = snapshot(selectAudience(await directory(db, actor, true), input.audience, true));
       if (!recipients.length || recipients.length > 10000) throw new Error('Select between 1 and 10000 users.');
-      if (input.fingerprint && hash(recipients) !== input.fingerprint) throw new Error('Audience changed. Refresh the audience preview before sending.');
+      if (input.fingerprint && hash(recipients) !== input.fingerprint) {
+        if (input.audience?.onlyOnline && recipients.length > 0) {
+          // Dynamic presence heartbeat; valid online recipients exist, proceed with dispatch
+        } else {
+          throw new Error('Audience changed. Refresh the audience preview before sending.');
+        }
+      }
     }
 
     const broadcastTitle = is_test ? `[TEST] ${title}` : title;

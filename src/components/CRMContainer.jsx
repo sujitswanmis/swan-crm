@@ -12,7 +12,7 @@ import { isFeatureEntitled } from '@/utils/saasEntitlements';
 import SubscriptionExpiryBanner from './SaaS/SubscriptionExpiryBanner';
 import SubscriptionExpiredModal from './SaaS/SubscriptionExpiredModal';
 import AddonPurchaseModal from './SaaS/AddonPurchaseModal';
-import { Database, LayoutDashboard, Users, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, MessageSquare, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen, Building2, MapPin, ShieldCheck, Camera, User, Upload, Loader2, Trash2, Calendar, Clock, AlertTriangle, AlertCircle, X, ExternalLink, CheckSquare, WifiOff, Sparkles, Volume2, CheckCircle2, Play, Settings2, FormInput, Workflow, Monitor, Target, FileType, Compass, Layers, Network, Activity, Crown, GitMerge, Sliders, Send, Mail, Zap, Package, Truck, Navigation as NavigationIcon } from 'lucide-react';
+import { Database, LayoutDashboard, Users, UserCheck, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, MessageSquare, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen, Building2, MapPin, ShieldCheck, Camera, User, Upload, Loader2, Trash2, Calendar, Clock, AlertTriangle, AlertCircle, X, ExternalLink, CheckSquare, WifiOff, Sparkles, Volume2, CheckCircle2, Play, Settings2, FormInput, Workflow, Monitor, Target, FileType, Compass, Layers, Network, Activity, Crown, GitMerge, Sliders, Send, Mail, Zap, Package, Truck, Navigation as NavigationIcon } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { getTeamMembers } from '@/app/actions/team';
@@ -117,6 +117,7 @@ const SETTINGS_MODULE_ITEMS = [
   { id: 'order_pipeline', label: 'Order to Delivery Config', icon: Truck },
   { id: 'complaints_config', label: 'Complaint Management Config', icon: AlertTriangle },
   { id: 'crm', label: 'CRM & Lead Config', icon: Settings2 },
+  { id: 'recruiter_config', label: 'Recruiter Config', icon: UserCheck },
   { id: 'notifications', label: 'Notifications & Alerts', icon: Bell },
   { id: 'departments', label: 'Manage Departments', icon: Layers },
   { id: 'targets', label: 'Targets & Performance', icon: Target },
@@ -226,7 +227,7 @@ export function isTabPermitted(tabId, moduleAccess = {}, userRole = '', tenantEn
   }
 
   // 2. SaaS Studio, Workflow Builder & Admin Message Gate: STRICTLY restricted to Master Admin (supujacreations@gmail.com)
-  if (tabId === 'saas_studio' || tabId === 'saas_master' || tabId === 'config_master' || tabId === 'workplace' || tabId === 'workflow' || tabId === 'admin_message_config') {
+  if (tabId === 'saas_studio' || tabId === 'saas_master' || ['saas-master/','saas_master/','saas-studio/','saas_studio/'].some(prefix => String(tabId || '').startsWith(prefix)) || tabId === 'config_master' || tabId === 'workplace' || tabId === 'workflow' || tabId === 'admin_message_config') {
     return checkIsMasterAdmin(moduleAccess, userRole, userEmail);
   }
 
@@ -719,7 +720,7 @@ export default function CRMContainer({
     const clean = String(rawSub).toLowerCase().trim().replace(/^\/+|\/+$/g, '');
     if (['task_manager', 'task-manager', 'tasks', 'task'].includes(clean)) return 'task_manager';
     if (['form_studio', 'form-studio', 'forms', 'form', 'custom_forms', 'custom-form-studio'].includes(clean)) return 'form_studio';
-    if (['live_radar', 'live-radar', 'radar', 'live_gps', 'live-gps', 'playback', 'live_tracking', 'route'].includes(clean)) return 'live_radar';
+    if (['live_radar', 'live-radar', 'radar', 'live_gps', 'live-gps', 'playback', 'live_tracking', 'route', 'cluster_radar', 'all_india_radar', 'vouchers', 'conveyance_vouchers', 'tada', '360_playback'].includes(clean)) return 'live_radar';
     if (['device_health', 'device-health', 'app_health', 'app-health', 'health', 'permissions'].includes(clean)) return 'device_health';
     return 'mobile_dashboard';
   };
@@ -733,7 +734,7 @@ export default function CRMContainer({
       const sub = cleanPath.split('/')[1];
       return resolveFieldForceSubTab(sub);
     }
-    if (queryTab && ['mobile_dashboard', 'task_manager', 'form_studio', 'live_radar', 'device_health', 'device-health', 'app_health', 'app-health', 'health', 'permissions', 'app', 'tasks', 'forms', 'radar'].includes(queryTab)) {
+    if (queryTab && ['mobile_dashboard', 'task_manager', 'form_studio', 'live_radar', 'device_health', 'device-health', 'app_health', 'app-health', 'health', 'permissions', 'app', 'tasks', 'forms', 'radar', 'live_tracking', 'playback', '360_playback', 'route', 'cluster_radar', 'all_india_radar', 'vouchers', 'conveyance_vouchers', 'tada'].includes(queryTab)) {
       return resolveFieldForceSubTab(queryTab);
     }
     return 'mobile_dashboard';
@@ -744,7 +745,16 @@ export default function CRMContainer({
     if (activeTab !== 'field_force') {
       setActiveTab('field_force');
     }
-    const newPath = `/field_force?tab=${canonical}`;
+    let newPath = `/field_force?tab=${canonical}`;
+    if (canonical === 'live_radar' && typeof window !== 'undefined') {
+      try {
+        const currentUrl = new URL(window.location.href);
+        const existingView = currentUrl.searchParams.get('view') || currentUrl.searchParams.get('subtab');
+        if (existingView && !['mobile_dashboard', 'task_manager', 'form_studio', 'device_health', 'live_radar'].includes(existingView)) {
+          newPath = `/field_force?tab=${canonical}&view=${existingView}`;
+        }
+      } catch {}
+    }
     window.history.pushState(null, '', newPath);
     if (window.innerWidth <= 768) {
       setIsSidebarOpen(false);
@@ -3260,6 +3270,13 @@ export default function CRMContainer({
         }
         tab = 'delegation';
         setDelegationMenuExpanded(true);
+      } else if (tab === 'field_force' || tab === 'field-force' || (tab && (tab.startsWith('field_force/') || tab.startsWith('field-force/')))) {
+        let sub = tab.includes('/') ? tab.split('/')[1] : (params.get('tab') || params.get('subtab'));
+        if (sub) {
+          setFieldForceSubTab(resolveFieldForceSubTab(sub));
+        }
+        tab = 'field_force';
+        setFieldForceMenuExpanded(true);
       } else if (tab === 'workflow' || tab === 'workplace' || (tab && (tab.startsWith('workflow/') || tab.startsWith('workplace/')))) {
         let sub = tab.startsWith('workflow/') ? tab.split('/')[1] : tab.startsWith('workplace/') ? tab.split('/')[1] : (params.get('tab') || params.get('subtab'));
         if (sub && ['active', 'tracker', 'trash'].includes(sub.toLowerCase())) {
@@ -4412,6 +4429,79 @@ export default function CRMContainer({
       leadsVisited: visitedTabs.has('leads') });
   }, [isMounted, activeTab, loadingLeads, leads.length, isCurrentTabAllowedOffline, visitedTabs]);
 
+  // Realtime Alert Subscription for Field Force GPS Tampering (for Admin / Manager / HOD)
+  const [fieldGpsTamperAlert, setFieldGpsTamperAlert] = useState(null);
+
+  useEffect(() => {
+    const isSupervisorOrAdmin = isMasterAdmin || isAdmin ||
+      ['manager', 'hod', 'director', 'general manager', 'team lead', 'supervisor', 'admin'].includes(String(userRole || '').trim().toLowerCase()) ||
+      Boolean(moduleAccess?.['field_force']?.write || moduleAccess?.['field_force']?.full);
+
+    if (!isSupervisorOrAdmin || !userCompany) return;
+
+    const channelName = `crm-tenant-alerts:${userCompany}`;
+    const alertChan = supabase
+      .channel(channelName)
+      .on('broadcast', { event: 'FIELD_GPS_TAMPER_ALERT' }, (payload) => {
+        const data = payload?.payload;
+        if (!data || !data.userName) return;
+
+        // Play urgent tamper alarm
+        try {
+          if (typeof window !== 'undefined') {
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            if (AudioCtx) {
+              const ctx = new AudioCtx();
+              const now = ctx.currentTime;
+              const tones = [
+                { freq: 900, start: now, dur: 0.15 },
+                { freq: 600, start: now + 0.16, dur: 0.15 },
+                { freq: 900, start: now + 0.32, dur: 0.25 }
+              ];
+              tones.forEach(t => {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(t.freq, t.start);
+                gain.gain.setValueAtTime(0.25, t.start);
+                gain.gain.exponentialRampToValueAtTime(0.001, t.start + t.dur);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start(t.start);
+                osc.stop(t.start + t.dur);
+              });
+            }
+          }
+        } catch (e) {
+          console.warn('Audio tamper chime blocked:', e);
+        }
+
+        setFieldGpsTamperAlert(data);
+
+        // Also trigger unified desktop notification
+        try {
+          dispatchDesktopNotification(
+            `🚨 GPS Warning: ${data.userName}`,
+            data.message || `${data.userName} disabled location during duty hours.`,
+            () => {
+              if (data.userId && typeof window !== 'undefined') {
+                try {
+                  localStorage.setItem(`crm_last_field_exec_${userCompany || 'New Swan Group'}`, data.userId);
+                  window.dispatchEvent(new CustomEvent('crm_select_field_exec', { detail: { userId: data.userId } }));
+                } catch {}
+              }
+              handleFieldForceSubTabChange('live_radar');
+            }
+          );
+        } catch {}
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(alertChan).catch(() => {});
+    };
+  }, [userCompany, userRole, isAdmin, isMasterAdmin, moduleAccess]);
+
   if (isMounted && !isUserPlatformAllowed(moduleAccess, userRole, null, userEmail)) {
     const currentPlatKey = getActiveClientPlatformKey();
     const currentPlatMeta = PLATFORM_ACCESS_OPTIONS.find(p => p.key === currentPlatKey) || PLATFORM_ACCESS_OPTIONS[0];
@@ -5169,7 +5259,7 @@ export default function CRMContainer({
                   {fieldForceMenuExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                 </span>
                 <NavigationIcon size={20} style={{ flexShrink: 0 }} />
-                <span>Field Force & Forms</span>
+                <span>Field Force System</span>
               </button>
               
               <div className={`submenu-list ${fieldForceMenuExpanded ? 'expanded' : ''}`}>
@@ -6166,7 +6256,7 @@ export default function CRMContainer({
                   {activeTab === 'attendance' && 'Smart Attendance & Regularization'}
                   {activeTab === 'checklist' && 'Smart Checklist Management'}
                   {activeTab === 'delegation' && 'Employee-to-Employee Task Delegation'}
-                  {activeTab === 'field_force' && 'Field Force & Dynamic Form Studio'}
+                  {activeTab === 'field_force' && 'Field Force System'}
                   {activeTab === 'registration' && 'Lead Registration'}
                   {activeTab === 'report' && 'Lead Registered Report'}
                   {activeTab === 'aiadmin' && 'AI Admin'}
@@ -6212,7 +6302,7 @@ export default function CRMContainer({
                     configMasterSubTab === 'offline_rule' ? '⚙️ Config Master — Offline Rules & Sync Policy' :
                     '⚙️ Config Master — Public User Management'
                   )}
-                  {!['dashboard', 'leads', 'orders', 'mrp', 'mrp_against', 'recruiter', 'joining', 'attendance', 'checklist', 'delegation', 'registration', 'report', 'aiadmin', 'aiknowledgebase', 'callcenter', 'calladmin', 'aicallcenter', 'team', 'user_management_new', 'client_registration', 'client_report', 'workplace', 'public_users', 'party', 'channel_ops', 'channel-operations', 'location_territory', 'location_master', 'whatsapp_official', 'whatsapp_unofficial', 'sms_config', 'rcs_config', 'email_config', 'admin_message_config', 'settings', 'saas_master', 'saas_studio', 'config_master'].includes(activeTab) && (
+                  {!['dashboard', 'leads', 'orders', 'mrp', 'mrp_against', 'recruiter', 'joining', 'attendance', 'checklist', 'delegation', 'field_force', 'registration', 'report', 'aiadmin', 'aiknowledgebase', 'callcenter', 'calladmin', 'aicallcenter', 'team', 'user_management_new', 'client_registration', 'client_report', 'workplace', 'public_users', 'party', 'channel_ops', 'channel-operations', 'location_territory', 'location_master', 'whatsapp_official', 'whatsapp_unofficial', 'sms_config', 'rcs_config', 'email_config', 'admin_message_config', 'settings', 'saas_master', 'saas_studio', 'config_master'].includes(activeTab) && (
                     activeTab ? activeTab.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) : 'Dashboard'
                   )}
                 </h1>
@@ -7896,8 +7986,8 @@ export default function CRMContainer({
                 isVisited={isTabPermitted('field_force', moduleAccess, userRole) && visitedTabs.has('field_force')}
               >
                 <ErrorBoundary>
-                  {/* Top Subpage Navigation Bar for Field Force & Forms */}
-                  <div role="navigation" aria-label="Field Force subpages" style={{
+                  {/* Top Subpage Navigation Bar for Field Force System */}
+                  <div role="navigation" aria-label="Field Force System subpages" style={{
                     display: 'flex',
                     flexShrink: 0,
                     minHeight: '60px',
@@ -8684,6 +8774,186 @@ export default function CRMContainer({
         </div>
       )}
 
+      {/* Real-time Field Force GPS Tampering Urgent Alert Modal */}
+      {fieldGpsTamperAlert && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 99999,
+            backgroundColor: 'rgba(15, 23, 42, 0.72)',
+            backdropFilter: 'blur(5px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '1.25rem',
+            animation: 'fadeIn 0.2s ease-out'
+          }}
+        >
+          <div
+            style={{
+              position: 'relative',
+              width: '100%',
+              maxWidth: '460px',
+              backgroundColor: 'var(--bg-surface, #ffffff)',
+              borderRadius: '16px',
+              boxShadow: '0 25px 60px rgba(220, 38, 38, 0.28), 0 0 0 2px rgba(239, 68, 68, 0.4)',
+              overflow: 'hidden',
+              border: '1px solid #fecaca'
+            }}
+          >
+            {/* Header with pulsing alert badge */}
+            <div
+              style={{
+                background: 'linear-gradient(135deg, #dc2626, #b91c1c)',
+                color: '#ffffff',
+                padding: '1.1rem 1.25rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.85rem'
+              }}
+            >
+              <div
+                style={{
+                  width: '42px',
+                  height: '42px',
+                  borderRadius: '12px',
+                  backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '1.5rem',
+                  flexShrink: 0
+                }}
+              >
+                ⚠️
+              </div>
+              <div style={{ flex: 1 }}>
+                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, letterSpacing: '-0.01em', color: '#ffffff' }}>
+                  Field GPS Disconnected Alert
+                </h3>
+                <div style={{ fontSize: '0.78rem', opacity: 0.9, marginTop: '2px', fontWeight: 500 }}>
+                  Active duty tracking interrupted • IST {fieldGpsTamperAlert.timeIST || 'Real-time'}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFieldGpsTamperAlert(null)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#ffffff',
+                  cursor: 'pointer',
+                  padding: '4px',
+                  borderRadius: '6px',
+                  opacity: 0.8
+                }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Content Body */}
+            <div style={{ padding: '1.25rem', color: 'var(--text-primary, #0f172a)' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.75rem',
+                  padding: '0.75rem 0.9rem',
+                  backgroundColor: '#fef2f2',
+                  border: '1px solid #fecaca',
+                  borderRadius: '10px',
+                  marginBottom: '1rem'
+                }}
+              >
+                <div
+                  style={{
+                    width: '38px',
+                    height: '38px',
+                    borderRadius: '50%',
+                    backgroundColor: '#dc2626',
+                    color: '#ffffff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontWeight: 700,
+                    fontSize: '0.95rem',
+                    flexShrink: 0
+                  }}
+                >
+                  {(fieldGpsTamperAlert.userName || 'FE').charAt(0).toUpperCase()}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#991b1b', wordBreak: 'break-word' }}>
+                    {fieldGpsTamperAlert.userName}
+                  </div>
+                  <div style={{ fontSize: '0.76rem', color: '#b91c1c', marginTop: '1px' }}>
+                    {fieldGpsTamperAlert.alertType === 'GPS_TOGGLE_OFF' ? '📴 Device GPS Turned OFF' : '🚫 Location Permission Revoked'}
+                  </div>
+                </div>
+              </div>
+
+              <p style={{ margin: '0 0 1.25rem', fontSize: '0.88rem', lineHeight: 1.55, color: 'var(--text-secondary, #475569)' }}>
+                {fieldGpsTamperAlert.message || `${fieldGpsTamperAlert.userName} stopped location tracking during active duty hours.`}
+              </p>
+
+              {/* Action Buttons */}
+              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  onClick={() => setFieldGpsTamperAlert(null)}
+                  style={{
+                    padding: '0.6rem 1rem',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-light, #e2e8f0)',
+                    background: 'transparent',
+                    color: 'var(--text-secondary, #64748b)',
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Acknowledge & Close
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (fieldGpsTamperAlert.userId && typeof window !== 'undefined') {
+                      try {
+                        localStorage.setItem(`crm_last_field_exec_${userCompany || 'New Swan Group'}`, fieldGpsTamperAlert.userId);
+                        window.dispatchEvent(new CustomEvent('crm_select_field_exec', { detail: { userId: fieldGpsTamperAlert.userId } }));
+                      } catch {}
+                    }
+                    handleFieldForceSubTabChange('live_radar');
+                    setFieldGpsTamperAlert(null);
+                  }}
+                  style={{
+                    padding: '0.6rem 1.25rem',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: '#dc2626',
+                    color: '#ffffff',
+                    fontSize: '0.86rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 12px rgba(220, 38, 38, 0.35)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.4rem'
+                  }}
+                >
+                  <span>Inspect on Live Radar</span>
+                  <span>🛰️</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Universal Employee Notification Preferences Modal */}
       <UserNotificationPreferencesModal
         isOpen={showNotificationPreferencesModal}
@@ -8695,6 +8965,7 @@ export default function CRMContainer({
         <GlobalMobileTelemetryTracker
           userId={userId}
           company={userCompany || 'TNT00001'}
+          trackingPolicy={moduleAccess?.tracking_policy || 'PUNCH_ONLY'}
         />
       )}
     </div>

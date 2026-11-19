@@ -4,6 +4,7 @@ import MobileTableView from '@/components/common/MobileTableView';
 import React, { useState, useMemo, useEffect } from 'react';
 import { getTenantBranches } from '@/app/actions/tenantBranches';
 import { matchesCompanyToken, expandCompanyAliases } from '@/utils/branchAccess';
+import UniversalBranchSelect from '@/components/common/UniversalBranchSelect';
 import {
   Building2, Users, Plus, ArrowRight, CheckCircle2, Clock,
   AlertTriangle, ShieldCheck, DollarSign, RefreshCw, MapPin,
@@ -255,46 +256,21 @@ export default function PartyMasterDashboard({
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
           {/* Company Filter Selector */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: 'var(--bg-primary)', padding: '0.25rem 0.6rem', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
-            <Filter size={14} style={{ color: 'var(--text-secondary)' }} />
-            <span style={{ fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Company:</span>
-            <select
+          <div style={{ minWidth: '220px', maxWidth: '320px' }}>
+            <UniversalBranchSelect
+              mode="filter"
               value={companyFilter}
-              onChange={e => setCompanyFilter(e.target.value)}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                color: 'var(--text-primary)',
-                fontWeight: 700,
-                fontSize: '0.82rem',
-                outline: 'none',
-                cursor: 'pointer'
+              onChange={val => setCompanyFilter(val || 'ALL')}
+              branches={dynamicBranches}
+              allValue="ALL"
+              allLabel="All Branches"
+              title="COMPANY / BRANCH"
+              triggerStyle={{
+                minHeight: '34px',
+                padding: '0.25rem 0.6rem',
+                borderRadius: '8px'
               }}
-            >
-              <option value="ALL">🏢 All Companies / Branches</option>
-              {dynamicBranches.length > 0 ? (
-                dynamicBranches.map(b => {
-                  const code = b.custom_code || b.legacy_code || b.branch_code;
-                  const cleanName = (b.branch_name || '').replace(/^New Swan\s+/i, '').replace(/^SuPuja Creations?\s+/i, '');
-                  return (
-                    <option key={b.id || b.branch_code} value={code}>
-                      {code} ({cleanName})
-                    </option>
-                  );
-                })
-              ) : (
-                <>
-                  <option value="NSG">NSG (Headquarters)</option>
-                  <option value="NSMLR">NSMLR (Multitech Limited Raian)</option>
-                  <option value="NSTLP">NSTLP (Technologies Limited Paharuwal)</option>
-                  <option value="NSE1">NSE1 (Enterprises - 1)</option>
-                  <option value="NSE2">NSE2 (Enterprises - 2)</option>
-                  <option value="NSE3">NSE3 (Enterprises - 3)</option>
-                  <option value="NSE4">NSE4 (Enterprises - 4)</option>
-                  <option value="NSACPL1">NSACPL1 (Autocomp Pvt. Ltd.)</option>
-                </>
-              )}
-            </select>
+            />
           </div>
 
           {/* S00 Transfers Queue Shortcut */}

@@ -28,6 +28,7 @@ import { getPrimaryClaimAssignees, getLeadStageAccess,
   getPrimaryLeadHandoff, canClaimPrimaryTeamLead } from '@/utils/reportingHierarchy';
 import { claimPrimaryReportingLead } from '@/app/actions/reportingLeadClaims';
 import { getLeadFieldAssignmentSummaries } from '@/app/actions/fieldTasks';
+import { formatBranchStandard } from '@/utils/branchAccess';
 
 const LeadFormModal = dynamic(() => import('./LeadFormModal'));
 const LeadProfilePanel = dynamic(() => import('./LeadProfilePanel'));
@@ -847,6 +848,29 @@ const AioPhoneCell = ({ info }) => {
   );
 };
 
+// Reusable Cell for Our Company / Branch column with standardized UID and Branch Name
+const LeadCompanyCell = ({ info }) => {
+  const rawValue = info.getValue();
+  if (!rawValue) return <span style={{ color: 'var(--text-secondary)' }}>-</span>;
+  const formatted = formatBranchStandard(rawValue);
+  return (
+    <span 
+      title={formatted} 
+      style={{ 
+        fontWeight: 600, 
+        fontSize: '0.8rem',
+        color: 'var(--text-primary)',
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        display: 'block'
+      }}
+    >
+      {formatted}
+    </span>
+  );
+};
+
 const columns = [
   {
     id: 'edit',
@@ -959,7 +983,14 @@ const columns = [
     maxSize: 400,
     accessorFn: row => [row.email, row.cp1_email_2, row.cp2_email_1, row.cp2_email_2, row.cp3_email_1, row.cp3_email_2].filter(Boolean).join(', ')
   },
-  { accessorKey: 'our_company', header: 'Our Company', size: 150, minSize: 90, maxSize: 350 },
+  { 
+    accessorKey: 'our_company', 
+    header: 'Our Company', 
+    size: 260, 
+    minSize: 130, 
+    maxSize: 450,
+    cell: info => <LeadCompanyCell info={info} />
+  },
   { accessorKey: 'state_name', header: 'State Name', size: 130, minSize: 80, maxSize: 300 },
   { accessorKey: 'district_name', header: 'District Name', size: 130, minSize: 80, maxSize: 300 },
   { accessorKey: 'pin_code', header: 'PIN Code', size: 100, minSize: 70, maxSize: 200 },

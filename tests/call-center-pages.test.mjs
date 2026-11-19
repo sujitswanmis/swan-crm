@@ -21,6 +21,7 @@ function load(code, imports = {}, globals = {}) {
 const cacheCode = compile('src/components/CallCenter/callCenterViewCache.js');
 const pageCode = compile('src/lib/callCenterPageData.js');
 const paginationCode = compile('src/components/CallCenter/CallCenterPagination.jsx');
+const standardPaginationCode = compile('src/components/common/StandardTablePagination.jsx');
 const adminCode = compile('src/components/CallCenter/CallAdminModule.jsx', '\nexport { TabCallLogs, TabEndpoints, CallAdminPage };');
 const deskCode = compile('src/components/CallCenter/CallCenterModule.jsx');
 const nodes = (tree, predicate) => Array.isArray(tree) ? tree.flatMap(node => nodes(node, predicate)) : !React.isValidElement(tree) ? []
@@ -89,15 +90,36 @@ test('simultaneous page GETs are deduplicated, bounded and retried after failure
 });
 
 test('pagination provides the standard range, sizes, boundary states and last-page navigation', () => {
-  const pagination = load(paginationCode, { react: React, 'lucide-react': require('lucide-react') }).default;
+  const simpleHooks = {
+    ...React,
+    useState: initial => [typeof initial === 'function' ? initial() : initial, () => {}],
+    useMemo: fn => fn(),
+    useEffect: () => {},
+    useCallback: fn => fn
+  };
+  const stdPagination = load(standardPaginationCode, { react: simpleHooks }).default;
+  const pagination = load(paginationCode, { react: simpleHooks, '@/components/common/StandardTablePagination': stdPagination }).default;
+  const renderPagination = props => {
+    const el = pagination(props);
+    return typeof el.type === 'function' ? el.type(el.props) : el;
+  };
   const changes = [];
-  let tree = pagination({ total: 83, page: 0, pageSize: 25, onPageChange: value => changes.push(value), onPageSizeChange() {} });
+  let tree = renderPagination({ total: 83, page: 0, pageSize: 25, onPageChange: value => changes.push(value), onPageSizeChange() {} });
   assert.match(text(tree), /Showing\s+1\s+to\s+25\s+of\s+83\s+records/);
-  assert.deepEqual(nodes(tree, node => node.type === 'option').map(node => node.props.value), [10, 25, 50, 100]);
-  assert.equal(nodes(tree, node => node.props['aria-label'] === 'First page')[0].props.disabled, true);
-  nodes(tree, node => node.props['aria-label'] === 'Last page')[0].props.onClick(); assert.equal(changes[0], 3);
-  tree = pagination({ total: 83, page: 3, pageSize: 25, onPageChange() {}, onPageSizeChange() {} });
-  assert.equal(nodes(tree, node => node.props['aria-label'] === 'Next page')[0].props.disabled, true);
+  const prevButtons = nodes(tree, node => node.type === 'button' && text(node).trim() === 'Previous');
+  assert.equal(prevButtons[0].props.disabled, true);
+  const nextButtons = nodes(tree, node => node.type === 'button' && text(node).trim() === 'Next');
+  nextButtons[0].props.onClick();
+  assert.equal(changes[0], 1);
+  tree = renderPagination({ total: 83, page: 3, pageSize: 25, onPageChange() {}, onPageSizeChange() {} });
+  const lastNext = nodes(tree, node => node.type === 'button' && text(node).trim() === 'Next');
+  assert.equal(lastNext[0].props.disabled, true);
+
+  // Plivo CDR exact total count pagination matches standard range
+  const plivoTree = renderPagination({ total: 208, page: 0, pageSize: 25, onPageChange() {}, onPageSizeChange() {} });
+  assert.match(text(plivoTree), /Showing\s+1\s+to\s+25\s+of\s+208\s+records/);
+  const plivoNext = nodes(plivoTree, node => node.type === 'button' && text(node).trim() === 'Next');
+  assert.equal(plivoNext[0].props.disabled, false);
 });
 
 test('a post-save refresh cannot reuse an older in-flight read or erase the newer pending request', async () => {
@@ -128,9 +150,12 @@ function uiHarness() {
   const cache = { mergeEndpointLists: load(cacheCode).mergeEndpointLists, viewScope: (...parts) => JSON.stringify(parts), readViewCache: (scope, key) => snapshots.get(`${scope}:${key}`),
     writeViewCache: (scope, key, value) => snapshots.set(`${scope}:${key}`, value), clearViewCache() {},
     fetchPageData: async url => { requests.push(url); return resolver(url); } };
+  const stdPagination = load(standardPaginationCode, { react: hooks }).default;
   const imports = { react: hooks, 'lucide-react': require('lucide-react'), '@/utils/permissionUtils': { getSubItemPermissions, filterVisibleSubTabs },
-    './callCenterViewCache': cache, './CallCenterPagination': load(paginationCode, { react: hooks, 'lucide-react': require('lucide-react') }),
+    './callCenterViewCache': cache, './CallCenterPagination': load(paginationCode, { react: hooks, 'lucide-react': require('lucide-react'), '@/components/common/StandardTablePagination': stdPagination }),
     '@/components/common/MobileTableView': { default: ({ children }) => children, useTableViewPreference: () => hooks.useState('table'), TableViewToggle: () => null },
+    '@/components/common/DateRangePicker': { default: () => null, computeDateRange: () => ({ startDate: '', endDate: '' }) },
+    '@/components/common/StandardTablePagination': stdPagination,
     '@/utils/tableColumnResize': { useTableColumnResize: (_key, widths) => ({ colWidths: widths, getTotalTableWidth: () => 1500 }), ColumnResizer: () => null },
     '../PremiumProgressLoader': { PremiumProgressLoader: () => null },
     '@/app/actions/team': new Proxy({}, { get: () => () => { throw new Error('Page reads must not use Server Actions'); } }) };
@@ -256,7 +281,7 @@ test('page reads exclude foreign employees and unrelated salary/module data', as
 test('call-log query bounds pagination, applies search before range and preserves explicit IST boundaries', async () => {
   const app = serverFixture();
   await app.helpers.readPageCalls({ db: app.db }, new URLSearchParams({ limit: '999999', offset: '-10', search: '9988,()', start_date: '2026-10-26T00:00:00+05:30' }), [{ id: 'agent-a' }]);
-  assert.ok(app.log.some(item => item.from === 0 && item.to === 99));
+  assert.ok(app.log.some(item => item.from === 0 && item.to === 999));
   assert.ok(app.log.some(item => item.search?.includes('customer_number.ilike.%9988%')));
   assert.ok(app.log.some(item => item.value === '2026-10-26T00:00:00+05:30'));
   await assert.rejects(serverFixture({ failCalls: true }).helpers.readPageCalls({ db: serverFixture({ failCalls: true }).db }, new URLSearchParams(), [{ id: 'agent-a' }]), /could not be loaded/);

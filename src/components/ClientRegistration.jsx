@@ -25,6 +25,7 @@ import {
 } from '@/app/actions/clientRegistrationSync';
 import { getTenantBranches } from '@/app/actions/tenantBranches';
 import { getUserBranchAccess, matchesCompanyToken } from '@/utils/branchAccess';
+import UniversalBranchSelect from '@/components/common/UniversalBranchSelect';
 
 const IMPORT_FIELDS = [
   { key: 'lead_date', label: 'Lead Date', standardHeaders: ['Lead Date', 'leaddate', 'date'] },
@@ -3103,63 +3104,20 @@ export default function ClientRegistration({
                     <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
                       {clientFormFields?.our_company?.label || 'Our Company Name'} <span style={{color: 'red'}}>*</span>
                     </label>
-                    <select 
-                      name="our_company" 
-                      value={formData.our_company === 'NSTL' ? 'NSTLP' : (formData.our_company || defaultWorkspaceCompany)} 
-                      onChange={handleChange} 
-                      required 
-                      style={{ padding: '0.6rem 0.8rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}
-                    >
-                      <option value="">-- Select Company / Branch --</option>
-                      {availableBranches.length > 0 ? (
-                        (() => {
-                          const baseBranches = availableBranches.filter(br => br.is_active !== false);
-                          const scopedBranches = (!effectiveBranchAccess.isAllBranches && effectiveBranchAccess.allowedCompanies.length > 0)
-                            ? baseBranches.filter(br => {
-                                const code = br.custom_code || br.legacy_code || br.branch_code;
-                                const cleanName = br.branch_name || br.company || '';
-                                return matchesCompanyToken(code, effectiveBranchAccess.allowedCompanies) ||
-                                  matchesCompanyToken(cleanName, effectiveBranchAccess.allowedCompanies);
-                              })
-                            : baseBranches;
-                          const displayBranches = scopedBranches.length > 0 ? scopedBranches : baseBranches;
-                          return displayBranches
-                            .sort((a, b) => {
-                              const codeA = String(a.branch_code || a.id || '');
-                              const codeB = String(b.branch_code || b.id || '');
-                              return codeA.localeCompare(codeB, undefined, { numeric: true });
-                            })
-                            .map(br => {
-                              const code = br.custom_code || br.legacy_code || br.branch_code;
-                              const optVal = code;
-                              const cleanName = br.branch_name || br.company || code;
-                              const optLabel = br.branch_code
-                                ? `${cleanName} (${code} - ${br.branch_code})`
-                                : `${cleanName} (${code})`;
-                              return (
-                                <option key={br.id || br.branch_code} value={optVal}>
-                                  {optLabel}
-                                </option>
-                              );
-                            });
-                        })()
-                      ) : (
-                        isSwanWorkspace ? (
-                          <>
-                            <option value="NSG">New Swan Group (NSG - TNT00002-B0001)</option>
-                            <option value="NSMLR">New Swan Multitech Limited Raian (NSMLR - TNT00002-B0002)</option>
-                            <option value="NSTLP">New Swan Technologies Limited Paharuwal (NSTLP - TNT00002-B0003)</option>
-                            <option value="NSE1">New Swan Enterprises - 1 (NSE1 - TNT00002-B0004)</option>
-                            <option value="NSE2">New Swan Enterprises - 2 (NSE2 - TNT00002-B0005)</option>
-                            <option value="NSE3">New Swan Enterprises - 3 (NSE3 - TNT00002-B0006)</option>
-                            <option value="NSE4">New Swan Enterprises - 4 (NSE4 - TNT00002-B0007)</option>
-                            <option value="NSACPL1">New Swan Autocomp Pvt. Ltd. (NSACPL1 - TNT00002-B0008)</option>
-                          </>
-                        ) : (
-                          <option value={userCompany || 'Client Workspace'}>{userCompany || 'Client Workspace'}</option>
-                        )
-                      )}
-                    </select>
+                    <UniversalBranchSelect
+                      name="our_company"
+                      value={formData.our_company === 'NSTL' ? 'NSTLP' : (formData.our_company || defaultWorkspaceCompany)}
+                      onChange={(val) => setFormData(prev => ({ ...prev, our_company: val }))}
+                      branches={availableBranches}
+                      placeholder="Select Company / Branch"
+                      triggerStyle={{
+                        borderRadius: '6px',
+                        border: '1px solid var(--border-light)',
+                        padding: '0.5rem 0.75rem',
+                        minHeight: '38px',
+                        fontSize: '0.86rem'
+                      }}
+                    />
                   </div>
                 )}
 

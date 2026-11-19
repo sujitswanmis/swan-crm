@@ -68,9 +68,22 @@ export async function fetchPageData(url, { fresh = false } = {}) {
   if (!fresh && pending.has(url)) return pending.get(url);
   const promise = (async () => {
     const response = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(20000) });
-    const data = await response.json();
-    if (!response.ok || data.error) {
-      throw Object.assign(new Error(data.error || 'Could not load this page. Please retry.'), { status: response.status });
+    let data;
+    if (typeof response.text === 'function') {
+      const text = await response.text();
+      if (!text || !text.trim()) {
+        throw Object.assign(new Error(`Server returned empty response (${response.status || 500}). Please refresh.`), { status: response.status || 500 });
+      }
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw Object.assign(new Error(`Server returned invalid response (${response.status || 500}). Please refresh.`), { status: response.status || 500 });
+      }
+    } else {
+      data = await response.json();
+    }
+    if (!response.ok || data?.error) {
+      throw Object.assign(new Error(data?.error || 'Could not load this page. Please retry.'), { status: response.status });
     }
     return data;
   })();

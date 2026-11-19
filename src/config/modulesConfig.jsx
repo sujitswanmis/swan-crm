@@ -4,6 +4,11 @@ import { WHATSAPP_LOG_PAGE, WHATSAPP_LOG_PERMISSION_ITEMS } from './whatsappMess
 import { UserPlus, FileText, Users, Building2, CheckCircle, Archive, Globe, Bot, Shield, PhoneCall, Phone, MessageCircle, Settings2, PieChart, ShieldCheck, Clock, CheckSquare, WifiOff, GitMerge, Navigation } from 'lucide-react';
 
 export const MODULES_CONFIG = [
+  {
+    id:'saas_master',path:'saas-master',label:'SaaS Master',category:'Master Admin',icon:<ShieldCheck size={20} />,
+    roleAssignable:false,masterAdminOnly:true,roleRestrictionLabel:'Master Admin only',subItemsType:'tabs',
+    subItems:[{id:'pricing',label:'Dynamic Pricing & Catalog'},{id:'tenants',label:'Client Workspaces & Subscriptions'},{id:'billing',label:'Master Invoices & Billing Ledger'}]
+  },
   // General / Dashboards
   {
     id: 'analytics', path: 'analytics', label: 'Analytics Dashboard', category: 'General',
@@ -100,7 +105,7 @@ export const MODULES_CONFIG = [
   {
     id: 'field_force',
     path: 'field_force',
-    label: 'Field Force & Form Studio',
+    label: 'Field Force System',
     category: 'General',
     icon: <Navigation size={20} />,
     subItemsType: 'tabs',
@@ -440,6 +445,7 @@ export const MODULES_CONFIG = [
       { id: 'order_pipeline', label: 'Order to Delivery Config' },
       { id: 'complaints_config', label: 'Complaint Management Config' },
       { id: 'crm', label: 'CRM & Lead Config' },
+      { id: 'recruiter_config', label: 'Recruiter Config' },
       { id: 'notifications', label: 'Notifications & Alerts' },
       { id: 'departments', label: 'Manage Departments' },
       { id: 'targets', label: 'Targets & Performance' },

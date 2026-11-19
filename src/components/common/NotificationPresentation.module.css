@@ -13,7 +13,7 @@
 }
 .layer *, .layer *::before, .layer *::after { box-sizing: border-box; }
 .layer[data-preview='true'] { position: absolute; inset: 0; z-index: 5; }
-.layer[data-blocking='true'] { inset: 0; z-index: 9995; pointer-events: auto; display: grid; place-items: center; padding: 24px; }
+.layer[data-blocking='true'] { inset: 0; z-index: 9995; pointer-events: auto; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); place-items: center; padding: 24px; }
 .layer[data-preview='true'][data-blocking='true'] { z-index: 6; }
 .layer[data-size='compact'] { --nt-card-width: 360px; --nt-padding: 16px; }
 .layer[data-size='standard'] { --nt-card-width: 420px; --nt-padding: 20px; }
@@ -21,12 +21,12 @@
 .backdrop { position: absolute; inset: 0; background: rgb(15 23 42 / 50%); backdrop-filter: blur(3px); }
 .frame {
   position: absolute; pointer-events: auto; display: flex; flex-direction: column;
-  min-width: 0; width: min(var(--nt-card-width), calc(100% - 32px));
+  min-width: 0; min-height: 0; width: min(var(--nt-card-width), calc(100% - 32px));
   max-height: calc(100% - 32px); border-radius: 12px;
   background: var(--bg-card, #fff); box-shadow: 0 12px 36px rgb(15 23 42 / 18%);
   animation-duration: var(--nt-duration, 250ms); animation-timing-function: ease-out;
 }
-.content { min-width: 0; overflow: auto; overscroll-behavior: contain; border-radius: inherit; scrollbar-width: thin; }
+.content { min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; border-radius: inherit; scrollbar-width: thin; }
 .frame:focus { outline: none; }
 .frame:focus-visible { outline: 2px solid var(--accent-color, #4f46e5); outline-offset: 3px; }
 .layer[data-notification-placement='top_right'] .frame { top: var(--nt-reserve-top); right: var(--nt-reserve-right); max-height: calc(100% - var(--nt-reserve-top) - 16px); }
@@ -73,7 +73,7 @@
 .layer[data-notification-placement='full_screen'] .content :global(.broadcast-card) { border-top: 5px solid #dc2626; padding: clamp(20px, 5%, 48px); }
 .layer[data-notification-placement='full_screen'] .content :global(.broadcast-card) > h3 { font-size: clamp(24px, 4cqw, 40px); margin: 22px 0 16px; }
 .layer[data-notification-placement='full_screen'] .content :global(.message-container) p { font-size: 16px; }
-.layer[data-notification-placement='full_screen'] .content :global(.broadcast-card) > footer { position: static; margin: 24px 0 0; padding: 20px 0 0; }
+.layer[data-notification-placement='full_screen'] .content :global(.broadcast-card) > footer { position: sticky; bottom: 0; margin: 24px 0 0; padding: 20px 0 0; }
 /* Banners use a horizontal grid; the existing response widgets occupy subsequent rows. */
 .layer:is([data-notification-placement='top_banner'], [data-notification-placement='bottom_banner']) .content :global(.broadcast-card) { display: grid; position: relative; grid-template-columns: auto minmax(0, 1fr) auto; column-gap: 16px; row-gap: 4px; align-items: center; min-height: 82px; border: 0; border-left: 3px solid #6366f1; border-radius: 0; padding: 14px 40px 14px 18px; }
 .layer:is([data-notification-placement='top_banner'], [data-notification-placement='bottom_banner']) .content :global(.theme-emerald) { border-left-color: #10b981; }
@@ -85,7 +85,7 @@
 .layer:is([data-notification-placement='top_banner'], [data-notification-placement='bottom_banner']) .content :global(.broadcast-card) > h3 { grid-column: 2; grid-row: 1; margin: 0; font-size: 14px; align-self: end; }
 .layer:is([data-notification-placement='top_banner'], [data-notification-placement='bottom_banner']) .content :global(.message-container) { grid-column: 2; grid-row: 2; align-self: start; max-height: 48px; overflow: auto; }
 .layer:is([data-notification-placement='top_banner'], [data-notification-placement='bottom_banner']) .content :global(.message-container) p { font-size: 12px; margin-bottom: 0; }
-.layer:is([data-notification-placement='top_banner'], [data-notification-placement='bottom_banner']) .content :global(.broadcast-card) > footer { position: static; grid-column: 3; grid-row: 1 / 3; margin: 0; padding: 0; border: 0; background: transparent; gap: 7px; max-width: 300px; }
+.layer:is([data-notification-placement='top_banner'], [data-notification-placement='bottom_banner']) .content :global(.broadcast-card) > footer { position: sticky; top: 0; bottom: auto; align-self: start; grid-column: 3; grid-row: 1 / 3; margin: 0; padding: 0; border: 0; background: var(--bg-card, #fff); gap: 7px; max-width: 300px; }
 .layer:is([data-notification-placement='top_banner'], [data-notification-placement='bottom_banner']) .content :global(.btn-action) { flex: 0 1 auto; padding: 7px 9px; font-size: 11px; }
 .layer:is([data-notification-placement='top_banner'], [data-notification-placement='bottom_banner']) .content :global(.action-buttons-row) { justify-content: flex-end; }
 .layer:is([data-notification-placement='top_banner'], [data-notification-placement='bottom_banner']) .content :global(.snooze-drawer),
@@ -116,7 +116,7 @@
   .layer:is([data-notification-placement='top_banner'], [data-notification-placement='bottom_banner']) .content :global(.workspace-preview-kind) { flex-direction: row; max-width: none; font-size: 10px; }
   .layer:is([data-notification-placement='top_banner'], [data-notification-placement='bottom_banner']) .content :global(.broadcast-card) > h3 { grid-column: 1; grid-row: 2; font-size: 13px; }
   .layer:is([data-notification-placement='top_banner'], [data-notification-placement='bottom_banner']) .content :global(.message-container) { grid-column: 1; grid-row: 3; max-height: 52px; }
-  .layer:is([data-notification-placement='top_banner'], [data-notification-placement='bottom_banner']) .content :global(.broadcast-card) > footer { grid-column: 1; grid-row: 4; max-width: none; margin-top: 4px; }
+  .layer:is([data-notification-placement='top_banner'], [data-notification-placement='bottom_banner']) .content :global(.broadcast-card) > footer { top: auto; bottom: 0; grid-column: 1; grid-row: 4; max-width: none; margin-top: 4px; }
   .layer:is([data-notification-placement='top_banner'], [data-notification-placement='bottom_banner']) .content :global(.footer-meta),
   .layer:is([data-notification-placement='top_banner'], [data-notification-placement='bottom_banner']) .content :global(.action-buttons-row) { justify-content: flex-start; }
   .layer:is([data-notification-placement='top_banner'], [data-notification-placement='bottom_banner']) .content :global(.snooze-drawer),
@@ -133,4 +133,4 @@
 @keyframes notificationLeft { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: translateX(0); } }
 @keyframes notificationRight { from { opacity: 0; transform: translateX(-18px); } to { opacity: 1; transform: translateX(0); } }
 @keyframes notificationZoom { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: scale(1); } }
-@media (prefers-reduced-motion: reduce) { .layer .frame, .layer .backdrop { animation: none; transition: none; } }
+@media (prefers-reduced-motion: reduce) { .layer[data-animation] .frame, .layer .backdrop { animation: none; transition: none; } }

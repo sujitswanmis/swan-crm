@@ -140,46 +140,73 @@ function getContentType(ext) {
 // =========================================================================
 
 const DEFAULT_TENANT_ID = '00000000-0000-0000-0000-000000000001';
+const SUPUJA_TENANT_ID = '0a37b8e8-1c28-4e19-8891-951fc3f8f8af';
 const SWAN_COMPANIES = ['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl'];
+
+function resolveTenantCode(tenantId) {
+  if (tenantId === SUPUJA_TENANT_ID) return 'TNT00001';
+  if (tenantId === '922d3e72-6588-457f-a562-4f1bdbf10d98') return 'TNT00003';
+  return 'TNT00002';
+}
 
 function isSwanWorkspace(tenantId, company) {
   if (tenantId && tenantId === DEFAULT_TENANT_ID) return true;
   const c = String(company || '').toLowerCase().trim();
   if (c && SWAN_COMPANIES.includes(c)) return true;
-  return !company && !tenantId;
+  return !company && (!tenantId || tenantId === DEFAULT_TENANT_ID);
 }
 
 function parsePositionWorkspace(pos) {
+  const directTenantId = pos.tenant_id;
+  const directTenantCode = pos.tenant_code;
+  const directBranchCode = pos.branch_code;
+  const directCompany = pos.company;
+
   const text = pos.jd_text || '';
   const match = text.match(/<!--WORKSPACE:(\{.*?\})-->/);
+  let meta = {};
   if (match) {
     try {
-      const meta = JSON.parse(match[1]);
-      return {
-        tenant_id: meta.tenant_id || DEFAULT_TENANT_ID,
-        company: meta.company || 'NSMLR',
-        cleanJd: text.replace(match[0], '').trim()
-      };
+      meta = JSON.parse(match[1]);
     } catch (_) {}
   }
+
+  const tenant_id = directTenantId || meta.tenant_id || DEFAULT_TENANT_ID;
+  const tenant_code = directTenantCode || meta.tenant_code || resolveTenantCode(tenant_id);
+  const company = directCompany || meta.company || (tenant_code === 'TNT00001' ? 'SuPuja Creations' : 'NSMLR');
+  const branch_code = directBranchCode || meta.branch_code || (company === 'NSMLR' ? 'TNT00002-B0002' : `${tenant_code}-B0001`);
+  const cleanJd = match ? text.replace(match[0], '').trim() : text;
+
   return {
-    tenant_id: DEFAULT_TENANT_ID,
-    company: 'NSMLR',
-    cleanJd: text
+    tenant_id,
+    tenant_code,
+    branch_code,
+    company,
+    cleanJd
   };
 }
 
-function embedPositionWorkspace(jdText, tenantId, company) {
-  const meta = { tenant_id: tenantId || DEFAULT_TENANT_ID, company: company || 'NSMLR' };
+function embedPositionWorkspace(jdText, tenantId, company, branchCode = null, tenantCode = null) {
+  const tid = tenantId || DEFAULT_TENANT_ID;
+  const tcode = tenantCode || resolveTenantCode(tid);
+  const comp = company || (tcode === 'TNT00001' ? 'SuPuja Creations' : 'NSMLR');
+  const bcode = branchCode || (comp === 'NSMLR' ? 'TNT00002-B0002' : `${tcode}-B0001`);
+
+  const meta = {
+    tenant_id: tid,
+    tenant_code: tcode,
+    company: comp,
+    branch_code: bcode
+  };
   const tag = `<!--WORKSPACE:${JSON.stringify(meta)}-->`;
   const clean = (jdText || '').replace(/<!--WORKSPACE:(\{.*?\})-->/g, '').trim();
   return clean ? `${clean}\n\n${tag}` : tag;
 }
 
 /**
- * Fetch positions isolated strictly to the requesting workspace tenant/company
+ * Fetch positions isolated strictly to the requesting workspace tenant/company/branch
  */
-export async function getPositions(tenantId = DEFAULT_TENANT_ID, userCompany = null) {
+export async function getPositions(tenantId = DEFAULT_TENANT_ID, userCompany = null, branchCode = null, adminCompanyFilter = null) {
   try {
     const adminClient = getAdminClient();
     const { data, error } = await adminClient
@@ -190,11 +217,35 @@ export async function getPositions(tenantId = DEFAULT_TENANT_ID, userCompany = n
     if (error) throw error;
     if (!Array.isArray(data)) return [];
 
+    const effectiveFilter = String(adminCompanyFilter || '').trim();
+    const isAllFilter = !effectiveFilter || effectiveFilter.toLowerCase() === 'all';
     const isSwan = isSwanWorkspace(tenantId, userCompany);
     const targetComp = String(userCompany || '').toLowerCase().trim();
 
     const filtered = data.filter(pos => {
       const meta = parsePositionWorkspace(pos);
+
+      // If user has specific filter selected in navbar (e.g. NSMLR, TNT00002-B0002, SuPuja Creations)
+      if (!isAllFilter) {
+        const filt = effectiveFilter.toLowerCase();
+        const matchComp = String(meta.company || '').toLowerCase() === filt;
+        const matchBranch = String(meta.branch_code || '').toLowerCase() === filt;
+        const matchTenant = String(meta.tenant_code || '').toLowerCase() === filt;
+        return matchComp || matchBranch || matchTenant;
+      }
+
+      // If branchCode specified explicitly
+      if (branchCode) {
+        const b = branchCode.toLowerCase();
+        return String(meta.branch_code || '').toLowerCase() === b || String(meta.company || '').toLowerCase() === b;
+      }
+
+      // Single tenant scoping
+      if (tenantId && tenantId === SUPUJA_TENANT_ID) {
+        // Scoped strictly to SuPuja Creations unless All filter is explicitly applied
+        return meta.tenant_id === SUPUJA_TENANT_ID || meta.tenant_code === 'TNT00001';
+      }
+
       if (isSwan) {
         return meta.tenant_id === DEFAULT_TENANT_ID || SWAN_COMPANIES.includes(String(meta.company).toLowerCase().trim());
       }
@@ -207,7 +258,9 @@ export async function getPositions(tenantId = DEFAULT_TENANT_ID, userCompany = n
         ...pos,
         jd_text: meta.cleanJd,
         workspace_tenant_id: meta.tenant_id,
-        workspace_company: meta.company
+        workspace_tenant_code: meta.tenant_code,
+        workspace_company: meta.company,
+        workspace_branch_code: meta.branch_code
       };
     });
   } catch (err) {
@@ -219,12 +272,12 @@ export async function getPositions(tenantId = DEFAULT_TENANT_ID, userCompany = n
 /**
  * Create or update a recruitment position scoped to the workspace
  */
-export async function savePosition(posForm, tenantId = DEFAULT_TENANT_ID, userCompany = null, userName = '') {
+export async function savePosition(posForm, tenantId = DEFAULT_TENANT_ID, userCompany = null, userName = '', branchCode = null, tenantCode = null) {
   try {
     const adminClient = getAdminClient();
-    const taggedJd = embedPositionWorkspace(posForm.jd_text, tenantId, userCompany);
+    const taggedJd = embedPositionWorkspace(posForm.jd_text, tenantId, userCompany, branchCode, tenantCode);
 
-    const payload = {
+    const basePayload = {
       title: posForm.title,
       department: posForm.department,
       openings: parseInt(posForm.openings, 10) || 1,
@@ -237,29 +290,56 @@ export async function savePosition(posForm, tenantId = DEFAULT_TENANT_ID, userCo
       salary_max: posForm.salary_max ? parseInt(posForm.salary_max, 10) : null
     };
 
-    if (posForm.id) {
-      const { data, error } = await adminClient
-        .from('recruitment_positions')
-        .update(payload)
-        .eq('id', posForm.id)
-        .select()
-        .single();
+    const resolvedTenantId = tenantId || DEFAULT_TENANT_ID;
+    const resolvedTenantCode = tenantCode || resolveTenantCode(resolvedTenantId);
+    const resolvedCompany = userCompany || (resolvedTenantCode === 'TNT00001' ? 'SuPuja Creations' : 'NSMLR');
+    const resolvedBranchCode = branchCode || (resolvedCompany === 'NSMLR' ? 'TNT00002-B0002' : `${resolvedTenantCode}-B0001`);
 
-      if (error) throw error;
-      const meta = parsePositionWorkspace(data);
-      return { success: true, data: { ...data, jd_text: meta.cleanJd } };
-    } else {
-      payload.created_by = userName || 'Admin';
-      const { data, error } = await adminClient
-        .from('recruitment_positions')
-        .insert([payload])
-        .select()
-        .single();
+    const fullPayload = {
+      ...basePayload,
+      tenant_id: resolvedTenantId,
+      tenant_code: resolvedTenantCode,
+      branch_code: resolvedBranchCode,
+      company: resolvedCompany
+    };
 
-      if (error) throw error;
-      const meta = parsePositionWorkspace(data);
-      return { success: true, data: { ...data, jd_text: meta.cleanJd } };
+    const executeSave = async (payloadToUse) => {
+      if (posForm.id) {
+        return adminClient
+          .from('recruitment_positions')
+          .update(payloadToUse)
+          .eq('id', posForm.id)
+          .select()
+          .single();
+      } else {
+        const insertData = { ...payloadToUse, created_by: userName || 'Admin' };
+        return adminClient
+          .from('recruitment_positions')
+          .insert([insertData])
+          .select()
+          .single();
+      }
+    };
+
+    // Try saving with tenant columns; if columns not yet added to DB, gracefully fall back to basePayload
+    let res = await executeSave(fullPayload);
+    if (res.error && res.error.code === 'PGRST204') {
+      res = await executeSave(basePayload);
     }
+
+    if (res.error) throw res.error;
+    const meta = parsePositionWorkspace(res.data);
+    return { 
+      success: true, 
+      data: { 
+        ...res.data, 
+        jd_text: meta.cleanJd,
+        workspace_tenant_id: meta.tenant_id,
+        workspace_tenant_code: meta.tenant_code,
+        workspace_company: meta.company,
+        workspace_branch_code: meta.branch_code
+      } 
+    };
   } catch (err) {
     console.error('savePosition error:', err);
     return { success: false, error: err.message };
@@ -326,12 +406,24 @@ export async function getCandidates(workspacePositionIds = []) {
     const adminClient = getAdminClient();
     const { data, error } = await adminClient
       .from('recruitment_candidates')
-      .select('*, recruitment_positions(title, department)')
+      .select('*, recruitment_positions(title, department, jd_text)')
       .in('position_id', workspacePositionIds)
       .order('created_at', { ascending: false });
 
     if (error) throw error;
-    return data || [];
+    if (!Array.isArray(data)) return [];
+
+    return data.map(cand => {
+      const parentPos = cand.recruitment_positions;
+      const meta = parentPos ? parsePositionWorkspace(parentPos) : null;
+      return {
+        ...cand,
+        workspace_tenant_id: cand.tenant_id || meta?.tenant_id || DEFAULT_TENANT_ID,
+        workspace_tenant_code: cand.tenant_code || meta?.tenant_code || 'TNT00002',
+        workspace_company: cand.company || meta?.company || 'NSMLR',
+        workspace_branch_code: cand.branch_code || meta?.branch_code || 'TNT00002-B0002'
+      };
+    });
   } catch (err) {
     console.error('getCandidates error:', err);
     return [];

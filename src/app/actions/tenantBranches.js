@@ -61,6 +61,7 @@ function resolveKnownTenantInternal(companyOrTenantId = 'Default') {
     'new_swan_group',
     'new swan',
     'new swan group',
+    'nsg',
     'nstl',
     'nstlp',
     'nsmlr',

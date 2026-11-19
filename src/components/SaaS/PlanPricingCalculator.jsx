@@ -20,6 +20,7 @@ import {
   Minus
 } from 'lucide-react';
 import { getProcessCatalog, getCycleDiscounts } from '@/app/actions/saasSubscription';
+import { calculateSaasPrice, SAAS_INTERNAL_KEYS } from '@/lib/saasBilling';
 
 const PROCESS_ICONS = {
   LEADS_ONLY: FileSpreadsheet,
@@ -44,6 +45,8 @@ export default function PlanPricingCalculator({
   initialProcessCodes = ['LEADS_WITH_CALLING'],
   initialSeats = 5,
   initialCycle = 'YEARLY',
+  catalogOverride = null,
+  cyclesOverride = null,
   showHeading = true,
   onPlanChange = null,
   onProceed = null,
@@ -51,9 +54,11 @@ export default function PlanPricingCalculator({
   onSaveDraft = null,
   draftButtonText = 'Save as Draft 📝'
 }) {
-  const [catalog, setCatalog] = useState([]);
-  const [cycles, setCycles] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loadedCatalog, setCatalog] = useState([]);
+  const catalog = catalogOverride || loadedCatalog;
+  const [loadedCycles, setCycles] = useState([]);
+  const cycles = cyclesOverride || loadedCycles;
+  const [loading, setLoading] = useState(() => !(catalogOverride && cyclesOverride));
 
   const [selectedProcesses, setSelectedProcesses] = useState(initialProcessCodes);
   const [seatCount, setSeatCount] = useState(Math.max(1, parseInt(initialSeats, 10) || 5));
@@ -65,6 +70,7 @@ export default function PlanPricingCalculator({
   const [dealNotes, setDealNotes] = useState('');
 
   useEffect(() => {
+    if (catalogOverride && cyclesOverride) return;
     let isMounted = true;
     async function loadData() {
       try {
@@ -73,7 +79,8 @@ export default function PlanPricingCalculator({
           getCycleDiscounts()
         ]);
         if (!isMounted) return;
-        if (catRes.success) setCatalog(catRes.catalog);
+        if (!catRes.success || !cycRes.success) throw new Error(catRes.error || cycRes.error || 'Pricing is unavailable.');
+        if (catRes.success) setCatalog(catRes.catalog.filter(p => p.is_active !== false && !SAAS_INTERNAL_KEYS.has(p.process_code)));
         if (cycRes.success) setCycles(cycRes.cycles);
       } catch (err) {
         console.error('PlanPricingCalculator load error:', err);
@@ -85,7 +92,7 @@ export default function PlanPricingCalculator({
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [catalogOverride, cyclesOverride]);
 
   const toggleProcess = (code) => {
     setSelectedProcesses((prev) => {
@@ -108,7 +115,7 @@ export default function PlanPricingCalculator({
   };
 
   const selectAll = () => {
-    const all = catalog.map((p) => p.process_code);
+    const all = catalog.filter(p => p.is_active !== false && !['LEADS_ONLY','CALLING_STANDALONE'].includes(p.process_code)).map((p) => p.process_code);
     setSelectedProcesses(all);
   };
 
@@ -127,20 +134,24 @@ export default function PlanPricingCalculator({
   const standardDiscountPercent = Number(activeCycle.discount_percent || 0);
   const discountPercent = customDiscount !== null ? customDiscount : standardDiscountPercent;
 
-  const selectedItems = catalog.filter((p) => selectedProcesses.includes(p.process_code));
+  const selectedItems = catalog.filter((p) => selectedProcesses.includes(p.process_code) && p.is_active !== false);
   const ratePerSeatMonthly = selectedItems.reduce(
     (sum, item) => sum + Number(item.monthly_rate_per_user || 0),
     0
   );
 
+  let pricingError = '';
+  let calculation = { rate:ratePerSeatMonthly,gross:0,discountAmount:0,amount:0 };
+  try {
+    if (!selectedItems.length || selectedItems.length !== selectedProcesses.length) throw new Error('Choose available modules.');
+    calculation = calculateSaasPrice({items:selectedItems,seats:seatCount,months,discountPercent});
+    if (customDealPrice !== '') calculateSaasPrice({items:selectedItems,seats:seatCount,months,discountPercent,dealPrice:customDealPrice});
+  } catch (error) { pricingError = error.message; }
   const monthlySubtotal = ratePerSeatMonthly * seatCount;
-  const grossTotal = monthlySubtotal * months;
-  const discountAmount = Math.round(grossTotal * (discountPercent / 100) * 100) / 100;
-  const netTotal = Math.max(0, Math.round((grossTotal - discountAmount) * 100) / 100);
-
-  const finalAgreedAmount = customDealPrice !== '' && !isNaN(Number(customDealPrice))
-    ? Math.max(0, Number(customDealPrice))
-    : netTotal;
+  const grossTotal = calculation.gross;
+  const discountAmount = calculation.discountAmount;
+  const netTotal = calculation.amount;
+  const finalAgreedAmount = customDealPrice !== '' && !pricingError ? Number(customDealPrice) : netTotal;
 
   const effectiveDiscountPercent = customDealPrice !== '' && grossTotal > 0
     ? Math.max(0, Math.round(((grossTotal - finalAgreedAmount) / grossTotal) * 100))
@@ -153,6 +164,10 @@ export default function PlanPricingCalculator({
   useEffect(() => {
     if (onPlanChange && !loading) {
       onPlanChange({
+        dealPrice:finalAgreedAmount,
+        discountPercent:effectiveDiscountPercent,
+        planPrice:grossTotal,
+        dealNotes,
         processCodes: selectedProcesses,
         seats: seatCount,
         cycleCode: selectedCycle,
@@ -182,6 +197,9 @@ export default function PlanPricingCalculator({
     netTotal,
     effectiveMonthlyPerSeat,
     onPlanChange,
+    finalAgreedAmount,
+    effectiveDiscountPercent,
+    dealNotes,
     loading
   ]);
 
@@ -414,7 +432,7 @@ export default function PlanPricingCalculator({
               min={1}
               max={10000}
               value={seatCount}
-              onChange={(e) => setSeatCount(Math.max(1, parseInt(e.target.value, 10) || 1))}
+              onChange={(e) => setSeatCount(e.target.value === '' ? '' : Number(e.target.value))}
               style={{
                 width: '80px',
                 height: '36px',
@@ -526,6 +544,7 @@ export default function PlanPricingCalculator({
         </div>
       </div>
 
+      {pricingError && <div role="alert" style={{color:'#b91c1c',padding:'0.75rem'}}>{pricingError}</div>}
       {/* PRICE SUMMARY CARD */}
       <div
         style={{
@@ -723,6 +742,7 @@ export default function PlanPricingCalculator({
             <button
               type="button"
               onClick={() => {
+                if (pricingError || loading) return;
                 onSaveDraft({
                   processCodes: selectedProcesses,
                   seats: seatCount,
@@ -766,6 +786,7 @@ export default function PlanPricingCalculator({
             <button
               type="button"
               onClick={() => {
+                if (pricingError || loading) return;
                 onProceed({
                   processCodes: selectedProcesses,
                   seats: seatCount,

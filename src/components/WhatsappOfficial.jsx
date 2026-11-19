@@ -385,17 +385,8 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
       );
 
       if (!alreadyExists && bCode) {
-        let displayName = b.branch_name || bCode;
-        if (isHQ) {
-          displayName = b.company 
-            ? `${b.company} (Headquarters)` 
-            : (displayName.includes('(') ? displayName : `${displayName} (Headquarters)`);
-        } else {
-          const suffix = b.location_type && !b.location_type.toLowerCase().includes('branch')
-            ? ` (${b.location_type})`
-            : ' (Branch)';
-          displayName = displayName.startsWith('🏢') ? displayName : `🏢 ${displayName}${displayName.includes('(') ? '' : suffix}`;
-        }
+        const cleanName = b.branch_name || bCode;
+        const displayName = b.branch_code ? `${b.branch_code} — ${cleanName}` : cleanName;
 
         // Determine parent HQ code strictly
         let parentHqCode = b.tenant_code || b.company || 'NEW_SWAN_GROUP';

@@ -641,55 +641,55 @@ export default function BusinessProfile({ userCompany = '' }) {
                 <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem' }}>
                   <thead>
                     <tr style={{ background: 'var(--bg-secondary, #f8fafc)' }}>
-                      <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-secondary, #f8fafc)', padding: '0.75rem 0.65rem', textAlign: 'center', fontWeight: 700, color: 'var(--text-secondary, #475569)', borderBottom: '1px solid var(--border-light, #e2e8f0)', boxShadow: 'inset 0 -1px 0 var(--border-light, #e2e8f0)', width: colWidths.sr }}>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-secondary, #f8fafc)', padding: '0.75rem 0.65rem', textAlign: 'center', fontWeight: 700, color: 'var(--text-secondary, #475569)', borderBottom: '1px solid var(--border-light, #e2e8f0)', boxShadow: 'inset 0 -1px 0 var(--border-light, #e2e8f0)', width: colWidths.sr, whiteSpace: 'nowrap' }}>
                         <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                           <span>#</span>
                           <ColumnResizer colKey="sr" isResizing={resizingCol === 'sr'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
                         </div>
                       </th>
-                      <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-secondary, #f8fafc)', padding: '0.75rem 0.85rem', fontWeight: 700, color: 'var(--text-secondary, #475569)', borderBottom: '1px solid var(--border-light, #e2e8f0)', boxShadow: 'inset 0 -1px 0 var(--border-light, #e2e8f0)', width: colWidths.name }}>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-secondary, #f8fafc)', padding: '0.75rem 0.85rem', fontWeight: 700, color: 'var(--text-secondary, #475569)', borderBottom: '1px solid var(--border-light, #e2e8f0)', boxShadow: 'inset 0 -1px 0 var(--border-light, #e2e8f0)', width: colWidths.name, whiteSpace: 'nowrap' }}>
                         <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                           <span>Branch / Plant Name</span>
                           <ColumnResizer colKey="name" isResizing={resizingCol === 'name'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
                         </div>
                       </th>
-                      <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-secondary, #f8fafc)', padding: '0.75rem 0.85rem', fontWeight: 700, color: 'var(--text-secondary, #475569)', borderBottom: '1px solid var(--border-light, #e2e8f0)', boxShadow: 'inset 0 -1px 0 var(--border-light, #e2e8f0)', width: colWidths.uid }}>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-secondary, #f8fafc)', padding: '0.75rem 0.85rem', fontWeight: 700, color: 'var(--text-secondary, #475569)', borderBottom: '1px solid var(--border-light, #e2e8f0)', boxShadow: 'inset 0 -1px 0 var(--border-light, #e2e8f0)', width: colWidths.uid, whiteSpace: 'nowrap' }}>
                         <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                           <span>System Branch UID</span>
                           <ColumnResizer colKey="uid" isResizing={resizingCol === 'uid'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
                         </div>
                       </th>
-                      <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-secondary, #f8fafc)', padding: '0.75rem 0.85rem', fontWeight: 700, color: 'var(--text-secondary, #475569)', borderBottom: '1px solid var(--border-light, #e2e8f0)', boxShadow: 'inset 0 -1px 0 var(--border-light, #e2e8f0)', width: colWidths.code }}>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-secondary, #f8fafc)', padding: '0.75rem 0.85rem', fontWeight: 700, color: 'var(--text-secondary, #475569)', borderBottom: '1px solid var(--border-light, #e2e8f0)', boxShadow: 'inset 0 -1px 0 var(--border-light, #e2e8f0)', width: colWidths.code, whiteSpace: 'nowrap' }}>
                         <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                           <span>Custom Code</span>
                           <ColumnResizer colKey="code" isResizing={resizingCol === 'code'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
                         </div>
                       </th>
-                      <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-secondary, #f8fafc)', padding: '0.75rem 0.85rem', fontWeight: 700, color: 'var(--text-secondary, #475569)', borderBottom: '1px solid var(--border-light, #e2e8f0)', boxShadow: 'inset 0 -1px 0 var(--border-light, #e2e8f0)', width: colWidths.type }}>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-secondary, #f8fafc)', padding: '0.75rem 0.85rem', fontWeight: 700, color: 'var(--text-secondary, #475569)', borderBottom: '1px solid var(--border-light, #e2e8f0)', boxShadow: 'inset 0 -1px 0 var(--border-light, #e2e8f0)', width: colWidths.type, whiteSpace: 'nowrap' }}>
                         <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                           <span>Location Type</span>
                           <ColumnResizer colKey="type" isResizing={resizingCol === 'type'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
                         </div>
                       </th>
-                      <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-secondary, #f8fafc)', padding: '0.75rem 0.85rem', fontWeight: 700, color: 'var(--text-secondary, #475569)', borderBottom: '1px solid var(--border-light, #e2e8f0)', boxShadow: 'inset 0 -1px 0 var(--border-light, #e2e8f0)', width: colWidths.location }}>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-secondary, #f8fafc)', padding: '0.75rem 0.85rem', fontWeight: 700, color: 'var(--text-secondary, #475569)', borderBottom: '1px solid var(--border-light, #e2e8f0)', boxShadow: 'inset 0 -1px 0 var(--border-light, #e2e8f0)', width: colWidths.location, whiteSpace: 'nowrap' }}>
                         <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                           <span>City & Address</span>
                           <ColumnResizer colKey="location" isResizing={resizingCol === 'location'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
                         </div>
                       </th>
-                      <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-secondary, #f8fafc)', padding: '0.75rem 0.85rem', fontWeight: 700, color: 'var(--text-secondary, #475569)', borderBottom: '1px solid var(--border-light, #e2e8f0)', boxShadow: 'inset 0 -1px 0 var(--border-light, #e2e8f0)', width: colWidths.incharge }}>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-secondary, #f8fafc)', padding: '0.75rem 0.85rem', fontWeight: 700, color: 'var(--text-secondary, #475569)', borderBottom: '1px solid var(--border-light, #e2e8f0)', boxShadow: 'inset 0 -1px 0 var(--border-light, #e2e8f0)', width: colWidths.incharge, whiteSpace: 'nowrap' }}>
                         <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                           <span>Incharge & Contact</span>
                           <ColumnResizer colKey="incharge" isResizing={resizingCol === 'incharge'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
                         </div>
                       </th>
-                      <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-secondary, #f8fafc)', padding: '0.75rem 0.85rem', fontWeight: 700, color: 'var(--text-secondary, #475569)', borderBottom: '1px solid var(--border-light, #e2e8f0)', boxShadow: 'inset 0 -1px 0 var(--border-light, #e2e8f0)', width: colWidths.gstin }}>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-secondary, #f8fafc)', padding: '0.75rem 0.85rem', fontWeight: 700, color: 'var(--text-secondary, #475569)', borderBottom: '1px solid var(--border-light, #e2e8f0)', boxShadow: 'inset 0 -1px 0 var(--border-light, #e2e8f0)', width: colWidths.gstin, whiteSpace: 'nowrap' }}>
                         <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                           <span>GSTIN</span>
                           <ColumnResizer colKey="gstin" isResizing={resizingCol === 'gstin'} onResizeStart={handleResizeStart} onReset={resetColWidth} />
                         </div>
                       </th>
-                      <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-secondary, #f8fafc)', padding: '0.75rem 0.85rem', textAlign: 'right', fontWeight: 700, color: 'var(--text-secondary, #475569)', borderBottom: '1px solid var(--border-light, #e2e8f0)', boxShadow: 'inset 0 -1px 0 var(--border-light, #e2e8f0)', width: colWidths.actions }}>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-secondary, #f8fafc)', padding: '0.75rem 0.85rem', textAlign: 'right', fontWeight: 700, color: 'var(--text-secondary, #475569)', borderBottom: '1px solid var(--border-light, #e2e8f0)', boxShadow: 'inset 0 -1px 0 var(--border-light, #e2e8f0)', width: colWidths.actions, whiteSpace: 'nowrap' }}>
                         <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
                           <span>Actions</span>
                           <ColumnResizer colKey="actions" isResizing={resizingCol === 'actions'} onResizeStart={handleResizeStart} onReset={resetColWidth} />

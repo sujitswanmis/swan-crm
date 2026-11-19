@@ -994,6 +994,8 @@ export default function AttendanceModule({
   // Pre-warm GPS location in background so punch action has instant 0ms access
   const preWarmGPSLocation = useCallback(() => {
     if (typeof window === 'undefined' || !navigator.geolocation) return;
+    const policy = moduleAccess?.tracking_policy || 'PUNCH_ONLY';
+    if (policy === 'ATTENDANCE_ONLY') return; // Zero GPS tracking/permission for Attendance Only policy
     const now = Date.now();
     if (gpsCacheRef.current.location && (now - gpsCacheRef.current.timestamp) < 300000) return;
     getCurrentGPSLocation({ timeout: 1500, enableHighAccuracy: false, maximumAge: 300000 }).then(gps => {
@@ -1004,7 +1006,7 @@ export default function AttendanceModule({
         };
       }
     }).catch(() => {});
-  }, []);
+  }, [moduleAccess?.tracking_policy]);
 
   // Pre-warm GPS location when viewing Daily Punch Station
   useEffect(() => {
@@ -2502,29 +2504,37 @@ export default function AttendanceModule({
         if (await saveOfflinePunch('IN', offlineRecord, punchLocation, scope)) accepted = offlineRecord;
         return;
       }
-      // Instant GPS resolution: Zero blocking on web desktop when GPS is not strictly required
-      const isGpsStrictlyRequired = Boolean(
-        geofenceSettings?.require_gps === 'ON' ||
-        geofenceSettings?.require_gps === 'STRICT' ||
-        geofenceSettings?.enable_geofence
-      );
+      // Resolve Attendance & Field GPS Policy (ATTENDANCE_ONLY | PUNCH_ONLY | LIVE_TRACKING)
+      const userTrackingPolicy = moduleAccess?.tracking_policy || 'PUNCH_ONLY';
       const nowTs = Date.now();
-      if (gpsCacheRef.current.location && (nowTs - gpsCacheRef.current.timestamp) < 300000) {
-        punchLocation = gpsCacheRef.current.location;
-      } else if (isGpsStrictlyRequired) {
-        // Only await GPS if policy strictly demands it (clamped to max 1200ms)
-        try {
-          const gps = await getCurrentGPSLocation({ timeout: 1200, enableHighAccuracy: false, maximumAge: 300000 });
-          if (gps?.success) {
-            punchLocation = `GPS (${gps.latitude.toFixed(4)}, ${gps.longitude.toFixed(4)})`;
-            gpsCacheRef.current = { location: punchLocation, timestamp: Date.now() };
-          }
-        } catch (e) {}
-      } else {
-        // GPS is OFF or AUTO (Standard Web Desktop): Punch INSTANTLY with 'Office Web Terminal' without 1ms delay!
+
+      if (userTrackingPolicy === 'ATTENDANCE_ONLY') {
+        // Tier 1: Only Attendance - Zero GPS permission required, instant web/desk punch
         punchLocation = 'Office Web Terminal';
-        // Non-blocking background fetch so subsequent punches might have GPS if available
-        preWarmGPSLocation();
+      } else {
+        // Tier 2 & 3: Punch GPS Only (Office/Plant) & Live Tracking (Field Force)
+        // Rule: "ye dont allow pr kam na kare baki sab pr kam kare"
+        if (gpsCacheRef.current.location && (nowTs - gpsCacheRef.current.timestamp) < 300000) {
+          punchLocation = gpsCacheRef.current.location;
+        } else {
+          try {
+            const gps = await getCurrentGPSLocation({ timeout: 2000, enableHighAccuracy: false, maximumAge: 300000 });
+            if (gps?.success) {
+              punchLocation = `GPS (${gps.latitude.toFixed(4)}, ${gps.longitude.toFixed(4)})`;
+              gpsCacheRef.current = { location: punchLocation, timestamp: Date.now() };
+            } else {
+              setPunchingIn(false);
+              setLoadingToday(false);
+              setPunchError('Office/Plant Punch ke liye Location permission zaroori hai. Kripya location access allow karein ("While using the app" ya "Only this time").');
+              return;
+            }
+          } catch (e) {
+            setPunchingIn(false);
+            setLoadingToday(false);
+            setPunchError('Office/Plant Punch ke liye Location permission zaroori hai. Kripya location access allow karein ("While using the app" ya "Only this time").');
+            return;
+          }
+        }
       }
 
       const res = await punchIn({
@@ -2548,6 +2558,11 @@ export default function AttendanceModule({
         }
         if (res.monthlyUsage) setShortLeaveUsage(res.monthlyUsage);
         fetchHistory(); // Refresh monthly history
+        try {
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('crm_attendance_changed', { detail: { type: 'IN', record: res.data } }));
+          }
+        } catch {}
       } else {
         if (res.alreadyPunched && res.data) {
           updateTodayRecord(res.data, scope);
@@ -2612,28 +2627,37 @@ export default function AttendanceModule({
         accepted = await saveOfflinePunch('OUT', offlineRecord, punchLocation, scope);
         return;
       }
-      // Instant GPS resolution: Zero blocking on web desktop when GPS is not strictly required
-      const isGpsStrictlyRequired = Boolean(
-        geofenceSettings?.require_gps === 'ON' ||
-        geofenceSettings?.require_gps === 'STRICT' ||
-        geofenceSettings?.enable_geofence
-      );
+      // Resolve Attendance & Field GPS Policy (ATTENDANCE_ONLY | PUNCH_ONLY | LIVE_TRACKING)
+      const userTrackingPolicy = moduleAccess?.tracking_policy || 'PUNCH_ONLY';
       const nowTsOut = Date.now();
-      if (gpsCacheRef.current.location && (nowTsOut - gpsCacheRef.current.timestamp) < 300000) {
-        punchLocation = gpsCacheRef.current.location;
-      } else if (isGpsStrictlyRequired) {
-        // Only await GPS if policy strictly demands it (clamped to max 1200ms)
-        try {
-          const gps = await getCurrentGPSLocation({ timeout: 1200, enableHighAccuracy: false, maximumAge: 300000 });
-          if (gps?.success) {
-            punchLocation = `GPS (${gps.latitude.toFixed(4)}, ${gps.longitude.toFixed(4)})`;
-            gpsCacheRef.current = { location: punchLocation, timestamp: Date.now() };
-          }
-        } catch (e) {}
-      } else {
-        // GPS is OFF or AUTO (Standard Web Desktop): Punch INSTANTLY with 'Office Web Terminal' without 1ms delay!
+
+      if (userTrackingPolicy === 'ATTENDANCE_ONLY') {
+        // Tier 1: Only Attendance - Zero GPS permission required, instant web/desk punch
         punchLocation = 'Office Web Terminal';
-        preWarmGPSLocation();
+      } else {
+        // Tier 2 & 3: Punch GPS Only (Office/Plant) & Live Tracking (Field Force)
+        // Rule: "ye dont allow pr kam na kare baki sab pr kam kare"
+        if (gpsCacheRef.current.location && (nowTsOut - gpsCacheRef.current.timestamp) < 300000) {
+          punchLocation = gpsCacheRef.current.location;
+        } else {
+          try {
+            const gps = await getCurrentGPSLocation({ timeout: 2000, enableHighAccuracy: false, maximumAge: 300000 });
+            if (gps?.success) {
+              punchLocation = `GPS (${gps.latitude.toFixed(4)}, ${gps.longitude.toFixed(4)})`;
+              gpsCacheRef.current = { location: punchLocation, timestamp: Date.now() };
+            } else {
+              setPunchingOut(false);
+              setLoadingToday(false);
+              setPunchError('Office/Plant Punch ke liye Location permission zaroori hai. Kripya location access allow karein ("While using the app" ya "Only this time").');
+              return;
+            }
+          } catch (e) {
+            setPunchingOut(false);
+            setLoadingToday(false);
+            setPunchError('Office/Plant Punch ke liye Location permission zaroori hai. Kripya location access allow karein ("While using the app" ya "Only this time").');
+            return;
+          }
+        }
       }
       const res = await punchOut({
         email: userEmail,
@@ -2655,6 +2679,11 @@ export default function AttendanceModule({
         }
         if (res.monthlyUsage) setShortLeaveUsage(res.monthlyUsage);
         fetchHistory(); // Refresh monthly history
+        try {
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('crm_attendance_changed', { detail: { type: 'OUT', record: res.data } }));
+          }
+        } catch {}
       } else {
         if (res.alreadyPunchedOut && res.data) {
           updateTodayRecord(res.data, scope);

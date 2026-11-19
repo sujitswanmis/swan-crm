@@ -5,7 +5,7 @@ import {
   Activity, ArrowDownLeft, ArrowUpRight, Battery, BatteryCharging, Calendar,
   Check, CheckCircle2, ChevronDown, Clock3, Flag, Layers, List, LocateFixed,
   MapPin, Maximize2, Minimize2, Navigation, Pause, Play, RefreshCw, Route,
-  Search, ShieldCheck, Signal, Wifi, WifiOff, CircleStop, UserRound,
+  Search, ShieldCheck, Signal, Wifi, WifiOff, CircleStop, UserRound, Radio,
 } from 'lucide-react';
 import styles from './LiveTrackingDashboard.module.css';
 import DateRangePicker from '@/components/common/DateRangePicker';
@@ -172,15 +172,37 @@ export const TrackingHeader = memo(function TrackingHeader({ employees, selected
       <div className={styles.pageTitle}><span className={styles.pageIcon}><Navigation size={21} aria-hidden="true" /></span><div><h1>Field Force 360° Radar</h1><p>Routes, visits & field activity</p></div></div>
       <div className={styles.headerFilters}>
         {tab === '360_PLAYBACK' && <TrackingEmployeePicker employees={employees} selectedId={selectedId} onChange={onEmployeeChange} />}
-        {tab === '360_PLAYBACK' ? <TrackingDatePicker date={date} range={range} onDateChange={onDateChange} /> : tab === 'CONVEYANCE_VOUCHERS' ? <label className={styles.voucherDate}><Calendar size={15} /><span className={styles.srOnly}>Voucher date in IST</span><input type="date" value={date} onChange={event => onDateChange({ preset: 'custom', startDate: event.target.value, endDate: event.target.value })} /></label> : <StatusPill tone="healthy">Live radar</StatusPill>}
+        {tab === '360_PLAYBACK' ? <TrackingDatePicker date={date} range={range} onDateChange={onDateChange} /> : tab === 'CONVEYANCE_VOUCHERS' ? <label className={styles.voucherDate}><Calendar size={15} /><span className={styles.srOnly}>Voucher date in IST</span><input type="date" value={date} onChange={event => onDateChange({ preset: 'custom', startDate: event.target.value, endDate: event.target.value })} /></label> : <StatusPill tone="healthy">{tab === 'LIVE_TRACKING' ? '🟢 Fleet Live' : 'Live radar'}</StatusPill>}
         <button type="button" className={styles.iconButton} onClick={onRefresh} disabled={busy} aria-label="Refresh tracking data" title="Refresh tracking data"><RefreshCw size={17} className={busy ? styles.spinning : undefined} aria-hidden="true" /></button>
       </div>
     </div>
     <div className={styles.headerBottom}>
       <nav aria-label="Field tracking views" className={styles.tabs}>
-        {[['360_PLAYBACK', Route, '360° Route & Playback'], ['ALL_INDIA_RADAR', Layers, 'All-India Cluster Radar'], ['CONVEYANCE_VOUCHERS', Flag, 'Daily TA/DA Vouchers']].map(([id, Icon, label]) => <button key={id} type="button" aria-current={tab === id ? 'page' : undefined} onClick={() => onTabChange(id)}><Icon size={15} aria-hidden="true" />{label}</button>)}
+        {[
+          ['LIVE_TRACKING', Radio, 'Live Tracking'],
+          ['360_PLAYBACK', Route, '360° Route & Playback'],
+          ['ALL_INDIA_RADAR', Layers, 'All-India Cluster Radar'],
+          ['CONVEYANCE_VOUCHERS', Flag, 'Daily TA/DA Vouchers']
+        ].map(([id, Icon, label]) => (
+          <button
+            key={id}
+            type="button"
+            aria-current={tab === id ? 'page' : undefined}
+            onClick={() => onTabChange(id)}
+            style={id === 'LIVE_TRACKING' ? { display: 'inline-flex', alignItems: 'center', gap: 6 } : undefined}
+          >
+            {id === 'LIVE_TRACKING' && (
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#22c55e', display: 'inline-block', boxShadow: '0 0 0 2px rgba(34,197,94,0.3)', animation: 'pulse 1.5s infinite' }} />
+            )}
+            <Icon size={15} aria-hidden="true" />
+            {label}
+          </button>
+        ))}
       </nav>
-      <span className={styles.headerContext}>{tab === '360_PLAYBACK' ? (mode === 'latest' ? 'Latest location' : 'Route playback') : formatTrackingDate(date)}<span>IST</span></span>
+      <span className={styles.headerContext}>
+        {tab === 'LIVE_TRACKING' ? 'Fleet Live GPS' : (tab === '360_PLAYBACK' ? (mode === 'latest' ? 'Latest location' : 'Route playback') : formatTrackingDate(date))}
+        <span>IST</span>
+      </span>
     </div>
   </header>;
 });

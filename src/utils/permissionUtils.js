@@ -52,9 +52,60 @@ export function isUserPlatformAllowed(moduleAccess, userRole, platformKey = null
   if (checkIsMasterAdmin(moduleAccess, userRole, userEmail)) return true;
   const key = getActiveClientPlatformKey(platformKey);
   if (key === 'all') return true;
+  // Fail-safe: Live tracking field workers always require mobile platform access
+  if ((key === 'android' || key === 'ios') && moduleAccess?.tracking_policy === 'LIVE_TRACKING') {
+    return true;
+  }
   const allowed = moduleAccess?.allowed_platforms;
   if (!allowed || typeof allowed !== 'object') return true;
   return allowed[key] !== false;
+}
+
+/**
+ * Automatically protects mobile platform access for Live Tracking and Field Force users.
+ * Ensures an admin cannot accidentally lock a field employee out of Android/iOS.
+ */
+export function enforcePolicyPlatformSafety(moduleAccess, trackingPolicy = null) {
+  if (!moduleAccess || typeof moduleAccess !== 'object') return moduleAccess;
+  const policy = trackingPolicy || moduleAccess.tracking_policy || 'PUNCH_ONLY';
+  if (policy === 'LIVE_TRACKING') {
+    const updated = { ...moduleAccess };
+    // 1. Layer 1 Global Platforms: ensure android & ios are not blocked
+    if (updated.allowed_platforms && typeof updated.allowed_platforms === 'object') {
+      const ap = { ...updated.allowed_platforms };
+      if (ap.android === false) ap.android = true;
+      if (ap.ios === false) ap.ios = true;
+      if (ap.web !== false && ap.windows !== false && ap.android !== false && ap.ios !== false) {
+        delete updated.allowed_platforms;
+      } else {
+        updated.allowed_platforms = ap;
+      }
+    }
+    // 2. Attendance module: ensure android & ios platforms are not blocked
+    if (updated.attendance && typeof updated.attendance === 'object') {
+      const att = { ...updated.attendance };
+      if (att.platforms && typeof att.platforms === 'object') {
+        const attP = { ...att.platforms };
+        if (attP.android === false) attP.android = true;
+        if (attP.ios === false) attP.ios = true;
+        att.platforms = attP;
+      }
+      updated.attendance = att;
+    }
+    // 3. Field Force module: ensure view, read & android/ios platforms are active
+    const ff = updated.field_force && typeof updated.field_force === 'object' ? { ...updated.field_force } : { view: true, read: true };
+    ff.view = true;
+    ff.read = true;
+    if (ff.platforms && typeof ff.platforms === 'object') {
+      const ffP = { ...ff.platforms };
+      if (ffP.android === false) ffP.android = true;
+      if (ffP.ios === false) ffP.ios = true;
+      ff.platforms = ffP;
+    }
+    updated.field_force = ff;
+    return updated;
+  }
+  return moduleAccess;
 }
 
 export function isPlatformEntryAllowed(entryPlatforms, parentPlatforms = null, platformKey = null) {
@@ -76,6 +127,9 @@ export function checkIsAdminRole(userRole) {
 
 export function getModulePermissions(moduleAccess, userRole, moduleId, platformKey = null) {
   const isMaster = checkIsMasterAdmin(moduleAccess, userRole);
+  if (moduleId === 'saas_master' || moduleId === 'saas_studio') {
+    return { view:isMaster, add:isMaster, edit:isMaster, delete:isMaster, is_manager:isMaster };
+  }
   if (moduleId === 'config_master') {
     return { view: isMaster, add: isMaster, edit: isMaster, delete: false, is_manager: isMaster };
   }
@@ -85,7 +139,11 @@ export function getModulePermissions(moduleAccess, userRole, moduleId, platformK
   }
 
   const m = moduleAccess?.[moduleId];
-  if (!isMaster && m && typeof m === 'object' && !isPlatformEntryAllowed(m.platforms, null, platformKey)) {
+  const isMobileFieldSafe = (platformKey === 'android' || platformKey === 'ios') &&
+    moduleAccess?.tracking_policy === 'LIVE_TRACKING' &&
+    (moduleId === 'field_force' || moduleId === 'attendance');
+
+  if (!isMaster && !isMobileFieldSafe && m && typeof m === 'object' && !isPlatformEntryAllowed(m.platforms, null, platformKey)) {
     return { view: false, add: false, edit: false, delete: false, is_manager: false };
   }
 
@@ -124,6 +182,9 @@ export function getModulePermissions(moduleAccess, userRole, moduleId, platformK
 
 export function getSubItemPermissions(moduleAccess, userRole, moduleId, subItemId, platformKey = null) {
   const isMaster = checkIsMasterAdmin(moduleAccess, userRole);
+  if (moduleId === 'saas_master' || moduleId === 'saas_studio') {
+    return { view:isMaster, add:isMaster, edit:isMaster, delete:isMaster, is_manager:isMaster };
+  }
   if (moduleId === 'config_master') {
     const parent = getModulePermissions(moduleAccess, userRole, moduleId, platformKey);
     return { view: parent.view, add: parent.add, edit: parent.edit, delete: false };

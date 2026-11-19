@@ -3274,7 +3274,7 @@ export default function EmailConfigModule({
                             const subLabel = b.location_type || b.city || b.location;
                             return (
                               <option key={b.id || bName} value={bName}>
-                                🏢 {bName} {subLabel ? `(${subLabel})` : ''}
+                                {b.branch_code ? `${b.branch_code} — ` : ''}{bName}
                               </option>
                             );
                           })
@@ -4291,7 +4291,7 @@ export default function EmailConfigModule({
                     .filter(b => b.branch_name)
                     .map(b => (
                       <option key={b.id || b.branch_name} value={b.branch_name}>
-                        🏢 {b.branch_name}
+                        {b.branch_code ? `${b.branch_code} — ` : ''}{b.branch_name}
                       </option>
                     ))}
                 </select>
