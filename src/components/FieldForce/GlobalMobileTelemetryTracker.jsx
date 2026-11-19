@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { MapPinOff, X, Download, Settings, BatteryCharging, ShieldAlert } from 'lucide-react';
+import { MapPinOff, X, Download, Settings, BatteryCharging, ShieldAlert, RefreshCw } from 'lucide-react';
 import {
   recordLocationPingBatch,
   issueFieldTelemetryToken,
