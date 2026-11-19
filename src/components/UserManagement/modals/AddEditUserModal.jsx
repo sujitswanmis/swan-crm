@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { X, User, Phone, Mail, Building, MapPin, Shield, Key, Eye, EyeOff, Save, Loader2, CheckCircle2, AlertCircle, Users, FileText, Globe, Plus, Star } from 'lucide-react';
 import SearchableEmployeeSelect from '@/components/common/SearchableEmployeeSelect';
 import { getReportingEmail, getReportingFields } from '@/utils/reportingHierarchy';
@@ -261,6 +261,8 @@ export default function AddEditUserModal({
 }) {
   const isEdit = Boolean(user);
   const [activeStep, setActiveStep] = useState('personal'); // 'personal' | 'job' | 'reporting' | 'auth'
+  const prevOpenRef = useRef(false);
+  const prevUserIdRef = useRef(null);
   const [availableTenants, setAvailableTenants] = useState([]);
   const [resolvedTenant, setResolvedTenant] = useState({ tenantId: tenantId || '', tenantCode: '', companyName: currentUserCompany || '' });
   const [availableBranches, setAvailableBranches] = useState([]);
@@ -296,27 +298,40 @@ export default function AddEditUserModal({
   const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
-  // Reset form state asynchronously via microtask when modal opens or user changes
+  // Reset form state only when modal opens or target user changes (never on tab switch)
   useEffect(() => {
-    if (!isOpen) return;
-    let isMounted = true;
+    if (!isOpen) {
+      prevOpenRef.current = false;
+      prevUserIdRef.current = null;
+      return;
+    }
 
+    const currentUserId = user?.user_id || (user ? 'edit-mode' : 'add-mode');
+    const isFirstOpen = !prevOpenRef.current;
+    const isDifferentUser = prevUserIdRef.current !== currentUserId;
+
+    // If modal is already open for this exact user, do NOT reset activeStep or formData!
+    if (!isFirstOpen && !isDifferentUser) {
+      return;
+    }
+
+    prevOpenRef.current = true;
+    prevUserIdRef.current = currentUserId;
+
+    let isMounted = true;
     const initTenantIdSync = user?.tenant_id || user?.module_access?._tenantId || tenantId || '';
     const initCompanySync = user?.company || currentUserCompany || '';
     const initialState = buildInitialFormData(user, departments, tenantId, currentUserCompany);
 
-    Promise.resolve().then(() => {
-      if (!isMounted) return;
-      setCustomBranchNameInput(false);
-      setCustomBranchDraft('');
-      setCustomLocationInput(false);
-      const curDesig = user?.emp_designation || '';
-      const isCustomDesig = Boolean(curDesig && !DESIGNATIONS.includes(curDesig));
-      setCustomDesignationInput(isCustomDesig);
-      setActiveStep('personal');
-      setErrorMsg('');
-      setFormData(initialState);
-    });
+    setCustomBranchNameInput(false);
+    setCustomBranchDraft('');
+    setCustomLocationInput(false);
+    const curDesig = user?.emp_designation || '';
+    const isCustomDesig = Boolean(curDesig && !DESIGNATIONS.includes(curDesig));
+    setCustomDesignationInput(isCustomDesig);
+    setActiveStep('personal');
+    setErrorMsg('');
+    setFormData(initialState);
 
     const seedTenantKey = initTenantIdSync || initCompanySync;
     if (seedTenantKey) {
@@ -338,7 +353,7 @@ export default function AddEditUserModal({
     }
 
     return () => { isMounted = false; };
-  }, [user, isOpen, departments, tenantId, currentUserCompany]);
+  }, [isOpen, user?.user_id, user, departments, tenantId, currentUserCompany]);
 
   // Load tenants catalog for Master Admin tenant selector
   useEffect(() => {
@@ -1645,7 +1660,29 @@ export default function AddEditUserModal({
                       </span>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.5rem', marginBottom: '0.6rem' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '0.5rem', marginBottom: '0.6rem' }}>
+                      <label style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.4rem',
+                        padding: '0.5rem 0.65rem',
+                        borderRadius: '6px',
+                        border: `1.5px solid ${formData.tracking_policy === 'ATTENDANCE_ONLY' ? '#6366f1' : 'var(--border-light)'}`,
+                        background: formData.tracking_policy === 'ATTENDANCE_ONLY' ? '#eef2ff' : 'var(--bg-surface)',
+                        cursor: 'pointer',
+                        fontSize: '0.78rem',
+                        fontWeight: 600
+                      }}>
+                        <input
+                          type="radio"
+                          name="tracking_policy"
+                          value="ATTENDANCE_ONLY"
+                          checked={formData.tracking_policy === 'ATTENDANCE_ONLY'}
+                          onChange={() => handleChange('tracking_policy', 'ATTENDANCE_ONLY')}
+                        />
+                        <span>🏢 Only Attendance (No Permission Required)</span>
+                      </label>
+
                       <label style={{
                         display: 'flex',
                         alignItems: 'center',

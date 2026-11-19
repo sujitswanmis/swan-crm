@@ -84,6 +84,11 @@ function createModalHarness({ tenantId = '00000000-0000-0000-0000-000000000001',
       if (!(index in states)) states[index] = typeof initial === 'function' ? initial() : initial;
       return [states[index], value => { states[index] = typeof value === 'function' ? value(states[index]) : value; }];
     },
+    useRef: initial => {
+      const index = cursor++;
+      if (!(index in states)) states[index] = { current: initial };
+      return states[index];
+    },
     useMemo: fn => fn(),
     useEffect: (fn, deps) => {
       const idx = effectCursor++;
@@ -684,6 +689,60 @@ test('attendance.js punchIn and punchOut avoid missing user_roles.company_name a
 
   assert.equal(userRoleSelects.some(s => String(s).includes('company_name')), false, 'user_roles query must never select company_name');
   assert.equal(userRoleSelects.includes('*'), true, '42703 on explicit columns must fall back to select(*)');
+});
+
+test('navigating to Step 2 Job & Location and Step 3 Reporting & HOD remains stable and does not reset to Step 1', async () => {
+  const harness = createModalHarness({
+    user: {
+      user_id: 'user-123',
+      emp_name: 'Sujit Kumar Gupta',
+      emp_id: '50479',
+      email: 'sujit@example.com',
+      company: 'New Swan Group',
+      emp_department: 'Sales',
+      emp_designation: 'Sales Executive'
+    }
+  });
+
+  let tree = harness.render();
+  await harness.flushEffects();
+  tree = harness.render();
+
+  // Find step tab buttons
+  let allButtons = nodes(tree).filter(n => n.type === 'button');
+  const jobTabButton = allButtons.find(b => text(b).includes('Job & Location'));
+  assert.ok(jobTabButton, 'Job & Location tab button must exist');
+
+  // Click Job & Location tab
+  jobTabButton.props.onClick();
+
+  // Re-render and flush effects to simulate microtasks/async effects
+  tree = harness.render();
+  await harness.flushEffects();
+  tree = harness.render();
+
+  // Verify that Step 2 (Job & Location) content is active and rendered
+  let activeText = text(tree);
+  assert.ok(activeText.includes('Organization / Tenant Workspace'), 'Job & Location step content must remain visible');
+  assert.ok(activeText.includes('Employee Code / ID'), 'Employee Code input must remain visible');
+
+  // Find Reporting & HOD tab button
+  allButtons = nodes(tree).filter(n => n.type === 'button');
+  const reportingTabButton = allButtons.find(b => text(b).includes('Reporting & HOD'));
+  assert.ok(reportingTabButton, 'Reporting & HOD tab button must exist');
+
+  // Click Reporting & HOD tab
+  reportingTabButton.props.onClick();
+
+  // Re-render and flush effects
+  tree = harness.render();
+  await harness.flushEffects();
+  tree = harness.render();
+
+  // Verify that Step 3 (Reporting & HOD) content is active and rendered
+  activeText = text(tree);
+  assert.ok(activeText.includes('Primary Reporting Manager (Daily Work / Tasks)'), 'Reporting step content must remain visible');
+  assert.ok(activeText.includes('Head of Department (HOD)'), 'HOD selector must remain visible');
 });
 
 
