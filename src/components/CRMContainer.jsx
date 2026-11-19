@@ -8087,6 +8087,7 @@ export default function CRMContainer({
                       userRole={userRole}
                       isMasterAdmin={isMasterAdmin}
                       branchAccess={userBranchAccess}
+                      adminCompanyFilter={adminCompanyFilter}
                       onInspectEmployeeRoute={(row) => {
                         if (row?.userId && typeof window !== 'undefined') {
                           try {

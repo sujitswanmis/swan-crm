@@ -701,6 +701,51 @@ export default function FieldDeviceHealthAudit({
           </div>
         </div>
 
+        {isMasterScope && availableTenants.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', paddingBottom: 2 }}>
+            <span style={{ fontSize: 11.5, fontWeight: 700, color: '#64748b', marginRight: 4 }}>Company:</span>
+            <button
+              type="button"
+              onClick={() => { setSelectedTenantCode('ALL'); setSelectedBranch('ALL'); setCurrentPage(1); setLoading(true); }}
+              style={{
+                padding: '3px 10px',
+                borderRadius: 999,
+                fontSize: 11,
+                fontWeight: 700,
+                border: 'none',
+                cursor: 'pointer',
+                background: (selectedTenantCode === 'ALL' || !selectedTenantCode) ? '#1e293b' : '#f1f5f9',
+                color: (selectedTenantCode === 'ALL' || !selectedTenantCode) ? '#ffffff' : '#475569'
+              }}
+            >
+              All Tenants ({summaryCounts.total || rows.length})
+            </button>
+            {availableTenants.map((t) => {
+              const active = selectedTenantCode === t.tenantCode;
+              const count = rows.filter(r => r.tenantCode === t.tenantCode).length;
+              return (
+                <button
+                  key={t.tenantCode}
+                  type="button"
+                  onClick={() => { setSelectedTenantCode(t.tenantCode); setSelectedBranch('ALL'); setCurrentPage(1); setLoading(true); }}
+                  style={{
+                    padding: '3px 10px',
+                    borderRadius: 999,
+                    fontSize: 11,
+                    fontWeight: 700,
+                    border: 'none',
+                    cursor: 'pointer',
+                    background: active ? '#2563eb' : '#f1f5f9',
+                    color: active ? '#ffffff' : '#475569'
+                  }}
+                >
+                  {t.tenantCode} — {t.companyName} ({count})
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
           {STATUS_FILTER_TABS.map((tab) => {
             const active = statusFilter === tab.id;
@@ -812,8 +857,10 @@ export default function FieldDeviceHealthAudit({
                     </td>
 
                     <td style={{ padding: '10px 12px' }}>
-                      <div style={{ fontWeight: 700, color: '#1d4ed8', fontSize: 11.5 }}>{row.tenantCode}</div>
-                      <div style={{ fontSize: 11, color: '#475569' }}>{row.branchCode}</div>
+                      <div style={{ fontWeight: 700, color: '#1d4ed8', fontSize: 11.5 }}>
+                        {row.tenantCode} {row.companyName ? `— ${row.companyName}` : ''}
+                      </div>
+                      <div style={{ fontSize: 11, color: '#475569', marginTop: 1 }}>{row.branchCode}</div>
                     </td>
 
                     <td style={{ padding: '10px 12px' }}>
