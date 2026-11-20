@@ -145,11 +145,9 @@ export default function ProductListConfig({ userCompany = '' }) {
   const [importResult, setImportResult] = useState(null);
   const [previewSearch, setPreviewSearch] = useState('');
   const [previewFilter, setPreviewFilter] = useState('ALL'); // 'ALL' | 'VALID' | 'ISSUES'
-  const [showSampleDropdown, setShowSampleDropdown] = useState(false);
   const [showExportDropdown, setShowExportDropdown] = useState(false);
   const [isExportingExcel, setIsExportingExcel] = useState(false);
   const fileInputRef = useRef(null);
-  const sampleDropdownRef = useRef(null);
   const exportDropdownRef = useRef(null);
 
   // Delete confirm
@@ -231,9 +229,6 @@ export default function ProductListConfig({ userCompany = '' }) {
   // Close dropdowns on outside click
   useEffect(() => {
     const handleClickOutside = (e) => {
-      if (sampleDropdownRef.current && !sampleDropdownRef.current.contains(e.target)) {
-        setShowSampleDropdown(false);
-      }
       if (exportDropdownRef.current && !exportDropdownRef.current.contains(e.target)) {
         setShowExportDropdown(false);
       }
@@ -539,7 +534,8 @@ export default function ProductListConfig({ userCompany = '' }) {
       'Category',
       'Sub-Category',
       'Coverage Type',
-      'Coverage Period (Months)',
+      'Coverage Period',
+      'Coverage Unit',
       'Coverage Terms',
       'Price',
       'Tax Rate %',
@@ -551,11 +547,12 @@ export default function ProductListConfig({ userCompany = '' }) {
     ];
 
     const sampleRows = [
-      ['Rotavator – Super Series', 'SWAN-ROTA-01', 'All Branches', 'Implement', 'Rotary Tiller', 'Warranty', '12', 'Manufacturing Defects Only', '115000', '18', '8432', '15', '1', 'Units', 'Heavy duty super series rotavator with multi speed gearbox'],
-      ['Laser Land Leveller', 'SWAN-LLL-02', 'NSMLR', 'Land Leveller', 'Dual Slope', 'Warranty', '24', 'Manufacturing Defects Only', '325000', '18', '8432', '8', '1', 'Units', 'Precision dual slope transmitter receiver system'],
-      ['Genuine Blade 28T', 'SWAN-BLD-28', 'All Branches', 'Spare Part', 'Rotary Blades', 'Guarantee', '6', 'Breakage & Manufacturing Defects', '650', '18', '843290', '200', '10', 'Pcs', 'High carbon boron steel rotary tiller blades'],
-      ['Super Seeder 8 Row', 'SWAN-SEED-08', 'NSTL', 'Seeder', 'Direct Sowing', 'Both', '12', 'Comprehensive standard coverage', '245000', '18', '8432', '5', '1', 'Units', 'Next generation super seeder for direct sowing'],
-      ['Hydraulic Reversible MB Plough', 'SWAN-PLOW-03', 'All Branches', 'Plough', 'Mould Board', 'Warranty', '12', 'Manufacturing Defects Only', '95000', '18', '8432', '12', '1', 'Units', 'Heavy duty reversible mould board plough']
+      ['Rotavator – Super Series', 'SWAN-ROTA-01', 'All Branches', 'Implement', 'Rotary Tiller', 'Warranty', '12', 'Months', 'Manufacturing Defects Only', '115000', '18', '8432', '15', '1', 'Units', 'Heavy duty super series rotavator with multi speed gearbox'],
+      ['Laser Land Leveller', 'SWAN-LLL-02', 'NSMLR', 'Land Leveller', 'Dual Slope', 'Warranty', '24', 'Months', 'Manufacturing Defects Only', '325000', '18', '8432', '8', '1', 'Units', 'Precision dual slope transmitter receiver system'],
+      ['Genuine Blade 28T', 'SWAN-BLD-28', 'All Branches', 'Spare Part', 'Rotary Blades', 'Guarantee', '45', 'Days', 'Breakage & Manufacturing Defects', '650', '18', '843290', '200', '10', 'Pcs', 'High carbon boron steel rotary tiller blades'],
+      ['Quick Replacement Wear Kit', 'SWAN-KIT-07', 'All Branches', 'Spare Part', 'Fast Replacement', 'Guarantee', '7', 'Days', 'Instant 7 Days Replacement Policy', '1450', '18', '843290', '80', '5', 'Box', '7 Days instant customer replacement spare kit'],
+      ['Super Seeder 8 Row', 'SWAN-SEED-08', 'NSTL', 'Seeder', 'Direct Sowing', 'Both', '100', 'Days', 'Comprehensive 100 Days Warranty & Field Guarantee', '245000', '18', '8432', '5', '1', 'Units', 'Next generation super seeder for direct sowing'],
+      ['Hydraulic Reversible MB Plough', 'SWAN-PLOW-03', 'All Branches', 'Plough', 'Mould Board', 'Warranty', '12', 'Months', 'Manufacturing Defects Only', '95000', '18', '8432', '12', '1', 'Units', 'Heavy duty reversible mould board plough']
     ];
 
     const csvContent = '\uFEFF' + [
@@ -584,20 +581,21 @@ export default function ProductListConfig({ userCompany = '' }) {
       const sheet = workbook.addWorksheet('Products');
 
       sheet.columns = [
-        { header: 'Name', key: 'name', width: 30 },
+        { header: 'Name', key: 'name', width: 32 },
         { header: 'SKU', key: 'sku', width: 18 },
         { header: 'Branch', key: 'branch', width: 20 },
         { header: 'Category', key: 'category', width: 18 },
         { header: 'Sub-Category', key: 'sub_category', width: 18 },
-        { header: 'Coverage Type', key: 'coverage_type', width: 16 },
-        { header: 'Coverage Period (Months)', key: 'coverage_period', width: 22 },
-        { header: 'Coverage Terms', key: 'coverage_terms', width: 28 },
+        { header: 'Coverage Type', key: 'coverage_type', width: 18 },
+        { header: 'Coverage Period', key: 'coverage_period', width: 18 },
+        { header: 'Coverage Unit', key: 'coverage_period_unit', width: 16 },
+        { header: 'Coverage Terms', key: 'coverage_terms', width: 32 },
         { header: 'Price', key: 'price', width: 14 },
         { header: 'Tax Rate %', key: 'tax_rate', width: 14 },
         { header: 'HSN Code', key: 'hsn', width: 14 },
         { header: 'Stock Qty', key: 'stock', width: 14 },
         { header: 'Min Order Qty', key: 'min_order_qty', width: 16 },
-        { header: 'UOM', key: 'uom', width: 12 },
+        { header: 'UOM', key: 'uom', width: 14 },
         { header: 'Description', key: 'description', width: 40 }
       ];
 
@@ -621,6 +619,7 @@ export default function ProductListConfig({ userCompany = '' }) {
           sub_category: 'Rotary Tiller',
           coverage_type: 'Warranty',
           coverage_period: 12,
+          coverage_period_unit: 'Months',
           coverage_terms: 'Manufacturing Defects Only',
           price: 115000,
           tax_rate: 18,
@@ -638,6 +637,7 @@ export default function ProductListConfig({ userCompany = '' }) {
           sub_category: 'Dual Slope',
           coverage_type: 'Warranty',
           coverage_period: 24,
+          coverage_period_unit: 'Months',
           coverage_terms: 'Manufacturing Defects Only',
           price: 325000,
           tax_rate: 18,
@@ -654,7 +654,8 @@ export default function ProductListConfig({ userCompany = '' }) {
           category: 'Spare Part',
           sub_category: 'Rotary Blades',
           coverage_type: 'Guarantee',
-          coverage_period: 6,
+          coverage_period: 45,
+          coverage_period_unit: 'Days',
           coverage_terms: 'Breakage & Manufacturing Defects',
           price: 650,
           tax_rate: 18,
@@ -665,14 +666,33 @@ export default function ProductListConfig({ userCompany = '' }) {
           description: 'High carbon boron steel rotary tiller blades'
         },
         {
+          name: 'Quick Replacement Wear Kit',
+          sku: 'SWAN-KIT-07',
+          branch: 'All Branches',
+          category: 'Spare Part',
+          sub_category: 'Fast Replacement',
+          coverage_type: 'Guarantee',
+          coverage_period: 7,
+          coverage_period_unit: 'Days',
+          coverage_terms: 'Instant 7 Days Replacement Policy',
+          price: 1450,
+          tax_rate: 18,
+          hsn: '843290',
+          stock: 80,
+          min_order_qty: 5,
+          uom: 'Box',
+          description: '7 Days instant customer replacement spare kit'
+        },
+        {
           name: 'Super Seeder 8 Row',
           sku: 'SWAN-SEED-08',
           branch: 'NSTL',
           category: 'Seeder',
           sub_category: 'Direct Sowing',
           coverage_type: 'Both',
-          coverage_period: 12,
-          coverage_terms: 'Comprehensive standard coverage',
+          coverage_period: 100,
+          coverage_period_unit: 'Days',
+          coverage_terms: 'Comprehensive 100 Days Warranty & Field Guarantee',
           price: 245000,
           tax_rate: 18,
           hsn: '8432',
@@ -689,6 +709,7 @@ export default function ProductListConfig({ userCompany = '' }) {
           sub_category: 'Mould Board',
           coverage_type: 'Warranty',
           coverage_period: 12,
+          coverage_period_unit: 'Months',
           coverage_terms: 'Manufacturing Defects Only',
           price: 95000,
           tax_rate: 18,
@@ -704,6 +725,40 @@ export default function ProductListConfig({ userCompany = '' }) {
         sheet.addRow(row);
       });
 
+      // Attach In-Cell Data Validation Dropdowns for rows 2 to 300
+      for (let r = 2; r <= 300; r++) {
+        // Column F: Coverage Type (Warranty / Guarantee / Both / None)
+        sheet.getCell(`F${r}`).dataValidation = {
+          type: 'list',
+          allowBlank: true,
+          formulae: ['"Warranty,Guarantee,Both,None"'],
+          showErrorMessage: true,
+          errorTitle: 'Invalid Coverage Type',
+          error: 'Please choose Warranty, Guarantee, Both, or None.'
+        };
+        // Column H: Coverage Unit (Days / Months / Years)
+        sheet.getCell(`H${r}`).dataValidation = {
+          type: 'list',
+          allowBlank: true,
+          formulae: ['"Days,Months,Years"'],
+          showErrorMessage: true,
+          errorTitle: 'Invalid Coverage Unit',
+          error: 'Please choose Days, Months, or Years.'
+        };
+        // Column K: Tax Rate %
+        sheet.getCell(`K${r}`).dataValidation = {
+          type: 'list',
+          allowBlank: true,
+          formulae: ['"0,5,12,18,28"']
+        };
+        // Column O: UOM
+        sheet.getCell(`O${r}`).dataValidation = {
+          type: 'list',
+          allowBlank: true,
+          formulae: ['"Units,Pcs,Kg,Ton,Box,Set,Nos,Mtr,Ltr"']
+        };
+      }
+
       const buffer = await workbook.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const url = URL.createObjectURL(blob);
@@ -714,7 +769,7 @@ export default function ProductListConfig({ userCompany = '' }) {
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
-      showToast('Sample Excel template (.xlsx) downloaded!');
+      showToast('Sample Excel template (.xlsx) with Dropdowns downloaded!');
     } catch (err) {
       console.error('Error generating Excel template:', err);
       showToast('Failed to download Excel template: ' + err.message, 'error');
@@ -841,8 +896,14 @@ export default function ProductListConfig({ userCompany = '' }) {
         ? Number(String(coveragePeriodRaw).replace(/[^0-9]/g, ''))
         : null;
       const rawLowerPeriod = String(coveragePeriodRaw || '').toLowerCase();
+      const rawCoverageUnit = findVal('coverage unit', 'coverage_unit', 'period unit', 'period_unit', 'coverage period unit', 'coverage_period_unit', 'unit of coverage');
       let coveragePeriodUnitVal = 'Months';
-      if (rawLowerPeriod.includes('day') || rawLowerPeriod.endsWith('d')) {
+      if (rawCoverageUnit) {
+        const lowerUnit = rawCoverageUnit.toLowerCase();
+        if (lowerUnit.includes('day') || lowerUnit === 'd') coveragePeriodUnitVal = 'Days';
+        else if (lowerUnit.includes('year') || lowerUnit === 'y') coveragePeriodUnitVal = 'Years';
+        else coveragePeriodUnitVal = 'Months';
+      } else if (rawLowerPeriod.includes('day') || rawLowerPeriod.endsWith('d')) {
         coveragePeriodUnitVal = 'Days';
       } else if (rawLowerPeriod.includes('year') || rawLowerPeriod.endsWith('y')) {
         coveragePeriodUnitVal = 'Years';
@@ -2816,101 +2877,61 @@ export default function ProductListConfig({ userCompany = '' }) {
                       </div>
                     </div>
 
-                    {/* Sample Template Dropdown */}
-                    <div style={{ position: 'relative' }} ref={sampleDropdownRef}>
+                    {/* Direct 1-Click Sample Template Buttons */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
                       <button
                         type="button"
-                        onClick={() => setShowSampleDropdown(prev => !prev)}
+                        onClick={handleDownloadSampleExcel}
                         style={{
-                          display: 'flex',
+                          display: 'inline-flex',
                           alignItems: 'center',
-                          gap: '0.4rem',
-                          padding: '0.45rem 0.85rem',
-                          borderRadius: '7px',
-                          border: '1px solid #93c5fd',
+                          gap: '0.45rem',
+                          padding: '0.5rem 0.95rem',
+                          borderRadius: '8px',
+                          border: '1.5px solid #16a34a',
+                          background: '#f0fdf4',
+                          color: '#15803d',
+                          fontSize: '0.8rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          whiteSpace: 'nowrap',
+                          boxShadow: '0 1px 3px rgba(22, 163, 74, 0.15)',
+                          transition: 'all 0.15s ease'
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = '#dcfce7'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = '#f0fdf4'; }}
+                        title="Download sample Excel template with built-in Dropdown menus"
+                      >
+                        <FileSpreadsheet size={16} color="#16a34a" />
+                        <span>Download Sample Excel (.xlsx) [With Dropdowns]</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleDownloadSampleCsv}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.45rem',
+                          padding: '0.5rem 0.85rem',
+                          borderRadius: '8px',
+                          border: '1px solid #cbd5e1',
                           background: '#ffffff',
-                          color: '#1d4ed8',
-                          fontSize: '0.775rem',
+                          color: '#475569',
+                          fontSize: '0.785rem',
                           fontWeight: 600,
                           cursor: 'pointer',
                           whiteSpace: 'nowrap',
-                          boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                          boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                          transition: 'all 0.15s ease'
                         }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = '#f8fafc'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = '#ffffff'; }}
+                        title="Download sample CSV template"
                       >
-                        <Download size={14} />
-                        <span>Download Sample Template</span>
-                        <ChevronDown size={13} />
+                        <FileText size={15} color="#64748b" />
+                        <span>Download CSV (.csv)</span>
                       </button>
-
-                      {showSampleDropdown && (
-                        <div style={{
-                          position: 'absolute',
-                          top: '100%',
-                          right: 0,
-                          marginTop: '6px',
-                          background: '#ffffff',
-                          borderRadius: '8px',
-                          border: '1px solid #cbd5e1',
-                          boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05)',
-                          zIndex: 60,
-                          minWidth: '210px',
-                          overflow: 'hidden'
-                        }}>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setShowSampleDropdown(false);
-                              handleDownloadSampleExcel();
-                            }}
-                            style={{
-                              width: '100%',
-                              padding: '0.65rem 0.9rem',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '0.6rem',
-                              border: 'none',
-                              background: 'transparent',
-                              color: '#0f172a',
-                              fontSize: '0.785rem',
-                              fontWeight: 600,
-                              cursor: 'pointer',
-                              textAlign: 'left'
-                            }}
-                            onMouseEnter={(e) => e.currentTarget.style.background = '#f8fafc'}
-                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                          >
-                            <FileSpreadsheet size={16} color="#16a34a" />
-                            <span>Download Excel (.xlsx)</span>
-                          </button>
-                          <div style={{ height: '1px', background: '#f1f5f9' }} />
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setShowSampleDropdown(false);
-                              handleDownloadSampleCsv();
-                            }}
-                            style={{
-                              width: '100%',
-                              padding: '0.65rem 0.9rem',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '0.6rem',
-                              border: 'none',
-                              background: 'transparent',
-                              color: '#0f172a',
-                              fontSize: '0.785rem',
-                              fontWeight: 600,
-                              cursor: 'pointer',
-                              textAlign: 'left'
-                            }}
-                            onMouseEnter={(e) => e.currentTarget.style.background = '#f8fafc'}
-                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                          >
-                            <Download size={16} color="#2563eb" />
-                            <span>Download CSV (.csv)</span>
-                          </button>
-                        </div>
-                      )}
                     </div>
                   </div>
 
