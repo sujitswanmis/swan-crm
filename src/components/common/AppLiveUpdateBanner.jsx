@@ -8,6 +8,7 @@ export default function AppLiveUpdateBanner() {
   const [hasNewVersion, setHasNewVersion] = useState(false);
   const [serverVersion, setServerVersion] = useState('');
   const [hasNewApk, setHasNewApk] = useState(false);
+  const [isForceUpgrade, setIsForceUpgrade] = useState(false);
   const [apkInfo, setApkInfo] = useState(null);
   const [dismissed, setDismissed] = useState(false);
   const [pullProgress, setPullProgress] = useState(0);
@@ -57,12 +58,36 @@ export default function AppLiveUpdateBanner() {
         const isAndroidApp = isCapacitor || isAndroidWebView;
 
         if (isAndroidApp && data.android.latest_version_code) {
-          // Compare with locally known version code
-          const localCode = Number(window.localStorage?.getItem('spc_android_version_code') || 0);
-          // If localCode is less than latest_version_code (e.g. 0 for legacy v4/v5/v6/v7), prompt to update to v8!
-          if (localCode < Number(data.android.latest_version_code)) {
+          // Query native FieldTracker plugin if available to get TRUE installed versionCode
+          let currentCode = Number(window.localStorage?.getItem('spc_android_version_code') || 0);
+          try {
+            const plugin = window?.Capacitor?.Plugins?.FieldTracker;
+            if (plugin && typeof plugin.getStatus === 'function') {
+              const st = await plugin.getStatus();
+              if (st?.appVersionCode) {
+                currentCode = Number(st.appVersionCode);
+                window.localStorage?.setItem('spc_android_version_code', String(currentCode));
+              }
+            }
+          } catch {}
+
+          const minSupported = Number(data.android.min_supported_version_code || 9);
+          const latestCode = Number(data.android.latest_version_code || 9);
+
+          // Option 1: Force Blocking Upgrade if currentCode < minSupported
+          if (currentCode < minSupported) {
+            setIsForceUpgrade(true);
             setHasNewApk(true);
-            setApkInfo(data.android);
+            setApkInfo({ ...data.android, currentCode });
+          } else if (currentCode < latestCode) {
+            // Optional / standard update banner
+            setIsForceUpgrade(false);
+            setHasNewApk(true);
+            setApkInfo({ ...data.android, currentCode });
+          } else {
+            // App is up to date (v9+)
+            setIsForceUpgrade(false);
+            setHasNewApk(false);
           }
         }
       }
@@ -246,20 +271,122 @@ export default function AppLiveUpdateBanner() {
 
   // Action: 1-Click Native APK Download & Install
   const handleDownloadApk = (e) => {
-    const url = apkInfo?.download_url || 'https://tinyurl.com/2buz39h3';
+    const directUrl = apkInfo?.download_url || 'https://qosmckbxvzpdccbrttkd.supabase.co/storage/v1/object/public/app_releases/SPC-Workspace-Android-v9.apk';
     try {
-      window.open(url, '_system');
+      window.open(directUrl, '_system');
     } catch {}
     try {
-      window.open(url, '_blank');
+      window.open(directUrl, '_blank');
     } catch {}
     try {
-      window.location.href = url;
+      window.location.href = directUrl;
     } catch {}
   };
 
   return (
     <>
+      {/* Option 1: Mandatory Full-Screen Blocking Modal when APK < min_supported_version_code (v9) */}
+      {isForceUpgrade && apkInfo && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 100001,
+            backgroundColor: 'rgba(15, 23, 42, 0.94)',
+            backdropFilter: 'blur(10px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '1.25rem'
+          }}
+        >
+          <div
+            style={{
+              background: '#ffffff',
+              borderRadius: '20px',
+              maxWidth: '420px',
+              width: '100%',
+              padding: '1.75rem 1.5rem',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+              textAlign: 'center',
+              border: '2px solid #ef4444'
+            }}
+          >
+            <div
+              style={{
+                width: '64px',
+                height: '64px',
+                borderRadius: '50%',
+                background: '#fee2e2',
+                color: '#dc2626',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 1.25rem'
+              }}
+            >
+              <Smartphone size={34} />
+            </div>
+
+            <h2 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#0f172a', marginBottom: '0.5rem' }}>
+              Zaroori App Update Anivarya Hai
+            </h2>
+
+            <div
+              style={{
+                display: 'inline-block',
+                background: '#fef2f2',
+                border: '1px solid #fca5a5',
+                color: '#991b1b',
+                padding: '4px 12px',
+                borderRadius: '999px',
+                fontSize: '0.78rem',
+                fontWeight: 700,
+                marginBottom: '1rem'
+              }}
+            >
+              Installed: v{apkInfo.currentCode || 'Purana'} ➔ Anivarya: v{apkInfo.latest_version_code}
+            </div>
+
+            <p style={{ fontSize: '0.85rem', color: '#475569', lineHeight: 1.55, marginBottom: '1.5rem' }}>
+              Aapka SPC Workspace Android App purana ho chuka hai. Naye attendance rules aur accurate GPS ke liye <strong>v{apkInfo.latest_version_code} install karna anivarya hai</strong>. Update kiye bina app aur punch use nahi kiya ja sakta.
+            </p>
+
+            <a
+              href={apkInfo.download_url || 'https://qosmckbxvzpdccbrttkd.supabase.co/storage/v1/object/public/app_releases/SPC-Workspace-Android-v9.apk'}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={handleDownloadApk}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.5rem',
+                width: '100%',
+                padding: '0.85rem 1rem',
+                background: 'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)',
+                color: '#ffffff',
+                borderRadius: '12px',
+                fontSize: '0.95rem',
+                fontWeight: 800,
+                textDecoration: 'none',
+                boxShadow: '0 8px 20px rgba(220, 38, 38, 0.4)',
+                cursor: 'pointer'
+              }}
+            >
+              <Download size={18} />
+              Naya App (v{apkInfo.latest_version_code}) Download Karein
+            </a>
+
+            <div style={{ marginTop: '1rem', fontSize: '0.72rem', color: '#94a3b8' }}>
+              Install hone ke baad app ko dobara kholein, ye screen automatic hat jayegi.
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Pull-to-refresh deliberate feedback indicator */}
       {(pullProgress > 0 || isPullRefreshing) && (
         <div style={{
@@ -293,8 +420,8 @@ export default function AppLiveUpdateBanner() {
         </div>
       )}
 
-      {/* Banner 1: Native APK Upgrade Available */}
-      {!dismissed && hasNewApk && apkInfo && (
+      {/* Banner 1: Native APK Upgrade Available (Non-blocking for optional updates) */}
+      {!dismissed && !isForceUpgrade && hasNewApk && apkInfo && (
         <div style={{
           position: 'fixed',
           bottom: '16px',
@@ -327,7 +454,7 @@ export default function AppLiveUpdateBanner() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}>
             <a
-              href={apkInfo.download_url || 'https://tinyurl.com/2buz39h3'}
+              href={apkInfo.download_url || 'https://qosmckbxvzpdccbrttkd.supabase.co/storage/v1/object/public/app_releases/SPC-Workspace-Android-v9.apk'}
               target="_blank"
               rel="noopener noreferrer"
               onClick={handleDownloadApk}

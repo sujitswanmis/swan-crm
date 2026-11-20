@@ -7,14 +7,20 @@
  * Defaults to enableHighAccuracy: false and 5-min maximumAge for lightning-fast (10-50ms) web response
  */
 export function getCurrentGPSLocation(options = {}) {
-  const timeoutMs = Math.min(Math.max(options.timeout || 1200, 300), 2500);
-  // Default to false for rapid 50ms Wi-Fi/IP resolution on web browsers unless explicitly requested
+  // Allow caller's requested timeout (default 5000ms, max 10000ms) for reliable indoor satellite acquisition
+  const requestedTimeout = typeof options.timeout === 'number' ? options.timeout : 5000;
+  const timeoutMs = Math.min(Math.max(requestedTimeout, 500), 10000);
   const enableHighAccuracy = options.enableHighAccuracy === true;
   const maximumAge = options.maximumAge !== undefined ? options.maximumAge : 300000; // 5 minutes cache for 0ms instant hits
 
   return new Promise((resolve) => {
     if (typeof window === 'undefined' || !navigator.geolocation) {
-      resolve({ success: false, error: 'Geolocation is not supported by your browser / device' });
+      resolve({
+        success: false,
+        error: 'Geolocation is not supported by your browser / device',
+        errorCode: -1,
+        isPermissionDenied: false
+      });
       return;
     }
 
@@ -22,7 +28,13 @@ export function getCurrentGPSLocation(options = {}) {
     const timer = setTimeout(() => {
       if (!settled) {
         settled = true;
-        resolve({ success: false, error: 'Location request timed out (fast fallback)' });
+        resolve({
+          success: false,
+          error: 'Location request timed out (fast fallback)',
+          errorCode: 3,
+          isTimeout: true,
+          isPermissionDenied: false
+        });
       }
     }, timeoutMs);
 
@@ -50,7 +62,14 @@ export function getCurrentGPSLocation(options = {}) {
           if (error.code === 1) message = 'Please allow Location / GPS permission to punch in';
           if (error.code === 2) message = 'Position unavailable (check GPS settings)';
           if (error.code === 3) message = 'Location request timed out';
-          resolve({ success: false, error: message });
+          resolve({
+            success: false,
+            error: message,
+            errorCode: error.code,
+            isPermissionDenied: error.code === 1,
+            isPositionUnavailable: error.code === 2,
+            isTimeout: error.code === 3
+          });
         },
         {
           enableHighAccuracy,
@@ -62,7 +81,12 @@ export function getCurrentGPSLocation(options = {}) {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      resolve({ success: false, error: err?.message || 'Geolocation invocation failed' });
+      resolve({
+        success: false,
+        error: err?.message || 'Geolocation invocation failed',
+        errorCode: -2,
+        isPermissionDenied: false
+      });
     }
   });
 }

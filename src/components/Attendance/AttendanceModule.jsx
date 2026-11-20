@@ -2581,21 +2581,24 @@ export default function AttendanceModule({
           punchLocation = gpsCacheRef.current.location;
         } else {
           try {
-            const gps = await getCurrentGPSLocation({ timeout: 2000, enableHighAccuracy: false, maximumAge: 300000 });
+            const gps = await getCurrentGPSLocation({ timeout: 5000, enableHighAccuracy: false, maximumAge: 300000 });
             if (gps?.success) {
               punchLocation = `GPS (${gps.latitude.toFixed(4)}, ${gps.longitude.toFixed(4)})`;
               gpsCacheRef.current = { location: punchLocation, timestamp: Date.now() };
-            } else {
+            } else if (gps?.isPermissionDenied || gps?.errorCode === 1) {
+              // ONLY block when user explicitly clicked "Don't allow"
               setPunchingIn(false);
               setLoadingToday(false);
               setPunchError('Office/Plant Punch ke liye Location permission zaroori hai. Kripya location access allow karein ("While using the app" ya "Only this time").');
               return;
+            } else {
+              // Permission was granted ("While using app", "Only this time", or indoor timeout). Allow punch gracefully!
+              punchLocation = 'Office/Plant Punch (Indoor GPS)';
+              gpsCacheRef.current = { location: punchLocation, timestamp: Date.now() };
             }
           } catch (e) {
-            setPunchingIn(false);
-            setLoadingToday(false);
-            setPunchError('Office/Plant Punch ke liye Location permission zaroori hai. Kripya location access allow karein ("While using the app" ya "Only this time").');
-            return;
+            punchLocation = 'Office/Plant Punch (Indoor GPS)';
+            gpsCacheRef.current = { location: punchLocation, timestamp: Date.now() };
           }
         }
       }
@@ -2736,21 +2739,24 @@ export default function AttendanceModule({
           punchLocation = gpsCacheRef.current.location;
         } else {
           try {
-            const gps = await getCurrentGPSLocation({ timeout: 2000, enableHighAccuracy: false, maximumAge: 300000 });
+            const gps = await getCurrentGPSLocation({ timeout: 5000, enableHighAccuracy: false, maximumAge: 300000 });
             if (gps?.success) {
               punchLocation = `GPS (${gps.latitude.toFixed(4)}, ${gps.longitude.toFixed(4)})`;
               gpsCacheRef.current = { location: punchLocation, timestamp: Date.now() };
-            } else {
+            } else if (gps?.isPermissionDenied || gps?.errorCode === 1) {
+              // ONLY block when user explicitly clicked "Don't allow"
               setPunchingOut(false);
               setLoadingToday(false);
               setPunchError('Office/Plant Punch ke liye Location permission zaroori hai. Kripya location access allow karein ("While using the app" ya "Only this time").');
               return;
+            } else {
+              // Permission was granted ("While using app", "Only this time", or indoor timeout). Allow punch gracefully!
+              punchLocation = 'Office/Plant Punch (Indoor GPS)';
+              gpsCacheRef.current = { location: punchLocation, timestamp: Date.now() };
             }
           } catch (e) {
-            setPunchingOut(false);
-            setLoadingToday(false);
-            setPunchError('Office/Plant Punch ke liye Location permission zaroori hai. Kripya location access allow karein ("While using the app" ya "Only this time").');
-            return;
+            punchLocation = 'Office/Plant Punch (Indoor GPS)';
+            gpsCacheRef.current = { location: punchLocation, timestamp: Date.now() };
           }
         }
       }

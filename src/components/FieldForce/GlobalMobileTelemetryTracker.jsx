@@ -10,6 +10,7 @@ import {
 import { getTodayUserAttendanceStatus } from '@/app/actions/fieldTasks';
 import { detectClientPlatform, PLATFORM_LABELS } from '@/utils/platformDetection';
 import { flushOfflineVault, queueOfflineGpsPing } from '@/utils/offlineLocationVault';
+import { initAttendanceReminderScheduler } from '@/utils/attendanceReminderScheduler';
 
 function calculateHaversineMeters(lat1, lon1, lat2, lon2) {
   if (!lat1 || !lon1 || !lat2 || !lon2) return 0;
@@ -373,6 +374,9 @@ export default function GlobalMobileTelemetryTracker({
               notificationsEnabled: st?.notificationsEnabled,
               gpsProviderEnabled: st?.gpsProviderEnabled
             };
+            if (st?.appVersionCode && typeof window !== 'undefined') {
+              try { window.localStorage?.setItem('spc_android_version_code', String(st.appVersionCode)); } catch {}
+            }
           } catch {
             // A failed bridge read is not a new permission or connectivity report.
             return;
@@ -525,12 +529,16 @@ export default function GlobalMobileTelemetryTracker({
       syncQueuedPings();
     };
 
+    // Initialize automatic Shift Punch In & Punch Out push notification reminder scheduler
+    const cancelReminderScheduler = initAttendanceReminderScheduler({ userId });
+
     document.addEventListener('visibilitychange', handleResume);
     window.addEventListener('focus', handleResume);
     window.addEventListener('online', handleOnline);
 
     return () => {
       disposed = true;
+      cancelReminderScheduler();
       if (watchId !== null) {
         try { navigator.geolocation?.clearWatch(watchId); } catch {}
       }
@@ -838,22 +846,24 @@ export default function GlobalMobileTelemetryTracker({
             </a>
           )}
 
-          <button
-            type="button"
-            onClick={() => setDismissedHealthBanner(true)}
-            aria-label="Dismiss device health notice"
-            style={{
-              border: 0,
-              background: 'transparent',
-              color: '#64748b',
-              cursor: 'pointer',
-              padding: '2px',
-              display: 'flex',
-              alignItems: 'center'
-            }}
-          >
-            <X size={14} />
-          </button>
+          {deviceHealthBanner.status !== 'FORCE_UPGRADE' && (
+            <button
+              type="button"
+              onClick={() => setDismissedHealthBanner(true)}
+              aria-label="Dismiss device health notice"
+              style={{
+                border: 0,
+                background: 'transparent',
+                color: '#64748b',
+                cursor: 'pointer',
+                padding: '2px',
+                display: 'flex',
+                alignItems: 'center'
+              }}
+            >
+              <X size={14} />
+            </button>
+          )}
         </div>
       )}
 
