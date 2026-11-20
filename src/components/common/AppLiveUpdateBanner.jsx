@@ -270,14 +270,38 @@ export default function AppLiveUpdateBanner() {
     window.location.reload();
   };
 
-  // Action: 1-Click Native APK Download & Install
+  // Action: 1-Click Native APK Download & Install (External Chrome Intent)
   const handleDownloadApk = (e) => {
-    const directUrl = apkInfo?.download_url || 'https://app.supujacreations.com/api/public/android-apk';
+    if (e && e.preventDefault) e.preventDefault();
+    const directUrl = 'https://app.supujacreations.com/api/public/android-apk';
+    const chromeIntent =
+      'intent://app.supujacreations.com/api/public/android-apk#Intent;scheme=https;action=android.intent.action.VIEW;package=com.android.chrome;S.browser_fallback_url=https%3A%2F%2Fapp.supujacreations.com%2Fapi%2Fpublic%2Fandroid-apk;end';
+
+    // 1. Try Capacitor Browser plugin (opens external system browser)
+    try {
+      if (window?.Capacitor?.Plugins?.Browser?.open) {
+        window.Capacitor.Plugins.Browser.open({ url: directUrl });
+        return;
+      }
+    } catch {}
+
+    // 2. Android Chrome Intent: Forces Android OS to open in Google Chrome app
+    const isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent || '');
+    if (isAndroid) {
+      try {
+        window.location.href = chromeIntent;
+        return;
+      } catch {}
+    }
+
+    // 3. Fallbacks: _system target, _blank window, direct location
     try {
       window.open(directUrl, '_system');
+      return;
     } catch {}
     try {
       window.open(directUrl, '_blank');
+      return;
     } catch {}
     try {
       window.location.href = directUrl;

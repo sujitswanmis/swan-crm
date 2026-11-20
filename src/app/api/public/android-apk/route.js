@@ -10,6 +10,7 @@ export const dynamic = 'force-dynamic';
 
 const APK_LOCAL_PATH = path.join(process.cwd(), 'SPC-APPS', 'SPC Workspace (Android).apk');
 const POLICY_FALLBACK_PATH = path.join(process.cwd(), 'src', 'config', 'app_release_policy.json');
+const DIRECT_STORAGE_URL = 'https://qosmckbxvzpdccbrttkd.supabase.co/storage/v1/object/public/app_releases/SPC-Workspace-Android-v9.apk';
 
 function getAdminClient() {
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
@@ -79,20 +80,22 @@ export async function GET(request) {
     }
 
     const configuredUrl = await resolvePolicyDownloadUrl();
-    const requestPath = new URL(request.url).pathname;
-    if (configuredUrl && configuredUrl !== requestPath && !configuredUrl.startsWith('/api/public/android-apk')) {
-      return NextResponse.redirect(new URL(configuredUrl, request.url));
-    }
+    const requestUrlObj = new URL(request.url);
+    const requestPath = requestUrlObj.pathname;
 
-    return NextResponse.json(
-      {
-        error: 'Android APK binary is not present on this server host.',
-        hint: 'Ask your administrator to configure an external download URL in App & Permission Health -> Release Policy.'
-      },
-      { status: 404 }
-    );
+    // Check if configuredUrl is self-referencing (points to this same endpoint or host path)
+    const isSelfReferencing =
+      !configuredUrl ||
+      configuredUrl.includes('/api/public/android-apk') ||
+      configuredUrl === requestPath ||
+      configuredUrl === request.url;
+
+    // If external non-loop URL is configured, use it. Otherwise, redirect directly to Supabase Storage CDN binary
+    const targetUrl = isSelfReferencing ? DIRECT_STORAGE_URL : configuredUrl;
+
+    return NextResponse.redirect(new URL(targetUrl, request.url), 307);
   } catch (err) {
     console.error('[android-apk] Download error:', err);
-    return NextResponse.json({ error: 'Failed to serve Android APK' }, { status: 500 });
+    return NextResponse.redirect(DIRECT_STORAGE_URL, 307);
   }
 }
