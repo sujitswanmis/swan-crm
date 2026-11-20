@@ -270,43 +270,16 @@ export default function AppLiveUpdateBanner() {
     window.location.reload();
   };
 
-  // Action: 1-Click Native APK Download & Install
-  const handleDownloadApk = async (e) => {
-    if (e && e.preventDefault) e.preventDefault();
-    const directUrl = 'https://app.supujacreations.com/api/public/android-apk';
-
-    // 1. Always copy link to clipboard immediately
+  // Action: 1-Click Direct Native APK Download (Launches external Chrome directly)
+  const handleDownloadApk = (e) => {
+    const launcherUrl = 'https://tinyurl.com/22jnrvlx';
     try {
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        await navigator.clipboard.writeText(directUrl);
-      } else {
-        const input = document.createElement('input');
-        input.value = directUrl;
-        document.body.appendChild(input);
-        input.select();
-        document.execCommand('copy');
-        document.body.removeChild(input);
-      }
-      setCopiedLink(true);
-      setTimeout(() => setCopiedLink(false), 5000);
-    } catch {}
-
-    // 2. Try native Web Share API (opens native Android sheet to select Chrome or WhatsApp)
-    try {
-      if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
-        await navigator.share({
-          title: 'SPC Workspace App Update (v9)',
-          text: 'SPC Workspace v9 APK Download Link:',
-          url: directUrl
-        });
-        return;
-      }
-    } catch {}
-
-    // 3. Fallback: try window.open with _system
-    try {
-      window.open(directUrl, '_system');
-    } catch {}
+      window.location.href = launcherUrl;
+    } catch {
+      try {
+        window.open(launcherUrl, '_system');
+      } catch {}
+    }
   };
 
   const handleCopyLink = () => {
@@ -443,9 +416,11 @@ export default function AppLiveUpdateBanner() {
               ⚡ Update now to unlock the latest improvements and continue using the app.
             </p>
 
-            {/* ACTION 1: Download & Update Button */}
-            <button
-              type="button"
+            {/* ACTION 1: Download & Update Button (1-Click Chrome Launcher) */}
+            <a
+              href="https://tinyurl.com/22jnrvlx"
+              target="_blank"
+              rel="noopener noreferrer"
               onClick={handleDownloadApk}
               style={{
                 display: 'flex',
@@ -456,10 +431,10 @@ export default function AppLiveUpdateBanner() {
                 padding: '0.85rem 1rem',
                 background: 'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)',
                 color: '#ffffff',
-                border: 'none',
                 borderRadius: '12px',
                 fontSize: '0.95rem',
                 fontWeight: 800,
+                textDecoration: 'none',
                 boxShadow: '0 8px 20px rgba(220, 38, 38, 0.4)',
                 cursor: 'pointer',
                 marginBottom: '0.65rem'
@@ -467,9 +442,9 @@ export default function AppLiveUpdateBanner() {
             >
               <Download size={18} />
               🔴 DOWNLOAD & UPDATE NOW
-            </button>
+            </a>
 
-            {/* ACTION 2: 1-Tap Copy Link Button */}
+            {/* ACTION 2: Backup 1-Tap Copy Link Button */}
             <button
               type="button"
               onClick={handleCopyLink}
@@ -479,61 +454,20 @@ export default function AppLiveUpdateBanner() {
                 justifyContent: 'center',
                 gap: '0.4rem',
                 width: '100%',
-                padding: '0.65rem 0.8rem',
-                background: copiedLink ? '#dcfce7' : '#f1f5f9',
+                padding: '0.60rem 0.8rem',
+                background: copiedLink ? '#dcfce7' : '#f8fafc',
                 border: copiedLink ? '1px solid #86efac' : '1px solid #cbd5e1',
-                color: copiedLink ? '#15803d' : '#334155',
+                color: copiedLink ? '#15803d' : '#475569',
                 borderRadius: '10px',
-                fontSize: '0.82rem',
+                fontSize: '0.80rem',
                 fontWeight: 700,
                 cursor: 'pointer',
                 transition: 'all 0.15s ease',
                 marginBottom: '0.75rem'
               }}
             >
-              {copiedLink ? '✅ Link Copied! Chrome me paste karein' : '📋 Copy Direct Download Link'}
+              {copiedLink ? '✅ Official Link Copied!' : '📋 Copy Direct Download Link'}
             </button>
-
-            {/* Copied Feedback Alert */}
-            {copiedLink && (
-              <div
-                style={{
-                  background: '#dcfce7',
-                  border: '1.5px solid #22c55e',
-                  color: '#15803d',
-                  padding: '0.55rem 0.75rem',
-                  borderRadius: '10px',
-                  fontSize: '0.78rem',
-                  fontWeight: 700,
-                  textAlign: 'center',
-                  marginBottom: '0.75rem'
-                }}
-              >
-                ✅ Link Copied! Phone ka Google Chrome kholein aur paste karein.
-              </div>
-            )}
-
-            {/* Quick 3-Step Guide */}
-            <div
-              style={{
-                background: '#f8fafc',
-                border: '1px solid #e2e8f0',
-                borderRadius: '10px',
-                padding: '0.6rem 0.8rem',
-                marginBottom: '0.75rem',
-                textAlign: 'left',
-                fontSize: '0.75rem',
-                color: '#334155',
-                lineHeight: 1.55
-              }}
-            >
-              <div style={{ fontWeight: 800, color: '#0f172a', marginBottom: '0.2rem' }}>
-                💡 Download Kaise Karein:
-              </div>
-              <div>1️⃣ Upar button tap karein <em>(link auto-copy ho jayegi)</em></div>
-              <div>2️⃣ Phone ka <strong>Google Chrome</strong> kholein aur link paste karein</div>
-              <div>3️⃣ APK download complete hone par install karein</div>
-            </div>
 
             {/* Direct Link Readout */}
             <div style={{ fontSize: '0.70rem', color: '#64748b', wordBreak: 'break-all', marginBottom: '0.75rem' }}>
