@@ -41,19 +41,54 @@ const UOM_OPTIONS = ['Units', 'Pcs', 'Kg', 'Ton', 'Box', 'Set', 'Nos', 'Mtr', 'L
 const TAX_SLABS = [0, 5, 18, 28];
 
 const COVERAGE_TYPE_OPTIONS = ['Warranty', 'Guarantee', 'Both', 'None'];
-const COVERAGE_PERIOD_PRESETS = [
-  { label: '1M', value: 1 },
-  { label: '2M', value: 2 },
-  { label: '3M', value: 3 },
-  { label: '6M', value: 6 },
-  { label: '9M', value: 9 },
-  { label: '12M', value: 12 },
-  { label: '24M', value: 24 },
-  { label: '36M', value: 36 },
-  { label: '48M', value: 48 },
-  { label: '60M', value: 60 },
-  { label: '120M', value: 120 }
-];
+const COVERAGE_UNIT_OPTIONS = ['Days', 'Months', 'Years'];
+
+const COVERAGE_PERIOD_PRESETS_BY_UNIT = {
+  Days: [
+    { label: '7D', value: 7 },
+    { label: '10D', value: 10 },
+    { label: '15D', value: 15 },
+    { label: '30D', value: 30 },
+    { label: '45D', value: 45 },
+    { label: '90D', value: 90 },
+    { label: '100D', value: 100 },
+    { label: '180D', value: 180 },
+    { label: '365D', value: 365 }
+  ],
+  Months: [
+    { label: '1M', value: 1 },
+    { label: '2M', value: 2 },
+    { label: '3M', value: 3 },
+    { label: '6M', value: 6 },
+    { label: '9M', value: 9 },
+    { label: '12M', value: 12 },
+    { label: '24M', value: 24 },
+    { label: '36M', value: 36 },
+    { label: '48M', value: 48 },
+    { label: '60M', value: 60 },
+    { label: '120M', value: 120 }
+  ],
+  Years: [
+    { label: '1Y', value: 1 },
+    { label: '2Y', value: 2 },
+    { label: '3Y', value: 3 },
+    { label: '5Y', value: 5 },
+    { label: '10Y', value: 10 }
+  ]
+};
+
+const formatCoveragePeriodDisplay = (period, unit = 'Months') => {
+  if (period === undefined || period === null || period === '' || isNaN(Number(period))) return '-';
+  const num = Number(period);
+  const cleanUnit = (unit || 'Months').toLowerCase();
+  if (cleanUnit.startsWith('day')) {
+    return `${num} ${num === 1 ? 'Day' : 'Days'}`;
+  }
+  if (cleanUnit.startsWith('year')) {
+    return `${num} ${num === 1 ? 'Year' : 'Years'}`;
+  }
+  return `${num}M (${num} ${num === 1 ? 'Month' : 'Months'})`;
+};
 
 const INITIAL_COL_WIDTHS = {
   select: 45,
@@ -147,6 +182,7 @@ export default function ProductListConfig({ userCompany = '' }) {
     subCategory: '',
     coverageType: 'Warranty',
     coveragePeriod: 12,
+    coveragePeriodUnit: 'Months',
     coverageTerms: 'Manufacturing Defects Only',
     branchName: 'All Branches',
     uom: 'Units',
@@ -280,6 +316,7 @@ export default function ProductListConfig({ userCompany = '' }) {
       subCategory: '',
       coverageType: 'Warranty',
       coveragePeriod: 12,
+      coveragePeriodUnit: 'Months',
       coverageTerms: 'Manufacturing Defects Only',
       branchName: selectedBranch !== 'ALL' ? selectedBranch : 'All Branches',
       uom: 'Units',
@@ -304,6 +341,7 @@ export default function ProductListConfig({ userCompany = '' }) {
       subCategory: p.sub_category || '',
       coverageType: p.coverage_type || 'Warranty',
       coveragePeriod: p.coverage_period !== undefined && p.coverage_period !== null && p.coverage_period !== '' ? p.coverage_period : '',
+      coveragePeriodUnit: p.coverage_period_unit || 'Months',
       coverageTerms: p.coverage_terms !== undefined && p.coverage_terms !== null ? p.coverage_terms : 'Manufacturing Defects Only',
       branchName: p.branch_name || 'All Branches',
       uom: p.uom || 'Units',
@@ -340,6 +378,7 @@ export default function ProductListConfig({ userCompany = '' }) {
         subCategory: formData.subCategory,
         coverageType: formData.coverageType,
         coveragePeriod: formData.coveragePeriod !== '' && !isNaN(Number(formData.coveragePeriod)) ? Number(formData.coveragePeriod) : null,
+        coveragePeriodUnit: formData.coveragePeriodUnit || 'Months',
         coverageTerms: formData.coverageTerms,
         uom: formData.uom,
         price: formData.price !== '' ? Number(formData.price) : 0,
@@ -457,7 +496,7 @@ export default function ProductListConfig({ userCompany = '' }) {
     }
 
     const headers = [
-      'Name', 'SKU', 'Branch', 'Category', 'Sub-Category', 'Coverage Type', 'Coverage Period (Months)', 'Coverage Terms', 'UOM', 'Price', 'Tax Rate %', 'HSN Code', 'Stock Qty', 'Min Order Qty', 'Status', 'Description'
+      'Name', 'SKU', 'Branch', 'Category', 'Sub-Category', 'Coverage Type', 'Coverage Period', 'Coverage Terms', 'UOM', 'Price', 'Tax Rate %', 'HSN Code', 'Stock Qty', 'Min Order Qty', 'Status', 'Description'
     ];
 
     const rows = filteredProducts.map(p => [
@@ -467,7 +506,7 @@ export default function ProductListConfig({ userCompany = '' }) {
       `"${(p.category || '').replace(/"/g, '""')}"`,
       `"${(p.sub_category || '').replace(/"/g, '""')}"`,
       `"${(p.coverage_type || 'None').replace(/"/g, '""')}"`,
-      p.coverage_period !== undefined && p.coverage_period !== null ? p.coverage_period : '',
+      `"${formatCoveragePeriodDisplay(p.coverage_period, p.coverage_period_unit)}"`,
       `"${(p.coverage_terms || '').replace(/"/g, '""')}"`,
       `"${(p.uom || 'Units').replace(/"/g, '""')}"`,
       p.price || 0,
@@ -732,7 +771,7 @@ export default function ProductListConfig({ userCompany = '' }) {
           category: p.category || '',
           sub_category: p.sub_category || '',
           coverage_type: p.coverage_type || 'None',
-          coverage_period: p.coverage_period !== undefined && p.coverage_period !== null ? `${p.coverage_period}M` : '-',
+          coverage_period: formatCoveragePeriodDisplay(p.coverage_period, p.coverage_period_unit),
           coverage_terms: p.coverage_terms || '',
           price: p.price || 0,
           tax_rate: p.tax_rate || 0,
@@ -801,6 +840,13 @@ export default function ProductListConfig({ userCompany = '' }) {
       const cleanCoveragePeriod = coveragePeriodRaw && !isNaN(Number(String(coveragePeriodRaw).replace(/[^0-9]/g, '')))
         ? Number(String(coveragePeriodRaw).replace(/[^0-9]/g, ''))
         : null;
+      const rawLowerPeriod = String(coveragePeriodRaw || '').toLowerCase();
+      let coveragePeriodUnitVal = 'Months';
+      if (rawLowerPeriod.includes('day') || rawLowerPeriod.endsWith('d')) {
+        coveragePeriodUnitVal = 'Days';
+      } else if (rawLowerPeriod.includes('year') || rawLowerPeriod.endsWith('y')) {
+        coveragePeriodUnitVal = 'Years';
+      }
 
       const uom = findVal('uom', 'unit') || 'Units';
       const priceStr = findVal('base price', 'unit price', 'price', 'rate', 'mrp');
@@ -831,6 +877,7 @@ export default function ProductListConfig({ userCompany = '' }) {
         sub_category: subCategoryVal || '',
         coverage_type: coverageTypeVal,
         coverage_period: cleanCoveragePeriod,
+        coverage_period_unit: coveragePeriodUnitVal,
         coverage_terms: coverageTermsVal,
         uom: uom,
         price,
@@ -1037,6 +1084,7 @@ export default function ProductListConfig({ userCompany = '' }) {
         sub_category: p.sub_category || '',
         coverage_type: p.coverage_type || 'Warranty',
         coverage_period: p.coverage_period,
+        coverage_period_unit: p.coverage_period_unit || 'Months',
         coverage_terms: p.coverage_terms || 'Manufacturing Defects Only',
         uom: p.uom || 'Units',
         price: p.price || 0,
@@ -2004,11 +2052,11 @@ export default function ProductListConfig({ userCompany = '' }) {
                             borderRadius: '6px',
                             fontSize: '0.75rem',
                             fontWeight: 600,
-                            background: '#f8fafc',
-                            color: '#0f172a',
-                            border: '1px solid #cbd5e1'
+                            background: (p.coverage_period_unit || '').toLowerCase().startsWith('day') ? '#fef3c7' : '#f8fafc',
+                            color: (p.coverage_period_unit || '').toLowerCase().startsWith('day') ? '#92400e' : '#0f172a',
+                            border: `1px solid ${(p.coverage_period_unit || '').toLowerCase().startsWith('day') ? '#fde68a' : '#cbd5e1'}`
                           }}>
-                            {p.coverage_period}M ({p.coverage_period} Mo)
+                            {formatCoveragePeriodDisplay(p.coverage_period, p.coverage_period_unit)}
                           </span>
                         ) : (
                           <span style={{ color: '#94a3b8' }}>-</span>
@@ -2472,37 +2520,76 @@ export default function ProductListConfig({ userCompany = '' }) {
                     </select>
                   </div>
 
-                  {/* Coverage Period Number */}
+                  {/* Coverage Period & Unit */}
                   <div>
-                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#334155', marginBottom: '4px' }}>
-                      Coverage Period (Months)
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      placeholder="e.g. 12"
-                      value={formData.coveragePeriod}
-                      onChange={(e) => setFormData(prev => ({ ...prev, coveragePeriod: e.target.value }))}
-                      style={{
-                        width: '100%',
-                        padding: '0.55rem 0.75rem',
-                        borderRadius: '8px',
-                        border: '1px solid #cbd5e1',
-                        fontSize: '0.85rem',
-                        boxSizing: 'border-box'
-                      }}
-                    />
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                      <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#334155' }}>
+                        Coverage Period
+                      </label>
+                      {/* Unit Selector Toggle (Days / Months / Years) */}
+                      <div style={{ display: 'inline-flex', background: '#e2e8f0', borderRadius: '6px', padding: '2px', gap: '2px' }}>
+                        {COVERAGE_UNIT_OPTIONS.map(unit => {
+                          const isActive = (formData.coveragePeriodUnit || 'Months') === unit;
+                          return (
+                            <button
+                              key={unit}
+                              type="button"
+                              onClick={() => {
+                                setFormData(prev => ({
+                                  ...prev,
+                                  coveragePeriodUnit: unit,
+                                  coveragePeriod: unit === 'Days' && (Number(prev.coveragePeriod) > 365 || Number(prev.coveragePeriod) === 12) ? 10 : prev.coveragePeriod
+                                }));
+                              }}
+                              style={{
+                                border: 'none',
+                                padding: '2px 7px',
+                                borderRadius: '4px',
+                                fontSize: '0.72rem',
+                                fontWeight: isActive ? 700 : 500,
+                                background: isActive ? '#ffffff' : 'transparent',
+                                color: isActive ? (unit === 'Days' ? '#d97706' : '#2563eb') : '#64748b',
+                                cursor: 'pointer',
+                                boxShadow: isActive ? '0 1px 3px rgba(0,0,0,0.12)' : 'none',
+                                transition: 'all 0.15s ease'
+                              }}
+                            >
+                              {unit}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div style={{ position: 'relative' }}>
+                      <input
+                        type="number"
+                        min="0"
+                        placeholder={formData.coveragePeriodUnit === 'Days' ? 'e.g. 7, 10, 15, 45, 100' : 'e.g. 12'}
+                        value={formData.coveragePeriod}
+                        onChange={(e) => setFormData(prev => ({ ...prev, coveragePeriod: e.target.value }))}
+                        style={{
+                          width: '100%',
+                          padding: '0.55rem 0.75rem',
+                          borderRadius: '8px',
+                          border: '1px solid #cbd5e1',
+                          fontSize: '0.85rem',
+                          boxSizing: 'border-box'
+                        }}
+                      />
+                    </div>
                   </div>
                 </div>
 
-                {/* Quick Selection Buttons for Coverage Period (1M, 2M, 3M, 6M, 9M, 12M, 24M, 36M, 48M, 60M, 120M) */}
+                {/* Quick Selection Buttons for Coverage Period (Dynamic by Days / Months / Years) */}
                 <div>
                   <div style={{ fontSize: '0.725rem', color: '#64748b', marginBottom: '5px', fontWeight: 500 }}>
-                    Quick Select Period (Months):
+                    Quick Select {formData.coveragePeriodUnit || 'Months'} (Click to apply):
                   </div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
-                    {COVERAGE_PERIOD_PRESETS.map(preset => {
+                    {(COVERAGE_PERIOD_PRESETS_BY_UNIT[formData.coveragePeriodUnit || 'Months'] || COVERAGE_PERIOD_PRESETS_BY_UNIT.Months).map(preset => {
                       const isSelected = Number(formData.coveragePeriod) === preset.value;
+                      const isDays = (formData.coveragePeriodUnit || 'Months') === 'Days';
                       return (
                         <button
                           key={preset.label}
@@ -2513,8 +2600,8 @@ export default function ProductListConfig({ userCompany = '' }) {
                             borderRadius: '6px',
                             fontSize: '0.74rem',
                             fontWeight: isSelected ? 700 : 500,
-                            border: `1px solid ${isSelected ? '#2563eb' : '#cbd5e1'}`,
-                            background: isSelected ? '#2563eb' : '#ffffff',
+                            border: `1px solid ${isSelected ? (isDays ? '#d97706' : '#2563eb') : '#cbd5e1'}`,
+                            background: isSelected ? (isDays ? '#d97706' : '#2563eb') : '#ffffff',
                             color: isSelected ? '#ffffff' : '#334155',
                             cursor: 'pointer',
                             transition: 'all 0.15s ease'
@@ -3243,7 +3330,7 @@ export default function ProductListConfig({ userCompany = '' }) {
                                   fontSize: '0.72rem',
                                   color: '#334155'
                                 }}>
-                                  {r.coverage_type || 'Warranty'}{r.coverage_period ? ` (${r.coverage_period}M)` : ''}
+                                  {r.coverage_type || 'Warranty'}{r.coverage_period ? ` (${formatCoveragePeriodDisplay(r.coverage_period, r.coverage_period_unit)})` : ''}
                                 </span>
                               </td>
                               <td style={{ padding: '0.5rem 0.75rem', color: '#475569', borderBottom: '1px solid #f1f5f9' }}>{r.branch_name || '-'}</td>

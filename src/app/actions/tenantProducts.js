@@ -174,6 +174,7 @@ export async function getTenantProducts(companyOrTenantId = 'Default', branchFil
           sub_category: p.sub_category || existing.sub_category || '',
           coverage_type: p.coverage_type || existing.coverage_type || '',
           coverage_period: p.coverage_period !== undefined ? p.coverage_period : existing.coverage_period,
+          coverage_period_unit: p.coverage_period_unit || existing.coverage_period_unit || 'Months',
           coverage_terms: p.coverage_terms || existing.coverage_terms || ''
         });
       } else {
@@ -293,6 +294,8 @@ export async function saveTenantProduct({
   coverage_type = '',
   coveragePeriod = null,
   coverage_period = null,
+  coveragePeriodUnit = 'Months',
+  coverage_period_unit = '',
   coverageTerms = 'Manufacturing Defects Only',
   coverage_terms = '',
   uom = 'Pcs',
@@ -322,6 +325,7 @@ export async function saveTenantProduct({
     const cleanCoveragePeriod = rawCoveragePeriod !== null && rawCoveragePeriod !== '' && !isNaN(Number(rawCoveragePeriod))
       ? Number(rawCoveragePeriod)
       : null;
+    const cleanCoveragePeriodUnit = (coverage_period_unit || coveragePeriodUnit || 'Months').trim();
     const cleanCoverageTerms = (coverage_terms !== undefined && coverage_terms !== null && coverage_terms !== ''
       ? coverage_terms
       : (coverageTerms || '')).trim();
@@ -338,6 +342,7 @@ export async function saveTenantProduct({
       sub_category: cleanSubCategory,
       coverage_type: cleanCoverageType,
       coverage_period: cleanCoveragePeriod,
+      coverage_period_unit: cleanCoveragePeriodUnit,
       coverage_terms: cleanCoverageTerms,
       uom: (uom || 'Pcs').trim(),
       price: Number(price) >= 0 ? Number(price) : 0,
@@ -362,6 +367,7 @@ export async function saveTenantProduct({
             sub_category: _sc,
             coverage_type: _ct,
             coverage_period: _cp,
+            coverage_period_unit: _cpu,
             coverage_terms: _cm,
             ...dbSafeRecord
           } = productRecord;
@@ -590,6 +596,7 @@ export async function importTenantProducts(productsList = [], company = 'Default
           sub_category: (p.sub_category || p.subCategory || existing?.sub_category || '').trim(),
           coverage_type: (p.coverage_type || p.coverageType || existing?.coverage_type || 'Warranty').trim(),
           coverage_period: cleanCoveragePeriod,
+          coverage_period_unit: (p.coverage_period_unit || p.coveragePeriodUnit || existing?.coverage_period_unit || 'Months').trim(),
           coverage_terms: (p.coverage_terms || p.coverageTerms || existing?.coverage_terms || 'Manufacturing Defects Only').trim(),
           uom: (p.uom || existing?.uom || 'Pcs').trim(),
           price: Number(p.price) >= 0 ? Number(p.price) : 0,
@@ -615,7 +622,7 @@ export async function importTenantProducts(productsList = [], company = 'Default
         const { error: bulkErr } = await admin.from('tenant_products').upsert(prepared, { onConflict: 'id' });
         // Fallback if some columns do not exist yet in DB schema cache
         if (bulkErr) {
-          const dbSafe = prepared.map(({ sub_category: _sc, coverage_type: _ct, coverage_period: _cp, coverage_terms: _cm, ...rest }) => rest);
+          const dbSafe = prepared.map(({ sub_category: _sc, coverage_type: _ct, coverage_period: _cp, coverage_period_unit: _cpu, coverage_terms: _cm, ...rest }) => rest);
           await admin.from('tenant_products').upsert(dbSafe, { onConflict: 'id' });
         }
       }
