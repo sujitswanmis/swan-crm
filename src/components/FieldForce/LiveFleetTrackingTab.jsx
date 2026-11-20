@@ -391,14 +391,16 @@ export default function LiveFleetTrackingTab({
     map.tileLayerInstance = newLayer;
   }, [mapStyle]);
 
-  // Center Map whenever Selected Employee changes
+  // Center Map whenever Selected Employee changes (preserving zoom without zooming out)
   useEffect(() => {
     if (!selectedEmployee || !mapInstanceRef.current) return;
 
     if (selectedEmployee.hasValidCoords) {
       const map = mapInstanceRef.current;
       map.invalidateSize();
-      map.setView([selectedEmployee.latitude, selectedEmployee.longitude], 16, { animate: true });
+      const currentZoom = map.getZoom();
+      const targetZoom = Math.max(currentZoom || 16, 17.5);
+      map.setView([selectedEmployee.latitude, selectedEmployee.longitude], targetZoom, { animate: true });
     }
   }, [selectedEmployee]);
 
@@ -446,9 +448,11 @@ export default function LiveFleetTrackingTab({
         // Render Cluster Bubble (or Spiderfied Individual User Icons if clicked)
         const count = cl.items.length;
         const isClusterExpanded = Boolean(
-          expandedCluster &&
-          Math.abs(expandedCluster.latitude - cl.latitude) < 0.0001 &&
-          Math.abs(expandedCluster.longitude - cl.longitude) < 0.0001
+          (expandedCluster && (
+            (Math.abs(expandedCluster.latitude - cl.latitude) < 0.0005 && Math.abs(expandedCluster.longitude - cl.longitude) < 0.0005) ||
+            cl.items.some(e => expandedCluster.items?.some(ex => ex.user_id === e.user_id))
+          )) ||
+          (selectedUserId && cl.items.some(e => e.user_id === selectedUserId))
         );
         const hasLive = cl.items.some(e => getEmployeeTrackingStatus(e, liveNowMs).key === 'live');
         const clusterBg = hasLive ? '#16a34a' : '#1e40af';
@@ -471,6 +475,7 @@ export default function LiveFleetTrackingTab({
           L.marker([cl.latitude, cl.longitude], { icon: centerIcon, zIndexOffset: 2500 })
             .on('click', () => {
               setExpandedCluster(null);
+              setSelectedUserId(null);
             })
             .bindTooltip('✕ Click to close cluster', { direction: 'top', offset: [0, -14] })
             .addTo(layer);
@@ -528,6 +533,7 @@ export default function LiveFleetTrackingTab({
               zIndexOffset: isSelected ? 3000 : 2200
             })
               .on('click', () => {
+                setExpandedCluster(cl);
                 setSelectedUserId(emp.user_id);
               })
               .bindTooltip(`<b>${emp.name}</b><br/><span style="color:${status.color};font-weight:700;">${status.label} • ${ageText}</span><br/><span style="color:#64748b;font-size:10.5px;">${emp.role || 'Field Staff'} • ${emp.branch_name || 'Main Branch'}</span>`, { direction: 'top', offset: [0, -18] })
@@ -552,7 +558,8 @@ export default function LiveFleetTrackingTab({
             .on('click', () => {
               setExpandedCluster(cl);
               setSelectedUserId(null);
-              map.setView([cl.latitude, cl.longitude], Math.max(map.getZoom(), 16), { animate: true });
+              const currentZoom = map.getZoom();
+              map.setView([cl.latitude, cl.longitude], Math.max(currentZoom || 16, 17.5), { animate: true });
             })
             .bindTooltip(`📍 Cluster: ${count} Employees here (Click to view employees)`, { direction: 'top', offset: [0, -14] })
             .addTo(layer);
