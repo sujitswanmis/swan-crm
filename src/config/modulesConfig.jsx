@@ -278,7 +278,7 @@ export const MODULES_CONFIG = [
   { 
     id: 'recruiter', 
     path: 'recruiter', 
-    label: 'Recruiter Dashboard', 
+    label: 'Recruiter System', 
     category: 'Human Resource', 
     icon: <Users size={20} />,
     subItemsType: 'recruiter_stages',

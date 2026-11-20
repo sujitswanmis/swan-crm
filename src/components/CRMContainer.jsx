@@ -315,7 +315,7 @@ export const MODULE_DISPLAY_NAMES = {
   orders: 'Order Management',
   mrp: 'MRP System',
   mrp_against: 'MRP Against',
-  recruiter: 'Recruiter Dashboard',
+  recruiter: 'Recruiter System',
   joining: 'Joining Process',
   attendance: 'Smart Attendance Station',
   checklist: 'Smart Checklist Management',

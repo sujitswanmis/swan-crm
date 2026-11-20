@@ -116,7 +116,7 @@ export default function GlobalSpotlightModal({
       { id: 'mrp_against', name: 'MRP Against', category: 'Production & MRP', icon: Boxes, keywords: ['mrp against', 'bom'] },
       { id: 'party', name: 'Fully Managed Party Master', category: 'Masters', icon: Building2, keywords: ['parties', 'dealers', 'vendors', 'distributors'] },
       { id: 'location_territory', name: 'Universal Location & Territory Master', category: 'Masters', icon: MapPin, keywords: ['states', 'cities', 'territory', 'zones'] },
-      { id: 'recruiter', name: 'Recruiter Dashboard & Stages', category: 'HR & Recruitment', icon: Briefcase, keywords: ['recruitment', 'hr', 'jobs', 'hiring', 'candidates'] },
+      { id: 'recruiter', name: 'Recruiter System & Stages', category: 'HR & Recruitment', icon: Briefcase, keywords: ['recruitment', 'hr', 'jobs', 'hiring', 'candidates', 'recruiter system'] },
       { id: 'joining', name: 'Joining Process', category: 'HR & Recruitment', icon: UserPlus, keywords: ['onboarding', 'joining', 'new employee'] },
       { id: 'registration', name: 'Client Registration', category: 'Clients', icon: FileText, keywords: ['client registration', 'form'] },
       { id: 'report', name: 'Client Registered Report', category: 'Clients', icon: FileText, keywords: ['client report', 'export'] },
