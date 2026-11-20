@@ -532,7 +532,7 @@ export default function ProductListConfig({ userCompany = '' }) {
     }
 
     const headers = [
-      'Name', 'SKU', 'Branch', 'Category', 'Sub-Category', 'Coverage Type', 'Coverage Period', 'Coverage Terms', 'UOM', 'Price', 'Tax Rate %', 'HSN Code', 'Stock Qty', 'Min Order Qty', 'Status', 'Description'
+      'Name', 'SKU', 'Branch', 'Category', 'Sub-Category', 'Coverage Type', 'Coverage Period', 'Coverage Duration', 'Coverage Terms', 'UOM', 'Price', 'Tax Rate %', 'HSN Code', 'Stock Qty', 'Min Order Qty', 'Status', 'Description'
     ];
 
     const rows = filteredProducts.map(p => [
@@ -542,7 +542,8 @@ export default function ProductListConfig({ userCompany = '' }) {
       `"${(p.category || '').replace(/"/g, '""')}"`,
       `"${(p.sub_category || '').replace(/"/g, '""')}"`,
       `"${(p.coverage_type || 'None').replace(/"/g, '""')}"`,
-      `"${formatCoveragePeriodDisplay(p.coverage_period, p.coverage_period_unit)}"`,
+      p.coverage_period !== undefined && p.coverage_period !== null ? p.coverage_period : '',
+      `"${(p.coverage_period_unit || 'Months').replace(/"/g, '""')}"`,
       `"${(p.coverage_terms || '').replace(/"/g, '""')}"`,
       `"${(p.uom || 'Units').replace(/"/g, '""')}"`,
       p.price || 0,
@@ -838,6 +839,7 @@ export default function ProductListConfig({ userCompany = '' }) {
         { header: 'Sub-Category', key: 'sub_category', width: 18 },
         { header: 'Coverage Type', key: 'coverage_type', width: 16 },
         { header: 'Coverage Period', key: 'coverage_period', width: 16 },
+        { header: 'Coverage Duration', key: 'coverage_duration', width: 18 },
         { header: 'Coverage Terms', key: 'coverage_terms', width: 26 },
         { header: 'Price (₹)', key: 'price', width: 14 },
         { header: 'Tax Rate %', key: 'tax_rate', width: 14 },
@@ -867,7 +869,8 @@ export default function ProductListConfig({ userCompany = '' }) {
           category: p.category || '',
           sub_category: p.sub_category || '',
           coverage_type: p.coverage_type || 'None',
-          coverage_period: formatCoveragePeriodDisplay(p.coverage_period, p.coverage_period_unit),
+          coverage_period: p.coverage_period !== undefined && p.coverage_period !== null ? p.coverage_period : '',
+          coverage_duration: p.coverage_period_unit || 'Months',
           coverage_terms: p.coverage_terms || '',
           price: p.price || 0,
           tax_rate: p.tax_rate || 0,
