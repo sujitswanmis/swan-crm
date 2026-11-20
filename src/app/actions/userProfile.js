@@ -53,7 +53,7 @@ async function directoryFor(db, user, role) {
       if (branch.is_active === false || (branch.tenant_id ? branch.tenant_id !== tenant.id : branch.tenant_code !== tenant.tenant_code)) continue;
       const code = branch.branch_code;
       if (PHOTO_BRANCH_CODE.test(code || '') && code.startsWith(tenant.tenant_code + '-B') && !branches.has(code)) {
-        branches.set(code, { code, name: branch.branch_name || code, legacyCode: branch.legacy_code || '' });
+        branches.set(code, { code, name: branch.branch_name || code, legacyCode: branch.legacy_code || '', customCode: branch.custom_code || '' });
       }
     }
     return { ...tenant, code: tenant.tenant_code, branches: [...branches.values()] };
