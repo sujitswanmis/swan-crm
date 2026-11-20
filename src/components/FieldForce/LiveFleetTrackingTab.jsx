@@ -140,6 +140,7 @@ export default function LiveFleetTrackingTab({
 }) {
   const [liveNowMs, setLiveNowMs] = useState(initialLiveNowMs);
   const [selectedUserId, setSelectedUserId] = useState(null);
+  const [expandedCluster, setExpandedCluster] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL'); // ALL, LIVE, DELAYED, STALE, MOVING, STATIONARY
   const [mapStyle, setMapStyle] = useState('street'); // street, satellite, light
@@ -442,31 +443,120 @@ export default function LiveFleetTrackingTab({
       latLngBounds.push([cl.latitude, cl.longitude]);
 
       if (cl.items.length > 1) {
-        // Render Cluster Bubble
+        // Render Cluster Bubble (or Spiderfied Individual User Icons if clicked)
         const count = cl.items.length;
+        const isClusterExpanded = Boolean(
+          expandedCluster &&
+          Math.abs(expandedCluster.latitude - cl.latitude) < 0.0001 &&
+          Math.abs(expandedCluster.longitude - cl.longitude) < 0.0001
+        );
         const hasLive = cl.items.some(e => getEmployeeTrackingStatus(e, liveNowMs).key === 'live');
         const clusterBg = hasLive ? '#16a34a' : '#1e40af';
 
-        const clusterIcon = L.divIcon({
-          className: 'custom-fleet-cluster',
-          html: `
-            <div style="position:relative;width:40px;height:40px;display:flex;align-items:center;justify-content:center;cursor:pointer;">
-              <div style="position:absolute;inset:0;border-radius:50%;background:${clusterBg};opacity:0.25;animation:pulse 1.8s infinite;"></div>
-              <div style="width:32px;height:32px;border-radius:50%;background:${clusterBg};color:#ffffff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;border:2.5px solid #ffffff;box-shadow:0 3px 10px rgba(0,0,0,0.35);">
-                ${count}
+        if (isClusterExpanded) {
+          // Center Collapse Badge
+          const centerIcon = L.divIcon({
+            className: 'custom-fleet-cluster-expanded',
+            html: `
+              <div style="position:relative;width:40px;height:40px;display:flex;align-items:center;justify-content:center;cursor:pointer;">
+                <div style="width:34px;height:34px;border-radius:50%;background:#0f172a;color:#ffffff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:12px;border:2.5px solid #ffffff;box-shadow:0 3px 10px rgba(0,0,0,0.35);">
+                  ✕
+                </div>
               </div>
-            </div>
-          `,
-          iconSize: [40, 40],
-          iconAnchor: [20, 20]
-        });
+            `,
+            iconSize: [40, 40],
+            iconAnchor: [20, 20]
+          });
 
-        L.marker([cl.latitude, cl.longitude], { icon: clusterIcon, zIndexOffset: 1200 })
-          .on('click', () => {
-            map.setView([cl.latitude, cl.longitude], map.getZoom() + 2);
-          })
-          .bindTooltip(`📍 Cluster: ${count} Employees here (Click to zoom)`, { direction: 'top', offset: [0, -14] })
-          .addTo(layer);
+          L.marker([cl.latitude, cl.longitude], { icon: centerIcon, zIndexOffset: 2500 })
+            .on('click', () => {
+              setExpandedCluster(null);
+            })
+            .bindTooltip('✕ Click to close cluster', { direction: 'top', offset: [0, -14] })
+            .addTo(layer);
+
+          // Spiderfy all individual employee markers in a circle around center
+          const N = cl.items.length;
+          const radiusMeters = Math.max(32, Math.min(80, 24 + N * 3.5));
+
+          cl.items.forEach((emp, idx) => {
+            const angle = (2 * Math.PI * idx) / N - (Math.PI / 2);
+            const latOffset = (radiusMeters / 111111) * Math.cos(angle);
+            const lngOffset = (radiusMeters / (111111 * Math.cos((cl.latitude * Math.PI) / 180))) * Math.sin(angle);
+            const empLat = cl.latitude + latOffset;
+            const empLng = cl.longitude + lngOffset;
+
+            // Connecting dashed line
+            L.polyline([[cl.latitude, cl.longitude], [empLat, empLng]], {
+              color: '#64748b',
+              weight: 1.5,
+              dashArray: '3, 4',
+              opacity: 0.8
+            }).addTo(layer);
+
+            // Render Employee Marker Icon
+            const isSelected = emp.user_id === selectedUserId;
+            const status = getEmployeeTrackingStatus(emp, liveNowMs);
+            const initials = (emp.name || 'FE').split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase();
+            const ageText = formatAge(emp.recorded_at, liveNowMs);
+
+            const markerHtml = `
+              <div style="position:relative;width:42px;height:42px;display:flex;align-items:center;justify-content:center;cursor:pointer;">
+                ${isSelected ? '<div style="position:absolute;inset:-6px;border-radius:50%;background:rgba(37,99,235,0.4);animation:pulse 1.4s infinite;border:2px solid #2563eb;"></div>' : ''}
+                ${status.key === 'live' ? `<div style="position:absolute;inset:-2px;border-radius:50%;background:${status.color};opacity:0.35;animation:pulse 1.6s infinite;"></div>` : ''}
+                <div style="width:32px;height:32px;border-radius:50%;background:${status.color};color:#ffffff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:11.5px;border:2.5px solid #ffffff;box-shadow:0 3px 10px rgba(0,0,0,0.3);position:relative;">
+                  ${initials}
+                  ${emp.is_moving ? '<span style="position:absolute;bottom:-2px;right:-2px;background:#0f172a;color:#fff;border-radius:50%;font-size:7.5px;padding:2px;display:flex;align-items:center;justify-content:center;">🚗</span>' : ''}
+                </div>
+                <!-- Floating Label Pill -->
+                <div style="position:absolute;bottom:-22px;left:50%;transform:translateX(-50%);white-space:nowrap;background:#0f172a;color:#ffffff;padding:2px 7px;border-radius:12px;font-size:10px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,0.25);border:1px solid rgba(255,255,255,0.7);display:flex;align-items:center;gap:4px;pointer-events:none;z-index:20;">
+                  <span style="width:6px;height:6px;border-radius:50%;background:${status.color};display:inline-block;"></span>
+                  <span>${emp.name.split(' ')[0]}</span>
+                </div>
+              </div>
+            `;
+
+            const icon = L.divIcon({
+              className: 'custom-fleet-emp-marker',
+              html: markerHtml,
+              iconSize: [42, 42],
+              iconAnchor: [21, 21]
+            });
+
+            L.marker([empLat, empLng], {
+              icon,
+              zIndexOffset: isSelected ? 3000 : 2200
+            })
+              .on('click', () => {
+                setSelectedUserId(emp.user_id);
+              })
+              .bindTooltip(`<b>${emp.name}</b><br/><span style="color:${status.color};font-weight:700;">${status.label} • ${ageText}</span><br/><span style="color:#64748b;font-size:10.5px;">${emp.role || 'Field Staff'} • ${emp.branch_name || 'Main Branch'}</span>`, { direction: 'top', offset: [0, -18] })
+              .addTo(layer);
+          });
+        } else {
+          const clusterIcon = L.divIcon({
+            className: 'custom-fleet-cluster',
+            html: `
+              <div style="position:relative;width:40px;height:40px;display:flex;align-items:center;justify-content:center;cursor:pointer;">
+                <div style="position:absolute;inset:0;border-radius:50%;background:${clusterBg};opacity:0.25;animation:pulse 1.8s infinite;"></div>
+                <div style="width:32px;height:32px;border-radius:50%;background:${clusterBg};color:#ffffff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;border:2.5px solid #ffffff;box-shadow:0 3px 10px rgba(0,0,0,0.35);">
+                  ${count}
+                </div>
+              </div>
+            `,
+            iconSize: [40, 40],
+            iconAnchor: [20, 20]
+          });
+
+          L.marker([cl.latitude, cl.longitude], { icon: clusterIcon, zIndexOffset: 1200 })
+            .on('click', () => {
+              setExpandedCluster(cl);
+              setSelectedUserId(null);
+              map.setView([cl.latitude, cl.longitude], Math.max(map.getZoom(), 16), { animate: true });
+            })
+            .bindTooltip(`📍 Cluster: ${count} Employees here (Click to view employees)`, { direction: 'top', offset: [0, -14] })
+            .addTo(layer);
+        }
       } else {
         // Individual Employee Marker
         const emp = cl.items[0];
@@ -523,7 +613,7 @@ export default function LiveFleetTrackingTab({
         map._hasFittedInitialFleet = true;
       } catch (_) {}
     }
-  }, [enrichedFleet, selectedUserId, liveNowMs, followLive]);
+  }, [enrichedFleet, selectedUserId, liveNowMs, followLive, expandedCluster]);
 
   // Fit all visible employees bounds
   const handleFitAllEmployees = useCallback(() => {
@@ -944,6 +1034,172 @@ export default function LiveFleetTrackingTab({
         {/* Leaflet Map DOM Element */}
         <div ref={mapContainerRef} style={{ width: '100%', height: '100%', zIndex: 1 }} />
 
+        {/* FLOATING CLUSTER ROSTER PANEL (When clicking cluster e.g. 13) */}
+        {expandedCluster && !selectedEmployee && (
+          <div style={{
+            position: 'absolute',
+            bottom: 14,
+            left: 14,
+            right: 14,
+            maxWidth: '460px',
+            maxHeight: '340px',
+            zIndex: 1000,
+            background: '#ffffff',
+            borderRadius: '14px',
+            boxShadow: '0 12px 36px rgba(0,0,0,0.22), 0 0 0 1px rgba(0,0,0,0.06)',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+            animation: 'fadeIn 0.2s ease-out'
+          }}>
+            {/* Header */}
+            <div style={{
+              background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+              color: '#ffffff',
+              padding: '10px 14px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexShrink: 0
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{
+                  width: '28px',
+                  height: '28px',
+                  borderRadius: '50%',
+                  background: 'rgba(37,99,235,0.3)',
+                  border: '1.5px solid #60a5fa',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '12px',
+                  fontWeight: 800,
+                  color: '#ffffff'
+                }}>
+                  {expandedCluster.items.length}
+                </div>
+                <div>
+                  <div style={{ fontSize: '13px', fontWeight: 800 }}>
+                    {expandedCluster.items.length} Employees at this Location
+                  </div>
+                  <div style={{ fontSize: '10px', color: '#94a3b8' }}>
+                    Click an employee icon to view full info & current location
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setExpandedCluster(null)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#94a3b8',
+                  cursor: 'pointer',
+                  padding: 4
+                }}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Scrollable list of employee icons & cards */}
+            <div style={{ overflowY: 'auto', padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              {expandedCluster.items.map(emp => {
+                const status = getEmployeeTrackingStatus(emp, liveNowMs);
+                const initials = (emp.name || 'FE').split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase();
+                return (
+                  <div
+                    key={emp.user_id}
+                    onClick={() => {
+                      setSelectedUserId(emp.user_id);
+                      mapInstanceRef.current?.setView([emp.latitude, emp.longitude], 17, { animate: true });
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '8px 10px',
+                      borderRadius: '9px',
+                      background: '#f8fafc',
+                      border: '1px solid #e2e8f0',
+                      cursor: 'pointer',
+                      transition: 'all 0.12s ease'
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.background = '#eff6ff'; e.currentTarget.style.borderColor = '#93c5fd'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = '#f8fafc'; e.currentTarget.style.borderColor = '#e2e8f0'; }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                      <div style={{
+                        position: 'relative',
+                        width: 34,
+                        height: 34,
+                        borderRadius: '50%',
+                        background: status.color,
+                        color: '#ffffff',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontWeight: 800,
+                        fontSize: 12,
+                        flexShrink: 0
+                      }}>
+                        {initials}
+                        <span style={{
+                          position: 'absolute',
+                          bottom: -1,
+                          right: -1,
+                          width: 9,
+                          height: 9,
+                          borderRadius: '50%',
+                          background: status.key === 'live' ? '#22c55e' : '#94a3b8',
+                          border: '1.5px solid #ffffff'
+                        }} />
+                      </div>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {emp.name}
+                        </div>
+                        <div style={{ fontSize: '10px', color: '#64748b' }}>
+                          {emp.role || 'Field Staff'} • {emp.branch_name || 'Main Branch'}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                      <span style={{
+                        fontSize: '10px',
+                        fontWeight: 700,
+                        color: status.color,
+                        background: '#ffffff',
+                        padding: '2px 7px',
+                        borderRadius: '6px',
+                        border: '1px solid #e2e8f0'
+                      }}>
+                        {status.label}
+                      </span>
+                      <button
+                        type="button"
+                        style={{
+                          background: '#2563eb',
+                          color: '#ffffff',
+                          border: 'none',
+                          borderRadius: '6px',
+                          padding: '4px 8px',
+                          fontSize: '10px',
+                          fontWeight: 700,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        View Info →
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* FLOATING SELECTED EMPLOYEE LOCATION DETAILS CARD */}
         {selectedEmployee && (
           <div style={{
@@ -993,13 +1249,36 @@ export default function LiveFleetTrackingTab({
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setSelectedUserId(null)}
-                style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 4 }}
-              >
-                <X size={15} />
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                {expandedCluster && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedUserId(null)}
+                    style={{
+                      background: 'rgba(255,255,255,0.18)',
+                      color: '#ffffff',
+                      border: '1px solid rgba(255,255,255,0.3)',
+                      borderRadius: '6px',
+                      padding: '3px 8px',
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 4
+                    }}
+                  >
+                    ⬅️ Cluster ({expandedCluster.items.length})
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setSelectedUserId(null)}
+                  style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 4 }}
+                >
+                  <X size={15} />
+                </button>
+              </div>
             </div>
 
             {/* Content */}
