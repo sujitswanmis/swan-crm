@@ -5,7 +5,8 @@ import {
   Package, Plus, Search, Filter, Download, Upload, Edit3, Trash2,
   CheckCircle2, AlertCircle, X, RefreshCw, Building2, Layers,
   IndianRupee, Tag, BarChart3, ArrowUpDown, Check, FileSpreadsheet,
-  Info, FileUp, FileText, Loader2, ChevronDown, Eye, CheckCircle, FileCheck
+  Info, FileUp, FileText, Loader2, ChevronDown, Eye, CheckCircle, FileCheck,
+  ShieldCheck
 } from 'lucide-react';
 import Papa from 'papaparse';
 import { getTenantBranches } from '@/app/actions/tenantBranches';
@@ -39,6 +40,21 @@ const DEFAULT_CATEGORIES = [
 const UOM_OPTIONS = ['Units', 'Pcs', 'Kg', 'Ton', 'Box', 'Set', 'Nos', 'Mtr', 'Ltr'];
 const TAX_SLABS = [0, 5, 18, 28];
 
+const COVERAGE_TYPE_OPTIONS = ['Warranty', 'Guarantee', 'Both', 'None'];
+const COVERAGE_PERIOD_PRESETS = [
+  { label: '1M', value: 1 },
+  { label: '2M', value: 2 },
+  { label: '3M', value: 3 },
+  { label: '6M', value: 6 },
+  { label: '9M', value: 9 },
+  { label: '12M', value: 12 },
+  { label: '24M', value: 24 },
+  { label: '36M', value: 36 },
+  { label: '48M', value: 48 },
+  { label: '60M', value: 60 },
+  { label: '120M', value: 120 }
+];
+
 const INITIAL_COL_WIDTHS = {
   select: 45,
   status: 90,
@@ -47,6 +63,9 @@ const INITIAL_COL_WIDTHS = {
   branch: 170,
   category: 140,
   subcategory: 130,
+  coverage_type: 125,
+  coverage_period: 125,
+  coverage_terms: 175,
   price: 130,
   tax: 90,
   hsn: 110,
@@ -126,6 +145,9 @@ export default function ProductListConfig({ userCompany = '' }) {
     sku: '',
     category: 'Implement',
     subCategory: '',
+    coverageType: 'Warranty',
+    coveragePeriod: 12,
+    coverageTerms: 'Manufacturing Defects Only',
     branchName: 'All Branches',
     uom: 'Units',
     price: '',
@@ -256,6 +278,9 @@ export default function ProductListConfig({ userCompany = '' }) {
       sku: '',
       category: 'Implement',
       subCategory: '',
+      coverageType: 'Warranty',
+      coveragePeriod: 12,
+      coverageTerms: 'Manufacturing Defects Only',
       branchName: selectedBranch !== 'ALL' ? selectedBranch : 'All Branches',
       uom: 'Units',
       price: '',
@@ -277,6 +302,9 @@ export default function ProductListConfig({ userCompany = '' }) {
       sku: p.sku || '',
       category: p.category || 'General',
       subCategory: p.sub_category || '',
+      coverageType: p.coverage_type || 'Warranty',
+      coveragePeriod: p.coverage_period !== undefined && p.coverage_period !== null && p.coverage_period !== '' ? p.coverage_period : '',
+      coverageTerms: p.coverage_terms !== undefined && p.coverage_terms !== null ? p.coverage_terms : 'Manufacturing Defects Only',
       branchName: p.branch_name || 'All Branches',
       uom: p.uom || 'Units',
       price: p.price ?? '',
@@ -310,6 +338,9 @@ export default function ProductListConfig({ userCompany = '' }) {
         sku: formData.sku.trim(),
         category: formData.category,
         subCategory: formData.subCategory,
+        coverageType: formData.coverageType,
+        coveragePeriod: formData.coveragePeriod !== '' && !isNaN(Number(formData.coveragePeriod)) ? Number(formData.coveragePeriod) : null,
+        coverageTerms: formData.coverageTerms,
         uom: formData.uom,
         price: formData.price !== '' ? Number(formData.price) : 0,
         taxRate: Number(formData.taxRate) || 0,
@@ -426,7 +457,7 @@ export default function ProductListConfig({ userCompany = '' }) {
     }
 
     const headers = [
-      'Name', 'SKU', 'Branch', 'Category', 'Sub-Category', 'UOM', 'Price', 'Tax Rate %', 'HSN Code', 'Stock Qty', 'Min Order Qty', 'Status', 'Description'
+      'Name', 'SKU', 'Branch', 'Category', 'Sub-Category', 'Coverage Type', 'Coverage Period (Months)', 'Coverage Terms', 'UOM', 'Price', 'Tax Rate %', 'HSN Code', 'Stock Qty', 'Min Order Qty', 'Status', 'Description'
     ];
 
     const rows = filteredProducts.map(p => [
@@ -435,6 +466,9 @@ export default function ProductListConfig({ userCompany = '' }) {
       `"${(p.branch_name || 'All Branches').replace(/"/g, '""')}"`,
       `"${(p.category || '').replace(/"/g, '""')}"`,
       `"${(p.sub_category || '').replace(/"/g, '""')}"`,
+      `"${(p.coverage_type || 'None').replace(/"/g, '""')}"`,
+      p.coverage_period !== undefined && p.coverage_period !== null ? p.coverage_period : '',
+      `"${(p.coverage_terms || '').replace(/"/g, '""')}"`,
       `"${(p.uom || 'Units').replace(/"/g, '""')}"`,
       p.price || 0,
       p.tax_rate || 0,
@@ -465,6 +499,9 @@ export default function ProductListConfig({ userCompany = '' }) {
       'Branch',
       'Category',
       'Sub-Category',
+      'Coverage Type',
+      'Coverage Period (Months)',
+      'Coverage Terms',
       'Price',
       'Tax Rate %',
       'HSN Code',
@@ -475,11 +512,11 @@ export default function ProductListConfig({ userCompany = '' }) {
     ];
 
     const sampleRows = [
-      ['Rotavator – Super Series', 'SWAN-ROTA-01', 'All Branches', 'Implement', 'Rotary Tiller', '115000', '18', '8432', '15', '1', 'Units', 'Heavy duty super series rotavator with multi speed gearbox'],
-      ['Laser Land Leveller', 'SWAN-LLL-02', 'NSMLR', 'Land Leveller', 'Dual Slope', '325000', '18', '8432', '8', '1', 'Units', 'Precision dual slope transmitter receiver system'],
-      ['Genuine Blade 28T', 'SWAN-BLD-28', 'All Branches', 'Spare Part', 'Rotary Blades', '650', '18', '843290', '200', '10', 'Pcs', 'High carbon boron steel rotary tiller blades'],
-      ['Super Seeder 8 Row', 'SWAN-SEED-08', 'NSTL', 'Seeder', 'Direct Sowing', '245000', '18', '8432', '5', '1', 'Units', 'Next generation super seeder for direct sowing'],
-      ['Hydraulic Reversible MB Plough', 'SWAN-PLOW-03', 'All Branches', 'Plough', 'Mould Board', '95000', '18', '8432', '12', '1', 'Units', 'Heavy duty reversible mould board plough']
+      ['Rotavator – Super Series', 'SWAN-ROTA-01', 'All Branches', 'Implement', 'Rotary Tiller', 'Warranty', '12', 'Manufacturing Defects Only', '115000', '18', '8432', '15', '1', 'Units', 'Heavy duty super series rotavator with multi speed gearbox'],
+      ['Laser Land Leveller', 'SWAN-LLL-02', 'NSMLR', 'Land Leveller', 'Dual Slope', 'Warranty', '24', 'Manufacturing Defects Only', '325000', '18', '8432', '8', '1', 'Units', 'Precision dual slope transmitter receiver system'],
+      ['Genuine Blade 28T', 'SWAN-BLD-28', 'All Branches', 'Spare Part', 'Rotary Blades', 'Guarantee', '6', 'Breakage & Manufacturing Defects', '650', '18', '843290', '200', '10', 'Pcs', 'High carbon boron steel rotary tiller blades'],
+      ['Super Seeder 8 Row', 'SWAN-SEED-08', 'NSTL', 'Seeder', 'Direct Sowing', 'Both', '12', 'Comprehensive standard coverage', '245000', '18', '8432', '5', '1', 'Units', 'Next generation super seeder for direct sowing'],
+      ['Hydraulic Reversible MB Plough', 'SWAN-PLOW-03', 'All Branches', 'Plough', 'Mould Board', 'Warranty', '12', 'Manufacturing Defects Only', '95000', '18', '8432', '12', '1', 'Units', 'Heavy duty reversible mould board plough']
     ];
 
     const csvContent = '\uFEFF' + [
@@ -513,6 +550,9 @@ export default function ProductListConfig({ userCompany = '' }) {
         { header: 'Branch', key: 'branch', width: 20 },
         { header: 'Category', key: 'category', width: 18 },
         { header: 'Sub-Category', key: 'sub_category', width: 18 },
+        { header: 'Coverage Type', key: 'coverage_type', width: 16 },
+        { header: 'Coverage Period (Months)', key: 'coverage_period', width: 22 },
+        { header: 'Coverage Terms', key: 'coverage_terms', width: 28 },
         { header: 'Price', key: 'price', width: 14 },
         { header: 'Tax Rate %', key: 'tax_rate', width: 14 },
         { header: 'HSN Code', key: 'hsn', width: 14 },
@@ -540,6 +580,9 @@ export default function ProductListConfig({ userCompany = '' }) {
           branch: 'All Branches',
           category: 'Implement',
           sub_category: 'Rotary Tiller',
+          coverage_type: 'Warranty',
+          coverage_period: 12,
+          coverage_terms: 'Manufacturing Defects Only',
           price: 115000,
           tax_rate: 18,
           hsn: '8432',
@@ -554,6 +597,9 @@ export default function ProductListConfig({ userCompany = '' }) {
           branch: 'NSMLR',
           category: 'Land Leveller',
           sub_category: 'Dual Slope',
+          coverage_type: 'Warranty',
+          coverage_period: 24,
+          coverage_terms: 'Manufacturing Defects Only',
           price: 325000,
           tax_rate: 18,
           hsn: '8432',
@@ -568,6 +614,9 @@ export default function ProductListConfig({ userCompany = '' }) {
           branch: 'All Branches',
           category: 'Spare Part',
           sub_category: 'Rotary Blades',
+          coverage_type: 'Guarantee',
+          coverage_period: 6,
+          coverage_terms: 'Breakage & Manufacturing Defects',
           price: 650,
           tax_rate: 18,
           hsn: '843290',
@@ -582,6 +631,9 @@ export default function ProductListConfig({ userCompany = '' }) {
           branch: 'NSTL',
           category: 'Seeder',
           sub_category: 'Direct Sowing',
+          coverage_type: 'Both',
+          coverage_period: 12,
+          coverage_terms: 'Comprehensive standard coverage',
           price: 245000,
           tax_rate: 18,
           hsn: '8432',
@@ -596,6 +648,9 @@ export default function ProductListConfig({ userCompany = '' }) {
           branch: 'All Branches',
           category: 'Plough',
           sub_category: 'Mould Board',
+          coverage_type: 'Warranty',
+          coverage_period: 12,
+          coverage_terms: 'Manufacturing Defects Only',
           price: 95000,
           tax_rate: 18,
           hsn: '8432',
@@ -646,6 +701,9 @@ export default function ProductListConfig({ userCompany = '' }) {
         { header: 'Branch', key: 'branch', width: 20 },
         { header: 'Category', key: 'category', width: 18 },
         { header: 'Sub-Category', key: 'sub_category', width: 18 },
+        { header: 'Coverage Type', key: 'coverage_type', width: 16 },
+        { header: 'Coverage Period', key: 'coverage_period', width: 16 },
+        { header: 'Coverage Terms', key: 'coverage_terms', width: 26 },
         { header: 'Price (₹)', key: 'price', width: 14 },
         { header: 'Tax Rate %', key: 'tax_rate', width: 14 },
         { header: 'HSN Code', key: 'hsn', width: 14 },
@@ -673,6 +731,9 @@ export default function ProductListConfig({ userCompany = '' }) {
           branch: p.branch_name || 'All Branches',
           category: p.category || '',
           sub_category: p.sub_category || '',
+          coverage_type: p.coverage_type || 'None',
+          coverage_period: p.coverage_period !== undefined && p.coverage_period !== null ? `${p.coverage_period}M` : '-',
+          coverage_terms: p.coverage_terms || '',
           price: p.price || 0,
           tax_rate: p.tax_rate || 0,
           hsn: p.hsn_code || '',
@@ -734,6 +795,13 @@ export default function ProductListConfig({ userCompany = '' }) {
         ? String(row[matchCatKey]).trim()
         : findVal('category', 'cat');
 
+      const coverageTypeVal = findVal('coverage type', 'coverage_type', 'warranty type', 'guarantee type') || 'Warranty';
+      const coveragePeriodRaw = findVal('coverage period', 'coverage_period', 'period', 'warranty period', 'guarantee period');
+      const coverageTermsVal = findVal('coverage terms', 'coverage_terms', 'terms', 'warranty terms', 'guarantee terms') || 'Manufacturing Defects Only';
+      const cleanCoveragePeriod = coveragePeriodRaw && !isNaN(Number(String(coveragePeriodRaw).replace(/[^0-9]/g, '')))
+        ? Number(String(coveragePeriodRaw).replace(/[^0-9]/g, ''))
+        : null;
+
       const uom = findVal('uom', 'unit') || 'Units';
       const priceStr = findVal('base price', 'unit price', 'price', 'rate', 'mrp');
       const taxRateStr = findVal('tax rate', 'tax %', 'gst %', 'tax', 'gst');
@@ -761,6 +829,9 @@ export default function ProductListConfig({ userCompany = '' }) {
         branch_name: branchVal || defaultBranch || 'All Branches',
         category: categoryVal || defaultCategory || 'General',
         sub_category: subCategoryVal || '',
+        coverage_type: coverageTypeVal,
+        coverage_period: cleanCoveragePeriod,
+        coverage_terms: coverageTermsVal,
         uom: uom,
         price,
         tax_rate: taxRate,
@@ -964,6 +1035,9 @@ export default function ProductListConfig({ userCompany = '' }) {
         branch_name: p.branch_name || importBranch,
         category: p.category || importCategory,
         sub_category: p.sub_category || '',
+        coverage_type: p.coverage_type || 'Warranty',
+        coverage_period: p.coverage_period,
+        coverage_terms: p.coverage_terms || 'Manufacturing Defects Only',
         uom: p.uom || 'Units',
         price: p.price || 0,
         tax_rate: p.tax_rate ?? 18,
@@ -1043,9 +1117,11 @@ export default function ProductListConfig({ userCompany = '' }) {
         const matchSku = (p.sku || '').toLowerCase().includes(q);
         const matchCat = (p.category || '').toLowerCase().includes(q);
         const matchSubCat = (p.sub_category || '').toLowerCase().includes(q);
+        const matchCoverageType = (p.coverage_type || '').toLowerCase().includes(q);
+        const matchCoverageTerms = (p.coverage_terms || '').toLowerCase().includes(q);
         const matchHsn = (p.hsn_code || '').toLowerCase().includes(q);
         const matchDesc = (p.description || '').toLowerCase().includes(q);
-        return matchName || matchSku || matchCat || matchSubCat || matchHsn || matchDesc;
+        return matchName || matchSku || matchCat || matchSubCat || matchCoverageType || matchCoverageTerms || matchHsn || matchDesc;
       }
 
       return true;
@@ -1647,6 +1723,45 @@ export default function ProductListConfig({ userCompany = '' }) {
                     />
                   </th>
 
+                  {/* Coverage Type Col */}
+                  <th style={{ width: colWidths.coverage_type, minWidth: '115px', position: 'relative', padding: '0.75rem 1rem' }}>
+                    Coverage Type
+                    <div
+                      onMouseDown={(e) => handleMouseDownResize(e, 'coverage_type')}
+                      onDoubleClick={() => handleDoubleClickResetCol('coverage_type')}
+                      style={{
+                        position: 'absolute', right: 0, top: 0, bottom: 0, width: '6px', cursor: 'col-resize',
+                        background: activeResizingCol === 'coverage_type' ? '#2563eb' : 'transparent'
+                      }}
+                    />
+                  </th>
+
+                  {/* Coverage Period Col */}
+                  <th style={{ width: colWidths.coverage_period, minWidth: '120px', position: 'relative', padding: '0.75rem 1rem', textAlign: 'center' }}>
+                    Coverage Period
+                    <div
+                      onMouseDown={(e) => handleMouseDownResize(e, 'coverage_period')}
+                      onDoubleClick={() => handleDoubleClickResetCol('coverage_period')}
+                      style={{
+                        position: 'absolute', right: 0, top: 0, bottom: 0, width: '6px', cursor: 'col-resize',
+                        background: activeResizingCol === 'coverage_period' ? '#2563eb' : 'transparent'
+                      }}
+                    />
+                  </th>
+
+                  {/* Coverage Terms Col */}
+                  <th style={{ width: colWidths.coverage_terms, minWidth: '140px', position: 'relative', padding: '0.75rem 1rem' }}>
+                    Coverage Terms
+                    <div
+                      onMouseDown={(e) => handleMouseDownResize(e, 'coverage_terms')}
+                      onDoubleClick={() => handleDoubleClickResetCol('coverage_terms')}
+                      style={{
+                        position: 'absolute', right: 0, top: 0, bottom: 0, width: '6px', cursor: 'col-resize',
+                        background: activeResizingCol === 'coverage_terms' ? '#2563eb' : 'transparent'
+                      }}
+                    />
+                  </th>
+
                   {/* Price Col */}
                   <th style={{ width: colWidths.price, minWidth: '100px', position: 'relative', padding: '0.75rem 1rem', textAlign: 'right' }}>
                     Base Price
@@ -1845,6 +1960,79 @@ export default function ProductListConfig({ userCompany = '' }) {
                         }}>
                           {p.sub_category || '-'}
                         </span>
+                      </td>
+
+                      {/* Coverage Type */}
+                      <td style={{ padding: '0.75rem 1rem' }}>
+                        {p.coverage_type && p.coverage_type !== 'None' ? (
+                          <span style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            padding: '2px 8px',
+                            borderRadius: '12px',
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                            background: p.coverage_type === 'Warranty' ? '#eff6ff' : (p.coverage_type === 'Guarantee' ? '#f3e8ff' : '#ecfdf5'),
+                            color: p.coverage_type === 'Warranty' ? '#1d4ed8' : (p.coverage_type === 'Guarantee' ? '#6b21a8' : '#047857'),
+                            border: `1px solid ${p.coverage_type === 'Warranty' ? '#bfdbfe' : (p.coverage_type === 'Guarantee' ? '#d8b4fe' : '#a7f3d0')}`
+                          }}>
+                            <ShieldCheck size={12} />
+                            {p.coverage_type}
+                          </span>
+                        ) : (
+                          <span style={{
+                            padding: '2px 8px',
+                            borderRadius: '12px',
+                            fontSize: '0.75rem',
+                            fontWeight: 500,
+                            background: '#f1f5f9',
+                            color: '#64748b',
+                            border: '1px solid #e2e8f0'
+                          }}>
+                            {p.coverage_type || 'None'}
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Coverage Period */}
+                      <td style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>
+                        {p.coverage_period !== undefined && p.coverage_period !== null && p.coverage_period !== '' ? (
+                          <span style={{
+                            display: 'inline-block',
+                            padding: '2px 8px',
+                            borderRadius: '6px',
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                            background: '#f8fafc',
+                            color: '#0f172a',
+                            border: '1px solid #cbd5e1'
+                          }}>
+                            {p.coverage_period}M ({p.coverage_period} Mo)
+                          </span>
+                        ) : (
+                          <span style={{ color: '#94a3b8' }}>-</span>
+                        )}
+                      </td>
+
+                      {/* Coverage Terms */}
+                      <td style={{ padding: '0.75rem 1rem', color: '#334155', fontSize: '0.8rem' }}>
+                        {p.coverage_terms ? (
+                          <span
+                            title={p.coverage_terms}
+                            style={{
+                              display: 'inline-block',
+                              maxWidth: '180px',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap'
+                            }}
+                          >
+                            {p.coverage_terms}
+                          </span>
+                        ) : (
+                          <span style={{ color: '#94a3b8' }}>-</span>
+                        )}
                       </td>
 
                       {/* Price */}
@@ -2241,6 +2429,126 @@ export default function ProductListConfig({ userCompany = '' }) {
                 </div>
               </div>
 
+              {/* Coverage & Warranty Specification */}
+              <div style={{
+                padding: '0.85rem 1rem',
+                background: '#f8fafc',
+                borderRadius: '10px',
+                border: '1px solid #e2e8f0',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.75rem'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ fontSize: '0.825rem', fontWeight: 700, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <ShieldCheck size={16} color="#2563eb" />
+                    Coverage & Warranty
+                  </div>
+                  <span style={{ fontSize: '0.72rem', color: '#64748b' }}>Warranty / Guarantee policies</span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                  {/* Coverage Type */}
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#334155', marginBottom: '4px' }}>
+                      Coverage Type
+                    </label>
+                    <select
+                      value={formData.coverageType}
+                      onChange={(e) => setFormData(prev => ({ ...prev, coverageType: e.target.value }))}
+                      style={{
+                        width: '100%',
+                        padding: '0.55rem 0.75rem',
+                        borderRadius: '8px',
+                        border: '1px solid #cbd5e1',
+                        fontSize: '0.85rem',
+                        background: '#ffffff',
+                        boxSizing: 'border-box'
+                      }}
+                    >
+                      {COVERAGE_TYPE_OPTIONS.map(opt => (
+                        <option key={opt} value={opt}>{opt}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Coverage Period Number */}
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#334155', marginBottom: '4px' }}>
+                      Coverage Period (Months)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="e.g. 12"
+                      value={formData.coveragePeriod}
+                      onChange={(e) => setFormData(prev => ({ ...prev, coveragePeriod: e.target.value }))}
+                      style={{
+                        width: '100%',
+                        padding: '0.55rem 0.75rem',
+                        borderRadius: '8px',
+                        border: '1px solid #cbd5e1',
+                        fontSize: '0.85rem',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Quick Selection Buttons for Coverage Period (1M, 2M, 3M, 6M, 9M, 12M, 24M, 36M, 48M, 60M, 120M) */}
+                <div>
+                  <div style={{ fontSize: '0.725rem', color: '#64748b', marginBottom: '5px', fontWeight: 500 }}>
+                    Quick Select Period (Months):
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
+                    {COVERAGE_PERIOD_PRESETS.map(preset => {
+                      const isSelected = Number(formData.coveragePeriod) === preset.value;
+                      return (
+                        <button
+                          key={preset.label}
+                          type="button"
+                          onClick={() => setFormData(prev => ({ ...prev, coveragePeriod: preset.value }))}
+                          style={{
+                            padding: '3px 8px',
+                            borderRadius: '6px',
+                            fontSize: '0.74rem',
+                            fontWeight: isSelected ? 700 : 500,
+                            border: `1px solid ${isSelected ? '#2563eb' : '#cbd5e1'}`,
+                            background: isSelected ? '#2563eb' : '#ffffff',
+                            color: isSelected ? '#ffffff' : '#334155',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          {preset.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Coverage Terms */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#334155', marginBottom: '4px' }}>
+                    Coverage Terms
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Manufacturing Defects Only"
+                    value={formData.coverageTerms}
+                    onChange={(e) => setFormData(prev => ({ ...prev, coverageTerms: e.target.value }))}
+                    style={{
+                      width: '100%',
+                      padding: '0.55rem 0.75rem',
+                      borderRadius: '8px',
+                      border: '1px solid #cbd5e1',
+                      fontSize: '0.85rem',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+              </div>
+
               {/* Description */}
               <div>
                 <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#334155', marginBottom: '4px' }}>
@@ -2275,7 +2583,7 @@ export default function ProductListConfig({ userCompany = '' }) {
               }}>
                 <div>
                   <div style={{ fontSize: '0.825rem', fontWeight: 600, color: '#0f172a' }}>Active Status</div>
-                  <div style={{ fontSize: '0.725rem', color: '#64748b' }}>Inactive products won't appear in order booking queues.</div>
+                  <div style={{ fontSize: '0.725rem', color: '#64748b' }}>Inactive products won&apos;t appear in order booking queues.</div>
                 </div>
                 <input
                   type="checkbox"
@@ -2895,6 +3203,7 @@ export default function ProductListConfig({ userCompany = '' }) {
                           <th style={{ padding: '0.55rem 0.75rem', position: 'sticky', top: 0, background: '#f8fafc', borderBottom: '1px solid #e2e8f0', minWidth: '120px' }}>SKU</th>
                           <th style={{ padding: '0.55rem 0.75rem', position: 'sticky', top: 0, background: '#f8fafc', borderBottom: '1px solid #e2e8f0', minWidth: '110px' }}>Category</th>
                           <th style={{ padding: '0.55rem 0.75rem', position: 'sticky', top: 0, background: '#f8fafc', borderBottom: '1px solid #e2e8f0', minWidth: '110px' }}>Sub-Category</th>
+                          <th style={{ padding: '0.55rem 0.75rem', position: 'sticky', top: 0, background: '#f8fafc', borderBottom: '1px solid #e2e8f0', minWidth: '120px' }}>Coverage</th>
                           <th style={{ padding: '0.55rem 0.75rem', position: 'sticky', top: 0, background: '#f8fafc', borderBottom: '1px solid #e2e8f0', minWidth: '120px' }}>Branch</th>
                           <th style={{ padding: '0.55rem 0.75rem', position: 'sticky', top: 0, background: '#f8fafc', borderBottom: '1px solid #e2e8f0', minWidth: '90px', textAlign: 'right' }}>Price (₹)</th>
                           <th style={{ padding: '0.55rem 0.75rem', position: 'sticky', top: 0, background: '#f8fafc', borderBottom: '1px solid #e2e8f0', minWidth: '70px', textAlign: 'right' }}>Tax %</th>
@@ -2905,7 +3214,7 @@ export default function ProductListConfig({ userCompany = '' }) {
                       <tbody>
                         {displayedPreviewRows.length === 0 ? (
                           <tr>
-                            <td colSpan={10} style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>
+                            <td colSpan={11} style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>
                               No products match the filter or search query.
                             </td>
                           </tr>
@@ -2925,6 +3234,18 @@ export default function ProductListConfig({ userCompany = '' }) {
                               <td style={{ padding: '0.5rem 0.75rem', fontFamily: 'monospace', color: '#334155', borderBottom: '1px solid #f1f5f9' }}>{r.sku || '-'}</td>
                               <td style={{ padding: '0.5rem 0.75rem', color: '#475569', borderBottom: '1px solid #f1f5f9' }}>{r.category || '-'}</td>
                               <td style={{ padding: '0.5rem 0.75rem', color: '#475569', borderBottom: '1px solid #f1f5f9' }}>{r.sub_category || '-'}</td>
+                              <td style={{ padding: '0.5rem 0.75rem', color: '#475569', borderBottom: '1px solid #f1f5f9' }}>
+                                <span style={{
+                                  display: 'inline-block',
+                                  padding: '1px 6px',
+                                  borderRadius: '4px',
+                                  background: '#f1f5f9',
+                                  fontSize: '0.72rem',
+                                  color: '#334155'
+                                }}>
+                                  {r.coverage_type || 'Warranty'}{r.coverage_period ? ` (${r.coverage_period}M)` : ''}
+                                </span>
+                              </td>
                               <td style={{ padding: '0.5rem 0.75rem', color: '#475569', borderBottom: '1px solid #f1f5f9' }}>{r.branch_name || '-'}</td>
                               <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right', fontWeight: 600, color: '#0f172a', borderBottom: '1px solid #f1f5f9' }}>
                                 ₹{Number(r.price || 0).toLocaleString('en-IN')}

@@ -171,7 +171,10 @@ export async function getTenantProducts(companyOrTenantId = 'Default', branchFil
         mergedMap.set(k, {
           ...existing,
           ...p,
-          sub_category: p.sub_category || existing.sub_category || ''
+          sub_category: p.sub_category || existing.sub_category || '',
+          coverage_type: p.coverage_type || existing.coverage_type || '',
+          coverage_period: p.coverage_period !== undefined ? p.coverage_period : existing.coverage_period,
+          coverage_terms: p.coverage_terms || existing.coverage_terms || ''
         });
       } else {
         mergedMap.set(k, p);
@@ -286,6 +289,12 @@ export async function saveTenantProduct({
   category = 'General',
   subCategory = '',
   sub_category = '',
+  coverageType = 'Warranty',
+  coverage_type = '',
+  coveragePeriod = null,
+  coverage_period = null,
+  coverageTerms = 'Manufacturing Defects Only',
+  coverage_terms = '',
   uom = 'Pcs',
   price = 0,
   taxRate = 18,
@@ -306,6 +315,16 @@ export async function saveTenantProduct({
     const prodId = id || `prod_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const istTime = getISTTimestamp();
     const cleanSubCategory = (subCategory || sub_category || '').trim();
+    const cleanCoverageType = (coverage_type || coverageType || 'None').trim();
+    const rawCoveragePeriod = coverage_period !== undefined && coverage_period !== null && coverage_period !== ''
+      ? coverage_period
+      : (coveragePeriod !== undefined && coveragePeriod !== null && coveragePeriod !== '' ? coveragePeriod : null);
+    const cleanCoveragePeriod = rawCoveragePeriod !== null && rawCoveragePeriod !== '' && !isNaN(Number(rawCoveragePeriod))
+      ? Number(rawCoveragePeriod)
+      : null;
+    const cleanCoverageTerms = (coverage_terms !== undefined && coverage_terms !== null && coverage_terms !== ''
+      ? coverage_terms
+      : (coverageTerms || '')).trim();
 
     const productRecord = {
       id: prodId,
@@ -317,6 +336,9 @@ export async function saveTenantProduct({
       sku: cleanSku,
       category: (category || 'General').trim(),
       sub_category: cleanSubCategory,
+      coverage_type: cleanCoverageType,
+      coverage_period: cleanCoveragePeriod,
+      coverage_terms: cleanCoverageTerms,
       uom: (uom || 'Pcs').trim(),
       price: Number(price) >= 0 ? Number(price) : 0,
       tax_rate: Number(taxRate) >= 0 ? Number(taxRate) : 18,
@@ -334,9 +356,15 @@ export async function saveTenantProduct({
       const admin = getAdminClient();
       if (admin) {
         const { error: upsertErr } = await admin.from('tenant_products').upsert(productRecord, { onConflict: 'id' });
-        // Fallback if sub_category column does not exist yet in DB schema cache
-        if (upsertErr && (upsertErr.message?.includes('sub_category') || upsertErr.code === 'PGRST204')) {
-          const { sub_category: _sc, ...dbSafeRecord } = productRecord;
+        // Fallback if columns do not exist yet in DB schema cache
+        if (upsertErr) {
+          const {
+            sub_category: _sc,
+            coverage_type: _ct,
+            coverage_period: _cp,
+            coverage_terms: _cm,
+            ...dbSafeRecord
+          } = productRecord;
           await admin.from('tenant_products').upsert(dbSafeRecord, { onConflict: 'id' });
         }
       }
@@ -543,6 +571,15 @@ export async function importTenantProducts(productsList = [], company = 'Default
         const matchedId = p.id || existing?.id || `prod_${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 6)}`;
         const cleanSku = rawSku || existing?.sku || `PRD-${cleanName.replace(/[^a-zA-Z0-9]/g, '').slice(0, 4).toUpperCase()}-${(Date.now() + idx).toString().slice(-4)}`;
 
+        const rawCoveragePeriod = p.coverage_period !== undefined && p.coverage_period !== null && p.coverage_period !== ''
+          ? p.coverage_period
+          : (p.coveragePeriod !== undefined && p.coveragePeriod !== null && p.coveragePeriod !== ''
+            ? p.coveragePeriod
+            : (existing?.coverage_period ?? null));
+        const cleanCoveragePeriod = rawCoveragePeriod !== null && rawCoveragePeriod !== '' && !isNaN(Number(rawCoveragePeriod))
+          ? Number(rawCoveragePeriod)
+          : null;
+
         return {
           id: matchedId,
           company: key,
@@ -551,6 +588,9 @@ export async function importTenantProducts(productsList = [], company = 'Default
           sku: cleanSku,
           category: (p.category || existing?.category || 'General').trim(),
           sub_category: (p.sub_category || p.subCategory || existing?.sub_category || '').trim(),
+          coverage_type: (p.coverage_type || p.coverageType || existing?.coverage_type || 'Warranty').trim(),
+          coverage_period: cleanCoveragePeriod,
+          coverage_terms: (p.coverage_terms || p.coverageTerms || existing?.coverage_terms || 'Manufacturing Defects Only').trim(),
           uom: (p.uom || existing?.uom || 'Pcs').trim(),
           price: Number(p.price) >= 0 ? Number(p.price) : 0,
           tax_rate: Number(p.tax_rate) >= 0 ? Number(p.tax_rate) : (existing?.tax_rate ?? 18),
@@ -573,9 +613,9 @@ export async function importTenantProducts(productsList = [], company = 'Default
       const admin = getAdminClient();
       if (admin) {
         const { error: bulkErr } = await admin.from('tenant_products').upsert(prepared, { onConflict: 'id' });
-        // Fallback if sub_category column does not exist yet in DB schema cache
-        if (bulkErr && (bulkErr.message?.includes('sub_category') || bulkErr.code === 'PGRST204')) {
-          const dbSafe = prepared.map(({ sub_category: _sc, ...rest }) => rest);
+        // Fallback if some columns do not exist yet in DB schema cache
+        if (bulkErr) {
+          const dbSafe = prepared.map(({ sub_category: _sc, coverage_type: _ct, coverage_period: _cp, coverage_terms: _cm, ...rest }) => rest);
           await admin.from('tenant_products').upsert(dbSafe, { onConflict: 'id' });
         }
       }
