@@ -1337,8 +1337,8 @@ export async function reportEmployeeDeviceHealth(snapshot = {}) {
           const { data: att } = await admin.from('attendance_records').select('id, in_time, out_time').eq('user_id', effectiveUserId).eq('attendance_date', todayIST).order('in_time', { ascending: false }).limit(1).maybeSingle();
 
           if (att && att.in_time && !att.out_time) {
-            const { data: userRow } = await admin.from('user_roles').select('name').eq('user_id', effectiveUserId).maybeSingle();
-            const empName = userRow?.name || 'Field Executive';
+            const { data: userRow } = await admin.from('user_roles').select('emp_name, email').eq('user_id', effectiveUserId).maybeSingle();
+            const empName = userRow?.emp_name || userRow?.name || 'Field Executive';
             const alertChan = admin.channel(`crm-tenant-alerts:${canonicalCompany}`);
             await alertChan.subscribe();
             await alertChan.send({
@@ -1439,8 +1439,8 @@ export async function reportFieldDeviceHeartbeat(token, snapshot = {}) {
             const { data: att } = await admin.from('attendance_records').select('id, in_time, out_time').eq('user_id', claims.uid).eq('attendance_date', todayIST).order('in_time', { ascending: false }).limit(1).maybeSingle();
 
             if (att && att.in_time && !att.out_time) {
-              const { data: userRow } = await admin.from('user_roles').select('name').eq('user_id', claims.uid).maybeSingle();
-              const empName = userRow?.name || 'Field Executive';
+              const { data: userRow } = await admin.from('user_roles').select('emp_name, email').eq('user_id', claims.uid).maybeSingle();
+              const empName = userRow?.emp_name || userRow?.name || 'Field Executive';
               const alertChan = admin.channel(`crm-tenant-alerts:${company}`);
               await alertChan.subscribe();
               await alertChan.send({

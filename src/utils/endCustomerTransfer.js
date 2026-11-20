@@ -123,7 +123,7 @@ export function validateEndCustomerRows(rows, { parties = [], products = [], dis
     if (data.pin_code && !/^[1-9]\d{5}$/.test(data.pin_code)) errors.push('PIN Code must contain 6 digits');
     const purchaseDate = normalizeImportDate(raw.purchase_date);
     if (purchaseDate === null) errors.push('Purchase Date must be YYYY-MM-DD or DD-MM-YYYY');
-    data.purchase_date = purchaseDate || '';
+    data.purchase_date = purchaseDate || null;
 
     const states = Object.keys(districtsByState);
     const state = states.find(s => normalized(s) === normalized(data.state_name));

@@ -249,7 +249,7 @@ export async function createEndCustomer(customerData, tenantId = 'TNT00002') {
       linked_party_name: customerData.linked_party_name || '',
       dealer_city_district: customerData.dealer_city_district || '',
       purchase_invoice_no: customerData.purchase_invoice_no || '',
-      purchase_date: customerData.purchase_date || '',
+      purchase_date: customerData.purchase_date || null,
       invoice_document_url: customerData.invoice_document_url || '',
       product_id: customerData.product_id || '',
       product_name: customerData.product_name || '',
@@ -307,11 +307,16 @@ export async function updateEndCustomer(customerId, updateData, tenantId = 'TNT0
   const adminClient = getAdminClient();
   const timestamp = getISTTimestamp();
 
+  const sanitizedUpdate = { ...updateData };
+  if ('purchase_date' in sanitizedUpdate && !sanitizedUpdate.purchase_date) {
+    sanitizedUpdate.purchase_date = null;
+  }
+
   if (adminClient) {
     try {
       await adminClient
         .from('end_customers')
-        .update({ ...updateData, updated_at: timestamp })
+        .update({ ...sanitizedUpdate, updated_at: timestamp })
         .eq('id', customerId)
         .eq('tenant_id', tenantKey);
     } catch (_) {
