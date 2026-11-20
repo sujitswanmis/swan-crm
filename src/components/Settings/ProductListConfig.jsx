@@ -535,7 +535,7 @@ export default function ProductListConfig({ userCompany = '' }) {
       'Sub-Category',
       'Coverage Type',
       'Coverage Period',
-      'Coverage Unit',
+      'Coverage Duration',
       'Coverage Terms',
       'Price',
       'Tax Rate %',
@@ -588,7 +588,7 @@ export default function ProductListConfig({ userCompany = '' }) {
         { header: 'Sub-Category', key: 'sub_category', width: 18 },
         { header: 'Coverage Type', key: 'coverage_type', width: 18 },
         { header: 'Coverage Period', key: 'coverage_period', width: 18 },
-        { header: 'Coverage Unit', key: 'coverage_period_unit', width: 16 },
+        { header: 'Coverage Duration', key: 'coverage_period_unit', width: 18 },
         { header: 'Coverage Terms', key: 'coverage_terms', width: 32 },
         { header: 'Price', key: 'price', width: 14 },
         { header: 'Tax Rate %', key: 'tax_rate', width: 14 },
@@ -736,13 +736,13 @@ export default function ProductListConfig({ userCompany = '' }) {
           errorTitle: 'Invalid Coverage Type',
           error: 'Please choose Warranty, Guarantee, Both, or None.'
         };
-        // Column H: Coverage Unit (Days / Months / Years)
+        // Column H: Coverage Duration (Days / Months / Years)
         sheet.getCell(`H${r}`).dataValidation = {
           type: 'list',
           allowBlank: true,
           formulae: ['"Days,Months,Years"'],
           showErrorMessage: true,
-          errorTitle: 'Invalid Coverage Unit',
+          errorTitle: 'Invalid Coverage Duration',
           error: 'Please choose Days, Months, or Years.'
         };
         // Column K: Tax Rate %
@@ -896,7 +896,7 @@ export default function ProductListConfig({ userCompany = '' }) {
         ? Number(String(coveragePeriodRaw).replace(/[^0-9]/g, ''))
         : null;
       const rawLowerPeriod = String(coveragePeriodRaw || '').toLowerCase();
-      const rawCoverageUnit = findVal('coverage unit', 'coverage_unit', 'period unit', 'period_unit', 'coverage period unit', 'coverage_period_unit', 'unit of coverage');
+      const rawCoverageUnit = findVal('coverage duration', 'coverage_duration', 'duration', 'coverage unit', 'coverage_unit', 'period unit', 'period_unit', 'coverage period unit', 'coverage_period_unit', 'unit of coverage');
       let coveragePeriodUnitVal = 'Months';
       if (rawCoverageUnit) {
         const lowerUnit = rawCoverageUnit.toLowerCase();
@@ -2581,14 +2581,14 @@ export default function ProductListConfig({ userCompany = '' }) {
                     </select>
                   </div>
 
-                  {/* Coverage Period & Unit */}
+                  {/* Coverage Period & Duration */}
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
                       <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#334155' }}>
-                        Coverage Period
+                        Coverage Period &amp; Duration
                       </label>
-                      {/* Unit Selector Toggle (Days / Months / Years) */}
-                      <div style={{ display: 'inline-flex', background: '#e2e8f0', borderRadius: '6px', padding: '2px', gap: '2px' }}>
+                      {/* Duration Selector Toggle (Days / Months / Years) */}
+                      <div style={{ display: 'inline-flex', background: '#e2e8f0', borderRadius: '6px', padding: '2px', gap: '2px' }} title="Coverage Duration">
                         {COVERAGE_UNIT_OPTIONS.map(unit => {
                           const isActive = (formData.coveragePeriodUnit || 'Months') === unit;
                           return (
