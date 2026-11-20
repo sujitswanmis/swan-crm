@@ -11,6 +11,7 @@ export default function AppLiveUpdateBanner() {
   const [isForceUpgrade, setIsForceUpgrade] = useState(false);
   const [apkInfo, setApkInfo] = useState(null);
   const [dismissed, setDismissed] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
   const [pullProgress, setPullProgress] = useState(0);
   const [isPullRefreshing, setIsPullRefreshing] = useState(false);
   const [isReadyToRefresh, setIsReadyToRefresh] = useState(false);
@@ -271,7 +272,7 @@ export default function AppLiveUpdateBanner() {
 
   // Action: 1-Click Native APK Download & Install
   const handleDownloadApk = (e) => {
-    const directUrl = apkInfo?.download_url || 'https://qosmckbxvzpdccbrttkd.supabase.co/storage/v1/object/public/app_releases/SPC-Workspace-Android-v9.apk';
+    const directUrl = apkInfo?.download_url || 'https://app.supujacreations.com/api/public/android-apk';
     try {
       window.open(directUrl, '_system');
     } catch {}
@@ -280,6 +281,24 @@ export default function AppLiveUpdateBanner() {
     } catch {}
     try {
       window.location.href = directUrl;
+    } catch {}
+  };
+
+  const handleCopyLink = () => {
+    const directUrl = 'https://app.supujacreations.com/api/public/android-apk';
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(directUrl);
+      } else {
+        const input = document.createElement('input');
+        input.value = directUrl;
+        document.body.appendChild(input);
+        input.select();
+        document.execCommand('copy');
+        document.body.removeChild(input);
+      }
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 3500);
     } catch {}
   };
 
@@ -294,44 +313,49 @@ export default function AppLiveUpdateBanner() {
             position: 'fixed',
             inset: 0,
             zIndex: 100001,
-            backgroundColor: 'rgba(15, 23, 42, 0.94)',
+            backgroundColor: 'rgba(15, 23, 42, 0.95)',
             backdropFilter: 'blur(10px)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            padding: '1.25rem'
+            padding: '1rem',
+            overflowY: 'auto'
           }}
         >
           <div
             style={{
               background: '#ffffff',
               borderRadius: '20px',
-              maxWidth: '420px',
+              maxWidth: '440px',
               width: '100%',
-              padding: '1.75rem 1.5rem',
+              padding: '1.75rem 1.4rem',
               boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
               textAlign: 'center',
-              border: '2px solid #ef4444'
+              border: '2px solid #ef4444',
+              maxHeight: '94vh',
+              overflowY: 'auto'
             }}
           >
+            {/* Header Icon */}
             <div
               style={{
-                width: '64px',
-                height: '64px',
+                width: '56px',
+                height: '56px',
                 borderRadius: '50%',
                 background: '#fee2e2',
                 color: '#dc2626',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                margin: '0 auto 1.25rem'
+                margin: '0 auto 0.85rem'
               }}
             >
-              <Smartphone size={34} />
+              <Smartphone size={30} />
             </div>
 
-            <h2 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#0f172a', marginBottom: '0.5rem' }}>
-              Zaroori App Update Anivarya Hai
+            {/* SECTION 1: Hindi / Hinglish (User-Requested) */}
+            <h2 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#0f172a', marginBottom: '0.35rem' }}>
+              🚀 Zaroori App Update Anivarya Hai
             </h2>
 
             <div
@@ -340,22 +364,63 @@ export default function AppLiveUpdateBanner() {
                 background: '#fef2f2',
                 border: '1px solid #fca5a5',
                 color: '#991b1b',
-                padding: '4px 12px',
+                padding: '3px 12px',
                 borderRadius: '999px',
                 fontSize: '0.78rem',
                 fontWeight: 700,
-                marginBottom: '1rem'
+                marginBottom: '0.75rem'
               }}
             >
-              Installed: v{apkInfo.currentCode || 'Purana'} ➔ Anivarya: v{apkInfo.latest_version_code}
+              Installed: v{apkInfo.currentCode || '6'} → Required: v{apkInfo.latest_version_code || 9}
             </div>
 
-            <p style={{ fontSize: '0.85rem', color: '#475569', lineHeight: 1.55, marginBottom: '1.5rem' }}>
-              Aapka SPC Workspace Android App purana ho chuka hai. Naye attendance rules aur accurate GPS ke liye <strong>v{apkInfo.latest_version_code} install karna anivarya hai</strong>. Update kiye bina app aur punch use nahi kiya ja sakta.
+            <p style={{ fontSize: '0.84rem', color: '#334155', lineHeight: 1.5, marginBottom: '0.45rem', textAlign: 'left' }}>
+              SPC Workspace ka naya version <strong>v{apkInfo.latest_version_code || 9}</strong> release ho chuka hai. Is update mein <strong>kai naye features add kiye gaye hain aur existing features ko upgrade kiya gaya hai.</strong>
             </p>
 
+            <p style={{ fontSize: '0.82rem', color: '#475569', lineHeight: 1.5, marginBottom: '0.85rem', textAlign: 'left' }}>
+              Behtar performance, faster speed, improved security aur smooth user experience ke liye <strong>naya version install karna anivarya hai.</strong>
+            </p>
+
+            {/* DIVIDER / CHANGE LINE */}
+            <div style={{ height: '1px', background: 'linear-gradient(to right, transparent, #cbd5e1, transparent)', margin: '0.85rem 0' }} />
+
+            {/* SECTION 2: English (User-Requested) */}
+            <h3 style={{ fontSize: '1.12rem', fontWeight: 800, color: '#1e3a8a', marginBottom: '0.35rem' }}>
+              🚀 BIG UPDATE IS HERE!
+            </h3>
+
+            <div
+              style={{
+                display: 'inline-block',
+                background: '#eff6ff',
+                border: '1px solid #bfdbfe',
+                color: '#1e40af',
+                padding: '3px 12px',
+                borderRadius: '999px',
+                fontSize: '0.76rem',
+                fontWeight: 700,
+                marginBottom: '0.65rem'
+              }}
+            >
+              Installed: v{apkInfo.currentCode || '6'} → New Version: v{apkInfo.latest_version_code || 9}
+            </div>
+
+            <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#0f172a', marginBottom: '0.4rem', textAlign: 'left' }}>
+              ✨ New Features. Smarter Tools. Better Experience!
+            </div>
+
+            <p style={{ fontSize: '0.80rem', color: '#475569', lineHeight: 1.5, marginBottom: '0.45rem', textAlign: 'left' }}>
+              SPC Workspace is now upgraded with <strong>exciting new features, enhanced functionality, and smoother performance.</strong>
+            </p>
+
+            <p style={{ fontSize: '0.80rem', color: '#1e293b', fontWeight: 600, lineHeight: 1.45, marginBottom: '1.1rem', textAlign: 'left' }}>
+              ⚡ Update now to unlock the latest improvements and continue using the app.
+            </p>
+
+            {/* ACTION 1: Download & Update Button */}
             <a
-              href={apkInfo.download_url || 'https://qosmckbxvzpdccbrttkd.supabase.co/storage/v1/object/public/app_releases/SPC-Workspace-Android-v9.apk'}
+              href={apkInfo.download_url || 'https://app.supujacreations.com/api/public/android-apk'}
               target="_blank"
               rel="noopener noreferrer"
               onClick={handleDownloadApk}
@@ -373,15 +438,50 @@ export default function AppLiveUpdateBanner() {
                 fontWeight: 800,
                 textDecoration: 'none',
                 boxShadow: '0 8px 20px rgba(220, 38, 38, 0.4)',
-                cursor: 'pointer'
+                cursor: 'pointer',
+                marginBottom: '0.65rem'
               }}
             >
               <Download size={18} />
-              Naya App (v{apkInfo.latest_version_code}) Download Karein
+              🔴 DOWNLOAD & UPDATE NOW
             </a>
 
-            <div style={{ marginTop: '1rem', fontSize: '0.72rem', color: '#94a3b8' }}>
-              Install hone ke baad app ko dobara kholein, ye screen automatic hat jayegi.
+            {/* ACTION 2: 1-Tap Copy Link Button (for opening directly in Chrome if in-app click fails) */}
+            <button
+              type="button"
+              onClick={handleCopyLink}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.4rem',
+                width: '100%',
+                padding: '0.55rem 0.8rem',
+                background: copiedLink ? '#dcfce7' : '#f8fafc',
+                border: copiedLink ? '1px solid #86efac' : '1px solid #cbd5e1',
+                color: copiedLink ? '#15803d' : '#475569',
+                borderRadius: '10px',
+                fontSize: '0.78rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+                marginBottom: '0.75rem'
+              }}
+            >
+              {copiedLink ? '✅ Link Copied! Chrome me paste karein' : '📋 Copy Direct Download Link'}
+            </button>
+
+            {/* Direct Link Readout */}
+            <div style={{ fontSize: '0.70rem', color: '#64748b', wordBreak: 'break-all', marginBottom: '0.75rem' }}>
+              Official URL: <strong>https://app.supujacreations.com/api/public/android-apk</strong>
+            </div>
+
+            {/* Footers (User-Requested) */}
+            <div style={{ fontSize: '0.74rem', color: '#475569', fontStyle: 'italic', marginBottom: '0.2rem' }}>
+              Install hone ke baad app dobara kholein. Yeh screen automatically hat jayegi.
+            </div>
+            <div style={{ fontSize: '0.72rem', color: '#64748b', fontStyle: 'italic' }}>
+              Reopen the app after installing the update.
             </div>
           </div>
         </div>
@@ -454,7 +554,7 @@ export default function AppLiveUpdateBanner() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}>
             <a
-              href={apkInfo.download_url || 'https://qosmckbxvzpdccbrttkd.supabase.co/storage/v1/object/public/app_releases/SPC-Workspace-Android-v9.apk'}
+              href={apkInfo.download_url || 'https://app.supujacreations.com/api/public/android-apk'}
               target="_blank"
               rel="noopener noreferrer"
               onClick={handleDownloadApk}

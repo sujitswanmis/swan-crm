@@ -9,11 +9,11 @@
 export const DEFAULT_ANDROID_RELEASE_POLICY = {
   platform: 'android',
   latest_version_code: 9,
-  latest_version_name: 'v9.0 (2.5.1243)',
+  latest_version_name: 'v9.0 (2.5.1245)',
   min_supported_version_code: 9,
-  download_url: 'https://qosmckbxvzpdccbrttkd.supabase.co/storage/v1/object/public/app_releases/SPC-Workspace-Android-v9.apk',
+  download_url: 'https://app.supujacreations.com/api/public/android-apk',
   release_notes:
-    'Live Tracking mandatory background GPS modal with "Allow all the time" settings launcher, direct APK download, and force v9 upgrade.'
+    'Official direct branded APK download with user-approved bilingual force upgrade modal and zero third-party links.'
 };
 
 export const DEVICE_HEALTH_STATUS = {
