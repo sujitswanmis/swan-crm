@@ -1,11 +1,327 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useTransition } from 'react';
-import { GitMerge, Plus, Clock, CheckSquare, Settings, Trash2, RotateCcw, ArrowUp, ArrowDown, PlayCircle, FileText, ListPlus, Tag, XCircle, RefreshCw } from 'lucide-react';
+import React, { useState, useEffect, useRef, useTransition, useMemo } from 'react';
+import { GitMerge, Plus, Clock, CheckSquare, Settings, Trash2, RotateCcw, ArrowUp, ArrowDown, PlayCircle, FileText, ListPlus, Tag, XCircle, RefreshCw, Search, Check, Square, Users, X, Building2, MapPin } from 'lucide-react';
 import { getDesignations } from '@/app/actions/designation';
 import { getEmployeesMaster } from '@/app/actions/employee';
 import { getWorkflowDefinitions, createWorkflowDefinition, addWorkflowStage, deleteWorkflowDefinition, restoreWorkflowDefinition, mapStageField, purgeWorkflowDefinition, getWorkflowInstances, startWorkflowInstance, advanceWorkflowInstance, setWorkflowPlanningMode, importWorkflowDefinition, reorderWorkflowStages, updateWorkflowStageField } from '@/app/actions/workflowEngine';
+import { CRMTabs } from '@/components/common/CRMDesignSystem';
+import UniversalBranchSelect from '@/components/common/UniversalBranchSelect';
+import { formatBranchStandard } from '@/utils/branchAccess';
 import { tatHours, formatWorkflowIST, workflowVariance } from '@/utils/workflowTiming.mjs';
+
+const isUUID = val => /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(String(val || ''));
+
+function StageEmployeeMultiSelect({ employees = [], selectedIds = [], onChange }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const wrapperRef = useRef(null);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const activeEmployees = useMemo(() => {
+    return (employees || []).filter(e => {
+      const status = String(e.emp_status || e.status || 'Active').toLowerCase();
+      return !['inactive', 'terminated', 'resigned', 'trash'].includes(status);
+    });
+  }, [employees]);
+
+  const filteredEmployees = useMemo(() => {
+    if (!searchQuery.trim()) return activeEmployees;
+    const q = searchQuery.toLowerCase().trim();
+    return activeEmployees.filter(e => {
+      const name = String(e.emp_name || e.name || '').toLowerCase();
+      const code = String(e.emp_code || '').toLowerCase();
+      const desig = String(e.designation_name || e.designation || '').toLowerCase();
+      const email = String(e.email || e.work_email || '').toLowerCase();
+      return name.includes(q) || code.includes(q) || desig.includes(q) || email.includes(q);
+    });
+  }, [activeEmployees, searchQuery]);
+
+  const selectedEmployees = useMemo(() => {
+    return (employees || []).filter(e => selectedIds.includes(e.id));
+  }, [employees, selectedIds]);
+
+  const toggleEmployee = (emp) => {
+    let nextIds;
+    if (selectedIds.includes(emp.id)) {
+      nextIds = selectedIds.filter(id => id !== emp.id);
+    } else {
+      nextIds = [...selectedIds, emp.id];
+    }
+    const nextObjs = (employees || []).filter(e => nextIds.includes(e.id));
+    onChange(nextIds, nextObjs);
+  };
+
+  const removeEmployee = (empId, e) => {
+    e.stopPropagation();
+    const nextIds = selectedIds.filter(id => id !== empId);
+    const nextObjs = (employees || []).filter(e => nextIds.includes(e.id));
+    onChange(nextIds, nextObjs);
+  };
+
+  const handleSelectAllFiltered = (e) => {
+    e.preventDefault();
+    const filteredIds = filteredEmployees.map(emp => emp.id);
+    const mergedIds = Array.from(new Set([...selectedIds, ...filteredIds]));
+    const nextObjs = (employees || []).filter(e => mergedIds.includes(e.id));
+    onChange(mergedIds, nextObjs);
+  };
+
+  const handleClearAll = (e) => {
+    e.preventDefault();
+    onChange([], []);
+  };
+
+  return (
+    <div ref={wrapperRef} style={{ position: 'relative', width: '100%' }}>
+      {/* Selected Employee Badges / Chips */}
+      {selectedEmployees.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', marginBottom: '0.4rem', padding: '0.35rem', background: 'var(--bg-surface, #ffffff)', border: '1px solid var(--border-light, #e2e8f0)', borderRadius: '6px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', width: '100%', marginBottom: '0.2rem' }}>
+            <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#2563eb', background: 'rgba(37, 99, 235, 0.1)', padding: '0.1rem 0.4rem', borderRadius: '10px' }}>
+              {selectedEmployees.length} Employee{selectedEmployees.length > 1 ? 's' : ''} Selected
+            </span>
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem' }}>
+              <button
+                type="button"
+                onClick={handleClearAll}
+                style={{ fontSize: '0.7rem', color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}
+              >
+                Clear All
+              </button>
+            </div>
+          </div>
+          {selectedEmployees.map(emp => (
+            <span
+              key={emp.id}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.3rem',
+                background: '#eff6ff',
+                border: '1px solid #bfdbfe',
+                borderRadius: '5px',
+                padding: '0.15rem 0.45rem',
+                fontSize: '0.75rem',
+                color: '#1e40af',
+                fontWeight: 600
+              }}
+            >
+              <span>{emp.emp_name || emp.name} {emp.emp_code ? `(${emp.emp_code})` : ''}</span>
+              <button
+                type="button"
+                onClick={(e) => removeEmployee(emp.id, e)}
+                style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center' }}
+                title="Remove"
+              >
+                <X size={12} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Search Input Box */}
+      <div
+        onClick={() => {
+          setIsOpen(true);
+          inputRef.current?.focus();
+        }}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem',
+          background: 'var(--bg-surface, #ffffff)',
+          border: isOpen ? '1.5px solid #2563eb' : '1px solid var(--border-strong, #cbd5e1)',
+          borderRadius: '6px',
+          padding: '0.45rem 0.65rem',
+          cursor: 'text',
+          boxShadow: isOpen ? '0 0 0 3px rgba(37, 99, 235, 0.12)' : 'none',
+          transition: 'all 0.15s ease'
+        }}
+      >
+        <Search size={14} style={{ color: '#64748b', flexShrink: 0 }} />
+        <input
+          ref={inputRef}
+          type="text"
+          value={searchQuery}
+          onChange={e => {
+            setSearchQuery(e.target.value);
+            if (!isOpen) setIsOpen(true);
+          }}
+          onFocus={() => setIsOpen(true)}
+          placeholder={selectedIds.length > 0 ? "Search more employees by name / code..." : "Search & Select employee by name, code (e.g. 50775)..."}
+          style={{
+            flex: 1,
+            border: 'none',
+            outline: 'none',
+            background: 'transparent',
+            fontSize: '0.85rem',
+            color: 'var(--text-primary, #0f172a)'
+          }}
+        />
+        {selectedIds.length > 0 && (
+          <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#2563eb', background: '#dbeafe', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>
+            {selectedIds.length}
+          </span>
+        )}
+      </div>
+
+      {/* Floating Dropdown List */}
+      {isOpen && (
+        <div style={{
+          position: 'absolute',
+          top: 'calc(100% + 4px)',
+          left: 0,
+          right: 0,
+          zIndex: 1000,
+          background: 'var(--bg-surface, #ffffff)',
+          border: '1px solid var(--border-strong, #cbd5e1)',
+          borderRadius: '8px',
+          boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+          maxHeight: '260px',
+          display: 'flex',
+          flexDirection: 'column'
+        }}>
+          {/* Header Actions */}
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            padding: '0.4rem 0.75rem',
+            background: 'var(--bg-primary, #f8fafc)',
+            borderBottom: '1px solid var(--border-light, #e2e8f0)',
+            fontSize: '0.72rem',
+            color: 'var(--text-secondary, #64748b)'
+          }}>
+            <span>Showing {filteredEmployees.length} employee{filteredEmployees.length !== 1 ? 's' : ''}</span>
+            <div style={{ display: 'flex', gap: '0.6rem' }}>
+              {filteredEmployees.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleSelectAllFiltered}
+                  style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', fontWeight: 600, padding: 0 }}
+                >
+                  Select All
+                </button>
+              )}
+              {selectedIds.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleClearAll}
+                  style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontWeight: 600, padding: 0 }}
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* List Items */}
+          <div style={{ overflowY: 'auto', flex: 1, padding: '0.25rem 0' }}>
+            {filteredEmployees.length === 0 ? (
+              <div style={{ padding: '0.75rem', textAlign: 'center', color: 'var(--text-secondary, #64748b)', fontSize: '0.8rem' }}>
+                No employees matching &quot;{searchQuery}&quot;
+              </div>
+            ) : (
+              filteredEmployees.map(emp => {
+                const isSelected = selectedIds.includes(emp.id);
+                return (
+                  <div
+                    key={emp.id}
+                    onClick={() => toggleEmployee(emp)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem',
+                      padding: '0.45rem 0.75rem',
+                      cursor: 'pointer',
+                      background: isSelected ? 'rgba(37, 99, 235, 0.08)' : 'transparent',
+                      borderLeft: isSelected ? '3px solid #2563eb' : '3px solid transparent',
+                      transition: 'background 0.1s ease'
+                    }}
+                    onMouseEnter={e => {
+                      if (!isSelected) e.currentTarget.style.background = 'var(--bg-primary, #f8fafc)';
+                    }}
+                    onMouseLeave={e => {
+                      if (!isSelected) e.currentTarget.style.background = 'transparent';
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => {}}
+                      style={{ cursor: 'pointer', accentColor: '#2563eb' }}
+                    />
+                    <div style={{
+                      width: '24px',
+                      height: '24px',
+                      borderRadius: '50%',
+                      background: isSelected ? '#2563eb' : '#e2e8f0',
+                      color: isSelected ? '#ffffff' : '#475569',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '0.65rem',
+                      fontWeight: 700,
+                      flexShrink: 0
+                    }}>
+                      {(emp.emp_name || emp.name || 'U').charAt(0).toUpperCase()}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '0.82rem', fontWeight: isSelected ? 700 : 500, color: 'var(--text-primary, #0f172a)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {emp.emp_name || emp.name}
+                        {emp.emp_code && (
+                          <span style={{ marginLeft: '0.35rem', fontSize: '0.72rem', color: '#64748b', fontWeight: 500 }}>
+                            ({emp.emp_code})
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary, #64748b)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {emp.designation_name || emp.designation || 'Staff'}
+                        {emp.department && ` • ${emp.department}`}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* Footer Done Button */}
+          <div style={{ padding: '0.35rem 0.75rem', background: 'var(--bg-primary, #f8fafc)', borderTop: '1px solid var(--border-light, #e2e8f0)', display: 'flex', justifyContent: 'flex-end' }}>
+            <button
+              type="button"
+              onClick={() => setIsOpen(false)}
+              style={{
+                padding: '0.25rem 0.6rem',
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                background: '#2563eb',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer'
+              }}
+            >
+              Done ({selectedIds.length} Selected)
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function UniversalWorkplaceModule({ moduleAccess = {}, userRole = '', initialSubTab = 'active', onSubTabChange = null }) {
   const [workflowFilter, setWorkflowFilter] = useState(initialSubTab || 'active'); // 'active' | 'tracker' | 'trash'
@@ -29,7 +345,9 @@ export default function UniversalWorkplaceModule({ moduleAccess = {}, userRole =
     workflow_code: '',
     category: 'PRODUCTION',
     description: '',
-    planning_mode: 'ACTUAL_PLUS_TAT'
+    planning_mode: 'ACTUAL_PLUS_TAT',
+    company_tenant: 'TNT00002',
+    branch_code: 'All'
   });
 
   // Stage Planner Modal & Trash State
@@ -43,6 +361,8 @@ export default function UniversalWorkplaceModule({ moduleAccess = {}, userRole =
     assignee_type: 'BY_DESIGNATION',
     assigned_designation_id: '',
     assigned_employee_id: '',
+    assigned_employee_ids: [],
+    assigned_employees: [],
     approval_required: false,
     approver_designation_id: ''
   });
@@ -100,54 +420,102 @@ export default function UniversalWorkplaceModule({ moduleAccess = {}, userRole =
 
   const loadWorkflowData = async () => {
     try {
-      const serverWorkflows = await getWorkflowDefinitions();
-      setWorkflows(prev => [...serverWorkflows, ...prev.filter(w => !w.persisted
-        && !serverWorkflows.some(sw => sw.workflow_code === w.workflow_code))]);
-      const instances = await getWorkflowInstances();
-      setLiveInstances(instances);
-    } catch (err) { setWorkflowError(err.message || 'Could not load workflows'); }
+      const [serverWorkflows, instances] = await Promise.all([
+        getWorkflowDefinitions(),
+        getWorkflowInstances()
+      ]);
+      setWorkflows(prev => {
+        const swList = serverWorkflows || [];
+        const nonPersisted = prev.filter(w => !w.persisted && !swList.some(sw => sw.workflow_code === w.workflow_code));
+        return [...swList, ...nonPersisted];
+      });
+      setLiveInstances(instances || []);
+    } catch (err) {
+      setWorkflowError(err.message || 'Could not load workflows');
+    }
   };
 
   useEffect(() => {
     let isMounted = true;
-    startWorkflowTransition(async () => {
-      try {
-        const [desigData, empData] = await Promise.all([
-          getDesignations(),
-          getEmployeesMaster()
-        ]);
-        if (isMounted) {
-          setDesignations(desigData || []);
-          setEmployees(empData || []);
-        }
-      } catch (e) {
-        console.error('Error loading role assignments:', e);
+
+    // 1. Instantly merge cached/local workflows so page has data from millisecond 0
+    try {
+      const stored = JSON.parse(localStorage.getItem('crm_custom_workflows') || '[]');
+      if (Array.isArray(stored) && isMounted) {
+        setLegacyWorkflowNotice(stored.some(w => w?.stages?.length));
+        setWorkflows(prev => [...prev, ...stored.filter(w => w?.id && !prev.some(p => p.id === w.id))
+          .map(w => ({ ...w, persisted: false }))]);
       }
+    } catch {}
 
-      try {
-        const stored = JSON.parse(localStorage.getItem('crm_custom_workflows') || '[]');
-        if (Array.isArray(stored) && isMounted) {
-          setLegacyWorkflowNotice(stored.some(w => w?.stages?.length));
-          setWorkflows(prev => [...prev, ...stored.filter(w => w?.id && !prev.some(p => p.id === w.id))
-            .map(w => ({ ...w, persisted: false }))]);
-        }
-      } catch {}
+    // 2. Fetch server workflows and instances in parallel immediately without blocking UI
+    loadWorkflowData();
 
+    // 3. Fetch designations & employees asynchronously in the background for stage configurator modal
+    Promise.all([
+      getDesignations(),
+      getEmployeesMaster()
+    ]).then(([desigData, empData]) => {
       if (isMounted) {
-        await loadWorkflowData();
+        setDesignations(desigData || []);
+        setEmployees(empData || []);
       }
+    }).catch(e => {
+      console.warn('Background role assignments load:', e?.message);
     });
+
     return () => { isMounted = false; };
   }, []);
+
+  const handleOpenConfigureStages = async (wf) => {
+    setSelectedWfForStages(wf);
+    if (!wf.persisted || !wf.workflow_versions?.[0]?.id) {
+      try {
+        const res = await workflowRequest(() => importWorkflowDefinition(wf));
+        if (res?.workflow) {
+          setSelectedWfForStages(res.workflow);
+          setWorkflows(prev => [res.workflow, ...prev.filter(w => w.id !== wf.id && w.workflow_code !== wf.workflow_code)]);
+        }
+      } catch (err) {
+        console.warn('Auto-save workflow on open configure stages:', err?.message);
+      }
+    }
+  };
 
   const handleSaveStage = async (e) => {
     e.preventDefault();
     if (!selectedWfForStages) return;
     try {
-      const verId = selectedWfForStages.workflow_versions?.[0]?.id || `ver-${selectedWfForStages.id}`;
+      let currentWf = selectedWfForStages;
+      if (!currentWf.persisted || !currentWf.workflow_versions?.[0]?.id || !isUUID(currentWf.workflow_versions?.[0]?.id)) {
+        try {
+          const importRes = await workflowRequest(() => importWorkflowDefinition(currentWf));
+          if (importRes?.workflow) {
+            currentWf = importRes.workflow;
+            setSelectedWfForStages(currentWf);
+            setWorkflows(prev => [currentWf, ...prev.filter(w => w.id !== currentWf.id && w.workflow_code !== currentWf.workflow_code)]);
+          }
+        } catch (e) {
+          console.warn('Auto-save before stage creation:', e?.message);
+        }
+      }
+      const verId = currentWf.workflow_versions?.[0]?.id || `ver-${currentWf.id}`;
       const approverDesig = designations.find(d => d.id === stageForm.approver_designation_id);
       const workerDesig = designations.find(d => d.id === stageForm.assigned_designation_id);
-      const workerEmp = employees.find(e => e.id === stageForm.assigned_employee_id);
+
+      const selectedEmpIds = Array.isArray(stageForm.assigned_employee_ids) && stageForm.assigned_employee_ids.length > 0
+        ? stageForm.assigned_employee_ids
+        : (stageForm.assigned_employee_id ? [stageForm.assigned_employee_id] : []);
+      const selectedEmpObjs = employees.filter(e => selectedEmpIds.includes(e.id));
+      const firstWorkerEmp = selectedEmpObjs[0] || employees.find(e => e.id === stageForm.assigned_employee_id);
+      const combinedWorkerNames = selectedEmpObjs.length > 0
+        ? selectedEmpObjs.map(e => (e.emp_name || e.name || '') + (e.emp_code ? ` (${e.emp_code})` : '')).filter(Boolean).join(', ')
+        : (firstWorkerEmp?.emp_name || '');
+
+      if (stageForm.assignee_type === 'SPECIFIC_EMPLOYEE' && selectedEmpIds.length === 0) {
+        alert('Please select at least one assigned employee for this stage.');
+        return;
+      }
 
       const stageIndex = (selectedWfForStages.stages || []).length;
       const canonicalCode = `S${String(stageIndex).padStart(2, '0')}`;
@@ -190,12 +558,28 @@ export default function UniversalWorkplaceModule({ moduleAccess = {}, userRole =
         fields: defaultFields,
         approver_designation_name: approverDesig?.designation_name || '',
         assigned_designation_name: workerDesig?.designation_name || '',
-        assigned_employee_name: workerEmp?.emp_name || ''
+        assigned_employee_id: firstWorkerEmp?.id || selectedEmpIds[0] || null,
+        assigned_employee_name: combinedWorkerNames,
+        assigned_employee_ids: selectedEmpIds,
+        assigned_employees: selectedEmpObjs.map(e => ({
+          id: e.id,
+          emp_name: e.emp_name || e.name,
+          emp_code: e.emp_code,
+          designation_name: e.designation_name || e.designation
+        }))
       }));
 
       createdStage.stage_code = canonicalCode;
       createdStage.tat_formatted_display = displayStr;
       createdStage.planned_tat_hours = hours;
+      createdStage.assigned_employee_ids = selectedEmpIds;
+      createdStage.assigned_employees = selectedEmpObjs.map(e => ({
+        id: e.id,
+        emp_name: e.emp_name || e.name,
+        emp_code: e.emp_code,
+        designation_name: e.designation_name || e.designation
+      }));
+      createdStage.assigned_employee_name = combinedWorkerNames;
 
       const updatedStages = [...(selectedWfForStages.stages || []), createdStage];
       const updatedWf = { ...selectedWfForStages, stages: updatedStages };
@@ -217,6 +601,8 @@ export default function UniversalWorkplaceModule({ moduleAccess = {}, userRole =
         assignee_type: 'BY_DESIGNATION',
         assigned_designation_id: '',
         assigned_employee_id: '',
+        assigned_employee_ids: [],
+        assigned_employees: [],
         approval_required: false,
         approver_designation_id: ''
       });
@@ -349,11 +735,18 @@ export default function UniversalWorkplaceModule({ moduleAccess = {}, userRole =
   const handleCreateWorkflow = async (e) => {
     e.preventDefault();
     try {
-      const res = await workflowRequest(() => createWorkflowDefinition(workflowForm));
+      const code = workflowForm.workflow_code.trim() || `WF-${workflowForm.category.slice(0, 4)}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
+      const payload = {
+        ...workflowForm,
+        workflow_code: code,
+        company_tenant: workflowForm.company_tenant || 'TNT00002',
+        branch_code: workflowForm.branch_code || 'All'
+      };
+      const res = await workflowRequest(() => createWorkflowDefinition(payload));
       if (res && res.workflow) {
         setWorkflows(prev => {
           const filtered = prev.filter(w => w.id !== res.workflow.id);
-          return [res.workflow, ...filtered];
+          return [{ ...res.workflow, company_tenant: payload.company_tenant, branch_code: payload.branch_code }, ...filtered];
         });
       }
       setShowAddWorkflowModal(false);
@@ -362,7 +755,9 @@ export default function UniversalWorkplaceModule({ moduleAccess = {}, userRole =
         workflow_code: '',
         category: 'PRODUCTION',
         description: '',
-        planning_mode: 'ACTUAL_PLUS_TAT'
+        planning_mode: 'ACTUAL_PLUS_TAT',
+        company_tenant: 'TNT00002',
+        branch_code: 'All'
       });
       alert('Workflow Created Successfully!');
       await loadWorkflowData();
@@ -377,7 +772,7 @@ export default function UniversalWorkplaceModule({ moduleAccess = {}, userRole =
       {workflowPending && <p role="status">Loading / saving workflow…</p>}
       {legacyWorkflowNotice && <p style={{ fontSize: '0.85rem' }}>Older local stage settings remain preserved in this browser. Supabase records are shown as the saved source.</p>}
 
-      {/* Top Header & Sub-page Navigation Tabs */}
+      {/* Top Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
           <h1 style={{ fontSize: '1.5rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.6rem', color: 'var(--text-primary, #0f172a)' }}>
@@ -389,99 +784,67 @@ export default function UniversalWorkplaceModule({ moduleAccess = {}, userRole =
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
           <button
             type="button"
             disabled={workflowPending}
             onClick={() => startWorkflowTransition(loadWorkflowData)}
             className="btn-action-secondary"
-            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 0.85rem', fontSize: '0.8rem' }}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 0.9rem', fontSize: '0.85rem' }}
           >
-            <RefreshCw size={14} /> Refresh
+            <RefreshCw size={15} /> Refresh
           </button>
 
-          {/* Sub-page Navigation Tabs / Filter Bar */}
-          <div style={{ display: 'flex', background: 'var(--bg-primary, #f1f5f9)', padding: '0.25rem', borderRadius: '10px', border: '1px solid var(--border-light, #e2e8f0)' }}>
-            <button
-              onClick={() => handleFilterChange('active')}
-              style={{
-                padding: '0.45rem 0.9rem',
-                background: workflowFilter === 'active' ? 'var(--accent-color, #2563eb)' : 'transparent',
-                border: 'none',
-                borderRadius: '6px',
-                color: workflowFilter === 'active' ? '#fff' : 'var(--text-secondary, #475569)',
-                fontSize: '0.82rem',
-                fontWeight: 600,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.35rem',
-                transition: 'all 0.15s ease'
-              }}
-            >
-              <span>Active Workflows</span>
-              <span style={{ fontSize: '0.72rem', background: workflowFilter === 'active' ? 'rgba(255,255,255,0.25)' : 'var(--border-light, rgba(0,0,0,0.08))', color: workflowFilter === 'active' ? '#fff' : 'var(--text-primary, #0f172a)', padding: '0.1rem 0.4rem', borderRadius: '10px' }}>
-                {workflows.filter(w => w.status !== 'DELETED').length}
-              </span>
-            </button>
-            <button
-              onClick={() => handleFilterChange('tracker')}
-              style={{
-                padding: '0.45rem 0.9rem',
-                background: workflowFilter === 'tracker' ? 'var(--accent-color, #2563eb)' : 'transparent',
-                border: 'none',
-                borderRadius: '6px',
-                color: workflowFilter === 'tracker' ? '#fff' : 'var(--text-secondary, #475569)',
-                fontSize: '0.82rem',
-                fontWeight: 600,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.35rem',
-                transition: 'all 0.15s ease'
-              }}
-            >
-              <PlayCircle size={14} />
-              <span>Live Working Tracker</span>
-              <span style={{ fontSize: '0.72rem', background: workflowFilter === 'tracker' ? 'rgba(255,255,255,0.25)' : 'var(--border-light, rgba(0,0,0,0.08))', color: workflowFilter === 'tracker' ? '#fff' : 'var(--text-primary, #0f172a)', padding: '0.1rem 0.4rem', borderRadius: '10px' }}>
-                {liveInstances.length}
-              </span>
-            </button>
-            <button
-              onClick={() => handleFilterChange('trash')}
-              style={{
-                padding: '0.45rem 0.9rem',
-                background: workflowFilter === 'trash' ? '#ef4444' : 'transparent',
-                border: 'none',
-                borderRadius: '6px',
-                color: workflowFilter === 'trash' ? '#fff' : 'var(--text-secondary, #475569)',
-                fontSize: '0.82rem',
-                fontWeight: 600,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.35rem',
-                transition: 'all 0.15s ease'
-              }}
-            >
-              <Trash2 size={14} />
-              <span>Trash Bin</span>
-              <span style={{ fontSize: '0.72rem', background: workflowFilter === 'trash' ? 'rgba(255,255,255,0.25)' : 'var(--border-light, rgba(0,0,0,0.08))', color: workflowFilter === 'trash' ? '#fff' : 'var(--text-primary, #0f172a)', padding: '0.1rem 0.4rem', borderRadius: '10px' }}>
-                {workflows.filter(w => w.status === 'DELETED').length}
-              </span>
-            </button>
-          </div>
-
-          {workflowFilter === 'active' && (
-            <button
-              onClick={() => setShowAddWorkflowModal(true)}
-              style={{ padding: '0.5rem 1rem', background: 'var(--accent-color, #2563eb)', border: 'none', borderRadius: '8px', color: '#fff', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem' }}
-            >
-              <Plus size={16} /> Create Workflow
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => setShowAddWorkflowModal(true)}
+            style={{
+              padding: '0.5rem 1rem',
+              background: 'var(--accent-color, #2563eb)',
+              border: 'none',
+              borderRadius: '8px',
+              color: '#fff',
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.4rem',
+              fontSize: '0.85rem',
+              boxShadow: 'var(--shadow-sm)'
+            }}
+          >
+            <Plus size={16} /> Create Workflow
+          </button>
         </div>
       </div>
+
+      {/* Enterprise B2B SaaS Segmented Sub-Tab Navigation (WhatsApp Official Style) */}
+      <CRMTabs
+        id="workflow-builder-tabs"
+        label="Workflow Builder pages"
+        items={[
+          {
+            id: 'active',
+            label: 'Active Workflows',
+            icon: GitMerge,
+            count: workflows.filter(w => w.status !== 'DELETED').length
+          },
+          {
+            id: 'tracker',
+            label: 'Live Working Tracker',
+            icon: PlayCircle,
+            count: liveInstances.length
+          },
+          {
+            id: 'trash',
+            label: 'Trash Bin',
+            icon: Trash2,
+            count: workflows.filter(w => w.status === 'DELETED').length
+          }
+        ]}
+        value={workflowFilter}
+        onChange={handleFilterChange}
+      />
 
       {/* SUB-PAGE 2: LIVE WORKING TRACKER VIEW */}
       {workflowFilter === 'tracker' && (
@@ -613,11 +976,19 @@ export default function UniversalWorkplaceModule({ moduleAccess = {}, userRole =
           ) : (
             workflows.filter(w => workflowFilter === 'trash' ? w.status === 'DELETED' : w.status !== 'DELETED').map(wf => (
               <div key={wf.id} style={{ color: 'var(--text-primary, #0f172a)', background: 'var(--bg-surface, #ffffff)', border: wf.status === 'DELETED' ? '1px solid rgba(239, 68, 68, 0.4)' : '1px solid var(--border-light, #e2e8f0)', borderRadius: '12px', padding: '1.25rem', boxShadow: 'var(--shadow-sm)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
                   <div>
-                    <span style={{ fontSize: '0.75rem', fontWeight: 700, padding: '0.2rem 0.5rem', borderRadius: '4px', background: 'rgba(59, 130, 246, 0.12)', color: 'var(--accent-color, #2563eb)' }}>
-                      {wf.category || 'WORKFLOW'}
-                    </span>
+                    <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '0.75rem', fontWeight: 700, padding: '0.2rem 0.5rem', borderRadius: '4px', background: 'rgba(59, 130, 246, 0.12)', color: 'var(--accent-color, #2563eb)' }}>
+                        {wf.category || 'WORKFLOW'}
+                      </span>
+                      <span style={{ fontSize: '0.7rem', padding: '0.15rem 0.45rem', borderRadius: '4px', background: 'var(--bg-primary, #f1f5f9)', color: 'var(--text-secondary, #475569)', fontWeight: 600, border: '1px solid var(--border-light, #e2e8f0)', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                        <Building2 size={11} /> {wf.company_tenant || wf.tenant_code || 'TNT00002'}
+                      </span>
+                      <span style={{ fontSize: '0.7rem', padding: '0.15rem 0.45rem', borderRadius: '4px', background: (wf.branch_code && wf.branch_code !== 'All') ? 'rgba(59, 130, 246, 0.1)' : 'rgba(16, 185, 129, 0.1)', color: (wf.branch_code && wf.branch_code !== 'All') ? '#2563eb' : '#059669', fontWeight: 600, border: '1px solid var(--border-light, #e2e8f0)', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                        <MapPin size={11} /> {wf.branch_code && wf.branch_code !== 'All' ? formatBranchStandard(wf.branch_code) : 'All Branches'}
+                      </span>
+                    </div>
                     <h3 style={{ fontSize: '1.1rem', fontWeight: 700, margin: '0.4rem 0 0 0', color: 'var(--text-primary, #0f172a)' }}>{wf.workflow_name}</h3>
                     <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary, #64748b)' }}>Code: {wf.workflow_code}</div>
                   </div>
@@ -636,29 +1007,52 @@ export default function UniversalWorkplaceModule({ moduleAccess = {}, userRole =
 
                 <label style={{ display: 'block', marginTop: '0.75rem', fontSize: '0.85rem', color: 'var(--text-secondary, #64748b)' }}>
                   Next stage planning rule
-                  <select aria-label={`Planning rule for ${wf.workflow_name}`} disabled={workflowPending || !wf.persisted}
+                  <select aria-label={`Planning rule for ${wf.workflow_name}`} disabled={workflowPending}
                     value={wf.planning_mode || 'ACTUAL_PLUS_TAT'} onChange={e => handlePlanningMode(wf, e.target.value)}
                     style={{ display: 'block', width: '100%', padding: '0.5rem', marginTop: '0.3rem', color: 'var(--text-primary, #0f172a)', background: 'var(--bg-primary, #f8fafc)', border: '1px solid var(--border-strong, #cbd5e1)', borderRadius: '6px' }}>
                     <option value="ACTUAL_PLUS_TAT">Previous Actual Completion + TAT</option>
                     <option value="PLANNED_PLUS_TAT">Previous Planned Completion + TAT</option>
                   </select>
                 </label>
-                {!wf.persisted && <button disabled={workflowPending} onClick={() => handleImportWorkflow(wf)} style={{ marginTop: '0.5rem' }}>Save Local Workflow to Supabase</button>}
+                {!wf.persisted && (
+                  <button
+                    disabled={workflowPending}
+                    onClick={() => handleImportWorkflow(wf)}
+                    style={{ marginTop: '0.5rem', width: '100%', padding: '0.4rem', background: 'rgba(59, 130, 246, 0.1)', border: '1px dashed var(--accent-color, #2563eb)', borderRadius: '6px', color: 'var(--accent-color, #2563eb)', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}
+                  >
+                    ☁️ Save Local Workflow to Supabase
+                  </button>
+                )}
                 <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem', flexWrap: 'wrap' }}>
                   {wf.status !== 'DELETED' ? (
                     <>
                       <button
-                        disabled={workflowPending || !wf.persisted || !wf.stages?.length}
-                        onClick={() => { launchRequestKey.current = crypto.randomUUID(); setLiveLaunchWf(wf); }}
+                        disabled={workflowPending || !wf.stages?.length}
+                        onClick={async () => {
+                          let targetWf = wf;
+                          if (!targetWf.persisted || !targetWf.workflow_versions?.[0]?.id) {
+                            try {
+                              const res = await workflowRequest(() => importWorkflowDefinition(targetWf));
+                              if (res?.workflow) {
+                                targetWf = res.workflow;
+                                setWorkflows(prev => [res.workflow, ...prev.filter(w => w.id !== wf.id && w.workflow_code !== wf.workflow_code)]);
+                              }
+                            } catch (e) {
+                              console.warn('Auto-save on launch:', e?.message);
+                            }
+                          }
+                          launchRequestKey.current = crypto.randomUUID();
+                          setLiveLaunchWf(targetWf);
+                        }}
                         style={{ padding: '0.5rem 0.8rem', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '0.85rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem', boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)' }}
                         title="Launch Live Workflow Order Instance"
                       >
                         <PlayCircle size={15} /> Start Live Instance
                       </button>
                       <button
-                        disabled={workflowPending || !wf.persisted}
-                        onClick={() => setSelectedWfForStages(wf)}
-                        style={{ flex: 1, padding: '0.5rem', background: 'rgba(59, 130, 246, 0.12)', border: '1px solid rgba(59, 130, 246, 0.3)', borderRadius: '6px', color: '#60a5fa', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}
+                        disabled={workflowPending}
+                        onClick={() => handleOpenConfigureStages(wf)}
+                        style={{ flex: 1, padding: '0.5rem', background: 'rgba(59, 130, 246, 0.12)', border: '1px solid rgba(59, 130, 246, 0.3)', borderRadius: '6px', color: 'var(--accent-color, #2563eb)', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}
                       >
                         <Settings size={15} /> Configure Stages ({wf.stages?.length || 0})
                       </button>
@@ -734,6 +1128,18 @@ export default function UniversalWorkplaceModule({ moduleAccess = {}, userRole =
                   onChange={e => setLiveForm({ ...liveForm, customer_name: e.target.value })}
                   placeholder="e.g. Swan Agro / Punjab Dealer Indent"
                   style={{ width: '100%', padding: '0.6rem', background: 'var(--bg-primary, #f8fafc)', border: '1px solid var(--border-strong, #cbd5e1)', borderRadius: '6px', color: 'var(--text-primary, #0f172a)', fontSize: '0.85rem' }}
+                />
+              </div>
+
+              <div style={{ marginBottom: '0.85rem' }}>
+                <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary, #64748b)', display: 'block', marginBottom: '0.3rem' }}>Operational Branch / Plant *</label>
+                <UniversalBranchSelect
+                  value={liveForm.branch_code || (liveLaunchWf.branch_code && liveLaunchWf.branch_code !== 'All' ? liveLaunchWf.branch_code : 'TNT00002-B0002')}
+                  onChange={val => setLiveForm({ ...liveForm, branch_code: val })}
+                  allValue="All"
+                  allLabel="All Branches (Tenant-wide)"
+                  placeholder="Select Branch"
+                  mode="form"
                 />
               </div>
 
@@ -902,7 +1308,12 @@ export default function UniversalWorkplaceModule({ moduleAccess = {}, userRole =
                               <div style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--text-primary, #0f172a)' }}>{stg.stage_name}</div>
                               <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary, #64748b)', display: 'flex', gap: '0.6rem', marginTop: '0.2rem' }}>
                                 <span>Type: <strong>{stg.execution_type}</strong></span>
-                                <span>| Worker: <strong style={{ color: 'var(--accent-color, #2563eb)' }}>{stg.assigned_designation_name || stg.assigned_employee_name || 'Unassigned'}</strong></span>
+                                <span>| Worker: <strong style={{ color: 'var(--accent-color, #2563eb)' }}>
+                                  {stg.assigned_designation_name ||
+                                   (Array.isArray(stg.assigned_employees) && stg.assigned_employees.length > 1
+                                     ? `${stg.assigned_employees.map(e => e.emp_name || e.name).join(', ')} (${stg.assigned_employees.length} assigned)`
+                                     : (stg.assigned_employee_name || 'Unassigned'))}
+                                </strong></span>
                               </div>
                             </div>
                           </div>
@@ -1104,12 +1515,22 @@ export default function UniversalWorkplaceModule({ moduleAccess = {}, userRole =
                   )}
 
                   {stageForm.assignee_type === 'SPECIFIC_EMPLOYEE' && (
-                    <div>
-                      <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary, #64748b)', display: 'block', marginBottom: '0.2rem' }}>Assigned Employee</label>
-                      <select value={stageForm.assigned_employee_id} onChange={e => setStageForm({ ...stageForm, assigned_employee_id: e.target.value })} style={{ width: '100%', padding: '0.5rem', background: 'var(--bg-surface, #ffffff)', border: '1px solid var(--border-strong, #cbd5e1)', borderRadius: '6px', color: 'var(--text-primary, #0f172a)', fontSize: '0.85rem' }}>
-                        <option value="">-- Select Specific Employee --</option>
-                        {employees.map(m => <option key={m.id} value={m.id}>{m.emp_name} ({m.emp_code} - {m.designation_name})</option>)}
-                      </select>
+                    <div style={{ gridColumn: 'span 2' }}>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary, #64748b)', display: 'block', marginBottom: '0.2rem', fontWeight: 600 }}>
+                        Assigned Employee(s) — Search & Select (Multiple Selection Allowed)
+                      </label>
+                      <StageEmployeeMultiSelect
+                        employees={employees}
+                        selectedIds={stageForm.assigned_employee_ids || (stageForm.assigned_employee_id ? [stageForm.assigned_employee_id] : [])}
+                        onChange={(newIds, newObjs) => {
+                          setStageForm({
+                            ...stageForm,
+                            assigned_employee_ids: newIds,
+                            assigned_employees: newObjs,
+                            assigned_employee_id: newIds[0] || ''
+                          });
+                        }}
+                      />
                     </div>
                   )}
                 </div>
@@ -1199,6 +1620,31 @@ export default function UniversalWorkplaceModule({ moduleAccess = {}, userRole =
                     <option value="SALES">Sales & Billing</option>
                     <option value="HR">HR</option>
                   </select>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                  <div>
+                    <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem' }}>Target Company / Tenant *</label>
+                    <select
+                      value={workflowForm.company_tenant || 'TNT00002'}
+                      onChange={e => setWorkflowForm({ ...workflowForm, company_tenant: e.target.value })}
+                      style={{ width: '100%', padding: '0.5rem', background: 'var(--bg-surface, #ffffff)', border: '1px solid var(--border-strong, #cbd5e1)', borderRadius: '6px', color: 'var(--text-primary, #0f172a)', fontSize: '0.85rem' }}
+                    >
+                      <option value="TNT00002">TNT00002 — New Swan Group</option>
+                      <option value="TNT00001">TNT00001 — SuPuja Creations</option>
+                      <option value="TNT00003">TNT00003 — Testing New Swan Group</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem' }}>Assigned Branch / Plant *</label>
+                    <UniversalBranchSelect
+                      value={workflowForm.branch_code || 'All'}
+                      onChange={val => setWorkflowForm({ ...workflowForm, branch_code: val })}
+                      allValue="All"
+                      allLabel="All Branches (Tenant-wide)"
+                      placeholder="Select Branch"
+                      mode="form"
+                    />
+                  </div>
                 </div>
                 <div>
                   <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem' }}>Planning Rule</label>

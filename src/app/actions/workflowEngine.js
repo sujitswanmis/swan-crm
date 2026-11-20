@@ -86,7 +86,7 @@ function prepareWorkflow(wf) {
     for (const stage of wf.stages) {
       if (!String(stage.stage_name || '').trim()) throw new Error('Stage name is required');
       if (stage.assignee_type === 'BY_DESIGNATION' && !stage.assigned_designation_id) throw new Error('Select a worker designation');
-      if (['BY_EMPLOYEE','SPECIFIC_EMPLOYEE'].includes(stage.assignee_type) && !stage.assigned_employee_id) throw new Error('Select a worker');
+      if (['BY_EMPLOYEE','SPECIFIC_EMPLOYEE'].includes(stage.assignee_type) && !stage.assigned_employee_id && (!stage.assigned_employee_ids || stage.assigned_employee_ids.length === 0)) throw new Error('Select a worker');
       if (stage.approval_required && !stage.approver_designation_id) throw new Error('Select an approver designation');
       const keys = (stage.fields || []).map(f => f.field_key || String(f.field_name || '').trim().toLowerCase().replace(/\W+/g, '_'));
       if (keys.some(k => !k || k.startsWith('_')) || new Set(keys).size !== keys.length) throw new Error('Stage field keys must be nonempty and unique');
@@ -100,7 +100,10 @@ function prepareWorkflow(wf) {
     ...(s.tat_value ? { tat_value: s.tat_value, tat_unit: s.tat_unit || 'HOURS' } : {}),
     tat_formatted_display: s.tat_formatted_display || '', assignee_type: s.assignee_type,
     assigned_designation_id: s.assigned_designation_id || null, assigned_designation_name: s.assigned_designation_name || '',
-    assigned_employee_id: s.assigned_employee_id || null, assigned_employee_name: s.assigned_employee_name || '',
+    assigned_employee_id: s.assigned_employee_id || (Array.isArray(s.assigned_employee_ids) && s.assigned_employee_ids[0]) || null,
+    assigned_employee_name: s.assigned_employee_name || '',
+    assigned_employee_ids: Array.isArray(s.assigned_employee_ids) ? s.assigned_employee_ids : (s.assigned_employee_id ? [s.assigned_employee_id] : []),
+    assigned_employees: Array.isArray(s.assigned_employees) ? s.assigned_employees : [],
     approval_required: !!s.approval_required, approver_designation_id: s.approver_designation_id || null,
     approver_designation_name: s.approver_designation_name || '',
     fields: (s.fields || []).map(f => ({ id: f.id,
@@ -125,13 +128,16 @@ export async function getWorkflowDefinitions(tenantId) {
 }
 
 export async function createWorkflowDefinition(workflowData, tenantId) {
-  const ctx = await access('add', tenantId);
+  const targetTenant = tenantId || workflowData.tenant_id;
+  const ctx = await access('add', targetTenant);
   // Never accept client supplied database IDs on the creation endpoint.
   const workflow = await save(ctx, { workflow_name: workflowData.workflow_name,
     workflow_code: workflowData.workflow_code || `WF-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
     category: workflowData.category || 'PRODUCTION', description: workflowData.description || '',
-    planning_mode: workflowData.planning_mode || 'ACTUAL_PLUS_TAT', stages: [] });
-  return { workflow };
+    planning_mode: workflowData.planning_mode || 'ACTUAL_PLUS_TAT',
+    branch_code: workflowData.branch_code || 'All',
+    stages: [] });
+  return { workflow: { ...workflow, branch_code: workflowData.branch_code || 'All', company_tenant: workflowData.company_tenant || 'TNT00002' } };
 }
 
 export async function importWorkflowDefinition(workflowData) {
