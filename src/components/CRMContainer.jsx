@@ -7954,6 +7954,7 @@ export default function CRMContainer({
                     userName={userName} 
                     selectedStage={recruiterFilterStage}
                     recruiterAccess={moduleAccess['recruiter'] || null}
+                    moduleAccess={moduleAccess}
                     isAdmin={userRole === 'admin' || userRole === 'Admin'}
                     userCompany={userCompany}
                     tenantId={effectiveTenantId}

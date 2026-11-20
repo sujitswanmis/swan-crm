@@ -5,7 +5,11 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { Plus, Briefcase, Users, Search, ChevronRight, UserPlus, Filter, RefreshCw, Calendar, FileText, CheckCircle2, ClipboardList } from 'lucide-react';
 import CandidateProfilePanel from './CandidateProfilePanel';
-import { getRecruitersList } from '@/app/actions/team';
+import { getRecruitersList, getTeamMembers } from '@/app/actions/team';
+import { getTenantBranches } from '@/app/actions/tenantBranches';
+import UniversalBranchSelect from '@/components/common/UniversalBranchSelect';
+import SearchableEmployeeSelect from '@/components/common/SearchableEmployeeSelect';
+import { formatBranchStandard } from '@/utils/branchAccess';
 import { 
   getPositions, 
   savePosition, 
@@ -22,10 +26,14 @@ const RECRUITER_POSITIONS_DEFAULT_COL_WIDTHS = {
   title: 220,
   position_id: 130,
   department: 160,
+  branch: 200,
   openings: 100,
   salary: 160,
-  status: 120,
+  status: 130,
   deadline: 130,
+  planned_tat: 155,
+  actual_logged: 155,
+  delay_status: 145,
   interviewer: 160,
   recruiter: 170,
   jd: 240,
@@ -38,10 +46,14 @@ const RECRUITER_POSITIONS_MIN_COL_WIDTHS = {
   title: 120,
   position_id: 90,
   department: 100,
+  branch: 110,
   openings: 70,
   salary: 110,
   status: 90,
   deadline: 90,
+  planned_tat: 110,
+  actual_logged: 110,
+  delay_status: 100,
   interviewer: 100,
   recruiter: 110,
   jd: 130,
@@ -54,9 +66,12 @@ const RECRUITER_CANDIDATES_DEFAULT_COL_WIDTHS = {
   name: 200,
   applying_for: 180,
   resume: 120,
-  stage: 100,
+  stage: 110,
   status: 185,
   details: 240,
+  planned_tat: 155,
+  actual_logged: 155,
+  delay_status: 145,
   date: 130,
   actions: 130
 };
@@ -65,12 +80,64 @@ const RECRUITER_CANDIDATES_MIN_COL_WIDTHS = {
   name: 120,
   applying_for: 110,
   resume: 80,
-  stage: 70,
+  stage: 80,
   status: 120,
   details: 140,
+  planned_tat: 110,
+  actual_logged: 110,
+  delay_status: 100,
   date: 90,
   actions: 90
 };
+
+function formatISTDateTime(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  return new Intl.DateTimeFormat('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true
+  }).format(d);
+}
+
+function getStageNumber(stageId) {
+  if (!stageId) return -1;
+  const match = String(stageId).match(/\d+/);
+  return match ? parseInt(match[0], 10) : -1;
+}
+
+function getSlaDelayInfo(plannedDateObj, actualDateObj = null) {
+  if (!plannedDateObj || isNaN(plannedDateObj.getTime())) {
+    return { isDelayed: false, badgeText: '🟢 On Track', color: '#166534', bg: '#dcfce7' };
+  }
+  const compareTime = actualDateObj && !isNaN(actualDateObj.getTime()) ? actualDateObj.getTime() : Date.now();
+  const diffMs = compareTime - plannedDateObj.getTime();
+  
+  if (diffMs > 0) {
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const days = Math.floor(diffHours / 24);
+    const hours = diffHours % 24;
+    const durStr = days > 0 ? `${days}d ${hours}h` : `${hours}h`;
+    return {
+      isDelayed: true,
+      badgeText: `🔴 Delayed (${durStr})`,
+      color: '#991b1b',
+      bg: '#fee2e2'
+    };
+  } else {
+    return {
+      isDelayed: false,
+      badgeText: '🟢 On Track',
+      color: '#166534',
+      bg: '#dcfce7'
+    };
+  }
+}
 
 const getStatusOptions = (stage) => {
   switch (stage) {
@@ -110,6 +177,7 @@ export default function RecruiterDashboard({
   userName, 
   selectedStage = 'positions', 
   recruiterAccess = null, 
+  moduleAccess = null,
   isAdmin = false,
   userCompany = '',
   tenantId = null,
@@ -147,6 +215,16 @@ export default function RecruiterDashboard({
 
   const canAccessDashboard = isAdmin || userRole === 'admin' || userRole === 'Admin' || !!(recruiterAccess?.is_manager);
   const canAccessAllStages = canAccessDashboard;
+
+  // Power check: only Manager, Admin, or users with can_decrease_recruiter_stage can revert/demote stages
+  const canDecreaseStage = useMemo(() => {
+    return isAdmin || 
+      userRole === 'admin' || 
+      userRole === 'Admin' || 
+      recruiterAccess?.is_manager === true || 
+      recruiterAccess?.can_decrease_stage === true || 
+      moduleAccess?.can_decrease_recruiter_stage === true;
+  }, [isAdmin, userRole, recruiterAccess, moduleAccess]);
   
   // Data State
   const [positions, setPositions] = useState([]);
@@ -196,7 +274,68 @@ export default function RecruiterDashboard({
   const [savingEditPos, setSavingEditPos] = useState(false);
   
   // Form State
-  const [newPosition, setNewPosition] = useState({ title: '', department: '', openings: 1, jd_text: '', deadline_date: '', interviewer_name: '', recruiter_assigned: 'All', salary_min: '', salary_max: '' });
+  const [newPosition, setNewPosition] = useState({ 
+    title: '', 
+    department: '', 
+    branch_code: '',
+    openings: 1, 
+    jd_text: '', 
+    deadline_date: '', 
+    interviewer_name: '', 
+    recruiter_assigned: 'All', 
+    salary_min: '', 
+    salary_max: '' 
+  });
+  const [availableBranches, setAvailableBranches] = useState([]);
+  const [teamMembers, setTeamMembers] = useState([]);
+
+  // Load Available Branches
+  useEffect(() => {
+    async function loadBranches() {
+      try {
+        const res = await getTenantBranches(userCompany || 'New Swan Group');
+        if (res?.success && Array.isArray(res.branches)) {
+          setAvailableBranches(res.branches.filter(b => b.is_active !== false));
+        }
+      } catch (e) {
+        console.warn('Failed to load branches in RecruiterDashboard:', e);
+      }
+    }
+    loadBranches();
+  }, [userCompany]);
+
+  // Load Team Members for Interviewer Search & Select
+  useEffect(() => {
+    async function loadTeam() {
+      try {
+        const members = await getTeamMembers(userCompany, effectiveTenantId);
+        if (Array.isArray(members)) {
+          setTeamMembers(members.map(m => ({
+            ...m,
+            id: m.user_id || m.id,
+            email: m.email || '',
+            name: m.emp_name || m.name || m.email || 'Employee',
+            emp_name: m.emp_name || m.name || m.email || 'Employee',
+            department: m.department || m.emp_department || 'General',
+            designation: m.emp_designation || m.designation || 'Staff'
+          })));
+        }
+      } catch (e) {
+        console.warn('Failed to load team members in RecruiterDashboard:', e);
+      }
+    }
+    loadTeam();
+  }, [userCompany, effectiveTenantId]);
+
+  // Set default branch for newPosition
+  useEffect(() => {
+    if (availableBranches.length > 0 && !newPosition.branch_code) {
+      const defaultBranch = (adminCompanyFilter && adminCompanyFilter !== 'All') 
+        ? adminCompanyFilter 
+        : (availableBranches[0]?.code || 'TNT00002-B0002');
+      setNewPosition(prev => ({ ...prev, branch_code: prev.branch_code || defaultBranch }));
+    }
+  }, [availableBranches, adminCompanyFilter, newPosition.branch_code]);
   const [newCandidate, setNewCandidate] = useState({ name: '', email: '', phone: '', position_id: '', resume_url: '', expected_salary_min: '', expected_salary_max: '' });
   const [uploadingResume, setUploadingResume] = useState(false);
   const [confirmModal, setConfirmModal] = useState({
@@ -284,6 +423,11 @@ export default function RecruiterDashboard({
       { id: 'S09', label: 'S09: Joined', color: '#dcfce7', textColor: '#166534', tat_hours: 48 }
     ];
   }, [pipelineConfig]);
+
+  // Candidate stages strictly exclude S00 and S01 (which belong only to Job Positions)
+  const CANDIDATE_STAGES = useMemo(() => {
+    return STAGES.filter(s => s.id !== 'S00' && s.id !== 'S01');
+  }, [STAGES]);
 
   const getStatusOptions = useCallback((stageId) => {
     const found = STAGES.find(s => s.id === stageId);
@@ -393,16 +537,30 @@ export default function RecruiterDashboard({
       const { data: { user } } = await supabase.auth.getUser();
       const creator = userName || user?.email?.split('@')[0] || 'Recruiter';
 
+      const selectedBranchCode = newPosition.branch_code || (adminCompanyFilter !== 'All' ? adminCompanyFilter : (availableBranches[0]?.code || 'TNT00002-B0002'));
+
       const res = await savePosition({
         ...newPosition,
+        branch_code: selectedBranchCode,
         deadline_date: newPosition.deadline_date || null,
         salary_min: newPosition.salary_min ? parseInt(newPosition.salary_min) : null,
         salary_max: newPosition.salary_max ? parseInt(newPosition.salary_max) : null,
         status: selectedStage === 'S01' ? 'S01' : 'S00'
-      }, effectiveTenantId, userCompany, creator);
+      }, effectiveTenantId, userCompany, creator, selectedBranchCode);
 
       if (!res.success) throw new Error(res.error);
-      setNewPosition({ title: '', department: '', openings: 1, jd_text: '', deadline_date: '', interviewer_name: '', recruiter_assigned: 'All', salary_min: '', salary_max: '' });
+      setNewPosition({ 
+        title: '', 
+        department: '', 
+        branch_code: selectedBranchCode, 
+        openings: 1, 
+        jd_text: '', 
+        deadline_date: '', 
+        interviewer_name: '', 
+        recruiter_assigned: 'All', 
+        salary_min: '', 
+        salary_max: '' 
+      });
       setIsPositionModalOpen(false);
       loadData();
     } catch (err) {
@@ -433,6 +591,7 @@ export default function RecruiterDashboard({
     setEditPositionForm({
       title: pos.title || '',
       department: pos.department || '',
+      branch_code: pos.branch_code || pos.workspace_branch_code || '',
       openings: pos.openings || 1,
       jd_text: pos.jd_text || '',
       deadline_date: pos.deadline_date || '',
@@ -455,7 +614,7 @@ export default function RecruiterDashboard({
         deadline_date: editPositionForm.deadline_date || null,
         salary_min: editPositionForm.salary_min ? parseInt(editPositionForm.salary_min) : null,
         salary_max: editPositionForm.salary_max ? parseInt(editPositionForm.salary_max) : null
-      }, effectiveTenantId, userCompany, userName);
+      }, effectiveTenantId, userCompany, userName, editPositionForm.branch_code);
 
       if (!res.success) throw new Error(res.error);
       setEditingPosition(null);
@@ -499,6 +658,20 @@ export default function RecruiterDashboard({
   // Update Candidate Stage from table dropdown
   const handleUpdateCandidateStage = async (candidateId, newStage) => {
     try {
+      const cand = candidates.find(c => c.id === candidateId);
+      const currentStage = cand?.current_stage || 'S02';
+      const isDemotion = getStageNumber(newStage) < getStageNumber(currentStage);
+
+      if (isDemotion && !canDecreaseStage) {
+        alert(`Stage Demotion Restricted: Only Manager, Admin, or users with 'Demote / Decrease Recruiter Stage Power' can revert a candidate from ${currentStage} back to ${newStage}.`);
+        return;
+      }
+
+      if (newStage === 'S00' || newStage === 'S01') {
+        alert("Invalid Stage: Candidates cannot be placed in S00 or S01 (Job Positions only). Candidate pipeline starts at S02.");
+        return;
+      }
+
       const { data: { user } } = await supabase.auth.getUser();
       const actor = userName || user?.email?.split('@')[0] || 'System';
       const defaultStatus = getStatusOptions(newStage)[0];
@@ -843,14 +1016,14 @@ export default function RecruiterDashboard({
         </div>
       ) : selectedStage === 'S00' || selectedStage === 'S01' ? (
         /* ==================== TAB: JOB POSITIONS ==================== */
-        <div style={{ overflowX: 'auto', backgroundColor: 'var(--bg-surface)', borderRadius: '12px', border: '1px solid var(--border-light)' }}>
+        <div style={{ width: '100%', overflowX: 'auto', backgroundColor: 'var(--bg-surface)', borderRadius: '12px', border: '1px solid var(--border-light)' }}>
           {filteredPositions.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>
               <h3>No Job Openings in this stage</h3>
               <p>Either create a new position or shift existing positions to change their status.</p>
             </div>
           ) : (
-            <MobileTableView id="Recruiter/RecruiterDashboard-1"><table style={{ width: `${getPosTotalTableWidth()}px`, borderCollapse: 'collapse', textAlign: 'left', tableLayout: 'fixed' }}>
+            <MobileTableView id="Recruiter/RecruiterDashboard-1"><table style={{ width: '100%', minWidth: `${getPosTotalTableWidth()}px`, borderCollapse: 'collapse', textAlign: 'left', tableLayout: 'fixed' }}>
               <thead>
                 <tr style={{ backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-light)' }}>
                   <th style={{ width: `${posColWidths.title}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
@@ -870,6 +1043,12 @@ export default function RecruiterDashboard({
                       <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Department</span>
                     </div>
                     <ColumnResizer colKey="department" isResizing={posResizingCol === 'department'} onResizeStart={handlePosResizeStart} onReset={resetPosColWidth} />
+                  </th>
+                  <th style={{ width: `${posColWidths.branch || 180}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                      <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Branch / Plant</span>
+                    </div>
+                    <ColumnResizer colKey="branch" isResizing={posResizingCol === 'branch'} onResizeStart={handlePosResizeStart} onReset={resetPosColWidth} />
                   </th>
                   <th style={{ width: `${posColWidths.openings}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
@@ -894,6 +1073,24 @@ export default function RecruiterDashboard({
                       <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Deadline</span>
                     </div>
                     <ColumnResizer colKey="deadline" isResizing={posResizingCol === 'deadline'} onResizeStart={handlePosResizeStart} onReset={resetPosColWidth} />
+                  </th>
+                  <th style={{ width: `${posColWidths.planned_tat || 155}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                      <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>⏱️ Planned Target (IST)</span>
+                    </div>
+                    <ColumnResizer colKey="planned_tat" isResizing={posResizingCol === 'planned_tat'} onResizeStart={handlePosResizeStart} onReset={resetPosColWidth} />
+                  </th>
+                  <th style={{ width: `${posColWidths.actual_logged || 155}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                      <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>📅 Actual Logged (IST)</span>
+                    </div>
+                    <ColumnResizer colKey="actual_logged" isResizing={posResizingCol === 'actual_logged'} onResizeStart={handlePosResizeStart} onReset={resetPosColWidth} />
+                  </th>
+                  <th style={{ width: `${posColWidths.delay_status || 145}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                      <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>⚡ Delay Status</span>
+                    </div>
+                    <ColumnResizer colKey="delay_status" isResizing={posResizingCol === 'delay_status'} onResizeStart={handlePosResizeStart} onReset={resetPosColWidth} />
                   </th>
                   <th style={{ width: `${posColWidths.interviewer}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
@@ -936,80 +1133,121 @@ export default function RecruiterDashboard({
                 </tr>
               </thead>
               <tbody>
-                {filteredPositions.map(pos => (
-                  <tr key={pos.id} style={{ borderBottom: '1px solid var(--border-light)', transition: 'background-color 0.2s' }}>
-                    <td style={{ width: `${posColWidths.title}px`, padding: '0.85rem 1rem', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)', boxSizing: 'border-box', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3, verticalAlign: 'top' }} title={pos.title}>{pos.title}</td>
-                    <td style={{ width: `${posColWidths.position_id}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', fontFamily: 'monospace', color: 'var(--text-secondary)', boxSizing: 'border-box', verticalAlign: 'top' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', overflow: 'hidden' }}>
-                        <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }} title={`Full ID: ${pos.id}`}>{pos.id ? `POS-${pos.id.substring(0, 8).toUpperCase()}` : 'N/A'}</span>
-                        {pos.id && (
-                          <button
-                            onClick={() => {
-                              navigator.clipboard.writeText(`POS-${pos.id.substring(0, 8).toUpperCase()}`);
-                              alert('Position Code copied!');
-                            }}
-                            style={{
-                              background: 'none', border: 'none', cursor: 'pointer', padding: '0.1rem 0.25rem',
-                              color: 'var(--text-secondary)', fontSize: '0.75rem', flexShrink: 0
-                            }}
-                            title="Copy Position Code"
-                          >
-                            📋
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                    <td style={{ width: `${posColWidths.department}px`, padding: '0.85rem 1rem', fontSize: '0.85rem', color: 'var(--text-primary)', boxSizing: 'border-box', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3, verticalAlign: 'top' }} title={pos.department}>{pos.department}</td>
-                    <td style={{ width: `${posColWidths.openings}px`, padding: '0.85rem 1rem', fontSize: '0.85rem', color: 'var(--text-primary)', boxSizing: 'border-box', verticalAlign: 'top' }}>{pos.openings}</td>
-                    <td style={{ width: `${posColWidths.salary}px`, padding: '0.85rem 1rem', fontSize: '0.85rem', color: 'var(--text-primary)', boxSizing: 'border-box', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3, verticalAlign: 'top' }}>
-                      {pos.salary_min || pos.salary_max ? (
-                        <span title={`${pos.salary_min ? `₹${pos.salary_min.toLocaleString('en-IN')}` : '0'} - ${pos.salary_max ? `₹${pos.salary_max.toLocaleString('en-IN')}` : 'Any'} / month`}>
-                          {pos.salary_min ? `₹${pos.salary_min.toLocaleString('en-IN')}` : '0'} - {pos.salary_max ? `₹${pos.salary_max.toLocaleString('en-IN')}` : 'Any'} / month
+                {filteredPositions.map(pos => {
+                  const posDeadlineObj = pos.deadline_date ? new Date(pos.deadline_date) : null;
+                  const posCreatedObj = pos.created_at ? new Date(pos.created_at) : null;
+                  const posPlannedObj = posDeadlineObj || (posCreatedObj ? new Date(posCreatedObj.getTime() + (24 * 60 * 60 * 1000)) : null);
+                  const posActualObj = pos.updated_at ? new Date(pos.updated_at) : posCreatedObj;
+                  const posPlannedStr = formatISTDateTime(posPlannedObj) || (pos.deadline_date ? new Date(pos.deadline_date).toLocaleDateString() : 'N/A');
+                  const posActualStr = formatISTDateTime(posActualObj) || 'N/A';
+                  const posDelay = getSlaDelayInfo(posPlannedObj, pos.status === 'S01' ? posActualObj : null);
+
+                  return (
+                    <tr key={pos.id} style={{ borderBottom: '1px solid var(--border-light)', transition: 'background-color 0.2s' }}>
+                      <td style={{ width: `${posColWidths.title}px`, padding: '0.85rem 1rem', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)', boxSizing: 'border-box', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3, verticalAlign: 'top' }} title={pos.title}>{pos.title}</td>
+                      <td style={{ width: `${posColWidths.position_id}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', fontFamily: 'monospace', color: 'var(--text-secondary)', boxSizing: 'border-box', verticalAlign: 'top' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', overflow: 'hidden' }}>
+                          <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }} title={`Full ID: ${pos.id}`}>{pos.id ? `POS-${pos.id.substring(0, 8).toUpperCase()}` : 'N/A'}</span>
+                          {pos.id && (
+                            <button
+                              onClick={() => {
+                                navigator.clipboard.writeText(`POS-${pos.id.substring(0, 8).toUpperCase()}`);
+                                alert('Position Code copied!');
+                              }}
+                              style={{
+                                background: 'none', border: 'none', cursor: 'pointer', padding: '0.1rem 0.25rem',
+                                color: 'var(--text-secondary)', fontSize: '0.75rem', flexShrink: 0
+                              }}
+                              title="Copy Position Code"
+                            >
+                              📋
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                      <td style={{ width: `${posColWidths.department}px`, padding: '0.85rem 1rem', fontSize: '0.85rem', color: 'var(--text-primary)', boxSizing: 'border-box', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3, verticalAlign: 'top' }} title={pos.department}>{pos.department}</td>
+                      <td style={{ width: `${posColWidths.branch || 200}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', color: 'var(--text-secondary)', boxSizing: 'border-box', whiteSpace: 'normal', wordBreak: 'break-word', verticalAlign: 'top' }}>
+                        <span style={{ display: 'inline-block', padding: '0.2rem 0.5rem', borderRadius: '4px', background: 'var(--bg-primary)', border: '1px solid var(--border-light)', fontSize: '0.75rem', fontWeight: 600, whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.35 }} title={formatBranchStandard(pos.branch_code || pos.workspace_branch_code || pos.company || 'All Branches')}>
+                          {formatBranchStandard(pos.branch_code || pos.workspace_branch_code || pos.company || 'All Branches')}
                         </span>
-                      ) : (
-                        <span style={{ fontStyle: 'italic', color: 'var(--text-secondary)' }}>Not Disclosed</span>
-                      )}
-                    </td>
-                    <td style={{ width: `${posColWidths.status}px`, padding: '0.85rem 1rem', fontSize: '0.85rem', boxSizing: 'border-box' }}>
-                      <span style={{ 
-                        fontSize: '0.7rem', 
-                        padding: '0.2rem 0.5rem', 
-                        borderRadius: '12px', 
-                        fontWeight: 'bold',
-                        background: pos.status === 'S00' ? '#fee2e2' : '#dcfce7',
-                        color: pos.status === 'S00' ? '#991b1b' : '#166534',
-                        display: 'inline-block',
-                        whiteSpace: 'nowrap'
-                      }}>
-                        {pos.status === 'S00' ? 'S00: Requirement' : 'S01: Posted & JD Prepared'}
-                      </span>
-                    </td>
-                    <td style={{ width: `${posColWidths.deadline}px`, padding: '0.85rem 1rem', fontSize: '0.85rem', color: 'var(--text-primary)', boxSizing: 'border-box', whiteSpace: 'nowrap' }}>
-                      {pos.deadline_date ? new Date(pos.deadline_date).toLocaleDateString() : <span style={{ fontStyle: 'italic', color: 'var(--text-secondary)' }}>None</span>}
-                    </td>
-                    <td style={{ width: `${posColWidths.interviewer}px`, padding: '0.85rem 1rem', fontSize: '0.85rem', color: 'var(--text-primary)', boxSizing: 'border-box', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3, verticalAlign: 'top' }} title={pos.interviewer_name || 'Not Assigned'}>
-                      {pos.interviewer_name || <span style={{ fontStyle: 'italic', color: 'var(--text-secondary)' }}>Not Assigned</span>}
-                    </td>
-                    <td style={{ width: `${posColWidths.recruiter}px`, padding: '0.85rem 1rem', fontSize: '0.85rem', boxSizing: 'border-box', verticalAlign: 'top' }}>
-                      {pos.recruiter_assigned && pos.recruiter_assigned !== 'All' ? (
+                      </td>
+                      <td style={{ width: `${posColWidths.openings}px`, padding: '0.85rem 1rem', fontSize: '0.85rem', color: 'var(--text-primary)', boxSizing: 'border-box', verticalAlign: 'top' }}>{pos.openings}</td>
+                      <td style={{ width: `${posColWidths.salary}px`, padding: '0.85rem 1rem', fontSize: '0.85rem', color: 'var(--text-primary)', boxSizing: 'border-box', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3, verticalAlign: 'top' }}>
+                        {pos.salary_min || pos.salary_max ? (
+                          <span title={`${pos.salary_min ? `₹${pos.salary_min.toLocaleString('en-IN')}` : '0'} - ${pos.salary_max ? `₹${pos.salary_max.toLocaleString('en-IN')}` : 'Any'} / month`}>
+                            {pos.salary_min ? `₹${pos.salary_min.toLocaleString('en-IN')}` : '0'} - {pos.salary_max ? `₹${pos.salary_max.toLocaleString('en-IN')}` : 'Any'} / month
+                          </span>
+                        ) : (
+                          <span style={{ fontStyle: 'italic', color: 'var(--text-secondary)' }}>Not Disclosed</span>
+                        )}
+                      </td>
+                      <td style={{ width: `${posColWidths.status}px`, padding: '0.85rem 1rem', fontSize: '0.85rem', boxSizing: 'border-box', verticalAlign: 'top' }}>
                         <span style={{ 
-                          display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
-                          padding: '0.2rem 0.6rem', borderRadius: '12px', fontWeight: 600,
-                          background: '#dbeafe', color: '#1e40af', fontSize: '0.75rem',
-                          maxWidth: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25
-                        }} title={pos.recruiter_assigned}>👤 {pos.recruiter_assigned}</span>
-                      ) : (
+                          fontSize: '0.7rem', 
+                          padding: '0.2rem 0.5rem', 
+                          borderRadius: '12px', 
+                          fontWeight: 'bold',
+                          background: pos.status === 'S00' ? '#fee2e2' : '#dcfce7',
+                          color: pos.status === 'S00' ? '#991b1b' : '#166534',
+                          display: 'inline-block',
+                          whiteSpace: 'normal',
+                          wordBreak: 'break-word',
+                          lineHeight: 1.25,
+                          textAlign: 'center'
+                        }}>
+                          {pos.status === 'S00' ? 'S00: Requirement' : 'S01: Posted & JD Prepared'}
+                        </span>
+                      </td>
+                      <td style={{ width: `${posColWidths.deadline}px`, padding: '0.85rem 1rem', fontSize: '0.85rem', color: 'var(--text-primary)', boxSizing: 'border-box', whiteSpace: 'nowrap', verticalAlign: 'top' }}>
+                        {pos.deadline_date ? new Date(pos.deadline_date).toLocaleDateString() : <span style={{ fontStyle: 'italic', color: 'var(--text-secondary)' }}>None</span>}
+                      </td>
+                      <td style={{ width: `${posColWidths.planned_tat || 155}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', color: 'var(--text-primary)', boxSizing: 'border-box', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3, verticalAlign: 'top' }}>
+                        <div style={{ fontWeight: 600 }}>{posPlannedStr}</div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>Target Deadline</div>
+                      </td>
+                      <td style={{ width: `${posColWidths.actual_logged || 155}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', color: 'var(--text-primary)', boxSizing: 'border-box', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3, verticalAlign: 'top' }}>
+                        <div style={{ fontWeight: 600 }}>{posActualStr}</div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>IST Entry</div>
+                      </td>
+                      <td style={{ width: `${posColWidths.delay_status || 145}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', boxSizing: 'border-box', verticalAlign: 'top' }}>
                         <span style={{ 
-                          display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
-                          padding: '0.2rem 0.6rem', borderRadius: '12px', fontWeight: 600,
-                          background: '#fef9c3', color: '#854d0e', fontSize: '0.75rem',
-                          whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25
-                        }}>📢 All Recruiters</span>
-                      )}
-                    </td>
-                    <td style={{ width: `${posColWidths.jd}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', color: 'var(--text-secondary)', boxSizing: 'border-box', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={pos.jd_text}>
-                      {pos.jd_text || <span style={{ fontStyle: 'italic', color: '#c2410c' }}>⚠️ No JD logged — please edit.</span>}
-                    </td>
+                          display: 'inline-block', 
+                          padding: '0.2rem 0.55rem', 
+                          borderRadius: '12px', 
+                          fontWeight: 'bold', 
+                          fontSize: '0.72rem', 
+                          background: posDelay.bg, 
+                          color: posDelay.color,
+                          whiteSpace: 'normal',
+                          wordBreak: 'break-word',
+                          lineHeight: 1.25
+                        }}>
+                          {posDelay.badgeText}
+                        </span>
+                      </td>
+                      <td style={{ width: `${posColWidths.interviewer}px`, padding: '0.85rem 1rem', fontSize: '0.85rem', color: 'var(--text-primary)', boxSizing: 'border-box', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3, verticalAlign: 'top' }} title={pos.interviewer_name || 'Not Assigned'}>
+                        {pos.interviewer_name || <span style={{ fontStyle: 'italic', color: 'var(--text-secondary)' }}>Not Assigned</span>}
+                      </td>
+                      <td style={{ width: `${posColWidths.recruiter}px`, padding: '0.85rem 1rem', fontSize: '0.85rem', boxSizing: 'border-box', verticalAlign: 'top' }}>
+                        {pos.recruiter_assigned && pos.recruiter_assigned !== 'All' ? (
+                          <span style={{ 
+                            display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
+                            padding: '0.2rem 0.6rem', borderRadius: '12px', fontWeight: 600,
+                            background: '#dbeafe', color: '#1e40af', fontSize: '0.75rem',
+                            maxWidth: '100%', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25
+                          }} title={pos.recruiter_assigned}>👤 {pos.recruiter_assigned}</span>
+                        ) : (
+                          <span style={{ 
+                            display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
+                            padding: '0.2rem 0.6rem', borderRadius: '12px', fontWeight: 600,
+                            background: '#fef9c3', color: '#854d0e', fontSize: '0.75rem',
+                            whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25
+                          }}>📢 All Recruiters</span>
+                        )}
+                      </td>
+                      <td style={{ width: `${posColWidths.jd}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', color: 'var(--text-secondary)', boxSizing: 'border-box', whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.35, verticalAlign: 'top' }} title={pos.jd_text}>
+                        {pos.jd_text || <span style={{ fontStyle: 'italic', color: '#c2410c' }}>⚠️ No JD logged — please edit.</span>}
+                      </td>
                     {selectedStage === 'S01' && (
                       <td style={{ width: `${posColWidths.apply_link}px`, padding: '0.85rem 1rem', fontSize: '0.85rem', boxSizing: 'border-box' }}>
                         <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
@@ -1102,7 +1340,8 @@ export default function RecruiterDashboard({
                       </div>
                     </td>
                   </tr>
-                ))}
+                );
+              })}
               </tbody>
             </table></MobileTableView>
           )}
@@ -1152,8 +1391,8 @@ export default function RecruiterDashboard({
               <p>Either add a new candidate or update existing candidates' stages to shift them here.</p>
             </div>
           ) : (
-            <div style={{ overflowX: 'auto', backgroundColor: 'var(--bg-surface)', borderRadius: '12px', border: '1px solid var(--border-light)' }}>
-              <MobileTableView id="Recruiter/RecruiterDashboard-2"><table style={{ width: `${getCandTotalTableWidth()}px`, borderCollapse: 'collapse', textAlign: 'left', tableLayout: 'fixed' }}>
+            <div style={{ width: '100%', overflowX: 'auto', backgroundColor: 'var(--bg-surface)', borderRadius: '12px', border: '1px solid var(--border-light)' }}>
+              <MobileTableView id="Recruiter/RecruiterDashboard-2"><table style={{ width: '100%', minWidth: `${getCandTotalTableWidth()}px`, borderCollapse: 'collapse', textAlign: 'left', tableLayout: 'fixed' }}>
                 <thead>
                   <tr style={{ backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-light)' }}>
                     <th style={{ width: `${candColWidths.name}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
@@ -1192,6 +1431,24 @@ export default function RecruiterDashboard({
                       </div>
                       <ColumnResizer colKey="details" isResizing={candResizingCol === 'details'} onResizeStart={handleCandResizeStart} onReset={resetCandColWidth} />
                     </th>
+                    <th style={{ width: `${candColWidths.planned_tat || 155}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                        <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>⏱️ Planned Target (IST)</span>
+                      </div>
+                      <ColumnResizer colKey="planned_tat" isResizing={candResizingCol === 'planned_tat'} onResizeStart={handleCandResizeStart} onReset={resetCandColWidth} />
+                    </th>
+                    <th style={{ width: `${candColWidths.actual_logged || 155}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                        <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>📅 Actual Logged (IST)</span>
+                      </div>
+                      <ColumnResizer colKey="actual_logged" isResizing={candResizingCol === 'actual_logged'} onResizeStart={handleCandResizeStart} onReset={resetCandColWidth} />
+                    </th>
+                    <th style={{ width: `${candColWidths.delay_status || 145}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
+                        <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>⚡ Delay Status</span>
+                      </div>
+                      <ColumnResizer colKey="delay_status" isResizing={candResizingCol === 'delay_status'} onResizeStart={handleCandResizeStart} onReset={resetCandColWidth} />
+                    </th>
                     <th style={{ width: `${candColWidths.date}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', position: 'relative', boxSizing: 'border-box', verticalAlign: 'middle' }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
                         <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>Date Applied</span>
@@ -1208,6 +1465,15 @@ export default function RecruiterDashboard({
                 </thead>
                 <tbody>
                   {filteredCandidates.map(cand => {
+                    const candCreatedObj = cand.created_at ? new Date(cand.created_at) : null;
+                    const candStageObj = STAGES.find(s => s.id === (cand.current_stage || 'S02'));
+                    const stageTatHours = candStageObj?.tat_hours || 24;
+                    const candPlannedObj = candCreatedObj ? new Date(candCreatedObj.getTime() + (stageTatHours * 60 * 60 * 1000)) : null;
+                    const candActualObj = cand.updated_at ? new Date(cand.updated_at) : candCreatedObj;
+                    const candPlannedStr = formatISTDateTime(candPlannedObj) || 'N/A';
+                    const candActualStr = formatISTDateTime(candActualObj) || 'N/A';
+                    const candDelay = getSlaDelayInfo(candPlannedObj, cand.current_stage === 'S09' ? candActualObj : null);
+
                     // Compute stage details cell
                     let stageDetailsText = <span style={{ fontStyle: 'italic', color: 'var(--text-secondary)' }}>No remarks logged.</span>;
                     if (cand.current_stage === 'S02') {
@@ -1363,9 +1629,15 @@ export default function RecruiterDashboard({
                               opacity: !canEditStage(cand.current_stage) ? 0.7 : 1
                             }}
                           >
-                            {STAGES.map(s => (
-                              <option key={s.id} value={s.id}>{s.id}</option>
-                            ))}
+                            {CANDIDATE_STAGES.map(s => {
+                              const isDemotion = getStageNumber(s.id) < getStageNumber(cand.current_stage || 'S02');
+                              const isOptionDisabled = isDemotion && !canDecreaseStage;
+                              return (
+                                <option key={s.id} value={s.id} disabled={isOptionDisabled}>
+                                  {s.id} {isOptionDisabled ? '🔒' : ''}
+                                </option>
+                              );
+                            })}
                           </select>
                         </td>
                         <td style={{ width: `${candColWidths.status}px`, padding: '0.85rem 1rem', boxSizing: 'border-box' }}>
@@ -1395,6 +1667,30 @@ export default function RecruiterDashboard({
                         </td>
                         <td style={{ width: `${candColWidths.details}px`, padding: '0.85rem 1rem', fontSize: '0.85rem', color: 'var(--text-primary)', boxSizing: 'border-box' }}>
                           {stageDetailsText}
+                        </td>
+                        <td style={{ width: `${candColWidths.planned_tat || 155}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', color: 'var(--text-primary)', boxSizing: 'border-box', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3, verticalAlign: 'top' }}>
+                          <div style={{ fontWeight: 600 }}>{candPlannedStr}</div>
+                          <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{candStageObj?.id || 'Stage'} Target ({stageTatHours}h)</div>
+                        </td>
+                        <td style={{ width: `${candColWidths.actual_logged || 155}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', color: 'var(--text-primary)', boxSizing: 'border-box', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3, verticalAlign: 'top' }}>
+                          <div style={{ fontWeight: 600 }}>{candActualStr}</div>
+                          <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>IST Entry</div>
+                        </td>
+                        <td style={{ width: `${candColWidths.delay_status || 145}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', boxSizing: 'border-box', verticalAlign: 'top' }}>
+                          <span style={{ 
+                            display: 'inline-block', 
+                            padding: '0.2rem 0.55rem', 
+                            borderRadius: '12px', 
+                            fontWeight: 'bold', 
+                            fontSize: '0.72rem', 
+                            background: candDelay.bg, 
+                            color: candDelay.color,
+                            whiteSpace: 'normal',
+                            wordBreak: 'break-word',
+                            lineHeight: 1.25
+                          }}>
+                            {candDelay.badgeText}
+                          </span>
                         </td>
                         <td style={{ width: `${candColWidths.date}px`, padding: '0.85rem 1rem', fontSize: '0.8rem', color: 'var(--text-secondary)', boxSizing: 'border-box', whiteSpace: 'nowrap' }}>
                           {new Date(cand.created_at).toLocaleDateString()}
@@ -1436,7 +1732,8 @@ export default function RecruiterDashboard({
           onCandidateUpdate={() => { loadData(); }}
           userName={userName}
           canEdit={canEditStage(selectedCandidate.current_stage)}
-          stagesConfig={STAGES}
+          canDecreaseStage={canDecreaseStage}
+          stagesConfig={CANDIDATE_STAGES}
           pipelineConfig={pipelineConfig}
         />
       )}
@@ -1444,23 +1741,35 @@ export default function RecruiterDashboard({
       {/* Modal: Add Job Position */}
       {isPositionModalOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '1rem' }}>
-          <div className="card" style={{ width: '400px', padding: '2rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          <div className="card" style={{ width: '560px', maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', padding: '2rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
             <h3 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0 }}>Create Job Requirement</h3>
             
             <form onSubmit={handleCreatePosition} style={{ display: 'flex', flexDirection: 'column', gap: '1rem', width: '100%', boxSizing: 'border-box' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', width: '100%' }}>
-                <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Position Title</label>
+                <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Position Title *</label>
                 <input required type="text" value={newPosition.title} onChange={e => setNewPosition({...newPosition, title: e.target.value})} placeholder="e.g. Sales Manager, Recruiter" style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', width: '100%' }}>
-                <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Department</label>
-                <select value={newPosition.department} onChange={e => setNewPosition({...newPosition, department: e.target.value})} style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}>
-                  <option value="">Select Department</option>
-                  {departments.map(d => (
-                    <option key={d} value={d}>{d}</option>
-                  ))}
-                </select>
+              <div style={{ display: 'flex', gap: '0.75rem', width: '100%' }}>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: 0 }}>
+                  <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Department *</label>
+                  <select required value={newPosition.department} onChange={e => setNewPosition({...newPosition, department: e.target.value})} style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}>
+                    <option value="">Select Department</option>
+                    {departments.map(d => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+                </div>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: 0 }}>
+                  <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Branch / Plant *</label>
+                  <UniversalBranchSelect
+                    mode="form"
+                    value={newPosition.branch_code}
+                    onChange={(val) => setNewPosition({...newPosition, branch_code: val})}
+                    branches={availableBranches}
+                    placeholder="Select Branch / Plant"
+                  />
+                </div>
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', width: '100%' }}>
@@ -1486,13 +1795,18 @@ export default function RecruiterDashboard({
                 </div>
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: 0 }}>
                   <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Interviewer Name</label>
-                  <input type="text" value={newPosition.interviewer_name || ''} onChange={e => setNewPosition({...newPosition, interviewer_name: e.target.value})} placeholder="e.g. Tanu Sharma" style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
+                  <SearchableEmployeeSelect
+                    employees={teamMembers}
+                    selectedEmail={newPosition.interviewer_name || ''}
+                    onSelect={(emp) => setNewPosition({...newPosition, interviewer_name: emp ? (emp.emp_name || emp.name || emp.email) : ''})}
+                    placeholder="Search interviewer..."
+                  />
                 </div>
               </div>
 
               {/* Recruiter Assigned */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', width: '100%' }}>
-                <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>🎯 Assign Recruiter</label>
+                <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>🎯 Assign Recruiter (HR Recruitment Team)</label>
                 <select 
                   value={newPosition.recruiter_assigned || 'All'} 
                   onChange={e => setNewPosition({...newPosition, recruiter_assigned: e.target.value})} 
@@ -1500,7 +1814,9 @@ export default function RecruiterDashboard({
                 >
                   <option value="All">📢 All Recruiters (Anyone can Claim)</option>
                   {recruitersList.map(r => (
-                    <option key={r.user_id} value={r.emp_name}>{r.emp_name}</option>
+                    <option key={r.user_id || r.emp_id} value={r.emp_name}>
+                      {r.emp_name} {r.emp_id ? `(${r.emp_id})` : ''} {r.emp_sub_department ? `— ${r.emp_sub_department}` : ''}
+                    </option>
                   ))}
                 </select>
                 <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>Select "All" if unsure — any recruiter can claim it from S00.</span>
@@ -1523,7 +1839,7 @@ export default function RecruiterDashboard({
       {/* Modal: Edit Position */}
       {editingPosition && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 9999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '1rem' }}>
-          <div className="card" style={{ width: '520px', maxHeight: '90vh', overflowY: 'auto', padding: '2rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          <div className="card" style={{ width: '560px', maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', padding: '2rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h3 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0 }}>✏️ Edit Position — {editingPosition.title}</h3>
               <button onClick={() => setEditingPosition(null)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '1.2rem', color: 'var(--text-secondary)' }}>✕</button>
@@ -1544,9 +1860,19 @@ export default function RecruiterDashboard({
                   </select>
                 </div>
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: 0 }}>
-                  <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>No. of Openings</label>
-                  <input type="number" min="1" value={editPositionForm.openings} onChange={e => setEditPositionForm({...editPositionForm, openings: parseInt(e.target.value) || 1})} style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
+                  <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Branch / Plant *</label>
+                  <UniversalBranchSelect
+                    mode="form"
+                    value={editPositionForm.branch_code}
+                    onChange={(val) => setEditPositionForm({...editPositionForm, branch_code: val})}
+                    branches={availableBranches}
+                    placeholder="Select Branch / Plant"
+                  />
                 </div>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', width: '100%' }}>
+                <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>No. of Openings</label>
+                <input type="number" min="1" value={editPositionForm.openings} onChange={e => setEditPositionForm({...editPositionForm, openings: parseInt(e.target.value) || 1})} style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
               </div>
 
               <div style={{ display: 'flex', gap: '0.75rem', width: '100%' }}>
@@ -1567,12 +1893,17 @@ export default function RecruiterDashboard({
                 </div>
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: 0 }}>
                   <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Interviewer Name</label>
-                  <input type="text" value={editPositionForm.interviewer_name || ''} onChange={e => setEditPositionForm({...editPositionForm, interviewer_name: e.target.value})} placeholder="e.g. Tanu Sharma" style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)' }} />
+                  <SearchableEmployeeSelect
+                    employees={teamMembers}
+                    selectedEmail={editPositionForm.interviewer_name || ''}
+                    onSelect={(emp) => setEditPositionForm({...editPositionForm, interviewer_name: emp ? (emp.emp_name || emp.name || emp.email) : ''})}
+                    placeholder="Search interviewer..."
+                  />
                 </div>
               </div>
               {/* Recruiter Assigned */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', width: '100%' }}>
-                <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>🎯 Assign Recruiter</label>
+                <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>🎯 Assign Recruiter (HR Recruitment Team)</label>
                 <select 
                   value={editPositionForm.recruiter_assigned || 'All'} 
                   onChange={e => setEditPositionForm({...editPositionForm, recruiter_assigned: e.target.value})} 
@@ -1580,7 +1911,9 @@ export default function RecruiterDashboard({
                 >
                   <option value="All">📢 All Recruiters (Anyone can Claim)</option>
                   {recruitersList.map(r => (
-                    <option key={r.user_id} value={r.emp_name}>{r.emp_name}</option>
+                    <option key={r.user_id || r.emp_id} value={r.emp_name}>
+                      {r.emp_name} {r.emp_id ? `(${r.emp_id})` : ''} {r.emp_sub_department ? `— ${r.emp_sub_department}` : ''}
+                    </option>
                   ))}
                 </select>
               </div>

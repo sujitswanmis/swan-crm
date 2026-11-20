@@ -34,6 +34,7 @@ export default function CandidateProfilePanel({
   onCandidateUpdate, 
   userName, 
   canEdit = true,
+  canDecreaseStage = false,
   stagesConfig = null,
   pipelineConfig = null
 }) {
@@ -79,25 +80,35 @@ export default function CandidateProfilePanel({
   };
 
 
+  const getStageNumber = (stageId) => {
+    if (!stageId) return -1;
+    const match = String(stageId).match(/\d+/);
+    return match ? parseInt(match[0], 10) : -1;
+  };
+
   const STAGES = useMemo(() => {
+    let list = [];
     if (Array.isArray(stagesConfig) && stagesConfig.length > 0) {
-      return stagesConfig.map(s => ({
+      list = stagesConfig.map(s => ({
         id: s.id,
         label: s.label || s.name || s.id,
         tat_hours: s.tat_hours || 24,
         status_options: s.status_options || []
       }));
+    } else {
+      list = [
+        { id: 'S02', label: 'S02 - Resume Filtered', tat_hours: 24 },
+        { id: 'S03', label: 'S03 - Interview Executed', tat_hours: 48 },
+        { id: 'S04', label: 'S04 - Test Result Updated', tat_hours: 24 },
+        { id: 'S05', label: 'S05 - ED Approval Pending', tat_hours: 48 },
+        { id: 'S06', label: 'S06 - Salary Negotiating', tat_hours: 24 },
+        { id: 'S07', label: 'S07 - Structure Confirmed / Shortlisted', tat_hours: 24 },
+        { id: 'S08', label: 'S08 - LOI Offer Letter Released', tat_hours: 24 },
+        { id: 'S09', label: 'S09 - Joining Formalities', tat_hours: 48 }
+      ];
     }
-    return [
-      { id: 'S02', label: 'S02 - Resume Filtered', tat_hours: 24 },
-      { id: 'S03', label: 'S03 - Interview Executed', tat_hours: 48 },
-      { id: 'S04', label: 'S04 - Test Result Updated', tat_hours: 24 },
-      { id: 'S05', label: 'S05 - ED Approval Pending', tat_hours: 48 },
-      { id: 'S06', label: 'S06 - Salary Negotiating', tat_hours: 24 },
-      { id: 'S07', label: 'S07 - Structure Confirmed / Shortlisted', tat_hours: 24 },
-      { id: 'S08', label: 'S08 - LOI Offer Letter Released', tat_hours: 24 },
-      { id: 'S09', label: 'S09 - Joining Formalities', tat_hours: 48 }
-    ];
+    // Candidate stages strictly exclude S00 and S01 (which belong only to Job Positions)
+    return list.filter(s => s.id !== 'S00' && s.id !== 'S01');
   }, [stagesConfig]);
 
   const currentStageObj = useMemo(() => {
@@ -211,6 +222,15 @@ export default function CandidateProfilePanel({
 
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
+
+    if (name === 'current_stage') {
+      const isDemotion = getStageNumber(value) < getStageNumber(candidate?.current_stage || 'S02');
+      if (isDemotion && !canDecreaseStage) {
+        alert(`Stage Demotion Restricted: Only Manager, Admin, or users with 'Demote / Decrease Recruiter Stage Power' can revert a candidate from ${candidate?.current_stage || 'S02'} back to ${value}.`);
+        return;
+      }
+    }
+
     setEditForm(prev => {
       const updated = {
         ...prev,
@@ -224,6 +244,15 @@ export default function CandidateProfilePanel({
   };
 
   const handleSave = async () => {
+    // Guard against stage demotion on save
+    if (candidate?.current_stage && editForm.current_stage) {
+      const isDemotion = getStageNumber(editForm.current_stage) < getStageNumber(candidate.current_stage);
+      if (isDemotion && !canDecreaseStage) {
+        alert(`Stage Demotion Restricted: Only Manager, Admin, or users with 'Demote / Decrease Recruiter Stage Power' can revert a candidate back to lower stages.`);
+        return;
+      }
+    }
+
     setIsSaving(true);
     try {
       const payload = {
@@ -399,9 +428,15 @@ export default function CandidateProfilePanel({
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
               <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Current Stage</label>
               <select name="current_stage" value={editForm.current_stage || 'S02'} onChange={handleInputChange} disabled={!canEdit} style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}>
-                {STAGES.map(s => (
-                  <option key={s.id} value={s.id}>{s.label}</option>
-                ))}
+                {STAGES.map(s => {
+                  const isDemotion = getStageNumber(s.id) < getStageNumber(candidate?.current_stage || 'S02');
+                  const isOptionDisabled = isDemotion && !canDecreaseStage;
+                  return (
+                    <option key={s.id} value={s.id} disabled={isOptionDisabled}>
+                      {s.label} {isOptionDisabled ? '🔒 (Decrease Restricted)' : ''}
+                    </option>
+                  );
+                })}
               </select>
             </div>
 

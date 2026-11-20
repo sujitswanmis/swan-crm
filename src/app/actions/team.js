@@ -231,8 +231,7 @@ export async function getRecruitersList(company = null) {
   const adminClient = getAdminClient();
   const { data, error } = await adminClient
     .from('user_roles')
-    .select('emp_name, emp_designation, user_id, emp_id, module_access, company')
-    .ilike('emp_designation', '%recruiter%')
+    .select('emp_name, emp_designation, emp_sub_department, user_id, emp_id, email, module_access, company')
     .order('emp_name', { ascending: true });
 
   if (error) {
@@ -248,6 +247,13 @@ export async function getRecruitersList(company = null) {
     if (!u.emp_name) return false;
     const status = u.module_access?.emp_status;
     if (status === 'InActive' || status === 'Trash' || status === 'Terminated') return false;
+
+    // Filter by Sub-Department = 'Recruiter' OR Designation containing 'Recruiter'
+    const subDept = String(u.emp_sub_department || u.module_access?.emp_sub_department || '').toLowerCase().trim();
+    const designation = String(u.emp_designation || '').toLowerCase().trim();
+    const isRecruiter = subDept === 'recruiter' || subDept.includes('recruiter') || designation.includes('recruiter');
+    if (!isRecruiter) return false;
+
     const userComp = String(u.company || '').toLowerCase().trim();
     if (!isSwanRequester) {
       return userComp === reqLower;
