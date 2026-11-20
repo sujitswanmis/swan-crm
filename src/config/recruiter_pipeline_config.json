@@ -16,8 +16,18 @@
           "textColor": "#1e293b",
           "is_enabled": true,
           "default_note": "Job requirement received from department HOD.",
-          "authorized_roles": ["admin", "hr_manager", "recruiter", "hod"],
-          "status_options": ["Pending Review", "Requirement Verified", "Hold", "Cancelled"],
+          "authorized_roles": [
+            "admin",
+            "hr_manager",
+            "recruiter",
+            "hod"
+          ],
+          "status_options": [
+            "Pending Review",
+            "Requirement Verified",
+            "Hold",
+            "Cancelled"
+          ],
           "custom_fields": []
         },
         {
@@ -31,8 +41,17 @@
           "textColor": "#581c87",
           "is_enabled": true,
           "default_note": "Job Description drafted, approved, and posted across recruitment portals.",
-          "authorized_roles": ["admin", "hr_manager", "recruiter"],
-          "status_options": ["Drafting JD", "JD Approved", "Posted on Job Boards", "Application Window Open"],
+          "authorized_roles": [
+            "admin",
+            "hr_manager",
+            "recruiter"
+          ],
+          "status_options": [
+            "Drafting JD",
+            "JD Approved",
+            "Posted on Job Boards",
+            "Application Window Open"
+          ],
           "custom_fields": []
         },
         {
@@ -46,8 +65,18 @@
           "textColor": "#334155",
           "is_enabled": true,
           "default_note": "Resumes screened and initial profile matching completed.",
-          "authorized_roles": ["admin", "hr_manager", "recruiter"],
-          "status_options": ["Awaiting Screening", "Resume Selected", "Resume Rejected", "No Response", "ReSchedule"],
+          "authorized_roles": [
+            "admin",
+            "hr_manager",
+            "recruiter"
+          ],
+          "status_options": [
+            "Awaiting Screening",
+            "Resume Selected",
+            "Resume Rejected",
+            "No Response",
+            "ReSchedule"
+          ],
           "custom_fields": []
         },
         {
@@ -61,8 +90,19 @@
           "textColor": "#854d0e",
           "is_enabled": true,
           "default_note": "Technical / HR interview rounds scheduled and conducted.",
-          "authorized_roles": ["admin", "hr_manager", "recruiter", "interviewer"],
-          "status_options": ["Interview Scheduled", "Interview Cleared", "Interview Rejected", "No Response", "ReSchedule"],
+          "authorized_roles": [
+            "admin",
+            "hr_manager",
+            "recruiter",
+            "interviewer"
+          ],
+          "status_options": [
+            "Interview Scheduled",
+            "Interview Cleared",
+            "Interview Rejected",
+            "No Response",
+            "ReSchedule"
+          ],
           "custom_fields": []
         },
         {
@@ -76,14 +116,25 @@
           "textColor": "#1e40af",
           "is_enabled": true,
           "default_note": "Skill assessment, aptitude, or machine test evaluated.",
-          "authorized_roles": ["admin", "hr_manager", "recruiter", "interviewer"],
-          "status_options": ["Test Pending", "Test Passed", "Test Failed", "No Response", "ReSchedule"],
+          "authorized_roles": [
+            "admin",
+            "hr_manager",
+            "recruiter",
+            "interviewer"
+          ],
+          "status_options": [
+            "Test Pending",
+            "Test Passed",
+            "Test Failed",
+            "No Response",
+            "ReSchedule"
+          ],
           "custom_fields": []
         },
         {
           "id": "S05",
           "step_no": 5,
-          "name": "S05 — ED Approval",
+          "name": "S05 — Final Confirmation",
           "short_code": "ED_APPROVAL",
           "department": "Executive Director",
           "tat_hours": 48,
@@ -91,8 +142,19 @@
           "textColor": "#c2410c",
           "is_enabled": true,
           "default_note": "Candidate dossier submitted for Executive Director final approval.",
-          "authorized_roles": ["admin", "hr_manager", "ed"],
-          "status_options": ["Pending ED", "ED Approved", "ED Rejected", "No Response", "ReSchedule"],
+          "authorized_roles": [
+            "admin",
+            "hr_manager",
+            "ed",
+            "hod"
+          ],
+          "status_options": [
+            "No Response",
+            "ReSchedule",
+            "Final Pending",
+            "Final Rejected",
+            "Final Confirmed"
+          ],
           "custom_fields": []
         },
         {
@@ -106,8 +168,18 @@
           "textColor": "#86198f",
           "is_enabled": true,
           "default_note": "CTC break-up discussed, benefits outlined, and offer numbers agreed.",
-          "authorized_roles": ["admin", "hr_manager", "recruiter"],
-          "status_options": ["Negotiation Pending", "Salary Agreed", "Salary Rejected", "No Response", "ReSchedule"],
+          "authorized_roles": [
+            "admin",
+            "hr_manager",
+            "recruiter"
+          ],
+          "status_options": [
+            "Negotiation Pending",
+            "Salary Agreed",
+            "Salary Rejected",
+            "No Response",
+            "ReSchedule"
+          ],
           "custom_fields": []
         },
         {
@@ -121,8 +193,16 @@
           "textColor": "#3730a3",
           "is_enabled": true,
           "default_note": "Final candidate structure confirmed and formal approval locked.",
-          "authorized_roles": ["admin", "hr_manager"],
-          "status_options": ["Shortlisted", "Dropped", "No Response", "ReSchedule"],
+          "authorized_roles": [
+            "admin",
+            "hr_manager"
+          ],
+          "status_options": [
+            "Shortlisted",
+            "Dropped",
+            "No Response",
+            "ReSchedule"
+          ],
           "custom_fields": []
         },
         {
@@ -136,8 +216,18 @@
           "textColor": "#0369a1",
           "is_enabled": true,
           "default_note": "Letter of Intent / Offer letter issued to candidate.",
-          "authorized_roles": ["admin", "hr_manager", "recruiter"],
-          "status_options": ["LOI Released", "LOI Accepted", "LOI Declined", "No Response", "ReSchedule"],
+          "authorized_roles": [
+            "admin",
+            "hr_manager",
+            "recruiter"
+          ],
+          "status_options": [
+            "LOI Released",
+            "LOI Accepted",
+            "LOI Declined",
+            "No Response",
+            "ReSchedule"
+          ],
           "custom_fields": []
         },
         {
@@ -151,11 +241,22 @@
           "textColor": "#166534",
           "is_enabled": true,
           "default_note": "Candidate onboarding formalities, asset allocation, and induction.",
-          "authorized_roles": ["admin", "hr_manager", "recruiter"],
-          "status_options": ["Joining Pending", "Joined", "No Show", "No Response", "ReSchedule"],
+          "authorized_roles": [
+            "admin",
+            "hr_manager",
+            "recruiter"
+          ],
+          "status_options": [
+            "Joining Pending",
+            "Joined",
+            "No Show",
+            "No Response",
+            "ReSchedule"
+          ],
           "custom_fields": []
         }
-      ]
+      ],
+      "updated_at_ist": "2026-11-20, 17:25:52"
     }
   },
   "TNT00001": {
@@ -175,8 +276,18 @@
           "textColor": "#1e293b",
           "is_enabled": true,
           "default_note": "Job requirement received from department HOD.",
-          "authorized_roles": ["admin", "hr_manager", "recruiter", "hod"],
-          "status_options": ["Pending Review", "Requirement Verified", "Hold", "Cancelled"],
+          "authorized_roles": [
+            "admin",
+            "hr_manager",
+            "recruiter",
+            "hod"
+          ],
+          "status_options": [
+            "Pending Review",
+            "Requirement Verified",
+            "Hold",
+            "Cancelled"
+          ],
           "custom_fields": []
         },
         {
@@ -190,8 +301,17 @@
           "textColor": "#581c87",
           "is_enabled": true,
           "default_note": "Job Description drafted, approved, and posted across recruitment portals.",
-          "authorized_roles": ["admin", "hr_manager", "recruiter"],
-          "status_options": ["Drafting JD", "JD Approved", "Posted on Job Boards", "Application Window Open"],
+          "authorized_roles": [
+            "admin",
+            "hr_manager",
+            "recruiter"
+          ],
+          "status_options": [
+            "Drafting JD",
+            "JD Approved",
+            "Posted on Job Boards",
+            "Application Window Open"
+          ],
           "custom_fields": []
         },
         {
@@ -205,8 +325,18 @@
           "textColor": "#334155",
           "is_enabled": true,
           "default_note": "Resumes screened and initial profile matching completed.",
-          "authorized_roles": ["admin", "hr_manager", "recruiter"],
-          "status_options": ["Awaiting Screening", "Resume Selected", "Resume Rejected", "No Response", "ReSchedule"],
+          "authorized_roles": [
+            "admin",
+            "hr_manager",
+            "recruiter"
+          ],
+          "status_options": [
+            "Awaiting Screening",
+            "Resume Selected",
+            "Resume Rejected",
+            "No Response",
+            "ReSchedule"
+          ],
           "custom_fields": []
         },
         {
@@ -220,8 +350,19 @@
           "textColor": "#854d0e",
           "is_enabled": true,
           "default_note": "Technical / HR interview rounds scheduled and conducted.",
-          "authorized_roles": ["admin", "hr_manager", "recruiter", "interviewer"],
-          "status_options": ["Interview Scheduled", "Interview Cleared", "Interview Rejected", "No Response", "ReSchedule"],
+          "authorized_roles": [
+            "admin",
+            "hr_manager",
+            "recruiter",
+            "interviewer"
+          ],
+          "status_options": [
+            "Interview Scheduled",
+            "Interview Cleared",
+            "Interview Rejected",
+            "No Response",
+            "ReSchedule"
+          ],
           "custom_fields": []
         },
         {
@@ -235,8 +376,19 @@
           "textColor": "#1e40af",
           "is_enabled": true,
           "default_note": "Skill assessment, aptitude, or machine test evaluated.",
-          "authorized_roles": ["admin", "hr_manager", "recruiter", "interviewer"],
-          "status_options": ["Test Pending", "Test Passed", "Test Failed", "No Response", "ReSchedule"],
+          "authorized_roles": [
+            "admin",
+            "hr_manager",
+            "recruiter",
+            "interviewer"
+          ],
+          "status_options": [
+            "Test Pending",
+            "Test Passed",
+            "Test Failed",
+            "No Response",
+            "ReSchedule"
+          ],
           "custom_fields": []
         },
         {
@@ -250,8 +402,18 @@
           "textColor": "#c2410c",
           "is_enabled": true,
           "default_note": "Candidate dossier submitted for Executive Director final approval.",
-          "authorized_roles": ["admin", "hr_manager", "ed"],
-          "status_options": ["Pending ED", "ED Approved", "ED Rejected", "No Response", "ReSchedule"],
+          "authorized_roles": [
+            "admin",
+            "hr_manager",
+            "ed"
+          ],
+          "status_options": [
+            "Pending ED",
+            "ED Approved",
+            "ED Rejected",
+            "No Response",
+            "ReSchedule"
+          ],
           "custom_fields": []
         },
         {
@@ -265,8 +427,18 @@
           "textColor": "#86198f",
           "is_enabled": true,
           "default_note": "CTC break-up discussed, benefits outlined, and offer numbers agreed.",
-          "authorized_roles": ["admin", "hr_manager", "recruiter"],
-          "status_options": ["Negotiation Pending", "Salary Agreed", "Salary Rejected", "No Response", "ReSchedule"],
+          "authorized_roles": [
+            "admin",
+            "hr_manager",
+            "recruiter"
+          ],
+          "status_options": [
+            "Negotiation Pending",
+            "Salary Agreed",
+            "Salary Rejected",
+            "No Response",
+            "ReSchedule"
+          ],
           "custom_fields": []
         },
         {
@@ -280,8 +452,16 @@
           "textColor": "#3730a3",
           "is_enabled": true,
           "default_note": "Final candidate structure confirmed and formal approval locked.",
-          "authorized_roles": ["admin", "hr_manager"],
-          "status_options": ["Shortlisted", "Dropped", "No Response", "ReSchedule"],
+          "authorized_roles": [
+            "admin",
+            "hr_manager"
+          ],
+          "status_options": [
+            "Shortlisted",
+            "Dropped",
+            "No Response",
+            "ReSchedule"
+          ],
           "custom_fields": []
         },
         {
@@ -295,8 +475,18 @@
           "textColor": "#0369a1",
           "is_enabled": true,
           "default_note": "Letter of Intent / Offer letter issued to candidate.",
-          "authorized_roles": ["admin", "hr_manager", "recruiter"],
-          "status_options": ["LOI Released", "LOI Accepted", "LOI Declined", "No Response", "ReSchedule"],
+          "authorized_roles": [
+            "admin",
+            "hr_manager",
+            "recruiter"
+          ],
+          "status_options": [
+            "LOI Released",
+            "LOI Accepted",
+            "LOI Declined",
+            "No Response",
+            "ReSchedule"
+          ],
           "custom_fields": []
         },
         {
@@ -310,8 +500,18 @@
           "textColor": "#166534",
           "is_enabled": true,
           "default_note": "Candidate onboarding formalities, asset allocation, and induction.",
-          "authorized_roles": ["admin", "hr_manager", "recruiter"],
-          "status_options": ["Joining Pending", "Joined", "No Show", "No Response", "ReSchedule"],
+          "authorized_roles": [
+            "admin",
+            "hr_manager",
+            "recruiter"
+          ],
+          "status_options": [
+            "Joining Pending",
+            "Joined",
+            "No Show",
+            "No Response",
+            "ReSchedule"
+          ],
           "custom_fields": []
         }
       ]

@@ -178,6 +178,11 @@ export default function RecruiterPipelineConfig({
       const res = await saveRecruiterPipelineConfig(selectedTenant, selectedBranch, config);
       if (res?.success) {
         setSaveSuccess(true);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('crm_recruiter_config_updated', {
+            detail: { tenant: selectedTenant, branch: selectedBranch, config }
+          }));
+        }
         setTimeout(() => setSaveSuccess(false), 3500);
       } else {
         setErrorMsg(res?.error || 'Failed to save configuration.');

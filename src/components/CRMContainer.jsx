@@ -47,6 +47,7 @@ import { getReportingTeam, getLeadAssignees, isLeadInAssignmentScope, getLeadSta
 import { isCompleteLeadCache, matchesLeadCacheContext, mergeLeadCacheForDisplay } from '@/utils/leadCachePolicy';
 import { getUserBranchAccess, evaluateLeadCompanyScope, matchesCompanyToken } from '@/utils/branchAccess';
 import { getTenantBranches } from '@/app/actions/tenantBranches';
+import { getRecruiterPipelineConfig } from '@/app/actions/recruiterConfig';
 import HeaderBranchFilter from '@/components/common/HeaderBranchFilter';
 
 const OfflineBlockScreen = dynamic(() => import('./Offline/OfflineBlockScreen'));
@@ -674,6 +675,37 @@ export default function CRMContainer({
       }
     }
   }, [userCompany, adminCompanyFilter, isSwanWorkspace, userBranchAccess]);
+
+  // Dynamic Recruiter Pipeline Stages
+  const [recruiterPipelineStages, setRecruiterPipelineStages] = useState(null);
+
+  const loadRecruiterStages = useCallback(async () => {
+    try {
+      const activeBranch = (!adminCompanyFilter || adminCompanyFilter === 'All') ? 'All Branches' : adminCompanyFilter;
+      const tenantParam = (effectiveTenantId === '00000000-0000-0000-0000-000000000001' || !effectiveTenantId)
+        ? (userCompany || 'New Swan Group')
+        : effectiveTenantId;
+      const res = await getRecruiterPipelineConfig(tenantParam, activeBranch);
+      if (res?.success && Array.isArray(res.config?.stages)) {
+        setRecruiterPipelineStages(res.config.stages);
+      }
+    } catch (e) {
+      console.warn('Failed to load recruiter pipeline config in CRMContainer:', e);
+    }
+  }, [effectiveTenantId, userCompany, adminCompanyFilter]);
+
+  useEffect(() => {
+    loadRecruiterStages();
+    const handleRecruiterConfigUpdated = (e) => {
+      if (e?.detail?.config?.stages && Array.isArray(e.detail.config.stages)) {
+        setRecruiterPipelineStages(e.detail.config.stages);
+      } else {
+        loadRecruiterStages();
+      }
+    };
+    window.addEventListener('crm_recruiter_config_updated', handleRecruiterConfigUpdated);
+    return () => window.removeEventListener('crm_recruiter_config_updated', handleRecruiterConfigUpdated);
+  }, [loadRecruiterStages]);
   const [messageMenuExpanded, setMessageMenuExpanded] = useState(false);
   const [aiMenuExpanded, setAiMenuExpanded] = useState(false);
   const resolveAttendanceSubTab = (rawSub) => {
@@ -5435,6 +5467,22 @@ export default function CRMContainer({
 
                                 const canSeeStage = (stageId) => isFullAccess || allowedSteps.includes(stageId) || recruiterAccess?.sub_items?.[stageId]?.view === true;
 
+                                const getStageLabel = (stageId, fallbackLabel) => {
+                                  if (recruiterPipelineStages && Array.isArray(recruiterPipelineStages)) {
+                                    const found = recruiterPipelineStages.find(s => s.id === stageId);
+                                    if (found?.name) return found.name;
+                                  }
+                                  return fallbackLabel;
+                                };
+
+                                const isStageEnabled = (stageId) => {
+                                  if (recruiterPipelineStages && Array.isArray(recruiterPipelineStages)) {
+                                    const found = recruiterPipelineStages.find(s => s.id === stageId);
+                                    if (found && found.is_enabled === false) return false;
+                                  }
+                                  return true;
+                                };
+
                                 return (
                                   <>
                                     {/* Dashboard & All Stages - for admins/managers or assigned */}
@@ -5465,22 +5513,22 @@ export default function CRMContainer({
                                     )}
 
                                     {/* S00 & S01 */}
-                                    {canSeeStage('S00') && (
+                                    {canSeeStage('S00') && isStageEnabled('S00') && (
                                       <button
                                         onClick={() => { handleTabChange('recruiter'); setRecruiterFilterStage('S00'); }}
                                         className="submenu-item"
                                         data-active={activeTab === 'recruiter' && recruiterFilterStage === 'S00'}
                                       >
-                                        S00 - Requirements Received
+                                        {getStageLabel('S00', 'S00 - Requirements Received')}
                                       </button>
                                     )}
-                                    {canSeeStage('S01') && (
+                                    {canSeeStage('S01') && isStageEnabled('S01') && (
                                       <button
                                         onClick={() => { handleTabChange('recruiter'); setRecruiterFilterStage('S01'); }}
                                         className="submenu-item"
                                         data-active={activeTab === 'recruiter' && recruiterFilterStage === 'S01'}
                                       >
-                                        S01 - JDs Prepared & Posted
+                                        {getStageLabel('S01', 'S01 - JDs Prepared & Posted')}
                                       </button>
                                     )}
 
@@ -5494,14 +5542,14 @@ export default function CRMContainer({
                                       { id: 'S07', label: 'S07 - Shortlisted' },
                                       { id: 'S08', label: 'S08 - LOI Released' },
                                       { id: 'S09', label: 'S09 - Joined' }
-                                    ].filter(stage => canSeeStage(stage.id)).map(stage => (
+                                    ].filter(stage => canSeeStage(stage.id) && isStageEnabled(stage.id)).map(stage => (
                                       <button
                                         key={stage.id}
                                         onClick={() => { handleTabChange('recruiter'); setRecruiterFilterStage(stage.id); }}
                                         className="submenu-item"
                                         data-active={activeTab === 'recruiter' && recruiterFilterStage === stage.id}
                                       >
-                                        {stage.label}
+                                        {getStageLabel(stage.id, stage.label)}
                                       </button>
                                     ))}
                                   </>
@@ -6250,7 +6298,13 @@ export default function CRMContainer({
                   {activeTab === 'recruiter' && (
                     recruiterFilterStage === 'dashboard' ? 'Recruiter Dashboard' :
                     recruiterFilterStage === 'all_stages' ? 'Recruiter — All Stages' :
-                    recruiterFilterStage ? `Recruiter — ${recruiterFilterStage}` : 'Recruiter'
+                    recruiterFilterStage ? `Recruiter — ${(() => {
+                      if (recruiterPipelineStages && Array.isArray(recruiterPipelineStages)) {
+                        const found = recruiterPipelineStages.find(s => s.id === recruiterFilterStage);
+                        if (found?.name) return found.name;
+                      }
+                      return recruiterFilterStage;
+                    })()}` : 'Recruiter'
                   )}
                   {activeTab === 'joining' && 'Joining Process'}
                   {activeTab === 'attendance' && 'Smart Attendance & Regularization'}
