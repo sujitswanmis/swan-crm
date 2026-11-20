@@ -468,13 +468,16 @@ export default function UniversalWorkplaceModule({ moduleAccess = {}, userRole =
   }, []);
 
   const handleOpenConfigureStages = async (wf) => {
-    setSelectedWfForStages(wf);
-    if (!wf.persisted || !wf.workflow_versions?.[0]?.id) {
+    const existingPersisted = workflows.find(w => w.persisted && (w.workflow_code === wf.workflow_code || (isUUID(wf.id) && w.id === wf.id)));
+    const targetWf = existingPersisted || wf;
+    setSelectedWfForStages(targetWf);
+
+    if (!targetWf.persisted || !targetWf.workflow_versions?.[0]?.id || !isUUID(targetWf.workflow_versions?.[0]?.id)) {
       try {
-        const res = await workflowRequest(() => importWorkflowDefinition(wf));
+        const res = await workflowRequest(() => importWorkflowDefinition(targetWf));
         if (res?.workflow) {
           setSelectedWfForStages(res.workflow);
-          setWorkflows(prev => [res.workflow, ...prev.filter(w => w.id !== wf.id && w.workflow_code !== wf.workflow_code)]);
+          setWorkflows(prev => [res.workflow, ...prev.filter(w => w.id !== res.workflow.id && w.workflow_code !== res.workflow.workflow_code)]);
         }
       } catch (err) {
         console.warn('Auto-save workflow on open configure stages:', err?.message);
@@ -488,18 +491,27 @@ export default function UniversalWorkplaceModule({ moduleAccess = {}, userRole =
     try {
       let currentWf = selectedWfForStages;
       if (!currentWf.persisted || !currentWf.workflow_versions?.[0]?.id || !isUUID(currentWf.workflow_versions?.[0]?.id)) {
-        try {
-          const importRes = await workflowRequest(() => importWorkflowDefinition(currentWf));
-          if (importRes?.workflow) {
-            currentWf = importRes.workflow;
-            setSelectedWfForStages(currentWf);
-            setWorkflows(prev => [currentWf, ...prev.filter(w => w.id !== currentWf.id && w.workflow_code !== currentWf.workflow_code)]);
+        const existingPersisted = workflows.find(w => w.persisted && (w.workflow_code === currentWf.workflow_code || (isUUID(currentWf.id) && w.id === currentWf.id)));
+        if (existingPersisted && existingPersisted.workflow_versions?.[0]?.id) {
+          currentWf = existingPersisted;
+          setSelectedWfForStages(currentWf);
+        } else {
+          try {
+            const importRes = await workflowRequest(() => importWorkflowDefinition(currentWf));
+            if (importRes?.workflow) {
+              currentWf = importRes.workflow;
+              setSelectedWfForStages(currentWf);
+              setWorkflows(prev => [currentWf, ...prev.filter(w => w.id !== currentWf.id && w.workflow_code !== currentWf.workflow_code)]);
+            }
+          } catch (e) {
+            console.warn('Auto-save before stage creation:', e?.message);
           }
-        } catch (e) {
-          console.warn('Auto-save before stage creation:', e?.message);
         }
       }
-      const verId = currentWf.workflow_versions?.[0]?.id || `ver-${currentWf.id}`;
+      const verId = currentWf.workflow_versions?.[0]?.id;
+      if (!verId || !isUUID(verId)) {
+        throw new Error('Unable to resolve a valid workflow version. Please refresh the page and try again.');
+      }
       const approverDesig = designations.find(d => d.id === stageForm.approver_designation_id);
       const workerDesig = designations.find(d => d.id === stageForm.assigned_designation_id);
 

@@ -23,8 +23,8 @@ async function access(operation = 'view', tenantId) {
   }
   const admin = true;
   const resolvedTenant = actor.tenant_id || DEFAULT_TENANT_ID;
-  if (tenantId && tenantId !== resolvedTenant) throw new Error('Workflow tenant mismatch');
-  return { client, tenantId: resolvedTenant, actor, user, admin };
+  if (tenantId && tenantId !== resolvedTenant && !isMaster) throw new Error('Workflow tenant mismatch');
+  return { client, tenantId: resolvedTenant, actor, user, admin, isMaster };
 }
 
 function checked(result) {
@@ -54,26 +54,37 @@ function normalizeWorkflow(row) {
 }
 
 async function definitions(ctx) {
-  const rows = checked(await ctx.client.from('workflow_definitions')
-    .select('*, workflow_versions(*, workflow_stages(*, stage_field_mappings(*)))')
-    .eq('tenant_id', ctx.tenantId).order('workflow_name'));
+  let query = ctx.client.from('workflow_definitions')
+    .select('*, workflow_versions(*, workflow_stages(*, stage_field_mappings(*)))');
+  if (!ctx.isMaster && ctx.tenantId) {
+    query = query.eq('tenant_id', ctx.tenantId);
+  }
+  const rows = checked(await query.order('workflow_name'));
   return (rows || []).filter(w => !w.is_purged).map(normalizeWorkflow);
 }
 
 async function workflowById(ctx, id) {
   if (!isUUID(id)) throw new Error('Save this local workflow to Supabase first');
-  const row = checked(await ctx.client.from('workflow_definitions')
+  let query = ctx.client.from('workflow_definitions')
     .select('*, workflow_versions(*, workflow_stages(*, stage_field_mappings(*)))')
-    .eq('tenant_id', ctx.tenantId).eq('id', id).single());
-  if (row.is_purged) throw new Error('Workflow not found');
+    .eq('id', id);
+  if (!ctx.isMaster && ctx.tenantId) {
+    query = query.eq('tenant_id', ctx.tenantId);
+  }
+  const { data: row, error } = await query.maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!row || row.is_purged) throw new Error('Workflow not found');
   return normalizeWorkflow(row);
 }
 
 async function versionWorkflow(ctx, versionId) {
   if (!isUUID(versionId)) throw new Error('Save this local workflow to Supabase first');
-  const version = checked(await ctx.client.from('workflow_versions').select('workflow_id').eq('id', versionId).single());
+  const { data: version, error: vErr } = await ctx.client.from('workflow_versions')
+    .select('workflow_id')
+    .eq('id', versionId)
+    .maybeSingle();
+  if (vErr || !version) throw new Error('Workflow version not found. Refresh and try again.');
   const wf = await workflowById(ctx, version.workflow_id);
-  if (wf.workflow_versions[0]?.id !== versionId) throw new Error('Refresh to use the current workflow version');
   return wf;
 }
 
@@ -119,7 +130,8 @@ function prepareWorkflow(wf) {
 }
 
 async function save(ctx, wf) {
-  const id = checked(await ctx.client.rpc('crm_save_workflow', { p_tenant_id: ctx.tenantId, p_workflow: prepareWorkflow(wf) }));
+  const targetTenant = wf.tenant_id || ctx.tenantId;
+  const id = checked(await ctx.client.rpc('crm_save_workflow', { p_tenant_id: targetTenant, p_workflow: prepareWorkflow(wf) }));
   return workflowById(ctx, id);
 }
 
@@ -142,8 +154,11 @@ export async function createWorkflowDefinition(workflowData, tenantId) {
 
 export async function importWorkflowDefinition(workflowData) {
   const ctx = await access('add');
-  const existing = (await definitions(ctx)).find(w => w.workflow_code === workflowData.workflow_code);
-  if (existing) throw new Error('This code already exists in Supabase. Local data has been preserved; review it before merging.');
+  const allDefs = await definitions(ctx);
+  const existing = allDefs.find(w => w.workflow_code === workflowData.workflow_code || (isUUID(workflowData.id) && w.id === workflowData.id));
+  if (existing) {
+    return { workflow: existing, alreadyExisted: true };
+  }
   const workflow = await save(ctx, { ...workflowData, id: null, updated_at: null,
     stages: (workflowData.stages || []).map(s => ({ ...s, id: null,
       fields: (s.fields || []).map(f => ({ ...f, id: null })) })) });
@@ -168,7 +183,8 @@ export async function addWorkflowStage(versionId, stageData) {
 
 export async function mapStageField(stageId, mappingData) {
   const ctx = await access('edit');
-  const stage = checked(await ctx.client.from('workflow_stages').select('workflow_version_id').eq('id', stageId).single());
+  const { data: stage, error: sErr } = await ctx.client.from('workflow_stages').select('workflow_version_id').eq('id', stageId).maybeSingle();
+  if (sErr || !stage) throw new Error('Stage not found');
   const wf = await versionWorkflow(ctx, stage.workflow_version_id);
   const marker = `local-${crypto.randomUUID()}`;
   const saved = await save(ctx, { ...wf, stages: wf.stages.map(s => s.id === stageId
@@ -178,7 +194,8 @@ export async function mapStageField(stageId, mappingData) {
 
 export async function updateWorkflowStageField(stageId, fieldId, changes, archive = false) {
   const ctx = await access('edit');
-  const stage = checked(await ctx.client.from('workflow_stages').select('workflow_version_id').eq('id', stageId).single());
+  const { data: stage, error: sErr } = await ctx.client.from('workflow_stages').select('workflow_version_id').eq('id', stageId).maybeSingle();
+  if (sErr || !stage) throw new Error('Stage not found');
   const wf = await versionWorkflow(ctx, stage.workflow_version_id);
   if (!wf.stages.find(s => s.id === stageId)?.fields.some(f => f.id === fieldId)) throw new Error('Field not found');
   return save(ctx, { ...wf, stages: wf.stages.map(s => s.id === stageId ? { ...s,
@@ -196,9 +213,10 @@ export async function reorderWorkflowStages(versionId, orderedIds) {
 
 async function setVisibility(id, changes) {
   const ctx = await access('delete');
-  await workflowById(ctx, id);
+  const wf = await workflowById(ctx, id);
+  const targetTenant = wf.tenant_id || ctx.tenantId;
   checked(await ctx.client.from('workflow_definitions').update({ ...changes, updated_at: new Date().toISOString() })
-    .eq('id', id).eq('tenant_id', ctx.tenantId).select('id').single());
+    .eq('id', id).eq('tenant_id', targetTenant).select('id'));
   return { success: true };
 }
 export async function deleteWorkflowDefinition(id) { return setVisibility(id, { is_deleted: true }); }
@@ -225,8 +243,12 @@ function normalizeInstance(row) {
 }
 
 async function instanceById(ctx, id) {
-  const row = checked(await ctx.client.from('workflow_instances').select('*, stage_instances(*)')
-    .eq('tenant_id', ctx.tenantId).eq('id', id).single());
+  let query = ctx.client.from('workflow_instances').select('*, stage_instances(*)').eq('id', id);
+  if (!ctx.isMaster && ctx.tenantId) {
+    query = query.eq('tenant_id', ctx.tenantId);
+  }
+  const { data: row, error } = await query.maybeSingle();
+  if (error || !row) throw new Error('Workflow instance not found');
   return normalizeInstance(row);
 }
 
