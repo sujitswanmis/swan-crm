@@ -18,6 +18,7 @@ import {
   toggleTenantProductStatus,
   importTenantProducts
 } from '@/app/actions/tenantProducts';
+import StandardTablePagination from '@/components/common/StandardTablePagination';
 
 const DEFAULT_CATEGORIES = [
   'Implement',
@@ -126,6 +127,44 @@ export default function ProductListConfig({ userCompany = '' }) {
   const [selectedBranch, setSelectedBranch] = useState('ALL');
   const [selectedCategory, setSelectedCategory] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL'); // ALL | ACTIVE | INACTIVE
+
+  // Page Navigation State (synced with Config Master)
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const s = JSON.parse(localStorage.getItem('crmPageNavSettings') || '{}');
+        if (s.defaultPageSize) {
+          return s.defaultPageSize === 'All' ? 100000 : (Number(s.defaultPageSize) || 25);
+        }
+      } catch (e) {}
+    }
+    return 25;
+  });
+
+  // Live Sync with Config Master Page Navigation Rules
+  useEffect(() => {
+    const syncNavSettings = () => {
+      try {
+        const s = JSON.parse(localStorage.getItem('crmPageNavSettings') || '{}');
+        if (s.defaultPageSize) {
+          const defSize = s.defaultPageSize === 'All' ? 100000 : (Number(s.defaultPageSize) || 25);
+          setPageSize(defSize);
+        }
+      } catch (e) {}
+    };
+    window.addEventListener('crm_page_nav_updated', syncNavSettings);
+    window.addEventListener('crm_config_updated', syncNavSettings);
+    return () => {
+      window.removeEventListener('crm_page_nav_updated', syncNavSettings);
+      window.removeEventListener('crm_config_updated', syncNavSettings);
+    };
+  }, []);
+
+  // Automatic Page Reset when search or filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedBranch, selectedCategory, statusFilter]);
 
   // Modals
   const [showAddEditModal, setShowAddEditModal] = useState(false);
@@ -456,10 +495,12 @@ export default function ProductListConfig({ userCompany = '' }) {
   };
 
   const handleToggleSelectAll = () => {
-    if (selectedProductIds.length === filteredProducts.length && filteredProducts.length > 0) {
-      setSelectedProductIds([]);
+    const targetList = paginatedProducts.length > 0 ? paginatedProducts : filteredProducts;
+    const allSelected = targetList.length > 0 && targetList.every(p => selectedProductIds.includes(p.id));
+    if (allSelected) {
+      setSelectedProductIds(prev => prev.filter(id => !targetList.some(p => p.id === id)));
     } else {
-      setSelectedProductIds(filteredProducts.map(p => p.id));
+      setSelectedProductIds(prev => Array.from(new Set([...prev, ...targetList.map(p => p.id)])));
     }
   };
 
@@ -1237,6 +1278,13 @@ export default function ProductListConfig({ userCompany = '' }) {
     });
   }, [products, selectedBranch, selectedCategory, statusFilter, searchQuery]);
 
+  // Paginated slice for table display
+  const paginatedProducts = useMemo(() => {
+    if (pageSize === 100000) return filteredProducts;
+    const start = (currentPage - 1) * pageSize;
+    return filteredProducts.slice(start, start + pageSize);
+  }, [filteredProducts, currentPage, pageSize]);
+
   // Unique categories in data
   const availableCategories = useMemo(() => {
     const set = new Set(DEFAULT_CATEGORIES);
@@ -1739,23 +1787,24 @@ export default function ProductListConfig({ userCompany = '' }) {
             </button>
           </div>
         ) : (
-          <div style={{ overflowX: 'auto', width: '100%', position: 'relative' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.825rem' }}>
-              <thead>
-                <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#475569', fontWeight: 600 }}>
+          <>
+            <div style={{ overflow: 'auto', width: '100%', position: 'relative', maxHeight: 'calc(100vh - 310px)', minHeight: '380px' }}>
+            <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, textAlign: 'left', fontSize: '0.825rem' }}>
+              <thead style={{ position: 'sticky', top: 0, zIndex: 10 }}>
+                <tr style={{ background: '#f8fafc', color: '#475569', fontWeight: 600 }}>
                   
                   {/* Select All Checkbox */}
-                  <th style={{ width: '45px', minWidth: '45px', padding: '0.75rem 0.75rem', textAlign: 'center' }}>
+                  <th style={{ width: '45px', minWidth: '45px', position: 'sticky', top: 0, zIndex: 10, background: '#f8fafc', boxShadow: 'inset 0 -1px 0 #e2e8f0', padding: '0.75rem 0.75rem', textAlign: 'center' }}>
                     <input
                       type="checkbox"
-                      checked={selectedProductIds.length > 0 && selectedProductIds.length === filteredProducts.length}
+                      checked={paginatedProducts.length > 0 && paginatedProducts.every(p => selectedProductIds.includes(p.id))}
                       onChange={handleToggleSelectAll}
                       style={{ cursor: 'pointer', width: '15px', height: '15px', accentColor: '#2563eb' }}
                     />
                   </th>
 
                   {/* Status Col */}
-                  <th style={{ width: colWidths.status, minWidth: '70px', position: 'relative', padding: '0.75rem 1rem' }}>
+                  <th style={{ width: colWidths.status, minWidth: '70px', position: 'sticky', top: 0, zIndex: 10, background: '#f8fafc', boxShadow: 'inset 0 -1px 0 #e2e8f0', padding: '0.75rem 1rem' }}>
                     Status
                     <div
                       onMouseDown={(e) => handleMouseDownResize(e, 'status')}
@@ -1768,7 +1817,7 @@ export default function ProductListConfig({ userCompany = '' }) {
                   </th>
 
                   {/* Name Col */}
-                  <th style={{ width: colWidths.name, minWidth: '140px', position: 'relative', padding: '0.75rem 1rem' }}>
+                  <th style={{ width: colWidths.name, minWidth: '140px', position: 'sticky', top: 0, zIndex: 10, background: '#f8fafc', boxShadow: 'inset 0 -1px 0 #e2e8f0', padding: '0.75rem 1rem' }}>
                     Product Name
                     <div
                       onMouseDown={(e) => handleMouseDownResize(e, 'name')}
@@ -1781,7 +1830,7 @@ export default function ProductListConfig({ userCompany = '' }) {
                   </th>
 
                   {/* SKU Col */}
-                  <th style={{ width: colWidths.sku, minWidth: '90px', position: 'relative', padding: '0.75rem 1rem' }}>
+                  <th style={{ width: colWidths.sku, minWidth: '90px', position: 'sticky', top: 0, zIndex: 10, background: '#f8fafc', boxShadow: 'inset 0 -1px 0 #e2e8f0', padding: '0.75rem 1rem' }}>
                     SKU / Code
                     <div
                       onMouseDown={(e) => handleMouseDownResize(e, 'sku')}
@@ -1794,7 +1843,7 @@ export default function ProductListConfig({ userCompany = '' }) {
                   </th>
 
                   {/* Branch Col */}
-                  <th style={{ width: colWidths.branch, minWidth: '120px', position: 'relative', padding: '0.75rem 1rem' }}>
+                  <th style={{ width: colWidths.branch, minWidth: '120px', position: 'sticky', top: 0, zIndex: 10, background: '#f8fafc', boxShadow: 'inset 0 -1px 0 #e2e8f0', padding: '0.75rem 1rem' }}>
                     Branch / Location
                     <div
                       onMouseDown={(e) => handleMouseDownResize(e, 'branch')}
@@ -1807,7 +1856,7 @@ export default function ProductListConfig({ userCompany = '' }) {
                   </th>
 
                   {/* Category Col */}
-                  <th style={{ width: colWidths.category, minWidth: '100px', position: 'relative', padding: '0.75rem 1rem' }}>
+                  <th style={{ width: colWidths.category, minWidth: '100px', position: 'sticky', top: 0, zIndex: 10, background: '#f8fafc', boxShadow: 'inset 0 -1px 0 #e2e8f0', padding: '0.75rem 1rem' }}>
                     Category
                     <div
                       onMouseDown={(e) => handleMouseDownResize(e, 'category')}
@@ -1820,7 +1869,7 @@ export default function ProductListConfig({ userCompany = '' }) {
                   </th>
 
                   {/* Sub-Category Col */}
-                  <th style={{ width: colWidths.subcategory, minWidth: '100px', position: 'relative', padding: '0.75rem 1rem' }}>
+                  <th style={{ width: colWidths.subcategory, minWidth: '100px', position: 'sticky', top: 0, zIndex: 10, background: '#f8fafc', boxShadow: 'inset 0 -1px 0 #e2e8f0', padding: '0.75rem 1rem' }}>
                     Sub-Category
                     <div
                       onMouseDown={(e) => handleMouseDownResize(e, 'subcategory')}
@@ -1833,7 +1882,7 @@ export default function ProductListConfig({ userCompany = '' }) {
                   </th>
 
                   {/* Coverage Type Col */}
-                  <th style={{ width: colWidths.coverage_type, minWidth: '115px', position: 'relative', padding: '0.75rem 1rem' }}>
+                  <th style={{ width: colWidths.coverage_type, minWidth: '115px', position: 'sticky', top: 0, zIndex: 10, background: '#f8fafc', boxShadow: 'inset 0 -1px 0 #e2e8f0', padding: '0.75rem 1rem' }}>
                     Coverage Type
                     <div
                       onMouseDown={(e) => handleMouseDownResize(e, 'coverage_type')}
@@ -1846,7 +1895,7 @@ export default function ProductListConfig({ userCompany = '' }) {
                   </th>
 
                   {/* Coverage Period Col */}
-                  <th style={{ width: colWidths.coverage_period, minWidth: '120px', position: 'relative', padding: '0.75rem 1rem', textAlign: 'center' }}>
+                  <th style={{ width: colWidths.coverage_period, minWidth: '120px', position: 'sticky', top: 0, zIndex: 10, background: '#f8fafc', boxShadow: 'inset 0 -1px 0 #e2e8f0', padding: '0.75rem 1rem', textAlign: 'center' }}>
                     Coverage Period
                     <div
                       onMouseDown={(e) => handleMouseDownResize(e, 'coverage_period')}
@@ -1859,7 +1908,7 @@ export default function ProductListConfig({ userCompany = '' }) {
                   </th>
 
                   {/* Coverage Terms Col */}
-                  <th style={{ width: colWidths.coverage_terms, minWidth: '140px', position: 'relative', padding: '0.75rem 1rem' }}>
+                  <th style={{ width: colWidths.coverage_terms, minWidth: '140px', position: 'sticky', top: 0, zIndex: 10, background: '#f8fafc', boxShadow: 'inset 0 -1px 0 #e2e8f0', padding: '0.75rem 1rem' }}>
                     Coverage Terms
                     <div
                       onMouseDown={(e) => handleMouseDownResize(e, 'coverage_terms')}
@@ -1872,7 +1921,7 @@ export default function ProductListConfig({ userCompany = '' }) {
                   </th>
 
                   {/* Price Col */}
-                  <th style={{ width: colWidths.price, minWidth: '100px', position: 'relative', padding: '0.75rem 1rem', textAlign: 'right' }}>
+                  <th style={{ width: colWidths.price, minWidth: '100px', position: 'sticky', top: 0, zIndex: 10, background: '#f8fafc', boxShadow: 'inset 0 -1px 0 #e2e8f0', padding: '0.75rem 1rem', textAlign: 'right' }}>
                     Base Price
                     <div
                       onMouseDown={(e) => handleMouseDownResize(e, 'price')}
@@ -1885,7 +1934,7 @@ export default function ProductListConfig({ userCompany = '' }) {
                   </th>
 
                   {/* Tax Col */}
-                  <th style={{ width: colWidths.tax, minWidth: '70px', position: 'relative', padding: '0.75rem 1rem', textAlign: 'center' }}>
+                  <th style={{ width: colWidths.tax, minWidth: '70px', position: 'sticky', top: 0, zIndex: 10, background: '#f8fafc', boxShadow: 'inset 0 -1px 0 #e2e8f0', padding: '0.75rem 1rem', textAlign: 'center' }}>
                     GST %
                     <div
                       onMouseDown={(e) => handleMouseDownResize(e, 'tax')}
@@ -1898,7 +1947,7 @@ export default function ProductListConfig({ userCompany = '' }) {
                   </th>
 
                   {/* HSN Col */}
-                  <th style={{ width: colWidths.hsn, minWidth: '80px', position: 'relative', padding: '0.75rem 1rem' }}>
+                  <th style={{ width: colWidths.hsn, minWidth: '80px', position: 'sticky', top: 0, zIndex: 10, background: '#f8fafc', boxShadow: 'inset 0 -1px 0 #e2e8f0', padding: '0.75rem 1rem' }}>
                     HSN
                     <div
                       onMouseDown={(e) => handleMouseDownResize(e, 'hsn')}
@@ -1911,7 +1960,7 @@ export default function ProductListConfig({ userCompany = '' }) {
                   </th>
 
                   {/* Stock Col */}
-                  <th style={{ width: colWidths.stock, minWidth: '80px', position: 'relative', padding: '0.75rem 1rem', textAlign: 'center' }}>
+                  <th style={{ width: colWidths.stock, minWidth: '80px', position: 'sticky', top: 0, zIndex: 10, background: '#f8fafc', boxShadow: 'inset 0 -1px 0 #e2e8f0', padding: '0.75rem 1rem', textAlign: 'center' }}>
                     Stock
                     <div
                       onMouseDown={(e) => handleMouseDownResize(e, 'stock')}
@@ -1924,7 +1973,7 @@ export default function ProductListConfig({ userCompany = '' }) {
                   </th>
 
                   {/* UOM Col */}
-                  <th style={{ width: colWidths.uom, minWidth: '70px', position: 'relative', padding: '0.75rem 1rem' }}>
+                  <th style={{ width: colWidths.uom, minWidth: '70px', position: 'sticky', top: 0, zIndex: 10, background: '#f8fafc', boxShadow: 'inset 0 -1px 0 #e2e8f0', padding: '0.75rem 1rem' }}>
                     UOM
                     <div
                       onMouseDown={(e) => handleMouseDownResize(e, 'uom')}
@@ -1937,7 +1986,7 @@ export default function ProductListConfig({ userCompany = '' }) {
                   </th>
 
                   {/* Updated At Col */}
-                  <th style={{ width: colWidths.updated, minWidth: '100px', position: 'relative', padding: '0.75rem 1rem' }}>
+                  <th style={{ width: colWidths.updated, minWidth: '100px', position: 'sticky', top: 0, zIndex: 10, background: '#f8fafc', boxShadow: 'inset 0 -1px 0 #e2e8f0', padding: '0.75rem 1rem' }}>
                     Last Updated
                     <div
                       onMouseDown={(e) => handleMouseDownResize(e, 'updated')}
@@ -1950,13 +1999,13 @@ export default function ProductListConfig({ userCompany = '' }) {
                   </th>
 
                   {/* Actions Col */}
-                  <th style={{ width: colWidths.actions, minWidth: '90px', padding: '0.75rem 1rem', textAlign: 'center' }}>
+                  <th style={{ width: colWidths.actions, minWidth: '90px', position: 'sticky', top: 0, zIndex: 10, background: '#f8fafc', boxShadow: 'inset 0 -1px 0 #e2e8f0', padding: '0.75rem 1rem', textAlign: 'center' }}>
                     Actions
                   </th>
                 </tr>
               </thead>
               <tbody>
-                {filteredProducts.map((p, idx) => {
+                {paginatedProducts.map((p, idx) => {
                   const isUniversal = !p.branch_name || p.branch_name === 'All Branches';
                   return (
                     <tr
@@ -2218,7 +2267,21 @@ export default function ProductListConfig({ userCompany = '' }) {
               </tbody>
             </table>
           </div>
-        )}
+
+          {/* Unified Standard Table Pagination */}
+          <StandardTablePagination
+            currentPage={currentPage}
+            totalRecords={filteredProducts.length}
+            pageSize={pageSize === 'All' ? 100000 : Number(pageSize || 25)}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={(newSize) => {
+              setPageSize(newSize);
+              setCurrentPage(1);
+            }}
+            style={{ borderTop: '1px solid #e2e8f0', background: '#ffffff', borderRadius: '0 0 12px 12px' }}
+          />
+        </>
+      )}
       </div>
 
       {/* --- ADD / EDIT PRODUCT MODAL --- */}
