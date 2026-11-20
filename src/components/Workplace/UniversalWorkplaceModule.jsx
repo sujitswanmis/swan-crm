@@ -414,8 +414,8 @@ export default function UniversalWorkplaceModule({ moduleAccess = {}, userRole =
   };
 
   const acceptWorkflow = (wf) => {
-    setWorkflows(prev => prev.map(w => w.id === wf.id ? wf : w));
-    setSelectedWfForStages(prev => prev?.id === wf.id ? wf : prev);
+    setWorkflows(prev => prev.map(w => (w.id === wf.id || w.workflow_code === wf.workflow_code) ? wf : w));
+    setSelectedWfForStages(prev => (prev?.id === wf.id || prev?.workflow_code === wf.workflow_code) ? wf : prev);
   };
 
   const loadWorkflowData = async () => {
@@ -593,15 +593,13 @@ export default function UniversalWorkplaceModule({ moduleAccess = {}, userRole =
       }));
       createdStage.assigned_employee_name = combinedWorkerNames;
 
-      const updatedStages = [...(selectedWfForStages.stages || []), createdStage];
-      const updatedWf = { ...selectedWfForStages, stages: updatedStages };
+      const updatedStages = [...(currentWf.stages || []), createdStage];
+      const updatedWf = { ...currentWf, stages: updatedStages, persisted: true };
 
       setSelectedWfForStages(updatedWf);
       setWorkflows(prev => {
-        const exists = prev.some(w => String(w.id) === String(updatedWf.id));
-        return exists
-          ? prev.map(w => String(w.id) === String(updatedWf.id) ? updatedWf : w)
-          : [updatedWf, ...prev];
+        const filtered = prev.filter(w => String(w.id) !== String(updatedWf.id) && w.workflow_code !== updatedWf.workflow_code);
+        return [updatedWf, ...filtered];
       });
 
       setStageForm({
