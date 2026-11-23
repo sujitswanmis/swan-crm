@@ -333,6 +333,16 @@ export default function OfflineRuleModule({ userRole = 'admin' }) {
       icon: FileText
     },
 
+    {
+      key: 'fieldForce',
+      category: 'field_operations',
+      categoryLabel: 'Field Operations',
+      title: 'Field Force',
+      desc: 'Allow Field Force screens to open offline. Available data depends on the tab and the device cache.',
+      icon: Activity,
+      offlineSaveNotice: 'Keep this off for staff who record visits until offline check-in and check-out sync has been verified.'
+    },
+
     // 🏢 Sales & Locations
     {
       key: 'partyMasterEdit',
@@ -357,6 +367,14 @@ export default function OfflineRuleModule({ userRole = 'admin' }) {
       title: 'Order Management & Tracking',
       desc: 'Allow viewing customer sales orders and order status offline.',
       icon: Briefcase
+    },
+    {
+      key: 'channelOperations',
+      category: 'sales_locations',
+      categoryLabel: 'Sales & Locations',
+      title: 'Channel Operations',
+      desc: 'Allow Channel Operations to open offline and display available cached orders, feedback, and complaints.',
+      icon: Layers
     },
 
     // 📦 Purchase & Production
@@ -857,6 +875,7 @@ export default function OfflineRuleModule({ userRole = 'admin' }) {
             { id: 'checklist', label: '📋 Smart Checklist', count: featureConfigs.filter(f => f.category === 'checklist').length },
             { id: 'delegation', label: '👥 Delegation Tasks', count: featureConfigs.filter(f => f.category === 'delegation').length },
             { id: 'attendance', label: '⏰ Smart Attendance', count: featureConfigs.filter(f => f.category === 'attendance').length },
+            { id: 'field_operations', label: 'Field Operations', count: featureConfigs.filter(f => f.category === 'field_operations').length },
             { id: 'leads', label: '🎯 Leads & Sales', count: featureConfigs.filter(f => f.category === 'leads').length },
             { id: 'sales_locations', label: '🏢 Sales & Locations', count: featureConfigs.filter(f => f.category === 'sales_locations').length },
             { id: 'purchase', label: '📦 Purchase & MRP', count: featureConfigs.filter(f => f.category === 'purchase').length },
@@ -950,7 +969,7 @@ export default function OfflineRuleModule({ userRole = 'admin' }) {
                     )}
                     {!QUEUED_OFFLINE_ACTIONS.has(feat.key) && (
                       <div style={{ marginTop: '0.35rem', fontSize: '0.7rem', color: '#b45309', fontWeight: '600' }}>
-                        No offline save queue for this action. Internet is still required to submit changes.
+                        {feat.offlineSaveNotice || 'No offline save queue for this action. Internet is still required to submit changes.'}
                       </div>
                     )}
                   </div>

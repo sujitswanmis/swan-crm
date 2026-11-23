@@ -852,7 +852,7 @@ export async function createSubdistrictCentral(payload, userId = null) {
     try {
       const { data: dMeta } = await adminClient
         .from('location_districts')
-        .select('state_id, country_id')
+        .select('state_id')
         .eq('id', targetDistrictId)
         .maybeSingle();
       if (dMeta?.state_id) realStateId = dMeta.state_id;
@@ -1157,13 +1157,13 @@ export async function resolveLocationAliasCentral(rawName, locationType = 'DISTR
   // 1. Exact Alias Match
   const { data: alias } = await adminClient
     .from('location_aliases')
-    .select('canonical_location_id')
-    .eq('alias_normalized', norm)
-    .eq('location_type', locationType)
-    .eq('is_active', true)
-    .single();
+    .select('target_district_id, official_name')
+    .ilike('raw_alias', norm)
+    .eq('status', 'ACTIVE')
+    .limit(1)
+    .maybeSingle();
 
-  if (alias) return { matchType: 'ALIAS_MATCH', id: alias.canonical_location_id };
+  if (alias) return { matchType: 'ALIAS_MATCH', id: alias.target_district_id, name: alias.official_name };
 
   // 2. Canonical Name Match under parent
   let query = adminClient

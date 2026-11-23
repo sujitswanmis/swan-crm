@@ -4,7 +4,10 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('desktopApp', {
   isDesktop: true,
   platform: process.platform,
-  version: process.versions.electron,
+  version: '3.0.0',
+  appVersion: 'v3.0',
+  appVersionCode: 3,
+  electronVersion: process.versions.electron,
   minimize: () => ipcRenderer.send('window-minimize'),
   maximize: () => ipcRenderer.send('window-maximize'),
   close: () => ipcRenderer.send('window-close'),
@@ -12,7 +15,8 @@ contextBridge.exposeInMainWorld('desktopApp', {
   setZoom: (percent) => ipcRenderer.send('set-zoom-factor', percent),
   onZoomChanged: (callback) => {
     ipcRenderer.on('zoom-changed', (_event, percent) => callback(percent));
-  }
+  },
+  showNotification: (payload) => ipcRenderer.invoke('show-native-notification', payload)
 });
 
 // React-compatible Native Input Setter (used by password managers like Bitwarden)

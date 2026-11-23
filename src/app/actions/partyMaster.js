@@ -1430,7 +1430,7 @@ export async function getOrderFollowups(tenantId = DEFAULT_TENANT_ID, scheduledD
   const adminClient = getAdminClient();
   let query = adminClient
     .from('party_order_followups')
-    .select('*, party:party_master(id, party_universal_code, firm_name, primary_mobile, business_nature, external_sap_code)')
+    .select('*, party:party_master!party_id(id, party_universal_code, firm_name, primary_mobile, business_nature, external_sap_code)')
     .eq('tenant_id', tenantId);
 
   if (scheduledDate && scheduledDate !== 'ALL') {
@@ -1556,7 +1556,7 @@ export async function getMonthlyFeedbackList(tenantId = DEFAULT_TENANT_ID, month
   try {
     let query = adminClient
       .from('party_monthly_feedback')
-      .select('*, party:party_master(id, party_universal_code, firm_name, primary_mobile, business_nature, external_sap_code)')
+      .select('*, party:party_master!party_id(id, party_universal_code, firm_name, primary_mobile, business_nature, external_sap_code)')
       .eq('tenant_id', tenantId);
 
     if (monthStr && monthStr !== 'ALL') {
@@ -1696,7 +1696,7 @@ export async function getComplaintsList(tenantId = DEFAULT_TENANT_ID) {
   const adminClient = getAdminClient();
   const { data, error } = await adminClient
     .from('party_complaints')
-    .select('*, party:party_master(id, party_universal_code, firm_name, primary_mobile, business_nature, external_sap_code)')
+    .select('*, party:party_master!party_id(id, party_universal_code, firm_name, primary_mobile, business_nature, external_sap_code)')
     .eq('tenant_id', tenantId)
     .order('created_at', { ascending: false });
 

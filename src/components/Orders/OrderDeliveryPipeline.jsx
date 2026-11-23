@@ -300,10 +300,18 @@ export default function OrderDeliveryPipeline({
   userName = 'Operations',
   userRole = '',
   userId = '',
-  moduleAccess = null
+  moduleAccess = null,
+  initialStageFilter = 'ALL',
+  onStageFilterChange = null
 }) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [stageFilter, setStageFilter] = useState('ALL');
+  const [stageFilter, setStageFilter] = useState(initialStageFilter || 'ALL');
+
+  useEffect(() => {
+    if (initialStageFilter && initialStageFilter !== stageFilter) {
+      setStageFilter(initialStageFilter);
+    }
+  }, [initialStageFilter]);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
 

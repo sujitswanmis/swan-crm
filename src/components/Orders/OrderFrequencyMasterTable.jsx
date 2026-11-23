@@ -142,6 +142,10 @@ export default function OrderFrequencyMasterTable({
       const p = item.party;
       if (!p) return false;
 
+      // Exclude unconfirmed S00 handoffs / drafts (strictly match Party Master Report)
+      const isUnconfirmedHandoff = p.party_status === 'Draft_From_Lead' || p.onboarding_stage === 'S00_Party_Entry';
+      if (isUnconfirmedHandoff) return false;
+
       if (frequencyFilter !== 'ALL' && item.frequency_type !== frequencyFilter) return false;
       if (tierFilter !== 'ALL' && (p.party_type || '').toLowerCase() !== tierFilter.toLowerCase()) return false;
 

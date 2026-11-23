@@ -1128,8 +1128,12 @@ export async function getMonthlyHealthCheckQueue(tenantId = DEFAULT_TENANT_ID, p
   const currentPeriod = periodStr || new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit' }).format(new Date());
 
   try {
-    // 1. Fetch active parties from Party Master
-    const parties = await getPartyList(effectiveTenantId);
+    // 1. Fetch active parties from Party Master (strictly verified onboarded partners only)
+    const rawParties = await getPartyList(effectiveTenantId);
+    const parties = (rawParties || []).filter(p => {
+      const isUnconfirmedHandoff = p.party_status === 'Draft_From_Lead' || p.onboarding_stage === 'S00_Party_Entry';
+      return !isUnconfirmedHandoff;
+    });
 
     // 2. Fetch monthly audits for selected period
     const { data: audits } = await adminClient

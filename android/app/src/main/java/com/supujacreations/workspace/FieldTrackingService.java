@@ -25,6 +25,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.PowerManager;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
@@ -68,6 +69,7 @@ public class FieldTrackingService extends Service {
     private ConnectivityManager.NetworkCallback networkCallback;
     private Handler mainHandler;
     private ExecutorService uploadExecutor;
+    private PowerManager.WakeLock wakeLock;
 
     private final Object stateLock = new Object();
     private boolean hasLastSaved = false;
@@ -122,6 +124,7 @@ public class FieldTrackingService extends Service {
             }
             // Connectivity and permission reporting must not depend on a location fix.
             scheduleStatusHeartbeat(false);
+            acquireWakeLock();
             if (mainHandler != null) {
                 mainHandler.postDelayed(this, HEARTBEAT_INTERVAL_MS);
             }
@@ -168,6 +171,7 @@ public class FieldTrackingService extends Service {
         }
 
         isServiceRunning = true;
+        acquireWakeLock();
         scheduleStatusHeartbeat(false);
 
         if (ACTION_FLUSH.equals(action)) {
@@ -200,8 +204,32 @@ public class FieldTrackingService extends Service {
         }
     }
 
+    private void acquireWakeLock() {
+        try {
+            if (wakeLock == null) {
+                PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+                if (pm != null) {
+                    wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "SPCWorkspace::TrackingWakeLock");
+                    wakeLock.setReferenceCounted(false);
+                }
+            }
+            if (wakeLock != null && !wakeLock.isHeld()) {
+                wakeLock.acquire(15 * 60 * 1000L); // 15 mins safety timeout
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private void releaseWakeLock() {
+        try {
+            if (wakeLock != null && wakeLock.isHeld()) {
+                wakeLock.release();
+            }
+        } catch (Exception ignored) {}
+    }
+
     private void stopServiceCleanly() {
         isServiceRunning = false;
+        releaseWakeLock();
         if (mainHandler != null) {
             mainHandler.removeCallbacksAndMessages(null);
         }
@@ -437,6 +465,7 @@ public class FieldTrackingService extends Service {
                 obj.put("battery_pct", JSONObject.NULL);
             }
             obj.put("is_charging", battery[1] == 1);
+            obj.put("is_power_save_mode", battery.length > 2 && battery[2] == 1);
             obj.put("is_moving", speedKmh > 2 || movedMeters >= 20f);
             obj.put("is_mock_gps", isMock);
             obj.put("is_offline_synced", !onlineAtCapture);
@@ -457,6 +486,13 @@ public class FieldTrackingService extends Service {
     private int[] readBatteryState() {
         int pct = -1;
         int charging = 0;
+        int powerSave = 0;
+        try {
+            PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+            if (pm != null && pm.isPowerSaveMode()) {
+                powerSave = 1;
+            }
+        } catch (Exception ignored) {}
         try {
             Intent batIntent = registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
             if (batIntent != null) {
@@ -471,7 +507,7 @@ public class FieldTrackingService extends Service {
                 }
             }
         } catch (Exception ignored) {}
-        return new int[]{ pct, charging };
+        return new int[]{ pct, charging, powerSave };
     }
 
     private boolean isNetworkAvailable() {
@@ -654,9 +690,19 @@ public class FieldTrackingService extends Service {
             : PendingIntent.FLAG_UPDATE_CURRENT;
         PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, openIntent, piFlags);
 
+        String title = "SPC Workspace Field Tracking";
+        String contentText = text;
+        try {
+            PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+            if (pm != null && pm.isPowerSaveMode()) {
+                title = "⚠️ Battery Saver Active";
+                contentText = "Phone is in Battery Saver mode. Turn OFF for smooth live tracking.";
+            }
+        } catch (Exception ignored) {}
+
         return new NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("SPC Workspace Field Tracking")
-            .setContentText(text)
+            .setContentTitle(title)
+            .setContentText(contentText)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
@@ -668,6 +714,7 @@ public class FieldTrackingService extends Service {
     @Override
     public void onDestroy() {
         isServiceRunning = false;
+        releaseWakeLock();
         if (providerReceiverRegistered) {
             try { unregisterReceiver(providerReceiver); } catch (Exception ignored) {}
             providerReceiverRegistered = false;

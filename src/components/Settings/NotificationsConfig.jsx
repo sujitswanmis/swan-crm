@@ -7,6 +7,9 @@ export default function NotificationsConfig() {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [browserPermission, setBrowserPermission] = useState('default');
 
+  const isWindowsApp = typeof window !== 'undefined' && Boolean(window.desktopApp?.isDesktop);
+  const isAndroidApp = typeof window !== 'undefined' && Boolean(window.Capacitor?.isNativePlatform?.() || window.Capacitor?.Plugins?.FieldTracker);
+
   const [prefs, setPrefs] = useState({
     email: true,
     browser: true,
@@ -58,6 +61,20 @@ export default function NotificationsConfig() {
   }, []);
 
   const requestBrowserPermission = async () => {
+    if (isWindowsApp && window.desktopApp?.showNotification) {
+      window.desktopApp.showNotification({
+        title: '🔔 SPC Workspace Windows Alert',
+        body: 'Windows Action Center toast notification is active and working!'
+      });
+      return;
+    }
+    if (isAndroidApp && window.Capacitor?.Plugins?.FieldTracker?.showNotification) {
+      window.Capacitor.Plugins.FieldTracker.showNotification({
+        title: '🔔 SPC Workspace Android Alert',
+        message: 'Android system notification channel is active and working!'
+      });
+      return;
+    }
     if (typeof window === 'undefined' || !('Notification' in window)) {
       alert('Your browser does not support desktop notifications.');
       return;
@@ -474,40 +491,42 @@ export default function NotificationsConfig() {
                 </div>
                 <div>
                   <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    Browser Desktop Notifications
+                    {isWindowsApp ? 'Windows Desktop App Notifications' : (isAndroidApp ? 'Android System Notifications' : 'Browser Desktop Notifications')}
                     <span style={{ 
                       fontSize: '0.7rem', padding: '0.1rem 0.4rem', borderRadius: '4px',
-                      backgroundColor: browserPermission === 'granted' ? '#dcfce7' : (browserPermission === 'denied' ? '#fee2e2' : '#f1f5f9'),
-                      color: browserPermission === 'granted' ? '#166534' : (browserPermission === 'denied' ? '#991b1b' : '#475569'),
+                      backgroundColor: (isWindowsApp || isAndroidApp || browserPermission === 'granted') ? '#dcfce7' : (browserPermission === 'denied' ? '#fee2e2' : '#f1f5f9'),
+                      color: (isWindowsApp || isAndroidApp || browserPermission === 'granted') ? '#166534' : (browserPermission === 'denied' ? '#991b1b' : '#475569'),
                       fontWeight: 700
                     }}>
-                      {browserPermission === 'granted' ? 'Granted ✓' : (browserPermission === 'denied' ? 'Blocked ✕' : 'Not Enabled')}
+                      {(isWindowsApp || isAndroidApp) ? 'Native Active ✓' : (browserPermission === 'granted' ? 'Granted ✓' : (browserPermission === 'denied' ? 'Blocked ✕' : 'Not Enabled'))}
                     </span>
                   </div>
                   <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                    Get Windows / Mac popup alerts even when CRM tab is minimized or running in background.
+                    {isWindowsApp 
+                      ? 'Direct Windows 10/11 Action Center & Taskbar toast alerts.'
+                      : (isAndroidApp
+                        ? 'Status bar & lock screen system alerts even when app is in background.'
+                        : 'Get Windows / Mac popup alerts even when CRM tab is minimized or running in background.')}
                   </div>
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                {browserPermission !== 'granted' && (
-                  <button
-                    type="button"
-                    onClick={requestBrowserPermission}
-                    style={{
-                      padding: '0.35rem 0.75rem',
-                      borderRadius: '6px',
-                      border: '1px solid var(--accent-color)',
-                      background: 'var(--nav-active-bg)',
-                      color: 'var(--accent-color)',
-                      fontSize: '0.78rem',
-                      fontWeight: 600,
-                      cursor: 'pointer'
-                    }}
-                  >
-                    Enable Permission
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={requestBrowserPermission}
+                  style={{
+                    padding: '0.35rem 0.75rem',
+                    borderRadius: '6px',
+                    border: '1px solid var(--accent-color)',
+                    background: 'var(--nav-active-bg)',
+                    color: 'var(--accent-color)',
+                    fontSize: '0.78rem',
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  {(isWindowsApp || isAndroidApp) ? 'Test Native Alert' : (browserPermission !== 'granted' ? 'Enable Permission' : 'Test Alert')}
+                </button>
                 <ToggleSwitch checked={prefs.browserPushEnabled} onChange={(v) => setPrefs(p => ({ ...p, browserPushEnabled: v }))} />
               </div>
             </div>

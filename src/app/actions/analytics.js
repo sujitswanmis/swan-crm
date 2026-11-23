@@ -183,10 +183,13 @@ export async function getUserAssignedWorkSummary({
 
     const delegation = {
       total: tasks.length,
+      active: tasks.filter(t => !['COMPLETED', 'CANCELLED'].includes(t.status)).length,
       pending: tasks.filter(t => t.status === 'PENDING').length,
       inProgress: tasks.filter(t => t.status === 'IN_PROGRESS').length,
       submitted: tasks.filter(t => t.status === 'SUBMITTED').length,
+      reopened: tasks.filter(t => t.status === 'REOPENED').length,
       completed: tasks.filter(t => t.status === 'COMPLETED').length,
+      cancelled: tasks.filter(t => t.status === 'CANCELLED').length,
       overdue: tasks.filter(t => !['COMPLETED', 'CANCELLED'].includes(t.status) && (t.is_overdue || (t.deadline && new Date(t.deadline) < now))).length,
       priorityBreakdown: {
         high: tasks.filter(t => t.priority === 'HIGH' || t.priority === 'URGENT').length,
@@ -279,7 +282,7 @@ export async function getUserAssignedWorkSummary({
 /**
  * Fetch Attendance + Checklist Compliance + Recruitment summaries for Dashboard
  */
-export async function getDashboardSummaries({ targetDate = null, tenantId = null, userCompany = null, branchCode = null, adminCompanyFilter = null } = {}) {
+export async function getDashboardSummaries({ targetDate = null, startDate = null, endDate = null, tenantId = null, userCompany = null, branchCode = null, adminCompanyFilter = null } = {}) {
   try {
     const { getTeamAttendanceMaster } = await import('@/app/actions/attendance');
     const { getEmployeeChecklistDashboard } = await import('@/app/actions/checklist');
@@ -305,16 +308,20 @@ export async function getDashboardSummaries({ targetDate = null, tenantId = null
     const todayIST = `${istNow.getFullYear()}-${String(istNow.getMonth() + 1).padStart(2, '0')}-${String(istNow.getDate()).padStart(2, '0')}`;
     const useDate = targetDate || todayIST;
 
-    // 1. Attendance summary (today)
+    // 1. Attendance summary (today or period)
     let attendanceSummary = { totalEmployees: 0, totalPresent: 0, totalAbsent: 0, totalLate: 0, totalHalfDay: 0, totalRegularized: 0, presentPercent: 0, records: [] };
     try {
-      const attRes = await getTeamAttendanceMaster({ date: useDate });
+      const attRes = await getTeamAttendanceMaster({ 
+        date: useDate,
+        startDate: startDate || useDate,
+        endDate: endDate || useDate
+      });
       if (attRes?.success && attRes.summary) {
         const s = attRes.summary;
         attendanceSummary = {
           ...s,
           records: Array.isArray(attRes.records) ? attRes.records : [],
-          presentPercent: s.totalEmployees > 0 ? Math.round(((s.totalPresent + s.totalHalfDay) / s.totalEmployees) * 100) : 0
+          presentPercent: s.totalEmployees > 0 ? Math.round(((s.totalPresent + s.totalHalfDay + (s.totalRegularized || 0)) / s.totalEmployees) * 100) : 0
         };
       }
     } catch (e) {
@@ -353,9 +360,37 @@ export async function getDashboardSummaries({ targetDate = null, tenantId = null
         tmplsQuery = tmplsQuery.eq('tenant_id', checklistTenantId);
       }
 
+      // Calculate working days in period (excluding Sundays)
+      let workingDays = 1;
+      if (startDate && endDate && startDate !== endDate) {
+        workingDays = 0;
+        const cur = new Date(`${startDate}T12:00:00+05:30`);
+        const end = new Date(`${endDate}T12:00:00+05:30`);
+        while (cur <= end) {
+          if (cur.getDay() !== 0) workingDays++; // Mon-Sat
+          cur.setDate(cur.getDate() + 1);
+        }
+        workingDays = Math.max(1, workingDays);
+      }
+
+      let subsQuery = supabase.from('checklist_submissions')
+        .select('id, template_id, period_key, status, employee_email, submitted_at');
+
+      if (checklistTenantId) {
+        subsQuery = subsQuery.eq('tenant_id', checklistTenantId);
+      }
+
+      if (startDate && endDate && startDate !== endDate) {
+        subsQuery = subsQuery
+          .gte('period_key', startDate)
+          .lte('period_key', `${endDate}_zz`);
+      } else {
+        subsQuery = subsQuery.like('period_key', `${useDate}%`);
+      }
+
       const [tmplsRes, subsRes] = await Promise.all([
         tmplsQuery,
-        supabase.from('checklist_submissions').select('id, template_id, period_key, status, employee_email, submitted_at').like('period_key', `${useDate}%`)
+        subsQuery
       ]);
 
       const tmpls = tmplsRes.data || [];
@@ -405,14 +440,30 @@ export async function getDashboardSummaries({ targetDate = null, tenantId = null
 
       const totalCompletedSubs = subs.filter(s => s.status === 'COMPLETED').length;
       const totalSlots = templateSlots.length;
-      const expectedTotalSubs = totalSlots * 6; // approximate daily expectation across team
-      const complianceRate = totalSlots > 0 ? Math.min(100, Math.round((totalCompletedSubs / (expectedTotalSubs || 1)) * 100)) : 0;
+      
+      // Calculate realistic total expected slots based on template assignment scopes
+      let expectedTotalSubs = 0;
+      templateSlots.forEach(slot => {
+        if (slot.assigned_type === 'SPECIFIC' && slot.assigned_employee_email) {
+          const count = slot.assigned_employee_email.split(',').filter(Boolean).length;
+          expectedTotalSubs += Math.max(1, count);
+        } else {
+          // Templates assigned to ALL or department across approved employees
+          expectedTotalSubs += Math.max(1, attendanceSummary.totalEmployees || 1);
+        }
+      });
+      if (expectedTotalSubs === 0) expectedTotalSubs = totalSlots;
+      expectedTotalSubs = expectedTotalSubs * workingDays;
+
+      const complianceRate = expectedTotalSubs > 0 ? Math.min(100, Math.round((totalCompletedSubs / expectedTotalSubs) * 100)) : 0;
 
       checklistSummary = {
         totalSlots,
+        expectedSlots: expectedTotalSubs,
         completed: totalCompletedSubs,
         pending: Math.max(0, expectedTotalSubs - totalCompletedSubs),
         complianceRate,
+        workingDays,
         submissionsByEmail,
         items: templateSlots
       };
@@ -462,11 +513,50 @@ export async function getDashboardSummaries({ targetDate = null, tenantId = null
         };
       });
 
-      // Filter positions based on active company / branch / tenant scope
+      // Resolve user's active tenant and tenant code for strict multi-tenant isolation
+      let targetTenantCode = 'TNT00002';
+      let targetTenantId = tenantId;
+      if (!targetTenantId) {
+        const compLower = String(userCompany || '').toLowerCase().trim();
+        if (compLower.includes('supuja')) {
+          targetTenantId = '0a37b8e8-1c28-4e19-8891-951fc3f8f8af';
+          targetTenantCode = 'TNT00001';
+        } else if (compLower.includes('testing')) {
+          targetTenantId = '922d3e72-6588-457f-a562-4f1bdbf10d98';
+          targetTenantCode = 'TNT00003';
+        } else {
+          targetTenantId = '00000000-0000-0000-0000-000000000001';
+          targetTenantCode = 'TNT00002';
+        }
+      } else {
+        targetTenantCode = targetTenantId === '0a37b8e8-1c28-4e19-8891-951fc3f8f8af' ? 'TNT00001' : (targetTenantId === '922d3e72-6588-457f-a562-4f1bdbf10d98' ? 'TNT00003' : 'TNT00002');
+      }
+
+      if (adminCompanyFilter && adminCompanyFilter !== 'All') {
+        const filtLower = String(adminCompanyFilter).toLowerCase().trim();
+        if (filtLower.includes('supuja') || filtLower === 'tnt00001') {
+          targetTenantId = '0a37b8e8-1c28-4e19-8891-951fc3f8f8af';
+          targetTenantCode = 'TNT00001';
+        } else if (filtLower.includes('testing') || filtLower === 'tnt00003') {
+          targetTenantId = '922d3e72-6588-457f-a562-4f1bdbf10d98';
+          targetTenantCode = 'TNT00003';
+        } else if (filtLower.includes('nsmlr') || filtLower.includes('swan') || filtLower.includes('nstl') || filtLower === 'tnt00002') {
+          targetTenantId = '00000000-0000-0000-0000-000000000001';
+          targetTenantCode = 'TNT00002';
+        }
+      }
+
+      // Filter positions based on active company / branch / tenant scope (Strict Tenant Isolation)
       const effectiveFilter = String(adminCompanyFilter || '').trim();
       const isAllCompanies = !effectiveFilter || effectiveFilter.toLowerCase() === 'all';
 
       const filteredPositions = parsedPositions.filter(p => {
+        // Enforce strict workspace tenant boundary: prevent SuPuja (TNT00001) leaking into New Swan (TNT00002) or vice-versa
+        const posTenantCode = p.workspace_tenant_code || (p.workspace_tenant_id === '0a37b8e8-1c28-4e19-8891-951fc3f8f8af' ? 'TNT00001' : 'TNT00002');
+        if (posTenantCode !== targetTenantCode && p.workspace_tenant_id !== targetTenantId) {
+          return false;
+        }
+
         // If specific company or branch filter is selected in navbar
         if (!isAllCompanies) {
           const filtLower = effectiveFilter.toLowerCase();
@@ -476,14 +566,6 @@ export async function getDashboardSummaries({ targetDate = null, tenantId = null
           return matchCompany || matchBranch || matchTenant;
         }
 
-        // If 'All Companies' is active:
-        // Single-tenant users who are strictly scoped to SuPuja Creations only see their tenant
-        if (tenantId && tenantId === '0a37b8e8-1c28-4e19-8891-951fc3f8f8af' && userCompany && String(userCompany).toLowerCase().includes('supuja')) {
-          // If adminCompanyFilter is not explicitly set to All, keep strictly isolated
-          if (adminCompanyFilter && adminCompanyFilter !== 'All') {
-            return p.workspace_tenant_id === tenantId || p.workspace_tenant_code === 'TNT00001';
-          }
-        }
         return true;
       });
 
@@ -495,9 +577,9 @@ export async function getDashboardSummaries({ targetDate = null, tenantId = null
           return {
             ...c,
             workspace_tenant_id: parentPos?.workspace_tenant_id,
-            workspace_tenant_code: parentPos?.workspace_tenant_code || 'TNT00002',
-            workspace_company: parentPos?.workspace_company || 'NSMLR',
-            workspace_branch_code: parentPos?.workspace_branch_code || 'TNT00002-B0002'
+            workspace_tenant_code: parentPos?.workspace_tenant_code || targetTenantCode,
+            workspace_company: parentPos?.workspace_company || (targetTenantCode === 'TNT00001' ? 'SuPuja Creations' : 'NSMLR'),
+            workspace_branch_code: parentPos?.workspace_branch_code || (targetTenantCode === 'TNT00001' ? 'TNT00001-B0001' : 'TNT00002-B0002')
           };
         });
 
@@ -517,14 +599,25 @@ export async function getDashboardSummaries({ targetDate = null, tenantId = null
         (c.candidate_status || '').toLowerCase().includes('dropped') ||
         (c.candidate_status || '').toLowerCase().includes('no show')
       );
-      const newToday = candidates.filter(c => c.created_at && c.created_at.startsWith(useDate));
+
+      // Candidate creation within selected date range
+      const isDateInRange = (dateStr) => {
+        if (!dateStr) return false;
+        const d = dateStr.slice(0, 10);
+        if (startDate && endDate && startDate !== endDate) {
+          return d >= startDate && d <= endDate;
+        }
+        return d === useDate;
+      };
+      const newInPeriod = candidates.filter(c => isDateInRange(c.created_at));
 
       recruitmentSummary = {
         openPositions: openPositions.length,
         totalPositions: positions.length,
         totalApplications: candidates.length,
         totalCandidates: candidates.length,
-        newToday: newToday.length,
+        newToday: newInPeriod.length,
+        newInPeriod: newInPeriod.length,
         inInterview: inInterview.length,
         shortlisted: shortlisted.length,
         hired: hired.length,

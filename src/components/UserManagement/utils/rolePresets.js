@@ -125,12 +125,13 @@ export const ROLE_PRESETS = [
       mrp_against: { view: true, read: true, write: true, edit: true, export: true },
       recruiter: {
         view: true, read: true, write: true, edit: true, export: true,
-        assigned_steps: ['dashboard', 'all_stages', 'S00', 'S01', 'S02', 'S03', 'S04', 'S05', 'S06', 'S07', 'S08', 'S09'],
+        assigned_steps: ['dashboard', 'all_stages', 'S00', 'S01', 'S02', 'S03', 'S04', 'S05', 'S06', 'S07', 'S08', 'S09', 'S10', 'S11', 'S12'],
         sub_items: {
           dashboard: { view: true }, all_stages: { view: true },
           S00: { view: true }, S01: { view: true }, S02: { view: true },
           S03: { view: true }, S04: { view: true }, S05: { view: true },
-          S06: { view: true }, S07: { view: true }, S08: { view: true }, S09: { view: true }
+          S06: { view: true }, S07: { view: true }, S08: { view: true }, S09: { view: true },
+          S10: { view: true }, S11: { view: true }, S12: { view: true }
         }
       },
       joining: { view: true, read: true, write: true, edit: true, export: true },
@@ -270,12 +271,13 @@ export const ROLE_PRESETS = [
       mrp_against: { view: true, read: true, write: true, edit: true, export: true },
       recruiter: {
         view: true, read: true, write: true, edit: true, export: true,
-        assigned_steps: ['dashboard', 'all_stages', 'S00', 'S01', 'S02', 'S03', 'S04', 'S05', 'S06', 'S07', 'S08', 'S09'],
+        assigned_steps: ['dashboard', 'all_stages', 'S00', 'S01', 'S02', 'S03', 'S04', 'S05', 'S06', 'S07', 'S08', 'S09', 'S10', 'S11', 'S12'],
         sub_items: {
           dashboard: { view: true }, all_stages: { view: true },
           S00: { view: true }, S01: { view: true }, S02: { view: true },
           S03: { view: true }, S04: { view: true }, S05: { view: true },
-          S06: { view: true }, S07: { view: true }, S08: { view: true }, S09: { view: true }
+          S06: { view: true }, S07: { view: true }, S08: { view: true }, S09: { view: true },
+          S10: { view: true }, S11: { view: true }, S12: { view: true }
         }
       },
       joining: { view: true, read: true, write: true, edit: true, export: true },
@@ -830,12 +832,13 @@ export const ROLE_PRESETS = [
       can_bulk_actions: true,
       recruiter: {
         view: true, read: true, write: true, edit: true, export: true,
-        assigned_steps: ['dashboard', 'all_stages', 'S00', 'S01', 'S02', 'S03', 'S04', 'S05', 'S06', 'S07', 'S08', 'S09'],
+        assigned_steps: ['dashboard', 'all_stages', 'S00', 'S01', 'S02', 'S03', 'S04', 'S05', 'S06', 'S07', 'S08', 'S09', 'S10', 'S11', 'S12'],
         sub_items: {
           dashboard: { view: true }, all_stages: { view: true },
           S00: { view: true }, S01: { view: true }, S02: { view: true },
           S03: { view: true }, S04: { view: true }, S05: { view: true },
-          S06: { view: true }, S07: { view: true }, S08: { view: true }, S09: { view: true }
+          S06: { view: true }, S07: { view: true }, S08: { view: true }, S09: { view: true },
+          S10: { view: true }, S11: { view: true }, S12: { view: true }
         }
       },
       joining: { view: true, read: true, write: true, edit: true, export: true },
@@ -954,6 +957,11 @@ for (const preset of ROLE_PRESETS) {
   };
 }
 
+// Home Workspace is standard and accessible to all roles by default
+for (const preset of ROLE_PRESETS) {
+  preset.presetData.home = { view: true, read: true, add: false, edit: false, delete: false };
+}
+
 // SaaS administration is always explicit and limited to Master Admin.
 for (const preset of ROLE_PRESETS) {
   const allowed = preset.key === 'master_admin';
@@ -962,5 +970,13 @@ for (const preset of ROLE_PRESETS) {
 }
 
 export function getRolePreset(roleKey) {
-  return ROLE_PRESETS.find(p => p.key === roleKey) || null;
+  const preset = ROLE_PRESETS.find(p => p.key === roleKey);
+  if (!preset) return null;
+  return {
+    ...preset,
+    presetData: {
+      ...preset.presetData,
+      home: { view: true, read: true, add: false, edit: false, delete: false }
+    }
+  };
 }

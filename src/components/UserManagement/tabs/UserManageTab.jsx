@@ -61,7 +61,7 @@ const DEFAULT_USER_MANAGE_COL_WIDTHS = {
   reporting: 130,
   status: 115,
   approval_status: 115,
-  role: 140,
+  role: 165,
   last_updated: 130,
   last_updated_by: 145,
   update_details: 220,
@@ -75,7 +75,7 @@ const USER_MANAGE_COL_MIN_WIDTHS = {
   reporting: 100,
   status: 80,
   approval_status: 85,
-  role: 110,
+  role: 130,
   last_updated: 90,
   last_updated_by: 90,
   update_details: 120,
@@ -555,7 +555,13 @@ export default function UserManageTab({
   const renderUserCell = (u, colKey, idx) => {
     const isMaster = isMasterAdmin(u);
     const isTrash = (u.emp_status || '').toLowerCase() === 'trash';
-    const initials = (u.emp_name || u.email || 'U').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
+    const rawName = (u.emp_name || '').split(/[-–—]/)[0].trim() || (u.email || 'U').split('@')[0].trim();
+    const cleanWords = rawName.replace(/[^a-zA-Z0-9\s]/g, '').trim().split(/\s+/).filter(Boolean);
+    const initials = (
+      cleanWords.length >= 2
+        ? cleanWords[0][0] + cleanWords[1][0]
+        : (cleanWords[0]?.slice(0, 2) || 'U')
+    ).toUpperCase();
 
     switch (colKey) {
       case 'user_employee':
@@ -1158,264 +1164,210 @@ export default function UserManageTab({
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', width: '100%' }}>
-      {/* Top Row: Status Badges (Left) & Action Controls (Right) */}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', width: '100%' }}>
+      {/* Row 1: Action Controls: [Advance Filter] [Column Filter] [Import CSV] [Export CSV] [TableViewToggle] [Refresh] [+ Add User] */}
       <div style={{
         display: 'flex',
-        flexWrap: 'wrap',
-        justifyContent: 'space-between',
         alignItems: 'center',
-        gap: '0.75rem',
-        paddingBottom: '0.25rem'
+        gap: '0.45rem',
+        flexWrap: 'wrap'
       }}>
-        {/* Status Filter Badges */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', alignItems: 'center' }}>
-          {['All', 'Active', 'InActive', 'Hold', 'Resigned', 'Terminated', 'Draft', 'Trash'].map(st => {
-            const isSelected = selectedStatusTab === st;
-            const count = statusCounts[st] || 0;
-            return (
-              <button
-                key={st}
-                type="button"
-                onClick={() => {
-                  setSelectedStatusTab(st);
-                  setCurrentPage(1);
-                }}
-                style={{
-                  padding: '0.35rem 0.75rem',
-                  borderRadius: '20px',
-                  border: isSelected ? '1px solid var(--primary-color, #2563eb)' : '1px solid var(--border-light)',
-                  backgroundColor: isSelected ? 'var(--primary-color, #2563eb)' : 'var(--bg-surface)',
-                  color: isSelected ? '#ffffff' : 'var(--text-primary)',
-                  fontSize: '0.78rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.4rem',
-                  transition: 'all 0.15s ease'
-                }}
-              >
-                <span>{st === 'Hold' ? 'On Hold' : st}</span>
-                <span style={{
-                  fontSize: '0.7rem',
-                  backgroundColor: isSelected ? 'rgba(255,255,255,0.25)' : 'var(--border-light)',
-                  color: isSelected ? '#ffffff' : 'var(--text-secondary)',
-                  padding: '0.05rem 0.45rem',
-                  borderRadius: '10px'
-                }}>
-                  {count}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Action Controls: [Advance Filter] [Column Filter] [Import CSV] [Export CSV] [TableViewToggle] [Refresh] [+ Add User] */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.45rem',
-          flexWrap: 'wrap',
-          flexShrink: 0
-        }}>
-          {/* 1. Advance Multi-Column Filter */}
-          <div style={{ position: 'relative', flexShrink: 0 }}>
-            <button
-              type="button"
-              onClick={() => { setShowFilterModal(!showFilterModal); setShowColumnModal(false); }}
-              style={{
-                padding: '0.42rem 0.65rem',
-                borderRadius: '8px',
-                border: activeRuleCount > 0 ? '1px solid #0284c7' : '1px solid var(--border-light)',
-                backgroundColor: showFilterModal ? '#0284c7' : (activeRuleCount > 0 ? '#eff6ff' : 'var(--bg-surface)'),
-                color: showFilterModal ? '#ffffff' : (activeRuleCount > 0 ? '#0284c7' : 'var(--text-primary)'),
-                fontSize: '0.78rem',
-                fontWeight: 600,
-                cursor: 'pointer',
+        {/* 1. Advance Multi-Column Filter */}
+        <div style={{ position: 'relative', flexShrink: 0 }}>
+          <button
+            type="button"
+            onClick={() => { setShowFilterModal(!showFilterModal); setShowColumnModal(false); }}
+            style={{
+              padding: '0.42rem 0.65rem',
+              borderRadius: '8px',
+              border: activeRuleCount > 0 ? '1px solid #0284c7' : '1px solid var(--border-light)',
+              backgroundColor: showFilterModal ? '#0284c7' : (activeRuleCount > 0 ? '#eff6ff' : 'var(--bg-surface)'),
+              color: showFilterModal ? '#ffffff' : (activeRuleCount > 0 ? '#0284c7' : 'var(--text-primary)'),
+              fontSize: '0.78rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.35rem',
+              position: 'relative',
+              boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+            }}
+            title="Advanced Multi-Column Filter (AND / OR conditions)"
+          >
+            <Filter size={15} />
+            <span>Filter</span>
+            {activeRuleCount > 0 && (
+              <span style={{
+                position: 'absolute',
+                top: '-6px',
+                right: '-6px',
+                backgroundColor: '#0284c7',
+                color: '#ffffff',
+                fontSize: '0.65rem',
+                fontWeight: 700,
+                borderRadius: '50%',
+                width: '18px',
+                height: '18px',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '0.35rem',
-                position: 'relative',
-                boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                justifyContent: 'center',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
+              }}>
+                {activeRuleCount}
+              </span>
+            )}
+          </button>
+
+          <ErrorBoundary fallback={null}>
+            <MultiColumnFilterModal
+              isOpen={showFilterModal}
+              onClose={() => setShowFilterModal(false)}
+              columns={USER_FILTER_COLUMNS}
+              filterRules={filterRules}
+              conditionType={filterConditionType}
+              onApply={(newRules, newCond) => {
+                setFilterRules(newRules);
+                setFilterConditionType(newCond);
+                setCurrentPage(1);
               }}
-              title="Advanced Multi-Column Filter (AND / OR conditions)"
-            >
-              <Filter size={15} />
-              <span>Filter</span>
-              {activeRuleCount > 0 && (
-                <span style={{
-                  position: 'absolute',
-                  top: '-6px',
-                  right: '-6px',
-                  backgroundColor: '#0284c7',
-                  color: '#ffffff',
-                  fontSize: '0.65rem',
-                  fontWeight: 700,
-                  borderRadius: '50%',
-                  width: '18px',
-                  height: '18px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
-                }}>
-                  {activeRuleCount}
-                </span>
-              )}
-            </button>
-
-            <ErrorBoundary fallback={null}>
-              <MultiColumnFilterModal
-                isOpen={showFilterModal}
-                onClose={() => setShowFilterModal(false)}
-                columns={USER_FILTER_COLUMNS}
-                filterRules={filterRules}
-                conditionType={filterConditionType}
-                onApply={(newRules, newCond) => {
-                  setFilterRules(newRules);
-                  setFilterConditionType(newCond);
-                  setCurrentPage(1);
-                }}
-                onResetAll={() => {
-                  setFilterRules({});
-                  setCurrentPage(1);
-                }}
-                getUniqueValues={getFilterUniqueValues}
-              />
-            </ErrorBoundary>
-          </div>
-
-          {/* 2. Column Filter (ColumnSelectorModal) */}
-          <div style={{ position: 'relative', flexShrink: 0 }}>
-            <button
-              type="button"
-              onClick={() => { setShowColumnModal(!showColumnModal); setShowFilterModal(false); }}
-              style={{
-                padding: '0.42rem 0.65rem',
-                borderRadius: '8px',
-                border: '1px solid var(--border-light)',
-                backgroundColor: showColumnModal ? '#0284c7' : 'var(--bg-surface)',
-                color: showColumnModal ? '#ffffff' : 'var(--text-primary)',
-                fontSize: '0.78rem',
-                fontWeight: 600,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.35rem',
-                boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+              onResetAll={() => {
+                setFilterRules({});
+                setCurrentPage(1);
               }}
-              title="Column Filter & Visibility (Show/Hide & Reorder Columns)"
-            >
-              <Settings size={15} />
-              <span>Columns</span>
-            </button>
-
-            <ErrorBoundary fallback={null}>
-              <ColumnSelectorModal
-                isOpen={showColumnModal}
-                onClose={() => setShowColumnModal(false)}
-                columns={ALL_USER_MANAGE_COLUMNS}
-                visibleColumns={visibleColumns}
-                onApply={handleApplyColumnSettings}
-                onReset={handleResetColumnSettings}
-              />
-            </ErrorBoundary>
-          </div>
-
-          {/* 3. Import CSV */}
-          <button
-            type="button"
-            onClick={onOpenBulkImport}
-            style={{
-              padding: '0.42rem 0.75rem',
-              borderRadius: '8px',
-              border: '1px solid var(--border-light)',
-              backgroundColor: 'var(--bg-surface)',
-              color: 'var(--text-primary)',
-              fontSize: '0.78rem',
-              fontWeight: 600,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.35rem'
-            }}
-          >
-            <Upload size={14} />
-            <span>Import CSV</span>
-          </button>
-
-          {/* 4. Export CSV */}
-          <button
-            type="button"
-            onClick={onExportCSV}
-            style={{
-              padding: '0.42rem 0.75rem',
-              borderRadius: '8px',
-              border: '1px solid var(--border-light)',
-              backgroundColor: 'var(--bg-surface)',
-              color: 'var(--text-primary)',
-              fontSize: '0.78rem',
-              fontWeight: 600,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.35rem'
-            }}
-          >
-            <Download size={14} />
-            <span>Export CSV</span>
-          </button>
-
-          {/* 5. TableViewToggle (right next to Export CSV) */}
-          <TableViewToggle view={tableView} onChange={setTableView} />
-
-          {/* 6. Refresh (right next to Add User) */}
-          <button
-            type="button"
-            onClick={onRefresh}
-            title="Refresh Users"
-            style={{
-              padding: '0.42rem 0.75rem',
-              borderRadius: '8px',
-              border: '1px solid var(--border-light)',
-              backgroundColor: 'var(--bg-surface)',
-              color: 'var(--text-primary)',
-              fontSize: '0.78rem',
-              fontWeight: 600,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.35rem'
-            }}
-          >
-            <RefreshCw size={14} className={loading ? 'spin' : ''} />
-            <span>Refresh</span>
-          </button>
-
-          {/* 7. Add User */}
-          <button
-            type="button"
-            onClick={onAddUser}
-            style={{
-              padding: '0.42rem 0.95rem',
-              borderRadius: '8px',
-              border: 'none',
-              backgroundColor: 'var(--primary-color, #2563eb)',
-              color: '#ffffff',
-              fontSize: '0.8rem',
-              fontWeight: 600,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.4rem',
-              boxShadow: '0 2px 6px rgba(37, 99, 235, 0.25)'
-            }}
-          >
-            <Plus size={16} />
-            <span>Add User</span>
-          </button>
+              getUniqueValues={getFilterUniqueValues}
+            />
+          </ErrorBoundary>
         </div>
+
+        {/* 2. Column Filter (ColumnSelectorModal) */}
+        <div style={{ position: 'relative', flexShrink: 0 }}>
+          <button
+            type="button"
+            onClick={() => { setShowColumnModal(!showColumnModal); setShowFilterModal(false); }}
+            style={{
+              padding: '0.42rem 0.65rem',
+              borderRadius: '8px',
+              border: '1px solid var(--border-light)',
+              backgroundColor: showColumnModal ? '#0284c7' : 'var(--bg-surface)',
+              color: showColumnModal ? '#ffffff' : 'var(--text-primary)',
+              fontSize: '0.78rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.35rem',
+              boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+            }}
+            title="Column Filter & Visibility (Show/Hide & Reorder Columns)"
+          >
+            <Settings size={15} />
+            <span>Columns</span>
+          </button>
+
+          <ErrorBoundary fallback={null}>
+            <ColumnSelectorModal
+              isOpen={showColumnModal}
+              onClose={() => setShowColumnModal(false)}
+              columns={ALL_USER_MANAGE_COLUMNS}
+              visibleColumns={visibleColumns}
+              onApply={handleApplyColumnSettings}
+              onReset={handleResetColumnSettings}
+            />
+          </ErrorBoundary>
+        </div>
+
+        {/* 3. Import CSV */}
+        <button
+          type="button"
+          onClick={onOpenBulkImport}
+          style={{
+            padding: '0.42rem 0.75rem',
+            borderRadius: '8px',
+            border: '1px solid var(--border-light)',
+            backgroundColor: 'var(--bg-surface)',
+            color: 'var(--text-primary)',
+            fontSize: '0.78rem',
+            fontWeight: 600,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.35rem'
+          }}
+        >
+          <Upload size={14} />
+          <span>Import CSV</span>
+        </button>
+
+        {/* 4. Export CSV */}
+        <button
+          type="button"
+          onClick={onExportCSV}
+          style={{
+            padding: '0.42rem 0.75rem',
+            borderRadius: '8px',
+            border: '1px solid var(--border-light)',
+            backgroundColor: 'var(--bg-surface)',
+            color: 'var(--text-primary)',
+            fontSize: '0.78rem',
+            fontWeight: 600,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.35rem'
+          }}
+        >
+          <Download size={14} />
+          <span>Export CSV</span>
+        </button>
+
+        {/* 5. TableViewToggle (right next to Export CSV) */}
+        <TableViewToggle view={tableView} onChange={setTableView} />
+
+        {/* 6. Refresh (right next to Add User) */}
+        <button
+          type="button"
+          onClick={onRefresh}
+          title="Refresh Users"
+          style={{
+            padding: '0.42rem 0.75rem',
+            borderRadius: '8px',
+            border: '1px solid var(--border-light)',
+            backgroundColor: 'var(--bg-surface)',
+            color: 'var(--text-primary)',
+            fontSize: '0.78rem',
+            fontWeight: 600,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.35rem'
+          }}
+        >
+          <RefreshCw size={14} className={loading ? 'spin' : ''} />
+          <span>Refresh</span>
+        </button>
+
+        {/* 7. Add User */}
+        <button
+          type="button"
+          onClick={onAddUser}
+          style={{
+            padding: '0.42rem 0.95rem',
+            borderRadius: '8px',
+            border: 'none',
+            backgroundColor: 'var(--primary-color, #2563eb)',
+            color: '#ffffff',
+            fontSize: '0.8rem',
+            fontWeight: 600,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.4rem',
+            boxShadow: '0 2px 6px rgba(37, 99, 235, 0.25)'
+          }}
+        >
+          <Plus size={16} />
+          <span>Add User</span>
+        </button>
       </div>
 
       {/* Row 2: Filter Toolbar (1. Search Bar -> 2. Department Selector -> 3. Sub-department Selector) */}
@@ -1534,6 +1486,49 @@ export default function UserManageTab({
             <span>Reset Filters</span>
           </button>
         )}
+      </div>
+
+      {/* Row 3: Status Filter Badges (Pills - Directly above Table) */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', alignItems: 'center', paddingBottom: '0.15rem' }}>
+        {['All', 'Active', 'InActive', 'Hold', 'Resigned', 'Terminated', 'Draft', 'Trash'].map(st => {
+          const isSelected = selectedStatusTab === st;
+          const count = statusCounts[st] || 0;
+          return (
+            <button
+              key={st}
+              type="button"
+              onClick={() => {
+                setSelectedStatusTab(st);
+                setCurrentPage(1);
+              }}
+              style={{
+                padding: '0.35rem 0.75rem',
+                borderRadius: '20px',
+                border: isSelected ? '1px solid var(--primary-color, #2563eb)' : '1px solid var(--border-light)',
+                backgroundColor: isSelected ? 'var(--primary-color, #2563eb)' : 'var(--bg-surface)',
+                color: isSelected ? '#ffffff' : 'var(--text-primary)',
+                fontSize: '0.78rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <span>{st === 'Hold' ? 'On Hold' : st}</span>
+              <span style={{
+                fontSize: '0.7rem',
+                backgroundColor: isSelected ? 'rgba(255,255,255,0.25)' : 'var(--border-light)',
+                color: isSelected ? '#ffffff' : 'var(--text-secondary)',
+                padding: '0.05rem 0.45rem',
+                borderRadius: '10px'
+              }}>
+                {count}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       {/* Users Data Table / Tiles */}

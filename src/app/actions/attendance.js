@@ -3414,8 +3414,9 @@ export async function getTeamMonthlyMatrix({
   customEndDay = null
 }) {
   const adminClient = getAdminClient();
-  const targetYear = parseInt(year, 10);
-  const targetMonth = parseInt(month, 10);
+  const now = new Date();
+  const targetYear = parseInt(year, 10) || now.getFullYear();
+  const targetMonth = parseInt(month, 10) || (now.getMonth() + 1);
   const effectiveTenantId = resolveTenantId(tenantId, company);
 
   const daysInMonth = new Date(targetYear, targetMonth, 0).getDate();

@@ -231,7 +231,7 @@ export async function getRecruitersList(company = null) {
   const adminClient = getAdminClient();
   const { data, error } = await adminClient
     .from('user_roles')
-    .select('emp_name, emp_designation, emp_sub_department, user_id, emp_id, email, module_access, company')
+    .select('emp_name, emp_designation, emp_sub_department, user_id, emp_id, email, module_access, company, emp_status')
     .order('emp_name', { ascending: true });
 
   if (error) {
@@ -245,8 +245,16 @@ export async function getRecruitersList(company = null) {
 
   return (data || []).filter(u => {
     if (!u.emp_name) return false;
-    const status = u.module_access?.emp_status;
-    if (status === 'InActive' || status === 'Trash' || status === 'Terminated') return false;
+    
+    // Strict Active & Approved Verification
+    const statusCol = String(u.emp_status || '').trim();
+    const statusMod = String(u.module_access?.emp_status || '').trim();
+    const isResignedOrInactive = 
+      statusCol === 'InActive' || statusCol === 'Trash' || statusCol === 'Terminated' || statusCol === 'Resigned' ||
+      statusMod === 'InActive' || statusMod === 'Trash' || statusMod === 'Terminated' || statusMod === 'Resigned' ||
+      u.module_access?.approval_status === 'Rejected' || u.module_access?.is_approved === false;
+
+    if (isResignedOrInactive) return false;
 
     // Filter by Sub-Department = 'Recruiter' OR Designation containing 'Recruiter'
     const subDept = String(u.emp_sub_department || u.module_access?.emp_sub_department || '').toLowerCase().trim();

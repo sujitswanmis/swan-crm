@@ -10,6 +10,10 @@ export default function AppLiveUpdateBanner() {
   const [hasNewApk, setHasNewApk] = useState(false);
   const [isForceUpgrade, setIsForceUpgrade] = useState(false);
   const [apkInfo, setApkInfo] = useState(null);
+  const [hasNewDesktop, setHasNewDesktop] = useState(false);
+  const [desktopInfo, setDesktopInfo] = useState(null);
+  const [hasNewIos, setHasNewIos] = useState(false);
+  const [iosInfo, setIosInfo] = useState(null);
   const [dismissed, setDismissed] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [pullProgress, setPullProgress] = useState(0);
@@ -72,8 +76,8 @@ export default function AppLiveUpdateBanner() {
             }
           } catch {}
 
-          const minSupported = Number(data.android.min_supported_version_code || 9);
-          const latestCode = Number(data.android.latest_version_code || 9);
+          const minSupported = Number(data.android.min_supported_version_code || 10);
+          const latestCode = Number(data.android.latest_version_code || 10);
 
           // Option 1: Force Blocking Upgrade if currentCode < minSupported
           if (currentCode < minSupported) {
@@ -86,9 +90,51 @@ export default function AppLiveUpdateBanner() {
             setHasNewApk(true);
             setApkInfo({ ...data.android, currentCode });
           } else {
-            // App is up to date (v9+)
+            // App is up to date (v10+)
             setIsForceUpgrade(false);
             setHasNewApk(false);
+          }
+        }
+      }
+
+      // Check if Windows Desktop App needs upgrade
+      if (typeof window !== 'undefined' && data.windows) {
+        const isDesktop = Boolean(window.desktopApp?.isDesktop);
+        if (isDesktop) {
+          const installedCode = Number(window.desktopApp?.appVersionCode || (window.desktopApp?.version === '3.0.0' ? 3 : 2));
+          const minSupportedCode = Number(data.windows.min_supported_version_code || 3);
+          const latestCode = Number(data.windows.latest_version_code || 3);
+          const installedVer = String(window.desktopApp?.appVersion || window.desktopApp?.version || 'v2.0').trim();
+          const targetVer = String(data.windows.latest_version_name || 'v3.0 (2.5.1339)').trim();
+
+          if (installedCode < latestCode || (targetVer && installedVer !== targetVer && installedCode < latestCode)) {
+            setHasNewDesktop(true);
+            setDesktopInfo({
+              ...data.windows,
+              installedVer,
+              installedCode,
+              isForce: installedCode < minSupportedCode
+            });
+          } else {
+            setHasNewDesktop(false);
+          }
+        }
+      }
+
+      // Check if iOS Mobile App needs upgrade
+      if (typeof window !== 'undefined' && data.ios) {
+        const cap = window.Capacitor;
+        const isIos = Boolean(
+          cap?.getPlatform?.() === 'ios' || /iPhone|iPad|iPod/i.test(navigator.userAgent || '')
+        );
+        if (isIos && data.ios.latest_version_code) {
+          const currentCode = Number(window.localStorage?.getItem('spc_ios_version_code') || 1);
+          const latestCode = Number(data.ios.latest_version_code || 1);
+          if (currentCode < latestCode) {
+            setHasNewIos(true);
+            setIosInfo({ ...data.ios, currentCode });
+          } else {
+            setHasNewIos(false);
           }
         }
       }
@@ -573,6 +619,135 @@ export default function AppLiveUpdateBanner() {
             >
               <Download size={13} />
               Update
+            </a>
+            <button
+              onClick={() => setDismissed(true)}
+              style={{ background: 'transparent', border: 'none', color: '#ffffff', opacity: 0.7, cursor: 'pointer', padding: '4px' }}
+            >
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Banner: Windows Desktop Upgrade Available */}
+      {!dismissed && hasNewDesktop && desktopInfo && (
+        <div style={{
+          position: 'fixed',
+          bottom: '16px',
+          left: '16px',
+          right: '16px',
+          maxWidth: '520px',
+          margin: '0 auto',
+          zIndex: 99998,
+          background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+          color: '#ffffff',
+          borderRadius: '12px',
+          padding: '0.75rem 1rem',
+          boxShadow: '0 8px 24px rgba(2, 132, 199, 0.35)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '0.75rem',
+          border: '1px solid rgba(255, 255, 255, 0.2)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+            <span style={{ fontSize: '20px' }}>🪟</span>
+            <div>
+              <div style={{ fontSize: '0.82rem', fontWeight: 700 }}>
+                Naya Windows Desktop Update ({desktopInfo.latest_version_name?.startsWith('v') ? desktopInfo.latest_version_name : `v${desktopInfo.latest_version_name}`})
+              </div>
+              <div style={{ fontSize: '0.72rem', opacity: 0.85 }}>
+                Action Center notifications aur performance upgrade ke liye download karein.
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}>
+            <a
+              href={desktopInfo.download_url || '/api/public/desktop-installer'}
+              download="SPC-Workspace-Setup.exe"
+              style={{
+                background: '#ffffff',
+                color: '#0369a1',
+                border: 'none',
+                padding: '0.4rem 0.75rem',
+                borderRadius: '6px',
+                fontSize: '0.76rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                textDecoration: 'none'
+              }}
+            >
+              <Download size={13} />
+              Setup (.exe)
+            </a>
+            <button
+              onClick={() => setDismissed(true)}
+              style={{ background: 'transparent', border: 'none', color: '#ffffff', opacity: 0.7, cursor: 'pointer', padding: '4px' }}
+            >
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Banner: iOS App Update Available */}
+      {!dismissed && hasNewIos && iosInfo && (
+        <div style={{
+          position: 'fixed',
+          bottom: '16px',
+          left: '16px',
+          right: '16px',
+          maxWidth: '480px',
+          margin: '0 auto',
+          zIndex: 99998,
+          background: 'linear-gradient(135deg, #111827 0%, #1f2937 100%)',
+          color: '#ffffff',
+          borderRadius: '12px',
+          padding: '0.75rem 1rem',
+          boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '0.75rem',
+          border: '1px solid rgba(255, 255, 255, 0.2)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+            <span style={{ fontSize: '20px' }}>🍎</span>
+            <div>
+              <div style={{ fontSize: '0.82rem', fontWeight: 700 }}>
+                Naya iOS App Update (v{iosInfo.latest_version_name})
+              </div>
+              <div style={{ fontSize: '0.72rem', opacity: 0.85 }}>
+                Apple App Store par naya update available hai.
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}>
+            <a
+              href={iosInfo.download_url || 'https://apps.apple.com'}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                background: '#ffffff',
+                color: '#111827',
+                border: 'none',
+                padding: '0.4rem 0.75rem',
+                borderRadius: '6px',
+                fontSize: '0.76rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                textDecoration: 'none'
+              }}
+            >
+              <Download size={13} />
+              App Store
             </a>
             <button
               onClick={() => setDismissed(true)}

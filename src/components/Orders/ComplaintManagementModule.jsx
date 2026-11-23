@@ -85,13 +85,21 @@ export default function ComplaintManagementModule({
   parties = [],
   userName = 'Operations',
   userId = '',
-  userRole = ''
+  userRole = '',
+  initialStageFilter = 'ALL',
+  onStageFilterChange = null
 }) {
   const [viewMode, setViewMode] = useState('table'); // 'table' | 'pipeline' | 'customers'
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [stageFilter, setStageFilter] = useState('ALL');
+  const [stageFilter, setStageFilter] = useState(initialStageFilter || 'ALL');
+
+  useEffect(() => {
+    if (initialStageFilter && initialStageFilter !== stageFilter) {
+      setStageFilter(initialStageFilter);
+    }
+  }, [initialStageFilter]);
   const [deptFilter, setDeptFilter] = useState('ALL');
   const [categoryFilter, setCategoryFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL');

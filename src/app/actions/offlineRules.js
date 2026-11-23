@@ -29,6 +29,8 @@ const DEFAULT_OFFLINE_RULES = {
     attendancePunch: true,
     attendanceRegularization: true,
 
+    fieldForce: false,
+
     // 🎯 Sales & CRM Operations
     leadStatusUpdate: true,
     leadNotes: true,
@@ -39,6 +41,7 @@ const DEFAULT_OFFLINE_RULES = {
     partyMasterEdit: true,
     locationMaster: false,
     orders: false,
+    channelOperations: false,
     clientReport: false,
 
     // 📊 General & Analytics

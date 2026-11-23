@@ -1,5 +1,6 @@
 'use client';
 
+import './AnalyticsDashboard.css';
 import MobileTableView from '@/components/common/MobileTableView';
 import React, { useState, useEffect, useMemo } from 'react';
 import {
@@ -30,17 +31,17 @@ const COLORS = [
 
 const getStageBadgeInfo = (stage, status) => {
   switch (stage) {
-    case 'S00': return { label: 'S00 Unassigned', bg: '#fef3c7', color: '#b45309' };
-    case 'S01': return { label: 'S01 Requisition', bg: '#dbeafe', color: '#1d4ed8' };
-    case 'S02': return { label: 'S02 Screening', bg: '#f1f5f9', color: '#475569' };
-    case 'S03': return { label: 'S03 Interview', bg: '#ede9fe', color: '#6d28d9' };
-    case 'S04': return { label: 'S04 Skill Test', bg: '#f3e8ff', color: '#7e22ce' };
-    case 'S05': return { label: 'S05 ED Approval', bg: '#cffafe', color: '#0e7490' };
-    case 'S06': return { label: 'S06 Salary Neg.', bg: '#fef3c7', color: '#b45309' };
-    case 'S07': return { label: 'S07 Shortlisted', bg: '#dcfce7', color: '#15803d' };
-    case 'S08': return { label: 'S08 LOI Offered', bg: '#e0e7ff', color: '#3730a3' };
-    case 'S09': return { label: 'S09 Joined/Onboard', bg: '#bbf7d0', color: '#166534' };
-    default: return { label: stage || status || 'Applied', bg: '#f3f4f6', color: '#374151' };
+    case 'S00': return { label: 'S00 Unassigned', bg: 'rgba(245, 158, 11, 0.14)', color: '#d97706' };
+    case 'S01': return { label: 'S01 Requisition', bg: 'rgba(59, 130, 246, 0.14)', color: '#2563eb' };
+    case 'S02': return { label: 'S02 Screening', bg: 'rgba(100, 116, 139, 0.14)', color: 'var(--text-secondary, #64748b)' };
+    case 'S03': return { label: 'S03 Interview', bg: 'rgba(168, 85, 247, 0.14)', color: '#9333ea' };
+    case 'S04': return { label: 'S04 Skill Test', bg: 'rgba(168, 85, 247, 0.14)', color: '#7e22ce' };
+    case 'S05': return { label: 'S05 ED Approval', bg: 'rgba(6, 182, 212, 0.14)', color: '#0891b2' };
+    case 'S06': return { label: 'S06 Salary Neg.', bg: 'rgba(245, 158, 11, 0.14)', color: '#d97706' };
+    case 'S07': return { label: 'S07 Shortlisted', bg: 'rgba(16, 185, 129, 0.14)', color: '#16a34a' };
+    case 'S08': return { label: 'S08 LOI Offered', bg: 'rgba(99, 102, 241, 0.14)', color: '#4f46e5' };
+    case 'S09': return { label: 'S09 Joined/Onboard', bg: 'rgba(16, 185, 129, 0.22)', color: '#15803d' };
+    default: return { label: stage || status || 'Applied', bg: 'var(--th-bg, rgba(100,116,139,0.1))', color: 'var(--text-primary)' };
   }
 };
 
@@ -79,6 +80,26 @@ export const fastToISTDate = (dateVal) => {
   return `${y}-${m}-${d}`;
 };
 
+const formatTimeIST = (timeStr) => {
+  if (!timeStr) return '—';
+  try {
+    if (typeof timeStr === 'string' && (timeStr.includes('T') || timeStr.includes('-'))) {
+      const d = new Date(timeStr);
+      if (!isNaN(d.getTime())) {
+        return d.toLocaleTimeString('en-IN', {
+          timeZone: 'Asia/Kolkata',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true
+        });
+      }
+    }
+    return timeStr;
+  } catch (_e) {
+    return timeStr;
+  }
+};
+
 export default function AnalyticsDashboard({ 
   leads = [], 
   teamMembers = [],
@@ -90,6 +111,7 @@ export default function AnalyticsDashboard({
   isSyncing = false,
   syncLoadedCount = 0,
   onNavigateTab,
+  onSubTabChange,
   initialSubTab = '',
   tenantId = null,
   userCompany = '',
@@ -126,6 +148,7 @@ export default function AnalyticsDashboard({
   const setActiveTab = (tabId) => {
     const canonical = (tabId === 'pipeline' || tabId === 'leads-data') ? 'lead-data' : tabId;
     setActiveTabState(canonical);
+    onSubTabChange?.(canonical);
     if (typeof window !== 'undefined') {
       let routePath = `/dashboard?tab=${canonical}`;
       if (canonical === 'scorecard') routePath = '/scorecard';
@@ -398,16 +421,29 @@ export default function AnalyticsDashboard({
   const getStageFromStatus = (status) => {
     if (!status) return '01 - New Stage';
     const s = String(status || '').trim();
-    if (s.startsWith('8;') || s.startsWith('08') || s.toLowerCase().includes('transfer to party')) return '08 - Transfer to Party';
-    if (status.startsWith('1;')) return '01 - New Stage';
-    if (status.startsWith('2;')) return '02 - Contact Stage';
-    if (status.startsWith('3;')) return '03 - Qualification Stage';
-    if (status.startsWith('4;')) return '04 - Follow Up Stage';
-    if (status.startsWith('5;')) return '05 - Sales Process Stage';
-    if (status.startsWith('6;')) return '06 - Conversion Stage';
-    if (status.startsWith('7;')) return '07 - Final Stage';
-    if (['New', 'Pending'].includes(status)) return '01 - New Stage';
-    if (['Converted', 'Order Received', 'Closed', 'Won'].includes(status)) return '07 - Final Stage';
+    if (s.startsWith('8;') || s.startsWith('08') || s.startsWith('8 -') || s.toLowerCase().includes('transfer to party')) return '08 - Transfer to Party';
+    if (s.startsWith('1;') || s.startsWith('01') || s.startsWith('1 -') || s.toLowerCase().includes('new stage') || s === 'New' || s === 'Pending') return '01 - New Stage';
+    if (s.startsWith('2;') || s.startsWith('02') || s.startsWith('2 -') || s.toLowerCase().includes('contact stage') || s.toLowerCase().includes('contacted')) return '02 - Contact Stage';
+    if (s.startsWith('3;') || s.startsWith('03') || s.startsWith('3 -') || s.toLowerCase().includes('qualification stage') || s.toLowerCase().includes('qualified')) return '03 - Qualification Stage';
+    if (s.startsWith('4;') || s.startsWith('04') || s.startsWith('4 -') || s.toLowerCase().includes('follow up stage') || s.toLowerCase().includes('follow-up') || s.toLowerCase().includes('reschedule')) return '04 - Follow Up Stage';
+    if (s.startsWith('5;') || s.startsWith('05') || s.startsWith('5 -') || s.toLowerCase().includes('sales process') || s.toLowerCase().includes('quotation') || s.toLowerCase().includes('proposal')) return '05 - Sales Process Stage';
+    if (s.startsWith('6;') || s.startsWith('06') || s.startsWith('6 -') || s.toLowerCase().includes('conversion stage') || s.toLowerCase().includes('negotiation')) return '06 - Conversion Stage';
+    if (s.startsWith('7;') || s.startsWith('07') || s.startsWith('7 -') || s.toLowerCase().includes('final stage') || ['Converted', 'Order Received', 'Closed', 'Won', 'Lost'].some(k => s.toLowerCase().includes(k.toLowerCase()))) return '07 - Final Stage';
+    const m = s.match(/^0?([1-8])/);
+    if (m) {
+      const num = parseInt(m[1], 10);
+      const stageNames = {
+        1: '01 - New Stage',
+        2: '02 - Contact Stage',
+        3: '03 - Qualification Stage',
+        4: '04 - Follow Up Stage',
+        5: '05 - Sales Process Stage',
+        6: '06 - Conversion Stage',
+        7: '07 - Final Stage',
+        8: '08 - Transfer to Party'
+      };
+      if (stageNames[num]) return stageNames[num];
+    }
     return '01 - New Stage';
   };
 
@@ -770,6 +806,8 @@ export default function AnalyticsDashboard({
     try {
       const res = await getDashboardSummaries({ 
         targetDate: startDate,
+        startDate,
+        endDate,
         tenantId,
         userCompany,
         adminCompanyFilter
@@ -784,31 +822,113 @@ export default function AnalyticsDashboard({
 
   useEffect(() => {
     fetchDashboardSummaries();
-  }, [startDate, tenantId, userCompany, adminCompanyFilter]);
+  }, [startDate, endDate, tenantId, userCompany, adminCompanyFilter]);
+
+  // Working days in current selected period (Mon–Sat, excluding Sundays)
+  const attendanceWorkingDays = useMemo(() => {
+    if (!startDate || !endDate || startDate === endDate) return 1;
+    let count = 0;
+    const cur = new Date(`${startDate}T12:00:00+05:30`);
+    const end = new Date(`${endDate}T12:00:00+05:30`);
+    while (cur <= end) {
+      if (cur.getDay() !== 0) count++;
+      cur.setDate(cur.getDate() + 1);
+    }
+    return Math.max(1, count);
+  }, [startDate, endDate]);
+
+  const isAttendanceRange = Boolean(startDate && endDate && startDate !== endDate);
 
   // Combined attendance records with CRM activity intelligence (defined before Scorecard so Scorecard can use attendance)
   const enrichedAttendanceRecords = useMemo(() => {
     const rawRecords = dashboardSummaries.attendanceSummary?.records || [];
-    const recordMap = new Map();
+    
+    // Group records by employee email
+    const empRecordsMap = new Map();
+    const latestRecordMap = new Map();
     rawRecords.forEach(r => {
-      if (r.email) recordMap.set(r.email.toLowerCase(), r);
+      const em = (r.email || '').toLowerCase().trim();
+      if (!em) return;
+      if (!empRecordsMap.has(em)) empRecordsMap.set(em, []);
+      empRecordsMap.get(em).push(r);
+      if (!latestRecordMap.has(em)) latestRecordMap.set(em, r);
     });
 
     return formattedEmployees.map(emp => {
       const email = (emp.email || '').toLowerCase();
-      const rawRec = recordMap.get(email);
+      const userRecs = empRecordsMap.get(email) || [];
+      const rawRec = latestRecordMap.get(email);
       const crmAct = crmActiveEmployeesMap.get(emp.emp_name?.toLowerCase()) || crmActiveEmployeesMap.get(email);
       const isCrmActive = Boolean(crmAct && crmAct.actions > 0);
 
+      if (isAttendanceRange) {
+        // Multi-day date range mode: aggregate period attendance performance
+        const presentDays = userRecs.filter(r => ['PRESENT', 'LATE', 'HALF_DAY', 'REGULARIZED'].includes(r.status) || r.in_time).length;
+        const lateDays = userRecs.filter(r => r.status === 'LATE').length;
+        const halfDays = userRecs.filter(r => r.status === 'HALF_DAY').length;
+        const absentDays = Math.max(0, attendanceWorkingDays - presentDays);
+        const attendanceRate = attendanceWorkingDays > 0 ? Math.min(100, Math.round((presentDays / attendanceWorkingDays) * 100)) : 0;
+        const inTime = rawRec?.in_time || null;
+
+        let presenceStatus = 'ABSENT';
+        let statusLabel = `No Punches Logged (0%)`;
+        let statusColor = '#dc2626';
+
+        if (attendanceRate >= 80) {
+          presenceStatus = 'PRESENT';
+          statusLabel = `Regular (${presentDays}/${attendanceWorkingDays}d · ${attendanceRate}%)`;
+          statusColor = '#16a34a';
+        } else if (attendanceRate >= 50) {
+          presenceStatus = 'PRESENT';
+          statusLabel = `Good (${presentDays}/${attendanceWorkingDays}d · ${attendanceRate}%)`;
+          statusColor = '#2563eb';
+        } else if (presentDays > 0) {
+          presenceStatus = 'HALF_DAY';
+          statusLabel = `Needs Attention (${presentDays}/${attendanceWorkingDays}d · ${attendanceRate}%)`;
+          statusColor = '#d97706';
+        } else if (isCrmActive) {
+          presenceStatus = 'CRM_ACTIVE';
+          statusLabel = `Active on CRM (${crmAct.actions} actions)`;
+          statusColor = '#2563eb';
+        }
+
+        return {
+          emp,
+          empName: emp.emp_name || emp.name,
+          empCode: emp.emp_code || emp.emp_id || '—',
+          email,
+          department: emp.department || 'General',
+          designation: emp.designation || 'Staff',
+          presenceStatus,
+          statusLabel,
+          statusColor,
+          inTime,
+          presentDays,
+          lateDays,
+          halfDays,
+          absentDays,
+          attendanceRate,
+          workingDays: attendanceWorkingDays,
+          crmUpdates: crmAct?.actions || 0,
+          crmLeadsTouched: crmAct?.uniqueLeads || 0
+        };
+      }
+
+      // Single-day mode: punch terminal status for target day
       let presenceStatus = 'ABSENT';
       let statusLabel = 'Absent (No Punch)';
       let statusColor = '#dc2626';
       let inTime = null;
 
-      if (rawRec && (rawRec.status === 'PRESENT' || rawRec.status === 'LATE' || rawRec.in_time)) {
+      if (rawRec && (['PRESENT', 'LATE', 'HALF_DAY', 'REGULARIZED'].includes(rawRec.status) || rawRec.in_time)) {
         presenceStatus = rawRec.status || 'PRESENT';
-        statusLabel = rawRec.status === 'LATE' ? 'Late Punch' : 'Punched Present';
-        statusColor = rawRec.status === 'LATE' ? '#d97706' : '#16a34a';
+        statusLabel = rawRec.status === 'LATE' ? 'Late Punch' 
+                    : rawRec.status === 'HALF_DAY' ? 'Half Day' 
+                    : rawRec.status === 'REGULARIZED' ? 'Regularized' 
+                    : 'Punched Present';
+        statusColor = rawRec.status === 'LATE' ? '#d97706' 
+                    : rawRec.status === 'HALF_DAY' ? '#f59e0b' 
+                    : '#16a34a';
         inTime = rawRec.in_time;
       } else if (isCrmActive) {
         presenceStatus = 'CRM_ACTIVE';
@@ -827,32 +947,48 @@ export default function AnalyticsDashboard({
         statusLabel,
         statusColor,
         inTime,
+        presentDays: ['PRESENT', 'LATE', 'HALF_DAY', 'REGULARIZED'].includes(presenceStatus) ? 1 : 0,
+        lateDays: presenceStatus === 'LATE' ? 1 : 0,
+        halfDays: presenceStatus === 'HALF_DAY' ? 1 : 0,
+        absentDays: presenceStatus === 'ABSENT' ? 1 : 0,
+        attendanceRate: ['PRESENT', 'LATE', 'HALF_DAY', 'REGULARIZED'].includes(presenceStatus) ? 100 : 0,
+        workingDays: 1,
         crmUpdates: crmAct?.actions || 0,
         crmLeadsTouched: crmAct?.uniqueLeads || 0
       };
     });
-  }, [formattedEmployees, dashboardSummaries.attendanceSummary, crmActiveEmployeesMap]);
+  }, [formattedEmployees, dashboardSummaries.attendanceSummary, crmActiveEmployeesMap, isAttendanceRange, attendanceWorkingDays]);
 
   const filteredAttendance = useMemo(() => {
     let list = enrichedAttendanceRecords;
     if (selectedEmployeeEmails.length > 0) {
       list = list.filter(r => selectedEmployeeObjs.some(emp => isEmployeeMatch(r.email, emp) || isEmployeeMatch(r.empName, emp)));
     }
-    if (attendanceFilter === 'PRESENT') return list.filter(r => r.presenceStatus === 'PRESENT' || r.presenceStatus === 'LATE');
+    if (attendanceFilter === 'PRESENT') return list.filter(r => ['PRESENT', 'LATE', 'HALF_DAY', 'REGULARIZED'].includes(r.presenceStatus) || (r.presentDays && r.presentDays > 0));
     if (attendanceFilter === 'CRM_ACTIVE') return list.filter(r => r.presenceStatus === 'CRM_ACTIVE');
-    if (attendanceFilter === 'ABSENT') return list.filter(r => r.presenceStatus === 'ABSENT');
+    if (attendanceFilter === 'ABSENT') return list.filter(r => r.presenceStatus === 'ABSENT' && (!r.presentDays || r.presentDays === 0));
     return list;
   }, [enrichedAttendanceRecords, attendanceFilter, selectedEmployeeEmails, selectedEmployeeObjs]);
 
   const attendanceStats = useMemo(() => {
     const total = enrichedAttendanceRecords.length;
-    const punched = enrichedAttendanceRecords.filter(r => r.presenceStatus === 'PRESENT' || r.presenceStatus === 'LATE').length;
+    if (isAttendanceRange) {
+      const activeWithPunches = enrichedAttendanceRecords.filter(r => (r.presentDays || 0) > 0).length;
+      const crmActiveOnly = enrichedAttendanceRecords.filter(r => (r.presentDays || 0) === 0 && r.crmUpdates > 0).length;
+      const effectivePresent = activeWithPunches + crmActiveOnly;
+      const absent = total - effectivePresent;
+      const totalPresentLogs = enrichedAttendanceRecords.reduce((sum, r) => sum + (r.presentDays || 0), 0);
+      const totalExpectedLogs = total * attendanceWorkingDays;
+      const effectivePercent = totalExpectedLogs > 0 ? Math.min(100, Math.round((totalPresentLogs / totalExpectedLogs) * 100)) : 0;
+      return { total, punched: activeWithPunches, crmActiveOnly, effectivePresent, absent, effectivePercent, totalPresentLogs, attendanceWorkingDays };
+    }
+    const punched = enrichedAttendanceRecords.filter(r => ['PRESENT', 'LATE', 'HALF_DAY', 'REGULARIZED'].includes(r.presenceStatus)).length;
     const crmActiveOnly = enrichedAttendanceRecords.filter(r => r.presenceStatus === 'CRM_ACTIVE').length;
     const effectivePresent = punched + crmActiveOnly;
     const absent = enrichedAttendanceRecords.filter(r => r.presenceStatus === 'ABSENT').length;
     const effectivePercent = total > 0 ? Math.round((effectivePresent / total) * 100) : 0;
-    return { total, punched, crmActiveOnly, effectivePresent, absent, effectivePercent };
-  }, [enrichedAttendanceRecords]);
+    return { total, punched, crmActiveOnly, effectivePresent, absent, effectivePercent, totalPresentLogs: punched, attendanceWorkingDays: 1 };
+  }, [enrichedAttendanceRecords, isAttendanceRange, attendanceWorkingDays]);
 
   // Attendance lookup map for fast employee presence checking
   const attendanceRecordMap = useMemo(() => {
@@ -942,6 +1078,14 @@ export default function AnalyticsDashboard({
         periodEmpLeads = activeLeads;
       }
 
+      // Assigned stage breakdown (S1 to S7): Full distribution of representative's assigned portfolio
+      const assignedStageBreakdown = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0 };
+      for (let i = 0; i < empAllLeads.length; i++) {
+        const num = getStageNumber(empAllLeads[i].status);
+        if (assignedStageBreakdown[num] !== undefined) assignedStageBreakdown[num]++;
+        else assignedStageBreakdown[1]++;
+      }
+
       // Stage breakdown (S1 to S7): Dynamically reacts to selected date filter
       const stageBreakdown = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0 };
       for (let i = 0; i < periodEmpLeads.length; i++) {
@@ -979,13 +1123,13 @@ export default function AnalyticsDashboard({
         for (let i = 0; i < empAllLeads.length; i++) {
           const l = empAllLeads[i];
           // Strictly within selected period: touched if rep made activity/note on it in period, or lead was updated in period
-          if ((act.leadIdSet && act.leadIdSet.has(l.id)) || periodTouchedLeadIds.has(l.id)) {
+          if (isLeadInPeriod(l, startDate, endDate, periodTouchedLeadIds) || (act.leadIdSet && act.leadIdSet.has(l.id)) || periodTouchedLeadIds.has(l.id)) {
             assignedTouchedCount++;
           }
         }
       }
 
-      const effectiveTouched = Math.max(assignedTouchedCount, act.uniqueLeads || 0);
+      const effectiveTouched = Math.max(assignedTouchedCount, periodEmpLeads.length, act.uniqueLeads || 0);
       const leadsTouched = effectiveTouched;
       const periodTotal = isAllTime ? leadsAssigned : Math.max(periodEmpLeads.length, leadsTouched);
       const contactRate = periodTotal > 0 ? Math.min(100, Math.round((leadsTouched / periodTotal) * 100)) : 0;
@@ -1018,8 +1162,8 @@ export default function AnalyticsDashboard({
       // Role categorization
       const roleCategory = getEmployeeRoleCategory(emp, leadsAssigned);
       const roleLabel = roleCategory === 'SALES' ? 'Sales Rep' : roleCategory === 'RECRUITER' ? 'Recruiter / HR' : 'Operations';
-      const roleBadgeBg = roleCategory === 'SALES' ? '#dbeafe' : roleCategory === 'RECRUITER' ? '#ede9fe' : '#f1f5f9';
-      const roleBadgeColor = roleCategory === 'SALES' ? '#1d4ed8' : roleCategory === 'RECRUITER' ? '#6d28d9' : '#475569';
+      const roleBadgeBg = roleCategory === 'SALES' ? 'rgba(59, 130, 246, 0.12)' : roleCategory === 'RECRUITER' ? 'rgba(168, 85, 247, 0.12)' : 'rgba(100, 116, 139, 0.12)';
+      const roleBadgeColor = roleCategory === 'SALES' ? 'var(--accent-color, #2563eb)' : roleCategory === 'RECRUITER' ? '#a855f7' : 'var(--text-secondary, #64748b)';
 
       // ------------------------------------------------------------------
       // PROCESS 1A: CALLING & OUTREACH (Max 30 pts)
@@ -1160,8 +1304,9 @@ export default function AnalyticsDashboard({
         p.metric = p.metricText;
       });
 
-      // Dynamic normalization across applicable processes
-      const applicableList = [callingProcess, recruiterProcess, followupProcess, checklistProcess, taskProcess, attendanceProcess].filter(p => p.applicable);
+      // Dynamic normalization across applicable processes (coreProcess max 30 + followup 25 + checklist 20 + task 15 + attendance 10 = exactly 100 max points)
+      const coreProcess = roleCategory === 'RECRUITER' ? recruiterProcess : callingProcess;
+      const applicableList = [coreProcess, followupProcess, checklistProcess, taskProcess, attendanceProcess].filter(p => p.applicable);
       const earnedPoints = applicableList.reduce((acc, p) => acc + p.score, 0);
       const maxPoints = applicableList.reduce((acc, p) => acc + p.max, 0);
 
@@ -1171,30 +1316,30 @@ export default function AnalyticsDashboard({
       let tier = 'INACTIVE';
       let tierLabel = 'Shift Not Started';
       let tierColor = '#94a3b8';
-      let tierBg = '#f1f5f9';
+      let tierBg = 'rgba(148, 163, 184, 0.12)';
 
       if (hasActiveWork && maxPoints > 0) {
         totalScore = Math.min(100, Math.round((earnedPoints / maxPoints) * 100));
         if (totalScore >= 80) {
           tier = 'STAR';
           tierLabel = 'Star Performer';
-          tierColor = '#15803d';
-          tierBg = '#dcfce7';
+          tierColor = '#10b981';
+          tierBg = 'rgba(16, 185, 129, 0.14)';
         } else if (totalScore >= 60) {
           tier = 'ON_TRACK';
           tierLabel = 'On Track';
-          tierColor = '#2563eb';
-          tierBg = '#dbeafe';
+          tierColor = 'var(--accent-color, #2563eb)';
+          tierBg = 'rgba(59, 130, 246, 0.14)';
         } else if (totalScore >= 40) {
           tier = 'NEEDS_ATTENTION';
           tierLabel = 'Needs Attention';
-          tierColor = '#b45309';
-          tierBg = '#fef3c7';
+          tierColor = '#f59e0b';
+          tierBg = 'rgba(245, 158, 11, 0.14)';
         } else {
           tier = 'CRITICAL';
           tierLabel = 'Critical / Lagging';
-          tierColor = '#dc2626';
-          tierBg = '#fee2e2';
+          tierColor = '#ef4444';
+          tierBg = 'rgba(239, 68, 68, 0.14)';
         }
       }
 
@@ -1212,6 +1357,7 @@ export default function AnalyticsDashboard({
         contactRate,
         outreachScore,
         stageBreakdown,
+        assignedStageBreakdown,
         updatesCount: act.actions,
         overdueFollowups,
         todayFollowups,
@@ -1317,6 +1463,7 @@ export default function AnalyticsDashboard({
   const employeeChecklistMatrix = useMemo(() => {
     const allItems = dashboardSummaries.checklistSummary?.items || [];
     const submissionsByEmail = dashboardSummaries.checklistSummary?.submissionsByEmail || {};
+    const workingDays = dashboardSummaries.checklistSummary?.workingDays || attendanceWorkingDays || 1;
 
     return formattedEmployees.map(emp => {
       const email = (emp.email || '').toLowerCase().trim();
@@ -1327,7 +1474,8 @@ export default function AnalyticsDashboard({
         return emails.includes(email);
       });
 
-      const total = assignedSlots.length;
+      const totalPerDay = assignedSlots.length;
+      const total = totalPerDay * workingDays;
       const completed = submissionsByEmail[email] || 0;
       const pending = Math.max(0, total - completed);
       const rate = total > 0 ? Math.min(100, Math.round((completed / total) * 100)) : 0;
@@ -1356,6 +1504,8 @@ export default function AnalyticsDashboard({
         empEmail: email,
         department: emp.department || 'General',
         designation: emp.designation || 'Staff',
+        totalPerDay,
+        workingDays,
         total,
         completed,
         pending,
@@ -1365,7 +1515,34 @@ export default function AnalyticsDashboard({
         statusBg
       };
     }).sort((a, b) => b.rate - a.rate || b.completed - a.completed);
-  }, [formattedEmployees, dashboardSummaries.checklistSummary]);
+  }, [formattedEmployees, dashboardSummaries.checklistSummary, attendanceWorkingDays]);
+
+  const checklistAggregates = useMemo(() => {
+    let assignedTotal = 0;
+    let completedTotal = 0;
+    let pendingTotal = 0;
+
+    employeeChecklistMatrix.forEach(row => {
+      assignedTotal += row.total;
+      completedTotal += row.completed;
+      pendingTotal += row.pending;
+    });
+
+    const compliance = assignedTotal > 0 ? Math.min(100, Math.round((completedTotal / assignedTotal) * 100)) : 0;
+    const distinctSlots = dashboardSummaries.checklistSummary?.totalSlots || checklists.totalSlots || 0;
+    const completedLate = dashboardSummaries.checklistSummary?.late || checklists.completedLate || 0;
+    const workingDays = dashboardSummaries.checklistSummary?.workingDays || attendanceWorkingDays || 1;
+
+    return {
+      distinctSlots,
+      assignedTotal,
+      completedTotal,
+      pendingTotal,
+      compliance,
+      completedLate,
+      workingDays
+    };
+  }, [employeeChecklistMatrix, dashboardSummaries.checklistSummary, checklists, attendanceWorkingDays]);
 
   const filteredEmployeeChecklist = useMemo(() => {
     let list = employeeChecklistMatrix;
@@ -1483,9 +1660,9 @@ export default function AnalyticsDashboard({
                   style={{
                     display: 'flex', alignItems: 'center', gap: '0.3rem',
                     padding: '0.3rem 0.65rem', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 600,
-                    border: 'none',
-                    backgroundColor: isMyWorkSelected ? 'var(--accent-color)' : 'transparent',
-                    color: isMyWorkSelected ? '#fff' : 'var(--text-primary)', cursor: 'pointer',
+                    border: isMyWorkSelected ? '1px solid var(--accent-color)' : '1px solid transparent',
+                    backgroundColor: isMyWorkSelected ? 'rgba(59, 130, 246, 0.12)' : 'transparent',
+                    color: isMyWorkSelected ? 'var(--accent-color)' : 'var(--text-primary)', cursor: 'pointer',
                     transition: 'all 0.15s'
                   }}
                 >
@@ -1497,9 +1674,9 @@ export default function AnalyticsDashboard({
                 style={{
                   display: 'flex', alignItems: 'center', gap: '0.3rem',
                   padding: '0.3rem 0.65rem', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 600,
-                  border: 'none',
-                  backgroundColor: selectedEmployeeEmails.length === 0 ? 'var(--accent-color)' : 'transparent',
-                  color: selectedEmployeeEmails.length === 0 ? '#fff' : 'var(--text-primary)', cursor: 'pointer',
+                  border: selectedEmployeeEmails.length === 0 ? '1px solid var(--accent-color)' : '1px solid transparent',
+                  backgroundColor: selectedEmployeeEmails.length === 0 ? 'rgba(59, 130, 246, 0.12)' : 'transparent',
+                  color: selectedEmployeeEmails.length === 0 ? 'var(--accent-color)' : 'var(--text-primary)', cursor: 'pointer',
                   transition: 'all 0.15s'
                 }}
               >
@@ -1574,151 +1751,95 @@ export default function AnalyticsDashboard({
             </button>
           </div>
         </div>
-
-        {/* Row 2: Secondary Navigation Tabs */}
-        <div style={{
-          display: 'flex', flexWrap: 'wrap', gap: '0.45rem', borderTop: '1px solid var(--border-light)',
-          paddingTop: '0.65rem'
-        }}>
-          {(() => {
-            const analyticsSubPerms = moduleAccess?.analytics?.sub_items;
-            const isMasterOrAdmin = userRole === 'admin' || userRole === 'Admin' || String(userRole || '').toLowerCase() === 'masteradmin';
-            const allTabs = [
-              { id: 'overview', label: 'Executive Overview', icon: Layers, badge: null },
-              { id: 'scorecard', label: 'Team Scorecard', icon: Award, badge: `${teamScorecardData.length} Reps` },
-              { id: 'lead-data', label: 'Lead Data', icon: Database, badge: `${kpis.total.toLocaleString('en-IN')} Leads` },
-              { id: 'delegation', label: 'Delegation Tasks', icon: CheckSquare, badge: delegation.overdue > 0 ? `${delegation.overdue} Overdue` : `${delegation.total}` },
-              { id: 'checklist', label: 'Daily Checklists', icon: ClipboardList, badge: `${dashboardSummaries.checklistSummary.complianceRate || checklists.complianceRate}%` },
-              { id: 'attendance', label: 'Attendance Ops', icon: UserCheck, badge: `${attendanceStats.effectivePresent}/${attendanceStats.total}` },
-              { id: 'recruiter', label: 'Recruiter Hub', icon: Briefcase, badge: `${dashboardSummaries.recruitmentSummary?.openPositions ?? 0} Open` }
-            ];
-            const visibleTabs = (isMasterOrAdmin || !analyticsSubPerms || Object.keys(analyticsSubPerms).length === 0)
-              ? allTabs
-              : allTabs.filter(t => analyticsSubPerms[t.id]?.view !== false);
-
-            return visibleTabs.map(tab => {
-              const Icon = tab.icon;
-              const isActive = activeTab === tab.id || (tab.id === 'lead-data' && activeTab === 'pipeline');
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: '0.4rem',
-                    padding: '0.4rem 0.85rem', borderRadius: '8px',
-                    fontSize: '0.8rem', fontWeight: isActive ? 700 : 500,
-                    whiteSpace: 'nowrap', border: 'none', cursor: 'pointer',
-                    backgroundColor: isActive ? 'var(--accent-color)' : 'transparent',
-                    color: isActive ? '#fff' : 'var(--text-primary)',
-                    transition: 'all 0.15s ease'
-                  }}
-                >
-                  <Icon size={14} />
-                  <span>{tab.label}</span>
-                  {tab.badge && (
-                    <span style={{
-                      fontSize: '0.68rem', padding: '0.1rem 0.45rem', borderRadius: '10px',
-                      backgroundColor: isActive ? 'rgba(255,255,255,0.25)' : 'var(--th-bg)',
-                      color: isActive ? '#fff' : 'var(--text-secondary)', fontWeight: 700
-                    }}>
-                      {tab.badge}
-                    </span>
-                  )}
-                </button>
-              );
-            });
-          })()}
-        </div>
       </div>
 
       {/* ========================================================================= */}
       {/* 📊 TAB 1: EXECUTIVE OVERVIEW (360° SUMMARY)                              */}
       {/* ========================================================================= */}
       {activeTab === 'overview' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+        <div className="flex flex-col gap-5">
 
           {/* 5 Top Core KPI Cards */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 180px), 1fr))', gap: '1rem' }}>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3.5">
             {/* KPI 1: Assigned Leads */}
-            <div className="card" style={{ padding: '1.1rem', borderLeft: '4px solid #3b82f6', display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '0.04em' }}>
+            <div className="card an-card-hover p-4 border-l-4 border-l-blue-500 flex flex-col gap-2 rounded-xl shadow-sm bg-[var(--bg-surface)]">
+              <div className="flex justify-between items-center">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">
                   {isAllTime ? '🎯 Assigned Leads' : `🎯 Leads Active (${dateFilterLabel})`}
                 </span>
-                <Target size={15} style={{ color: '#3b82f6' }} />
+                <Target size={15} className="text-blue-500" />
               </div>
-              <div style={{ fontSize: '1.9rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.1 }}>{kpis.total.toLocaleString('en-IN')}</div>
-              <div style={{ fontSize: '0.73rem', display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-                <span style={{ color: '#d97706', fontWeight: 700 }}>⚡ {kpis.actionNeeded} Need Action</span>
-                <span style={{ color: '#16a34a', fontWeight: 600 }}>🏆 {kpis.won} Won</span>
-                {!isAllTime && <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>({leads.length.toLocaleString('en-IN')} in CRM)</span>}
+              <div className="text-3xl font-extrabold text-[var(--text-primary)] leading-none">{kpis.total.toLocaleString('en-IN')}</div>
+              <div className="text-xs flex gap-2 flex-wrap items-center">
+                <span className="text-amber-600 font-bold">⚡ {kpis.actionNeeded} Need Action</span>
+                <span className="text-emerald-600 font-semibold">🏆 {kpis.won} Won</span>
+                {!isAllTime && <span className="text-[var(--text-secondary)] font-medium">({leads.length.toLocaleString('en-IN')} in CRM)</span>}
               </div>
-              <button onClick={() => onNavigateTab?.('leads')} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', background: 'none', border: 'none', color: '#3b82f6', fontSize: '0.72rem', fontWeight: 600, cursor: 'pointer', padding: '0.35rem 0 0', borderTop: '1px solid var(--border-light)', marginTop: 'auto' }}>
+              <button onClick={() => onNavigateTab?.('leads')} className="flex items-center gap-1.5 bg-transparent border-0 border-t border-[var(--border-light)] text-blue-500 text-xs font-semibold cursor-pointer pt-2 mt-auto hover:text-blue-600 transition-colors">
                 Open Leads <ArrowRight size={11} />
               </button>
             </div>
 
             {/* KPI 2: Follow-ups */}
-            <div className="card" style={{ padding: '1.1rem', borderLeft: `4px solid ${kpis.overdueFollowups > 0 ? '#ef4444' : '#f59e0b'}`, display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '0.04em' }}>📞 Follow-ups</span>
-                <CalendarClock size={15} style={{ color: kpis.overdueFollowups > 0 ? '#ef4444' : '#f59e0b' }} />
+            <div className={`card an-card-hover p-4 border-l-4 ${kpis.overdueFollowups > 0 ? 'border-l-red-500' : 'border-l-amber-500'} flex flex-col gap-2 rounded-xl shadow-sm bg-[var(--bg-surface)]`}>
+              <div className="flex justify-between items-center">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">📞 Follow-ups</span>
+                <CalendarClock size={15} className={kpis.overdueFollowups > 0 ? 'text-red-500' : 'text-amber-500'} />
               </div>
-              <div style={{ fontSize: '1.9rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.1 }}>{kpis.followUps.toLocaleString('en-IN')}</div>
-              <div style={{ fontSize: '0.73rem', display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-                {kpis.overdueFollowups > 0 && <span style={{ color: '#dc2626', fontWeight: 700 }}>🚨 {kpis.overdueFollowups} Overdue</span>}
-                <span style={{ color: '#b45309', fontWeight: 600 }}>📅 {kpis.todayFollowups} Today</span>
+              <div className="text-3xl font-extrabold text-[var(--text-primary)] leading-none">{kpis.followUps.toLocaleString('en-IN')}</div>
+              <div className="text-xs flex gap-2 flex-wrap items-center">
+                {kpis.overdueFollowups > 0 && <span className="text-red-600 font-bold">🚨 {kpis.overdueFollowups} Overdue</span>}
+                <span className="text-amber-700 font-semibold">📅 {kpis.todayFollowups} Today</span>
               </div>
-              <button onClick={() => onNavigateTab?.('leads')} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', background: 'none', border: 'none', color: '#f59e0b', fontSize: '0.72rem', fontWeight: 600, cursor: 'pointer', padding: '0.35rem 0 0', borderTop: '1px solid var(--border-light)', marginTop: 'auto' }}>
+              <button onClick={() => onNavigateTab?.('leads')} className="flex items-center gap-1.5 bg-transparent border-0 border-t border-[var(--border-light)] text-amber-500 text-xs font-semibold cursor-pointer pt-2 mt-auto hover:text-amber-600 transition-colors">
                 Open Leads <ArrowRight size={11} />
               </button>
             </div>
 
             {/* KPI 3: Deals Won */}
-            <div className="card" style={{ padding: '1.1rem', borderLeft: '4px solid #10b981', display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '0.04em' }}>🏆 Deals Won</span>
-                <CheckCircle2 size={15} style={{ color: '#10b981' }} />
+            <div className="card an-card-hover p-4 border-l-4 border-l-emerald-500 flex flex-col gap-2 rounded-xl shadow-sm bg-[var(--bg-surface)]">
+              <div className="flex justify-between items-center">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">🏆 Deals Won</span>
+                <CheckCircle2 size={15} className="text-emerald-500" />
               </div>
-              <div style={{ fontSize: '1.9rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.1 }}>{kpis.won}</div>
-              <div style={{ fontSize: '0.73rem', color: 'var(--text-secondary)' }}>{kpis.inPipeline} in active pipeline</div>
-              <button onClick={() => setActiveTab('lead-data')} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', background: 'none', border: 'none', color: '#10b981', fontSize: '0.72rem', fontWeight: 600, cursor: 'pointer', padding: '0.35rem 0 0', borderTop: '1px solid var(--border-light)', marginTop: 'auto' }}>
+              <div className="text-3xl font-extrabold text-[var(--text-primary)] leading-none">{kpis.won}</div>
+              <div className="text-xs text-[var(--text-secondary)]">{kpis.inPipeline} in active pipeline</div>
+              <button onClick={() => setActiveTab('lead-data')} className="flex items-center gap-1.5 bg-transparent border-0 border-t border-[var(--border-light)] text-emerald-600 text-xs font-semibold cursor-pointer pt-2 mt-auto hover:text-emerald-700 transition-colors">
                 Lead Data View <ArrowRight size={11} />
               </button>
             </div>
 
             {/* KPI 4: Delegated Tasks */}
-            <div className="card" style={{ padding: '1.1rem', borderLeft: `4px solid ${delegation.overdue > 0 ? '#ef4444' : '#8b5cf6'}`, display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '0.04em' }}>📋 Delegated Tasks</span>
-                {loadingAssignedWork ? <Loader2 size={14} className="animate-spin" style={{ color: '#8b5cf6' }} /> : <CheckSquare size={15} style={{ color: '#8b5cf6' }} />}
+            <div className={`card an-card-hover p-4 border-l-4 ${delegation.overdue > 0 ? 'border-l-red-500' : 'border-l-purple-500'} flex flex-col gap-2 rounded-xl shadow-sm bg-[var(--bg-surface)]`}>
+              <div className="flex justify-between items-center">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">📋 Delegated Tasks</span>
+                {loadingAssignedWork ? <Loader2 size={14} className="animate-spin text-purple-500" /> : <CheckSquare size={15} className="text-purple-500" />}
               </div>
-              <div style={{ fontSize: '1.9rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.1 }}>
+              <div className="text-3xl font-extrabold text-[var(--text-primary)] leading-none">
                 {loadingAssignedWork ? '—' : delegation.total}
               </div>
-              <div style={{ fontSize: '0.73rem', display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-                <span style={{ color: delegation.overdue > 0 ? '#dc2626' : 'var(--text-secondary)', fontWeight: delegation.overdue > 0 ? 700 : 500 }}>
+              <div className="text-xs flex gap-2 flex-wrap items-center">
+                <span className={delegation.overdue > 0 ? 'text-red-600 font-bold' : 'text-[var(--text-secondary)] font-medium'}>
                   {delegation.overdue > 0 ? `🚨 ${delegation.overdue} Overdue` : `⏳ ${delegation.pending + delegation.inProgress} Pending`}
                 </span>
-                <span style={{ color: '#16a34a', fontWeight: 600 }}>✅ {delegation.completed} Done</span>
+                <span className="text-emerald-600 font-semibold">✅ {delegation.completed} Done</span>
               </div>
-              <button onClick={() => setActiveTab('delegation')} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', background: 'none', border: 'none', color: '#8b5cf6', fontSize: '0.72rem', fontWeight: 600, cursor: 'pointer', padding: '0.35rem 0 0', borderTop: '1px solid var(--border-light)', marginTop: 'auto' }}>
+              <button onClick={() => setActiveTab('delegation')} className="flex items-center gap-1.5 bg-transparent border-0 border-t border-[var(--border-light)] text-purple-600 text-xs font-semibold cursor-pointer pt-2 mt-auto hover:text-purple-700 transition-colors">
                 Task Manager <ArrowRight size={11} />
               </button>
             </div>
 
             {/* KPI 5: Work Health */}
-            <div className="card" style={{
-              padding: '1.1rem',
-              borderLeft: `4px solid ${workHealthScore >= 75 ? '#10b981' : workHealthScore >= 45 ? '#f59e0b' : '#ef4444'}`,
-              display: 'flex', flexDirection: 'column', gap: '0.45rem'
-            }}>
-              <span style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '0.04em' }}>⚡ Work Health</span>
-              <div style={{ fontSize: '1.9rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.1 }}>{workHealthScore}%</div>
-              <div style={{ width: '100%', height: '5px', background: 'var(--border-light)', borderRadius: '3px', overflow: 'hidden' }}>
-                <div style={{ width: `${workHealthScore}%`, height: '100%', backgroundColor: workHealthScore >= 75 ? '#10b981' : workHealthScore >= 45 ? '#f59e0b' : '#ef4444', transition: 'width 0.5s ease' }} />
+            <div className={`card an-card-hover p-4 border-l-4 ${workHealthScore >= 75 ? 'border-l-emerald-500' : workHealthScore >= 45 ? 'border-l-amber-500' : 'border-l-red-500'} flex flex-col gap-2 rounded-xl shadow-sm bg-[var(--bg-surface)]`}>
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">⚡ Work Health</span>
+              <div className="text-3xl font-extrabold text-[var(--text-primary)] leading-none">{workHealthScore}%</div>
+              <div className="w-full h-1.5 bg-[var(--border-light)] rounded-full overflow-hidden">
+                <div 
+                  className={`h-full transition-all duration-500 rounded-full ${workHealthScore >= 75 ? 'bg-emerald-500' : workHealthScore >= 45 ? 'bg-amber-500' : 'bg-red-500'}`} 
+                  style={{ width: `${workHealthScore}%` }} 
+                />
               </div>
-              <div style={{ fontSize: '0.73rem', fontWeight: 700, color: workHealthScore >= 75 ? '#15803d' : workHealthScore >= 45 ? '#b45309' : '#dc2626' }}>
+              <div className={`text-xs font-bold ${workHealthScore >= 75 ? 'text-emerald-700' : workHealthScore >= 45 ? 'text-amber-700' : 'text-red-600'}`}>
                 {workHealthScore >= 80 ? '🌟 Outstanding' : workHealthScore >= 50 ? '👍 On Track' : '⚠️ Needs Attention'}
               </div>
             </div>
@@ -1726,48 +1847,27 @@ export default function AnalyticsDashboard({
 
           {/* Action Required Banner */}
           {(kpis.overdueFollowups > 0 || kpis.todayFollowups > 0 || delegation.overdue > 0 || (checklists.pending > 0)) && (
-            <div style={{
-              display: 'flex', flexWrap: 'wrap', gap: '0.6rem', alignItems: 'center',
-              padding: '0.75rem 1.1rem',
-              backgroundColor: 'var(--bg-surface)', borderRadius: '10px',
-              border: '1px solid var(--border-light)'
-            }}>
-              <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', flexShrink: 0 }}>
+            <div className="flex flex-wrap gap-2.5 items-center px-4.5 py-3 bg-[var(--bg-surface)] rounded-xl border border-[var(--border-light)] shadow-sm">
+              <span className="text-[11px] font-bold text-[var(--text-secondary)] uppercase tracking-wider shrink-0">
                 ⚡ Action Required
               </span>
               {kpis.overdueFollowups > 0 && (
-                <button onClick={() => onNavigateTab?.('leads')} style={{
-                  display: 'flex', alignItems: 'center', gap: '0.35rem',
-                  padding: '0.35rem 0.8rem', borderRadius: '20px', fontSize: '0.78rem', fontWeight: 700,
-                  backgroundColor: '#fee2e2', color: '#dc2626', border: '1px solid #fca5a5', cursor: 'pointer'
-                }}>
+                <button onClick={() => onNavigateTab?.('leads')} className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/30 hover:bg-red-500/20 cursor-pointer transition-colors">
                   <AlertTriangle size={12} /> {kpis.overdueFollowups} Overdue Follow-ups → Open Leads
                 </button>
               )}
               {kpis.todayFollowups > 0 && (
-                <button onClick={() => onNavigateTab?.('leads')} style={{
-                  display: 'flex', alignItems: 'center', gap: '0.35rem',
-                  padding: '0.35rem 0.8rem', borderRadius: '20px', fontSize: '0.78rem', fontWeight: 700,
-                  backgroundColor: '#fef3c7', color: '#b45309', border: '1px solid #fde68a', cursor: 'pointer'
-                }}>
+                <button onClick={() => onNavigateTab?.('leads')} className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/30 hover:bg-amber-500/20 cursor-pointer transition-colors">
                   📅 {kpis.todayFollowups} Follow-ups Due Today → Open Leads
                 </button>
               )}
               {delegation.overdue > 0 && (
-                <button onClick={() => setActiveTab('delegation')} style={{
-                  display: 'flex', alignItems: 'center', gap: '0.35rem',
-                  padding: '0.35rem 0.8rem', borderRadius: '20px', fontSize: '0.78rem', fontWeight: 700,
-                  backgroundColor: '#fee2e2', color: '#dc2626', border: '1px solid #fca5a5', cursor: 'pointer'
-                }}>
+                <button onClick={() => setActiveTab('delegation')} className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/30 hover:bg-red-500/20 cursor-pointer transition-colors">
                   🚨 {delegation.overdue} Tasks Overdue → Task Manager
                 </button>
               )}
               {checklists.pending > 0 && (
-                <button onClick={() => setActiveTab('checklist')} style={{
-                  display: 'flex', alignItems: 'center', gap: '0.35rem',
-                  padding: '0.35rem 0.8rem', borderRadius: '20px', fontSize: '0.78rem', fontWeight: 700,
-                  backgroundColor: '#dcfce7', color: '#15803d', border: '1px solid #86efac', cursor: 'pointer'
-                }}>
+                <button onClick={() => setActiveTab('checklist')} className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/20 cursor-pointer transition-colors">
                   ✅ {checklists.pending} Checklists Pending → Open Checklist
                 </button>
               )}
@@ -1775,180 +1875,180 @@ export default function AnalyticsDashboard({
           )}
 
           {/* Unified Compact Operations Pulse Banner */}
-          <div style={{
-            display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))', gap: '1rem',
-            backgroundColor: 'var(--bg-surface)', padding: '1rem 1.25rem', borderRadius: '12px',
-            border: '1px solid var(--border-light)'
-          }}>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 bg-[var(--bg-surface)] p-4 rounded-xl border border-[var(--border-light)] shadow-sm">
             {/* Pulse 1: Attendance */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', borderRight: '1px solid var(--border-light)', paddingRight: '1rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                  <UserCheck size={14} style={{ color: '#2563eb' }} /> Today's Attendance
+            <div className="flex flex-col gap-1.5 md:border-r md:border-[var(--border-light)] md:pr-4">
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-bold text-[var(--text-secondary)] flex items-center gap-1.5">
+                  <UserCheck size={14} className="text-blue-600" /> Today's Attendance
                 </span>
-                <span style={{ fontSize: '0.72rem', color: '#2563eb', fontWeight: 600, cursor: 'pointer' }} onClick={() => setActiveTab('attendance')}>
+                <span className="text-xs text-blue-600 font-semibold cursor-pointer hover:underline" onClick={() => setActiveTab('attendance')}>
                   View Ops →
                 </span>
               </div>
-              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+              <div className="text-xl font-extrabold text-[var(--text-primary)]">
                 {attendanceStats.effectivePresent} / {attendanceStats.total} Staff Active
               </div>
-              <div style={{ fontSize: '0.72rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                <span style={{ color: '#16a34a', fontWeight: 600 }}>✅ {attendanceStats.punched} Punched</span>
-                <span style={{ color: '#2563eb', fontWeight: 600 }}>⚡ {attendanceStats.crmActiveOnly} CRM Active</span>
-                <span style={{ color: '#dc2626', fontWeight: 600 }}>🚫 {attendanceStats.absent} Absent</span>
+              <div className="text-xs flex gap-2 flex-wrap items-center">
+                <span className="text-emerald-600 font-semibold">✅ {attendanceStats.punched} Punched</span>
+                <span className="text-blue-600 font-semibold">⚡ {attendanceStats.crmActiveOnly} CRM Active</span>
+                <span className="text-red-600 font-semibold">🚫 {attendanceStats.absent} Absent</span>
               </div>
             </div>
 
             {/* Pulse 2: Checklist */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', borderRight: '1px solid var(--border-light)', paddingRight: '1rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                  <ClipboardList size={14} style={{ color: '#10b981' }} /> Checklist Compliance
+            <div className="flex flex-col gap-1.5 md:border-r md:border-[var(--border-light)] md:pr-4">
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-bold text-[var(--text-secondary)] flex items-center gap-1.5">
+                  <ClipboardList size={14} className="text-emerald-500" /> Checklist Compliance
                 </span>
-                <span style={{ fontSize: '0.72rem', color: '#10b981', fontWeight: 600, cursor: 'pointer' }} onClick={() => setActiveTab('checklist')}>
+                <span className="text-xs text-emerald-600 font-semibold cursor-pointer hover:underline" onClick={() => setActiveTab('checklist')}>
                   View Ops →
                 </span>
               </div>
-              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                {dashboardSummaries.checklistSummary?.complianceRate || checklists.complianceRate}% Completed
+              <div className="text-xl font-extrabold text-[var(--text-primary)]">
+                {dashboardSummaries.checklistSummary?.complianceRate ?? checklists.complianceRate}% Completed
               </div>
-              <div style={{ fontSize: '0.72rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                <span style={{ color: '#16a34a', fontWeight: 600 }}>✅ {checklists.completed} Done</span>
-                <span style={{ color: '#d97706', fontWeight: 600 }}>⏳ {checklists.pending} Pending</span>
-                {checklists.completedLate > 0 && <span style={{ color: '#dc2626', fontWeight: 600 }}>⚠️ {checklists.completedLate} Late</span>}
+              <div className="text-xs flex gap-2 flex-wrap items-center">
+                <span className="text-emerald-600 font-semibold">✅ {dashboardSummaries.checklistSummary?.completed ?? checklists.completed} Done</span>
+                <span className="text-amber-600 font-semibold">⏳ {dashboardSummaries.checklistSummary?.pending ?? checklists.pending} Pending</span>
+                {(dashboardSummaries.checklistSummary?.late || checklists.completedLate) > 0 && (
+                  <span className="text-red-600 font-semibold">⚠️ {dashboardSummaries.checklistSummary?.late || checklists.completedLate} Late</span>
+                )}
               </div>
             </div>
 
             {/* Pulse 3: Team Scorecard Quick Preview */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', borderRight: '1px solid var(--border-light)', paddingRight: '1rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                  <Award size={14} style={{ color: '#f59e0b' }} /> Top Reps Scoreboard
+            <div className="flex flex-col gap-1.5 md:border-r md:border-[var(--border-light)] md:pr-4">
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-bold text-[var(--text-secondary)] flex items-center gap-1.5">
+                  <Award size={14} className="text-amber-500" /> Top Reps Scoreboard
                 </span>
-                <span style={{ fontSize: '0.72rem', color: '#f59e0b', fontWeight: 600, cursor: 'pointer' }} onClick={() => setActiveTab('scorecard')}>
+                <span className="text-xs text-amber-600 font-semibold cursor-pointer hover:underline" onClick={() => setActiveTab('scorecard')}>
                   Full Scorecard →
                 </span>
               </div>
-              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+              <div className="text-xl font-extrabold text-[var(--text-primary)] truncate">
                 {teamScorecardData[0]?.empName || 'Team'} 🏆 #{1}
               </div>
-              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
-                Score: <strong style={{ color: '#16a34a' }}>{teamScorecardData[0]?.totalScore || 0}%</strong> · {teamScorecardData[0]?.updatesCount || 0} updates logged today
+              <div className="text-xs text-[var(--text-secondary)]">
+                Score: <strong className="text-emerald-600">{teamScorecardData[0]?.totalScore || 0}%</strong> · {teamScorecardData[0]?.updatesCount || 0} updates logged today
               </div>
             </div>
 
             {/* Pulse 4: Hiring & Recruiter Hub */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                  <Briefcase size={14} style={{ color: '#8b5cf6' }} /> Recruiter Hub
+            <div className="flex flex-col gap-1.5">
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-bold text-[var(--text-secondary)] flex items-center gap-1.5">
+                  <Briefcase size={14} className="text-purple-500" /> Recruiter Hub
                 </span>
-                <span style={{ fontSize: '0.72rem', color: '#8b5cf6', fontWeight: 600, cursor: 'pointer' }} onClick={() => setActiveTab('recruiter')}>
+                <span className="text-xs text-purple-600 font-semibold cursor-pointer hover:underline" onClick={() => setActiveTab('recruiter')}>
                   View Talent →
                 </span>
               </div>
-              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+              <div className="text-xl font-extrabold text-[var(--text-primary)]">
                 {dashboardSummaries.recruitmentSummary?.openPositions || 0} Open Positions
               </div>
-              <div style={{ fontSize: '0.72rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                <span style={{ color: '#8b5cf6', fontWeight: 600 }}>👥 {dashboardSummaries.recruitmentSummary?.totalCandidates || 0} Pipeline</span>
-                <span style={{ color: '#2563eb', fontWeight: 600 }}>🎯 {dashboardSummaries.recruitmentSummary?.inInterview || 0} Interview</span>
-                <span style={{ color: '#16a34a', fontWeight: 600 }}>🎉 {dashboardSummaries.recruitmentSummary?.hired || 0} Hired</span>
+              <div className="text-xs flex gap-2 flex-wrap items-center">
+                <span className="text-purple-600 font-semibold">👥 {dashboardSummaries.recruitmentSummary?.totalCandidates || 0} Pipeline</span>
+                <span className="text-blue-600 font-semibold">🎯 {dashboardSummaries.recruitmentSummary?.inInterview || 0} Interview</span>
+                <span className="text-emerald-600 font-semibold">🎉 {dashboardSummaries.recruitmentSummary?.hired || 0} Hired</span>
               </div>
             </div>
           </div>
 
           {/* Visuals: Stage Funnel & Activity Pulse */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 340px), 1fr))', gap: '1.25rem', alignItems: 'start' }}>
-            {/* Leads by Stage Funnel Chart */}
-            <div className="card" style={{ padding: '1.25rem', gridColumn: 'span 2' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700 }}>Leads by Stage</h3>
-                <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{kpis.total.toLocaleString('en-IN')} total in scope</span>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
+            {/* Left 2 Columns: Leads by Stage + Communication & Pipeline vertically grouped */}
+            <div className="lg:col-span-2 flex flex-col gap-5">
+              {/* Leads by Stage Funnel Chart */}
+              <div className="card an-card-hover p-5 rounded-xl shadow-sm bg-[var(--bg-surface)] border border-[var(--border-light)]">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="m-0 text-sm font-bold text-[var(--text-primary)]">Leads by Stage</h3>
+                  <span className="text-xs text-[var(--text-secondary)]">{kpis.total.toLocaleString('en-IN')} total in scope</span>
+                </div>
+                <ResponsiveContainer width="100%" height={240}>
+                  <BarChart data={stageData} margin={{ top: 8, right: 8, left: -20, bottom: 16 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-light)" />
+                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: 'var(--text-secondary)' }} />
+                    <YAxis axisLine={false} tickLine={false} tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} />
+                    <RechartsTooltip cursor={{ fill: 'var(--bg-primary)' }} contentStyle={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-light)', color: 'var(--text-primary)', borderRadius: '8px' }} />
+                    <Bar dataKey="count" fill="var(--accent-color)" radius={[4, 4, 0, 0]}>
+                      <LabelList dataKey="count" position="top" style={{ fill: 'var(--text-primary)', fontSize: 11, fontWeight: 600 }} />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
               </div>
-              <ResponsiveContainer width="100%" height={240}>
-                <BarChart data={stageData} margin={{ top: 8, right: 8, left: -20, bottom: 16 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-light)" />
-                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: 'var(--text-secondary)' }} />
-                  <YAxis axisLine={false} tickLine={false} tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} />
-                  <RechartsTooltip cursor={{ fill: 'var(--bg-primary)' }} contentStyle={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-light)', color: 'var(--text-primary)', borderRadius: '8px' }} />
-                  <Bar dataKey="count" fill="var(--accent-color)" radius={[4, 4, 0, 0]}>
-                    <LabelList dataKey="count" position="top" style={{ fill: 'var(--text-primary)', fontSize: 11, fontWeight: 600 }} />
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+
+              {/* Pipeline & Outreach Summary Card */}
+              <div className="card an-card-hover p-4.5 flex flex-col gap-3 rounded-xl shadow-sm bg-[var(--bg-surface)] border border-[var(--border-light)]">
+                <div className="flex justify-between items-center">
+                  <h3 className="m-0 text-sm font-bold text-[var(--text-primary)]">Communication & Pipeline Overview</h3>
+                  <span className="text-xs text-[var(--text-secondary)]">{dateFilterLabel}</span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                  {[
+                    { label: 'Fresh / New Leads', value: kpis.newLeads, color: '#3b82f6' },
+                    { label: 'In Active Pipeline', value: kpis.inPipeline, color: '#8b5cf6' },
+                    { label: 'Follow-ups Pending', value: kpis.followUps, color: '#f59e0b' },
+                    { label: `WhatsApp Sent (${dateFilterLabel})`, value: loading ? '…' : metrics.whatsappStats.period, color: '#10b981' },
+                  ].map(item => (
+                    <div key={item.label} className="p-3 rounded-lg bg-[var(--th-bg)] border border-[var(--border-light)]">
+                      <div className="text-[11px] text-[var(--text-secondary)] font-semibold mb-1 truncate">{item.label}</div>
+                      <div className="text-xl font-extrabold" style={{ color: item.color }}>
+                        {typeof item.value === 'number' ? item.value.toLocaleString('en-IN') : item.value}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
 
-            {/* Employee Activity Table (Fixed with horizontal scroll) */}
-            <div className="card" style={{ padding: '0', overflow: 'hidden', minWidth: 0 }}>
-              <div style={{ padding: '0.85rem 1.1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-light)', backgroundColor: 'var(--th-bg)' }}>
-                <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                  <Activity size={15} style={{ color: 'var(--accent-color)' }} /> Employee Activity
+            {/* Right 1 Column: Employee Activity Table */}
+            <div className="card an-card-hover p-0 overflow-hidden min-w-0 rounded-xl shadow-sm bg-[var(--bg-surface)] border border-[var(--border-light)]">
+              <div className="px-4 py-3 flex justify-between items-center border-b border-[var(--border-light)] bg-[var(--th-bg)]">
+                <h3 className="m-0 text-sm font-bold flex items-center gap-1.5 text-[var(--text-primary)] whitespace-nowrap">
+                  <Activity size={15} className="text-[var(--accent-color)]" /> Employee Activity
                 </h3>
-                <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>{dateFilterLabel}</span>
+                <span className="text-xs text-[var(--text-secondary)] whitespace-nowrap">{dateFilterLabel}</span>
               </div>
               {loading ? (
-                <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
-                  <Loader2 size={22} className="animate-spin" />
+                <div className="p-8 text-center text-[var(--text-secondary)]">
+                  <Loader2 size={22} className="animate-spin inline-block" />
                 </div>
               ) : (employeeActivityList.length === 0 && (!metrics.employeeActivity || metrics.employeeActivity.length === 0)) ? (
-                <div style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.83rem' }}>
+                <div className="p-6 text-center text-[var(--text-secondary)] text-xs">
                   No activity recorded for {dateFilterLabel.toLowerCase()}.
                 </div>
               ) : (
-                <div style={{ overflow: 'auto', maxHeight: '360px', width: '100%', position: 'relative' }}>
-                  <MobileTableView id="AnalyticsDashboard-1"><table style={{ width: '100%', minWidth: '280px', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.83rem' }}>
-                    <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)' }}>
-                      <tr style={{ backgroundColor: 'var(--th-bg)' }}>
-                        <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.55rem 0.75rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', whiteSpace: 'nowrap' }}>Employee</th>
-                        <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'center', padding: '0.55rem 0.5rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', whiteSpace: 'nowrap' }}>Leads</th>
-                        <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'right', padding: '0.55rem 0.75rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', whiteSpace: 'nowrap' }}>Updates</th>
+                <div className="overflow-auto max-h-[460px] w-full relative">
+                  <MobileTableView id="AnalyticsDashboard-1" hideToggle><table className="w-full min-w-[300px] border-separate border-spacing-0 text-xs">
+                    <thead className="sticky top-0 z-10 bg-[var(--th-bg)]">
+                      <tr className="bg-[var(--th-bg)]">
+                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3 py-2 text-[var(--text-secondary)] font-semibold text-[11px] whitespace-nowrap min-w-[140px]">Employee</th>
+                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-2 py-2 text-[var(--text-secondary)] font-semibold text-[11px] whitespace-nowrap min-w-[65px]">Leads</th>
+                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-right px-3 py-2 text-[var(--text-secondary)] font-semibold text-[11px] whitespace-nowrap min-w-[70px]">Updates</th>
                       </tr>
                     </thead>
                     <tbody>
                       {(employeeActivityList.length > 0 ? employeeActivityList : (metrics.employeeActivity || [])).slice(0, 10).map((act, i) => (
-                        <tr key={act.employee} style={{ borderBottom: '1px solid var(--border-light)' }}>
-                          <td style={{ padding: '0.5rem 0.75rem', color: 'var(--text-primary)', maxWidth: '180px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', minWidth: 0 }}>
-                              <div style={{
-                                width: '24px', height: '24px', borderRadius: '50%', flexShrink: 0,
-                                backgroundColor: COLORS[i % COLORS.length], color: 'white',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.62rem', fontWeight: 700
-                              }}>
+                        <tr key={act.employee} className="border-b border-[var(--border-light)] hover:bg-[var(--th-bg)] transition-colors">
+                          <td className="px-3 py-2 text-[var(--text-primary)] max-w-[160px]">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <div className="w-6 h-6 rounded-full shrink-0 text-white flex items-center justify-center text-[10px] font-bold" style={{ backgroundColor: COLORS[i % COLORS.length] }}>
                                 {act.employee.substring(0, 2).toUpperCase()}
                               </div>
-                              <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{act.employee}</span>
+                              <span className="font-medium truncate" title={act.employee}>{act.employee}</span>
                             </div>
                           </td>
-                          <td style={{ padding: '0.5rem', textAlign: 'center', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>{act.uniqueLeads}</td>
-                          <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right', fontWeight: 700, color: 'var(--accent-color)', whiteSpace: 'nowrap' }}>{act.actions}</td>
+                          <td className="px-2 py-2 text-center font-bold text-[var(--text-primary)] whitespace-nowrap min-w-[65px]">{act.uniqueLeads}</td>
+                          <td className="px-3 py-2 text-right font-bold text-[var(--accent-color)] whitespace-nowrap min-w-[70px]">{act.actions}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table></MobileTableView>
                 </div>
               )}
-            </div>
-
-            {/* Pipeline & Outreach Summary Card */}
-            <div className="card" style={{ padding: '1.1rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-              <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700 }}>Communication & Pipeline</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem' }}>
-                {[
-                  { label: 'Fresh / New Leads', value: kpis.newLeads, color: '#3b82f6' },
-                  { label: 'In Active Pipeline', value: kpis.inPipeline, color: '#8b5cf6' },
-                  { label: 'Follow-ups Pending', value: kpis.followUps, color: '#f59e0b' },
-                  { label: `WhatsApp Sent (${dateFilterLabel})`, value: loading ? '…' : metrics.whatsappStats.period, color: '#10b981' },
-                ].map(item => (
-                  <div key={item.label} style={{ padding: '0.75rem', borderRadius: '8px', backgroundColor: 'var(--th-bg)', border: '1px solid var(--border-light)' }}>
-                    <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', fontWeight: 600, marginBottom: '0.2rem' }}>{item.label}</div>
-                    <div style={{ fontSize: '1.4rem', fontWeight: 800, color: item.color }}>
-                      {typeof item.value === 'number' ? item.value.toLocaleString('en-IN') : item.value}
-                    </div>
-                  </div>
-                ))}
-              </div>
             </div>
           </div>
         </div>
@@ -1958,24 +2058,21 @@ export default function AnalyticsDashboard({
       {/* 🏆 TAB 2: TEAM SCORECARD & LEADERBOARD (SCORING DASHBOARD)                */}
       {/* ========================================================================= */}
       {activeTab === 'scorecard' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+        <div className="flex flex-col gap-5">
           {/* Header Banner */}
-          <div style={{
-            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem',
-            backgroundColor: 'var(--bg-surface)', padding: '1.1rem 1.25rem', borderRadius: '12px', border: '1px solid var(--border-light)'
-          }}>
+          <div className="flex justify-between items-center flex-wrap gap-4 bg-[var(--bg-surface)] p-4.5 rounded-xl border border-[var(--border-light)] shadow-sm">
             <div>
-              <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                <Award size={22} style={{ color: '#f59e0b' }} /> Team Performance Scorecard & Leaderboard
+              <h3 className="m-0 text-lg font-bold flex items-center gap-2 text-[var(--text-primary)]">
+                <Award size={22} className="text-amber-500" /> Team Performance Scorecard & Leaderboard
               </h3>
-              <p style={{ margin: '0.3rem 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+              <p className="mt-1 mb-0 text-xs text-[var(--text-secondary)]">
                 Multi-process operational index (100 pts max) across Calling/Recruitment (30 pts), Follow-up Adherence (25 pts), Daily Checklists (20 pts), Delegation Tasks (15 pts), and Attendance (10 pts).
               </p>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <div className="flex items-center gap-3 flex-wrap">
               {/* Role filter buttons */}
-              <div style={{ display: 'flex', gap: '0.35rem', backgroundColor: 'var(--bg-primary)', padding: '0.2rem', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
+              <div className="flex gap-1.5 bg-[var(--bg-primary)] p-1 rounded-lg border border-[var(--border-light)]">
                 {[
                   { key: 'ALL', label: 'All Roles', count: teamScorecardData.length },
                   { key: 'SALES', label: '📞 Sales & Calls', count: teamScorecardData.filter(s => s.roleCategory === 'SALES').length },
@@ -1986,318 +2083,286 @@ export default function AnalyticsDashboard({
                     key={tab.key}
                     type="button"
                     onClick={() => setScorecardDeptFilter(tab.key)}
-                    style={{
-                      padding: '0.35rem 0.65rem',
-                      fontSize: '0.72rem',
-                      fontWeight: 600,
-                      borderRadius: '6px',
-                      border: 'none',
-                      cursor: 'pointer',
-                      transition: 'all 0.15s',
-                      backgroundColor: scorecardDeptFilter === tab.key ? 'var(--accent-color, #2563eb)' : 'transparent',
-                      color: scorecardDeptFilter === tab.key ? '#ffffff' : 'var(--text-secondary)'
-                    }}
+                    className={`px-2.5 py-1.5 text-xs font-semibold rounded-md cursor-pointer transition-all duration-150 ${
+                      scorecardDeptFilter === tab.key
+                        ? 'bg-blue-500/10 text-[var(--accent-color,#2563eb)] font-bold border border-[var(--accent-color,#2563eb)]/30 shadow-xs'
+                        : 'bg-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-transparent'
+                    }`}
                   >
-                    {tab.label} <span style={{ opacity: 0.8, fontSize: '0.68rem' }}>({tab.count})</span>
+                    {tab.label} <span className="opacity-80 text-[11px]">({tab.count})</span>
                   </button>
                 ))}
               </div>
 
               {/* Search Box */}
-              <div style={{ position: 'relative', width: '220px' }}>
+              <div className="relative w-56">
                 <input
                   type="text"
                   placeholder="Search executive or dept..."
                   value={scorecardSearch}
                   onChange={(e) => setScorecardSearch(e.target.value)}
-                  style={{
-                    width: '100%', padding: '0.45rem 0.75rem 0.45rem 2rem', fontSize: '0.78rem',
-                    borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-primary)',
-                    color: 'var(--text-primary)'
-                  }}
+                  className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border border-[var(--border-light)] bg-[var(--bg-primary)] text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--accent-color)]"
                 />
-                <Search size={14} style={{ position: 'absolute', left: '0.65rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
+                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-secondary)] pointer-events-none" />
               </div>
             </div>
           </div>
 
           {/* Top 3 Podium Highlights (Strictly Verified Active Performers) */}
           {activePodiumWinners.length > 0 ? (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))', gap: '1rem' }}>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {activePodiumWinners.map((rep, idx) => (
                 <div
                   key={rep.empEmail}
-                  className="card"
+                  className="card an-card-hover p-4.5 cursor-pointer rounded-xl bg-[var(--bg-surface)] shadow-sm relative overflow-hidden transition-all"
                   onClick={() => setSelectedEmployeeEmails([rep.empEmail])}
                   style={{
-                    padding: '1.15rem', cursor: 'pointer', transition: 'all 0.2s',
-                    borderTop: idx === 0 ? '4px solid #f59e0b' : idx === 1 ? '4px solid #94a3b8' : '4px solid #b45309',
-                    position: 'relative', overflow: 'hidden'
+                    borderTop: idx === 0 ? '4px solid #f59e0b' : idx === 1 ? '4px solid #94a3b8' : '4px solid #b45309'
                   }}
                 >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <div style={{
-                        width: '32px', height: '32px', borderRadius: '50%',
-                        backgroundColor: idx === 0 ? '#fef3c7' : idx === 1 ? '#f1f5f9' : '#ffedd5',
-                        color: idx === 0 ? '#b45309' : idx === 1 ? '#475569' : '#c2410c',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '0.85rem'
-                      }}>
+                  <div className="flex justify-between items-start">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center font-extrabold text-sm shrink-0 ${
+                        idx === 0 ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30' : idx === 1 ? 'bg-slate-500/15 text-slate-600 dark:text-slate-300 border border-slate-500/30' : 'bg-orange-500/15 text-orange-600 dark:text-orange-400 border border-orange-500/30'
+                      }`}>
                         #{idx + 1}
                       </div>
                       <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                          <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700 }}>{rep.empName}</h4>
-                          <span style={{
-                            fontSize: '0.62rem', fontWeight: 700, padding: '0.1rem 0.35rem', borderRadius: '4px',
-                            backgroundColor: rep.roleCategory === 'RECRUITER' ? '#ede9fe' : rep.roleCategory === 'SALES' ? '#dbeafe' : '#f1f5f9',
-                            color: rep.roleCategory === 'RECRUITER' ? '#6d28d9' : rep.roleCategory === 'SALES' ? '#1d4ed8' : '#475569'
-                          }}>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <h4 className="m-0 text-sm font-bold text-[var(--text-primary)]">{rep.empName}</h4>
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${
+                            rep.roleCategory === 'RECRUITER' ? 'bg-purple-500/15 text-purple-600 dark:text-purple-400 border-purple-500/25' : rep.roleCategory === 'SALES' ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/25' : 'bg-slate-500/15 text-slate-600 dark:text-slate-300 border-slate-500/25'
+                          }`}>
                             {rep.roleCategory === 'RECRUITER' ? 'Recruiter' : rep.roleCategory === 'SALES' ? 'Sales' : 'Ops'}
                           </span>
                         </div>
-                        <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{rep.department} · {rep.designation}</span>
+                        <span className="text-xs text-[var(--text-secondary)]">{rep.department} · {rep.designation}</span>
                       </div>
                     </div>
-                    <span style={{
-                      fontSize: '0.7rem', fontWeight: 700, padding: '0.2rem 0.5rem', borderRadius: '12px',
-                      backgroundColor: rep.tierBg, color: rep.tierColor
-                    }}>
+                    <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: rep.tierBg, color: rep.tierColor }}>
                       {rep.tierLabel}
                     </span>
                   </div>
 
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.35rem', margin: '0.85rem 0 0.45rem' }}>
-                    <span style={{ fontSize: '2.2rem', fontWeight: 800, lineHeight: 1, color: 'var(--text-primary)' }}>{rep.totalScore}%</span>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Performance Index</span>
+                  <div className="flex items-baseline gap-1.5 mt-3.5 mb-2">
+                    <span className="text-3xl font-extrabold leading-none text-[var(--text-primary)]">{rep.totalScore}%</span>
+                    <span className="text-xs text-[var(--text-secondary)]">Performance Index</span>
                   </div>
 
-                  <div style={{ width: '100%', height: '5px', background: 'var(--border-light)', borderRadius: '3px', overflow: 'hidden', marginBottom: '0.75rem' }}>
-                    <div style={{ width: `${rep.totalScore}%`, height: '100%', backgroundColor: rep.tierColor }} />
+                  <div className="w-full h-1.5 bg-[var(--border-light)] rounded-full overflow-hidden mb-3">
+                    <div className="h-full rounded-full transition-all duration-500" style={{ width: `${rep.totalScore}%`, backgroundColor: rep.tierColor }} />
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', fontSize: '0.72rem', paddingTop: '0.6rem', borderTop: '1px solid var(--border-light)' }}>
+                  <div className="grid grid-cols-2 gap-2 text-xs pt-2.5 border-t border-[var(--border-light)]">
                     <div>
-                      <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '0.65rem', textTransform: 'uppercase' }}>{rep.primaryProcess.name}</span>
-                      <strong>{rep.primaryProcess.metricText || rep.primaryProcess.metric || 'No Activity'}</strong>
-                      <span style={{ color: 'var(--text-secondary)', marginLeft: '0.25rem' }}>({rep.primaryProcess.score}/{rep.primaryProcess.max}p)</span>
+                      <span className="text-[10px] uppercase text-[var(--text-secondary)] block">{rep.primaryProcess.name}</span>
+                      <strong className="text-[var(--text-primary)]">{rep.primaryProcess.metricText || rep.primaryProcess.metric || 'No Activity'}</strong>
+                      <span className="text-[var(--text-secondary)] ml-1">({rep.primaryProcess.score}/{rep.primaryProcess.max}p)</span>
                     </div>
                     <div>
-                      <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '0.65rem', textTransform: 'uppercase' }}>{rep.followupProcess.name}</span>
-                      <strong>{rep.followupProcess.metricText || rep.followupProcess.metric}</strong>
-                      <span style={{ color: 'var(--text-secondary)', marginLeft: '0.25rem' }}>({rep.followupProcess.score}/{rep.followupProcess.max}p)</span>
+                      <span className="text-[10px] uppercase text-[var(--text-secondary)] block">{rep.followupProcess.name}</span>
+                      <strong className="text-[var(--text-primary)]">{rep.followupProcess.metricText || rep.followupProcess.metric}</strong>
+                      <span className="text-[var(--text-secondary)] ml-1">({rep.followupProcess.score}/{rep.followupProcess.max}p)</span>
                     </div>
                     <div>
-                      <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '0.65rem', textTransform: 'uppercase' }}>Checklists</span>
-                      <strong>{rep.checklistProcess.applicable ? (rep.checklistProcess.metricText || rep.checklistProcess.metric) : 'Exempt'}</strong>
-                      <span style={{ color: 'var(--text-secondary)', marginLeft: '0.25rem' }}>({rep.checklistProcess.score}/{rep.checklistProcess.max}p)</span>
+                      <span className="text-[10px] uppercase text-[var(--text-secondary)] block">Checklists</span>
+                      <strong className="text-[var(--text-primary)]">{rep.checklistProcess.applicable ? (rep.checklistProcess.metricText || rep.checklistProcess.metric) : 'Exempt'}</strong>
+                      <span className="text-[var(--text-secondary)] ml-1">({rep.checklistProcess.score}/{rep.checklistProcess.max}p)</span>
                     </div>
                     <div>
-                      <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '0.65rem', textTransform: 'uppercase' }}>Tasks</span>
-                      <strong>{rep.taskProcess.applicable ? (rep.taskProcess.metricText || rep.taskProcess.metric) : 'Exempt'}</strong>
-                      <span style={{ color: 'var(--text-secondary)', marginLeft: '0.25rem' }}>({rep.taskProcess.score}/{rep.taskProcess.max}p)</span>
+                      <span className="text-[10px] uppercase text-[var(--text-secondary)] block">Tasks</span>
+                      <strong className="text-[var(--text-primary)]">{rep.taskProcess.applicable ? (rep.taskProcess.metricText || rep.taskProcess.metric) : 'Exempt'}</strong>
+                      <span className="text-[var(--text-secondary)] ml-1">({rep.taskProcess.score}/{rep.taskProcess.max}p)</span>
                     </div>
-                    <div style={{ gridColumn: 'span 2' }}>
-                      <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '0.65rem', textTransform: 'uppercase' }}>Attendance</span>
-                      <strong>{rep.attendanceProcess.metricText || rep.attendanceProcess.metric}</strong>
-                      <span style={{ color: 'var(--text-secondary)', marginLeft: '0.25rem' }}>({rep.attendanceProcess.score}/{rep.attendanceProcess.max}p)</span>
+                    <div className="col-span-2">
+                      <span className="text-[10px] uppercase text-[var(--text-secondary)] block">Attendance</span>
+                      <strong className="text-[var(--text-primary)]">{rep.attendanceProcess.metricText || rep.attendanceProcess.metric}</strong>
+                      <span className="text-[var(--text-secondary)] ml-1">({rep.attendanceProcess.score}/{rep.attendanceProcess.max}p)</span>
                     </div>
                   </div>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="card" style={{ padding: '1.25rem', textAlign: 'center', backgroundColor: 'var(--bg-surface)', border: '1px dashed var(--border-light)' }}>
-              <div style={{ display: 'inline-flex', padding: '0.6rem', borderRadius: '50%', backgroundColor: '#fef3c7', color: '#b45309', marginBottom: '0.5rem' }}>
+            <div className="card an-card-hover p-5 text-center bg-[var(--bg-surface)] border border-dashed border-[var(--border-light)] rounded-xl">
+              <div className="inline-flex p-2.5 rounded-full bg-amber-100 text-amber-800 mb-2">
                 <Clock size={24} />
               </div>
-              <h4 style={{ margin: '0 0 0.35rem', fontSize: '0.95rem', fontWeight: 700 }}>Live Shift In Progress — Scoring Active</h4>
-              <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-secondary)', maxWidth: '540px', marginLeft: 'auto', marginRight: 'auto' }}>
+              <h4 className="m-0 mb-1 text-sm font-bold text-[var(--text-primary)]">Live Shift In Progress — Scoring Active</h4>
+              <p className="m-0 text-xs text-[var(--text-secondary)] max-w-lg mx-auto">
                 Executives are actively clocking in, updating CRM leads, candidate pipelines, and fulfilling checklist slots. As operational actions are recorded today, top performers will automatically take the podium!
               </p>
             </div>
           )}
 
           {/* Full Leaderboard Table with Process Performance Breakdown */}
-          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-            <div style={{ padding: '0.85rem 1.15rem', borderBottom: '1px solid var(--border-light)', backgroundColor: 'var(--th-bg)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+          <div className="card an-card-hover p-0 overflow-hidden rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)] shadow-sm">
+            <div className="px-4.5 py-3 border-b border-[var(--border-light)] bg-[var(--th-bg)] flex justify-between items-center flex-wrap gap-2">
               <div>
-                <h4 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 700 }}>
+                <h4 className="m-0 text-sm font-bold text-[var(--text-primary)]">
                   Process-Wise Performance Leaderboard ({filteredScorecard.length})
                 </h4>
-                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
+                <div className="text-xs text-[var(--text-secondary)] mt-0.5">
                   Transparent scoring breakdown: Calling/Leads (30p) + Recruiter (30p) + Follow-up/Requisitions (25p) + Checklists (20p) + Delegation (15p) + Attendance (10p)
                 </div>
               </div>
-              <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>Click any executive row to filter dashboard</span>
+              <span className="text-xs text-[var(--text-secondary)]">Click any executive row to filter dashboard</span>
             </div>
 
-            <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 280px)', minHeight: '400px', width: '100%', position: 'relative' }}>
-              <MobileTableView id="AnalyticsDashboard-2"><table style={{ width: '100%', minWidth: '980px', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.82rem' }}>
-                <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)' }}>
-                  <tr style={{ backgroundColor: 'var(--th-bg)' }}>
-                    <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'center', padding: '0.65rem 0.5rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', width: '45px' }}>Rank</th>
-                    <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.65rem 0.75rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', minWidth: '180px' }}>Executive & Role</th>
-                    <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'center', padding: '0.65rem 0.5rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', minWidth: '110px' }}>Overall Score</th>
-                    <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'center', padding: '0.65rem 0.65rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', minWidth: '115px' }}>🎯 Leads Touched</th>
-                    <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.65rem 0.65rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', minWidth: '150px' }}>🧑‍💼 Recruiter (30p)</th>
-                    <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.65rem 0.65rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', minWidth: '140px' }}>⏰ Follow-up Discipline (25p)</th>
-                    <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.65rem 0.65rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', minWidth: '120px' }}>✅ Checklists (20p)</th>
-                    <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.65rem 0.65rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', minWidth: '110px' }}>📋 Tasks (15p)</th>
-                    <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.65rem 0.65rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem', minWidth: '110px' }}>🏢 Attendance (10p)</th>
+            <div className="overflow-auto max-h-[calc(100vh-280px)] min-h-[400px] w-full relative">
+              <MobileTableView id="AnalyticsDashboard-2" hideToggle><table className="w-full min-w-[980px] border-separate border-spacing-0 text-xs">
+                <thead className="sticky top-0 z-10 bg-[var(--th-bg)]">
+                  <tr className="bg-[var(--th-bg)]">
+                    <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-2 py-2.5 text-[var(--text-secondary)] font-semibold text-[11px] w-11">Rank</th>
+                    <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3 py-2.5 text-[var(--text-secondary)] font-semibold text-[11px] min-w-[180px]">Executive & Role</th>
+                    <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-2 py-2.5 text-[var(--text-secondary)] font-semibold text-[11px] min-w-[110px]">Overall Score</th>
+                    <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-2.5 py-2.5 text-[var(--text-secondary)] font-semibold text-[11px] min-w-[115px]">🎯 Leads Touched</th>
+                    <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-2.5 py-2.5 text-[var(--text-secondary)] font-semibold text-[11px] min-w-[150px]">🧑‍💼 Recruiter (30p)</th>
+                    <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-2.5 py-2.5 text-[var(--text-secondary)] font-semibold text-[11px] min-w-[140px]">⏰ Follow-up Discipline (25p)</th>
+                    <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-2.5 py-2.5 text-[var(--text-secondary)] font-semibold text-[11px] min-w-[120px]">✅ Checklists (20p)</th>
+                    <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-2.5 py-2.5 text-[var(--text-secondary)] font-semibold text-[11px] min-w-[110px]">📋 Tasks (15p)</th>
+                    <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-2.5 py-2.5 text-[var(--text-secondary)] font-semibold text-[11px] min-w-[110px]">🏢 Attendance (10p)</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredScorecard.length === 0 ? (
                     <tr>
-                      <td colSpan={9} style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                      <td colSpan={9} className="p-8 text-center text-[var(--text-secondary)] text-xs">
                         No team members found matching the selected filter.
                       </td>
                     </tr>
                   ) : (
-                    filteredScorecard.map((row, idx) => (
-                      <tr
-                        key={row.empEmail}
-                        onClick={() => {
-                          const target = (row.empEmail || '').toLowerCase();
-                          if (selectedEmployeeEmails.length === 1 && selectedEmployeeEmails[0].toLowerCase() === target) {
-                            setSelectedEmployeeEmails([]);
-                          } else {
-                            setSelectedEmployeeEmails([row.empEmail]);
-                          }
-                        }}
-                        className={selectedEmployeeEmails.some(e => e.toLowerCase() === (row.empEmail || '').toLowerCase()) ? 'active-row' : ''}
-                        style={{
-                          borderBottom: '1px solid var(--border-light)', 
-                          cursor: 'pointer',
-                          backgroundColor: selectedEmployeeEmails.some(e => e.toLowerCase() === (row.empEmail || '').toLowerCase()) 
-                            ? 'var(--table-row-selected, var(--th-filtered-bg))' 
-                            : (idx % 2 === 0 ? 'var(--table-row-odd, var(--bg-surface))' : 'var(--table-row-even, var(--bg-primary))'),
-                          borderLeft: selectedEmployeeEmails.some(e => e.toLowerCase() === (row.empEmail || '').toLowerCase()) ? '3px solid var(--accent-color)' : '3px solid transparent',
-                          transition: 'all 0.15s cubic-bezier(0.16, 1, 0.3, 1)'
-                        }}
-                      >
-                        {/* Rank */}
-                        <td style={{ textAlign: 'center', padding: '0.65rem 0.5rem', fontWeight: 800, color: idx < 3 && row.totalScore > 0 ? '#f59e0b' : 'var(--text-secondary)' }}>
-                          {row.totalScore > 0 ? `#${idx + 1}` : '—'}
-                        </td>
+                    filteredScorecard.map((row, idx) => {
+                      const isSelected = selectedEmployeeEmails.some(e => e.toLowerCase() === (row.empEmail || '').toLowerCase());
+                      return (
+                        <tr
+                          key={row.empEmail}
+                          onClick={() => {
+                            const target = (row.empEmail || '').toLowerCase();
+                            if (selectedEmployeeEmails.length === 1 && selectedEmployeeEmails[0].toLowerCase() === target) {
+                              setSelectedEmployeeEmails([]);
+                            } else {
+                              setSelectedEmployeeEmails([row.empEmail]);
+                            }
+                          }}
+                          className={`border-b border-[var(--border-light)] cursor-pointer transition-all duration-150 ${
+                            isSelected
+                              ? 'bg-[var(--table-row-selected,var(--th-filtered-bg))] border-l-[3px] border-l-[var(--accent-color)] active-row'
+                              : `${idx % 2 === 0 ? 'bg-[var(--table-row-odd,var(--bg-surface))]' : 'bg-[var(--table-row-even,var(--bg-primary))]'} border-l-[3px] border-l-transparent hover:bg-[var(--th-bg)]`
+                          }`}
+                        >
+                          {/* Rank */}
+                          <td className={`text-center px-2 py-2.5 font-extrabold ${idx < 3 && row.totalScore > 0 ? 'text-amber-500' : 'text-[var(--text-secondary)]'}`}>
+                            {row.totalScore > 0 ? `#${idx + 1}` : '—'}
+                          </td>
 
-                        {/* Executive & Role */}
-                        <td style={{ padding: '0.65rem 0.75rem' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
-                            <div style={{
-                              width: '28px', height: '28px', borderRadius: '50%', flexShrink: 0,
-                              backgroundColor: COLORS[idx % COLORS.length], color: 'white',
-                              display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.68rem', fontWeight: 700
-                            }}>
-                              {row.empName.substring(0, 2).toUpperCase()}
-                            </div>
-                            <div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
-                                <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{row.empName}</span>
-                                <span style={{
-                                  fontSize: '0.6rem', fontWeight: 700, padding: '0.05rem 0.35rem', borderRadius: '3px',
-                                  backgroundColor: row.roleCategory === 'RECRUITER' ? '#ede9fe' : row.roleCategory === 'SALES' ? '#dbeafe' : '#f1f5f9',
-                                  color: row.roleCategory === 'RECRUITER' ? '#6d28d9' : row.roleCategory === 'SALES' ? '#1d4ed8' : '#475569'
-                                }}>
-                                  {row.roleCategory === 'RECRUITER' ? 'Recruiter' : row.roleCategory === 'SALES' ? 'Sales' : 'Operations'}
-                                </span>
-                                {row.leadsAssigned > 0 && (
-                                  <span style={{ fontSize: '0.6rem', fontWeight: 600, padding: '0.05rem 0.35rem', borderRadius: '3px', backgroundColor: 'var(--th-bg)', color: 'var(--text-secondary)' }}>
-                                    {row.leadsAssigned.toLocaleString('en-IN')} Leads
+                          {/* Executive & Role */}
+                          <td className="px-3 py-2.5">
+                            <div className="flex items-center gap-2">
+                              <div
+                                className="w-7 h-7 rounded-full shrink-0 text-white flex items-center justify-center text-[10px] font-bold"
+                                style={{ backgroundColor: COLORS[idx % COLORS.length] }}
+                              >
+                                {row.empName.substring(0, 2).toUpperCase()}
+                              </div>
+                              <div>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="font-semibold text-[var(--text-primary)]">{row.empName}</span>
+                                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${
+                                    row.roleCategory === 'RECRUITER' ? 'bg-purple-500/15 text-purple-600 dark:text-purple-400 border-purple-500/25' : row.roleCategory === 'SALES' ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/25' : 'bg-slate-500/15 text-slate-600 dark:text-slate-300 border-slate-500/25'
+                                  }`}>
+                                    {row.roleCategory === 'RECRUITER' ? 'Recruiter' : row.roleCategory === 'SALES' ? 'Sales' : 'Operations'}
                                   </span>
-                                )}
-                              </div>
-                              <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
-                                {row.department} · {row.designation}
+                                  {row.leadsAssigned > 0 && (
+                                    <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-[var(--th-bg)] text-[var(--text-secondary)]">
+                                      {row.leadsAssigned.toLocaleString('en-IN')} Leads
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-[11px] text-[var(--text-secondary)]">
+                                  {row.department} · {row.designation}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        </td>
+                          </td>
 
-                        {/* Overall Score */}
-                        <td style={{ textAlign: 'center', padding: '0.65rem 0.5rem' }}>
-                          <div style={{ fontSize: '1.05rem', fontWeight: 800, color: row.tierColor, lineHeight: 1.1 }}>
-                            {row.totalScore}%
-                          </div>
-                          <span style={{
-                            fontSize: '0.62rem', fontWeight: 700, padding: '0.12rem 0.4rem', borderRadius: '10px',
-                            backgroundColor: row.tierBg, color: row.tierColor, display: 'inline-block', marginTop: '0.2rem'
-                          }}>
-                            {row.tierLabel}
-                          </span>
-                        </td>
+                          {/* Overall Score */}
+                          <td className="text-center px-2 py-2.5">
+                            <div className="text-base font-extrabold leading-none" style={{ color: row.tierColor }}>
+                              {row.totalScore}%
+                            </div>
+                            <span
+                              className="text-[10px] font-bold px-1.5 py-0.5 rounded-full inline-block mt-1"
+                              style={{ backgroundColor: row.tierBg, color: row.tierColor }}
+                            >
+                              {row.tierLabel}
+                            </span>
+                          </td>
 
-                        {/* Leads Touched & Calling Score */}
-                        <td style={{ textAlign: 'center', padding: '0.65rem 0.65rem' }}>
-                          <div style={{
-                            fontSize: '0.95rem',
-                            fontWeight: 800,
-                            color: row.leadsTouched > 0 ? 'var(--accent-color, #2563eb)' : 'var(--text-secondary)'
-                          }}>
-                            {row.leadsTouched > 0 ? row.leadsTouched.toLocaleString('en-IN') : (row.updatesCount > 0 ? '0' : '—')}
-                          </div>
-                          <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', marginTop: '0.1rem' }}>
-                            {row.callingProcess?.applicable
-                              ? `${row.callingProcess.score} / 30 pts · ${row.leadsAssigned > 0 ? `${row.leadsAssigned.toLocaleString('en-IN')} assigned` : (row.updatesCount > 0 ? `${row.updatesCount} updates` : '0 assigned')}`
-                              : 'Exempt (No leads)'}
-                          </div>
-                        </td>
+                          {/* Leads Touched & Calling Score */}
+                          <td className="text-center px-2.5 py-2.5">
+                            <div className={`text-sm font-extrabold ${row.leadsTouched > 0 ? 'text-[var(--accent-color,#2563eb)]' : 'text-[var(--text-secondary)]'}`}>
+                              {row.leadsTouched > 0 ? row.leadsTouched.toLocaleString('en-IN') : (row.updatesCount > 0 ? '0' : '—')}
+                            </div>
+                            <div className="text-[11px] text-[var(--text-secondary)] mt-0.5">
+                              {row.callingProcess?.applicable
+                                ? `${row.callingProcess.score} / 30 pts · ${row.leadsAssigned > 0 ? `${row.leadsAssigned.toLocaleString('en-IN')} assigned` : (row.updatesCount > 0 ? `${row.updatesCount} updates` : '0 assigned')}`
+                                : 'Exempt (No leads)'}
+                            </div>
+                          </td>
 
-                        {/* Recruiter & Hiring Pipeline (30p) */}
-                        <td style={{ padding: '0.65rem 0.65rem' }}>
-                          <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.78rem' }}>
-                            {row.recruiterProcess?.applicable ? (row.recruiterProcess.metricText || 'No Candidates') : 'Exempt (Not a Recruiter)'}
-                          </div>
-                          <div style={{ fontSize: '0.68rem', color: row.recruiterProcess?.applicable && row.recruiterProcess.score > 0 ? 'var(--accent-color, #2563eb)' : 'var(--text-secondary)', fontWeight: 600 }}>
-                            {row.recruiterProcess?.applicable ? `${row.recruiterProcess.score} / ${row.recruiterProcess.max || 30} pts` : 'Exempt (Not scored)'}
-                          </div>
-                        </td>
+                          {/* Recruiter & Hiring Pipeline (30p) */}
+                          <td className="px-2.5 py-2.5">
+                            <div className="font-semibold text-[var(--text-primary)] text-xs">
+                              {row.recruiterProcess?.applicable ? (row.recruiterProcess.metricText || 'No Candidates') : 'Exempt (Not a Recruiter)'}
+                            </div>
+                            <div className={`text-[11px] font-semibold ${row.recruiterProcess?.applicable && row.recruiterProcess.score > 0 ? 'text-[var(--accent-color,#2563eb)]' : 'text-[var(--text-secondary)]'}`}>
+                              {row.recruiterProcess?.applicable ? `${row.recruiterProcess.score} / ${row.recruiterProcess.max || 30} pts` : 'Exempt (Not scored)'}
+                            </div>
+                          </td>
 
-                        {/* Follow-up / Requisitions */}
-                        <td style={{ padding: '0.65rem 0.65rem' }}>
-                          <div style={{
-                            fontWeight: 600, fontSize: '0.78rem',
-                            color: row.overdueFollowups > 0 ? '#dc2626' : 'var(--text-primary)'
-                          }}>
-                            {row.followupProcess.metricText || row.followupProcess.metric}
-                          </div>
-                          <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
-                            {row.followupProcess.score} / {row.followupProcess.max} pts
-                          </div>
-                        </td>
+                          {/* Follow-up / Requisitions */}
+                          <td className="px-2.5 py-2.5">
+                            <div className={`font-semibold text-xs ${row.overdueFollowups > 0 ? 'text-red-600' : 'text-[var(--text-primary)]'}`}>
+                              {row.followupProcess.metricText || row.followupProcess.metric}
+                            </div>
+                            <div className="text-[11px] text-[var(--text-secondary)] font-semibold">
+                              {row.followupProcess.score} / {row.followupProcess.max} pts
+                            </div>
+                          </td>
 
-                        {/* Checklists */}
-                        <td style={{ padding: '0.65rem 0.65rem' }}>
-                          <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.78rem' }}>
-                            {row.checklistProcess.applicable ? (row.checklistProcess.metricText || row.checklistProcess.metric) : 'Exempt (No slots)'}
-                          </div>
-                          <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
-                            {row.checklistProcess.applicable ? `${row.checklistProcess.score} / ${row.checklistProcess.max} pts` : 'Exempt (Not scored)'}
-                          </div>
-                        </td>
+                          {/* Checklists */}
+                          <td className="px-2.5 py-2.5">
+                            <div className="font-semibold text-[var(--text-primary)] text-xs">
+                              {row.checklistProcess.applicable ? (row.checklistProcess.metricText || row.checklistProcess.metric) : 'Exempt (No slots)'}
+                            </div>
+                            <div className="text-[11px] text-[var(--text-secondary)] font-semibold">
+                              {row.checklistProcess.applicable ? `${row.checklistProcess.score} / ${row.checklistProcess.max} pts` : 'Exempt (Not scored)'}
+                            </div>
+                          </td>
 
-                        {/* Tasks */}
-                        <td style={{ padding: '0.65rem 0.65rem' }}>
-                          <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.78rem' }}>
-                            {row.taskProcess.applicable ? (row.taskProcess.metricText || row.taskProcess.metric) : 'Exempt (No tasks)'}
-                          </div>
-                          <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
-                            {row.taskProcess.applicable ? `${row.taskProcess.score} / ${row.taskProcess.max} pts` : 'Exempt (Not scored)'}
-                          </div>
-                        </td>
+                          {/* Tasks */}
+                          <td className="px-2.5 py-2.5">
+                            <div className="font-semibold text-[var(--text-primary)] text-xs">
+                              {row.taskProcess.applicable ? (row.taskProcess.metricText || row.taskProcess.metric) : 'Exempt (No tasks)'}
+                            </div>
+                            <div className="text-[11px] text-[var(--text-secondary)] font-semibold">
+                              {row.taskProcess.applicable ? `${row.taskProcess.score} / ${row.taskProcess.max} pts` : 'Exempt (Not scored)'}
+                            </div>
+                          </td>
 
-                        {/* Attendance */}
-                        <td style={{ padding: '0.65rem 0.65rem' }}>
-                          <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.78rem' }}>
-                            {row.attendanceProcess.metricText || row.attendanceProcess.metric}
-                          </div>
-                          <div style={{ fontSize: '0.68rem', color: row.attendanceProcess.score >= 7 ? '#16a34a' : 'var(--text-secondary)', fontWeight: 600 }}>
-                            {row.attendanceProcess.score} / {row.attendanceProcess.max} pts
-                          </div>
-                        </td>
-                      </tr>
-                    ))
+                          {/* Attendance */}
+                          <td className="px-2.5 py-2.5">
+                            <div className="font-semibold text-[var(--text-primary)] text-xs">
+                              {row.attendanceProcess.metricText || row.attendanceProcess.metric}
+                            </div>
+                            <div className={`text-[11px] font-semibold ${row.attendanceProcess.score >= 7 ? 'text-emerald-600' : 'text-[var(--text-secondary)]'}`}>
+                              {row.attendanceProcess.score} / {row.attendanceProcess.max} pts
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table></MobileTableView>
@@ -2310,73 +2375,70 @@ export default function AnalyticsDashboard({
       {/* 📋 TAB 3: DELEGATION TASKS DASHBOARD                                      */}
       {/* ========================================================================= */}
       {activeTab === 'delegation' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+        <div className="flex flex-col gap-5">
           {/* Header Metric Cards */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 160px), 1fr))', gap: '1rem' }}>
-            <div className="card" style={{ padding: '1rem', borderLeft: '4px solid #8b5cf6' }}>
-              <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Total Tasks</div>
-              <div style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--text-primary)', margin: '0.3rem 0' }}>{delegation.total}</div>
-              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>In current scope</div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3.5">
+            <div className="card an-card-hover p-4 border-l-4 border-l-purple-500 rounded-xl bg-[var(--bg-surface)] shadow-sm">
+              <div className="text-[11px] font-bold text-[var(--text-secondary)] uppercase tracking-wider">Total Tasks</div>
+              <div className="text-3xl font-extrabold text-[var(--text-primary)] my-1 leading-none">{delegation.total}</div>
+              <div className="text-xs text-[var(--text-secondary)]">In current scope</div>
             </div>
 
-            <div className="card" style={{ padding: '1rem', borderLeft: '4px solid #3b82f6' }}>
-              <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>In Progress / Pending</div>
-              <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#3b82f6', margin: '0.3rem 0' }}>{delegation.pending + delegation.inProgress}</div>
-              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>Active execution</div>
+            <div className="card an-card-hover p-4 border-l-4 border-l-blue-500 rounded-xl bg-[var(--bg-surface)] shadow-sm">
+              <div className="text-[11px] font-bold text-[var(--text-secondary)] uppercase tracking-wider">In Progress / Active</div>
+              <div className="text-3xl font-extrabold text-blue-600 my-1 leading-none">
+                {delegation.active !== undefined ? delegation.active : Math.max(0, delegation.total - delegation.completed)}
+              </div>
+              <div className="text-xs text-[var(--text-secondary)]">
+                {(delegation.inProgress || 0)} In-Progress · {(delegation.pending || 0)} Pending{(delegation.submitted ? ` · ${delegation.submitted} Review` : '')}{(delegation.reopened ? ` · ${delegation.reopened} Reopened` : '')}
+              </div>
             </div>
 
-            <div className="card" style={{ padding: '1rem', borderLeft: '4px solid #10b981' }}>
-              <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Completed</div>
-              <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#10b981', margin: '0.3rem 0' }}>{delegation.completed}</div>
-              <div style={{ fontSize: '0.72rem', color: '#15803d', fontWeight: 600 }}>
+            <div className="card an-card-hover p-4 border-l-4 border-l-emerald-500 rounded-xl bg-[var(--bg-surface)] shadow-sm">
+              <div className="text-[11px] font-bold text-[var(--text-secondary)] uppercase tracking-wider">Completed</div>
+              <div className="text-3xl font-extrabold text-emerald-600 my-1 leading-none">{delegation.completed}</div>
+              <div className="text-xs text-emerald-700 font-semibold">
                 {delegation.total > 0 ? `${Math.round((delegation.completed / delegation.total) * 100)}% Done` : '0%'}
               </div>
             </div>
 
-            <div className="card" style={{ padding: '1rem', borderLeft: `4px solid ${delegation.overdue > 0 ? '#ef4444' : '#10b981'}` }}>
-              <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Overdue Tasks</div>
-              <div style={{ fontSize: '1.8rem', fontWeight: 800, color: delegation.overdue > 0 ? '#dc2626' : '#10b981', margin: '0.3rem 0' }}>{delegation.overdue}</div>
-              <div style={{ fontSize: '0.72rem', color: delegation.overdue > 0 ? '#dc2626' : '#15803d', fontWeight: 600 }}>
+            <div className={`card an-card-hover p-4 border-l-4 ${delegation.overdue > 0 ? 'border-l-red-500' : 'border-l-emerald-500'} rounded-xl bg-[var(--bg-surface)] shadow-sm`}>
+              <div className="text-[11px] font-bold text-[var(--text-secondary)] uppercase tracking-wider">Overdue Tasks</div>
+              <div className={`text-3xl font-extrabold my-1 leading-none ${delegation.overdue > 0 ? 'text-red-600' : 'text-emerald-600'}`}>{delegation.overdue}</div>
+              <div className={`text-xs font-semibold ${delegation.overdue > 0 ? 'text-red-600' : 'text-emerald-700'}`}>
                 {delegation.overdue > 0 ? 'Action required' : 'All on time'}
               </div>
             </div>
 
-            <div className="card" style={{ padding: '1rem', borderLeft: '4px solid #f59e0b' }}>
-              <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Priority Split</div>
-              <div style={{ fontSize: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.25rem', marginTop: '0.4rem' }}>
-                <span style={{ color: '#dc2626', fontWeight: 700 }}>🔴 High: {delegation.priorityBreakdown?.high || 0}</span>
-                <span style={{ color: '#d97706', fontWeight: 600 }}>🟡 Medium: {delegation.priorityBreakdown?.medium || 0}</span>
-                <span style={{ color: '#16a34a', fontWeight: 600 }}>🟢 Low: {delegation.priorityBreakdown?.low || 0}</span>
+            <div className="card an-card-hover p-4 border-l-4 border-l-amber-500 rounded-xl bg-[var(--bg-surface)] shadow-sm">
+              <div className="text-[11px] font-bold text-[var(--text-secondary)] uppercase tracking-wider">Priority Split</div>
+              <div className="text-xs flex flex-col gap-1 mt-2">
+                <span className="text-red-600 font-bold">🔴 High: {delegation.priorityBreakdown?.high || 0}</span>
+                <span className="text-amber-600 font-semibold">🟡 Medium: {delegation.priorityBreakdown?.medium || 0}</span>
+                <span className="text-emerald-600 font-semibold">🟢 Low: {delegation.priorityBreakdown?.low || 0}</span>
               </div>
             </div>
           </div>
 
           {/* Task List Table */}
-          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-            <div style={{ padding: '0.85rem 1.15rem', borderBottom: '1px solid var(--border-light)', backgroundColor: 'var(--th-bg)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+          <div className="card an-card-hover p-0 overflow-hidden rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)] shadow-sm">
+            <div className="px-4.5 py-3 border-b border-[var(--border-light)] bg-[var(--th-bg)] flex justify-between items-center flex-wrap gap-2">
               <div>
-                <h4 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 700 }}>Recent Delegated Tasks ({delegationTasksList.length})</h4>
-                <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>Status & Deadline Tracking</span>
+                <h4 className="m-0 text-sm font-bold text-[var(--text-primary)]">Recent Delegated Tasks ({delegationTasksList.length})</h4>
+                <span className="text-xs text-[var(--text-secondary)]">Status & Deadline Tracking</span>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <div className="flex items-center gap-2">
                 <input
                   type="text"
                   placeholder="Filter tasks..."
                   value={taskSearch}
                   onChange={(e) => setTaskSearch(e.target.value)}
-                  style={{
-                    padding: '0.35rem 0.65rem', fontSize: '0.78rem', borderRadius: '6px',
-                    border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-primary)', color: 'var(--text-primary)'
-                  }}
+                  className="px-2.5 py-1.5 text-xs rounded-lg border border-[var(--border-light)] bg-[var(--bg-primary)] text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--accent-color)]"
                 />
                 <button
                   onClick={() => onNavigateTab?.('delegation')}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.35rem 0.75rem',
-                    borderRadius: '6px', fontSize: '0.78rem', fontWeight: 600, backgroundColor: 'var(--accent-color)',
-                    color: '#fff', border: 'none', cursor: 'pointer'
-                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-500/10 text-[var(--accent-color,#2563eb)] border border-[var(--accent-color,#2563eb)]/30 cursor-pointer hover:bg-blue-500/20 transition-colors shadow-xs"
                 >
                   Open Task Manager <ArrowRight size={12} />
                 </button>
@@ -2384,66 +2446,53 @@ export default function AnalyticsDashboard({
             </div>
 
             {delegationTasksList.length === 0 ? (
-              <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+              <div className="p-8 text-center text-[var(--text-secondary)] text-xs">
                 No tasks found for this scope.
               </div>
             ) : (
-              <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 280px)', minHeight: '380px', width: '100%', position: 'relative' }}>
-                <MobileTableView id="AnalyticsDashboard-3"><table style={{ width: '100%', minWidth: '600px', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.83rem' }}>
-                  <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)' }}>
-                    <tr style={{ backgroundColor: 'var(--th-bg)' }}>
-                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>Code</th>
-                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>Task Title</th>
-                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'center', padding: '0.6rem 0.65rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>Priority</th>
-                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>Assigned To</th>
-                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>Deadline</th>
-                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'center', padding: '0.6rem 0.65rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>Status</th>
+              <div className="overflow-auto max-h-[calc(100vh-280px)] min-h-[380px] w-full relative">
+                <MobileTableView id="AnalyticsDashboard-3" hideToggle><table className="w-full min-w-[650px] border-separate border-spacing-0 text-xs">
+                  <thead className="sticky top-0 z-10 bg-[var(--th-bg)]">
+                    <tr className="bg-[var(--th-bg)]">
+                      <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--text-secondary)] text-[11px] font-semibold whitespace-nowrap">Code</th>
+                      <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--text-secondary)] text-[11px] font-semibold whitespace-nowrap">Task Title</th>
+                      <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-2.5 py-2.5 text-[var(--text-secondary)] text-[11px] font-semibold whitespace-nowrap">Priority</th>
+                      <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--text-secondary)] text-[11px] font-semibold whitespace-nowrap">Assigned To</th>
+                      <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--text-secondary)] text-[11px] font-semibold whitespace-nowrap">Deadline</th>
+                      <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-2.5 py-2.5 text-[var(--text-secondary)] text-[11px] font-semibold whitespace-nowrap">Status</th>
                     </tr>
                   </thead>
                   <tbody>
                     {delegationTasksList.map(task => (
-                      <tr key={task.id} style={{ borderBottom: '1px solid var(--border-light)' }}>
-                        <td style={{ padding: '0.6rem 0.85rem' }}>
-                          <div style={{ fontWeight: 700, color: 'var(--text-secondary)', fontSize: '0.75rem' }}>
+                      <tr key={task.id} className="border-b border-[var(--border-light)] hover:bg-[var(--th-bg)] transition-colors">
+                        <td className="px-3.5 py-2.5">
+                          <div className="font-bold text-[var(--text-secondary)] text-xs">
                             {task.task_code || '—'}
                           </div>
                           {task.tenant_code && (
-                            <span style={{
-                              fontSize: '0.62rem',
-                              fontWeight: 700,
-                              padding: '0.05rem 0.3rem',
-                              borderRadius: '3px',
-                              backgroundColor: 'var(--th-bg)',
-                              color: 'var(--text-secondary)',
-                              marginTop: '0.15rem',
-                              display: 'inline-block'
-                            }}>
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[var(--th-bg)] text-[var(--text-secondary)] mt-0.5 inline-block border border-[var(--border-light)]">
                               {task.tenant_code}
                             </span>
                           )}
                         </td>
-                        <td style={{ padding: '0.6rem 0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>{task.title}</td>
-                        <td style={{ textAlign: 'center', padding: '0.6rem 0.65rem' }}>
-                          <span style={{
-                            fontSize: '0.68rem', fontWeight: 700, padding: '0.15rem 0.45rem', borderRadius: '4px',
-                            backgroundColor: task.priority === 'HIGH' || task.priority === 'URGENT' ? '#fee2e2' : task.priority === 'MEDIUM' ? '#fef3c7' : '#dcfce7',
-                            color: task.priority === 'HIGH' || task.priority === 'URGENT' ? '#dc2626' : task.priority === 'MEDIUM' ? '#b45309' : '#15803d'
-                          }}>
+                        <td className="px-3.5 py-2.5 font-semibold text-[var(--text-primary)]">{task.title}</td>
+                        <td className="text-center px-2.5 py-2.5">
+                          <span className={`text-[11px] font-bold px-2 py-0.5 rounded border ${
+                            task.priority === 'HIGH' || task.priority === 'URGENT' ? 'bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/25' : task.priority === 'MEDIUM' ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/25' : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/25'
+                          }`}>
                             {task.priority}
                           </span>
                         </td>
-                        <td style={{ padding: '0.6rem 0.85rem', color: 'var(--text-secondary)' }}>{task.assigned_to_name || task.assigned_to_email}</td>
-                        <td style={{ padding: '0.6rem 0.85rem', whiteSpace: 'nowrap' }}>
-                          {task.deadline ? new Date(task.deadline).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '—'}
-                          {task.is_overdue && <span style={{ color: '#dc2626', fontWeight: 700, marginLeft: '0.4rem' }}>🚨 Overdue</span>}
+                        <td className="px-3.5 py-2.5 text-[var(--text-secondary)]">{task.assigned_to_name || task.assigned_to_email}</td>
+                        <td className="px-3.5 py-2.5 whitespace-nowrap">
+                          {task.deadline ? new Date(task.deadline).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
+                          {task.is_overdue && <span className="text-red-600 dark:text-red-400 font-bold ml-1.5">🚨 Overdue</span>}
                         </td>
-                        <td style={{ textAlign: 'center', padding: '0.6rem 0.65rem' }}>
-                          <span style={{
-                            fontSize: '0.7rem', fontWeight: 700, padding: '0.2rem 0.5rem', borderRadius: '12px',
-                            backgroundColor: task.status === 'COMPLETED' ? '#dcfce7' : task.status === 'IN_PROGRESS' ? '#dbeafe' : '#f1f5f9',
-                            color: task.status === 'COMPLETED' ? '#15803d' : task.status === 'IN_PROGRESS' ? '#2563eb' : '#475569'
-                          }}>
-                            {task.status}
+                        <td className="text-center px-2.5 py-2.5">
+                          <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border whitespace-nowrap ${
+                            task.status === 'COMPLETED' ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/25' : task.status === 'IN_PROGRESS' ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/25' : task.status === 'SUBMITTED' ? 'bg-purple-500/15 text-purple-600 dark:text-purple-400 border-purple-500/25' : task.status === 'REOPENED' ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/25' : 'bg-slate-500/15 text-slate-600 dark:text-slate-300 border-slate-500/25'
+                          }`}>
+                            {(task.status || '').replace(/_/g, ' ')}
                           </span>
                         </td>
                       </tr>
@@ -2460,77 +2509,69 @@ export default function AnalyticsDashboard({
       {/* ✅ TAB 4: DAILY CHECKLISTS DASHBOARD                                      */}
       {/* ========================================================================= */}
       {activeTab === 'checklist' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+        <div className="flex flex-col gap-5">
           {/* Header Metric Cards */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 170px), 1fr))', gap: '1rem' }}>
-            <div className="card" style={{ padding: '1rem', borderLeft: '4px solid #10b981' }}>
-              <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Scheduled Slots</div>
-              <div style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--text-primary)', margin: '0.3rem 0' }}>
-                {dashboardSummaries.checklistSummary?.totalSlots || checklists.totalSlots}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+            <div className="card an-card-hover p-4 border-l-4 border-l-emerald-500 rounded-xl bg-[var(--bg-surface)] shadow-sm">
+              <div className="text-[11px] font-bold text-[var(--text-secondary)] uppercase tracking-wider">Scheduled Slots</div>
+              <div className="text-3xl font-extrabold text-[var(--text-primary)] my-1 leading-none">
+                {checklistAggregates.assignedTotal}
               </div>
-              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>Daily slots today</div>
-            </div>
-
-            <div className="card" style={{ padding: '1rem', borderLeft: '4px solid #16a34a' }}>
-              <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Completed</div>
-              <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#16a34a', margin: '0.3rem 0' }}>
-                {dashboardSummaries.checklistSummary?.completed ?? checklists.completed}
-              </div>
-              <div style={{ fontSize: '0.72rem', color: '#15803d', fontWeight: 600 }}>
-                {dashboardSummaries.checklistSummary?.complianceRate || checklists.complianceRate}% Compliance
+              <div className="text-xs text-[var(--text-secondary)]">
+                {checklistAggregates.distinctSlots} unique slot templates{checklistAggregates.workingDays > 1 ? ` · ${checklistAggregates.workingDays} working days` : ''}
               </div>
             </div>
 
-            <div className="card" style={{ padding: '1rem', borderLeft: '4px solid #f59e0b' }}>
-              <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Pending Slots</div>
-              <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#f59e0b', margin: '0.3rem 0' }}>
-                {dashboardSummaries.checklistSummary?.pending ?? checklists.pending}
+            <div className="card an-card-hover p-4 border-l-4 border-l-green-600 rounded-xl bg-[var(--bg-surface)] shadow-sm">
+              <div className="text-[11px] font-bold text-[var(--text-secondary)] uppercase tracking-wider">Completed</div>
+              <div className="text-3xl font-extrabold text-emerald-600 my-1 leading-none">
+                {checklistAggregates.completedTotal}
               </div>
-              <div style={{ fontSize: '0.72rem', color: '#b45309', fontWeight: 600 }}>Awaiting submission</div>
+              <div className="text-xs text-emerald-700 font-semibold">
+                {checklistAggregates.compliance}% Compliance
+              </div>
             </div>
 
-            <div className="card" style={{ padding: '1rem', borderLeft: '4px solid #ef4444' }}>
-              <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Completed Late</div>
-              <div style={{ fontSize: '1.8rem', fontWeight: 800, color: (dashboardSummaries.checklistSummary?.late || checklists.completedLate) > 0 ? '#dc2626' : '#16a34a', margin: '0.3rem 0' }}>
-                {dashboardSummaries.checklistSummary?.late || checklists.completedLate}
+            <div className="card an-card-hover p-4 border-l-4 border-l-amber-500 rounded-xl bg-[var(--bg-surface)] shadow-sm">
+              <div className="text-[11px] font-bold text-[var(--text-secondary)] uppercase tracking-wider">Pending Slots</div>
+              <div className="text-3xl font-extrabold text-amber-500 my-1 leading-none">
+                {checklistAggregates.pendingTotal}
               </div>
-              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>Past deadline cutoff</div>
+              <div className="text-xs text-amber-700 font-semibold">Awaiting submission</div>
+            </div>
+
+            <div className="card an-card-hover p-4 border-l-4 border-l-red-500 rounded-xl bg-[var(--bg-surface)] shadow-sm">
+              <div className="text-[11px] font-bold text-[var(--text-secondary)] uppercase tracking-wider">Completed Late</div>
+              <div className={`text-3xl font-extrabold my-1 leading-none ${checklistAggregates.completedLate > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                {checklistAggregates.completedLate}
+              </div>
+              <div className="text-xs text-[var(--text-secondary)]">Past deadline cutoff</div>
             </div>
           </div>
 
           {/* Checklist Dual View Selector & Actions */}
-          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-            <div style={{
-              padding: '0.85rem 1.15rem', borderBottom: '1px solid var(--border-light)',
-              backgroundColor: 'var(--th-bg)', display: 'flex', justifyContent: 'space-between',
-              alignItems: 'center', flexWrap: 'wrap', gap: '0.65rem'
-            }}>
+          <div className="card an-card-hover p-0 overflow-hidden rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)] shadow-sm">
+            <div className="px-4.5 py-3 border-b border-[var(--border-light)] bg-[var(--th-bg)] flex justify-between items-center flex-wrap gap-2.5">
               {/* Toggle: By Employee vs By Slots */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <div style={{ display: 'flex', backgroundColor: 'var(--bg-primary)', padding: '0.18rem', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
+              <div className="flex items-center gap-2">
+                <div className="flex bg-[var(--bg-primary)] p-1 rounded-lg border border-[var(--border-light)]">
                   <button
                     onClick={() => setChecklistViewMode('BY_EMPLOYEE')}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: '0.35rem',
-                      padding: '0.35rem 0.75rem', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 600,
-                      border: 'none', cursor: 'pointer',
-                      backgroundColor: checklistViewMode === 'BY_EMPLOYEE' ? 'var(--accent-color)' : 'transparent',
-                      color: checklistViewMode === 'BY_EMPLOYEE' ? '#fff' : 'var(--text-primary)',
-                      transition: 'all 0.15s'
-                    }}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold cursor-pointer transition-all duration-150 ${
+                      checklistViewMode === 'BY_EMPLOYEE'
+                        ? 'bg-blue-500/10 text-[var(--accent-color,#2563eb)] font-bold border border-[var(--accent-color,#2563eb)]/30 shadow-xs'
+                        : 'bg-transparent text-[var(--text-primary)] hover:bg-[var(--th-bg)] border border-transparent'
+                    }`}
                   >
                     <Users size={13} /> Team Status ({employeeChecklistMatrix.length})
                   </button>
                   <button
                     onClick={() => setChecklistViewMode('BY_SLOTS')}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: '0.35rem',
-                      padding: '0.35rem 0.75rem', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 600,
-                      border: 'none', cursor: 'pointer',
-                      backgroundColor: checklistViewMode === 'BY_SLOTS' ? 'var(--accent-color)' : 'transparent',
-                      color: checklistViewMode === 'BY_SLOTS' ? '#fff' : 'var(--text-primary)',
-                      transition: 'all 0.15s'
-                    }}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold cursor-pointer transition-all duration-150 ${
+                      checklistViewMode === 'BY_SLOTS'
+                        ? 'bg-blue-500/10 text-[var(--accent-color,#2563eb)] font-bold border border-[var(--accent-color,#2563eb)]/30 shadow-xs'
+                        : 'bg-transparent text-[var(--text-primary)] hover:bg-[var(--th-bg)] border border-transparent'
+                    }`}
                   >
                     <ClipboardList size={13} /> All Slots ({checklistItemsList.length})
                   </button>
@@ -2538,25 +2579,17 @@ export default function AnalyticsDashboard({
               </div>
 
               {/* Search & Direct Link */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <div className="flex items-center gap-2">
                 <input
                   type="text"
                   placeholder={checklistViewMode === 'BY_EMPLOYEE' ? "Search team member..." : "Filter checklist title..."}
                   value={checklistSearch}
                   onChange={(e) => setChecklistSearch(e.target.value)}
-                  style={{
-                    padding: '0.35rem 0.65rem', fontSize: '0.78rem', borderRadius: '6px',
-                    border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-primary)', color: 'var(--text-primary)',
-                    minWidth: '180px'
-                  }}
+                  className="px-2.5 py-1.5 text-xs rounded-lg border border-[var(--border-light)] bg-[var(--bg-primary)] text-[var(--text-primary)] min-w-[180px] focus:outline-none focus:ring-1 focus:ring-[var(--accent-color)]"
                 />
                 <button
                   onClick={() => onNavigateTab?.('checklist')}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.35rem 0.75rem',
-                    borderRadius: '6px', fontSize: '0.78rem', fontWeight: 600, backgroundColor: '#10b981',
-                    color: '#fff', border: 'none', cursor: 'pointer'
-                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 cursor-pointer hover:bg-emerald-500/20 transition-colors shadow-xs"
                 >
                   Open Checklist Module <ArrowRight size={12} />
                 </button>
@@ -2565,17 +2598,17 @@ export default function AnalyticsDashboard({
 
             {/* VIEW 1: Team Members Checklist Status Matrix */}
             {checklistViewMode === 'BY_EMPLOYEE' && (
-              <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 280px)', minHeight: '380px', width: '100%', position: 'relative' }}>
-                <MobileTableView id="AnalyticsDashboard-4"><table style={{ width: '100%', minWidth: '650px', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.83rem' }}>
-                  <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)' }}>
-                    <tr style={{ backgroundColor: 'var(--th-bg)' }}>
-                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>Staff Member</th>
-                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>Department</th>
-                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'center', padding: '0.6rem 0.65rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>Assigned Slots</th>
-                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'center', padding: '0.6rem 0.65rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>Completed</th>
-                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'center', padding: '0.6rem 0.65rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>Pending</th>
-                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'center', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600, width: '130px' }}>Compliance</th>
-                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'center', padding: '0.6rem 0.65rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>Status</th>
+              <div className="overflow-auto max-h-[calc(100vh-280px)] min-h-[380px] w-full relative">
+                <MobileTableView id="AnalyticsDashboard-4" hideToggle><table className="w-full min-w-[760px] border-separate border-spacing-0 text-xs">
+                  <thead className="sticky top-0 z-10 bg-[var(--th-bg)]">
+                    <tr className="bg-[var(--th-bg)]">
+                      <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--text-secondary)] text-[11px] font-semibold whitespace-nowrap">Staff Member</th>
+                      <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--text-secondary)] text-[11px] font-semibold whitespace-nowrap">Department</th>
+                      <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3 py-2.5 text-[var(--text-secondary)] text-[11px] font-semibold whitespace-nowrap">Assigned Slots</th>
+                      <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3 py-2.5 text-[var(--text-secondary)] text-[11px] font-semibold whitespace-nowrap">Completed</th>
+                      <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3 py-2.5 text-[var(--text-secondary)] text-[11px] font-semibold whitespace-nowrap">Pending</th>
+                      <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3.5 py-2.5 text-[var(--text-secondary)] text-[11px] font-semibold whitespace-nowrap min-w-[120px]">Compliance</th>
+                      <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3 py-2.5 text-[var(--text-secondary)] text-[11px] font-semibold whitespace-nowrap">Status</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2590,46 +2623,50 @@ export default function AnalyticsDashboard({
                             setSelectedEmployeeEmails([row.empEmail]);
                           }
                         }}
-                        style={{
-                          borderBottom: '1px solid var(--border-light)', cursor: 'pointer',
-                          backgroundColor: selectedEmployeeEmails.some(e => e.toLowerCase() === (row.empEmail || '').toLowerCase()) ? 'var(--th-bg)' : 'transparent',
-                          transition: 'background 0.15s'
-                        }}
+                        className={`border-b border-[var(--border-light)] cursor-pointer transition-colors ${
+                          selectedEmployeeEmails.some(e => e.toLowerCase() === (row.empEmail || '').toLowerCase())
+                            ? 'bg-[var(--th-bg)]'
+                            : 'hover:bg-[var(--th-bg)]'
+                        }`}
                       >
-                        <td style={{ padding: '0.6rem 0.85rem' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                            <div style={{
-                              width: '28px', height: '28px', borderRadius: '50%', flexShrink: 0,
-                              backgroundColor: COLORS[idx % COLORS.length], color: 'white',
-                              display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.68rem', fontWeight: 700
-                            }}>
+                        <td className="px-3.5 py-2.5">
+                          <div className="flex items-center gap-2">
+                            <div
+                              className="w-7 h-7 rounded-full shrink-0 text-white flex items-center justify-center text-[10px] font-bold"
+                              style={{ backgroundColor: COLORS[idx % COLORS.length] }}
+                            >
                               {row.empName.substring(0, 2).toUpperCase()}
                             </div>
                             <div>
-                              <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{row.empName}</div>
-                              <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{row.empEmail}</div>
+                              <div className="font-semibold text-[var(--text-primary)]">{row.empName}</div>
+                              <div className="text-[11px] text-[var(--text-secondary)]">{row.empEmail}</div>
                             </div>
                           </div>
                         </td>
-                        <td style={{ padding: '0.6rem 0.85rem', color: 'var(--text-secondary)' }}>{row.department}</td>
-                        <td style={{ textAlign: 'center', padding: '0.6rem 0.65rem', fontWeight: 700 }}>{row.total}</td>
-                        <td style={{ textAlign: 'center', padding: '0.6rem 0.65rem', fontWeight: 700, color: '#16a34a' }}>{row.completed}</td>
-                        <td style={{ textAlign: 'center', padding: '0.6rem 0.65rem', fontWeight: 700, color: row.pending > 0 ? '#d97706' : '#16a34a' }}>
+                        <td className="px-3.5 py-2.5 text-[var(--text-secondary)]">{row.department}</td>
+                        <td className="text-center px-2.5 py-2.5">
+                          <div className="font-bold text-[var(--text-primary)]">{row.total}</div>
+                          {row.workingDays > 1 && (
+                            <div className="text-[10px] text-[var(--text-secondary)]">{row.totalPerDay}/day</div>
+                          )}
+                        </td>
+                        <td className="text-center px-2.5 py-2.5 font-bold text-emerald-600">{row.completed}</td>
+                        <td className={`text-center px-2.5 py-2.5 font-bold ${row.pending > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
                           {row.pending > 0 ? row.pending : '0'}
                         </td>
-                        <td style={{ padding: '0.6rem 0.85rem' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                            <div style={{ flex: 1, height: '6px', backgroundColor: 'var(--border-light)', borderRadius: '3px', overflow: 'hidden' }}>
-                              <div style={{ width: `${row.rate}%`, height: '100%', backgroundColor: row.rate === 100 ? '#10b981' : row.rate > 0 ? '#3b82f6' : '#f59e0b' }} />
+                        <td className="px-3.5 py-2.5">
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1 h-1.5 bg-[var(--border-light)] rounded-full overflow-hidden">
+                              <div className={`h-full rounded-full ${row.rate === 100 ? 'bg-emerald-500' : row.rate > 0 ? 'bg-blue-500' : 'bg-amber-500'}`} style={{ width: `${row.rate}%` }} />
                             </div>
-                            <span style={{ fontSize: '0.72rem', fontWeight: 700, minWidth: '32px' }}>{row.rate}%</span>
+                            <span className="text-[11px] font-bold min-w-[32px]">{row.rate}%</span>
                           </div>
                         </td>
-                        <td style={{ textAlign: 'center', padding: '0.6rem 0.65rem' }}>
-                          <span style={{
-                            fontSize: '0.7rem', fontWeight: 700, padding: '0.2rem 0.55rem', borderRadius: '12px',
-                            backgroundColor: row.statusBg, color: row.statusColor, whiteSpace: 'nowrap'
-                          }}>
+                        <td className="text-center px-2.5 py-2.5">
+                          <span
+                            className="text-[11px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap"
+                            style={{ backgroundColor: row.statusBg, color: row.statusColor }}
+                          >
                             {row.statusLabel}
                           </span>
                         </td>
@@ -2642,47 +2679,45 @@ export default function AnalyticsDashboard({
 
             {/* VIEW 2: Scheduled Slots Details */}
             {checklistViewMode === 'BY_SLOTS' && (
-              <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 280px)', minHeight: '380px', width: '100%', position: 'relative' }}>
+              <div className="overflow-auto max-h-[calc(100vh-280px)] min-h-[380px] w-full relative">
                 {checklistItemsList.length === 0 ? (
-                  <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+                  <div className="p-8 text-center text-[var(--text-secondary)] text-xs">
                     No checklist slots scheduled for today.
                   </div>
                 ) : (
-                  <MobileTableView id="AnalyticsDashboard-5"><table style={{ width: '100%', minWidth: '650px', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.83rem' }}>
-                    <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)' }}>
-                      <tr style={{ backgroundColor: 'var(--th-bg)' }}>
-                        <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>Slot ID</th>
-                        <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>Checklist Title</th>
-                        <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>Department</th>
-                        <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>Assigned To</th>
-                        <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'center', padding: '0.6rem 0.65rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>Due Time</th>
-                        <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'center', padding: '0.6rem 0.65rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>Status</th>
+                  <MobileTableView id="AnalyticsDashboard-5" hideToggle><table className="w-full min-w-[760px] border-separate border-spacing-0 text-xs">
+                    <thead className="sticky top-0 z-10 bg-[var(--th-bg)]">
+                      <tr className="bg-[var(--th-bg)]">
+                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--text-secondary)] text-[11px] font-semibold whitespace-nowrap">Slot ID</th>
+                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--text-secondary)] text-[11px] font-semibold whitespace-nowrap">Checklist Title</th>
+                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--text-secondary)] text-[11px] font-semibold whitespace-nowrap">Department</th>
+                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--text-secondary)] text-[11px] font-semibold whitespace-nowrap">Assigned To</th>
+                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3 py-2.5 text-[var(--text-secondary)] text-[11px] font-semibold whitespace-nowrap">Due Time</th>
+                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3 py-2.5 text-[var(--text-secondary)] text-[11px] font-semibold whitespace-nowrap">Status</th>
                       </tr>
                     </thead>
                     <tbody>
                       {checklistItemsList.map((item, idx) => (
-                        <tr key={item.id + (item.slot_id || '') + idx} style={{ borderBottom: '1px solid var(--border-light)' }}>
-                          <td style={{ padding: '0.6rem 0.85rem', fontWeight: 700, color: 'var(--accent-color)', fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
+                        <tr key={item.id + (item.slot_id || '') + idx} className="border-b border-[var(--border-light)] hover:bg-[var(--th-bg)] transition-colors">
+                          <td className="px-3.5 py-2.5 font-bold text-[var(--accent-color)] text-xs whitespace-nowrap">
                             {item.slot_id || `Slot ${idx + 1}`}
                           </td>
-                          <td style={{ padding: '0.6rem 0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                          <td className="px-3.5 py-2.5 font-semibold text-[var(--text-primary)]">
                             {item.title || item.base_title || 'Daily Operational Checklist'}
                           </td>
-                          <td style={{ padding: '0.6rem 0.85rem', color: 'var(--text-secondary)' }}>
+                          <td className="px-3.5 py-2.5 text-[var(--text-secondary)]">
                             {item.department || 'General'}
                           </td>
-                          <td style={{ padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.75rem' }}>
+                          <td className="px-3.5 py-2.5 text-[var(--text-secondary)] text-[11px]">
                             {item.assigned_type === 'ALL' ? '👥 All Team Staff' : (item.assigned_employee_email || 'General Staff')}
                           </td>
-                          <td style={{ textAlign: 'center', padding: '0.6rem 0.65rem', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                          <td className="text-center px-2.5 py-2.5 font-semibold whitespace-nowrap">
                             ⏰ {item.due_time || '18:00'}
                           </td>
-                          <td style={{ textAlign: 'center', padding: '0.6rem 0.65rem' }}>
-                            <span style={{
-                              fontSize: '0.7rem', fontWeight: 700, padding: '0.2rem 0.55rem', borderRadius: '12px',
-                              backgroundColor: item.status === 'COMPLETED' ? '#dcfce7' : item.status === 'PARTIAL' ? '#fef3c7' : '#fee2e2',
-                              color: item.status === 'COMPLETED' ? '#15803d' : item.status === 'PARTIAL' ? '#b45309' : '#dc2626'
-                            }}>
+                          <td className="text-center px-2.5 py-2.5">
+                            <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
+                              item.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-800' : item.status === 'PARTIAL' ? 'bg-amber-100 text-amber-800' : 'bg-red-100 text-red-600'
+                            }`}>
                               {item.status === 'COMPLETED' ? (item.isDelayed ? '✅ Done (Late)' : '✅ Completed') : '⏳ Pending'}
                             </span>
                           </td>
@@ -2700,107 +2735,187 @@ export default function AnalyticsDashboard({
       {/* ========================================================================= */}
       {/* 🏢 TAB 5: ATTENDANCE OPS DASHBOARD                                       */}
       {/* ========================================================================= */}
+      {/* 🎯 TAB 5: ATTENDANCE & TEAM ACTIVITY STATUS                               */}
+      {/* ========================================================================= */}
       {activeTab === 'attendance' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+        <div className="flex flex-col gap-5">
           {/* Header Metric Cards */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 170px), 1fr))', gap: '1rem' }}>
-            <div className="card" style={{ padding: '1rem', borderLeft: '4px solid #3b82f6' }}>
-              <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Approved Staff</div>
-              <div style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--text-primary)', margin: '0.3rem 0' }}>{attendanceStats.total}</div>
-              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>Active team members</div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="card an-card-hover p-4 border-l-4 border-blue-500 rounded-xl bg-[var(--bg-surface)] border-t border-r border-b border-[var(--border-light)] shadow-sm">
+              <div className="text-[0.72rem] font-bold text-[var(--text-secondary)] uppercase tracking-wider">Approved Staff</div>
+              <div className="text-2xl sm:text-3xl font-extrabold text-[var(--text-primary)] my-1">{attendanceStats.total}</div>
+              <div className="text-xs text-[var(--text-secondary)]">Active team members</div>
             </div>
 
-            <div className="card" style={{ padding: '1rem', borderLeft: '4px solid #10b981' }}>
-              <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Effective Present</div>
-              <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#10b981', margin: '0.3rem 0' }}>{attendanceStats.effectivePresent}</div>
-              <div style={{ fontSize: '0.72rem', color: '#15803d', fontWeight: 600 }}>{attendanceStats.effectivePercent}% Presence Rate</div>
+            <div className="card an-card-hover p-4 border-l-4 border-emerald-500 rounded-xl bg-[var(--bg-surface)] border-t border-r border-b border-[var(--border-light)] shadow-sm">
+              <div className="text-[0.72rem] font-bold text-[var(--text-secondary)] uppercase tracking-wider">
+                {isAttendanceRange ? 'Period Presence Rate' : 'Effective Present'}
+              </div>
+              <div className="text-2xl sm:text-3xl font-extrabold text-emerald-500 my-1">
+                {isAttendanceRange ? `${attendanceStats.effectivePercent}%` : attendanceStats.effectivePresent}
+              </div>
+              <div className="text-xs text-emerald-700 dark:text-emerald-400 font-semibold">
+                {isAttendanceRange ? `${attendanceStats.totalPresentLogs || 0} Total Present Logs` : `${attendanceStats.effectivePercent}% Presence Rate`}
+              </div>
             </div>
 
-            <div className="card" style={{ padding: '1rem', borderLeft: '4px solid #2563eb' }}>
-              <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>⚡ Active on CRM</div>
-              <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#2563eb', margin: '0.3rem 0' }}>{attendanceStats.crmActiveOnly}</div>
-              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>Working without punch</div>
+            <div className="card an-card-hover p-4 border-l-4 border-blue-600 rounded-xl bg-[var(--bg-surface)] border-t border-r border-b border-[var(--border-light)] shadow-sm">
+              <div className="text-[0.72rem] font-bold text-[var(--text-secondary)] uppercase tracking-wider">
+                {isAttendanceRange ? 'Working Days in Period' : '⚡ Active on CRM'}
+              </div>
+              <div className="text-2xl sm:text-3xl font-extrabold text-blue-600 dark:text-blue-400 my-1">
+                {isAttendanceRange ? `${attendanceWorkingDays} Days` : attendanceStats.crmActiveOnly}
+              </div>
+              <div className="text-xs text-[var(--text-secondary)]">
+                {isAttendanceRange ? 'Mon–Sat in selected period' : 'Working without punch'}
+              </div>
             </div>
 
-            <div className="card" style={{ padding: '1rem', borderLeft: '4px solid #ef4444' }}>
-              <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Absent</div>
-              <div style={{ fontSize: '1.8rem', fontWeight: 800, color: attendanceStats.absent > 0 ? '#dc2626' : '#16a34a', margin: '0.3rem 0' }}>{attendanceStats.absent}</div>
-              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>No punch or activity</div>
+            <div className="card an-card-hover p-4 border-l-4 border-red-500 rounded-xl bg-[var(--bg-surface)] border-t border-r border-b border-[var(--border-light)] shadow-sm">
+              <div className="text-[0.72rem] font-bold text-[var(--text-secondary)] uppercase tracking-wider">
+                {isAttendanceRange ? 'Active Punched Staff' : 'Absent'}
+              </div>
+              <div className={`text-2xl sm:text-3xl font-extrabold my-1 ${isAttendanceRange ? 'text-emerald-600 dark:text-emerald-400' : (attendanceStats.absent > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400')}`}>
+                {isAttendanceRange ? `${attendanceStats.punched} / ${attendanceStats.total}` : attendanceStats.absent}
+              </div>
+              <div className="text-xs text-[var(--text-secondary)]">
+                {isAttendanceRange ? `${attendanceStats.absent} Staff with zero punches` : 'No punch or activity'}
+              </div>
             </div>
           </div>
 
           {/* Attendance List Table */}
-          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-            <div style={{ padding: '0.85rem 1.15rem', borderBottom: '1px solid var(--border-light)', backgroundColor: 'var(--th-bg)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+          <div className="card p-0 overflow-hidden rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)] shadow-sm">
+            <div className="px-4 py-3 border-b border-[var(--border-light)] bg-[var(--th-bg)] flex justify-between items-center flex-wrap gap-2.5">
               <div>
-                <h4 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 700 }}>Today's Team Attendance & Activity Status</h4>
-                <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>Combines Web Terminal Punch with CRM Lead Activity</span>
+                <h4 className="m-0 text-sm font-bold text-[var(--text-primary)]">
+                  {isAttendanceRange ? `Team Attendance & Working Days Summary (${dateFilterLabel})` : "Today's Team Attendance & Activity Status"}
+                </h4>
+                <span className="text-xs text-[var(--text-secondary)]">
+                  {isAttendanceRange ? `Aggregated punch logs across ${attendanceWorkingDays} working days in selected period` : "Combines Web Terminal Punch with CRM Lead Activity"}
+                </span>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <div className="flex items-center gap-2">
                 <select
                   value={attendanceFilter}
                   onChange={(e) => setAttendanceFilter(e.target.value)}
-                  style={{
-                    padding: '0.35rem 0.65rem', fontSize: '0.78rem', borderRadius: '6px',
-                    border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-primary)', color: 'var(--text-primary)'
-                  }}
+                  className="px-2.5 py-1.5 text-xs rounded-md border border-[var(--border-light)] bg-[var(--bg-primary)] text-[var(--text-primary)] outline-none focus:ring-1 focus:ring-[var(--accent-color)]"
                 >
                   <option value="ALL">All Staff ({attendanceStats.total})</option>
-                  <option value="PRESENT">Punched Present ({attendanceStats.punched})</option>
+                  <option value="PRESENT">{isAttendanceRange ? `Active Staff (${attendanceStats.punched})` : `Punched Present (${attendanceStats.punched})`}</option>
                   <option value="CRM_ACTIVE">CRM Active Only ({attendanceStats.crmActiveOnly})</option>
-                  <option value="ABSENT">Absent ({attendanceStats.absent})</option>
+                  <option value="ABSENT">{isAttendanceRange ? `Zero Punches (${attendanceStats.absent})` : `Absent (${attendanceStats.absent})`}</option>
                 </select>
 
                 <button
                   onClick={() => onNavigateTab?.('attendance')}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.35rem 0.75rem',
-                    borderRadius: '6px', fontSize: '0.78rem', fontWeight: 600, backgroundColor: 'var(--accent-color)',
-                    color: '#fff', border: 'none', cursor: 'pointer'
-                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-500/10 text-[var(--accent-color,#2563eb)] border border-[var(--accent-color,#2563eb)]/30 cursor-pointer hover:bg-blue-500/20 transition-colors shadow-xs"
                 >
-                  Open Attendance Module <ArrowRight size={12} />
+                  <span>Open Attendance Module</span>
+                  <ArrowRight size={12} />
                 </button>
               </div>
             </div>
 
-            <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 280px)', minHeight: '380px', width: '100%', position: 'relative' }}>
-              <MobileTableView id="AnalyticsDashboard-6"><table style={{ width: '100%', minWidth: '600px', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.83rem' }}>
-                <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)' }}>
-                  <tr style={{ backgroundColor: 'var(--th-bg)' }}>
-                    <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>Staff Member</th>
-                    <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'center', padding: '0.6rem 0.65rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>Code</th>
-                    <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>Department</th>
-                    <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'center', padding: '0.6rem 0.65rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>In Time</th>
-                    <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'center', padding: '0.6rem 0.65rem', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600 }}>Status & Source</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredAttendance.map(row => (
-                    <tr key={row.email} style={{ borderBottom: '1px solid var(--border-light)' }}>
-                      <td style={{ padding: '0.6rem 0.85rem' }}>
-                        <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{row.empName}</div>
-                        <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{row.email}</div>
-                      </td>
-                      <td style={{ textAlign: 'center', padding: '0.6rem 0.65rem', fontWeight: 600, color: 'var(--text-secondary)' }}>{row.empCode}</td>
-                      <td style={{ padding: '0.6rem 0.85rem', color: 'var(--text-secondary)' }}>{row.department}</td>
-                      <td style={{ textAlign: 'center', padding: '0.6rem 0.65rem', fontWeight: 600 }}>
-                        {row.inTime || '—'}
-                      </td>
-                      <td style={{ textAlign: 'center', padding: '0.6rem 0.65rem' }}>
-                        <span style={{
-                          fontSize: '0.7rem', fontWeight: 700, padding: '0.2rem 0.55rem', borderRadius: '12px',
-                          backgroundColor: row.presenceStatus === 'PRESENT' ? '#dcfce7' : row.presenceStatus === 'CRM_ACTIVE' ? '#dbeafe' : '#fee2e2',
-                          color: row.statusColor
-                        }}>
-                          {row.statusLabel}
-                        </span>
-                      </td>
+            <div className="overflow-auto max-h-[calc(100vh-280px)] min-h-[380px] w-full relative">
+              <MobileTableView id="AnalyticsDashboard-6" hideToggle>
+                <table className="w-full min-w-[650px] border-separate border-spacing-0 text-xs">
+                  <thead className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)]">
+                    <tr className="bg-[var(--th-bg)]">
+                      <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--text-secondary)] text-[0.72rem] font-semibold whitespace-nowrap">Staff Member</th>
+                      <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3 py-2.5 text-[var(--text-secondary)] text-[0.72rem] font-semibold whitespace-nowrap">Code</th>
+                      <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--text-secondary)] text-[0.72rem] font-semibold whitespace-nowrap">Department</th>
+                      {isAttendanceRange ? (
+                        <>
+                          <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3 py-2.5 text-[var(--text-secondary)] text-[0.72rem] font-semibold whitespace-nowrap">Present Days</th>
+                          <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3 py-2.5 text-[var(--text-secondary)] text-[0.72rem] font-semibold whitespace-nowrap">Late / Half Day</th>
+                          <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3.5 py-2.5 text-[var(--text-secondary)] text-[0.72rem] font-semibold whitespace-nowrap min-w-[120px]">Attendance Rate</th>
+                          <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3 py-2.5 text-[var(--text-secondary)] text-[0.72rem] font-semibold whitespace-nowrap">Status & Health</th>
+                        </>
+                      ) : (
+                        <>
+                          <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3 py-2.5 text-[var(--text-secondary)] text-[0.72rem] font-semibold whitespace-nowrap">In Time</th>
+                          <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3 py-2.5 text-[var(--text-secondary)] text-[0.72rem] font-semibold whitespace-nowrap">Status & Source</th>
+                        </>
+                      )}
                     </tr>
-                  ))}
-                </tbody>
-              </table></MobileTableView>
+                  </thead>
+                  <tbody>
+                    {filteredAttendance.map(row => (
+                      <tr key={row.email} className="border-b border-[var(--border-light)] hover:bg-[var(--hover-bg,rgba(0,0,0,0.02))] transition-colors">
+                        <td className="px-3.5 py-2.5">
+                          <div className="font-semibold text-[var(--text-primary)]">{row.empName}</div>
+                          <div className="text-[0.7rem] text-[var(--text-secondary)]">{row.email}</div>
+                        </td>
+                        <td className="text-center px-3 py-2.5 font-semibold text-[var(--text-secondary)]">{row.empCode}</td>
+                        <td className="px-3.5 py-2.5 text-[var(--text-secondary)]">{row.department}</td>
+                        {isAttendanceRange ? (
+                          <>
+                            <td className="text-center px-3 py-2.5 font-bold text-[var(--text-primary)] whitespace-nowrap">
+                              {row.presentDays || 0} / {attendanceWorkingDays}d
+                            </td>
+                            <td className="text-center px-3 py-2.5 whitespace-nowrap text-xs">
+                              {row.lateDays > 0 && <span className="text-amber-600 font-semibold mr-1">{row.lateDays} Late</span>}
+                              {row.halfDays > 0 && <span className="text-orange-600 font-semibold">{row.halfDays} Half</span>}
+                              {(!row.lateDays && !row.halfDays) && <span className="text-[var(--text-secondary)]">—</span>}
+                            </td>
+                            <td className="px-3.5 py-2.5">
+                              <div className="flex items-center gap-2">
+                                <div className="flex-1 h-1.5 bg-[var(--border-light)] rounded-full overflow-hidden">
+                                  <div
+                                    className={`h-full rounded-full ${row.attendanceRate >= 80 ? 'bg-emerald-500' : row.attendanceRate >= 50 ? 'bg-blue-500' : row.attendanceRate > 0 ? 'bg-amber-500' : 'bg-red-500'}`}
+                                    style={{ width: `${row.attendanceRate || 0}%` }}
+                                  />
+                                </div>
+                                <span className="text-[11px] font-bold text-[var(--text-secondary)] w-8 text-right">
+                                  {row.attendanceRate || 0}%
+                                </span>
+                              </div>
+                            </td>
+                            <td className="text-center px-3 py-2.5">
+                              <span
+                                className="inline-block text-[0.7rem] font-bold px-2.5 py-0.5 rounded-full whitespace-nowrap"
+                                style={{
+                                  backgroundColor: (row.presentDays && row.presentDays > 0) ? 'rgba(16, 185, 129, 0.14)' : 'rgba(239, 68, 68, 0.14)',
+                                  color: (row.presentDays && row.presentDays > 0) ? '#16a34a' : '#dc2626',
+                                  border: `1px solid ${(row.presentDays && row.presentDays > 0) ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`
+                                }}
+                              >
+                                {row.statusLabel}
+                              </span>
+                            </td>
+                          </>
+                        ) : (
+                          <>
+                            <td className="text-center px-3 py-2.5 font-semibold text-[var(--text-primary)] whitespace-nowrap">
+                              {formatTimeIST(row.inTime)}
+                            </td>
+                            <td className="text-center px-3 py-2.5">
+                              <span
+                                className="inline-block text-[0.7rem] font-bold px-2.5 py-0.5 rounded-full whitespace-nowrap"
+                                style={{
+                                  backgroundColor: (row.presenceStatus === 'PRESENT' || row.presenceStatus === 'REGULARIZED') ? 'rgba(16, 185, 129, 0.14)'
+                                    : row.presenceStatus === 'CRM_ACTIVE' ? 'rgba(59, 130, 246, 0.14)'
+                                    : (row.presenceStatus === 'LATE' || row.presenceStatus === 'HALF_DAY') ? 'rgba(245, 158, 11, 0.14)'
+                                    : 'rgba(239, 68, 68, 0.14)',
+                                  color: row.statusColor,
+                                  border: `1px solid ${(row.presenceStatus === 'PRESENT' || row.presenceStatus === 'REGULARIZED') ? 'rgba(16, 185, 129, 0.3)'
+                                    : row.presenceStatus === 'CRM_ACTIVE' ? 'rgba(59, 130, 246, 0.3)'
+                                    : (row.presenceStatus === 'LATE' || row.presenceStatus === 'HALF_DAY') ? 'rgba(245, 158, 11, 0.3)'
+                                    : 'rgba(239, 68, 68, 0.3)'}`
+                                }}
+                              >
+                                {row.statusLabel}
+                              </span>
+                            </td>
+                          </>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </MobileTableView>
             </div>
           </div>
         </div>
@@ -2810,32 +2925,22 @@ export default function AnalyticsDashboard({
       {/* 🎯 TAB 6: LEAD DATA & PIPELINE DASHBOARD                                  */}
       {/* ========================================================================= */}
       {(activeTab === 'lead-data' || activeTab === 'pipeline') && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+        <div className="flex flex-col gap-5">
           {/* Header Action Banner */}
-          <div style={{
-            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.85rem',
-            padding: '1rem 1.25rem', backgroundColor: 'var(--bg-surface)', borderRadius: '12px',
-            border: '1px solid var(--border-light)'
-          }}>
+          <div className="flex justify-between items-center flex-wrap gap-3.5 p-4.5 bg-[var(--bg-surface)] rounded-xl border border-[var(--border-light)] shadow-sm">
             <div>
-              <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <Database size={18} style={{ color: 'var(--accent-color)' }} />
+              <h3 className="m-0 text-base font-bold flex items-center gap-2 text-[var(--text-primary)]">
+                <Database size={18} className="text-[var(--accent-color)]" />
                 Lead Data & Pipeline Analytics
               </h3>
-              <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+              <div className="text-xs text-[var(--text-secondary)] mt-1">
                 Total lead distribution across CRM sales stages, outreach touchpoints, and caller allocations
               </div>
             </div>
 
             <button
               onClick={() => onNavigateTab?.('leads')}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: '0.45rem',
-                padding: '0.5rem 1rem', borderRadius: '8px',
-                backgroundColor: 'var(--accent-color)', color: '#fff',
-                fontSize: '0.82rem', fontWeight: 600, border: 'none',
-                cursor: 'pointer', transition: 'opacity 0.15s ease'
-              }}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-500/10 text-[var(--accent-color,#2563eb)] border border-[var(--accent-color,#2563eb)]/30 text-xs font-bold cursor-pointer hover:bg-blue-500/20 transition-colors shadow-xs"
             >
               <span>Open Full Leads Database</span>
               <ArrowRight size={15} />
@@ -2843,7 +2948,7 @@ export default function AnalyticsDashboard({
           </div>
 
           {/* Quick Stats Grid */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 160px), 1fr))', gap: '0.85rem' }}>
+          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
             {[
               { label: isAllTime ? 'Total Leads in CRM' : `Leads Active (${dateFilterLabel})`, value: kpis.total, color: '#3b82f6', icon: Database },
               { label: isAllTime ? 'Fresh / New Leads' : 'New Leads Created', value: kpis.newLeads, color: '#06b6d4', icon: Zap },
@@ -2854,12 +2959,12 @@ export default function AnalyticsDashboard({
             ].map(card => {
               const Icon = card.icon;
               return (
-                <div key={card.label} className="card" style={{ padding: '0.9rem 1rem', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>{card.label}</span>
+                <div key={card.label} className="card an-card-hover p-3.5 flex flex-col gap-1.5 rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)] shadow-sm">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[11px] font-bold text-[var(--text-secondary)] uppercase tracking-wider">{card.label}</span>
                     <Icon size={14} style={{ color: card.color }} />
                   </div>
-                  <div style={{ fontSize: '1.5rem', fontWeight: 800, color: card.color }}>
+                  <div className="text-2xl font-extrabold" style={{ color: card.color }}>
                     {typeof card.value === 'number' ? card.value.toLocaleString('en-IN') : card.value}
                   </div>
                 </div>
@@ -2868,73 +2973,62 @@ export default function AnalyticsDashboard({
           </div>
 
           {/* Pipeline Stage & Sub-Stage Breakdown Interactive Grid */}
-          <div className="card" style={{ padding: '1.25rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+          <div className="card an-card-hover p-5 rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)] shadow-sm">
+            <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
               <div>
-                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <Layers size={18} style={{ color: 'var(--accent-color)' }} />
+                <h3 className="m-0 text-base font-bold text-[var(--text-primary)] flex items-center gap-2">
+                  <Layers size={18} className="text-[var(--accent-color)]" />
                   Pipeline Stage & Sub-Stage Breakdown
                 </h3>
-                <p style={{ margin: '0.2rem 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                <p className="mt-1 mb-0 text-xs text-[var(--text-secondary)]">
                   Click any stage card to jump directly to those filtered leads in the database.
                 </p>
               </div>
-              <span style={{ fontSize: '0.78rem', background: 'var(--th-bg)', padding: '0.25rem 0.65rem', borderRadius: '8px', border: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontWeight: 600 }}>
+              <span className="text-xs bg-[var(--th-bg)] px-2.5 py-1 rounded-lg border border-[var(--border-light)] text-[var(--text-secondary)] font-semibold">
                 {filteredLeadsSync.length.toLocaleString('en-IN')} Total Filtered Leads
               </span>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 150px), 1fr))', gap: '0.85rem' }}>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-8 gap-3.5">
               {detailedStageBreakdown.map(item => (
                 <div
                   key={item.fullStage}
                   onClick={() => onNavigateTab?.('leads', null, item.fullStage)}
+                  className="an-card-hover bg-[var(--bg-surface)] p-3.5 rounded-xl border cursor-pointer transition-all duration-150 flex flex-col"
                   style={{
-                    background: 'var(--bg-surface)',
-                    padding: '1rem 0.85rem',
-                    borderRadius: '10px',
-                    border: `1px solid ${item.color}33`,
-                    borderLeft: `4px solid ${item.color}`,
-                    cursor: 'pointer',
-                    transition: 'transform 0.15s, boxShadow 0.15s'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.transform = 'translateY(-2px)';
-                    e.currentTarget.style.boxShadow = '0 6px 16px rgba(0,0,0,0.08)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = 'translateY(0)';
-                    e.currentTarget.style.boxShadow = 'none';
+                    borderColor: `${item.color}33`,
+                    borderLeftWidth: '4px',
+                    borderLeftColor: item.color
                   }}
                 >
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  <div className="text-[11px] text-[var(--text-secondary)] font-bold uppercase tracking-wider">
                     {item.fullStage.split(' - ')[0]}
                   </div>
-                  <div style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-primary)', marginTop: '0.2rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  <div className="text-sm font-bold text-[var(--text-primary)] mt-1 min-h-[2.25rem] leading-snug line-clamp-2" title={item.shortName}>
                     {item.shortName}
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: '0.5rem' }}>
-                    <span style={{ fontSize: '1.4rem', fontWeight: 800, color: item.color }}>{item.count.toLocaleString('en-IN')}</span>
-                    <span style={{ fontSize: '0.72rem', color: item.color, fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
+                  <div className="flex justify-between items-baseline mt-2 gap-2">
+                    <span className="text-xl font-extrabold" style={{ color: item.color }}>{item.count.toLocaleString('en-IN')}</span>
+                    <span className="text-xs font-semibold flex items-center gap-1 shrink-0" style={{ color: item.color }}>
                       View <ArrowRight size={11} />
                     </span>
                   </div>
 
                   {/* Sub-stages count breakdown list */}
                   {item.substages && item.substages.length > 0 && (
-                    <div style={{ marginTop: '0.65rem', paddingTop: '0.5rem', borderTop: '1px dashed var(--border-light)', display: 'flex', flexDirection: 'column', gap: '0.3rem', maxHeight: '110px', overflowY: 'auto' }}>
+                    <div className="mt-2.5 pt-2 border-t border-dashed border-[var(--border-light)] flex flex-col gap-1 max-h-28 overflow-y-auto">
                       {item.substages.slice(0, 4).map(sub => (
-                        <div key={sub.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.72rem' }}>
-                          <span style={{ color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '75%' }} title={sub.label}>
+                        <div key={sub.label} className="flex justify-between items-center text-xs">
+                          <span className="text-[var(--text-secondary)] truncate max-w-[75%]" title={sub.label}>
                             ↳ {sub.label}
                           </span>
-                          <span style={{ fontWeight: 700, color: item.color, background: 'var(--th-bg)', padding: '0.05rem 0.35rem', borderRadius: '4px', border: '1px solid var(--border-light)', fontSize: '0.68rem' }}>
+                          <span className="font-bold bg-[var(--th-bg)] px-1.5 py-0.5 rounded text-[10px] border border-[var(--border-light)]" style={{ color: item.color }}>
                             {sub.count}
                           </span>
                         </div>
                       ))}
                       {item.substages.length > 4 && (
-                        <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', textAlign: 'right', fontStyle: 'italic' }}>
+                        <div className="text-[10px] text-[var(--text-secondary)] text-right italic">
                           +{item.substages.length - 4} more
                         </div>
                       )}
@@ -2946,11 +3040,11 @@ export default function AnalyticsDashboard({
           </div>
 
           {/* Stage Funnel Table & Cards */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))', gap: '1rem' }}>
-            <div className="card" style={{ padding: '1.25rem', gridColumn: 'span 2' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700 }}>Sales Pipeline Stage Distribution</h3>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{filteredLeadsSync.length.toLocaleString('en-IN')} Leads in View</span>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="card an-card-hover p-5 lg:col-span-2 rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)] shadow-sm">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="m-0 text-sm font-bold text-[var(--text-primary)]">Sales Pipeline Stage Distribution</h3>
+                <span className="text-xs text-[var(--text-secondary)]">{filteredLeadsSync.length.toLocaleString('en-IN')} Leads in View</span>
               </div>
               <ResponsiveContainer width="100%" height={260}>
                 <BarChart data={stageData} margin={{ top: 8, right: 8, left: -20, bottom: 16 }}>
@@ -2965,25 +3059,25 @@ export default function AnalyticsDashboard({
               </ResponsiveContainer>
             </div>
 
-            <div className="card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-              <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700 }}>Outreach & Messaging Metrics</h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
-                <div style={{ padding: '0.85rem', borderRadius: '8px', backgroundColor: 'var(--th-bg)', border: '1px solid var(--border-light)' }}>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600 }}>WhatsApp Messages Sent ({dateFilterLabel})</div>
-                  <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#10b981', margin: '0.2rem 0' }}>
+            <div className="card an-card-hover p-5 flex flex-col gap-3.5 rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)] shadow-sm">
+              <h3 className="m-0 text-sm font-bold text-[var(--text-primary)]">Outreach & Messaging Metrics</h3>
+              <div className="flex flex-col gap-2.5">
+                <div className="p-3.5 rounded-lg bg-[var(--th-bg)] border border-[var(--border-light)]">
+                  <div className="text-xs text-[var(--text-secondary)] font-semibold">WhatsApp Messages Sent ({dateFilterLabel})</div>
+                  <div className="text-2xl font-extrabold text-emerald-600 my-1">
                     {loading ? '…' : metrics.whatsappStats.period.toLocaleString('en-IN')}
                   </div>
-                  <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
+                  <div className="text-[11px] text-[var(--text-secondary)]">
                     Total All Time: {metrics.whatsappStats.total.toLocaleString('en-IN')}
                   </div>
                 </div>
 
-                <div style={{ padding: '0.85rem', borderRadius: '8px', backgroundColor: 'var(--th-bg)', border: '1px solid var(--border-light)' }}>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Pipeline Conversion Health</div>
-                  <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#3b82f6', margin: '0.2rem 0' }}>
+                <div className="p-3.5 rounded-lg bg-[var(--th-bg)] border border-[var(--border-light)]">
+                  <div className="text-xs text-[var(--text-secondary)] font-semibold">Pipeline Conversion Health</div>
+                  <div className="text-2xl font-extrabold text-blue-600 my-1">
                     {kpis.total > 0 ? `${((kpis.won / kpis.total) * 100).toFixed(2)}%` : '0%'}
                   </div>
-                  <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
+                  <div className="text-[11px] text-[var(--text-secondary)]">
                     {kpis.won} Won out of {kpis.total.toLocaleString('en-IN')} total leads
                   </div>
                 </div>
@@ -3009,30 +3103,22 @@ export default function AnalyticsDashboard({
                 </span>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 140px), 1fr))', gap: '0.65rem' }}>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2.5">
                 {sourceBreakdown.map((src) => {
                   const share = kpis.total > 0 ? Math.round((src.count / kpis.total) * 100) : 0;
                   return (
                     <div
                       key={src.name}
-                      style={{
-                        padding: '0.75rem 0.85rem',
-                        borderRadius: '8px',
-                        backgroundColor: 'var(--th-bg)',
-                        border: '1px solid var(--border-light)',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '0.25rem'
-                      }}
+                      className="p-3 rounded-lg bg-[var(--th-bg)] border border-[var(--border-light)] flex flex-col gap-1"
                     >
-                      <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={src.name}>
+                      <div className="text-xs font-semibold text-[var(--text-primary)] truncate" title={src.name}>
                         {src.name}
                       </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: '0.2rem' }}>
-                        <span style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--accent-color)' }}>
+                      <div className="flex justify-between items-baseline mt-1">
+                        <span className="text-lg font-extrabold text-[var(--accent-color)]">
                           {src.count.toLocaleString('en-IN')}
                         </span>
-                        <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-secondary)', backgroundColor: 'var(--bg-surface)', padding: '0.1rem 0.35rem', borderRadius: '4px', border: '1px solid var(--border-light)' }}>
+                        <span className="text-[11px] font-bold text-[var(--text-secondary)] bg-[var(--bg-surface)] px-1.5 py-0.5 rounded border border-[var(--border-light)]">
                           {share}%
                         </span>
                       </div>
@@ -3044,40 +3130,31 @@ export default function AnalyticsDashboard({
           )}
 
           {/* Team Member Lead & Stage-Wise Breakdown Matrix (Stages 1 – 7) */}
-          <div className="card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.65rem' }}>
+          <div className="card an-card-hover p-5 flex flex-col gap-3.5 rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)] shadow-sm">
+            <div className="flex justify-between items-center flex-wrap gap-2.5">
               <div>
-                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                  <Users size={17} style={{ color: 'var(--accent-color)' }} />
+                <h3 className="m-0 text-base font-bold text-[var(--text-primary)] flex items-center gap-2">
+                  <Users size={17} className="text-[var(--accent-color)]" />
                   Team Member Lead & Stage-Wise Breakdown Matrix
                 </h3>
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
+                <div className="text-xs text-[var(--text-secondary)] mt-0.5">
                   Live distribution of leads across Stages 1 to 7 and operational performance per representative
                 </div>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                <div style={{ position: 'relative' }}>
-                  <Search size={13} style={{ position: 'absolute', left: '0.6rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="relative">
+                  <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-secondary)] pointer-events-none" />
                   <input
                     type="text"
                     placeholder="Filter representative..."
                     value={leadBreakdownSearch}
                     onChange={(e) => setLeadBreakdownSearch(e.target.value)}
-                    style={{
-                      padding: '0.35rem 0.6rem 0.35rem 1.8rem',
-                      borderRadius: '8px',
-                      border: '1px solid var(--border-light)',
-                      backgroundColor: 'var(--th-bg)',
-                      color: 'var(--text-primary)',
-                      fontSize: '0.78rem',
-                      outline: 'none',
-                      width: '160px'
-                    }}
+                    className="pl-7 pr-2.5 py-1.5 rounded-lg border border-[var(--border-light)] bg-[var(--th-bg)] text-[var(--text-primary)] text-xs outline-none w-40 focus:ring-1 focus:ring-[var(--accent-color)]"
                   />
                 </div>
 
-                <div style={{ display: 'inline-flex', borderRadius: '8px', border: '1px solid var(--border-light)', overflow: 'hidden' }}>
+                <div className="inline-flex rounded-lg border border-[var(--border-light)] overflow-hidden">
                   {[
                     { id: 'ALL', label: 'All Reps' },
                     { id: 'WITH_LEADS', label: 'With Leads' },
@@ -3086,15 +3163,11 @@ export default function AnalyticsDashboard({
                     <button
                       key={f.id}
                       onClick={() => setLeadBreakdownFilter(f.id)}
-                      style={{
-                        padding: '0.35rem 0.65rem',
-                        fontSize: '0.74rem',
-                        fontWeight: leadBreakdownFilter === f.id ? 700 : 500,
-                        backgroundColor: leadBreakdownFilter === f.id ? 'var(--accent-color)' : 'var(--bg-surface)',
-                        color: leadBreakdownFilter === f.id ? '#fff' : 'var(--text-secondary)',
-                        border: 'none',
-                        cursor: 'pointer'
-                      }}
+                      className={`px-2.5 py-1 text-xs font-bold border-0 cursor-pointer transition-colors ${
+                        leadBreakdownFilter === f.id
+                          ? 'bg-blue-500/15 text-[var(--accent-color,#2563eb)] shadow-xs'
+                          : 'bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                      }`}
                     >
                       {f.label}
                     </button>
@@ -3103,46 +3176,43 @@ export default function AnalyticsDashboard({
 
                 <button
                   onClick={() => onNavigateTab?.('leads')}
-                  style={{
-                    fontSize: '0.78rem', fontWeight: 600, color: 'var(--accent-color)',
-                    background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.25rem'
-                  }}
+                  className="text-xs font-semibold text-[var(--accent-color)] bg-transparent border-0 cursor-pointer flex items-center gap-1 hover:underline"
                 >
                   Go to Leads Table <ArrowRight size={12} />
                 </button>
               </div>
             </div>
 
-            <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 280px)', minHeight: '400px', width: '100%', position: 'relative' }}>
-              <MobileTableView id="AnalyticsDashboard-7"><table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.8rem' }}>
-                <thead style={{ position: 'sticky', top: 0, zIndex: 12, backgroundColor: 'var(--th-bg)' }}>
-                  <tr style={{ background: 'var(--th-bg)' }}>
-                    <th rowSpan={2} style={{ position: 'sticky', top: 0, zIndex: 12, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', padding: '0.65rem 0.8rem', fontWeight: 700, color: 'var(--text-secondary)', textAlign: 'left', verticalAlign: 'middle', borderRight: '1px solid var(--border-light)', minWidth: '150px' }}>
+            <div className="overflow-auto max-h-[calc(100vh-280px)] min-h-[400px] w-full relative">
+              <MobileTableView id="AnalyticsDashboard-7" hideToggle><table className="w-full border-separate border-spacing-0 text-xs">
+                <thead className="sticky top-0 z-12 bg-[var(--th-bg)]">
+                  <tr className="bg-[var(--th-bg)]">
+                    <th rowSpan={2} className="sticky top-0 z-12 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] px-3 py-2.5 font-bold text-[var(--text-secondary)] text-left align-middle border-r border-[var(--border-light)] min-w-[150px]">
                       Representative
                     </th>
-                    <th rowSpan={2} style={{ position: 'sticky', top: 0, zIndex: 12, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', padding: '0.65rem 0.8rem', fontWeight: 700, color: 'var(--text-secondary)', textAlign: 'left', verticalAlign: 'middle', borderRight: '1px solid var(--border-light)', minWidth: '130px' }}>
+                    <th rowSpan={2} className="sticky top-0 z-12 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] px-3 py-2.5 font-bold text-[var(--text-secondary)] text-left align-middle border-r border-[var(--border-light)] min-w-[130px]">
                       Department
                     </th>
-                    <th colSpan={7} style={{ position: 'sticky', top: 0, zIndex: 12, padding: '0.45rem 0.65rem', fontWeight: 700, color: 'var(--text-primary)', textAlign: 'center', backgroundColor: 'var(--th-bg)', borderRight: '1px solid var(--border-light)', borderBottom: '1px solid var(--border-light)', height: '32px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.35rem' }}>
-                        <Layers size={13} style={{ color: 'var(--accent-color)' }} />
+                    <th colSpan={7} className="sticky top-0 z-12 px-2.5 py-1.5 font-bold text-[var(--text-primary)] text-center bg-[var(--th-bg)] border-r border-b border-[var(--border-light)] h-8">
+                      <div className="flex items-center justify-center gap-1.5">
+                        <Layers size={13} className="text-[var(--accent-color)]" />
                         <span>Stage Breakdown (Stages 1 – 7)</span>
                       </div>
                     </th>
-                    <th rowSpan={2} style={{ position: 'sticky', top: 0, zIndex: 12, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', padding: '0.65rem 0.75rem', fontWeight: 700, color: 'var(--text-secondary)', textAlign: 'right', verticalAlign: 'middle', borderRight: '1px solid var(--border-light)', minWidth: '95px' }}>
+                    <th rowSpan={2} className="sticky top-0 z-12 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] px-3 py-2.5 font-bold text-[var(--text-secondary)] text-right align-middle border-r border-[var(--border-light)] min-w-[95px]">
                       Total Assigned
                     </th>
-                    <th rowSpan={2} style={{ position: 'sticky', top: 0, zIndex: 12, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', padding: '0.65rem 0.75rem', fontWeight: 700, color: 'var(--text-secondary)', textAlign: 'right', verticalAlign: 'middle', borderRight: '1px solid var(--border-light)', minWidth: '100px' }}>
+                    <th rowSpan={2} className="sticky top-0 z-12 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] px-3 py-2.5 font-bold text-[var(--text-secondary)] text-right align-middle border-r border-[var(--border-light)] min-w-[100px]">
                       🎯 Leads Touched
                     </th>
-                    <th rowSpan={2} style={{ position: 'sticky', top: 0, zIndex: 12, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', padding: '0.65rem 0.75rem', fontWeight: 700, color: 'var(--text-secondary)', textAlign: 'right', verticalAlign: 'middle', borderRight: '1px solid var(--border-light)', minWidth: '95px' }}>
+                    <th rowSpan={2} className="sticky top-0 z-12 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] px-3 py-2.5 font-bold text-[var(--text-secondary)] text-right align-middle border-r border-[var(--border-light)] min-w-[95px]">
                       Touch Rate %
                     </th>
-                    <th rowSpan={2} style={{ position: 'sticky', top: 0, zIndex: 12, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', padding: '0.65rem 0.75rem', fontWeight: 700, color: 'var(--text-secondary)', textAlign: 'center', verticalAlign: 'middle', minWidth: '95px' }}>
+                    <th rowSpan={2} className="sticky top-0 z-12 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] px-3 py-2.5 font-bold text-[var(--text-secondary)] text-center align-middle min-w-[95px]">
                       Outreach Score
                     </th>
                   </tr>
-                  <tr style={{ background: 'var(--th-bg)' }}>
+                  <tr className="bg-[var(--th-bg)]">
                     {[
                       { num: 1, label: 'S1 New', color: '#3b82f6' },
                       { num: 2, label: 'S2 Contact', color: '#06b6d4' },
@@ -3154,20 +3224,8 @@ export default function AnalyticsDashboard({
                     ].map(st => (
                       <th
                         key={st.num}
-                        style={{
-                          position: 'sticky',
-                          top: '32px',
-                          zIndex: 11,
-                          backgroundColor: 'var(--th-bg)',
-                          boxShadow: '0 1px 0 var(--border-light)',
-                          padding: '0.35rem 0.45rem',
-                          textAlign: 'center',
-                          fontSize: '0.72rem',
-                          fontWeight: 700,
-                          color: st.color,
-                          borderRight: '1px solid var(--border-light)',
-                          minWidth: '58px'
-                        }}
+                        className="sticky top-8 z-11 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] px-2 py-1.5 text-center text-[11px] font-bold border-r border-[var(--border-light)] min-w-[58px]"
+                        style={{ color: st.color }}
                       >
                         {st.label}
                       </th>
@@ -3177,7 +3235,7 @@ export default function AnalyticsDashboard({
                 <tbody>
                   {filteredLeadMatrixData.length === 0 ? (
                     <tr>
-                      <td colSpan={12} style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                      <td colSpan={12} className="p-8 text-center text-[var(--text-secondary)] text-xs">
                         No representatives found matching the selected filter.
                       </td>
                     </tr>
@@ -3185,54 +3243,53 @@ export default function AnalyticsDashboard({
                     filteredLeadMatrixData.map((row, idx) => {
                       const contactRate = row.contactRate !== undefined ? row.contactRate : (row.leadsAssigned > 0 ? Math.round((row.leadsTouched / row.leadsAssigned) * 100) : 0);
                       return (
-                        <tr key={row.empEmail || idx} style={{ borderBottom: '1px solid var(--border-light)', transition: 'background 0.15s' }}>
-                          <td style={{ padding: '0.6rem 0.8rem', fontWeight: 600, color: 'var(--text-primary)', borderRight: '1px solid var(--border-light)' }}>
+                        <tr key={row.empEmail || idx} className="border-b border-[var(--border-light)] hover:bg-[var(--th-bg)] transition-colors">
+                          <td className="px-3 py-2 font-semibold text-[var(--text-primary)] border-r border-[var(--border-light)]">
                             {row.empName}
                           </td>
-                          <td style={{ padding: '0.6rem 0.8rem', color: 'var(--text-secondary)', borderRight: '1px solid var(--border-light)' }}>
+                          <td className="px-3 py-2 text-[var(--text-secondary)] border-r border-[var(--border-light)]">
                             {row.department || 'Sales & Telecalling'}
                           </td>
                           {[1, 2, 3, 4, 5, 6, 7].map(stNum => {
-                            const count = row.stageBreakdown?.[stNum] || 0;
+                            const count = row.assignedStageBreakdown?.[stNum] ?? row.stageBreakdown?.[stNum] ?? 0;
                             const colors = ['#3b82f6', '#06b6d4', '#8b5cf6', '#f59e0b', '#ec4899', '#10b981', '#6366f1'];
                             const colColor = colors[stNum - 1];
                             return (
                               <td
                                 key={stNum}
+                                className="px-2 py-2 text-center text-xs border-r border-[var(--border-light)]"
                                 style={{
-                                  padding: '0.55rem 0.45rem',
-                                  textAlign: 'center',
                                   fontWeight: count > 0 ? 700 : 400,
                                   color: count > 0 ? colColor : 'var(--text-secondary)',
-                                  backgroundColor: count > 0 ? `${colColor}0D` : 'transparent',
-                                  borderRight: '1px solid var(--border-light)',
-                                  fontSize: '0.78rem'
+                                  backgroundColor: count > 0 ? `${colColor}0D` : 'transparent'
                                 }}
                               >
                                 {count > 0 ? count : '—'}
                               </td>
                             );
                           })}
-                          <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', fontWeight: 700, color: '#3b82f6', borderRight: '1px solid var(--border-light)' }}>
+                          <td className="px-3 py-2 text-right font-bold text-blue-600 border-r border-[var(--border-light)]">
                             📦 {row.leadsAssigned.toLocaleString('en-IN')}
                           </td>
-                          <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', fontWeight: 700, color: '#10b981', borderRight: '1px solid var(--border-light)' }}>
+                          <td className="px-3 py-2 text-right font-bold text-emerald-600 border-r border-[var(--border-light)]">
                             🎯 {row.leadsAssigned > 0 ? row.leadsTouched.toLocaleString('en-IN') : '—'}
                           </td>
-                          <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', fontWeight: 700, color: contactRate >= 70 ? '#10b981' : contactRate >= 40 ? '#f59e0b' : '#ef4444', borderRight: '1px solid var(--border-light)' }}>
+                          <td className={`px-3 py-2 text-right font-bold border-r border-[var(--border-light)] ${contactRate >= 70 ? 'text-emerald-600' : contactRate >= 40 ? 'text-amber-500' : 'text-red-500'}`}>
                             {row.leadsAssigned > 0 ? `${contactRate}%` : '—'}
                           </td>
-                          <td style={{ padding: '0.6rem 0.75rem', textAlign: 'center' }}>
+                          <td className="px-3 py-2 text-center">
                             {row.leadsAssigned > 0 ? (
-                              <span style={{
-                                padding: '0.2rem 0.55rem', borderRadius: '6px', fontSize: '0.72rem', fontWeight: 700,
-                                backgroundColor: (row.outreachScore ?? 0) >= 20 ? 'rgba(16, 185, 129, 0.15)' : (row.outreachScore ?? 0) >= 12 ? 'rgba(245, 158, 11, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-                                color: (row.outreachScore ?? 0) >= 20 ? '#10b981' : (row.outreachScore ?? 0) >= 12 ? '#d97706' : '#ef4444'
-                              }}>
+                              <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                                (row.outreachScore ?? 0) >= 20 
+                                  ? 'bg-emerald-50 text-emerald-600' 
+                                  : (row.outreachScore ?? 0) >= 12 
+                                    ? 'bg-amber-50 text-amber-600' 
+                                    : 'bg-red-50 text-red-600'
+                              }`}>
                                 {row.outreachScore ?? 0} / 30 pts
                               </span>
                             ) : (
-                              <span style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>—</span>
+                              <span className="text-[var(--text-secondary)] text-xs">—</span>
                             )}
                           </td>
                         </tr>
@@ -3249,32 +3306,22 @@ export default function AnalyticsDashboard({
       {/* 🧑‍💼 TAB 7: RECRUITER & TALENT ACQUISITION HUB                             */}
       {/* ========================================================================= */}
       {activeTab === 'recruiter' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+        <div className="flex flex-col gap-5">
           {/* Header Action Banner */}
-          <div style={{
-            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.85rem',
-            padding: '1rem 1.25rem', backgroundColor: 'var(--bg-surface)', borderRadius: '12px',
-            border: '1px solid var(--border-light)'
-          }}>
+          <div className="flex justify-between items-center flex-wrap gap-3.5 p-4.5 bg-[var(--bg-surface)] rounded-xl border border-[var(--border-light)] shadow-sm">
             <div>
-              <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <Briefcase size={18} style={{ color: 'var(--accent-color)' }} />
+              <h3 className="m-0 text-base font-bold flex items-center gap-2 text-[var(--text-primary)]">
+                <Briefcase size={18} className="text-[var(--accent-color)]" />
                 Recruitment & Talent Acquisition Hub
               </h3>
-              <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+              <div className="text-xs text-[var(--text-secondary)] mt-1">
                 Live job requisitions, candidate pipeline tracking & multi-stage interview progress
               </div>
             </div>
 
             <button
               onClick={() => onNavigateTab?.('recruiter')}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: '0.45rem',
-                padding: '0.5rem 1rem', borderRadius: '8px',
-                backgroundColor: 'var(--accent-color)', color: '#fff',
-                fontSize: '0.82rem', fontWeight: 600, border: 'none',
-                cursor: 'pointer', transition: 'opacity 0.15s ease'
-              }}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-500/10 text-[var(--accent-color,#2563eb)] border border-[var(--accent-color,#2563eb)]/30 text-xs font-bold cursor-pointer hover:bg-blue-500/20 transition-colors shadow-xs"
             >
               <span>Open Full Recruiter Module</span>
               <ArrowRight size={15} />
@@ -3282,82 +3329,74 @@ export default function AnalyticsDashboard({
           </div>
 
           {/* Top KPI Metric Cards */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 180px), 1fr))', gap: '1rem' }}>
-            <div className="card" style={{ padding: '1rem', borderLeft: '4px solid #3b82f6' }}>
-              <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Open Positions</div>
-              <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#3b82f6', margin: '0.3rem 0' }}>
+          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3.5">
+            <div className="card an-card-hover p-4 border-l-4 border-blue-500 rounded-xl bg-[var(--bg-surface)] border-t border-r border-b border-[var(--border-light)] shadow-sm">
+              <div className="text-[0.72rem] font-bold text-[var(--text-secondary)] uppercase tracking-wider">Open Positions</div>
+              <div className="text-2xl sm:text-3xl font-extrabold text-blue-500 my-1">
                 {dashboardSummaries.recruitmentSummary?.openPositions || 0}
               </div>
-              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+              <div className="text-xs text-[var(--text-secondary)]">
                 {dashboardSummaries.recruitmentSummary?.positions?.reduce((a, b) => a + (b.openings || 1), 0) || 0} Total vacancies
               </div>
             </div>
 
-            <div className="card" style={{ padding: '1rem', borderLeft: '4px solid #8b5cf6' }}>
-              <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Total Candidates</div>
-              <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#8b5cf6', margin: '0.3rem 0' }}>
+            <div className="card an-card-hover p-4 border-l-4 border-purple-500 rounded-xl bg-[var(--bg-surface)] border-t border-r border-b border-[var(--border-light)] shadow-sm">
+              <div className="text-[0.72rem] font-bold text-[var(--text-secondary)] uppercase tracking-wider">Total Candidates</div>
+              <div className="text-2xl sm:text-3xl font-extrabold text-purple-500 my-1">
                 {dashboardSummaries.recruitmentSummary?.totalCandidates || 0}
               </div>
-              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
-                {dashboardSummaries.recruitmentSummary?.newToday || 0} Added today (IST)
+              <div className="text-xs text-[var(--text-secondary)]">
+                {dashboardSummaries.recruitmentSummary?.newInPeriod ?? dashboardSummaries.recruitmentSummary?.newToday ?? 0} Added in period ({dateFilterLabel})
               </div>
             </div>
 
-            <div className="card" style={{ padding: '1rem', borderLeft: '4px solid #6366f1' }}>
-              <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>In Interview</div>
-              <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#6366f1', margin: '0.3rem 0' }}>
+            <div className="card an-card-hover p-4 border-l-4 border-indigo-500 rounded-xl bg-[var(--bg-surface)] border-t border-r border-b border-[var(--border-light)] shadow-sm">
+              <div className="text-[0.72rem] font-bold text-[var(--text-secondary)] uppercase tracking-wider">In Interview</div>
+              <div className="text-2xl sm:text-3xl font-extrabold text-indigo-500 my-1">
                 {dashboardSummaries.recruitmentSummary?.inInterview || 0}
               </div>
-              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+              <div className="text-xs text-[var(--text-secondary)]">
                 Stages S03 & Scheduling
               </div>
             </div>
 
-            <div className="card" style={{ padding: '1rem', borderLeft: '4px solid #10b981' }}>
-              <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Shortlisted</div>
-              <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#10b981', margin: '0.3rem 0' }}>
+            <div className="card an-card-hover p-4 border-l-4 border-emerald-500 rounded-xl bg-[var(--bg-surface)] border-t border-r border-b border-[var(--border-light)] shadow-sm">
+              <div className="text-[0.72rem] font-bold text-[var(--text-secondary)] uppercase tracking-wider">Shortlisted</div>
+              <div className="text-2xl sm:text-3xl font-extrabold text-emerald-500 my-1">
                 {dashboardSummaries.recruitmentSummary?.shortlisted || 0}
               </div>
-              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+              <div className="text-xs text-[var(--text-secondary)]">
                 Stage S07 Qualified
               </div>
             </div>
 
-            <div className="card" style={{ padding: '1rem', borderLeft: '4px solid #16a34a' }}>
-              <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Offers & Joined</div>
-              <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#16a34a', margin: '0.3rem 0' }}>
+            <div className="card an-card-hover p-4 border-l-4 border-green-600 rounded-xl bg-[var(--bg-surface)] border-t border-r border-b border-[var(--border-light)] shadow-sm">
+              <div className="text-[0.72rem] font-bold text-[var(--text-secondary)] uppercase tracking-wider">Offers & Joined</div>
+              <div className="text-2xl sm:text-3xl font-extrabold text-green-600 my-1">
                 {dashboardSummaries.recruitmentSummary?.hired || 0}
               </div>
-              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+              <div className="text-xs text-[var(--text-secondary)]">
                 LOI Accepted & Joined
               </div>
             </div>
           </div>
 
           {/* Active Positions Table */}
-          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-            <div style={{
-              padding: '0.85rem 1.15rem', borderBottom: '1px solid var(--border-light)',
-              backgroundColor: 'var(--th-bg)', display: 'flex', justifyContent: 'space-between',
-              alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem'
-            }}>
+          <div className="card p-0 overflow-hidden rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)] shadow-sm">
+            <div className="px-4 py-3 border-b border-[var(--border-light)] bg-[var(--th-bg)] flex justify-between items-center flex-wrap gap-2">
               <div>
-                <h4 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                  <Briefcase size={15} style={{ color: 'var(--accent-color)' }} />
+                <h4 className="m-0 text-sm font-bold text-[var(--text-primary)] flex items-center gap-1.5">
+                  <Briefcase size={15} className="text-[var(--accent-color)]" />
                   Active Job Positions ({dashboardSummaries.recruitmentSummary?.positions?.length || 0})
                 </h4>
-                <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                <span className="text-xs text-[var(--text-secondary)]">
                   Current open requisitions and department headcount requirements
                 </span>
               </div>
 
               <button
                 onClick={() => onNavigateTab?.('recruiter')}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: '0.3rem',
-                  fontSize: '0.75rem', fontWeight: 600, color: 'var(--accent-color)',
-                  background: 'none', border: 'none', cursor: 'pointer', padding: 0
-                }}
+                className="flex items-center gap-1.5 text-xs font-semibold text-[var(--accent-color)] bg-transparent border-0 cursor-pointer p-0 hover:underline"
               >
                 <span>Manage in Recruiter</span>
                 <ExternalLink size={12} />
@@ -3365,137 +3404,119 @@ export default function AnalyticsDashboard({
             </div>
 
             {dashboardSummaries.recruitmentSummary?.positions?.length === 0 ? (
-              <div style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+              <div className="p-10 text-center text-xs text-[var(--text-secondary)]">
                 No job positions created yet.
               </div>
             ) : (
-              <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 280px)', minHeight: '380px', width: '100%', position: 'relative' }}>
-                <MobileTableView id="AnalyticsDashboard-8"><table style={{ width: '100%', minWidth: '700px', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.83rem' }}>
-                  <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)' }}>
-                    <tr style={{ backgroundColor: 'var(--th-bg)' }}>
-                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Job Title</th>
-                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Department</th>
-                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'center', padding: '0.6rem 0.75rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Openings</th>
-                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Recruiter Assigned</th>
-                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Salary Range</th>
-                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Target Deadline</th>
-                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'center', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(dashboardSummaries.recruitmentSummary?.positions || []).map((pos, idx) => {
-                      const isClosed = pos.status === 'CLOSED';
-                      return (
-                        <tr key={pos.id || idx} style={{ borderBottom: '1px solid var(--border-light)' }}>
-                          <td style={{ padding: '0.65rem 0.85rem' }}>
-                            <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{pos.title}</div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '0.2rem', flexWrap: 'wrap' }}>
-                              <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', fontFamily: 'monospace' }}>
-                                {pos.id?.substring(0, 8) ? `POS-${pos.id.substring(0, 8).toUpperCase()}` : ''}
-                              </span>
-                              {pos.workspace_branch_code && (
-                                <span style={{
-                                  fontSize: '0.65rem',
-                                  fontWeight: 700,
-                                  padding: '0.1rem 0.35rem',
-                                  borderRadius: '4px',
-                                  backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                                  color: 'var(--accent-color, #2563eb)'
-                                }} title={`Tenant: ${pos.workspace_tenant_code || 'TNT00002'} | Branch: ${pos.workspace_branch_code}`}>
-                                  {pos.workspace_branch_code} ({pos.workspace_company || 'NSMLR'})
+              <div className="overflow-auto max-h-[calc(100vh-280px)] min-h-[380px] w-full relative">
+                <MobileTableView id="AnalyticsDashboard-8" hideToggle>
+                  <table className="w-full min-w-[760px] border-separate border-spacing-0 text-xs">
+                    <thead className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)]">
+                      <tr className="bg-[var(--th-bg)]">
+                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--text-secondary)] font-semibold text-[0.72rem] whitespace-nowrap">Job Title</th>
+                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--text-secondary)] font-semibold text-[0.72rem] whitespace-nowrap">Department</th>
+                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3 py-2.5 text-[var(--text-secondary)] font-semibold text-[0.72rem] whitespace-nowrap">Openings</th>
+                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--text-secondary)] font-semibold text-[0.72rem] whitespace-nowrap">Recruiter Assigned</th>
+                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--text-secondary)] font-semibold text-[0.72rem] whitespace-nowrap">Salary Range</th>
+                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--text-secondary)] font-semibold text-[0.72rem] whitespace-nowrap">Target Deadline</th>
+                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3.5 py-2.5 text-[var(--text-secondary)] font-semibold text-[0.72rem] whitespace-nowrap">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(dashboardSummaries.recruitmentSummary?.positions || []).map((pos, idx) => {
+                        const isClosed = pos.status === 'CLOSED';
+                        return (
+                          <tr key={pos.id || idx} className="border-b border-[var(--border-light)] hover:bg-[var(--hover-bg,rgba(0,0,0,0.02))] transition-colors">
+                            <td className="px-3.5 py-2.5">
+                              <div className="font-bold text-[var(--text-primary)]">{pos.title}</div>
+                              <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                                <span className="text-[0.68rem] text-[var(--text-secondary)] font-mono">
+                                  {pos.id?.substring(0, 8) ? `POS-${pos.id.substring(0, 8).toUpperCase()}` : ''}
                                 </span>
-                              )}
-                            </div>
-                          </td>
-                          <td style={{ padding: '0.65rem 0.85rem' }}>
-                            <span style={{
-                              display: 'inline-block', padding: '0.15rem 0.5rem', borderRadius: '4px',
-                              backgroundColor: 'var(--th-bg)', fontSize: '0.73rem', fontWeight: 600, color: 'var(--text-primary)'
-                            }}>
-                              {pos.department || 'General'}
-                            </span>
-                          </td>
-                          <td style={{ textAlign: 'center', padding: '0.65rem 0.75rem', fontWeight: 700 }}>
-                            <span style={{
-                              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                              width: '24px', height: '24px', borderRadius: '50%',
-                              backgroundColor: '#dbeafe', color: '#1d4ed8', fontSize: '0.75rem', fontWeight: 700
-                            }}>
-                              {pos.openings || 1}
-                            </span>
-                          </td>
-                          <td style={{ padding: '0.65rem 0.85rem', color: 'var(--text-secondary)', fontSize: '0.78rem' }}>
-                            {pos.recruiter_assigned || 'Unassigned'}
-                          </td>
-                          <td style={{ padding: '0.65rem 0.85rem', fontSize: '0.78rem' }}>
-                            {pos.salary_min || pos.salary_max ? (
-                              <span>
-                                {pos.salary_min ? `₹${Number(pos.salary_min).toLocaleString('en-IN')}` : ''}
-                                {pos.salary_min && pos.salary_max ? ' - ' : ''}
-                                {pos.salary_max ? `₹${Number(pos.salary_max).toLocaleString('en-IN')}` : ''}
+                                {pos.workspace_branch_code && (
+                                  <span
+                                    className="text-[0.65rem] font-bold px-1.5 py-0.5 rounded bg-blue-500/10 text-[var(--accent-color,#2563eb)]"
+                                    title={`Tenant: ${pos.workspace_tenant_code || 'TNT00002'} | Branch: ${pos.workspace_branch_code}`}
+                                  >
+                                    {pos.workspace_branch_code} ({pos.workspace_company || 'NSMLR'})
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-3.5 py-2.5">
+                              <span className="inline-block px-2 py-0.5 rounded bg-[var(--th-bg)] text-[0.73rem] font-semibold text-[var(--text-primary)]">
+                                {pos.department || 'General'}
                               </span>
-                            ) : (
-                              <span style={{ color: 'var(--text-secondary)' }}>Best in industry</span>
-                            )}
-                          </td>
-                          <td style={{ padding: '0.65rem 0.85rem', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                            {pos.deadline_date ? new Date(pos.deadline_date).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
-                          </td>
-                          <td style={{ textAlign: 'center', padding: '0.65rem 0.85rem' }}>
-                            <span style={{
-                              display: 'inline-block', padding: '0.2rem 0.55rem', borderRadius: '12px',
-                              fontSize: '0.72rem', fontWeight: 700,
-                              backgroundColor: isClosed ? '#fee2e2' : '#dcfce7',
-                              color: isClosed ? '#dc2626' : '#15803d'
-                            }}>
-                              {isClosed ? 'Closed' : 'Active Requisition'}
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table></MobileTableView>
+                            </td>
+                            <td className="text-center px-3 py-2.5 font-bold">
+                              <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-500/25 text-xs font-bold">
+                                {pos.openings || 1}
+                              </span>
+                            </td>
+                            <td className="px-3.5 py-2.5 text-[var(--text-secondary)] text-xs">
+                              {pos.recruiter_assigned || 'Unassigned'}
+                            </td>
+                            <td className="px-3.5 py-2.5 text-xs">
+                              {pos.salary_min || pos.salary_max ? (
+                                <span>
+                                  {pos.salary_min ? `₹${Number(pos.salary_min).toLocaleString('en-IN')}` : ''}
+                                  {pos.salary_min && pos.salary_max ? ' - ' : ''}
+                                  {pos.salary_max ? `₹${Number(pos.salary_max).toLocaleString('en-IN')}` : ''}
+                                </span>
+                              ) : (
+                                <span className="text-[var(--text-secondary)]">Best in industry</span>
+                              )}
+                            </td>
+                            <td className="px-3.5 py-2.5 text-xs text-[var(--text-secondary)]">
+                              {pos.deadline_date ? new Date(pos.deadline_date).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
+                            </td>
+                            <td className="text-center px-3.5 py-2.5">
+                              <span className={`inline-block px-2.5 py-0.5 rounded-full text-[0.72rem] font-bold whitespace-nowrap border ${
+                                isClosed
+                                  ? 'bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/25'
+                                  : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/25'
+                              }`}>
+                                {isClosed ? 'Closed' : 'Active Requisition'}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </MobileTableView>
               </div>
             )}
           </div>
 
           {/* Candidates Pipeline Table */}
-          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-            <div style={{
-              padding: '0.85rem 1.15rem', borderBottom: '1px solid var(--border-light)',
-              backgroundColor: 'var(--th-bg)', display: 'flex', justifyContent: 'space-between',
-              alignItems: 'center', flexWrap: 'wrap', gap: '0.65rem'
-            }}>
+          <div className="card p-0 overflow-hidden rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)] shadow-sm">
+            <div className="px-4 py-3 border-b border-[var(--border-light)] bg-[var(--th-bg)] flex justify-between items-center flex-wrap gap-2.5">
               <div>
-                <h4 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                  <Users size={15} style={{ color: 'var(--accent-color)' }} />
+                <h4 className="m-0 text-sm font-bold text-[var(--text-primary)] flex items-center gap-1.5">
+                  <Users size={15} className="text-[var(--accent-color)]" />
                   Candidate Talent Pipeline ({filteredCandidatesList.length})
                 </h4>
-                <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                <span className="text-xs text-[var(--text-secondary)]">
                   Screening, evaluation stages & hiring decisions
                 </span>
               </div>
 
               {/* Filters & Search Toolbar */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                <div style={{ position: 'relative' }}>
-                  <Search size={13} style={{ position: 'absolute', left: '0.55rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="relative">
+                  <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-secondary)]" />
                   <input
                     type="text"
                     placeholder="Search candidate, role, phone..."
                     value={recruiterSearch}
                     onChange={(e) => setRecruiterSearch(e.target.value)}
-                    style={{
-                      padding: '0.35rem 0.65rem 0.35rem 1.75rem', fontSize: '0.78rem', borderRadius: '6px',
-                      border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-primary)', color: 'var(--text-primary)',
-                      width: '200px'
-                    }}
+                    className="pl-7 pr-7 py-1.5 text-xs rounded-md border border-[var(--border-light)] bg-[var(--bg-primary)] text-[var(--text-primary)] outline-none focus:ring-1 focus:ring-[var(--accent-color)] w-52"
                   />
                   {recruiterSearch && (
                     <button
                       onClick={() => setRecruiterSearch('')}
-                      style={{ position: 'absolute', right: '0.4rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: '0.75rem' }}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 bg-transparent border-0 cursor-pointer text-[var(--text-secondary)] text-xs hover:text-[var(--text-primary)]"
                     >
                       ×
                     </button>
@@ -3505,10 +3526,7 @@ export default function AnalyticsDashboard({
                 <select
                   value={recruiterFilter}
                   onChange={(e) => setRecruiterFilter(e.target.value)}
-                  style={{
-                    padding: '0.35rem 0.65rem', fontSize: '0.78rem', borderRadius: '6px',
-                    border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-primary)', color: 'var(--text-primary)'
-                  }}
+                  className="px-2.5 py-1.5 text-xs rounded-md border border-[var(--border-light)] bg-[var(--bg-primary)] text-[var(--text-primary)] outline-none focus:ring-1 focus:ring-[var(--accent-color)]"
                 >
                   <option value="ALL">All Stages ({dashboardSummaries.recruitmentSummary?.candidates?.length || 0})</option>
                   <option value="INTERVIEW">In Interview ({dashboardSummaries.recruitmentSummary?.inInterview || 0})</option>
@@ -3528,139 +3546,123 @@ export default function AnalyticsDashboard({
             </div>
 
             {filteredCandidatesList.length === 0 ? (
-              <div style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+              <div className="p-10 text-center text-xs text-[var(--text-secondary)]">
                 {recruiterSearch || recruiterFilter !== 'ALL' ? 'No candidates match your search or filter.' : 'No candidates in the pipeline.'}
               </div>
             ) : (
-              <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 280px)', minHeight: '380px', width: '100%', position: 'relative' }}>
-                <MobileTableView id="AnalyticsDashboard-9"><table style={{ width: '100%', minWidth: '820px', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.83rem' }}>
-                  <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)' }}>
-                    <tr style={{ backgroundColor: 'var(--th-bg)' }}>
-                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Candidate</th>
-                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Target Position</th>
-                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Pipeline Stage</th>
-                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Current Status</th>
-                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Contact Info</th>
-                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'left', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Applied Date</th>
-                      <th style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--th-bg)', boxShadow: '0 1px 0 var(--border-light)', textAlign: 'center', padding: '0.6rem 0.85rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.72rem' }}>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredCandidatesList.map((cand, idx) => {
-                      const badge = getStageBadgeInfo(cand.current_stage, cand.candidate_status);
-                      const isJoined = (cand.candidate_status || '').toLowerCase().includes('joined') || cand.current_stage === 'S09';
-                      const isRejected = (cand.candidate_status || '').toLowerCase().includes('reject') || (cand.candidate_status || '').toLowerCase().includes('dropped');
-                      return (
-                        <tr key={cand.id || idx} style={{ borderBottom: '1px solid var(--border-light)' }}>
-                          <td style={{ padding: '0.65rem 0.85rem' }}>
-                            <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{cand.name}</div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', marginTop: '0.15rem', flexWrap: 'wrap' }}>
-                              {cand.candidate_code && (
-                                <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', fontFamily: 'monospace' }}>
-                                  {cand.candidate_code}
+              <div className="overflow-auto max-h-[calc(100vh-280px)] min-h-[380px] w-full relative">
+                <MobileTableView id="AnalyticsDashboard-9" hideToggle>
+                  <table className="w-full min-w-[850px] border-separate border-spacing-0 text-xs">
+                    <thead className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)]">
+                      <tr className="bg-[var(--th-bg)]">
+                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--text-secondary)] font-semibold text-[0.72rem] whitespace-nowrap">Candidate</th>
+                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--text-secondary)] font-semibold text-[0.72rem] whitespace-nowrap">Target Position</th>
+                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--text-secondary)] font-semibold text-[0.72rem] whitespace-nowrap">Pipeline Stage</th>
+                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--text-secondary)] font-semibold text-[0.72rem] whitespace-nowrap">Current Status</th>
+                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--text-secondary)] font-semibold text-[0.72rem] whitespace-nowrap">Contact Info</th>
+                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--text-secondary)] font-semibold text-[0.72rem] whitespace-nowrap">Applied Date</th>
+                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3.5 py-2.5 text-[var(--text-secondary)] font-semibold text-[0.72rem] whitespace-nowrap">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredCandidatesList.map((cand, idx) => {
+                        const badge = getStageBadgeInfo(cand.current_stage, cand.candidate_status);
+                        const isJoined = (cand.candidate_status || '').toLowerCase().includes('joined') || cand.current_stage === 'S09';
+                        const isRejected = (cand.candidate_status || '').toLowerCase().includes('reject') || (cand.candidate_status || '').toLowerCase().includes('dropped');
+                        return (
+                          <tr key={cand.id || idx} className="border-b border-[var(--border-light)] hover:bg-[var(--hover-bg,rgba(0,0,0,0.02))] transition-colors">
+                            <td className="px-3.5 py-2.5">
+                              <div className="font-bold text-[var(--text-primary)]">{cand.name}</div>
+                              <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                                {cand.candidate_code && (
+                                  <span className="text-[0.68rem] text-[var(--text-secondary)] font-mono">
+                                    {cand.candidate_code}
+                                  </span>
+                                )}
+                                {cand.workspace_tenant_code && (
+                                  <span
+                                    className="text-[0.63rem] font-bold px-1 py-0.5 rounded bg-[var(--th-bg)] text-[var(--text-secondary)]"
+                                    title={`Tenant Code: ${cand.workspace_tenant_code}`}
+                                  >
+                                    {cand.workspace_tenant_code}
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-3.5 py-2.5">
+                              <div className="font-semibold text-[var(--text-primary)] text-xs">
+                                {cand.recruitment_positions?.title || 'General Position'}
+                              </div>
+                              <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                                <span className="text-[0.7rem] text-[var(--text-secondary)]">
+                                  {cand.recruitment_positions?.department || '—'}
                                 </span>
-                              )}
-                              {cand.workspace_tenant_code && (
-                                <span style={{
-                                  fontSize: '0.63rem',
-                                  fontWeight: 700,
-                                  padding: '0.05rem 0.3rem',
-                                  borderRadius: '3px',
-                                  backgroundColor: 'var(--th-bg)',
-                                  color: 'var(--text-secondary)'
-                                }} title={`Tenant Code: ${cand.workspace_tenant_code}`}>
-                                  {cand.workspace_tenant_code}
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td style={{ padding: '0.65rem 0.85rem' }}>
-                            <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.8rem' }}>
-                              {cand.recruitment_positions?.title || 'General Position'}
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '0.15rem', flexWrap: 'wrap' }}>
-                              <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
-                                {cand.recruitment_positions?.department || '—'}
-                              </span>
-                              {cand.workspace_branch_code && (
-                                <span style={{
-                                  fontSize: '0.65rem',
-                                  fontWeight: 700,
-                                  padding: '0.1rem 0.35rem',
-                                  borderRadius: '4px',
-                                  backgroundColor: 'rgba(139, 92, 246, 0.1)',
-                                  color: '#8b5cf6'
-                                }} title={`Branch: ${cand.workspace_branch_code} | Company: ${cand.workspace_company || 'NSMLR'}`}>
-                                  {cand.workspace_branch_code} ({cand.workspace_company || 'NSMLR'})
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td style={{ padding: '0.65rem 0.85rem' }}>
-                            <span style={{
-                              display: 'inline-block', padding: '0.2rem 0.55rem', borderRadius: '12px',
-                              fontSize: '0.72rem', fontWeight: 700,
-                              backgroundColor: badge.bg, color: badge.color
-                            }}>
-                              {badge.label}
-                            </span>
-                          </td>
-                          <td style={{ padding: '0.65rem 0.85rem' }}>
-                            <span style={{
-                              display: 'inline-block', padding: '0.15rem 0.5rem', borderRadius: '4px',
-                              fontSize: '0.73rem', fontWeight: 600,
-                              backgroundColor: isJoined ? '#dcfce7' : isRejected ? '#fee2e2' : 'var(--th-bg)',
-                              color: isJoined ? '#15803d' : isRejected ? '#dc2626' : 'var(--text-primary)'
-                            }}>
-                              {cand.candidate_status || 'Under Review'}
-                            </span>
-                          </td>
-                          <td style={{ padding: '0.65rem 0.85rem', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                            {cand.phone && <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}><Phone size={11} /> {cand.phone}</div>}
-                            {cand.email && <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}><Mail size={11} /> {cand.email}</div>}
-                          </td>
-                          <td style={{ padding: '0.65rem 0.85rem', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                            {cand.created_at ? new Date(cand.created_at).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
-                          </td>
-                          <td style={{ textAlign: 'center', padding: '0.65rem 0.85rem' }}>
-                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
-                              {cand.resume_url && (
-                                <a
-                                  href={cand.resume_url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  title="View Resume"
-                                  style={{
-                                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                                    padding: '0.3rem 0.45rem', borderRadius: '6px',
-                                    border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)',
-                                    color: 'var(--accent-color)', textDecoration: 'none', fontSize: '0.72rem', fontWeight: 600
-                                  }}
-                                >
-                                  <FileText size={12} style={{ marginRight: '0.2rem' }} />
-                                  Resume
-                                </a>
-                              )}
-                              <button
-                                onClick={() => onNavigateTab?.('recruiter')}
-                                title="Open in Recruiter module"
-                                style={{
-                                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                                  padding: '0.3rem 0.55rem', borderRadius: '6px',
-                                  border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-primary)',
-                                  color: 'var(--text-primary)', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 600
-                                }}
+                                {cand.workspace_branch_code && (
+                                  <span
+                                    className="text-[0.65rem] font-bold px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-600 dark:text-purple-400"
+                                    title={`Branch: ${cand.workspace_branch_code} | Company: ${cand.workspace_company || 'NSMLR'}`}
+                                  >
+                                    {cand.workspace_branch_code} ({cand.workspace_company || 'NSMLR'})
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-3.5 py-2.5">
+                              <span
+                                className="inline-block px-2.5 py-0.5 rounded-full text-[0.72rem] font-bold border border-[var(--border-light)]"
+                                style={{ backgroundColor: badge.bg, color: badge.color }}
                               >
-                                View
-                                <ArrowRight size={11} style={{ marginLeft: '0.2rem' }} />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table></MobileTableView>
+                                {badge.label}
+                              </span>
+                            </td>
+                            <td className="px-3.5 py-2.5">
+                              <span className={`inline-block px-2.5 py-0.5 rounded text-[0.73rem] font-semibold border ${
+                                isJoined
+                                  ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/25'
+                                  : isRejected
+                                    ? 'bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/25'
+                                    : 'bg-[var(--th-bg)] text-[var(--text-primary)] border-[var(--border-light)]'
+                              }`}>
+                                {cand.candidate_status || 'Under Review'}
+                              </span>
+                            </td>
+                            <td className="px-3.5 py-2.5 text-xs text-[var(--text-secondary)]">
+                              {cand.phone && <div className="flex items-center gap-1"><Phone size={11} /> {cand.phone}</div>}
+                              {cand.email && <div className="flex items-center gap-1"><Mail size={11} /> {cand.email}</div>}
+                            </td>
+                            <td className="px-3.5 py-2.5 text-xs text-[var(--text-secondary)]">
+                              {cand.created_at ? new Date(cand.created_at).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
+                            </td>
+                            <td className="text-center px-3.5 py-2.5">
+                              <div className="inline-flex items-center gap-1.5">
+                                {cand.resume_url && (
+                                  <a
+                                    href={cand.resume_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    title="View Resume"
+                                    className="inline-flex items-center justify-center px-2 py-1 rounded-md border border-[var(--border-light)] bg-[var(--bg-surface)] text-[var(--accent-color)] no-underline text-xs font-semibold hover:opacity-80"
+                                  >
+                                    <FileText size={12} className="mr-1" />
+                                    Resume
+                                  </a>
+                                )}
+                                <button
+                                  onClick={() => onNavigateTab?.('recruiter')}
+                                  title="Open in Recruiter module"
+                                  className="inline-flex items-center justify-center px-2 py-1 rounded-md border border-[var(--border-light)] bg-[var(--bg-primary)] text-[var(--text-primary)] cursor-pointer text-xs font-semibold hover:bg-[var(--th-bg)]"
+                                >
+                                  <span>View</span>
+                                  <ArrowRight size={11} className="ml-1" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </MobileTableView>
               </div>
             )}
           </div>

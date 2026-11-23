@@ -12,7 +12,7 @@ import { isFeatureEntitled } from '@/utils/saasEntitlements';
 import SubscriptionExpiryBanner from './SaaS/SubscriptionExpiryBanner';
 import SubscriptionExpiredModal from './SaaS/SubscriptionExpiredModal';
 import AddonPurchaseModal from './SaaS/AddonPurchaseModal';
-import { Database, LayoutDashboard, Users, UserCheck, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, MessageSquare, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen, Building2, MapPin, ShieldCheck, Camera, User, Upload, Loader2, Trash2, Calendar, Clock, AlertTriangle, AlertCircle, X, ExternalLink, CheckSquare, WifiOff, Sparkles, Volume2, CheckCircle2, Play, Settings2, FormInput, Workflow, Monitor, Target, FileType, Compass, Layers, Network, Activity, Crown, GitMerge, Sliders, Send, Mail, Zap, Package, Truck, Navigation as NavigationIcon } from 'lucide-react';
+import { Database, LayoutDashboard, Home, Users, UserCheck, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, MessageSquare, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen, Building2, MapPin, ShieldCheck, Camera, User, Upload, Loader2, Trash2, Calendar, Clock, AlertTriangle, AlertCircle, X, ExternalLink, CheckSquare, WifiOff, Sparkles, Volume2, CheckCircle2, Play, Settings2, FormInput, Workflow, Monitor, Target, FileType, Compass, Layers, Network, Activity, Crown, GitMerge, Sliders, Send, Mail, Zap, Package, Truck, Navigation as NavigationIcon } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { getTeamMembers } from '@/app/actions/team';
@@ -51,6 +51,7 @@ import { getRecruiterPipelineConfig } from '@/app/actions/recruiterConfig';
 import HeaderBranchFilter from '@/components/common/HeaderBranchFilter';
 
 const OfflineBlockScreen = dynamic(() => import('./Offline/OfflineBlockScreen'));
+const WorkspaceHome = dynamic(() => import('./Home/WorkspaceHome'), { loading: () => <WorkspaceSkeleton variant="analytics" /> });
 const AnalyticsDashboard = dynamic(() => import('@/components/AnalyticsDashboard'), { loading: () => <WorkspaceSkeleton variant="analytics" /> });
 const ClientRegistration = dynamic(() => import('@/components/ClientRegistration'), { loading: () => <WorkspaceSkeleton variant="form" /> });
 const CallCenterModule = dynamic(() => import('./CallCenter/CallCenterModule'), { loading: () => <WorkspaceSkeleton variant="callcenter" /> });
@@ -237,6 +238,9 @@ export function isTabPermitted(tabId, moduleAccess = {}, userRole = '', tenantEn
     return false;
   }
 
+  // Home Workspace is available to all authenticated employees
+  if (tabId === 'home') return true;
+
   const isAdmin = checkIsAdminRole(userRole);
   if (isAdmin) return true;
   if (!moduleAccess) return false;
@@ -300,13 +304,103 @@ export const CHANNEL_OPS_SUBTAB_TITLES = {
   frequency_rules: 'Order Frequency Master',
   order_followup: 'Order Desk Calling',
   order_pipeline: 'Order to Delivery Pipeline',
-  order_feedback: 'Post-Order Feedback',
+  order_feedback: 'Post-Delivery Feedback',
   monthly_feedback: 'Monthly Health Checks',
   complaints: 'Complaint Management',
   end_customers: 'End Customer Master'
 };
 
+export const MODULE_COLORS = {
+  home: '#2563eb',
+  saas_master: '#f59e0b',
+  config_master: '#6366f1',
+  dashboard: '#3b82f6',
+  ai: '#a855f7',
+  aiadmin: '#a855f7',
+  aiknowledgebase: '#a855f7',
+  callcenter: '#06b6d4',
+  calladmin: '#06b6d4',
+  aicallcenter: '#06b6d4',
+  attendance: '#f97316',
+  checklist: '#10b981',
+  delegation: '#0ea5e9',
+  field_force: '#14b8a6',
+  registration: '#8b5cf6',
+  report: '#8b5cf6',
+  leads: '#6366f1',
+  party: '#ea580c',
+  channel_ops: '#2563eb',
+  'channel-operations': '#2563eb',
+  monthly_feedback: '#4f46e5',
+  complaints: '#ef4444',
+  end_customers: '#16a34a',
+  location_master: '#0284c7',
+  location_territory: '#0284c7',
+  mrp: '#d97706',
+  mrp_against: '#b45309',
+  recruiter: '#ec4899',
+  joining: '#10b981',
+  user_management_new: '#3b82f6',
+  team: '#475569',
+  workplace: '#8b5cf6',
+  whatsapp_official: '#22c55e',
+  whatsapp_unofficial: '#16a34a',
+  sms_config: '#f59e0b',
+  rcs_config: '#6366f1',
+  email_config: '#3b82f6',
+  settings: '#64748b'
+};
+
+function renderNavIconBadge(icon, color = '#3b82f6') {
+  return (
+    <span
+      className="nav-icon-badge"
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: '30px',
+        height: '30px',
+        minWidth: '30px',
+        borderRadius: '8px',
+        background: `linear-gradient(135deg, ${color}20, ${color}38)`,
+        border: `1.5px solid ${color}45`,
+        color: color,
+        boxShadow: `0 2px 6px ${color}22`,
+        flexShrink: 0
+      }}
+    >
+      {React.isValidElement(icon) ? React.cloneElement(icon, { size: 16, style: { flexShrink: 0, strokeWidth: 2.2 } }) : icon}
+    </span>
+  );
+}
+
+function renderMiniSubBadge(icon, color = '#3b82f6') {
+  return (
+    <span
+      className="nav-sub-icon-badge"
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: '22px',
+        height: '22px',
+        minWidth: '22px',
+        borderRadius: '6px',
+        background: `linear-gradient(135deg, ${color}22, ${color}40)`,
+        border: `1px solid ${color}50`,
+        color: color,
+        boxShadow: `0 1px 4px ${color}20`,
+        flexShrink: 0
+      }}
+    >
+      {React.isValidElement(icon) ? React.cloneElement(icon, { size: 13, style: { flexShrink: 0, strokeWidth: 2.2 } }) : icon}
+    </span>
+  );
+}
+
 export const MODULE_DISPLAY_NAMES = {
+  home: 'Home Workspace',
   dashboard: 'Analytics Dashboard',
   leads: 'Leads & Sales Database',
   channel_ops: 'Daily Order Follow-up',
@@ -504,6 +598,11 @@ export default function CRMContainer({
       path = (searchParams?.get('tab') || initialSearchParams?.tab || '').toLowerCase();
     }
     
+    // Position #1: Root default or /home
+    if (!path || path === 'home') {
+      return 'home';
+    }
+    
     // Check if path is a dashboard subtab or alias
     if (path === 'registration' || path.startsWith('registration/')) return 'registration';
     if (['scorecard', 'overview', 'pipeline', 'lead-data', 'leads-data'].includes(path) || (path && path.startsWith('dashboard/')) || path === 'dashboard') {
@@ -582,9 +681,7 @@ export default function CRMContainer({
     const stageParam = typeof initialSearchParams !== 'undefined' ? initialSearchParams?.stage : null;
     if (stageParam === 'all') return null;
     if (stageParam) return stageParam;
-    try {
-      return typeof window !== 'undefined' ? localStorage.getItem('crmActiveStage') || null : null;
-    } catch (_e) { return null; }
+    return null;
   });
   const stagePreviewStateRef = useRef(null);
   const [leads, setLeads] = useState(() => {
@@ -743,6 +840,7 @@ export default function CRMContainer({
     }
     return 'my_attendance';
   });
+  const [analyticsMenuExpanded, setAnalyticsMenuExpanded] = useState(false);
   const [checklistMenuExpanded, setChecklistMenuExpanded] = useState(false);
   const [checklistSubTab, setChecklistSubTab] = useState('dashboard');
   const [delegationMenuExpanded, setDelegationMenuExpanded] = useState(false);
@@ -853,9 +951,23 @@ export default function CRMContainer({
       let sub = cleanPath.split('/')[1];
       if (sub) return sub;
     }
-    if (queryTab && ['frequency_rules', 'order_followup', 'order_pipeline', 'order_feedback', 'monthly_feedback', 'complaints'].includes(queryTab)) return queryTab;
+    if (queryTab && ['frequency_rules', 'order_followup', 'order_pipeline', 'order_feedback', 'monthly_feedback', 'complaints', 'end_customers'].includes(queryTab)) return queryTab;
     return 'frequency_rules';
   });
+  const [registrationMenuExpanded, setRegistrationMenuExpanded] = useState(() => {
+    const raw = (initialRoute || pathname || '');
+    let cleanPath = (typeof raw === 'string' ? raw : '').replace(/^\/+|\/+$/g, '').toLowerCase();
+    return cleanPath === 'registration' || cleanPath.startsWith('registration/') || cleanPath === 'report';
+  });
+  const [complaintMenuExpanded, setComplaintMenuExpanded] = useState(() => {
+    const raw = (initialRoute || pathname || '');
+    let cleanPath = (typeof raw === 'string' ? raw : '').replace(/^\/+|\/+$/g, '').toLowerCase();
+    let queryTab = (searchParams?.get('tab') || searchParams?.get('subtab') || '').toLowerCase();
+    return cleanPath.includes('complaint') || queryTab === 'complaints';
+  });
+  const [orderPipelineMenuExpanded, setOrderPipelineMenuExpanded] = useState(false);
+  const [orderPipelineStage, setOrderPipelineStage] = useState('ALL');
+  const [complaintStageFilter, setComplaintStageFilter] = useState('ALL');
   const [saasMenuExpanded, setSaasMenuExpanded] = useState(() => {
     const raw = (initialRoute || pathname || '');
     let cleanPath = (typeof raw === 'string' ? raw : '').replace(/^\/+|\/+$/g, '').toLowerCase();
@@ -1420,9 +1532,12 @@ export default function CRMContainer({
   const [recruiterMenuExpanded, setRecruiterMenuExpanded] = useState(false);
   const [recruiterFilterStage, setRecruiterFilterStage] = useState('dashboard');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isSidebarScrolled, setIsSidebarScrolled] = useState(false);
+  const sidebarRef = useRef(null);
+  const navListRef = useRef(null);
   const [expandedCategories, setExpandedCategories] = useState(() => {
     const defaults = {
-      'Sales': false,
+      'Sales': true,
       'Purchase': false,
       'Human Resource': false,
       'User Management': false,
@@ -1469,10 +1584,21 @@ export default function CRMContainer({
       : '';
     return ['user_manage', 'roles', 'hierarchy', 'sessions', 'audit'].includes(requested) ? requested : 'user_manage';
   });
+  const [userManageMenuExpanded, setUserManageMenuExpanded] = useState(() => {
+    return ['user_manage', 'roles', 'hierarchy'].includes(userManagementSubTab);
+  });
+  const [userAuditMenuExpanded, setUserAuditMenuExpanded] = useState(() => {
+    return ['sessions', 'audit'].includes(userManagementSubTab);
+  });
 
   const handleUserManagementSubTabChange = (subTabId) => {
     const nextSubTab = ['user_manage', 'roles', 'hierarchy', 'sessions', 'audit'].includes(subTabId) ? subTabId : 'user_manage';
     setUserManagementSubTab(nextSubTab);
+    if (['user_manage', 'roles', 'hierarchy'].includes(nextSubTab)) {
+      setUserManageMenuExpanded(true);
+    } else if (['sessions', 'audit'].includes(nextSubTab)) {
+      setUserAuditMenuExpanded(true);
+    }
     React.startTransition(() => {
       setActiveTab('user_management_new');
     });
@@ -1509,12 +1635,21 @@ export default function CRMContainer({
 
     // Auto-expand submenus
     const cleanTab = String(activeTab || '').toLowerCase();
+    if (cleanTab === 'dashboard' || cleanTab.startsWith('dashboard/') || ['scorecard', 'overview', 'lead-data'].includes(cleanTab)) setAnalyticsMenuExpanded(true);
+    if (cleanTab === 'registration' || cleanTab.startsWith('registration/') || cleanTab === 'report') setRegistrationMenuExpanded(true);
     if (cleanTab === 'leads') setLeadDataExpanded(true);
     if (cleanTab === 'recruiter') setRecruiterMenuExpanded(true);
     if (cleanTab === 'attendance' || cleanTab.startsWith('attendance/')) setAttendanceMenuExpanded(true);
     if (cleanTab === 'checklist' || cleanTab.startsWith('checklist/')) setChecklistMenuExpanded(true);
     if (cleanTab === 'delegation' || cleanTab.startsWith('delegation/')) setDelegationMenuExpanded(true);
     if (cleanTab === 'party' || cleanTab.startsWith('party/')) setPartyMenuExpanded(true);
+    if (cleanTab === 'channel_ops' || cleanTab === 'channel-operations' || cleanTab.startsWith('channel_ops/') || cleanTab.startsWith('channel-operations/')) {
+      if (channelOpsSubTab === 'complaints') {
+        setComplaintMenuExpanded(true);
+      } else if (['frequency_rules', 'order_followup', 'order_pipeline', 'order_feedback'].includes(channelOpsSubTab)) {
+        setChannelOpsMenuExpanded(true);
+      }
+    }
     if (['ai', 'aiadmin', 'aiknowledgebase'].includes(cleanTab) || cleanTab.startsWith('aiadmin/')) setAiMenuExpanded(true);
     if (['whatsapp_official', 'whatsapp_unofficial', 'sms_config', 'rcs_config', 'email_config'].includes(cleanTab) || cleanTab.startsWith('email-config') || cleanTab.startsWith('email_config')) setMessageMenuExpanded(true);
     if (['callcenter', 'calladmin', 'aicallcenter'].includes(cleanTab) || cleanTab.startsWith('calladmin/')) setCallCenterMenuExpanded(true);
@@ -1522,6 +1657,13 @@ export default function CRMContainer({
     if (cleanTab === 'settings' || cleanTab.startsWith('settings/') || cleanTab === 'sessions') setSettingsMenuExpanded(true);
     if (['saas_master', 'saas_studio'].includes(cleanTab) || cleanTab.startsWith('saas-master/')) setSaasMenuExpanded(true);
     if (cleanTab === 'config_master' || cleanTab.startsWith('config-master/')) setConfigMasterMenuExpanded(true);
+    if (cleanTab === 'user_management_new' || cleanTab.startsWith('user_management_new/')) {
+      if (['user_manage', 'roles', 'hierarchy'].includes(userManagementSubTab)) {
+        setUserManageMenuExpanded(true);
+      } else if (['sessions', 'audit'].includes(userManagementSubTab)) {
+        setUserAuditMenuExpanded(true);
+      }
+    }
   }, [activeTab]);
 
   useEffect(() => {
@@ -2903,9 +3045,12 @@ export default function CRMContainer({
   const [notifFilter, setNotifFilter] = useState('all'); // 'all' | 'yesterday' | 'today' | 'tomorrow' | 'overdue' | 'upcoming'
   const [notifSearch, setNotifSearch] = useState('');
   const [collapsedDates, setCollapsedDates] = useState(new Set());
-  const [notifMainTab, setNotifMainTab] = useState('all'); // 'all' | 'checklist' | 'delegation' | 'leads'
+  const [notifMainTab, setNotifMainTab] = useState('all'); // 'all' | 'checklist' | 'delegation' | 'leads' | 'recruiter' | 'complaints' | 'notices'
   const [userDelegationTasks, setUserDelegationTasks] = useState([]);
   const [userChecklistSlots, setUserChecklistSlots] = useState([]);
+  const [userRecruiterAlerts, setUserRecruiterAlerts] = useState([]);
+  const [userComplaintAlerts, setUserComplaintAlerts] = useState([]);
+  const [userBroadcastAlerts, setUserBroadcastAlerts] = useState([]);
   const userChecklistSlotsRef = useRef(userChecklistSlots);
   useEffect(() => {
     userChecklistSlotsRef.current = userChecklistSlots;
@@ -3025,15 +3170,18 @@ export default function CRMContainer({
     if (['scorecard', 'overview', 'pipeline', 'lead-data', 'leads-data'].includes(tab)) {
       setDashboardSubTab(tab === 'pipeline' || tab === 'leads-data' ? 'lead-data' : tab);
       tab = 'dashboard';
+      setAnalyticsMenuExpanded(true);
     } else if (tab && tab.startsWith('dashboard/')) {
       let sub = tab.split('/')[1];
       if (sub === 'pipeline' || sub === 'leads-data') sub = 'lead-data';
       if (sub) setDashboardSubTab(sub);
       tab = 'dashboard';
+      setAnalyticsMenuExpanded(true);
     } else if (tab === 'dashboard') {
       let sub = params.get('subtab') || params.get('tab');
       if (sub === 'pipeline' || sub === 'leads-data') sub = 'lead-data';
       if (sub) setDashboardSubTab(sub);
+      setAnalyticsMenuExpanded(true);
     } else if (tab === 'sessions' || tab === 'shift-monitoring' || tab === 'shift-analytics' || tab === 'breakdown') {
       tab = 'settings';
       setCurrentSettingSubTab('sessions');
@@ -3202,15 +3350,18 @@ export default function CRMContainer({
       if (['scorecard', 'overview', 'pipeline', 'lead-data', 'leads-data'].includes(tab)) {
         setDashboardSubTab(tab === 'pipeline' || tab === 'leads-data' ? 'lead-data' : tab);
         tab = 'dashboard';
+        setAnalyticsMenuExpanded(true);
       } else if (tab && tab.startsWith('dashboard/')) {
         let sub = tab.split('/')[1];
         if (sub === 'pipeline' || sub === 'leads-data') sub = 'lead-data';
         if (sub) setDashboardSubTab(sub);
         tab = 'dashboard';
+        setAnalyticsMenuExpanded(true);
       } else if (tab === 'dashboard') {
         let sub = params.get('subtab') || params.get('tab');
         if (sub === 'pipeline' || sub === 'leads-data') sub = 'lead-data';
         if (sub) setDashboardSubTab(sub);
+        setAnalyticsMenuExpanded(true);
       } else if (tab === 'user_management_new') {
         const sub = (params.get('tab') || params.get('subtab') || '').toLowerCase();
         setUserManagementSubTab(['user_manage', 'roles', 'hierarchy', 'sessions', 'audit'].includes(sub) ? sub : 'user_manage');
@@ -3411,7 +3562,7 @@ export default function CRMContainer({
     if (isMasterAdmin) return;
     if (!isTabPermitted(activeTab, moduleAccess, userRole, effectiveTenantEntitlements, effectiveTenantId, userEmail)) {
       const allPossibleTabs = [
-        'dashboard', 'leads', 'attendance', 'checklist', 'delegation', 'field_force',
+        'home', 'dashboard', 'leads', 'attendance', 'checklist', 'delegation', 'field_force',
         'registration', 'report', 'orders', 'mrp', 'mrp_against', 'recruiter', 'joining',
         'party', 'channel_ops', 'location_master', 'ai', 'callcenter', 'whatsapp_official',
         'whatsapp_unofficial', 'calladmin', 'aicallcenter', 'email_config', 'user_management_new',
@@ -3453,10 +3604,23 @@ export default function CRMContainer({
       setLastScreenCapture(null);
     }
 
+    if (tabId === 'home') {
+      setActiveTab('home');
+      window.history.pushState(null, '', '/');
+      if (window.innerWidth <= 768) setIsSidebarOpen(false);
+      return;
+    }
+
     if (tabId === 'dashboard') {
       if (!isTabPermitted('dashboard', moduleAccess, userRole)) return;
       setActiveTab('dashboard');
-      window.history.pushState(null, '', '/dashboard');
+      setAnalyticsMenuExpanded(true);
+      const targetSub = dashboardSubTab || 'overview';
+      let path = `/dashboard?tab=${targetSub}`;
+      if (targetSub === 'overview') path = '/dashboard';
+      else if (targetSub === 'scorecard') path = '/scorecard';
+      else if (targetSub === 'lead-data') path = '/lead-data';
+      window.history.pushState(null, '', path);
       if (window.innerWidth <= 768) setIsSidebarOpen(false);
       return;
     }
@@ -3466,6 +3630,7 @@ export default function CRMContainer({
       const canonical = (tabId === 'pipeline' || tabId === 'leads-data') ? 'lead-data' : tabId;
       setActiveTab('dashboard');
       setDashboardSubTab(canonical);
+      setAnalyticsMenuExpanded(true);
       window.history.pushState(null, '', `/${canonical}`);
       if (window.innerWidth <= 768) {
         setIsSidebarOpen(false);
@@ -3657,6 +3822,24 @@ export default function CRMContainer({
     }
   };
 
+  const handleAnalyticsSubTabChange = (subTabId) => {
+    const canonical = (subTabId === 'pipeline' || subTabId === 'leads-data') ? 'lead-data' : subTabId;
+    setDashboardSubTab(canonical);
+    if (activeTab !== 'dashboard') {
+      setActiveTab('dashboard');
+    }
+    setAnalyticsMenuExpanded(true);
+    let newPath = `/dashboard?tab=${canonical}`;
+    if (canonical === 'overview') newPath = '/dashboard';
+    else if (canonical === 'scorecard') newPath = '/scorecard';
+    else if (canonical === 'lead-data') newPath = '/lead-data';
+    window.history.pushState(null, '', newPath);
+    
+    if (window.innerWidth <= 768) {
+      setIsSidebarOpen(false);
+    }
+  };
+
   const handleChecklistSubTabChange = (subTabId) => {
     setChecklistSubTab(subTabId);
     if (activeTab !== 'checklist') {
@@ -3740,6 +3923,16 @@ export default function CRMContainer({
     if (window.innerWidth <= 768) {
       setIsSidebarOpen(false);
     }
+  };
+
+  const handlePipelineStageSelect = (stageId) => {
+    setOrderPipelineStage(stageId);
+    handleChannelOpsSubTabChange('order_pipeline');
+  };
+
+  const handleComplaintStageSelect = (stageId) => {
+    setComplaintStageFilter(stageId);
+    handleChannelOpsSubTabChange('complaints');
   };
 
   const handleSaasSubTabChange = (subTabId) => {
@@ -4150,10 +4343,32 @@ export default function CRMContainer({
     }
   };
 
-  // Helper to dispatch native browser desktop notification
+  // Universal Multi-Platform Notification Dispatcher (Windows Desktop Electron + Android Capacitor + Web Browser)
   const dispatchDesktopNotification = (title, body, onClick) => {
     try {
-      if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+      if (typeof window === 'undefined') return;
+
+      // 1. Windows Desktop App (Electron Native OS Toast via IPC)
+      if (window.desktopApp?.showNotification) {
+        window.desktopApp.showNotification({
+          title: title || 'SPC Workspace',
+          body: body || '',
+          silent: false
+        }).catch(() => {});
+        return;
+      }
+
+      // 2. Android Mobile App (Capacitor Native Notification via FieldTracker Plugin)
+      if (window.Capacitor?.Plugins?.FieldTracker?.showNotification) {
+        window.Capacitor.Plugins.FieldTracker.showNotification({
+          title: title || 'SPC Workspace',
+          message: body || ''
+        }).catch(() => {});
+        return;
+      }
+
+      // 3. Web Browser Fallback (Standard HTML5 Notification)
+      if ('Notification' in window && Notification.permission === 'granted') {
         const n = new Notification(title, {
           body: body || '',
           icon: '/favicon.ico'
@@ -4167,7 +4382,7 @@ export default function CRMContainer({
         }
       }
     } catch (e) {
-      console.warn('Desktop notification error:', e);
+      console.warn('Universal notification error:', e);
     }
   };
 
@@ -4245,7 +4460,7 @@ export default function CRMContainer({
     // 'bell_only' only applicable for admin users who explicitly configured it
   };
 
-  // Fetch & process checklist and delegation alerts for logged-in user
+  // Fetch & process checklist, delegation, recruiter, complaints, and broadcast alerts for logged-in user
   const fetchAndProcessUserAlerts = async () => {
     if (!userEmail) return;
     try {
@@ -4254,14 +4469,22 @@ export default function CRMContainer({
 
       const tasks = Array.isArray(res.delegationTasks) ? res.delegationTasks : [];
       const slots = Array.isArray(res.checklistSlots) ? res.checklistSlots : [];
+      const recruiter = Array.isArray(res.recruiterAlerts) ? res.recruiterAlerts : [];
+      const complaints = Array.isArray(res.complaintAlerts) ? res.complaintAlerts : [];
+      const broadcasts = Array.isArray(res.broadcastAlerts) ? res.broadcastAlerts : [];
 
       setUserDelegationTasks(current => sameAlertItems(current, tasks) ? current : tasks);
       setUserChecklistSlots(current => sameAlertItems(current, slots) ? current : slots);
+      setUserRecruiterAlerts(recruiter);
+      setUserComplaintAlerts(complaints);
+      setUserBroadcastAlerts(broadcasts);
 
       // Baseline establishment on first fetch
       if (!initialAlertSyncFinishedRef.current) {
         tasks.forEach(t => notifiedTaskIdsRef.current.add(t.id));
         slots.forEach(s => notifiedChecklistKeysRef.current.add(`${s.templateId}_${s.periodKey}`));
+        recruiter.forEach(r => notifiedTaskIdsRef.current.add(`rec_${r.id}_${r.type}`));
+        complaints.forEach(c => notifiedTaskIdsRef.current.add(`cmp_${c.id}_${c.is_breached ? 'breach' : 'action'}`));
         initialAlertSyncFinishedRef.current = true;
         return;
       }
@@ -4301,6 +4524,46 @@ export default function CRMContainer({
             rawItem: s,
             isUrgent: true
           });
+        }
+      }
+
+      // Check new recruiter alerts (interview scheduled / joining due)
+      for (const r of recruiter) {
+        const rKey = `rec_${r.id}_${r.type}`;
+        if (!notifiedTaskIdsRef.current.has(rKey)) {
+          notifiedTaskIdsRef.current.add(rKey);
+          triggerUnifiedAlert({
+            id: rKey,
+            type: 'recruiter',
+            title: r.title,
+            subtitle: r.subtitle,
+            details: `Candidate: ${r.name} (${r.phone || ''})`,
+            dueTime: r.scheduled_date ? new Date(r.scheduled_date).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' }) : '',
+            targetTab: 'recruiter',
+            rawItem: r,
+            isUrgent: r.type === 'interview'
+          });
+        }
+      }
+
+      // Check new complaint alerts (SLA breach / urgent ticket action)
+      for (const c of complaints) {
+        const cKey = `cmp_${c.id}_${c.is_breached ? 'breach' : 'action'}`;
+        if (!notifiedTaskIdsRef.current.has(cKey)) {
+          notifiedTaskIdsRef.current.add(cKey);
+          if (c.is_breached) {
+            triggerUnifiedAlert({
+              id: cKey,
+              type: 'complaint',
+              title: c.title,
+              subtitle: c.subtitle,
+              details: `SLA Deadline: ${c.sla_deadline ? new Date(c.sla_deadline).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }) : 'Immediate action'}`,
+              dueTime: c.sla_deadline ? new Date(c.sla_deadline).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' }) : '',
+              targetTab: 'channel_ops',
+              rawItem: c,
+              isUrgent: true
+            });
+          }
         }
       }
     } catch (e) {
@@ -4625,7 +4888,16 @@ export default function CRMContainer({
       <div className={`sidebar-overlay ${isSidebarOpen ? 'open' : ''}`} onClick={() => setIsSidebarOpen(false)}></div>
 
       {/* Sidebar */}
-      <aside className={`sidebar ${isSidebarOpen ? 'open' : ''} ${isSidebarCollapsed ? 'collapsed' : ''}`}>
+      <aside 
+        ref={sidebarRef}
+        className={`sidebar ${isSidebarOpen ? 'open' : ''} ${isSidebarCollapsed ? 'collapsed' : ''}`}
+        onScroll={(e) => {
+          const scrolled = e.currentTarget.scrollTop > 35;
+          if (scrolled !== isSidebarScrolled) {
+            setIsSidebarScrolled(scrolled);
+          }
+        }}
+      >
         <div className="sidebar-header" style={{ display: 'flex', justifyContent: isSidebarCollapsed ? 'center' : 'space-between', alignItems: 'center', position: 'relative', padding: isSidebarCollapsed ? '1rem 0.5rem' : '0.9rem 1rem', borderBottom: '1px solid var(--border-light)' }}>
           <div 
             onClick={() => { if (isSidebarCollapsed) setIsSidebarCollapsed(false); }}
@@ -4705,7 +4977,161 @@ export default function CRMContainer({
             {isSidebarCollapsed ? <ChevronRight size={13} /> : <ChevronLeft size={15} />}
           </button>
         </div>
-        <nav className="nav-list">
+        <nav 
+          ref={navListRef}
+          className="nav-list"
+          onScroll={(e) => {
+            const scrolled = e.currentTarget.scrollTop > 35;
+            if (scrolled !== isSidebarScrolled) {
+              setIsSidebarScrolled(scrolled);
+            }
+          }}
+        >
+          {/* Position #1: 🏠 Home Workspace + Solution 2 Compact Sticky Freeze */}
+          {canShowSidebarModule('home', true) && (
+            <div 
+              className={`sidebar-sticky-home ${isSidebarScrolled ? 'scrolled' : ''}`}
+              style={{
+                position: 'sticky',
+                top: 0,
+                zIndex: 25,
+                backgroundColor: 'var(--bg-surface)',
+                boxShadow: isSidebarScrolled ? '0 4px 12px rgba(0,0,0,0.06), 0 1px 0 var(--border-light)' : 'none',
+                transition: 'box-shadow 0.2s ease, border-color 0.2s ease',
+                margin: isSidebarCollapsed ? '0 auto 0.25rem' : (isSidebarScrolled ? '-0.65rem -0.4rem 0.35rem -0.4rem' : '0 0 0.25rem 0'),
+                padding: isSidebarCollapsed ? '0' : (isSidebarScrolled ? '0.45rem 0.5rem' : '0'),
+                borderBottom: isSidebarScrolled ? '1px solid var(--border-light)' : 'none',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                width: isSidebarCollapsed ? 'auto' : '100%',
+                boxSizing: 'border-box'
+              }}
+            >
+              {/* When scrolled down in expanded sidebar: Mini-Brand SPC Logo */}
+              {isSidebarScrolled && !isSidebarCollapsed && (
+                <div 
+                  onClick={() => {
+                    if (sidebarRef.current) {
+                      sidebarRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+                    }
+                    if (navListRef.current) {
+                      navListRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+                    }
+                  }}
+                  title="Scroll to top / SPC Brand"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.35rem',
+                    cursor: 'pointer',
+                    padding: '0.2rem 0.45rem',
+                    borderRadius: '8px',
+                    background: 'var(--bg-main, rgba(0,0,0,0.03))',
+                    border: '1px solid var(--border-light)',
+                    flexShrink: 0,
+                    transition: 'transform 0.15s ease'
+                  }}
+                >
+                  <div style={{
+                    width: '22px',
+                    height: '22px',
+                    borderRadius: '6px',
+                    background: '#ffffff',
+                    padding: '1px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+                    overflow: 'hidden',
+                    flexShrink: 0
+                  }}>
+                    <img 
+                      src="/supuja-logo.png" 
+                      alt="SPC" 
+                      style={{ width: '100%', height: '100%', objectFit: 'contain' }} 
+                    />
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                    <span style={{ fontWeight: 800, fontSize: '0.8rem', color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>SPC</span>
+                    <span
+                      suppressHydrationWarning
+                      style={{
+                        fontSize: '0.58rem',
+                        fontWeight: 700,
+                        color: 'var(--accent-color)',
+                        background: 'var(--nav-active-bg)',
+                        padding: '0.05rem 0.35rem',
+                        borderRadius: '9999px',
+                        border: '1px solid rgba(37, 99, 235, 0.2)',
+                        letterSpacing: '0.02em',
+                        whiteSpace: 'nowrap'
+                      }}
+                    >
+                      v{pkg.version || '1.0.584'}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Home Navigation Button */}
+              <button 
+                onClick={() => handleTabChange('home')}
+                className="nav-item" 
+                data-active={activeTab === 'home'}
+                title={isSidebarCollapsed ? "Home Workspace" : undefined}
+                style={{ 
+                  background: activeTab === 'home' 
+                    ? 'linear-gradient(135deg, rgba(37, 99, 235, 0.16) 0%, rgba(59, 130, 246, 0.16) 100%)' 
+                    : (isSidebarScrolled && !isSidebarCollapsed ? 'var(--bg-main, rgba(0,0,0,0.02))' : 'none'), 
+                  borderTop: isSidebarScrolled && !isSidebarCollapsed && activeTab !== 'home' ? '1px solid var(--border-light)' : 'none',
+                  borderRight: isSidebarScrolled && !isSidebarCollapsed && activeTab !== 'home' ? '1px solid var(--border-light)' : 'none',
+                  borderBottom: isSidebarScrolled && !isSidebarCollapsed && activeTab !== 'home' ? '1px solid var(--border-light)' : 'none',
+                  borderLeft: activeTab === 'home' ? '3px solid #2563eb' : (isSidebarScrolled && !isSidebarCollapsed ? '1px solid var(--border-light)' : 'none'),
+                  width: '100%', 
+                  flex: 1,
+                  textAlign: 'left', 
+                  cursor: 'pointer', 
+                  fontFamily: 'inherit', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: isSidebarScrolled && !isSidebarCollapsed ? '0.5rem' : '0.75rem',
+                  padding: isSidebarCollapsed ? '0' : (isSidebarScrolled ? '0.35rem 0.6rem' : undefined),
+                  marginBottom: isSidebarScrolled ? '0' : '0.25rem',
+                  borderRadius: isSidebarScrolled ? '8px' : undefined
+                }}
+              >
+                {renderNavIconBadge(<Home size={18} />, '#2563eb')}
+                <span style={{ fontWeight: activeTab === 'home' ? 700 : 500, fontSize: isSidebarScrolled ? '0.88rem' : undefined }}>Home</span>
+              </button>
+
+              {/* Scrolled Collapse Toggle on right */}
+              {isSidebarScrolled && !isSidebarCollapsed && (
+                <button
+                  onClick={() => setIsSidebarCollapsed(true)}
+                  title="Collapse Sidebar"
+                  className="desktop-only-icon"
+                  style={{
+                    background: 'var(--nav-active-bg)',
+                    border: '1px solid var(--border-light)',
+                    cursor: 'pointer',
+                    color: 'var(--accent-color)',
+                    padding: '0.25rem',
+                    borderRadius: '6px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                    width: '24px',
+                    height: '24px'
+                  }}
+                >
+                  <ChevronLeft size={14} />
+                </button>
+              )}
+            </div>
+          )}
+
           {/* Master Admin: 1. SaaS Master */}
           {isMasterAdmin && (
             <SidebarSubmenu collapsed={isSidebarCollapsed}>
@@ -4739,7 +5165,7 @@ export default function CRMContainer({
                 <span className="nav-chevron" style={{ marginRight: '-0.25rem' }}>
                   {saasMenuExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                 </span>
-                <Crown size={20} style={{ flexShrink: 0, color: '#f59e0b' }} />
+                {renderNavIconBadge(<Crown />, '#f59e0b')}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
                   <span style={{ fontWeight: (activeTab === 'saas_master' || activeTab === 'saas_studio') ? 600 : 500 }}>SaaS Master</span>
                   <span style={{ 
@@ -4818,7 +5244,7 @@ export default function CRMContainer({
                 <span className="nav-chevron" style={{ marginRight: '-0.25rem' }}>
                   {configMasterMenuExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                 </span>
-                <Sliders size={20} style={{ flexShrink: 0, color: '#6366f1' }} />
+                {renderNavIconBadge(<Sliders />, '#6366f1')}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
                   <span style={{ fontWeight: activeTab === 'config_master' ? 600 : 500 }}>Config Master</span>
                   <span style={{ 
@@ -4894,16 +5320,97 @@ export default function CRMContainer({
           )}
 
           {canShowSidebarModule('dashboard', userRole === 'admin' || userRole === 'Admin' || moduleAccess['analytics']?.view) && (
-            <button 
-              onClick={() => handleTabChange('dashboard')}
-              className="nav-item" 
-              data-active={activeTab === 'dashboard'}
-              title={isSidebarCollapsed ? "Analytics Dashboard" : undefined}
-              style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
-            >
-              <PieChart size={20} style={{ flexShrink: 0 }} />
-              <span>Analytics Dashboard</span>
-            </button>
+            <SidebarSubmenu collapsed={isSidebarCollapsed}>
+              <button 
+                onClick={() => {
+                  if (isSidebarCollapsed) {
+                    setIsSidebarCollapsed(false);
+                    setAnalyticsMenuExpanded(true);
+                  } else {
+                    setAnalyticsMenuExpanded(!analyticsMenuExpanded);
+                  }
+                  handleTabChange('dashboard');
+                }}
+                className="nav-item" 
+                data-active={activeTab === 'dashboard'}
+                title={isSidebarCollapsed ? "Analytics Dashboard" : undefined}
+                style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
+              >
+                <span className="nav-chevron" style={{ marginRight: '-0.25rem' }}>
+                  {analyticsMenuExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                </span>
+                {renderNavIconBadge(<PieChart />, '#3b82f6')}
+                <span>Analytics Dashboard</span>
+              </button>
+
+              <div className={`submenu-list ${analyticsMenuExpanded ? 'expanded' : ''}`}>
+                <div className="submenu-inner">
+                  {getSubItemPermissions(moduleAccess, userRole, 'analytics', 'overview').view && (
+                    <button
+                      onClick={() => handleAnalyticsSubTabChange('overview')}
+                      className="submenu-item"
+                      data-active={activeTab === 'dashboard' && (dashboardSubTab === 'overview' || !dashboardSubTab)}
+                    >
+                      📊 Executive Overview
+                    </button>
+                  )}
+                  {getSubItemPermissions(moduleAccess, userRole, 'analytics', 'scorecard').view && (
+                    <button
+                      onClick={() => handleAnalyticsSubTabChange('scorecard')}
+                      className="submenu-item"
+                      data-active={activeTab === 'dashboard' && dashboardSubTab === 'scorecard'}
+                    >
+                      🏆 Team Scorecard
+                    </button>
+                  )}
+                  {getSubItemPermissions(moduleAccess, userRole, 'analytics', 'lead-data').view && (
+                    <button
+                      onClick={() => handleAnalyticsSubTabChange('lead-data')}
+                      className="submenu-item"
+                      data-active={activeTab === 'dashboard' && dashboardSubTab === 'lead-data'}
+                    >
+                      🗄️ Lead Data
+                    </button>
+                  )}
+                  {getSubItemPermissions(moduleAccess, userRole, 'analytics', 'delegation').view && (
+                    <button
+                      onClick={() => handleAnalyticsSubTabChange('delegation')}
+                      className="submenu-item"
+                      data-active={activeTab === 'dashboard' && dashboardSubTab === 'delegation'}
+                    >
+                      📋 Delegation Tasks
+                    </button>
+                  )}
+                  {getSubItemPermissions(moduleAccess, userRole, 'analytics', 'checklist').view && (
+                    <button
+                      onClick={() => handleAnalyticsSubTabChange('checklist')}
+                      className="submenu-item"
+                      data-active={activeTab === 'dashboard' && dashboardSubTab === 'checklist'}
+                    >
+                      ✅ Daily Checklists
+                    </button>
+                  )}
+                  {getSubItemPermissions(moduleAccess, userRole, 'analytics', 'attendance').view && (
+                    <button
+                      onClick={() => handleAnalyticsSubTabChange('attendance')}
+                      className="submenu-item"
+                      data-active={activeTab === 'dashboard' && dashboardSubTab === 'attendance'}
+                    >
+                      ⏱️ Attendance Ops
+                    </button>
+                  )}
+                  {getSubItemPermissions(moduleAccess, userRole, 'analytics', 'recruiter').view && (
+                    <button
+                      onClick={() => handleAnalyticsSubTabChange('recruiter')}
+                      className="submenu-item"
+                      data-active={activeTab === 'dashboard' && dashboardSubTab === 'recruiter'}
+                    >
+                      🧑‍💼 Recruiter Hub
+                    </button>
+                  )}
+                </div>
+              </div>
+            </SidebarSubmenu>
           )}
 
           {/* AI Chatbot & AI Suite */}
@@ -4927,7 +5434,7 @@ export default function CRMContainer({
                 <span className="nav-chevron" style={{ marginRight: '-0.25rem' }}>
                   {aiMenuExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                 </span>
-                <Bot size={20} style={{ flexShrink: 0 }} />
+                {renderNavIconBadge(<Bot />, '#a855f7')}
                 <span>AI Chatbot</span>
               </button>
               
@@ -4984,7 +5491,7 @@ export default function CRMContainer({
                 <span className="nav-chevron" style={{ marginRight: '-0.25rem' }}>
                   {callCenterMenuExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                 </span>
-                <PhoneCall size={20} style={{ flexShrink: 0 }} />
+                {renderNavIconBadge(<PhoneCall />, '#06b6d4')}
                 <span>Call Center</span>
               </button>
               
@@ -5041,7 +5548,7 @@ export default function CRMContainer({
                 <span className="nav-chevron" style={{ marginRight: '-0.25rem' }}>
                   {attendanceMenuExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                 </span>
-                <Clock size={20} style={{ flexShrink: 0 }} />
+                {renderNavIconBadge(<Clock />, '#f97316')}
                 <span>Smart Attendance</span>
               </button>
               
@@ -5154,7 +5661,7 @@ export default function CRMContainer({
                 <span className="nav-chevron" style={{ marginRight: '-0.25rem' }}>
                   {checklistMenuExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                 </span>
-                <CheckSquare size={20} style={{ flexShrink: 0 }} />
+                {renderNavIconBadge(<CheckSquare />, '#10b981')}
                 <span>Smart Checklist</span>
               </button>
               
@@ -5222,7 +5729,7 @@ export default function CRMContainer({
                 <span className="nav-chevron" style={{ marginRight: '-0.25rem' }}>
                   {delegationMenuExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                 </span>
-                <Users size={20} style={{ flexShrink: 0 }} />
+                {renderNavIconBadge(<Users />, '#0ea5e9')}
                 <span>Delegation Tasks</span>
               </button>
               
@@ -5290,7 +5797,7 @@ export default function CRMContainer({
                 <span className="nav-chevron" style={{ marginRight: '-0.25rem' }}>
                   {fieldForceMenuExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                 </span>
-                <NavigationIcon size={20} style={{ flexShrink: 0 }} />
+                {renderNavIconBadge(<NavigationIcon />, '#14b8a6')}
                 <span>Field Force System</span>
               </button>
               
@@ -5370,17 +5877,29 @@ export default function CRMContainer({
                   suppressHydrationWarning
                 >
                   <div className="category-modules-inner">
-                    {visibleModules.map(module => (
-                      <SidebarSubmenu key={module.id} collapsed={isSidebarCollapsed}>
+                    {visibleModules.map(module => {
+                      if (module.id === 'report') return null;
+                      return (
+                        <React.Fragment key={module.id}>
+                          <SidebarSubmenu collapsed={isSidebarCollapsed}>
                         <button 
                           onClick={() => { 
-                            if (module.id === 'leads') {
+                            if (module.id === 'registration') {
+                              if (isSidebarCollapsed) {
+                                setIsSidebarCollapsed(false);
+                                setRegistrationMenuExpanded(true);
+                              } else {
+                                setRegistrationMenuExpanded(!registrationMenuExpanded);
+                              }
+                              handleTabChange('registration');
+                            } else if (module.id === 'leads') {
                               if (isSidebarCollapsed) {
                                 setIsSidebarCollapsed(false);
                                 setLeadDataExpanded(true);
                               } else {
                                 setLeadDataExpanded(!leadDataExpanded);
                               }
+                              handleTabChange('leads');
                             } else if (module.id === 'recruiter') {
                               if (isSidebarCollapsed) {
                                 setIsSidebarCollapsed(false);
@@ -5417,10 +5936,15 @@ export default function CRMContainer({
                             }
                           }}
                           className="nav-item" 
-                          data-active={activeTab === (module.path || module.id)}
+                          data-active={module.id === 'registration' ? (activeTab === 'registration' || activeTab === 'report') : activeTab === (module.path || module.id)}
                           title={isSidebarCollapsed ? module.label : undefined}
                           style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
                         >
+                          {module.id === 'registration' && (
+                            <span className="nav-chevron" style={{ marginRight: '-0.25rem' }}>
+                              {registrationMenuExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                            </span>
+                          )}
                           {module.id === 'leads' && (
                             <span className="nav-chevron" style={{ marginRight: '-0.25rem' }}>
                               {leadDataExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
@@ -5446,7 +5970,7 @@ export default function CRMContainer({
                               {channelOpsMenuExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                             </span>
                           )}
-                          {React.cloneElement(module.icon, { style: { flexShrink: 0 } })}
+                          {renderNavIconBadge(module.icon, MODULE_COLORS[module.id] || '#2563eb')}
                           <span>{module.label}</span>
                           {module.id === 'party' && partyPendingCount > 0 && (
                             <span style={{ marginLeft: 'auto', background: '#ef4444', color: '#fff', fontSize: '0.68rem', fontWeight: 800, padding: '0.1rem 0.45rem', borderRadius: '10px', lineHeight: '1' }}>
@@ -5532,7 +6056,7 @@ export default function CRMContainer({
                                       </button>
                                     )}
 
-                                    {/* S02–S09 */}
+                                    {/* S02–S12 */}
                                     {[
                                       { id: 'S02', label: 'S02 - Resume Filtered' },
                                       { id: 'S03', label: 'S03 - Interview Executed' },
@@ -5541,7 +6065,10 @@ export default function CRMContainer({
                                       { id: 'S06', label: 'S06 - Salary Negotiating' },
                                       { id: 'S07', label: 'S07 - Shortlisted' },
                                       { id: 'S08', label: 'S08 - LOI Released' },
-                                      { id: 'S09', label: 'S09 - Joined' }
+                                      { id: 'S09', label: 'S09 - Joined' },
+                                      { id: 'S10', label: 'S10 - Document Collection' },
+                                      { id: 'S11', label: 'S11 - Emp ID & Final Mapping' },
+                                      { id: 'S12', label: 'S12 - Employee Working Rating' }
                                     ].filter(stage => canSeeStage(stage.id) && isStageEnabled(stage.id)).map(stage => (
                                       <button
                                         key={stage.id}
@@ -5636,16 +6163,77 @@ export default function CRMContainer({
                           </div>
                         )}
 
-                        {module.id === 'registration' && activeTab === 'registration' && (
-                          <div className="submenu-list expanded"><div className="submenu-inner">
-                            {(module.subItems || []).filter(item => getSubItemPermissions(moduleAccess, userRole, 'registration', item.id).view).map(item => (
-                              <button key={item.id} className="submenu-item" onClick={() => {
-                                const target = item.id === 'form' ? '/registration' : `/registration/${item.id}`;
-                                window.history.pushState(null, '', target);
-                                window.dispatchEvent(new PopStateEvent('popstate'));
-                              }}>{item.label}</button>
-                            ))}
-                          </div></div>
+                        {module.id === 'registration' && (
+                          <div className={`submenu-list ${registrationMenuExpanded ? 'expanded' : ''}`}>
+                            <div className="submenu-inner">
+                              {(() => {
+                                const regPath = (pathname || initialRoute || '').toLowerCase();
+                                const isDrafts = regPath.includes('/registration/drafts') || regPath.includes('registration/drafts');
+                                const isSubmitted = regPath.includes('/registration/submitted') || regPath.includes('registration/submitted');
+                                const isDeleted = regPath.includes('/registration/deleted') || regPath.includes('registration/deleted');
+                                const isAddLead = !isDrafts && !isSubmitted && !isDeleted;
+                                return (
+                                  <>
+                                    <button
+                                      onClick={() => {
+                                        if (activeTab !== 'registration') handleTabChange('registration');
+                                        window.history.pushState(null, '', '/registration');
+                                        window.dispatchEvent(new PopStateEvent('popstate'));
+                                      }}
+                                      className="submenu-item"
+                                      data-active={activeTab === 'registration' && isAddLead}
+                                    >
+                                      ➕ +Add Lead
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        if (activeTab !== 'registration') handleTabChange('registration');
+                                        window.history.pushState(null, '', '/registration/drafts');
+                                        window.dispatchEvent(new PopStateEvent('popstate'));
+                                      }}
+                                      className="submenu-item"
+                                      data-active={activeTab === 'registration' && isDrafts}
+                                    >
+                                      💾 Lead Saved Draft
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        if (activeTab !== 'registration') handleTabChange('registration');
+                                        window.history.pushState(null, '', '/registration/submitted');
+                                        window.dispatchEvent(new PopStateEvent('popstate'));
+                                      }}
+                                      className="submenu-item"
+                                      data-active={activeTab === 'registration' && isSubmitted}
+                                    >
+                                      ✅ Lead Submitted
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        if (activeTab !== 'registration') handleTabChange('registration');
+                                        window.history.pushState(null, '', '/registration/deleted');
+                                        window.dispatchEvent(new PopStateEvent('popstate'));
+                                      }}
+                                      className="submenu-item"
+                                      data-active={activeTab === 'registration' && isDeleted}
+                                    >
+                                      🗑️ Lead Deleted
+                                    </button>
+                                  </>
+                                );
+                              })()}
+                              {canShowSidebarModule('report', (userRole === 'admin' || userRole === 'Admin') || moduleAccess['report']?.view) && (
+                                <button
+                                  onClick={() => {
+                                    handleTabChange('report');
+                                  }}
+                                  className="submenu-item"
+                                  data-active={activeTab === 'report'}
+                                >
+                                  📑 Lead Registered Report
+                                </button>
+                              )}
+                            </div>
+                          </div>
                         )}
 
                         {module.id === 'party' && (
@@ -5833,13 +6421,64 @@ export default function CRMContainer({
                               )}
 
                               {getSubItemPermissions(moduleAccess, userRole, 'channel_ops', 'order_pipeline').view && (
-                                <button
-                                  onClick={() => handleChannelOpsSubTabChange('order_pipeline')}
-                                  className="submenu-item"
-                                  data-active={activeTab === 'channel_ops' && channelOpsSubTab === 'order_pipeline'}
-                                >
-                                  🚚 Order to Delivery Pipeline
-                                </button>
+                                <>
+                                  <button
+                                    onClick={() => {
+                                      const nextState = !orderPipelineMenuExpanded;
+                                      setOrderPipelineMenuExpanded(nextState);
+                                      if (activeTab !== 'channel_ops' || channelOpsSubTab !== 'order_pipeline') {
+                                        handleChannelOpsSubTabChange('order_pipeline');
+                                      }
+                                    }}
+                                    className="submenu-item"
+                                    data-active={activeTab === 'channel_ops' && channelOpsSubTab === 'order_pipeline'}
+                                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
+                                  >
+                                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                                      🚚 Order to Delivery Pipeline
+                                    </span>
+                                    <span style={{ opacity: 0.7 }}>
+                                      {orderPipelineMenuExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                                    </span>
+                                  </button>
+                                  {orderPipelineMenuExpanded && (
+                                    <div style={{ paddingLeft: '0.85rem', display: 'flex', flexDirection: 'column', gap: '0.2rem', margin: '0.2rem 0' }}>
+                                      <button
+                                        onClick={() => handlePipelineStageSelect('ALL')}
+                                        className="submenu-item"
+                                        data-active={activeTab === 'channel_ops' && channelOpsSubTab === 'order_pipeline' && (orderPipelineStage === 'ALL' || !orderPipelineStage)}
+                                        style={{ fontSize: '0.78rem', fontWeight: 600 }}
+                                      >
+                                        📦 Order All Stage
+                                      </button>
+                                      {[
+                                        { id: 'S01', label: 'S01 - Order Confirmation' },
+                                        { id: 'S02', label: 'S02 - PI Generation' },
+                                        { id: 'S03', label: 'S03 - PI Shared' },
+                                        { id: 'S04', label: 'S04 - Request Advance Payment' },
+                                        { id: 'S05', label: 'S05 - Receive Advance Payment' },
+                                        { id: 'S06', label: 'S06 - Check Stock & Production' },
+                                        { id: 'S07', label: 'S07 - Product Partial & Full Status' },
+                                        { id: 'S08', label: 'S08 - Quality Check (PDI)' },
+                                        { id: 'S09', label: 'S09 - Request 70% Balance' },
+                                        { id: 'S10', label: 'S10 - Receive 70% Balance' },
+                                        { id: 'S11', label: 'S11 - Ready for Dispatch' },
+                                        { id: 'S12', label: 'S12 - Dispatch Material' },
+                                        { id: 'S13', label: 'S13 - Material Delivered (POD)' }
+                                      ].map(stg => (
+                                        <button
+                                          key={stg.id}
+                                          onClick={() => handlePipelineStageSelect(stg.id)}
+                                          className="submenu-item"
+                                          data-active={activeTab === 'channel_ops' && channelOpsSubTab === 'order_pipeline' && orderPipelineStage === stg.id}
+                                          style={{ fontSize: '0.78rem' }}
+                                        >
+                                          {stg.label}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  )}
+                                </>
                               )}
 
                               {getSubItemPermissions(moduleAccess, userRole, 'channel_ops', 'order_feedback').view && (
@@ -5848,44 +6487,108 @@ export default function CRMContainer({
                                   className="submenu-item"
                                   data-active={activeTab === 'channel_ops' && channelOpsSubTab === 'order_feedback'}
                                 >
-                                  ⭐ Post-Order Feedback
-                                </button>
-                              )}
-
-                              {getSubItemPermissions(moduleAccess, userRole, 'channel_ops', 'monthly_feedback').view && (
-                                <button
-                                  onClick={() => handleChannelOpsSubTabChange('monthly_feedback')}
-                                  className="submenu-item"
-                                  data-active={activeTab === 'channel_ops' && channelOpsSubTab === 'monthly_feedback'}
-                                >
-                                  📅 Monthly Health Checks
-                                </button>
-                              )}
-
-                              {getSubItemPermissions(moduleAccess, userRole, 'channel_ops', 'complaints').view && (
-                                <button
-                                  onClick={() => handleChannelOpsSubTabChange('complaints')}
-                                  className="submenu-item"
-                                  data-active={activeTab === 'channel_ops' && channelOpsSubTab === 'complaints'}
-                                >
-                                  ⚠️ Complaint Management
-                                </button>
-                              )}
-
-                              {getSubItemPermissions(moduleAccess, userRole, 'channel_ops', 'end_customers').view && (
-                                <button
-                                  onClick={() => handleChannelOpsSubTabChange('end_customers')}
-                                  className="submenu-item"
-                                  data-active={activeTab === 'channel_ops' && channelOpsSubTab === 'end_customers'}
-                                >
-                                  🚜 End Customer Master
+                                  ⭐ Post-Delivery Feedback
                                 </button>
                               )}
                             </div>
                           </div>
                         )}
                       </SidebarSubmenu>
-                    ))}
+
+                      {/* Standalone Sales Sub-Modules Extracted as Direct Menu Entries */}
+                      {(module.id === 'channel_ops' || module.id === 'channel-operations') && getSubItemPermissions(moduleAccess, userRole, 'channel_ops', 'monthly_feedback').view && (
+                        <SidebarSubmenu key="monthly_feedback_sub" collapsed={isSidebarCollapsed}>
+                          <button
+                            onClick={() => {
+                              if (isSidebarCollapsed) setIsSidebarCollapsed(false);
+                              handleChannelOpsSubTabChange('monthly_feedback');
+                            }}
+                            className="nav-item"
+                            data-active={(activeTab === 'channel_ops' || activeTab === 'channel-operations') && channelOpsSubTab === 'monthly_feedback'}
+                            title={isSidebarCollapsed ? "Monthly Health Checks" : undefined}
+                            style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
+                          >
+                            {renderNavIconBadge(<Calendar />, '#4f46e5')}
+                            <span>Monthly Health Checks</span>
+                          </button>
+                        </SidebarSubmenu>
+                      )}
+
+                      {(module.id === 'channel_ops' || module.id === 'channel-operations') && getSubItemPermissions(moduleAccess, userRole, 'channel_ops', 'complaints').view && (
+                        <SidebarSubmenu key="complaints_sub" collapsed={isSidebarCollapsed}>
+                          <button
+                            onClick={() => {
+                              if (isSidebarCollapsed) {
+                                setIsSidebarCollapsed(false);
+                                setComplaintMenuExpanded(true);
+                              } else {
+                                setComplaintMenuExpanded(!complaintMenuExpanded);
+                              }
+                              handleChannelOpsSubTabChange('complaints');
+                            }}
+                            className="nav-item"
+                            data-active={(activeTab === 'channel_ops' || activeTab === 'channel-operations') && channelOpsSubTab === 'complaints'}
+                            title={isSidebarCollapsed ? "Complaint Management" : undefined}
+                            style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
+                          >
+                            <span className="nav-chevron" style={{ marginRight: '-0.25rem' }}>
+                              {complaintMenuExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                            </span>
+                            {renderNavIconBadge(<AlertTriangle />, '#ef4444')}
+                            <span>Complaint Management</span>
+                          </button>
+                          <div className={`submenu-list ${complaintMenuExpanded ? 'expanded' : ''}`}>
+                            <div className="submenu-inner">
+                              <button
+                                onClick={() => handleComplaintStageSelect('ALL')}
+                                className="submenu-item"
+                                data-active={(activeTab === 'channel_ops' || activeTab === 'channel-operations') && channelOpsSubTab === 'complaints' && (complaintStageFilter === 'ALL' || !complaintStageFilter)}
+                                style={{ fontWeight: 600 }}
+                              >
+                                📋 Complaints All Stage
+                              </button>
+                              {[
+                                { id: 'C01', label: 'C01 - Ticket Logged & Triaged' },
+                                { id: 'C02', label: 'C02 - Internal Dept RCA' },
+                                { id: 'C03', label: 'C03 - Service Engineer Deputed' },
+                                { id: 'C04', label: 'C04 - On-Site Job Card' },
+                                { id: 'C05', label: 'C05 - Customer OTP Verification' },
+                                { id: 'C06', label: 'C06 - Quality Audit & Closed' }
+                              ].map(stg => (
+                                <button
+                                  key={stg.id}
+                                  onClick={() => handleComplaintStageSelect(stg.id)}
+                                  className="submenu-item"
+                                  data-active={(activeTab === 'channel_ops' || activeTab === 'channel-operations') && channelOpsSubTab === 'complaints' && complaintStageFilter === stg.id}
+                                >
+                                  {stg.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </SidebarSubmenu>
+                      )}
+
+                      {(module.id === 'channel_ops' || module.id === 'channel-operations') && getSubItemPermissions(moduleAccess, userRole, 'channel_ops', 'end_customers').view && (
+                        <SidebarSubmenu key="end_customers_sub" collapsed={isSidebarCollapsed}>
+                          <button
+                            onClick={() => {
+                              if (isSidebarCollapsed) setIsSidebarCollapsed(false);
+                              handleChannelOpsSubTabChange('end_customers');
+                            }}
+                            className="nav-item"
+                            data-active={(activeTab === 'channel_ops' || activeTab === 'channel-operations') && channelOpsSubTab === 'end_customers'}
+                            title={isSidebarCollapsed ? "End Customer Master" : undefined}
+                            style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
+                          >
+                            {renderNavIconBadge(<Truck />, '#16a34a')}
+                            <span>End Customer Master</span>
+                          </button>
+                        </SidebarSubmenu>
+                      )}
+                        </React.Fragment>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
@@ -5915,42 +6618,149 @@ export default function CRMContainer({
                 suppressHydrationWarning
               >
                 <div className="category-modules-inner">
-                  {[
-                    { id: 'user_manage', label: 'User Manage', icon: Users },
-                    { id: 'roles', label: 'Roles & Permissions', icon: Shield },
-                    { id: 'hierarchy', label: 'Org Hierarchy', icon: Network },
-                    { id: 'sessions', label: 'Active Sessions', icon: Monitor },
-                    { id: 'audit', label: 'Audit Logs', icon: Clock }
-                  ].filter(sub => {
-                    return getSubItemPermissions(moduleAccess, userRole, 'user_management_new', sub.id).view;
-                  }).map(sub => {
-                    const SubIcon = sub.icon;
-                    const isSubActive = activeTab === 'user_management_new' && userManagementSubTab === sub.id;
-                    return (
+                  {/* Group 1: 👥 User System */}
+                  {['user_manage', 'roles', 'hierarchy'].some(subId => getSubItemPermissions(moduleAccess, userRole, 'user_management_new', subId).view) && (
+                    <SidebarSubmenu collapsed={isSidebarCollapsed}>
                       <button
-                        key={sub.id}
-                        onClick={() => handleUserManagementSubTabChange(sub.id)}
-                        className="nav-item"
-                        data-active={isSubActive}
-                        title={isSidebarCollapsed ? sub.label : undefined}
-                        style={{
-                          background: isSubActive ? 'var(--primary-light, rgba(37, 99, 235, 0.12))' : 'none',
-                          border: 'none',
-                          width: '100%',
-                          textAlign: 'left',
-                          cursor: 'pointer',
-                          fontFamily: 'inherit',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '0.75rem',
-                          paddingLeft: '1.25rem'
+                        onClick={() => {
+                          if (isSidebarCollapsed) {
+                            setIsSidebarCollapsed(false);
+                            setUserManageMenuExpanded(true);
+                          } else {
+                            setUserManageMenuExpanded(!userManageMenuExpanded);
+                          }
+                          if (activeTab !== 'user_management_new') {
+                            handleTabChange('user_management_new');
+                          }
+                          if (!['user_manage', 'roles', 'hierarchy'].includes(userManagementSubTab)) {
+                            handleUserManagementSubTabChange('user_manage');
+                          }
                         }}
+                        className="nav-item"
+                        data-active={activeTab === 'user_management_new' && ['user_manage', 'roles', 'hierarchy'].includes(userManagementSubTab)}
+                        title={isSidebarCollapsed ? "User System" : undefined}
+                        style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
                       >
-                        <SubIcon size={16} style={{ flexShrink: 0, color: isSubActive ? 'var(--primary-color, #2563eb)' : 'inherit' }} />
-                        <span style={{ fontWeight: isSubActive ? 700 : 500 }}>{sub.label}</span>
+                        <span className="nav-chevron" style={{ marginRight: '-0.25rem' }}>
+                          {userManageMenuExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                        </span>
+                        {renderNavIconBadge(<Users />, '#3b82f6')}
+                        <span>User System</span>
                       </button>
-                    );
-                  })}
+
+                      <div className={`submenu-list ${userManageMenuExpanded ? 'expanded' : ''}`}>
+                        <div className="submenu-inner">
+                          {getSubItemPermissions(moduleAccess, userRole, 'user_management_new', 'user_manage').view && (
+                            <button
+                              onClick={() => {
+                                if (activeTab !== 'user_management_new') handleTabChange('user_management_new');
+                                handleUserManagementSubTabChange('user_manage');
+                              }}
+                              className="submenu-item"
+                              data-active={activeTab === 'user_management_new' && (userManagementSubTab === 'user_manage' || !userManagementSubTab)}
+                              style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}
+                            >
+                              {renderMiniSubBadge(<Users />, '#0284c7')}
+                              <span>User Manage</span>
+                            </button>
+                          )}
+                          {getSubItemPermissions(moduleAccess, userRole, 'user_management_new', 'roles').view && (
+                            <button
+                              onClick={() => {
+                                if (activeTab !== 'user_management_new') handleTabChange('user_management_new');
+                                handleUserManagementSubTabChange('roles');
+                              }}
+                              className="submenu-item"
+                              data-active={activeTab === 'user_management_new' && userManagementSubTab === 'roles'}
+                              style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}
+                            >
+                              {renderMiniSubBadge(<Shield />, '#8b5cf6')}
+                              <span>Roles & Permissions</span>
+                            </button>
+                          )}
+                          {getSubItemPermissions(moduleAccess, userRole, 'user_management_new', 'hierarchy').view && (
+                            <button
+                              onClick={() => {
+                                if (activeTab !== 'user_management_new') handleTabChange('user_management_new');
+                                handleUserManagementSubTabChange('hierarchy');
+                              }}
+                              className="submenu-item"
+                              data-active={activeTab === 'user_management_new' && userManagementSubTab === 'hierarchy'}
+                              style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}
+                            >
+                              {renderMiniSubBadge(<Network />, '#06b6d4')}
+                              <span>Org Hierarchy</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </SidebarSubmenu>
+                  )}
+
+                  {/* Group 2: User Audit System */}
+                  {['audit', 'sessions'].some(subId => getSubItemPermissions(moduleAccess, userRole, 'user_management_new', subId).view) && (
+                    <SidebarSubmenu collapsed={isSidebarCollapsed}>
+                      <button
+                        onClick={() => {
+                          if (isSidebarCollapsed) {
+                            setIsSidebarCollapsed(false);
+                            setUserAuditMenuExpanded(true);
+                          } else {
+                            setUserAuditMenuExpanded(!userAuditMenuExpanded);
+                          }
+                          if (activeTab !== 'user_management_new') {
+                            handleTabChange('user_management_new');
+                          }
+                          if (!['audit', 'sessions'].includes(userManagementSubTab)) {
+                            handleUserManagementSubTabChange('audit');
+                          }
+                        }}
+                        className="nav-item"
+                        data-active={activeTab === 'user_management_new' && ['audit', 'sessions'].includes(userManagementSubTab)}
+                        title={isSidebarCollapsed ? "User Audit System" : undefined}
+                        style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
+                      >
+                        <span className="nav-chevron" style={{ marginRight: '-0.25rem' }}>
+                          {userAuditMenuExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                        </span>
+                        {renderNavIconBadge(<Clock />, '#6366f1')}
+                        <span>User Audit System</span>
+                      </button>
+
+                      <div className={`submenu-list ${userAuditMenuExpanded ? 'expanded' : ''}`}>
+                        <div className="submenu-inner">
+                          {getSubItemPermissions(moduleAccess, userRole, 'user_management_new', 'audit').view && (
+                            <button
+                              onClick={() => {
+                                if (activeTab !== 'user_management_new') handleTabChange('user_management_new');
+                                handleUserManagementSubTabChange('audit');
+                              }}
+                              className="submenu-item"
+                              data-active={activeTab === 'user_management_new' && userManagementSubTab === 'audit'}
+                              style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}
+                            >
+                              {renderMiniSubBadge(<Clock />, '#f59e0b')}
+                              <span>Audit Logs</span>
+                            </button>
+                          )}
+                          {getSubItemPermissions(moduleAccess, userRole, 'user_management_new', 'sessions').view && (
+                            <button
+                              onClick={() => {
+                                if (activeTab !== 'user_management_new') handleTabChange('user_management_new');
+                                handleUserManagementSubTabChange('sessions');
+                              }}
+                              className="submenu-item"
+                              data-active={activeTab === 'user_management_new' && userManagementSubTab === 'sessions'}
+                              style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}
+                            >
+                              {renderMiniSubBadge(<Monitor />, '#10b981')}
+                              <span>Active Sessions</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </SidebarSubmenu>
+                  )}
                 </div>
               </div>
             </div>
@@ -6049,7 +6859,7 @@ export default function CRMContainer({
                         title={isSidebarCollapsed ? "WhatsApp Official" : undefined}
                         style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
                       >
-                        <MessageSquare size={20} style={{ flexShrink: 0 }} />
+                        {renderNavIconBadge(<MessageSquare />, '#22c55e')}
                         <span>WhatsApp Official</span>
                       </button>
                     )}
@@ -6062,7 +6872,7 @@ export default function CRMContainer({
                         title={isSidebarCollapsed ? "WhatsApp UnOfficial" : undefined}
                         style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
                       >
-                        <MessageCircle size={20} style={{ flexShrink: 0 }} />
+                        {renderNavIconBadge(<MessageCircle />, '#16a34a')}
                         <span>WhatsApp UnOfficial</span>
                       </button>
                     )}
@@ -6075,7 +6885,7 @@ export default function CRMContainer({
                         title={isSidebarCollapsed ? "SMS" : undefined}
                         style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
                       >
-                        <Send size={20} style={{ flexShrink: 0 }} />
+                        {renderNavIconBadge(<Send />, '#f59e0b')}
                         <span>SMS</span>
                       </button>
                     )}
@@ -6088,7 +6898,7 @@ export default function CRMContainer({
                         title={isSidebarCollapsed ? "RCS" : undefined}
                         style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
                       >
-                        <Zap size={20} style={{ flexShrink: 0 }} />
+                        {renderNavIconBadge(<Zap />, '#6366f1')}
                         <span>RCS</span>
                       </button>
                     )}
@@ -6101,7 +6911,7 @@ export default function CRMContainer({
                         title={isSidebarCollapsed ? "Email" : undefined}
                         style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
                       >
-                        <Mail size={20} style={{ flexShrink: 0 }} />
+                        {renderNavIconBadge(<Mail />, '#3b82f6')}
                         <span>Email</span>
                       </button>
                     )}
@@ -6136,7 +6946,7 @@ export default function CRMContainer({
                         title={isSidebarCollapsed ? "Team Management" : undefined}
                         style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
                       >
-                        <Shield size={20} style={{ flexShrink: 0 }} />
+                        {renderNavIconBadge(<Shield />, '#475569')}
                         <span>Team Management</span>
                       </button>
                     )}
@@ -6179,7 +6989,7 @@ export default function CRMContainer({
                         title={isSidebarCollapsed ? item.label : undefined}
                         style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
                       >
-                        <IconComponent size={20} style={{ flexShrink: 0 }} />
+                        {renderNavIconBadge(<IconComponent />, '#64748b')}
                         <span>{item.label}</span>
                       </button>
                     );
@@ -6284,6 +7094,7 @@ export default function CRMContainer({
             {activeTab !== 'ai' && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0, flexShrink: 0, overflow: 'hidden' }}>
                 <h1 suppressHydrationWarning style={{ fontSize: '0.96rem', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', margin: 0, minWidth: 0, flexShrink: 0, letterSpacing: '-0.015em' }}>
+                  {activeTab === 'home' && 'Home Workspace'}
                   {activeTab === 'dashboard' && 'Analytics Dashboard'}
                   {activeTab === 'leads' && (
                     leadsFilterStage === 'hourly_work' 
@@ -6356,7 +7167,7 @@ export default function CRMContainer({
                     configMasterSubTab === 'offline_rule' ? '⚙️ Config Master — Offline Rules & Sync Policy' :
                     '⚙️ Config Master — Public User Management'
                   )}
-                  {!['dashboard', 'leads', 'orders', 'mrp', 'mrp_against', 'recruiter', 'joining', 'attendance', 'checklist', 'delegation', 'field_force', 'registration', 'report', 'aiadmin', 'aiknowledgebase', 'callcenter', 'calladmin', 'aicallcenter', 'team', 'user_management_new', 'client_registration', 'client_report', 'workplace', 'public_users', 'party', 'channel_ops', 'channel-operations', 'location_territory', 'location_master', 'whatsapp_official', 'whatsapp_unofficial', 'sms_config', 'rcs_config', 'email_config', 'admin_message_config', 'settings', 'saas_master', 'saas_studio', 'config_master'].includes(activeTab) && (
+                  {!['home', 'dashboard', 'leads', 'orders', 'mrp', 'mrp_against', 'recruiter', 'joining', 'attendance', 'checklist', 'delegation', 'field_force', 'registration', 'report', 'aiadmin', 'aiknowledgebase', 'callcenter', 'calladmin', 'aicallcenter', 'team', 'user_management_new', 'client_registration', 'client_report', 'workplace', 'public_users', 'party', 'channel_ops', 'channel-operations', 'location_territory', 'location_master', 'whatsapp_official', 'whatsapp_unofficial', 'sms_config', 'rcs_config', 'email_config', 'admin_message_config', 'settings', 'saas_master', 'saas_studio', 'config_master'].includes(activeTab) && (
                     activeTab ? activeTab.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) : 'Dashboard'
                   )}
                 </h1>
@@ -6518,7 +7329,7 @@ export default function CRMContainer({
             {/* Notifications Button (Square Button Box) */}
             <div style={{ position: 'relative', flexShrink: 0 }} ref={notificationMenuRef}>
               {(() => {
-                const totalAlertCount = (dueFollowUps?.length || 0) + (userChecklistSlots?.length || 0) + (userDelegationTasks?.length || 0);
+                const totalAlertCount = (dueFollowUps?.length || 0) + (userChecklistSlots?.length || 0) + (userDelegationTasks?.length || 0) + (userRecruiterAlerts?.length || 0) + (userComplaintAlerts?.length || 0) + (userBroadcastAlerts?.length || 0);
                 return (
                   <button
                     type="button"
@@ -6628,7 +7439,7 @@ export default function CRMContainer({
                         padding: '0.2rem 0.6rem',
                         borderRadius: '9999px'
                       }}>
-                        {(dueFollowUps?.length || 0) + (userChecklistSlots?.length || 0) + (userDelegationTasks?.length || 0)} Total
+                        {(dueFollowUps?.length || 0) + (userChecklistSlots?.length || 0) + (userDelegationTasks?.length || 0) + (userRecruiterAlerts?.length || 0) + (userComplaintAlerts?.length || 0) + (userBroadcastAlerts?.length || 0)} Total
                       </span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
@@ -6706,10 +7517,13 @@ export default function CRMContainer({
                     overflowX: 'auto'
                   }}>
                     {[
-                      { id: 'all', label: 'All', icon: '🔔', count: (dueFollowUps?.length || 0) + (userChecklistSlots?.length || 0) + (userDelegationTasks?.length || 0) },
+                      { id: 'all', label: 'All', icon: '🔔', count: (dueFollowUps?.length || 0) + (userChecklistSlots?.length || 0) + (userDelegationTasks?.length || 0) + (userRecruiterAlerts?.length || 0) + (userComplaintAlerts?.length || 0) + (userBroadcastAlerts?.length || 0) },
                       { id: 'checklist', label: 'Checklist', icon: '📋', count: userChecklistSlots.length },
                       { id: 'delegation', label: 'Delegation', icon: '🎯', count: userDelegationTasks.length },
-                      { id: 'leads', label: 'Leads', icon: '📞', count: dueFollowUps.length }
+                      { id: 'leads', label: 'Leads', icon: '📞', count: dueFollowUps.length },
+                      { id: 'recruiter', label: 'Recruiter', icon: '👥', count: userRecruiterAlerts.length },
+                      { id: 'complaints', label: 'Complaints', icon: '🛠️', count: userComplaintAlerts.length },
+                      { id: 'notices', label: 'Notices', icon: '📢', count: userBroadcastAlerts.length }
                     ].map(tab => {
                       const isActive = notifMainTab === tab.id;
                       return (
@@ -7216,6 +8030,212 @@ export default function CRMContainer({
                     </>
                   )}
 
+                  {/* TAB CONTENT: RECRUITER */}
+                  {notifMainTab === 'recruiter' && (
+                    <div style={{ flex: 1, overflowY: 'auto', padding: '0.6rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', minHeight: '180px' }}>
+                      {userRecruiterAlerts.length === 0 ? (
+                        <div style={{ padding: '2.5rem 1rem', color: 'var(--text-secondary)', textAlign: 'center', fontSize: '0.85rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+                          <Users size={28} style={{ opacity: 0.4, color: '#3b82f6' }} />
+                          <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>No Recruiter Alerts Today!</span>
+                          <span style={{ fontSize: '0.78rem' }}>No interviews or candidate joinings scheduled for today.</span>
+                        </div>
+                      ) : (
+                        userRecruiterAlerts.map(item => (
+                          <div
+                            key={item.id}
+                            onClick={() => { setActiveTab('recruiter'); setShowNotifications(false); }}
+                            style={{
+                              padding: '0.75rem 0.85rem',
+                              borderRadius: '10px',
+                              border: '1px solid var(--border-light)',
+                              backgroundColor: 'var(--bg-primary)',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '0.35rem',
+                              boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                              cursor: 'pointer',
+                              transition: 'all 0.15s'
+                            }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
+                              <span style={{ fontSize: '0.75rem', fontWeight: 800, color: item.type === 'joining' ? '#10b981' : '#3b82f6' }}>
+                                {item.type === 'joining' ? '🎉 JOINING DUE' : '👥 INTERVIEW DUE'}
+                              </span>
+                              <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '0.12rem 0.45rem', borderRadius: '6px', backgroundColor: 'var(--th-bg)', color: 'var(--text-secondary)' }}>
+                                #{item.candidate_code}
+                              </span>
+                            </div>
+                            <div style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--text-primary)' }}>
+                              {item.name}
+                            </div>
+                            <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
+                              Position: <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{item.position_title}</span>
+                            </div>
+                            {item.interviewer_name && (
+                              <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
+                                Interviewer: {item.interviewer_name}
+                              </div>
+                            )}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.2rem' }}>
+                              <span style={{ fontSize: '0.72rem', color: 'var(--accent-color)', fontWeight: 600 }}>
+                                📅 {item.scheduled_date ? new Date(item.scheduled_date).toLocaleDateString('en-IN') : 'Scheduled'}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveTab('recruiter');
+                                  setShowNotifications(false);
+                                }}
+                                style={{
+                                  padding: '0.35rem 0.8rem',
+                                  borderRadius: '6px',
+                                  border: 'none',
+                                  background: 'var(--accent-color)',
+                                  color: '#ffffff',
+                                  fontSize: '0.76rem',
+                                  fontWeight: 700,
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                View Candidate 👉
+                              </button>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+
+                  {/* TAB CONTENT: COMPLAINTS */}
+                  {notifMainTab === 'complaints' && (
+                    <div style={{ flex: 1, overflowY: 'auto', padding: '0.6rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', minHeight: '180px' }}>
+                      {userComplaintAlerts.length === 0 ? (
+                        <div style={{ padding: '2.5rem 1rem', color: 'var(--text-secondary)', textAlign: 'center', fontSize: '0.85rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+                          <CheckCircle2 size={28} style={{ opacity: 0.4, color: '#10b981' }} />
+                          <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>No SLA Breaches!</span>
+                          <span style={{ fontSize: '0.78rem' }}>All customer complaint tickets are resolved or within SLA.</span>
+                        </div>
+                      ) : (
+                        userComplaintAlerts.map(ticket => (
+                          <div
+                            key={ticket.id}
+                            onClick={() => {
+                              setActiveTab('channel_ops');
+                              setChannelOpsSubTab('complaints');
+                              setShowNotifications(false);
+                            }}
+                            style={{
+                              padding: '0.75rem 0.85rem',
+                              borderRadius: '10px',
+                              border: ticket.is_breached ? '1px solid rgba(239, 68, 68, 0.4)' : '1px solid var(--border-light)',
+                              backgroundColor: ticket.is_breached ? 'rgba(239, 68, 68, 0.04)' : 'var(--bg-primary)',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '0.35rem',
+                              boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                              cursor: 'pointer',
+                              transition: 'all 0.15s'
+                            }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
+                              <span style={{
+                                fontSize: '0.68rem',
+                                fontWeight: 800,
+                                padding: '0.12rem 0.45rem',
+                                borderRadius: '6px',
+                                backgroundColor: ticket.is_breached ? 'rgba(239, 68, 68, 0.15)' : 'rgba(59, 130, 246, 0.15)',
+                                color: ticket.is_breached ? '#ef4444' : '#3b82f6',
+                                border: `1px solid ${ticket.is_breached ? '#ef4444' : '#3b82f6'}40`
+                              }}>
+                                {ticket.is_breached ? '🚨 SLA BREACHED' : '🛠️ ACTION REQUIRED'}
+                              </span>
+                              <span style={{ fontSize: '0.72rem', fontWeight: 700, fontFamily: 'monospace', color: 'var(--text-secondary)' }}>
+                                #{ticket.ticket_number}
+                              </span>
+                            </div>
+                            <div style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--text-primary)' }}>
+                              {ticket.party_name}
+                            </div>
+                            <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
+                              Category: <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{ticket.category}</span>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.2rem' }}>
+                              <span style={{ fontSize: '0.72rem', color: ticket.is_breached ? '#ef4444' : 'var(--text-secondary)', fontWeight: 600 }}>
+                                ⏰ SLA: {ticket.sla_deadline ? new Date(ticket.sla_deadline).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' }) : 'Action needed'}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveTab('channel_ops');
+                                  setChannelOpsSubTab('complaints');
+                                  setShowNotifications(false);
+                                }}
+                                style={{
+                                  padding: '0.35rem 0.8rem',
+                                  borderRadius: '6px',
+                                  border: 'none',
+                                  background: ticket.is_breached ? '#ef4444' : 'var(--accent-color)',
+                                  color: '#ffffff',
+                                  fontSize: '0.76rem',
+                                  fontWeight: 700,
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                Open Ticket 👉
+                              </button>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+
+                  {/* TAB CONTENT: NOTICES */}
+                  {notifMainTab === 'notices' && (
+                    <div style={{ flex: 1, overflowY: 'auto', padding: '0.6rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', minHeight: '180px' }}>
+                      {userBroadcastAlerts.length === 0 ? (
+                        <div style={{ padding: '2.5rem 1rem', color: 'var(--text-secondary)', textAlign: 'center', fontSize: '0.85rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+                          <Bell size={28} style={{ opacity: 0.4, color: '#3b82f6' }} />
+                          <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>No Active Notices!</span>
+                          <span style={{ fontSize: '0.78rem' }}>No company-wide circulars published recently.</span>
+                        </div>
+                      ) : (
+                        userBroadcastAlerts.map(notice => (
+                          <div
+                            key={notice.id}
+                            style={{
+                              padding: '0.75rem 0.85rem',
+                              borderRadius: '10px',
+                              border: '1px solid var(--border-light)',
+                              backgroundColor: 'var(--bg-primary)',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '0.35rem',
+                              boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+                            }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
+                              <span style={{ fontSize: '0.72rem', fontWeight: 800, color: notice.priority === 'critical' ? '#ef4444' : '#3b82f6', textTransform: 'uppercase' }}>
+                                📢 {notice.type || 'Notice'}
+                              </span>
+                              <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>
+                                {notice.created_at ? new Date(notice.created_at).toLocaleDateString('en-IN') : ''}
+                              </span>
+                            </div>
+                            <div style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--text-primary)' }}>
+                              {notice.title}
+                            </div>
+                            <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                              {notice.message ? (notice.message.length > 140 ? notice.message.substring(0, 140) + '...' : notice.message) : ''}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+
                   {/* TAB CONTENT: ALL (COMBINED VIEW) */}
                   {notifMainTab === 'all' && (
                     <div style={{ flex: 1, overflowY: 'auto', padding: '0.6rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', minHeight: '180px' }}>
@@ -7357,6 +8377,102 @@ export default function CRMContainer({
                           ))}
                         </div>
                       </div>
+
+                      {/* Section 4: Recruiter Due */}
+                      {userRecruiterAlerts.length > 0 && (
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem', padding: '0 0.2rem' }}>
+                            <span style={{ fontSize: '0.78rem', fontWeight: 800, color: '#8b5cf6', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                              👥 Recruiter Interviews & Joining ({userRecruiterAlerts.length})
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => { setActiveTab('recruiter'); setShowNotifications(false); }}
+                              style={{ background: 'none', border: 'none', color: 'var(--accent-color)', fontSize: '0.74rem', fontWeight: 700, cursor: 'pointer' }}
+                            >
+                              Go to Recruiter 👉
+                            </button>
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                            {userRecruiterAlerts.slice(0, 3).map(item => (
+                              <div
+                                key={`all_rec_${item.id}`}
+                                onClick={() => { setActiveTab('recruiter'); setShowNotifications(false); }}
+                                style={{
+                                  padding: '0.5rem 0.75rem',
+                                  borderRadius: '8px',
+                                  backgroundColor: 'var(--bg-primary)',
+                                  border: '1px solid var(--border-light)',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between'
+                                }}
+                              >
+                                <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                    {item.name}
+                                  </span>
+                                  <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginLeft: '0.4rem' }}>
+                                    ({item.position_title})
+                                  </span>
+                                </div>
+                                <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '0.1rem 0.35rem', borderRadius: '4px', backgroundColor: item.type === 'joining' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(59, 130, 246, 0.15)', color: item.type === 'joining' ? '#10b981' : '#3b82f6' }}>
+                                  {item.type === 'joining' ? 'Joining' : 'Interview'}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Section 5: Complaints Action */}
+                      {userComplaintAlerts.length > 0 && (
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem', padding: '0 0.2rem' }}>
+                            <span style={{ fontSize: '0.78rem', fontWeight: 800, color: '#ef4444', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                              🛠️ Complaint Alerts ({userComplaintAlerts.length})
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => { setActiveTab('channel_ops'); setChannelOpsSubTab('complaints'); setShowNotifications(false); }}
+                              style={{ background: 'none', border: 'none', color: 'var(--accent-color)', fontSize: '0.74rem', fontWeight: 700, cursor: 'pointer' }}
+                            >
+                              Go to Complaints 👉
+                            </button>
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                            {userComplaintAlerts.slice(0, 3).map(ticket => (
+                              <div
+                                key={`all_cmp_${ticket.id}`}
+                                onClick={() => { setActiveTab('channel_ops'); setChannelOpsSubTab('complaints'); setShowNotifications(false); }}
+                                style={{
+                                  padding: '0.5rem 0.75rem',
+                                  borderRadius: '8px',
+                                  backgroundColor: 'var(--bg-primary)',
+                                  border: ticket.is_breached ? '1px solid rgba(239, 68, 68, 0.3)' : '1px solid var(--border-light)',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between'
+                                }}
+                              >
+                                <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                    #{ticket.ticket_number} - {ticket.party_name}
+                                  </span>
+                                  <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginLeft: '0.4rem' }}>
+                                    ({ticket.category})
+                                  </span>
+                                </div>
+                                <span style={{ fontSize: '0.68rem', fontWeight: 700, color: ticket.is_breached ? '#ef4444' : '#3b82f6' }}>
+                                  {ticket.is_breached ? 'SLA Breached' : 'Open'}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -7862,6 +8978,67 @@ export default function CRMContainer({
             />
           ) : (
             <React.Suspense fallback={<WorkspaceSkeleton variant={activeTab === 'leads' ? 'table' : 'default'} />}>
+              {/* Home Workspace */}
+              <KeepAliveTab 
+                isActive={activeTab === 'home'} 
+                isVisited={visitedTabs.has('home') || activeTab === 'home'}
+              >
+                <ErrorBoundary>
+                  <WorkspaceHome
+                    userName={userName}
+                    userRole={userRole}
+                    userId={userId}
+                    userEmail={userEmail}
+                    teamMembers={teamMembers}
+                    moduleAccess={moduleAccess}
+                    tenantId={effectiveTenantId}
+                    userCompany={userCompany}
+                    onNavigate={(tab, subTab, stage) => {
+                      if (tab === 'leads') {
+                        if (stage || subTab) {
+                          const targetStage = stage || (typeof subTab === 'string' && subTab.includes('Stage') ? subTab : null);
+                          if (targetStage && targetStage !== 'all_leads') {
+                            handleStageChange(targetStage);
+                          } else {
+                            handleStageChange('All Leads');
+                          }
+                        }
+                        handleTabChange('leads');
+                      } else if ((tab === 'channel_ops' || tab === 'channel-operations') && subTab === 'order_pipeline') {
+                        if (stage) {
+                          handlePipelineStageSelect(String(stage).toUpperCase());
+                        } else {
+                          handlePipelineStageSelect('ALL');
+                        }
+                      } else if ((tab === 'channel_ops' || tab === 'channel-operations') && subTab === 'complaints') {
+                        if (stage) {
+                          handleComplaintStageSelect(String(stage).toUpperCase());
+                        } else {
+                          handleComplaintStageSelect('ALL');
+                        }
+                      } else if (tab === 'recruiter') {
+                        if (stage) {
+                          setRecruiterFilterStage(stage);
+                        } else {
+                          setRecruiterFilterStage('dashboard');
+                        }
+                        handleTabChange('recruiter');
+                      } else if (['scorecard', 'overview', 'pipeline', 'lead-data', 'leads-data'].includes(tab)) {
+                        const canonical = (tab === 'pipeline' || tab === 'leads-data') ? 'lead-data' : tab;
+                        setActiveTab('dashboard');
+                        setDashboardSubTab(canonical);
+                        window.history.pushState(null, '', `/${canonical}`);
+                      } else if (subTab) {
+                        setActiveTab(tab);
+                        window.history.pushState(null, '', `/${tab}?tab=${subTab}`);
+                      } else {
+                        handleTabChange(tab);
+                      }
+                    }}
+                  />
+                </ErrorBoundary>
+              </KeepAliveTab>
+
               {/* Dashboard */}
               <KeepAliveTab 
                 isActive={activeTab === 'dashboard'} 
@@ -7879,6 +9056,7 @@ export default function CRMContainer({
                     isSyncing={isSyncing}
                     syncLoadedCount={syncLoadedCount}
                     initialSubTab={dashboardSubTab}
+                    onSubTabChange={(tab) => handleAnalyticsSubTabChange(tab)}
                     tenantId={effectiveTenantId}
                     userCompany={userCompany}
                     adminCompanyFilter={adminCompanyFilter}
@@ -7950,6 +9128,7 @@ export default function CRMContainer({
               >
                 <ErrorBoundary>
                   <RecruiterDashboard 
+                    viewerId={userId}
                     userRole={userRole} 
                     userName={userName} 
                     selectedStage={recruiterFilterStage}
@@ -8382,6 +9561,10 @@ export default function CRMContainer({
                     initialSubTab={channelOpsSubTab}
                     activeSubTab={channelOpsSubTab}
                     onSubTabChange={(tab) => handleChannelOpsSubTabChange(tab)}
+                    initialPipelineStage={orderPipelineStage}
+                    initialComplaintStage={complaintStageFilter}
+                    onPipelineStageChange={setOrderPipelineStage}
+                    onComplaintStageChange={setComplaintStageFilter}
                     userRole={userRole}
                     moduleAccess={moduleAccess}
                     userCompany={userCompany}

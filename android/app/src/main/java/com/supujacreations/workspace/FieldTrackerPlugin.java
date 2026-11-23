@@ -2,6 +2,9 @@ package com.supujacreations.workspace;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -13,6 +16,7 @@ import android.os.Build;
 import android.os.PowerManager;
 import android.provider.Settings;
 import androidx.core.app.ActivityCompat;
+import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
 import androidx.core.content.ContextCompat;
 import androidx.core.content.pm.PackageInfoCompat;
@@ -92,6 +96,7 @@ public class FieldTrackerPlugin extends Plugin {
 
         boolean started = launchService(FieldTrackingService.ACTION_START);
         maybeRequestBackgroundPermissionOnce(prefs);
+        maybeRequestBatteryExemptionOnce(prefs);
 
         JSObject res = new JSObject();
         res.put("started", started);
@@ -292,6 +297,70 @@ public class FieldTrackerPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void showNotification(PluginCall call) {
+        String title = call.getString("title", "SPC Workspace");
+        String message = call.getString("message", "");
+        Context ctx = getContext();
+        if (ctx == null) {
+            call.reject("Context is null");
+            return;
+        }
+
+        try {
+            NotificationManager nm = (NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
+            String channelId = "spc_workspace_alerts";
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                NotificationChannel channel = new NotificationChannel(
+                    channelId,
+                    "SPC Operational Alerts",
+                    NotificationManager.IMPORTANCE_HIGH
+                );
+                channel.setDescription("SPC Workspace Tasks, Interviews & Complaints Alerts");
+                channel.enableVibration(true);
+                channel.setShowBadge(true);
+                if (nm != null) {
+                    nm.createNotificationChannel(channel);
+                }
+            }
+
+            Intent intent = new Intent(ctx, MainActivity.class);
+            intent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                flags |= PendingIntent.FLAG_IMMUTABLE;
+            }
+            int notifId = (int) (System.currentTimeMillis() % 100000);
+            PendingIntent pi = PendingIntent.getActivity(ctx, notifId, intent, flags);
+
+            int smallIconRes = ctx.getApplicationInfo().icon;
+            if (smallIconRes == 0) {
+                smallIconRes = android.R.drawable.ic_dialog_info;
+            }
+
+            NotificationCompat.Builder builder = new NotificationCompat.Builder(ctx, channelId)
+                .setSmallIcon(smallIconRes)
+                .setContentTitle(title)
+                .setContentText(message)
+                .setStyle(new NotificationCompat.BigTextStyle().bigText(message))
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setDefaults(NotificationCompat.DEFAULT_ALL)
+                .setAutoCancel(true)
+                .setContentIntent(pi);
+
+            if (nm != null) {
+                nm.notify(notifId, builder.build());
+            }
+
+            JSObject res = new JSObject();
+            res.put("success", true);
+            res.put("id", notifId);
+            call.resolve(res);
+        } catch (Exception e) {
+            call.reject("Failed to show notification: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
     public void getStatus(PluginCall call) {
         Context ctx = getContext();
         OfflinePingDbHelper helper = new OfflinePingDbHelper(ctx);
@@ -344,6 +413,25 @@ public class FieldTrackerPlugin extends Plugin {
                 new String[]{ Manifest.permission.ACCESS_BACKGROUND_LOCATION },
                 BG_PERM_REQ_CODE
             );
+        } catch (Exception ignored) {}
+    }
+
+    private void maybeRequestBatteryExemptionOnce(SharedPreferences prefs) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M || getActivity() == null) return;
+        Context ctx = getContext();
+        try {
+            PowerManager pm = (PowerManager) ctx.getSystemService(Context.POWER_SERVICE);
+            if (pm != null && pm.isIgnoringBatteryOptimizations(ctx.getPackageName())) {
+                return;
+            }
+        } catch (Exception ignored) {}
+
+        if (prefs.getBoolean("battery_exemption_prompted", false)) return;
+        prefs.edit().putBoolean("battery_exemption_prompted", true).apply();
+        try {
+            Intent intent = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+            intent.setData(Uri.parse("package:" + ctx.getPackageName()));
+            openIntentSafely(intent);
         } catch (Exception ignored) {}
     }
 }

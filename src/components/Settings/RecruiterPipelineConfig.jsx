@@ -8,10 +8,12 @@ import {
 } from 'lucide-react';
 import {
   getRecruiterPipelineConfig,
-  saveRecruiterPipelineConfig
+  saveRecruiterPipelineConfig,
+  getRecruiterWorkloadLimits,
+  saveRecruiterWorkloadLimits
 } from '@/app/actions/recruiterConfig';
 import { getTenantBranches } from '@/app/actions/tenantBranches';
-import { getTeamMembers } from '@/app/actions/team';
+import { getTeamMembers, getRecruitersList } from '@/app/actions/team';
 import UniversalBranchSelect from '@/components/common/UniversalBranchSelect';
 import SearchableEmployeeSelect from '@/components/common/SearchableEmployeeSelect';
 
@@ -46,9 +48,17 @@ const STAGE_COLOR_PRESETS = [
 export default function RecruiterPipelineConfig({
   userCompany = 'New Swan Group',
   isMasterAdmin = false,
-  userRole = ''
+  userRole = '',
+  initialTab = 'stages'
 }) {
   const isMaster = isMasterAdmin === true || userRole === 'master_admin';
+  const [activeTab, setActiveTab] = useState(initialTab || 'stages');
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
 
   // 1. Dual Scope Selection: Company (Tenant) & Branch (Plant)
   const [selectedCompany, setSelectedCompany] = useState(() => {
@@ -167,6 +177,88 @@ export default function RecruiterPipelineConfig({
   useEffect(() => {
     loadConfig();
   }, [selectedTenant, selectedBranch]);
+
+  // Recruiter Workload Limits State
+  const [workloadLimits, setWorkloadLimits] = useState({});
+  const [activePositionsCount, setActivePositionsCount] = useState({});
+  const [savingRecruiterKey, setSavingRecruiterKey] = useState(null);
+  const [recruiterList, setRecruiterList] = useState([]);
+
+  const loadWorkloadData = async () => {
+    try {
+      // 1. Load authentic active recruiters only (filters out Resigned, Inactive, and Rejected employees)
+      const list = await getRecruitersList(selectedCompany);
+      if (Array.isArray(list)) {
+        setRecruiterList(list);
+      }
+
+      // 2. Load workload limits & server-calculated live active counts (bypasses browser RLS)
+      const res = await getRecruiterWorkloadLimits(selectedTenant);
+      if (res?.success) {
+        if (res.workload_limits) setWorkloadLimits(res.workload_limits);
+        if (res.active_counts) setActivePositionsCount(res.active_counts);
+      }
+    } catch (e) {
+      console.warn('Failed to load recruiter workload data:', e);
+    }
+  };
+
+  useEffect(() => {
+    loadWorkloadData();
+  }, [selectedTenant, selectedCompany]);
+
+  const getActivePositionsForMember = (m) => {
+    const name = String(m.emp_name || m.name || '').trim();
+    const email = String(m.email || '').trim();
+    const id = String(m.emp_id || m.user_id || '').trim();
+    const baseName = name.includes('-') ? name.split('-')[0].trim() : name;
+
+    return (
+      activePositionsCount[name] ||
+      activePositionsCount[baseName] ||
+      (email && activePositionsCount[email]) ||
+      (id && activePositionsCount[id]) ||
+      0
+    );
+  };
+
+  const getRecruiterLimit = (m) => {
+    const key = String(m.user_id || m.id || m.email);
+    return workloadLimits[key] || {
+      limit_mode: 'No Limit',
+      fixed_limit: '',
+      override: 'Admin/HOD Only'
+    };
+  };
+
+  const handleUpdateLimitField = (m, field, value) => {
+    const key = String(m.user_id || m.id || m.email);
+    setWorkloadLimits(prev => ({
+      ...prev,
+      [key]: {
+        ...(prev[key] || { limit_mode: 'No Limit', fixed_limit: '', override: 'Admin/HOD Only' }),
+        [field]: value
+      }
+    }));
+  };
+
+  const handleSaveIndividualWorkload = async (m) => {
+    const key = String(m.user_id || m.id || m.email);
+    setSavingRecruiterKey(key);
+    try {
+      const limitObj = getRecruiterLimit(m);
+      const res = await saveRecruiterWorkloadLimits(selectedTenant, key, limitObj);
+      if (res?.success) {
+        alert(`Workload limit saved for ${m.emp_name || m.name}!`);
+      } else {
+        alert(`Failed to save: ${res?.error}`);
+      }
+    } catch (err) {
+      alert(`Error: ${err.message}`);
+    } finally {
+      setSavingRecruiterKey(null);
+    }
+  };
 
   // Save Config
   const handleSaveConfig = async () => {
@@ -334,7 +426,7 @@ export default function RecruiterPipelineConfig({
                 Recruiter Stages &amp; TAT SLA Configuration Studio
               </h2>
               <p style={{ fontSize: '0.82rem', margin: 0, color: 'var(--text-secondary)' }}>
-                Configure all recruitment pipeline stages (S00–S09), Planned vs Actual TAT SLA models, incharge assignments, and candidate status options.
+                Configure all recruitment pipeline stages (S00–S12), Planned vs Actual TAT SLA models, incharge assignments, candidate status options, and recruiter workload limits.
               </p>
             </div>
           </div>
@@ -533,28 +625,273 @@ export default function RecruiterPipelineConfig({
         </div>
       </div>
 
-      {/* SLA Mode Explainer Card */}
+      {/* Configuration Studio Subtabs */}
       <div style={{
-        background: 'rgba(59, 130, 246, 0.05)',
-        border: '1px solid rgba(59, 130, 246, 0.2)',
-        borderRadius: '10px',
-        padding: '1rem 1.25rem',
-        marginBottom: '1.5rem',
         display: 'flex',
         alignItems: 'center',
-        gap: '0.85rem'
+        gap: '0.65rem',
+        borderBottom: '2px solid var(--border-light)',
+        paddingBottom: '0.75rem',
+        marginBottom: '1.5rem'
       }}>
-        <Clock size={20} color="#2563eb" style={{ flexShrink: 0 }} />
-        <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-          <strong style={{ color: 'var(--text-primary)' }}>Planned &amp; Actual SLA Logic (IST): </strong>
-          <strong>Model 1: Planned ➔ TAT ➔ Planned</strong> builds the master baseline target date for each stage (S00 to S09).
-          <br />
-          <strong>Model 2: Planned ➔ Actual ➔ TAT ➔ Planned</strong> captures the actual interview/test completion date and automatically cascades the next stage's target date: 
-          <code style={{ background: 'var(--bg-surface)', padding: '0.1rem 0.4rem', borderRadius: '4px', border: '1px solid var(--border-light)', marginLeft: '0.4rem' }}>
-            Next Stage Planned = Actual Date + Next Stage TAT
-          </code>
-        </div>
+        <button
+          type="button"
+          onClick={() => setActiveTab('stages')}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            padding: '0.65rem 1.25rem',
+            borderRadius: '10px',
+            border: activeTab === 'stages' ? '1.5px solid #2563eb' : '1px solid var(--border-light)',
+            backgroundColor: activeTab === 'stages' ? '#2563eb' : 'var(--bg-surface)',
+            color: activeTab === 'stages' ? '#ffffff' : 'var(--text-primary)',
+            fontSize: '0.88rem',
+            fontWeight: 700,
+            cursor: 'pointer',
+            boxShadow: activeTab === 'stages' ? '0 2px 6px rgba(37,99,235,0.25)' : 'none',
+            transition: 'all 0.15s ease'
+          }}
+        >
+          <Layers size={16} />
+          <span>Pipeline Stages &amp; TAT SLA</span>
+          <span style={{
+            fontSize: '0.72rem',
+            padding: '0.15rem 0.5rem',
+            borderRadius: '12px',
+            backgroundColor: activeTab === 'stages' ? 'rgba(255,255,255,0.25)' : 'var(--bg-primary)',
+            color: activeTab === 'stages' ? '#ffffff' : 'var(--text-secondary)',
+            fontWeight: 700
+          }}>
+            {activeStagesCount} Stages (S00–S12)
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('workload')}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            padding: '0.65rem 1.25rem',
+            borderRadius: '10px',
+            border: activeTab === 'workload' ? '1.5px solid #2563eb' : '1px solid var(--border-light)',
+            backgroundColor: activeTab === 'workload' ? '#2563eb' : 'var(--bg-surface)',
+            color: activeTab === 'workload' ? '#ffffff' : 'var(--text-primary)',
+            fontSize: '0.88rem',
+            fontWeight: 700,
+            cursor: 'pointer',
+            boxShadow: activeTab === 'workload' ? '0 2px 6px rgba(37,99,235,0.25)' : 'none',
+            transition: 'all 0.15s ease'
+          }}
+        >
+          <Users size={16} />
+          <span>Recruiter Workload Limits</span>
+          <span style={{
+            fontSize: '0.72rem',
+            padding: '0.15rem 0.5rem',
+            borderRadius: '12px',
+            backgroundColor: activeTab === 'workload' ? 'rgba(255,255,255,0.25)' : 'var(--bg-primary)',
+            color: activeTab === 'workload' ? '#ffffff' : 'var(--text-secondary)',
+            fontWeight: 700
+          }}>
+            {recruiterList.length} Recruiters
+          </span>
+        </button>
       </div>
+
+      {/* TAB 2: Recruiter Workload Limits */}
+      {activeTab === 'workload' && (
+        <div style={{
+          background: 'var(--bg-surface)',
+          border: '1px solid var(--border-light)',
+          borderRadius: '12px',
+          padding: '1.25rem',
+          marginBottom: '1.5rem',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
+        }}>
+          <div style={{ marginBottom: '1rem' }}>
+            <h3 style={{ fontSize: '1rem', fontWeight: 700, margin: '0 0 0.25rem 0', color: 'var(--text-primary)' }}>
+              Recruiter Workload Limits
+            </h3>
+            <p style={{ fontSize: '0.8rem', margin: 0, color: 'var(--text-secondary)' }}>
+              Set No Limit or Fixed Limit individually. Limit applies to all assigned positions; Admin/HOD override requires reason in S00.
+            </p>
+          </div>
+
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem' }}>
+              <thead>
+                <tr style={{ borderBottom: '1.5px solid var(--border-light)', color: 'var(--text-secondary)' }}>
+                  <th style={{ padding: '0.65rem 0.85rem', fontWeight: 700 }}>Recruiter</th>
+                  <th style={{ padding: '0.65rem 0.85rem', fontWeight: 700 }}>Active Positions</th>
+                  <th style={{ padding: '0.65rem 0.85rem', fontWeight: 700 }}>Limit Mode</th>
+                  <th style={{ padding: '0.65rem 0.85rem', fontWeight: 700 }}>Fixed Limit</th>
+                  <th style={{ padding: '0.65rem 0.85rem', fontWeight: 700 }}>Override</th>
+                  <th style={{ padding: '0.65rem 0.85rem', fontWeight: 700 }}>Status</th>
+                  <th style={{ padding: '0.65rem 0.85rem', fontWeight: 700, textAlign: 'center' }}>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recruiterList.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                      No active recruiters found in {selectedCompany}.
+                    </td>
+                  </tr>
+                ) : (
+                  recruiterList.map(m => {
+                    const mKey = String(m.user_id || m.id || m.email);
+                    const limitObj = getRecruiterLimit(m);
+                    const activeCount = getActivePositionsForMember(m);
+                    const isFixed = limitObj.limit_mode === 'Fixed Limit';
+                    const fixedVal = parseInt(limitObj.fixed_limit, 10) || 0;
+                    const isAtCapacity = isFixed && activeCount >= fixedVal && fixedVal > 0;
+                    const isRowSaving = savingRecruiterKey === mKey;
+
+                    return (
+                      <tr key={mKey} style={{ borderBottom: '1px solid var(--border-light)' }}>
+                        <td style={{ padding: '0.75rem 0.85rem' }}>
+                          <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+                            {(() => {
+                              const rawName = m.emp_name || m.name || m.email || '';
+                              const code = m.emp_id || m.emp_code || '';
+                              if (code && !rawName.includes(code)) {
+                                return `${rawName} - ${code}`;
+                              }
+                              return rawName;
+                            })()}
+                          </div>
+                          {m.email && <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{m.email}</div>}
+                        </td>
+                        <td style={{ padding: '0.75rem 0.85rem', fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.9rem' }}>
+                          {activeCount}
+                        </td>
+                        <td style={{ padding: '0.75rem 0.85rem' }}>
+                          <select
+                            value={limitObj.limit_mode || 'No Limit'}
+                            onChange={(e) => handleUpdateLimitField(m, 'limit_mode', e.target.value)}
+                            style={{
+                              padding: '0.45rem 0.75rem',
+                              borderRadius: '8px',
+                              border: '1px solid var(--border-light)',
+                              backgroundColor: 'var(--bg-primary)',
+                              color: 'var(--text-primary)',
+                              fontSize: '0.82rem',
+                              fontWeight: 600
+                            }}
+                          >
+                            <option value="No Limit">No Limit</option>
+                            <option value="Fixed Limit">Fixed Limit</option>
+                          </select>
+                        </td>
+                        <td style={{ padding: '0.75rem 0.85rem' }}>
+                          <input
+                            type="number"
+                            min="1"
+                            placeholder={isFixed ? "e.g. 10" : ""}
+                            disabled={!isFixed}
+                            value={limitObj.fixed_limit || ''}
+                            onChange={(e) => handleUpdateLimitField(m, 'fixed_limit', e.target.value)}
+                            style={{
+                              width: '100px',
+                              padding: '0.45rem 0.65rem',
+                              borderRadius: '8px',
+                              border: '1px solid var(--border-light)',
+                              backgroundColor: isFixed ? 'var(--bg-surface)' : 'var(--bg-primary)',
+                              color: 'var(--text-primary)',
+                              fontSize: '0.82rem',
+                              opacity: isFixed ? 1 : 0.5
+                            }}
+                          />
+                        </td>
+                        <td style={{ padding: '0.75rem 0.85rem' }}>
+                          <select
+                            value={limitObj.override || 'Admin/HOD Only'}
+                            onChange={(e) => handleUpdateLimitField(m, 'override', e.target.value)}
+                            style={{
+                              padding: '0.45rem 0.75rem',
+                              borderRadius: '8px',
+                              border: '1px solid var(--border-light)',
+                              backgroundColor: 'var(--bg-primary)',
+                              color: 'var(--text-primary)',
+                              fontSize: '0.82rem'
+                            }}
+                          >
+                            <option value="Admin/HOD Only">Admin/HOD Only</option>
+                            <option value="Admin Only">Admin Only</option>
+                            <option value="Strict (No Override)">Strict (No Override)</option>
+                          </select>
+                        </td>
+                        <td style={{ padding: '0.75rem 0.85rem' }}>
+                          <span style={{
+                            display: 'inline-block',
+                            padding: '0.25rem 0.75rem',
+                            borderRadius: '14px',
+                            fontSize: '0.75rem',
+                            fontWeight: 700,
+                            backgroundColor: isAtCapacity ? '#fee2e2' : '#e0f2fe',
+                            color: isAtCapacity ? '#991b1b' : '#0369a1'
+                          }}>
+                            {isAtCapacity ? 'At Capacity' : 'Available'}
+                          </span>
+                        </td>
+                        <td style={{ padding: '0.75rem 0.85rem', textAlign: 'center' }}>
+                          <button
+                            type="button"
+                            onClick={() => handleSaveIndividualWorkload(m)}
+                            disabled={isRowSaving}
+                            style={{
+                              padding: '0.4rem 1rem',
+                              borderRadius: '8px',
+                              border: '1px solid #2563eb',
+                              backgroundColor: '#2563eb',
+                              color: '#ffffff',
+                              fontSize: '0.8rem',
+                              fontWeight: 600,
+                              cursor: isRowSaving ? 'not-allowed' : 'pointer',
+                              boxShadow: '0 1px 3px rgba(37,99,235,0.2)'
+                            }}
+                          >
+                            {isRowSaving ? 'Saving...' : 'Save'}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 1: Recruiter Pipeline Stages & TAT SLA */}
+      {activeTab === 'stages' && (
+        <>
+          {/* SLA Mode Explainer Card */}
+          <div style={{
+            background: 'rgba(59, 130, 246, 0.05)',
+            border: '1px solid rgba(59, 130, 246, 0.2)',
+            borderRadius: '10px',
+            padding: '1rem 1.25rem',
+            marginBottom: '1.5rem',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.85rem'
+          }}>
+            <Clock size={20} color="#2563eb" style={{ flexShrink: 0 }} />
+            <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+              <strong style={{ color: 'var(--text-primary)' }}>Planned &amp; Actual SLA Logic (IST): </strong>
+              <strong>Model 1: Planned ➔ TAT ➔ Planned</strong> builds the master baseline target date for each stage (S00 to S12).
+              <br />
+              <strong>Model 2: Planned ➔ Actual ➔ TAT ➔ Planned</strong> captures the actual interview/test completion date and automatically cascades the next stage's target date: 
+              <code style={{ background: 'var(--bg-surface)', padding: '0.1rem 0.4rem', borderRadius: '4px', border: '1px solid var(--border-light)', marginLeft: '0.4rem' }}>
+                Next Stage Planned = Actual Date + Next Stage TAT
+              </code>
+            </div>
+          </div>
 
       {/* Stage Cards Header & Summary */}
       <div style={{
@@ -564,7 +901,7 @@ export default function RecruiterPipelineConfig({
         marginBottom: '1rem'
       }}>
         <h3 style={{ fontSize: '1rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <span>Recruiter Pipeline Stages (S00 to S09)</span>
+          <span>Recruiter Pipeline Stages (S00 to S12)</span>
           <span style={{
             fontSize: '0.75rem',
             padding: '0.2rem 0.55rem',
@@ -942,6 +1279,8 @@ export default function RecruiterPipelineConfig({
           {saving ? 'Saving...' : 'Save Pipeline Configuration'}
         </button>
       </div>
+        </>
+      )}
     </div>
   );
 }

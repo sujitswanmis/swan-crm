@@ -2,7 +2,6 @@
 
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { logAuditAction } from '@/app/actions/audit';
-import { createPartyMaster, resolveDbTenantUuid } from '@/app/actions/partyMaster';
 import { expandCompanyAliases, getUserBranchAccess, matchesCompanyToken } from '@/utils/branchAccess';
 import { createClient } from '@/utils/supabase/server';
 import { checkIsAdminRole, checkIsMasterAdmin, getModulePermissions, getSubItemPermissions } from '@/utils/permissionUtils';
@@ -449,123 +448,16 @@ export async function submitClientRegistrationAndSync(formData, userCompany = ''
     try {
       await adminClient.from('lead_notes').insert([{
         lead_id: savedLeadId,
-        note_text: `[Client Registration Finalized]: Registered by ${currentUser || 'User'}. Synced to Party Master & Registered Report.`,
+        note_text: `[Lead Registration Finalized]: Registered by ${currentUser || 'User'}. Saved to Lead Registered Report & Lead Data.`,
         created_by: currentUser || 'System'
       }]);
     } catch {}
 
-    // STEP 3: Auto-Sync to Party Master
-    let partyMasterResult = null;
-    try {
-      const gstNo = (formData.business_gst || '').trim().toUpperCase();
-      let existingParty = null;
-
-      // Check if party already exists by GSTIN or Phone
-      if (gstNo && gstNo.length >= 10) {
-        const { data: foundByGst } = await adminClient
-          .from('party_master')
-          .select('id, party_universal_code, firm_name')
-          .eq('gstin', gstNo)
-          .maybeSingle();
-        existingParty = foundByGst;
-      }
-
-      if (!existingParty && primaryPhone && primaryPhone.length === 10) {
-        const { data: foundByPhone } = await adminClient
-          .from('party_master')
-          .select('id, party_universal_code, firm_name')
-          .eq('primary_mobile', primaryPhone)
-          .maybeSingle();
-        existingParty = foundByPhone;
-      }
-
-      if (existingParty) {
-        // Update existing party link
-        await adminClient
-          .from('party_master')
-          .update({
-            source_lead_id: savedLeadId,
-            party_status: 'Active',
-            official_email: formData.email || formData.business_email_1 || undefined,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', existingParty.id);
-
-        partyMasterResult = {
-          id: existingParty.id,
-          party_universal_code: existingParty.party_universal_code,
-          isExisting: true
-        };
-      } else {
-        // Create new Party Master record
-        const partyPayload = {
-          firm_name: companyName,
-          legal_name: companyName,
-          trade_name: companyName,
-          business_nature: formData.business_type || 'Client',
-          constitution_type: 'PROPRIETORSHIP',
-          gstin: gstNo || null,
-          pan: formData.business_pan || (gstNo ? gstNo.slice(2, 12) : null),
-          official_email: formData.email || formData.business_email_1 || null,
-          primary_mobile: primaryPhone || '0000000000',
-          party_status: 'Active',
-          onboarding_stage: 'S01_Approved',
-          acquisition_source: 'CRM_REGISTRATION',
-          source_lead_id: savedLeadId,
-          our_company: finalCompany,
-          created_by: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(formData?.created_by_user_id || '').trim())
-            ? String(formData.created_by_user_id).trim()
-            : null
-        };
-
-        const tenantUuid = await resolveDbTenantUuid(finalCompany);
-        const newParty = await createPartyMaster(partyPayload, tenantUuid, currentUser || 'Sales Executive');
-        if (newParty && newParty.id) {
-          partyMasterResult = newParty;
-
-          // Also insert primary address
-          if (formData.address || formData.city_name || formData.state_name) {
-            try {
-              await adminClient.from('party_addresses').insert([{
-                party_id: newParty.id,
-                address_type: 'BILLING',
-                address_line1: formData.address || `${formData.city_name || ''}, ${formData.state_name || ''}`,
-                city: formData.city_name || null,
-                state: formData.state_name || null,
-                pincode: formData.pin_code || null,
-                is_primary: true
-              }]);
-            } catch (addrErr) {
-              console.warn('Address sync warning:', addrErr.message);
-            }
-          }
-
-          // Also insert primary contact person
-          if (formData.name || primaryPhone) {
-            try {
-              await adminClient.from('party_contacts').insert([{
-                party_id: newParty.id,
-                contact_name: formData.name || 'Primary Contact',
-                mobile_no: primaryPhone || null,
-                email: formData.email || formData.business_email_1 || null,
-                is_primary: true
-              }]);
-            } catch (contactErr) {
-              console.warn('Contact sync warning:', contactErr.message);
-            }
-          }
-        }
-      }
-    } catch (partyErr) {
-      console.error('Party Master Sync Non-fatal Warning:', partyErr);
-      // Registration still succeeds even if party master has a minor field difference
-    }
-
-    // STEP 4: Audit Log
+    // STEP 3: Audit Log
     try {
       await logAuditAction(
-        'Client Registered & Synced',
-        `Registered client ${companyName} (${leadRefId || savedLeadId}) synced to Lead Data, Client Report, and Party Master.`
+        'Lead Registered & Saved',
+        `Registered lead ${companyName} (${leadRefId || savedLeadId}) saved to Lead Registered Report & Lead Data.`
       );
     } catch {}
 
@@ -574,12 +466,11 @@ export async function submitClientRegistrationAndSync(formData, userCompany = ''
       lead: { ...savedLead, lead_ref_id: leadRefId || savedLead?.lead_ref_id },
       leadId: savedLeadId,
       leadRefId,
-      partyMaster: partyMasterResult,
-      message: 'Client successfully registered and synced across Lead Data, Reports, and Party Master!'
+      message: 'Lead successfully registered and saved to Lead Registered Report & Lead Data!'
     };
 
   } catch (err) {
     console.error('submitClientRegistrationAndSync error:', err);
-    return { success: false, error: err.message || 'Failed to register client' };
+    return { success: false, error: err.message || 'Failed to register lead' };
   }
 }

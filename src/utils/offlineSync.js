@@ -34,6 +34,8 @@ export const DEFAULT_OFFLINE_RULES = {
     attendancePunch: true,
     attendanceRegularization: true,
 
+    fieldForce: false,
+
     // 🎯 Sales & CRM Operations
     leadStatusUpdate: true,
     leadNotes: true,
@@ -44,6 +46,7 @@ export const DEFAULT_OFFLINE_RULES = {
     partyMasterEdit: true,
     locationMaster: false,
     orders: false,
+    channelOperations: false,
     clientReport: false,
 
     // 📊 General & Analytics
@@ -1361,21 +1364,28 @@ function toAttendanceDbPayload(payload = {}) {
   };
 }
 
-export async function syncPendingQueue(supabaseClient, onProgress = null) {
+export async function syncPendingQueue(supabaseClient, onProgress = null, options = {}) {
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
     return { success: false, reason: 'offline', count: 0 };
   }
 
-  const queue = (await getPendingQueue()).sort((a, b) => a.timestamp - b.timestamp);
+  const queue = (await getPendingQueue())
+    .filter(item => !options.entityType || item.entityType === options.entityType)
+    .sort((a, b) => a.timestamp - b.timestamp);
   if (queue.length === 0) {
     return { success: true, count: 0 };
   }
 
   let successCount = 0;
   let failCount = 0;
+  let recruiterUser;
 
   for (const item of queue) {
     try {
+      if (item.entityType === 'recruiter') {
+        recruiterUser ??= (await supabaseClient.auth.getUser()).data?.user?.id || '';
+        if (recruiterUser !== item.payload?.scope?.userId) continue;
+      }
       if (onProgress) onProgress(item, 'syncing');
 
       if (item.entityType === 'lead') {
@@ -1629,6 +1639,17 @@ export async function syncPendingQueue(supabaseClient, onProgress = null) {
         }
         await removeQueueItem(item.queueId, { ...item, title: `Task Status: ${payload.status || 'Updated'}` });
         successCount++;
+      } else if (item.entityType === 'recruiter') {
+        const { applyRecruiterMutation } = await import('@/app/actions/recruitment');
+        const result = await applyRecruiterMutation(item.payload);
+        if (!result?.success) throw new Error(result?.error || 'Recruiter change could not be synced.');
+        await removeQueueItem(item.queueId, item);
+        const { notifyRecruiterSync } = await import('./recruiterLocalDb');
+        notifyRecruiterSync({
+          tenantId: item.payload.scope.tenantId,
+          candidateId: item.payload.payload?.candidate_id || null
+        });
+        successCount++;
       } else if (item.entityType === 'registration_lifecycle') {
         // Isolated opt-in handler. Existing lead/calling/attendance queue paths are unchanged.
         const actions = await import('@/app/actions/clientRegistrationSync');
@@ -1744,6 +1765,14 @@ export function isModuleAllowedOffline(tabId = '') {
 
     case 'attendance':
       return !!(features.attendancePunch || features.attendanceRegularization);
+
+    case 'field_force':
+    case 'field-force':
+      return features.fieldForce === true;
+
+    case 'channel_ops':
+    case 'channel-operations':
+      return features.channelOperations === true;
 
     case 'party':
       return !!features.partyMasterEdit;

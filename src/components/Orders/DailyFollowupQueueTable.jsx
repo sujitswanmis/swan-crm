@@ -18,6 +18,7 @@ import {
 import { getTenantProducts } from '@/app/actions/tenantProducts';
 import { formatISTDateTime, formatISTShortDate } from '@/utils/orderFrequency';
 import { PRODUCT_GROUPS } from '@/config/productCatalog';
+import { INDIAN_STATE_DISTRICTS } from '@/config/indianStateDistricts';
 import MaskedPhoneDisplay from '../common/MaskedPhoneDisplay';
 import StandardTablePagination from '../common/StandardTablePagination';
 import { fetchPartyWorkspaceResource } from '@/utils/partyWorkspaceCache';
@@ -51,6 +52,9 @@ export default function DailyFollowupQueueTable({
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('DUE_TODAY');
   const [tierFilter, setTierFilter] = useState('ALL');
+  const [stateFilter, setStateFilter] = useState('ALL');
+  const [districtFilter, setDistrictFilter] = useState('ALL');
+  const [billingTypeFilter, setBillingTypeFilter] = useState('ALL');
 
   // Ledger State
   const [todayLedger, setTodayLedger] = useState([]);
@@ -412,6 +416,58 @@ export default function DailyFollowupQueueTable({
     }
   };
 
+  // Available States from Queue
+  const availableStates = useMemo(() => {
+    const set = new Set();
+    queue.forEach(item => {
+      const st = (item.party?.state_name || '').trim();
+      if (st) set.add(st);
+    });
+    return Array.from(set).sort();
+  }, [queue]);
+
+  // Dependent Available Districts based on stateFilter
+  const availableDistricts = useMemo(() => {
+    if (stateFilter !== 'ALL') {
+      const set = new Set();
+      const mapped = INDIAN_STATE_DISTRICTS[stateFilter] || [];
+      mapped.forEach(d => { if (d) set.add(d.trim()); });
+      queue.forEach(item => {
+        const p = item.party;
+        if ((p?.state_name || '').toLowerCase() === stateFilter.toLowerCase()) {
+          const d = (p?.district_name || '').trim();
+          if (d) set.add(d);
+        }
+      });
+      return Array.from(set).sort();
+    }
+    const set = new Set();
+    queue.forEach(item => {
+      const d = (item.party?.district_name || '').trim();
+      if (d) set.add(d);
+    });
+    return Array.from(set).sort();
+  }, [queue, stateFilter]);
+
+  const handleStateChange = (newState) => {
+    setStateFilter(newState);
+    setDistrictFilter('ALL');
+  };
+
+  const isAnyFilterActive = Boolean(
+    searchTerm || statusFilter !== 'DUE_TODAY' || tierFilter !== 'ALL' ||
+    stateFilter !== 'ALL' || districtFilter !== 'ALL' || billingTypeFilter !== 'ALL'
+  );
+
+  const handleResetFilters = () => {
+    setSearchTerm('');
+    setStatusFilter('DUE_TODAY');
+    setTierFilter('ALL');
+    setStateFilter('ALL');
+    setDistrictFilter('ALL');
+    setBillingTypeFilter('ALL');
+  };
+
   // Filtered queue
   const todayStr = useMemo(() => {
     return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
@@ -422,22 +478,73 @@ export default function DailyFollowupQueueTable({
       const p = item.party;
       if (!p) return false;
 
+      // Exclude unconfirmed S00 handoffs / drafts (strictly match Party Master Report)
+      const isUnconfirmedHandoff = p.party_status === 'Draft_From_Lead' || p.onboarding_stage === 'S00_Party_Entry';
+      if (isUnconfirmedHandoff) return false;
+
+      // 1. Tier Filter
       if (tierFilter !== 'ALL' && (p.party_type || '').toLowerCase() !== tierFilter.toLowerCase()) return false;
 
+      // 2. Status Filter
       if (statusFilter === 'DUE_TODAY' && item.next_due_date !== todayStr) return false;
       if (statusFilter === 'OVERDUE' && item.next_due_date >= todayStr) return false;
       if (statusFilter === 'COMPLETED_TODAY' && !item.isCompletedToday) return false;
 
-      if (!searchTerm) return true;
-      const term = searchTerm.toLowerCase().trim();
-      const code = (p.distributor_code || p.dealer_code || p.party_universal_code || '').toLowerCase();
-      const firm = (p.firm_name || '').toLowerCase();
-      const person = (p.owner_name || p.contact_person_name_1 || '').toLowerCase();
-      const dist = (p.district_name || '').toLowerCase();
+      // 3. State Filter
+      if (stateFilter !== 'ALL' && (p.state_name || '').toLowerCase() !== stateFilter.toLowerCase()) return false;
 
-      return code.includes(term) || firm.includes(term) || person.includes(term) || dist.includes(term);
+      // 4. District Filter
+      if (districtFilter !== 'ALL' && (p.district_name || '').toLowerCase() !== districtFilter.toLowerCase()) return false;
+
+      // 5. Billing Type Filter
+      if (billingTypeFilter !== 'ALL') {
+        const partyBilling = p.billing_route_type || 'DIRECT_COMPANY_BILLING';
+        if (partyBilling !== billingTypeFilter) return false;
+      }
+
+      // 6. Deep Multi-Field Search (Code, Firm, Phones, District, State, City, Contact Person, GSTIN, Address)
+      if (searchTerm) {
+        const term = searchTerm.toLowerCase().trim();
+        const cleanTermDigits = term.replace(/\D/g, '');
+        const cleanTermAlphanum = term.replace(/[^a-z0-9]/gi, '');
+
+        const code = (p.distributor_code || p.dealer_code || p.party_universal_code || '').toLowerCase();
+        const cleanCode = code.replace(/[^a-z0-9]/gi, '');
+
+        const firm = (p.firm_name || '').toLowerCase();
+        const legal = (p.legal_name || '').toLowerCase();
+        const trade = (p.trade_name || '').toLowerCase();
+
+        const person = (p.owner_name || p.contact_person_name_1 || '').toLowerCase();
+        const dist = (p.district_name || '').toLowerCase();
+        const state = (p.state_name || '').toLowerCase();
+        const city = (p.city_village || p.city || '').toLowerCase();
+        const address = (p.address || '').toLowerCase();
+        const gstin = (p.gstin || '').toLowerCase();
+
+        // Phone numbers (primary, contact person, business, etc.)
+        const phones = [
+          p.contact_mobile_1_1,
+          p.contact_mobile_1_2,
+          p.primary_mobile,
+          p.biz_contact_no_1,
+          p.phone
+        ].filter(Boolean).map(String);
+
+        const phoneMatches = (cleanTermDigits.length >= 3 && phones.some(ph => ph.replace(/\D/g, '').includes(cleanTermDigits))) ||
+                             phones.some(ph => ph.toLowerCase().includes(term));
+
+        const codeMatches = code.includes(term) || (cleanTermAlphanum && cleanCode.includes(cleanTermAlphanum));
+        const textMatches = firm.includes(term) || legal.includes(term) || trade.includes(term) ||
+                            person.includes(term) || dist.includes(term) || state.includes(term) ||
+                            city.includes(term) || address.includes(term) || gstin.includes(term);
+
+        if (!codeMatches && !textMatches && !phoneMatches) return false;
+      }
+
+      return true;
     });
-  }, [queue, statusFilter, tierFilter, searchTerm, todayStr]);
+  }, [queue, statusFilter, tierFilter, stateFilter, districtFilter, billingTypeFilter, searchTerm, todayStr]);
 
   // Queue KPI counts
   const kpis = useMemo(() => {
@@ -482,7 +589,7 @@ export default function DailyFollowupQueueTable({
   // Auto-reset queue page on filter changes
   useEffect(() => {
     setQueuePage(1);
-  }, [searchTerm, statusFilter, tierFilter, queuePageSize]);
+  }, [searchTerm, statusFilter, tierFilter, stateFilter, districtFilter, billingTypeFilter, queuePageSize]);
 
   // Auto-reset ledger page on filter or date changes
   useEffect(() => {
@@ -769,17 +876,17 @@ export default function DailyFollowupQueueTable({
             flexWrap: 'wrap',
             gap: '0.75rem'
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flex: '1 1 300px', maxWidth: '420px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flex: '1 1 280px', maxWidth: '380px' }}>
               <div style={{ position: 'relative', width: '100%' }}>
                 <Search size={15} style={{ position: 'absolute', left: '10px', top: '10px', color: 'var(--text-secondary)' }} />
                 <input
                   type="text"
                   value={searchTerm}
                   onChange={e => setSearchTerm(e.target.value)}
-                  placeholder="Search Partner Code, Firm Name, District..."
+                  placeholder="Search by Code, Firm, Phone, District, State..."
                   style={{
                     width: '100%',
-                    padding: '0.5rem 0.65rem 0.5rem 2.2rem',
+                    padding: '0.5rem 1.8rem 0.5rem 2.2rem',
                     background: 'var(--bg-primary)',
                     border: '1px solid var(--border-light)',
                     borderRadius: '8px',
@@ -787,10 +894,34 @@ export default function DailyFollowupQueueTable({
                     fontSize: '0.84rem'
                   }}
                 />
+                {searchTerm && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchTerm('')}
+                    style={{
+                      position: 'absolute',
+                      right: '8px',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--text-secondary)',
+                      cursor: 'pointer',
+                      padding: '2px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                    title="Clear search"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
               </div>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+              {/* Status Filter */}
               <select
                 value={statusFilter}
                 onChange={e => setStatusFilter(e.target.value)}
@@ -806,9 +937,10 @@ export default function DailyFollowupQueueTable({
                 <option value="DUE_TODAY">📞 Due Today ({kpis.dueToday})</option>
                 <option value="OVERDUE">⚠️ Overdue Calls ({kpis.overdue})</option>
                 <option value="COMPLETED_TODAY">✓ Completed Today ({kpis.completedToday})</option>
-                <option value="ALL">All Network Partners</option>
+                <option value="ALL">All Network Partners ({kpis.total})</option>
               </select>
 
+              {/* Partner Tier */}
               <select
                 value={tierFilter}
                 onChange={e => setTierFilter(e.target.value)}
@@ -826,6 +958,92 @@ export default function DailyFollowupQueueTable({
                 <option value="Dealer">🏬 Dealer</option>
                 <option value="Sub-Dealer">🤝 Sub-Dealer</option>
               </select>
+
+              {/* State Filter */}
+              <select
+                value={stateFilter}
+                onChange={e => handleStateChange(e.target.value)}
+                style={{
+                  padding: '0.5rem 0.75rem',
+                  background: stateFilter !== 'ALL' ? 'rgba(37,99,235,0.08)' : 'var(--bg-primary)',
+                  border: stateFilter !== 'ALL' ? '1px solid var(--accent-color, #2563eb)' : '1px solid var(--border-light)',
+                  borderRadius: '8px',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.82rem',
+                  fontWeight: stateFilter !== 'ALL' ? 600 : 400
+                }}
+              >
+                <option value="ALL">📍 All States ({availableStates.length})</option>
+                {availableStates.map(st => (
+                  <option key={st} value={st}>{st}</option>
+                ))}
+              </select>
+
+              {/* District Filter (Dependent on State) */}
+              <select
+                value={districtFilter}
+                onChange={e => setDistrictFilter(e.target.value)}
+                style={{
+                  padding: '0.5rem 0.75rem',
+                  background: districtFilter !== 'ALL' ? 'rgba(37,99,235,0.08)' : 'var(--bg-primary)',
+                  border: districtFilter !== 'ALL' ? '1px solid var(--accent-color, #2563eb)' : '1px solid var(--border-light)',
+                  borderRadius: '8px',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.82rem',
+                  fontWeight: districtFilter !== 'ALL' ? 600 : 400
+                }}
+              >
+                <option value="ALL">
+                  🏙️ {stateFilter === 'ALL' ? `All Districts (${availableDistricts.length})` : `All in ${stateFilter} (${availableDistricts.length})`}
+                </option>
+                {availableDistricts.map(dt => (
+                  <option key={dt} value={dt}>{dt}</option>
+                ))}
+              </select>
+
+              {/* Billing Type Filter */}
+              <select
+                value={billingTypeFilter}
+                onChange={e => setBillingTypeFilter(e.target.value)}
+                style={{
+                  padding: '0.5rem 0.75rem',
+                  background: billingTypeFilter !== 'ALL' ? 'rgba(37,99,235,0.08)' : 'var(--bg-primary)',
+                  border: billingTypeFilter !== 'ALL' ? '1px solid var(--accent-color, #2563eb)' : '1px solid var(--border-light)',
+                  borderRadius: '8px',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.82rem',
+                  fontWeight: billingTypeFilter !== 'ALL' ? 600 : 400
+                }}
+              >
+                <option value="ALL">💳 All Billing Types</option>
+                <option value="DIRECT_COMPANY_BILLING">Direct Company Billing</option>
+                <option value="DEALER_BILLED">Dealer Billed</option>
+                <option value="DISTRIBUTOR_BILLED">Distributor Billed</option>
+              </select>
+
+              {/* Reset Filters Button */}
+              {isAnyFilterActive && (
+                <button
+                  type="button"
+                  onClick={handleResetFilters}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.35rem',
+                    padding: '0.5rem 0.75rem',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-light)',
+                    background: 'var(--bg-primary)',
+                    color: 'var(--text-secondary)',
+                    fontSize: '0.78rem',
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                  title="Reset all filters to default"
+                >
+                  <RefreshCw size={12} /> Reset
+                </button>
+              )}
             </div>
           </div>
 
@@ -877,7 +1095,52 @@ export default function DailyFollowupQueueTable({
                   {filteredQueue.length === 0 ? (
                     <tr>
                       <td colSpan="7" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
-                        No partners in queue matching the current filter.
+                        <div style={{ fontSize: '0.92rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.4rem' }}>
+                          No partners in queue matching the current filter.
+                        </div>
+                        {searchTerm && statusFilter !== 'ALL' && (
+                          <div style={{ marginTop: '0.65rem' }}>
+                            <button
+                              type="button"
+                              onClick={() => setStatusFilter('ALL')}
+                              style={{
+                                padding: '0.45rem 0.9rem',
+                                background: 'var(--accent-color, #2563eb)',
+                                color: '#fff',
+                                border: 'none',
+                                borderRadius: '6px',
+                                fontSize: '0.82rem',
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.4rem'
+                              }}
+                            >
+                              <Search size={13} /> Search "{searchTerm}" in All Network Partners ({kpis.total})
+                            </button>
+                          </div>
+                        )}
+                        {isAnyFilterActive && (
+                          <div style={{ marginTop: '0.5rem' }}>
+                            <button
+                              type="button"
+                              onClick={handleResetFilters}
+                              style={{
+                                padding: '0.35rem 0.75rem',
+                                background: 'var(--bg-primary)',
+                                color: 'var(--text-secondary)',
+                                border: '1px solid var(--border-light)',
+                                borderRadius: '6px',
+                                fontSize: '0.78rem',
+                                fontWeight: 500,
+                                cursor: 'pointer'
+                              }}
+                            >
+                              Clear All Filters
+                            </button>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   ) : (

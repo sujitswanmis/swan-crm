@@ -8,12 +8,38 @@
 
 export const DEFAULT_ANDROID_RELEASE_POLICY = {
   platform: 'android',
-  latest_version_code: 9,
-  latest_version_name: 'v9.0 (2.5.1245)',
-  min_supported_version_code: 9,
+  latest_version_code: 10,
+  latest_version_name: 'v10.0 (2.5.1333)',
+  min_supported_version_code: 10,
   download_url: 'https://app.supujacreations.com/api/public/android-apk',
   release_notes:
-    'Official direct branded APK download with user-approved bilingual force upgrade modal and zero third-party links.'
+    'Official direct branded APK download with universal multi-platform push notifications, background wake lock, and battery saver protection.'
+};
+
+export const DEFAULT_WINDOWS_RELEASE_POLICY = {
+  platform: 'windows',
+  latest_version_code: 3,
+  latest_version_name: 'v3.0 (2.5.1339)',
+  min_supported_version_code: 3,
+  download_url: 'https://app.supujacreations.com/api/public/desktop-installer',
+  release_notes:
+    'Official SPC Workspace Desktop v3.0 with native Action Center toast notifications, persistent background sync, and dynamic Next.js runtime.'
+};
+
+export const DEFAULT_IOS_RELEASE_POLICY = {
+  platform: 'ios',
+  latest_version_code: 1,
+  latest_version_name: 'v1.0 (2.5.1333)',
+  min_supported_version_code: 1,
+  download_url: 'https://apps.apple.com/app/spc-workspace',
+  release_notes:
+    'Official iOS mobile application with live GPS telemetry, smart checklist, and multi-tenant push notifications.'
+};
+
+export const PLATFORM_RELEASE_DEFAULTS = {
+  android: DEFAULT_ANDROID_RELEASE_POLICY,
+  windows: DEFAULT_WINDOWS_RELEASE_POLICY,
+  ios: DEFAULT_IOS_RELEASE_POLICY
 };
 
 export const DEVICE_HEALTH_STATUS = {
@@ -70,19 +96,22 @@ export const HEALTH_STATUS_META = {
   }
 };
 
-export function sanitizeReleasePolicy(raw = {}) {
-  const latestCode = Math.max(1, parseInt(raw?.latest_version_code ?? DEFAULT_ANDROID_RELEASE_POLICY.latest_version_code, 10) || 4);
+export function sanitizeReleasePolicy(raw = {}, defaultPlatform = 'android') {
+  const platform = String(raw?.platform || defaultPlatform || 'android').trim().toLowerCase();
+  const fallback = PLATFORM_RELEASE_DEFAULTS[platform] || DEFAULT_ANDROID_RELEASE_POLICY;
+
+  const latestCode = Math.max(1, parseInt(raw?.latest_version_code ?? fallback.latest_version_code, 10) || 1);
   const minCode = Math.max(
     1,
-    Math.min(latestCode, parseInt(raw?.min_supported_version_code ?? DEFAULT_ANDROID_RELEASE_POLICY.min_supported_version_code, 10) || 4)
+    Math.min(latestCode, parseInt(raw?.min_supported_version_code ?? fallback.min_supported_version_code, 10) || 1)
   );
   return {
-    platform: 'android',
+    platform,
     latest_version_code: latestCode,
-    latest_version_name: String(raw?.latest_version_name || DEFAULT_ANDROID_RELEASE_POLICY.latest_version_name).trim(),
+    latest_version_name: String(raw?.latest_version_name || fallback.latest_version_name).trim(),
     min_supported_version_code: minCode,
-    download_url: String(raw?.download_url || DEFAULT_ANDROID_RELEASE_POLICY.download_url).trim() || '/api/public/android-apk',
-    release_notes: String(raw?.release_notes || DEFAULT_ANDROID_RELEASE_POLICY.release_notes).trim(),
+    download_url: String(raw?.download_url || fallback.download_url).trim() || fallback.download_url,
+    release_notes: String(raw?.release_notes || fallback.release_notes).trim(),
     updated_by: raw?.updated_by || null,
     updated_at: raw?.updated_at || null
   };

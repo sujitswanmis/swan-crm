@@ -88,7 +88,8 @@ export const STANDARD_SWAN_BRANCH_MAP = {
   'NSE2': { branch_code: 'TNT00002-B0005', branch_name: 'New Swan Enterprises - 2', custom_code: 'NSE2' },
   'NSE3': { branch_code: 'TNT00002-B0006', branch_name: 'New Swan Enterprises - 3', custom_code: 'NSE3' },
   'NSE4': { branch_code: 'TNT00002-B0007', branch_name: 'New Swan Enterprises - 4', custom_code: 'NSE4' },
-  'NSACPL1': { branch_code: 'TNT00002-B0008', branch_name: 'New Swan Autocomp Pvt. Ltd.', custom_code: 'NSACPL1' }
+  'NSACPL1': { branch_code: 'TNT00002-B0008', branch_name: 'New Swan Autocomp Pvt. Ltd.', custom_code: 'NSACPL1' },
+  'SUPUJA_CREATIONS': { branch_code: 'TNT00001-B0001', branch_name: 'SuPuja Creations (Headquarters)', custom_code: 'HQ' }
 };
 
 export const STANDARD_SWAN_BRANCH_LIST = Object.values(STANDARD_SWAN_BRANCH_MAP);
@@ -98,12 +99,28 @@ export const STANDARD_SWAN_BRANCH_LIST = Object.values(STANDARD_SWAN_BRANCH_MAP)
  * Returns `${branch_code} — ${branch_name}`
  * Example: "TNT00002-B0002 — New Swan Multitech Limited Raian"
  */
-export function formatBranchStandard(branch) {
+export function formatBranchStandard(branch, branchList = null) {
   if (!branch) return '';
   if (typeof branch === 'string') {
     const raw = branch.trim();
     if (!raw) return '';
     if (/^TNT\d+-B\d+\s*—/i.test(raw)) return raw;
+
+    // Check optional dynamic branchList first if provided
+    if (Array.isArray(branchList) && branchList.length > 0) {
+      const match = branchList.find(b => 
+        (b.branch_code && b.branch_code.toUpperCase() === raw.toUpperCase()) ||
+        (b.code && b.code.toUpperCase() === raw.toUpperCase()) ||
+        (b.id && b.id.toUpperCase() === raw.toUpperCase()) ||
+        (b.custom_code && b.custom_code.toUpperCase() === raw.toUpperCase())
+      );
+      if (match) {
+        const uid = match.branch_code || match.code || match.id || raw;
+        const name = match.branch_name || match.name || match.company || '';
+        if (uid && name) return `${uid} — ${name}`;
+      }
+    }
+
     const upper = raw.toUpperCase();
     for (const [key, info] of Object.entries(STANDARD_SWAN_BRANCH_MAP)) {
       if (key === upper || info.branch_code.toUpperCase() === upper) {
@@ -118,7 +135,7 @@ export function formatBranchStandard(branch) {
     }
     return raw;
   }
-  const uid = branch.branch_code || '';
+  const uid = branch.branch_code || branch.code || '';
   const name = branch.branch_name || branch.name || branch.company || '';
   if (uid && name) {
     return `${uid} — ${name}`;

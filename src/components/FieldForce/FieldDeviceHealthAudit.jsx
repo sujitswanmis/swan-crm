@@ -16,16 +16,24 @@ import {
   WifiOff,
   SlidersHorizontal,
   ExternalLink,
-  Building2
+  Building2,
+  Laptop,
+  Monitor
 } from 'lucide-react';
 import {
   getDeviceHealthFleetReport,
-  updateAppReleasePolicy
+  updateAppReleasePolicy,
+  getAllAppReleasePolicies
 } from '@/app/actions/liveTracking';
 import {
   resolveKnownTenant
 } from '@/app/actions/tenantBranches';
-import { DEFAULT_ANDROID_RELEASE_POLICY } from '@/config/appReleaseConfig';
+import {
+  DEFAULT_ANDROID_RELEASE_POLICY,
+  DEFAULT_WINDOWS_RELEASE_POLICY,
+  DEFAULT_IOS_RELEASE_POLICY,
+  PLATFORM_RELEASE_DEFAULTS
+} from '@/config/appReleaseConfig';
 import useTableColumnResize, { ColumnResizer } from '@/utils/tableColumnResize';
 import StandardTablePagination from '@/components/common/StandardTablePagination';
 
@@ -155,8 +163,10 @@ export default function FieldDeviceHealthAudit({
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [copiedUserId, setCopiedUserId] = useState(null);
 
-  // Release Policy Editor State
+  // Multi-Platform Release Policy Editor State
   const [showPolicyEditor, setShowPolicyEditor] = useState(false);
+  const [policyPlatform, setPolicyPlatform] = useState('android');
+  const [allPolicies, setAllPolicies] = useState(PLATFORM_RELEASE_DEFAULTS);
   const [policyForm, setPolicyForm] = useState(DEFAULT_ANDROID_RELEASE_POLICY);
   const [savingPolicy, setSavingPolicy] = useState(false);
   const [policyNotice, setPolicyNotice] = useState('');
@@ -217,12 +227,18 @@ export default function FieldDeviceHealthAudit({
     if (res.summaryCounts) setSummaryCounts(res.summaryCounts);
     if (res.policy) {
       setPolicy(res.policy);
-      setPolicyForm({
-        latest_version_code: res.policy.latest_version_code ?? DEFAULT_ANDROID_RELEASE_POLICY.latest_version_code,
-        latest_version_name: res.policy.latest_version_name || DEFAULT_ANDROID_RELEASE_POLICY.latest_version_name,
-        min_supported_version_code: res.policy.min_supported_version_code ?? DEFAULT_ANDROID_RELEASE_POLICY.min_supported_version_code,
-        download_url: res.policy.download_url || DEFAULT_ANDROID_RELEASE_POLICY.download_url,
-        release_notes: res.policy.release_notes || ''
+      setAllPolicies((prev) => ({ ...prev, android: res.policy }));
+      setPolicyForm((prev) => {
+        if (policyPlatform === 'android') {
+          return {
+            latest_version_code: res.policy.latest_version_code ?? DEFAULT_ANDROID_RELEASE_POLICY.latest_version_code,
+            latest_version_name: res.policy.latest_version_name || DEFAULT_ANDROID_RELEASE_POLICY.latest_version_name,
+            min_supported_version_code: res.policy.min_supported_version_code ?? DEFAULT_ANDROID_RELEASE_POLICY.min_supported_version_code,
+            download_url: res.policy.download_url || DEFAULT_ANDROID_RELEASE_POLICY.download_url,
+            release_notes: res.policy.release_notes || ''
+          };
+        }
+        return prev;
       });
     }
   }, []);
@@ -299,16 +315,47 @@ export default function FieldDeviceHealthAudit({
     return filteredRows.slice(startIdx, startIdx + effectiveSize);
   }, [filteredRows, currentPage, effectiveSize]);
 
+  useEffect(() => {
+    let active = true;
+    getAllAppReleasePolicies()
+      .then((res) => {
+        if (!active || !res?.success || !res?.policies) return;
+        setAllPolicies(res.policies);
+        if (res.policies.android) {
+          setPolicy(res.policies.android);
+        }
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, []);
+
+  const handlePlatformTabSwitch = (targetPlatform) => {
+    setPolicyPlatform(targetPlatform);
+    const existing = allPolicies?.[targetPlatform] || PLATFORM_RELEASE_DEFAULTS[targetPlatform] || DEFAULT_ANDROID_RELEASE_POLICY;
+    setPolicyForm({
+      latest_version_code: existing.latest_version_code ?? 1,
+      latest_version_name: existing.latest_version_name || '',
+      min_supported_version_code: existing.min_supported_version_code ?? 1,
+      download_url: existing.download_url || '',
+      release_notes: existing.release_notes || ''
+    });
+  };
+
   const handleSavePolicy = async (e) => {
     e.preventDefault();
     setSavingPolicy(true);
     setPolicyNotice('');
     try {
-      const res = await updateAppReleasePolicy(policyForm);
+      const res = await updateAppReleasePolicy({
+        ...policyForm,
+        platform: policyPlatform
+      });
       if (res?.success && res.policy) {
-        setPolicy(res.policy);
-        setPolicyNotice(`Policy updated cleanly (v${res.policy.latest_version_code} / min v${res.policy.min_supported_version_code}).`);
-        setShowPolicyEditor(false);
+        setAllPolicies((prev) => ({ ...prev, [policyPlatform]: res.policy }));
+        if (policyPlatform === 'android') {
+          setPolicy(res.policy);
+        }
+        setPolicyNotice(`[${policyPlatform.toUpperCase()}] Policy updated cleanly (${res.policy.latest_version_name} / code ${res.policy.latest_version_code} / min ${res.policy.min_supported_version_code}).`);
         fetchFleetAudit();
       } else {
         setPolicyNotice(res?.error || 'Could not update policy.');
@@ -388,13 +435,19 @@ export default function FieldDeviceHealthAudit({
           </div>
           <div>
             <div style={{ fontSize: 16, fontWeight: 800, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              App Version, Background GPS &amp; Battery Health Audit
+              Universal App Version &amp; Field Device Health Audit
               <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: '#dcfce7', color: '#15803d', border: '1px solid #86efac' }}>
-                Target APK: v{policy.latest_version_code} ({policy.latest_version_name})
+                🤖 APK: v{policy.latest_version_code} ({policy.latest_version_name})
+              </span>
+              <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' }}>
+                🪟 Windows: {allPolicies?.windows?.latest_version_name ? (allPolicies.windows.latest_version_name.startsWith('v') ? allPolicies.windows.latest_version_name : `v${allPolicies.windows.latest_version_name}`) : 'v3.0'}
+              </span>
+              <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: '#faf5ff', color: '#7e22ce', border: '1px solid #e9d5ff' }}>
+                🍎 iOS: {allPolicies?.ios?.latest_version_name || 'v1.0 (2.5.1333)'}
               </span>
             </div>
             <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
-              Monitor field team Android APK version (including legacy v1–v3 builds), &ldquo;Allow all the time&rdquo; GPS, Battery Optimization &amp; Browser-only logins.
+              Multi-platform application governance (Android, Windows Desktop &amp; iOS) &amp; field battery/GPS diagnostics.
             </div>
           </div>
         </div>
@@ -418,6 +471,26 @@ export default function FieldDeviceHealthAudit({
             }}
           >
             <Download size={14} /> Download APK v{policy.latest_version_code}
+          </a>
+
+          <a
+            href={allPolicies?.windows?.download_url || '/api/public/desktop-installer'}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '7px 12px',
+              borderRadius: 8,
+              background: '#1e40af',
+              color: '#ffffff',
+              fontSize: 12,
+              fontWeight: 700,
+              textDecoration: 'none'
+            }}
+          >
+            <Download size={14} /> Desktop Setup (.exe)
           </a>
 
           {isPrivilegedRole && (
@@ -466,7 +539,7 @@ export default function FieldDeviceHealthAudit({
         </div>
       </div>
 
-      {/* Collapsible Dynamic Release Governance Form */}
+      {/* Collapsible Dynamic Multi-Platform Release Governance Form */}
       {showPolicyEditor && (
         <form
           onSubmit={handleSavePolicy}
@@ -479,12 +552,54 @@ export default function FieldDeviceHealthAudit({
             boxShadow: '0 2px 8px rgba(37,99,235,0.06)'
           }}
         >
-          <div style={{ fontSize: 13, fontWeight: 800, color: '#1e3a8a', marginBottom: 10 }}>
-            Dynamic Android APK Governance Policy (Future-Proof — No Code Edit Required for Next 5–6 Years)
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: 14, borderBottom: '1px solid #e2e8f0', paddingBottom: 10 }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 800, color: '#1e3a8a' }}>
+                Universal Multi-Platform App Governance Policy (Real-Time Supabase Sync)
+              </div>
+              <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
+                Configure live mandatory &amp; optional upgrade thresholds across Android, Windows Desktop, and Apple iOS.
+              </div>
+            </div>
+
+            {/* Platform Selector Tabs */}
+            <div style={{ display: 'flex', gap: 6 }}>
+              {[
+                { id: 'android', label: 'Android APK', icon: <Smartphone size={14} /> },
+                { id: 'windows', label: 'Windows Desktop', icon: <Monitor size={14} /> },
+                { id: 'ios', label: 'Apple iOS', icon: <Laptop size={14} /> }
+              ].map((p) => {
+                const isActive = policyPlatform === p.id;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => handlePlatformTabSwitch(p.id)}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      padding: '5px 12px',
+                      borderRadius: 6,
+                      fontSize: 12,
+                      fontWeight: 700,
+                      border: isActive ? '1px solid #2563eb' : '1px solid #cbd5e1',
+                      background: isActive ? '#eff6ff' : '#ffffff',
+                      color: isActive ? '#1d4ed8' : '#64748b',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {p.icon}
+                    {p.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
+
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 10 }}>
             <label style={{ fontSize: 11, fontWeight: 700, color: '#475569' }}>
-              Latest Version Code (Integer)
+              {policyPlatform === 'windows' ? 'Latest Build Code (e.g. 251333)' : policyPlatform === 'ios' ? 'Latest Build Code (Integer)' : 'Latest Version Code (Integer)'}
               <input
                 type="number"
                 min={1}
@@ -494,7 +609,7 @@ export default function FieldDeviceHealthAudit({
               />
             </label>
             <label style={{ fontSize: 11, fontWeight: 700, color: '#475569' }}>
-              Latest CRM Version Label
+              {policyPlatform === 'windows' ? 'Latest App Version Label (e.g. 2.5.1333)' : 'Latest CRM Version Label'}
               <input
                 type="text"
                 value={policyForm.latest_version_name}
@@ -503,7 +618,7 @@ export default function FieldDeviceHealthAudit({
               />
             </label>
             <label style={{ fontSize: 11, fontWeight: 700, color: '#475569' }}>
-              Min Supported Version Code
+              Min Supported Version Code (Forces Upgrade)
               <input
                 type="number"
                 min={1}
@@ -513,7 +628,7 @@ export default function FieldDeviceHealthAudit({
               />
             </label>
             <label style={{ fontSize: 11, fontWeight: 700, color: '#475569' }}>
-              APK Download URL / Endpoint
+              {policyPlatform === 'windows' ? 'Desktop Installer (.exe) Download URL' : policyPlatform === 'ios' ? 'Apple App Store / TestFlight URL' : 'APK Download URL / Endpoint'}
               <input
                 type="text"
                 value={policyForm.download_url}
@@ -525,7 +640,7 @@ export default function FieldDeviceHealthAudit({
           <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
             <input
               type="text"
-              placeholder="Release notes (shown to outdated app users)..."
+              placeholder={`Release notes for ${policyPlatform.toUpperCase()} (shown to outdated app users)...`}
               value={policyForm.release_notes}
               onChange={(e) => setPolicyForm((p) => ({ ...p, release_notes: e.target.value }))}
               style={{ flex: 1, minWidth: 260, padding: '6px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12 }}
@@ -543,7 +658,7 @@ export default function FieldDeviceHealthAudit({
                 disabled={savingPolicy}
                 style={{ padding: '7px 14px', borderRadius: 6, border: 'none', background: '#1d4ed8', color: '#ffffff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
               >
-                {savingPolicy ? 'Saving...' : 'Save Release Policy'}
+                {savingPolicy ? 'Saving...' : `Save ${policyPlatform.toUpperCase()} Policy`}
               </button>
             </div>
           </div>

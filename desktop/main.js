@@ -1,9 +1,12 @@
-const { app, BrowserWindow, shell, session, Tray, Menu, ipcMain } = require('electron');
+const { app, BrowserWindow, shell, session, Tray, Menu, ipcMain, Notification } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
-// Set official application name
+// Set official application name and AppUserModelId for Windows Action Center
 app.name = 'SPC Workspace';
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.supujacreations.workspace');
+}
 
 // Target Hosted Workspace URL
 const TARGET_URL = process.env.CRM_DESKTOP_URL || 'https://app.supujacreations.com';
@@ -286,6 +289,35 @@ ipcMain.on('set-zoom-factor', (_event, percent) => {
     mainWindow.webContents.setZoomFactor(factor);
     mainWindow.webContents.send('zoom-changed', Math.round(factor * 100));
     saveWindowState();
+  }
+});
+
+// Windows Native Action Center & Desktop Toast Notifications
+ipcMain.handle('show-native-notification', (_event, payload) => {
+  try {
+    const { title = 'SPC Workspace', body = '', silent = false } = payload || {};
+    if (Notification.isSupported()) {
+      const iconPath = path.join(__dirname, 'icon.png');
+      const notification = new Notification({
+        title,
+        body,
+        icon: iconPath,
+        silent: Boolean(silent)
+      });
+      notification.on('click', () => {
+        if (mainWindow) {
+          if (mainWindow.isMinimized()) mainWindow.restore();
+          mainWindow.show();
+          mainWindow.focus();
+        }
+      });
+      notification.show();
+      return { success: true };
+    }
+    return { success: false, reason: 'Notification not supported' };
+  } catch (err) {
+    console.warn('[Desktop Notification Error]:', err.message);
+    return { success: false, error: err.message };
   }
 });
 

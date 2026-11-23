@@ -15,6 +15,7 @@ import android.net.NetworkCapabilities;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.PowerManager;
 import androidx.core.content.ContextCompat;
 import androidx.core.content.pm.PackageInfoCompat;
 import androidx.core.location.LocationManagerCompat;
@@ -136,12 +137,18 @@ public final class FieldDeviceStatusReporter {
         status.put("running", FieldTrackingService.isServiceRunning);
         status.put("appVersionCode", PackageInfoCompat.getLongVersionCode(info));
         status.put("appVersionName", info.versionName);
+        PowerManager pm = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
+        boolean isPowerSave = pm != null && pm.isPowerSaveMode();
+        boolean isUnrestricted = pm != null && (Build.VERSION.SDK_INT < Build.VERSION_CODES.M || pm.isIgnoringBatteryOptimizations(context.getPackageName()));
+        status.put("isPowerSaveMode", isPowerSave);
+        status.put("batteryUnrestricted", isUnrestricted);
         return status;
     }
 
     private String signature(JSONObject status) {
         return status.optBoolean("hasForegroundLocation") + ":" + status.optBoolean("hasBackgroundLocation")
-            + ":" + status.optBoolean("gpsProviderEnabled") + ":" + status.optBoolean("running");
+            + ":" + status.optBoolean("gpsProviderEnabled") + ":" + status.optBoolean("running")
+            + ":" + status.optBoolean("isPowerSaveMode") + ":" + status.optBoolean("batteryUnrestricted");
     }
 
     public synchronized boolean statusDue(JSONObject status) {

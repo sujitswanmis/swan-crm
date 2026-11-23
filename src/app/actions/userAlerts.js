@@ -16,10 +16,15 @@ const getAdminClient = () => {
  * Lightweight, non-blocking fetcher for active user alerts:
  * 1. Active delegation tasks assigned to current user
  * 2. Today's unsubmitted / due checklist slots for current user
+ * 3. Today's recruiter interviews & joining due candidates
+ * 4. Active complaints tickets (SLA breached / assigned)
+ * 5. Recent active broadcast notices
  */
 export async function getUserPendingAlerts({
   userEmail = '',
-  tenantId = DEFAULT_TENANT_ID
+  tenantId = DEFAULT_TENANT_ID,
+  userRole = '',
+  userDepartment = ''
 } = {}) {
   const emailClean = (userEmail || '').trim().toLowerCase();
   if (!emailClean) {
@@ -27,6 +32,9 @@ export async function getUserPendingAlerts({
       success: true,
       delegationTasks: [],
       checklistSlots: [],
+      recruiterAlerts: [],
+      complaintAlerts: [],
+      broadcastAlerts: [],
       checkedAt: new Date().toISOString()
     };
   }
@@ -34,6 +42,9 @@ export async function getUserPendingAlerts({
   const adminClient = getAdminClient();
   let delegationTasks = [];
   let checklistSlots = [];
+  let recruiterAlerts = [];
+  let complaintAlerts = [];
+  let broadcastAlerts = [];
 
   // 1. Fetch active delegation tasks
   try {
@@ -83,18 +94,10 @@ export async function getUserPendingAlerts({
     if (checkRes.success && Array.isArray(checkRes.data)) {
       checklistSlots = checkRes.data
         .filter(item => {
-          // 1. Skip if already completed
           if (item.status === 'COMPLETED' || item.submission?.status === 'COMPLETED') return false;
-
-          // 2. Skip UPCOMING locked slots (do NOT show before scheduled slot unlock time)
           if (item.delayInfo?.isBeforeStart) return false;
-
-          // 3. Skip EXPIRED locked slots (do NOT show once closed by template master rules)
           if (item.delayInfo?.isExpired) return false;
-
-          // 4. Must be currently actionable / executable
           if (item.delayInfo?.canExecute === false) return false;
-
           return true;
         })
         .map(item => ({
@@ -119,10 +122,127 @@ export async function getUserPendingAlerts({
     console.warn('Error fetching user checklist alerts:', err.message);
   }
 
+  // 3. Fetch recruiter alerts (Scheduled interviews & Joining due today in IST)
+  try {
+    const todayIST = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+    const { data: candidates, error: candErr } = await adminClient
+      .from('recruitment_candidates')
+      .select('id, candidate_code, name, phone, email, current_stage, candidate_status, interviewer_name, joining_date, joining_details, position_id, recruitment_positions(title)')
+      .limit(30);
+
+    if (!candErr && Array.isArray(candidates)) {
+      recruiterAlerts = candidates
+        .filter(c => {
+          let interviewDateStr = '';
+          if (c.joining_details) {
+            try {
+              const jd = typeof c.joining_details === 'string' ? JSON.parse(c.joining_details) : c.joining_details;
+              interviewDateStr = jd?.interview_date ? String(jd.interview_date).substring(0, 10) : '';
+            } catch {}
+          }
+          const joiningDateStr = c.joining_date ? String(c.joining_date).substring(0, 10) : '';
+          const isInterviewToday = Boolean(interviewDateStr && interviewDateStr === todayIST);
+          const isJoiningTodayOrDue = Boolean(joiningDateStr && joiningDateStr <= todayIST && c.current_stage !== 'S09');
+          return isInterviewToday || isJoiningTodayOrDue;
+        })
+        .map(c => {
+          let interviewDateStr = '';
+          if (c.joining_details) {
+            try {
+              const jd = typeof c.joining_details === 'string' ? JSON.parse(c.joining_details) : c.joining_details;
+              interviewDateStr = jd?.interview_date ? String(jd.interview_date).substring(0, 10) : '';
+            } catch {}
+          }
+          const joiningDateStr = c.joining_date ? String(c.joining_date).substring(0, 10) : '';
+          const isJoining = Boolean(joiningDateStr && joiningDateStr <= todayIST && c.current_stage !== 'S09');
+          return {
+            id: c.id,
+            candidate_code: c.candidate_code || 'CAND',
+            name: c.name || 'Candidate',
+            phone: c.phone || '',
+            position_title: c.recruitment_positions?.title || 'Open Position',
+            type: isJoining ? 'joining' : 'interview',
+            title: isJoining ? `🎉 Joining Due: ${c.name}` : `👥 Interview Due: ${c.name}`,
+            subtitle: `${c.recruitment_positions?.title || 'Candidate'} (${c.candidate_status || c.current_stage || 'Stage'})`,
+            scheduled_date: isJoining ? c.joining_date : (interviewDateStr || c.joining_date),
+            interviewer_name: c.interviewer_name || 'Assigned Interviewer',
+            current_stage: c.current_stage
+          };
+        });
+    }
+  } catch (err) {
+    console.warn('Error fetching recruiter alerts:', err.message);
+  }
+
+  // 4. Fetch complaint alerts (SLA breached / open assigned tickets)
+  try {
+    const now = Date.now();
+    const { data: tickets, error: ticketErr } = await adminClient
+      .from('party_complaints')
+      .select('id, ticket_number, category, ticket_status, stage_id, sla_deadline, sla_breached, assigned_department, assigned_employee_name, party:party_master(firm_name, primary_mobile)')
+      .neq('ticket_status', 'RESOLVED_CLOSED')
+      .neq('ticket_status', 'REJECTED')
+      .neq('stage_id', 'C06')
+      .order('created_at', { ascending: false })
+      .limit(20);
+
+    if (!ticketErr && Array.isArray(tickets)) {
+      complaintAlerts = tickets
+        .filter(t => {
+          const deadlineMs = t.sla_deadline ? new Date(t.sla_deadline).getTime() : null;
+          const isBreached = Boolean(t.sla_breached || (deadlineMs && deadlineMs < now));
+          return isBreached || t.stage_id === 'C01' || t.stage_id === 'C02';
+        })
+        .map(t => {
+          const deadlineMs = t.sla_deadline ? new Date(t.sla_deadline).getTime() : null;
+          const isBreached = Boolean(t.sla_breached || (deadlineMs && deadlineMs < now));
+          return {
+            id: t.id,
+            ticket_number: t.ticket_number || 'TICKET',
+            category: t.category || 'General',
+            party_name: t.party?.firm_name || 'Customer',
+            party_mobile: t.party?.primary_mobile || '',
+            stage_id: t.stage_id || 'C01',
+            is_breached: isBreached,
+            sla_deadline: t.sla_deadline,
+            title: isBreached ? `🚨 SLA Breached: #${t.ticket_number}` : `🛠️ Action Required: #${t.ticket_number}`,
+            subtitle: `${t.party?.firm_name || 'Party'} - ${t.category || 'Complaint'}`
+          };
+        });
+    }
+  } catch (err) {
+    console.warn('Error fetching complaint alerts:', err.message);
+  }
+
+  // 5. Fetch recent active broadcast notices
+  try {
+    const { data: broadcasts, error: broadErr } = await adminClient
+      .from('crm_broadcasts')
+      .select('id, title, message, notification_type, created_at, expires_at')
+      .order('created_at', { ascending: false })
+      .limit(10);
+
+    if (!broadErr && Array.isArray(broadcasts)) {
+      broadcastAlerts = broadcasts.map(b => ({
+        id: b.id,
+        title: b.title,
+        message: b.message,
+        priority: 'medium',
+        type: b.notification_type || 'broadcast',
+        created_at: b.created_at
+      }));
+    }
+  } catch (err) {
+    console.warn('Error fetching broadcast notices:', err.message);
+  }
+
   return {
     success: true,
     delegationTasks,
     checklistSlots,
+    recruiterAlerts,
+    complaintAlerts,
+    broadcastAlerts,
     checkedAt: new Date().toISOString()
   };
 }

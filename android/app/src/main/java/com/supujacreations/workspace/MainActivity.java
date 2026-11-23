@@ -60,8 +60,13 @@ public class MainActivity extends BridgeActivity {
                     } catch (Exception ignored) {}
                 });
                 // Inject native versionCode for in-app OTA version detector
+                long vCode = 10L;
+                try {
+                    android.content.pm.PackageInfo pInfo = getPackageManager().getPackageInfo(getPackageName(), 0);
+                    vCode = androidx.core.content.pm.PackageInfoCompat.getLongVersionCode(pInfo);
+                } catch (Exception ignored) {}
                 webView.evaluateJavascript(
-                    "try { window.localStorage.setItem('spc_android_version_code', '9'); } catch(e){}",
+                    "try { window.localStorage.setItem('spc_android_version_code', '" + vCode + "'); } catch(e){}",
                     null
                 );
             }

@@ -11,6 +11,9 @@ export default function UserNotificationPreferencesModal({ isOpen, onClose }) {
 
   const [popupStyle, setPopupStyle] = useState('corner_toast'); // 'corner_toast' | 'center_modal' | 'both'
 
+  const isWindowsApp = typeof window !== 'undefined' && Boolean(window.desktopApp?.isDesktop);
+  const isAndroidApp = typeof window !== 'undefined' && Boolean(window.Capacitor?.isNativePlatform?.() || window.Capacitor?.Plugins?.FieldTracker);
+
   useEffect(() => {
     if (typeof window !== 'undefined' && 'Notification' in window) {
       setBrowserPermission(Notification.permission);
@@ -45,6 +48,29 @@ export default function UserNotificationPreferencesModal({ isOpen, onClose }) {
       } catch (err) {
         console.error('Error requesting notification permission:', err);
       }
+    }
+  };
+
+  const handleTestNativeNotification = () => {
+    if (isWindowsApp && window.desktopApp?.showNotification) {
+      window.desktopApp.showNotification({
+        title: '🔔 SPC Workspace Windows Alert',
+        body: 'Windows Action Center toast notification is active and working!'
+      });
+      return;
+    }
+    if (isAndroidApp && window.Capacitor?.Plugins?.FieldTracker?.showNotification) {
+      window.Capacitor.Plugins.FieldTracker.showNotification({
+        title: '🔔 SPC Workspace Android Alert',
+        message: 'Android system notification channel is active and working!'
+      });
+      return;
+    }
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+      new Notification('🔔 SPC Workspace Alert', {
+        body: 'Browser desktop push notification is working perfectly!',
+        icon: '/favicon.ico'
+      });
     }
   };
 
@@ -153,7 +179,7 @@ export default function UserNotificationPreferencesModal({ isOpen, onClose }) {
         {/* Modal Body */}
         <div style={{ padding: '1.25rem 1.4rem', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
           
-          {/* Section 1: Desktop Browser Permission */}
+          {/* Section 1: Desktop Browser / Native OS Permission */}
           <div style={{
             padding: '1rem',
             borderRadius: '12px',
@@ -168,10 +194,14 @@ export default function UserNotificationPreferencesModal({ isOpen, onClose }) {
                 <MonitorSmartphone size={20} style={{ color: 'var(--accent-color)' }} />
                 <div>
                   <div style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--text-primary)' }}>
-                    Desktop Browser Notifications
+                    {isWindowsApp ? 'Windows Desktop App Notifications' : (isAndroidApp ? 'Android System Notifications' : 'Desktop Browser Notifications')}
                   </div>
                   <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
-                    Receive popup alerts even when the CRM window is minimized
+                    {isWindowsApp 
+                      ? 'Direct Windows 10/11 Action Center & Taskbar toast alerts'
+                      : (isAndroidApp
+                        ? 'Status bar & lock screen system alerts even when app is in background'
+                        : 'Receive popup alerts even when the CRM window is minimized')}
                   </div>
                 </div>
               </div>
@@ -180,19 +210,19 @@ export default function UserNotificationPreferencesModal({ isOpen, onClose }) {
                 fontWeight: 700,
                 padding: '0.2rem 0.6rem',
                 borderRadius: '6px',
-                backgroundColor: browserPermission === 'granted' ? 'rgba(16, 185, 129, 0.15)' : (browserPermission === 'denied' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(234, 179, 8, 0.18)'),
-                color: browserPermission === 'granted' ? '#10b981' : (browserPermission === 'denied' ? '#ef4444' : '#d97706'),
-                border: `1px solid ${browserPermission === 'granted' ? '#10b981' : (browserPermission === 'denied' ? '#ef4444' : '#d97706')}40`
+                backgroundColor: (isWindowsApp || isAndroidApp || browserPermission === 'granted') ? 'rgba(16, 185, 129, 0.15)' : (browserPermission === 'denied' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(234, 179, 8, 0.18)'),
+                color: (isWindowsApp || isAndroidApp || browserPermission === 'granted') ? '#10b981' : (browserPermission === 'denied' ? '#ef4444' : '#d97706'),
+                border: `1px solid ${(isWindowsApp || isAndroidApp || browserPermission === 'granted') ? '#10b981' : (browserPermission === 'denied' ? '#ef4444' : '#d97706')}40`
               }}>
-                {browserPermission === 'granted' ? 'Enabled ✓' : (browserPermission === 'denied' ? 'Blocked in Browser ✕' : 'Not Enabled')}
+                {(isWindowsApp || isAndroidApp) ? 'Native Active ✓' : (browserPermission === 'granted' ? 'Enabled ✓' : (browserPermission === 'denied' ? 'Blocked in Browser ✕' : 'Not Enabled'))}
               </span>
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '0.5rem', borderTop: '1px dashed var(--border-light)' }}>
-              {browserPermission !== 'granted' ? (
+              {isWindowsApp || isAndroidApp ? (
                 <button
                   type="button"
-                  onClick={handleRequestPermission}
+                  onClick={handleTestNativeNotification}
                   style={{
                     padding: '0.45rem 0.95rem',
                     borderRadius: '8px',
@@ -207,15 +237,54 @@ export default function UserNotificationPreferencesModal({ isOpen, onClose }) {
                     gap: '0.4rem'
                   }}
                 >
-                  <Bell size={14} /> Enable Desktop Notifications 👉
+                  <Bell size={14} /> Test {isWindowsApp ? 'Windows Toast' : 'Android Notification'} 👉
                 </button>
               ) : (
-                <span style={{ fontSize: '0.78rem', color: '#10b981', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                  <Check size={15} /> Desktop notification permission is active
-                </span>
+                browserPermission !== 'granted' ? (
+                  <button
+                    type="button"
+                    onClick={handleRequestPermission}
+                    style={{
+                      padding: '0.45rem 0.95rem',
+                      borderRadius: '8px',
+                      border: 'none',
+                      background: 'var(--accent-color)',
+                      color: '#ffffff',
+                      fontSize: '0.8rem',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.4rem'
+                    }}
+                  >
+                    <Bell size={14} /> Enable Desktop Notifications 👉
+                  </button>
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <span style={{ fontSize: '0.78rem', color: '#10b981', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <Check size={15} /> Desktop notification permission is active
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleTestNativeNotification}
+                      style={{
+                        padding: '0.25rem 0.6rem',
+                        borderRadius: '6px',
+                        border: '1px solid var(--border-light)',
+                        background: 'var(--bg-surface)',
+                        color: 'var(--text-primary)',
+                        fontSize: '0.74rem',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Test Alert
+                    </button>
+                  </div>
+                )
               )}
 
-              {browserPermission === 'denied' && (
+              {!isWindowsApp && !isAndroidApp && browserPermission === 'denied' && (
                 <span style={{ fontSize: '0.74rem', color: '#ef4444', lineHeight: 1.3 }}>
                   Click the 🔒 icon in your browser URL address bar to change to &quot;Allow&quot;.
                 </span>

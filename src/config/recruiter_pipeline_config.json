@@ -149,11 +149,14 @@
             "hod"
           ],
           "status_options": [
-            "No Response",
-            "ReSchedule",
+            "Pending ED",
+            "ED Approved",
+            "ED Rejected",
             "Final Pending",
+            "Final Confirmed",
             "Final Rejected",
-            "Final Confirmed"
+            "No Response",
+            "ReSchedule"
           ],
           "custom_fields": []
         },
@@ -254,14 +257,93 @@
             "ReSchedule"
           ],
           "custom_fields": []
+        },
+        {
+          "id": "S10",
+          "step_no": 10,
+          "name": "S10 — Document Collection",
+          "short_code": "DOC_COLLECTION",
+          "department": "Human Resource",
+          "tat_hours": 48,
+          "color": "#fed7aa",
+          "textColor": "#9a3412",
+          "is_enabled": true,
+          "default_note": "Post-joining document verification, KYC, and background credentials.",
+          "authorized_roles": [
+            "admin",
+            "hr_manager",
+            "recruiter"
+          ],
+          "status_options": [
+            "Pending Documents",
+            "Documents Submitted",
+            "KYC & Verification Completed",
+            "Discrepancy Found",
+            "Hold",
+            "ReSchedule"
+          ],
+          "custom_fields": []
+        },
+        {
+          "id": "S11",
+          "step_no": 11,
+          "name": "S11 — Emp ID & Final Mapping",
+          "short_code": "EMP_ID_MAPPING",
+          "department": "HR & Systems",
+          "tat_hours": 24,
+          "color": "#c7d2fe",
+          "textColor": "#312e81",
+          "is_enabled": true,
+          "default_note": "Official Employee Code generation, branch allocation, email creation, and attendance handover.",
+          "authorized_roles": [
+            "admin",
+            "hr_manager",
+            "recruiter"
+          ],
+          "status_options": [
+            "Mapping Pending",
+            "Employee ID Generated",
+            "Biometric Enrolled",
+            "System & Email Created",
+            "Handover Completed",
+            "Hold"
+          ],
+          "custom_fields": []
+        },
+        {
+          "id": "S12",
+          "step_no": 12,
+          "name": "S12 — Employee Working Rating",
+          "short_code": "WORKING_RATING",
+          "department": "HOD / Management / HR",
+          "tat_hours": 720,
+          "color": "#fef08a",
+          "textColor": "#713f12",
+          "is_enabled": true,
+          "default_note": "Probation review, HOD working evaluation rating (1–5 stars), and confirmation status.",
+          "authorized_roles": [
+            "admin",
+            "hr_manager",
+            "hod"
+          ],
+          "status_options": [
+            "Under Probation",
+            "30-Day Review Completed",
+            "60-Day Review Completed",
+            "Confirmed (Good)",
+            "Average (Needs Monitoring)",
+            "Probation Extended",
+            "Early Left / Resigned"
+          ],
+          "custom_fields": []
         }
       ],
-      "updated_at_ist": "2026-11-20, 17:25:52"
+      "updated_at_ist": "2026-11-22, 18:16:41"
     }
   },
   "TNT00001": {
     "All Branches": {
-      "tat_mode": "DUAL",
+      "tat_mode": "FIXED",
       "planned_anchor": "CANDIDATE_CREATION",
       "enable_tat_alerts": true,
       "stages": [
@@ -394,7 +476,7 @@
         {
           "id": "S05",
           "step_no": 5,
-          "name": "S05 — ED Approval",
+          "name": "S05 — Final Confirmation",
           "short_code": "ED_APPROVAL",
           "department": "Executive Director",
           "tat_hours": 48,
@@ -408,11 +490,11 @@
             "ed"
           ],
           "status_options": [
-            "Pending ED",
-            "ED Approved",
-            "ED Rejected",
             "No Response",
-            "ReSchedule"
+            "ReSchedule",
+            "Final Pending",
+            "Final Rejected",
+            "Final Confirmed"
           ],
           "custom_fields": []
         },
@@ -508,13 +590,93 @@
           "status_options": [
             "Joining Pending",
             "Joined",
-            "No Show",
             "No Response",
+            "ReSchedule",
+            "Not Joined"
+          ],
+          "custom_fields": []
+        },
+        {
+          "id": "S10",
+          "step_no": 10,
+          "name": "S10 — Document Collection",
+          "short_code": "DOC_COLLECTION",
+          "department": "Human Resource",
+          "tat_hours": 48,
+          "color": "#fed7aa",
+          "textColor": "#9a3412",
+          "is_enabled": true,
+          "default_note": "Post-joining document verification, KYC, and background credentials.",
+          "authorized_roles": [
+            "admin",
+            "hr_manager",
+            "recruiter"
+          ],
+          "status_options": [
+            "Pending Documents",
+            "Documents Submitted",
+            "KYC & Verification Completed",
+            "Discrepancy Found",
+            "Hold",
             "ReSchedule"
           ],
           "custom_fields": []
+        },
+        {
+          "id": "S11",
+          "step_no": 11,
+          "name": "S11 — Employee ID & Final Mapping",
+          "short_code": "EMP_ID_MAPPING",
+          "department": "HR & Systems",
+          "tat_hours": 24,
+          "color": "#c7d2fe",
+          "textColor": "#312e81",
+          "is_enabled": true,
+          "default_note": "Official Employee Code generation, branch allocation, email creation, and attendance handover.",
+          "authorized_roles": [
+            "admin",
+            "hr_manager",
+            "recruiter"
+          ],
+          "status_options": [
+            "Mapping Pending",
+            "Employee ID Generated",
+            "Biometric Enrolled",
+            "System & Email Created",
+            "Handover Completed",
+            "Hold"
+          ],
+          "custom_fields": []
+        },
+        {
+          "id": "S12",
+          "step_no": 12,
+          "name": "S12 — Employee Working Rating",
+          "short_code": "WORKING_RATING",
+          "department": "HOD / Management / HR",
+          "tat_hours": 720,
+          "color": "#fef08a",
+          "textColor": "#713f12",
+          "is_enabled": true,
+          "default_note": "Probation review, HOD working evaluation rating (1–5 stars), and confirmation status.",
+          "authorized_roles": [
+            "admin",
+            "hr_manager",
+            "hod"
+          ],
+          "status_options": [
+            "Under Probation",
+            "30-Day Review Completed",
+            "60-Day Review Completed",
+            "Confirmed (Good)",
+            "Average (Needs Monitoring)",
+            "Probation Extended",
+            "Early Left / Resigned"
+          ],
+          "custom_fields": []
         }
-      ]
+      ],
+      "updated_at_ist": "2026-11-21, 00:46:36"
     }
   }
 }

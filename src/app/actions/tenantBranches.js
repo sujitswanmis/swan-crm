@@ -405,7 +405,7 @@ export async function saveTenantBranch({
       try {
         let branchQuery = admin
           .from('tenant_branches')
-          .select('id, branch_code, custom_code, legacy_code, legacy_id');
+          .select('id, branch_code, custom_code, legacy_code');
 
         const orFilters = [];
         if (resolvedTenantCode) orFilters.push(`tenant_code.eq.${resolvedTenantCode}`);

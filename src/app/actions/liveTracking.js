@@ -1100,18 +1100,21 @@ function getISTDayWindowISO(dateStr = null) {
   return { dayStr, startISO: start.toISOString(), endISO: end.toISOString() };
 }
 
-export async function getAppReleasePolicy() {
-  const { DEFAULT_ANDROID_RELEASE_POLICY, sanitizeReleasePolicy } = await import('@/config/appReleaseConfig');
+export async function getAppReleasePolicy(platform = 'android') {
+  const targetPlatform = String(platform || 'android').trim().toLowerCase();
+  const { PLATFORM_RELEASE_DEFAULTS, sanitizeReleasePolicy } = await import('@/config/appReleaseConfig');
+  const defaultPolicy = PLATFORM_RELEASE_DEFAULTS[targetPlatform] || PLATFORM_RELEASE_DEFAULTS.android;
+
   try {
     const admin = getAdminClient();
     if (admin) {
       const { data, error } = await admin
         .from('app_release_policies')
         .select('*')
-        .eq('platform', 'android')
+        .eq('platform', targetPlatform)
         .maybeSingle();
       if (!error && data) {
-        return { success: true, policy: sanitizeReleasePolicy(data), source: 'database' };
+        return { success: true, policy: sanitizeReleasePolicy(data, targetPlatform), source: 'database' };
       }
     }
   } catch {
@@ -1121,9 +1124,50 @@ export async function getAppReleasePolicy() {
   const paths = await resolvePolicyPaths();
   const cached = await readJsonFileSafe(paths.primary, paths.tmp, null);
   if (cached) {
-    return { success: true, policy: sanitizeReleasePolicy(cached), source: 'json_fallback' };
+    const platformSpecific = cached.platforms?.[targetPlatform] || (targetPlatform === 'android' ? cached : null);
+    if (platformSpecific) {
+      return { success: true, policy: sanitizeReleasePolicy(platformSpecific, targetPlatform), source: 'json_fallback' };
+    }
   }
-  return { success: true, policy: sanitizeReleasePolicy(DEFAULT_ANDROID_RELEASE_POLICY), source: 'default' };
+  return { success: true, policy: sanitizeReleasePolicy(defaultPolicy, targetPlatform), source: 'default' };
+}
+
+export async function getAllAppReleasePolicies() {
+  const { PLATFORM_RELEASE_DEFAULTS, sanitizeReleasePolicy } = await import('@/config/appReleaseConfig');
+  const policies = {
+    android: sanitizeReleasePolicy(PLATFORM_RELEASE_DEFAULTS.android, 'android'),
+    windows: sanitizeReleasePolicy(PLATFORM_RELEASE_DEFAULTS.windows, 'windows'),
+    ios: sanitizeReleasePolicy(PLATFORM_RELEASE_DEFAULTS.ios, 'ios')
+  };
+
+  try {
+    const admin = getAdminClient();
+    if (admin) {
+      const { data, error } = await admin.from('app_release_policies').select('*');
+      if (!error && Array.isArray(data)) {
+        for (const row of data) {
+          const p = String(row?.platform || '').trim().toLowerCase();
+          if (policies[p]) {
+            policies[p] = sanitizeReleasePolicy(row, p);
+          }
+        }
+        return { success: true, policies, source: 'database' };
+      }
+    }
+  } catch {}
+
+  const paths = await resolvePolicyPaths();
+  const cached = await readJsonFileSafe(paths.primary, paths.tmp, null);
+  if (cached?.platforms) {
+    for (const [p, val] of Object.entries(cached.platforms)) {
+      if (policies[p]) {
+        policies[p] = sanitizeReleasePolicy(val, p);
+      }
+    }
+    return { success: true, policies, source: 'json_fallback' };
+  }
+
+  return { success: true, policies, source: 'default' };
 }
 
 export async function updateAppReleasePolicy(payload = {}) {
@@ -1159,18 +1203,29 @@ export async function updateAppReleasePolicy(payload = {}) {
       r?.module_access?.field_force?.is_manager === true;
 
     if (!isAllowed) {
-      return { success: false, error: 'Only Admin, HR, or Manager can update mobile release policy.' };
+      return { success: false, error: 'Only Admin, HR, or Manager can update release policy.' };
     }
 
+    const targetPlatform = String(payload?.platform || 'android').trim().toLowerCase();
     const { sanitizeReleasePolicy } = await import('@/config/appReleaseConfig');
     const nextPolicy = sanitizeReleasePolicy({
       ...payload,
+      platform: targetPlatform,
       updated_by: user.email || user.id,
       updated_at: new Date().toISOString()
-    });
+    }, targetPlatform);
 
     const paths = await resolvePolicyPaths();
-    await writeJsonFileSafe(paths.primary, paths.tmp, nextPolicy);
+    const currentJson = await readJsonFileSafe(paths.primary, paths.tmp, {}) || {};
+    const updatedPlatforms = currentJson.platforms || {};
+    updatedPlatforms[targetPlatform] = nextPolicy;
+
+    const mergedJson = {
+      ...currentJson,
+      ...(targetPlatform === 'android' ? nextPolicy : {}),
+      platforms: updatedPlatforms
+    };
+    await writeJsonFileSafe(paths.primary, paths.tmp, mergedJson);
 
     const { data: upserted, error } = await admin
       .from('app_release_policies')
@@ -1184,7 +1239,7 @@ export async function updateAppReleasePolicy(payload = {}) {
 
     return {
       success: true,
-      policy: upserted ? sanitizeReleasePolicy(upserted) : nextPolicy,
+      policy: upserted ? sanitizeReleasePolicy(upserted, targetPlatform) : nextPolicy,
       storage: error ? 'json_fallback' : 'database'
     };
   } catch (err) {
@@ -1418,6 +1473,8 @@ export async function reportFieldDeviceHeartbeat(token, snapshot = {}) {
       service_running: snapshot.running,
       location_mode: !snapshot.hasForegroundLocation ? 'denied' : snapshot.hasBackgroundLocation ? 'all_the_time' : 'while_using',
       pending_queue_count: clampBoundedInt(snapshot.pendingCount, 0, 1000000, previous.pending_queue_count ?? 0),
+      is_power_save_mode: snapshot.isPowerSaveMode === true,
+      battery_unrestricted: snapshot.batteryUnrestricted === true,
       app_version_code: clampBoundedInt(snapshot.appVersionCode, 1, 1000000, previous.app_version_code ?? null),
       app_version_name: typeof snapshot.appVersionName === 'string' ? snapshot.appVersionName.slice(0, 80) : previous.app_version_name ?? null,
       last_checked_at: nowIso,

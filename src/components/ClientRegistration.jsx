@@ -1551,7 +1551,7 @@ export default function ClientRegistration({
           if (!check.allowed) throw new Error(check.reason);
           const queued = await enqueueOfflineAction('submit', 'registration_lifecycle', { ...draftPayload, userCompany });
           if (!queued) throw new Error('Could not save submission on this device. Your draft has been preserved.');
-          showSyncToast('Submission queued safely on this device. Report and Lead Data will update after cloud sync.', 'info', 6000);
+          showSyncToast('Submission queued safely on this device. Lead Registered Report and Lead Data will update after cloud sync.', 'info', 6000);
         };
         if (!navigator.onLine) {
           await queueSubmission();
@@ -1582,7 +1582,7 @@ export default function ClientRegistration({
         notifyRegistrationChanged(committed);
         window.dispatchEvent(new CustomEvent('crm_leads_imported', { detail: [committed] }));
         if (onRegistrationSuccess) onRegistrationSuccess(committed);
-        showSyncToast('Lead submitted successfully. Report and Lead Data updated.', 'success', 5000);
+        showSyncToast('Lead submitted successfully. Lead Registered Report and Lead Data updated.', 'success', 5000);
       } else {
         // INSERT MODE
         rawNormalized.status = registrationStatus(rawNormalized.status, tenantLeadStatuses[0]);
@@ -1676,8 +1676,8 @@ export default function ClientRegistration({
               }
             }
             
-            showSyncToast('✅ Saved to Supabase: Client registered successfully!', 'success', 3500);
-            alert('Client Registered Successfully! (Synced with Client Report, Lead Data & Party Master)');
+            showSyncToast('✅ Saved to Supabase: Lead registered successfully!', 'success', 3500);
+            alert('Lead Registered Successfully! (Saved to Lead Registered Report & Lead Data)');
             if (onRegistrationSuccess) onRegistrationSuccess(finalNewLeadObj);
             if (finalNewLeadObj) {
               window.dispatchEvent(new CustomEvent('crm_leads_imported', { detail: [finalNewLeadObj] }));

@@ -15,7 +15,8 @@ export async function updateSession(request) {
   // and attempts a broken forward to /[[...route]] which returns empty JSON {}.
   // Rewriting Server Action requests targeting catch-all CRM subpaths to '/' lets Next.js resolve
   // directly to app/[[...route]]/page without forwarding, returning valid text/x-component Flight responses.
-  const isCatchAllCrmRoute = !isApiRoute && !isAuthPage && !isSaasStudio && pathname !== '/';
+  const isApplyRoute = pathname.startsWith('/apply');
+  const isCatchAllCrmRoute = !isApiRoute && !isAuthPage && !isSaasStudio && !isApplyRoute && pathname !== '/';
   const rewriteUrl = request.nextUrl.clone();
   if (isServerAction && isCatchAllCrmRoute) {
     rewriteUrl.pathname = '/';
@@ -51,6 +52,7 @@ export async function updateSession(request) {
   const isPublicPage = 
     pathname === '/chat' || 
     pathname === '/' || 
+    pathname.startsWith('/apply') || 
     pathname === '/manifest.json' || 
     pathname === '/sw.js' || 
     pathname.startsWith('/icon') ||

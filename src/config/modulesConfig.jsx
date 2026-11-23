@@ -1,9 +1,89 @@
 import React from 'react';
 import { INTEGRATION_PAGE, INTEGRATION_PAGES, CONFIG_MASTER_PAGES } from './integrationsConfig';
 import { WHATSAPP_LOG_PAGE, WHATSAPP_LOG_PERMISSION_ITEMS } from './whatsappMessageLogsConfig.js';
-import { UserPlus, FileText, Users, Building2, CheckCircle, Archive, Globe, Bot, Shield, PhoneCall, Phone, MessageCircle, Settings2, PieChart, ShieldCheck, Clock, CheckSquare, WifiOff, GitMerge, Navigation } from 'lucide-react';
+import { Home, UserPlus, FileText, Users, Building2, CheckCircle, Archive, Globe, Bot, Shield, PhoneCall, Phone, MessageCircle, Settings2, PieChart, ShieldCheck, Clock, CheckSquare, WifiOff, GitMerge, Navigation } from 'lucide-react';
+
+// Channel Operations / Daily Order Follow-up Sub-Item Groups (Aligned 1:1 with CRM Navigation Bar)
+export const CHANNEL_OPS_ORDER_TABS = [
+  { id: 'frequency_rules', label: '⚙️ Order Frequency Master' },
+  { id: 'order_followup', label: '📞 Order Desk Calling' },
+  { id: 'order_pipeline', label: '🚚 Order to Delivery Pipeline' },
+  { id: 'all_orders', label: '📦 Pipeline: All Orders' },
+  { id: 's01', label: 'S01 - Order Confirmation' },
+  { id: 's02', label: 'S02 - PI Generation' },
+  { id: 's03', label: 'S03 - PI Shared' },
+  { id: 's04', label: 'S04 - Request Advance Payment' },
+  { id: 's05', label: 'S05 - Receive Advance Payment' },
+  { id: 's06', label: 'S06 - Check Stock & Production' },
+  { id: 's07', label: 'S07 - Product Partial & Full Status' },
+  { id: 's08', label: 'S08 - Quality Check (PDI)' },
+  { id: 's09', label: 'S09 - Request 70% Balance' },
+  { id: 's10', label: 'S10 - Receive 70% Balance' },
+  { id: 's11', label: 'S11 - Ready for Dispatch' },
+  { id: 's12', label: 'S12 - Dispatch Material' },
+  { id: 's13', label: 'S13 - Material Delivered (POD)' },
+  { id: 'order_feedback', label: '⭐ Post-Delivery Feedback' },
+];
+
+export const CHANNEL_OPS_MONTHLY_TABS = [
+  { id: 'monthly_feedback', label: '📅 Monthly Health Checks' },
+];
+
+export const CHANNEL_OPS_COMPLAINTS_TABS = [
+  { id: 'complaints', label: '📋 Complaints All Stage' },
+  { id: 'c01', label: 'C01 - Ticket Logged & Triaged' },
+  { id: 'c02', label: 'C02 - Internal Dept RCA' },
+  { id: 'c03', label: 'C03 - Service Engineer Deputed' },
+  { id: 'c04', label: 'C04 - On-Site Job Card' },
+  { id: 'c05', label: 'C05 - Customer OTP Verification' },
+  { id: 'c06', label: 'C06 - Quality Audit & Closed' },
+];
+
+export const CHANNEL_OPS_END_CUSTOMER_TABS = [
+  { id: 'end_customers', label: '🚜 End Customer Master' },
+];
+
+export const CHANNEL_OPS_GROUPS = [
+  { id: 'order_pipeline_group', label: '🚚 Daily Order Follow-up & Pipeline', subItems: CHANNEL_OPS_ORDER_TABS },
+  { id: 'monthly_feedback_group', label: '📅 Monthly Health Checks', subItems: CHANNEL_OPS_MONTHLY_TABS },
+  { id: 'complaints_group', label: '⚠️ Complaint Management', subItems: CHANNEL_OPS_COMPLAINTS_TABS },
+  { id: 'end_customers_group', label: '🚜 End Customer Master', subItems: CHANNEL_OPS_END_CUSTOMER_TABS },
+];
+
+export const CHANNEL_OPS_SUB_ITEMS = [
+  ...CHANNEL_OPS_ORDER_TABS.map(tab => ({ ...tab, tabLabel: tab.label, pageId: 'order_pipeline_group' })),
+  ...CHANNEL_OPS_MONTHLY_TABS.map(tab => ({ ...tab, tabLabel: tab.label, pageId: 'monthly_feedback_group' })),
+  ...CHANNEL_OPS_COMPLAINTS_TABS.map(tab => ({ ...tab, tabLabel: tab.label, pageId: 'complaints_group' })),
+  ...CHANNEL_OPS_END_CUSTOMER_TABS.map(tab => ({ ...tab, tabLabel: tab.label, pageId: 'end_customers_group' })),
+];
+
+// User Management Sub-Item Groups (Aligned 1:1 with CRM Navigation Bar)
+export const USER_MGMT_SYSTEM_TABS = [
+  { id: 'user_manage', label: 'User Manage' },
+  { id: 'roles', label: 'Roles & Permissions' },
+  { id: 'hierarchy', label: 'Org Hierarchy' },
+];
+
+export const USER_MGMT_AUDIT_TABS = [
+  { id: 'audit', label: 'Audit Logs' },
+  { id: 'sessions', label: 'Active Sessions' },
+];
+
+export const USER_MGMT_GROUPS = [
+  { id: 'user_system_group', label: '👥 User System', subItems: USER_MGMT_SYSTEM_TABS },
+  { id: 'user_audit_group', label: '⏱️ User Audit System', subItems: USER_MGMT_AUDIT_TABS },
+];
+
+export const USER_MGMT_SUB_ITEMS = [
+  ...USER_MGMT_SYSTEM_TABS.map(tab => ({ ...tab, tabLabel: tab.label, pageId: 'user_system_group' })),
+  ...USER_MGMT_AUDIT_TABS.map(tab => ({ ...tab, tabLabel: tab.label, pageId: 'user_audit_group' })),
+];
 
 export const MODULES_CONFIG = [
+  {
+    id: 'home', path: 'home', label: 'Home Workspace', category: 'General',
+    icon: <Home size={20} />, viewOnly: true
+  },
   {
     id:'saas_master',path:'saas-master',label:'SaaS Master',category:'Master Admin',icon:<ShieldCheck size={20} />,
     roleAssignable:false,masterAdminOnly:true,roleRestrictionLabel:'Master Admin only',subItemsType:'tabs',
@@ -148,12 +228,13 @@ export const MODULES_CONFIG = [
 
   // Sales
   { id: 'registration', path: 'registration', label: 'New Lead Registration', category: 'Sales', icon: <UserPlus size={20} />, subItems: [
-    { id: 'form', label: 'New Lead Registration' },
-    { id: 'drafts', label: 'Saved Drafts' },
+    { id: 'form', label: '+Add Lead' },
+    { id: 'drafts', label: 'Lead Saved Draft' },
     { id: 'submitted', label: 'Lead Submitted' },
     { id: 'deleted', label: 'Lead Deleted' },
+    { id: 'report', label: 'Lead Registered Report' },
   ] },
-  { id: 'report', path: 'report', label: 'Lead Registered Report', category: 'Sales', icon: <FileText size={20} /> },
+  { id: 'report', path: 'report', label: 'Lead Registered Report', category: 'Sales', icon: <FileText size={20} />, roleAssignable: false, roleRestrictionLabel: 'Managed via Lead Registration' },
   { 
     id: 'leads', 
     path: 'leads', 
@@ -218,35 +299,8 @@ export const MODULES_CONFIG = [
       { id: 'all_orders', label: 'Pipeline: All Orders' }
     ],
     roleDisplayNote: 'Pipeline stages can be assigned individually or inherited from Order to Delivery Pipeline / All Orders.',
-    subItems: [
-      { id: 'frequency_rules', label: '⚙️ Order Frequency Master' },
-      { id: 'order_followup', label: '📞 Order Desk Calling' },
-      { id: 'order_pipeline', label: '🚚 Order to Delivery Pipeline' },
-      { id: 'all_orders', label: '📦 Pipeline: All Orders' },
-      { id: 's01', label: 'S01 - Order Confirmation' },
-      { id: 's02', label: 'S02 - PI Generation' },
-      { id: 's03', label: 'S03 - PI Shared' },
-      { id: 's04', label: 'S04 - Request Advance Payment' },
-      { id: 's05', label: 'S05 - Receive Advance Payment' },
-      { id: 's06', label: 'S06 - Check Stock & Production' },
-      { id: 's07', label: 'S07 - Product Partial & Full Status' },
-      { id: 's08', label: 'S08 - Quality Check (PDI)' },
-      { id: 's09', label: 'S09 - Request 70% Balance' },
-      { id: 's10', label: 'S10 - Receive 70% Balance' },
-      { id: 's11', label: 'S11 - Ready for Dispatch' },
-      { id: 's12', label: 'S12 - Dispatch Material' },
-      { id: 's13', label: 'S13 - Material Delivered (POD)' },
-      { id: 'order_feedback', label: '⭐ Post-Order Feedback' },
-      { id: 'monthly_feedback', label: '📅 Monthly Health Checks' },
-      { id: 'complaints', label: '⚠️ Complaint Management' },
-      { id: 'c01', label: 'C01 - Ticket Logged & Triaged' },
-      { id: 'c02', label: 'C02 - Internal Dept RCA' },
-      { id: 'c03', label: 'C03 - Service Engineer Deputed' },
-      { id: 'c04', label: 'C04 - On-Site Job Card' },
-      { id: 'c05', label: 'C05 - Customer OTP Verification' },
-      { id: 'c06', label: 'C06 - Quality Audit & Closed' },
-      { id: 'end_customers', label: '🚜 End Customer Master' }
-    ]
+    subItemGroups: CHANNEL_OPS_GROUPS,
+    subItems: CHANNEL_OPS_SUB_ITEMS
   },
   { 
     id: 'location_master', 
@@ -299,7 +353,10 @@ export const MODULES_CONFIG = [
       { id: 'S06', label: 'S06 — Salary Negotiation' },
       { id: 'S07', label: 'S07 — Shortlisted' },
       { id: 'S08', label: 'S08 — LOI Released' },
-      { id: 'S09', label: 'S09 — Joined' }
+      { id: 'S09', label: 'S09 — Joined' },
+      { id: 'S10', label: 'S10 — Document Collection' },
+      { id: 'S11', label: 'S11 — Employee ID & Final Mapping' },
+      { id: 'S12', label: 'S12 — Employee Working Rating' }
     ]
   },
   { id: 'joining', path: 'joining', label: 'Joining Process', category: 'Human Resource', icon: <CheckCircle size={20} /> },
@@ -312,13 +369,8 @@ export const MODULES_CONFIG = [
     category: 'User Management', 
     icon: <Users size={20} />,
     subItemsType: 'tabs',
-    subItems: [
-      { id: 'user_manage', label: 'User Manage' },
-      { id: 'roles', label: 'Roles & Permissions' },
-      { id: 'hierarchy', label: 'Org Hierarchy' },
-      { id: 'sessions', label: 'Active Sessions' },
-      { id: 'audit', label: 'Audit Logs' }
-    ]
+    subItemGroups: USER_MGMT_GROUPS,
+    subItems: USER_MGMT_SUB_ITEMS
   },
 
   // System

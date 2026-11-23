@@ -982,7 +982,7 @@ input[type="checkbox"]:hover, input[type="radio"]:hover {
 }
 
 /* Smooth Sidebar Transitions */
-.sidebar .nav-item span:not(.nav-chevron) {
+.sidebar .nav-item span:not(.nav-chevron):not(.nav-icon-badge):not(.nav-sub-icon-badge) {
   opacity: 1;
   max-width: 200px;
   white-space: nowrap;
@@ -992,10 +992,22 @@ input[type="checkbox"]:hover, input[type="radio"]:hover {
   display: inline-block;
 }
 
-.sidebar.collapsed .nav-item span:not(.nav-chevron) {
-  opacity: 0;
-  max-width: 0;
-  pointer-events: none;
+.sidebar.collapsed .nav-item span:not(.nav-chevron):not(.nav-icon-badge):not(.nav-sub-icon-badge) {
+  opacity: 0 !important;
+  max-width: 0 !important;
+  pointer-events: none !important;
+  display: none !important;
+}
+
+.sidebar.collapsed .nav-item .nav-icon-badge,
+.sidebar.collapsed .nav-item .nav-sub-icon-badge {
+  display: inline-flex !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  max-width: none !important;
+  pointer-events: auto !important;
+  margin: 0 auto !important;
+  flex-shrink: 0 !important;
 }
 
 .sidebar-brand-text {
@@ -1281,10 +1293,35 @@ input[type="checkbox"]:hover, input[type="radio"]:hover {
     gap: 2px;
   }
 
-  .sidebar.collapsed .nav-item > span,
-  .sidebar.collapsed .nav-item > div {
+  .sidebar.collapsed .nav-item > span:not(.nav-icon-badge):not(.nav-sub-icon-badge),
+  .sidebar.collapsed .nav-item > div:not(.nav-icon-badge) {
     display: none !important;
   }
+
+  .sidebar.collapsed .sidebar-sticky-home {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 25 !important;
+    background-color: var(--bg-surface) !important;
+    width: 100% !important;
+    margin: 0 auto 4px !important;
+    padding: 2px 0 4px !important;
+    display: flex !important;
+    justify-content: center !important;
+  }
+
+  .sidebar.collapsed .sidebar-sticky-home.scrolled {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08) !important;
+    border-bottom: 1px solid var(--border-light) !important;
+  }
+}
+
+.sidebar-sticky-home {
+  position: sticky;
+  top: 0;
+  z-index: 25;
+  background-color: var(--bg-surface);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .sidebar-submenu-popover {

@@ -153,10 +153,16 @@ export function getModulePermissions(moduleAccess, userRole, moduleId, platformK
   }
 
   if (!moduleAccess) {
+    if (moduleId === 'home') {
+      return { view: true, add: false, edit: false, delete: false, is_manager: false };
+    }
     return { view: false, add: false, edit: false, delete: false, is_manager: false };
   }
 
   if (!m) {
+    if (moduleId === 'home') {
+      return { view: true, add: false, edit: false, delete: false, is_manager: false };
+    }
     return { view: false, add: false, edit: false, delete: false, is_manager: false };
   }
 

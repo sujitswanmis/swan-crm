@@ -78,6 +78,10 @@ export default function ChannelOperationsModule({
   initialSubTab = 'frequency_rules',
   activeSubTab,
   onSubTabChange,
+  initialPipelineStage = 'ALL',
+  initialComplaintStage = 'ALL',
+  onPipelineStageChange,
+  onComplaintStageChange,
   userRole,
   moduleAccess,
   userCompany,
@@ -392,6 +396,8 @@ export default function ChannelOperationsModule({
           userRole={userRole}
           userId={userId}
           moduleAccess={moduleAccess}
+          initialStageFilter={initialPipelineStage}
+          onStageFilterChange={onPipelineStageChange}
         />
       )}
 
@@ -414,6 +420,11 @@ export default function ChannelOperationsModule({
         <ComplaintManagementModule
           tenantId={effectiveTenantId}
           parties={parties}
+          userName={userName}
+          userId={userId}
+          userRole={userRole}
+          initialStageFilter={initialComplaintStage}
+          onStageFilterChange={onComplaintStageChange}
         />
       )}
 

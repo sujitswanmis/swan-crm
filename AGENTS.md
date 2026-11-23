@@ -44,6 +44,38 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - **No Automatic Pushes**: Do NOT execute `git push` automatically. Always present changes to the user first, allow them to verify locally, and wait for their explicit permission before pushing changes.
 - **Deliverable App Upgrades Inside SPC-APPS/**: Whenever building or upgrading the Android APK or Desktop installers (`SPC Workspace`), ALWAYS archive any existing binary inside `SPC-APPS/archive/` (respecting Zero Deletion Policy) and place the upgraded build at `SPC-APPS/SPC Workspace (Android).apk` (or corresponding Desktop `.exe` inside `SPC-APPS/`). Keep `SPC-APPS/` `.gitignore`d.
 
+# Mandatory Complete Mobile App Release Policy & APK Synchronization Rule (Zero Omission)
+- **Universal Synchronization on Every Android Build/Upgrade**: Whenever the Android APK is upgraded or a new version is built, the AI assistant MUST ALWAYS synchronize ALL 5 interconnected components together without forgetting any single one:
+  1. **Android Gradle & Code**:
+     - `android/app/build.gradle`: Increment `versionCode` strictly by +1 (e.g. `9` -> `10`) and update `versionName` to match CRM version (e.g. `"v10.0 (2.5.1333)"`).
+     - `MainActivity.java`: Must dynamically read `versionCode` from runtime package info without hardcoding.
+  2. **Active Deliverable Binary in `SPC-APPS/`**:
+     - Archive previous APK to `SPC-APPS/archive/SPC Workspace (Android)_<timestamp>.apk` (Zero Deletion Policy).
+     - The active production APK MUST ALWAYS be placed with its explicit version in the file name: `SPC-APPS/SPC Workspace (Android) v{versionCode}.apk` (e.g. `SPC-APPS/SPC Workspace (Android) v10.apk`).
+     - A companion copy at `SPC-APPS/SPC Workspace (Android).apk` must also be kept for legacy static server references.
+  3. **Supabase Database Table (`app_release_policies`)**:
+     - MUST ALWAYS update the live `app_release_policies` database record for `platform: 'android'` with `latest_version_code`, `latest_version_name`, `min_supported_version_code`, `download_url`, `release_notes`, and `updated_at`. The Field Force / Device Health Audit UI reads this database table first!
+  4. **JSON Policy Store (`src/config/app_release_policy.json`)**:
+     - MUST ALWAYS update `latest_version_code`, `latest_version_name`, and `min_supported_version_code` to match the exact same values.
+  5. **Code Config Defaults (`src/config/appReleaseConfig.js`)**:
+     - MUST ALWAYS update `DEFAULT_ANDROID_RELEASE_POLICY` (`latest_version_code`, `latest_version_name`, `min_supported_version_code`) to prevent stale fallbacks.
+  6. **UI Verification**:
+     - Verify that **Field Force System ➔ App & Permission Health** (`FieldDeviceHealthAudit.jsx`) displays the correct `Target APK: v{latest_version_code} ({latest_version_name})` and `Download APK v{latest_version_code}` button.
+- **Strict Prohibition on Partial Updates**: Never update `build.gradle` or local APK without simultaneously updating Supabase `app_release_policies`, `app_release_policy.json`, and `appReleaseConfig.js`. All 5 MUST be updated in the same release step.
+
+# Mandatory Explicit Version in Build File Names & Download Headers Rule (Zero Generic File Names)
+- **Always Include Version in Deliverable File Names**: Whenever building, upgrading, or copying deliverable application binaries into `SPC-APPS/`:
+  1. The primary file name MUST ALWAYS include the explicit version number:
+     - **Android APK**: `SPC Workspace (Android) v{versionCode}.apk` (e.g. `SPC Workspace (Android) v10.apk`).
+     - **Windows Desktop Installer**: `SPC Workspace Setup v{versionCode}.exe` (e.g. `SPC Workspace Setup v3.exe`).
+     - **Windows Portable**: `SPC Workspace Portable v{versionCode}.exe` (e.g. `SPC Workspace Portable v3.exe`).
+  2. Companion unversioned copies (`SPC Workspace (Android).apk`, `SPC Workspace Setup (Installer).exe`, `SPC Workspace (Portable).exe`) must also be maintained in `SPC-APPS/` as backward-compatible aliases so zero legacy references break.
+  3. **Mandatory Dynamic Version in `Content-Disposition` Attachment Headers**:
+     - In all streaming download routes (`/api/public/android-apk`, `/api/public/desktop-installer`), the `Content-Disposition` header MUST dynamically specify the downloaded filename with the exact version:
+       - Android: `filename="SPC-Workspace-Android-v{versionCode}.apk"` (e.g. `SPC-Workspace-Android-v10.apk`).
+       - Windows: `filename="SPC-Workspace-Setup-v{versionCode}.exe"` (e.g. `SPC-Workspace-Setup-v3.exe`).
+     - Under NO circumstances should users ever download a generic unversioned file (`SPC-Workspace.apk` or `SPC-Workspace-Setup.exe`). The downloaded file in their phone/PC Downloads folder must always show the exact version.
+
 # Mandatory Independent Softphone & CRM Version Increment Rules
 - **CRM Softphone Version**: For every completed CRM Softphone update (UI, calling behavior, or related calling fixes), increment the final numeric component of `SOFTPHONE_VERSION` in `src/components/CallCenter/GlobalSoftphoneWidget.jsx` by exactly **+1**, once for that completed update. Example: `v2.1` -> `v2.2` -> `v2.3`.
 - **SuPuja Creations CRM Version**: For every completed main CRM update, increment only the final numeric component of `version` in `package.json` by exactly **+1**, once for that completed update. Example: `1.0.847` -> `1.0.848` -> `1.0.849`. The CRM display must continue to use this package version as its source of truth.

@@ -130,8 +130,9 @@ export default function PermissionMatrixModal({
     return assignableModules.filter(module => {
       const matchLabel = (module.label || '').toLowerCase().includes(query);
       const matchCat = (module.category || '').toLowerCase().includes(query);
-      const matchSubs = (module.subItems || []).some(s => (s.label || '').toLowerCase().includes(query));
-      return matchLabel || matchCat || matchSubs;
+      const matchSubs = (module.subItems || []).some(s => (s.label || '').toLowerCase().includes(query) || (s.tabLabel || '').toLowerCase().includes(query));
+      const matchGroups = (module.subItemGroups || []).some(g => (g.label || '').toLowerCase().includes(query));
+      return matchLabel || matchCat || matchSubs || matchGroups;
     });
   }, [assignableModules, query]);
 
@@ -213,6 +214,10 @@ export default function PermissionMatrixModal({
   // Permission resolution helpers
   const getModulePerms = (moduleId) => {
     const m = accessForm[moduleId];
+    if (moduleId === 'home') {
+      if (m?.view === false) return { view: false, add: false, edit: false, delete: false };
+      return { view: true, add: false, edit: false, delete: false };
+    }
     if (!m) return { view: false, add: false, edit: false, delete: false };
     if (m === true) return { view: true, add: true, edit: true, delete: false };
     if (m.view === false) return { view: false, add: false, edit: false, delete: false };
@@ -575,6 +580,7 @@ export default function PermissionMatrixModal({
           ...(m.subItems?.length ? { sub_items: subItems } : {})
         };
       });
+      updated.home = { view: true, read: true, add: false, write: false, edit: false, delete: false };
       return updated;
     });
   };
@@ -601,6 +607,7 @@ export default function PermissionMatrixModal({
           ...(m.subItems?.length ? { sub_items: subItems } : {})
         };
       });
+      updated.home = { view: true, read: true, add: false, write: false, edit: false, delete: false };
       OPERATIONAL_POWERS.forEach(p => {
         if (p.key !== 'can_manage_settings') updated[p.key] = true;
       });
@@ -628,6 +635,7 @@ export default function PermissionMatrixModal({
           };
         }
       });
+      updated.home = { view: true, read: true, add: false, write: false, edit: false, delete: false };
       return updated;
     });
   };
@@ -648,6 +656,9 @@ export default function PermissionMatrixModal({
     setError('');
     // Auto-sync assigned_steps & sanitize platform restriction maps
     const updatedForm = { ...accessForm };
+    if (updatedForm.home === undefined || updatedForm.home?.view !== false) {
+      updatedForm.home = { view: true, read: true, ...(updatedForm.home || {}) };
+    }
     const cleanAllowed = cleanPlatformsForSave(updatedForm.allowed_platforms);
     if (cleanAllowed) updatedForm.allowed_platforms = cleanAllowed;
     else delete updatedForm.allowed_platforms;
@@ -1433,7 +1444,38 @@ export default function PermissionMatrixModal({
 
                                     return (
                                       <React.Fragment key={sub.id}>
-                                      {firstInGroup && <tr><td colSpan={COLUMN_COUNT} style={{padding:'0.65rem 0.8rem 0.65rem 2.8rem',fontWeight:700,borderBottom:'1px solid var(--border-light)',background:'var(--bg-primary)'}}>{group.label}<span style={{marginLeft:8,fontSize:'0.75rem',fontWeight:500,color:'var(--text-secondary)'}}>{group.subItems.length} Tabs</span></td></tr>}
+                                      {firstInGroup && (
+                                        <tr style={{ background: 'var(--nav-hover-bg, rgba(37, 99, 235, 0.05))' }}>
+                                          <td
+                                            colSpan={COLUMN_COUNT}
+                                            style={{
+                                              padding: '0.65rem 0.8rem 0.65rem 2.8rem',
+                                              fontWeight: 700,
+                                              fontSize: '0.86rem',
+                                              color: 'var(--text-primary)',
+                                              borderBottom: '1px solid var(--border-light)',
+                                              borderTop: '1px solid var(--border-light)'
+                                            }}
+                                          >
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                              <span>{group.label}</span>
+                                              <span
+                                                style={{
+                                                  fontSize: '0.72rem',
+                                                  fontWeight: 600,
+                                                  padding: '0.1rem 0.45rem',
+                                                  borderRadius: '8px',
+                                                  background: 'var(--bg-surface)',
+                                                  border: '1px solid var(--border-light)',
+                                                  color: 'var(--text-secondary)'
+                                                }}
+                                              >
+                                                {group.subItems.length} {group.subItems.length === 1 ? 'Tab' : 'Tabs'}
+                                              </span>
+                                            </div>
+                                          </td>
+                                        </tr>
+                                      )}
                                       <tr
                                         style={{
                                           background: subPerms.view ? 'var(--bg-surface)' : 'var(--bg-primary)'

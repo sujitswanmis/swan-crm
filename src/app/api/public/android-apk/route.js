@@ -52,11 +52,49 @@ async function resolvePolicyDownloadUrl() {
   return DEFAULT_ANDROID_RELEASE_POLICY.download_url;
 }
 
+async function resolvePolicyVersionCode() {
+  try {
+    const admin = getAdminClient();
+    if (admin) {
+      const { data, error } = await admin
+        .from('app_release_policies')
+        .select('latest_version_code')
+        .eq('platform', 'android')
+        .maybeSingle();
+      if (!error && data?.latest_version_code) {
+        return Number(data.latest_version_code);
+      }
+    }
+  } catch {}
+
+  try {
+    const raw = await fsp.readFile(POLICY_FALLBACK_PATH, 'utf-8');
+    const parsed = JSON.parse(raw || '{}');
+    if (parsed?.platforms?.android?.latest_version_code) {
+      return Number(parsed.platforms.android.latest_version_code);
+    }
+    if (parsed?.latest_version_code) {
+      return Number(parsed.latest_version_code);
+    }
+  } catch {}
+
+  return DEFAULT_ANDROID_RELEASE_POLICY.latest_version_code || 10;
+}
+
 export async function GET(request) {
   try {
-    const stat = await fsp.stat(APK_LOCAL_PATH).catch(() => null);
+    const versionCode = await resolvePolicyVersionCode();
+    const versionedApkPath = path.join(process.cwd(), 'SPC-APPS', `SPC Workspace (Android) v${versionCode}.apk`);
+    let finalPath = APK_LOCAL_PATH;
+    let stat = await fsp.stat(versionedApkPath).catch(() => null);
     if (stat && stat.isFile() && stat.size > 0) {
-      const fileStream = fs.createReadStream(APK_LOCAL_PATH);
+      finalPath = versionedApkPath;
+    } else {
+      stat = await fsp.stat(APK_LOCAL_PATH).catch(() => null);
+    }
+
+    if (stat && stat.isFile() && stat.size > 0) {
+      const fileStream = fs.createReadStream(finalPath);
       const webStream = new ReadableStream({
         start(controller) {
           fileStream.on('data', (chunk) => controller.enqueue(chunk));
@@ -72,7 +110,7 @@ export async function GET(request) {
         status: 200,
         headers: {
           'Content-Type': 'application/vnd.android.package-archive',
-          'Content-Disposition': 'attachment; filename="SPC-Workspace-Android.apk"',
+          'Content-Disposition': `attachment; filename="SPC-Workspace-Android-v${versionCode}.apk"`,
           'Content-Length': String(stat.size),
           'Cache-Control': 'no-store, no-cache, must-revalidate'
         }

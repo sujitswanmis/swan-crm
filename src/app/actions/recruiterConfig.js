@@ -2,6 +2,7 @@
 
 import fs from 'fs/promises';
 import path from 'path';
+import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 
 const CONFIG_FILE_PATH = path.join(process.cwd(), 'src', 'config', 'recruiter_pipeline_config.json');
 
@@ -11,11 +12,10 @@ const CONFIG_FILE_PATH = path.join(process.cwd(), 'src', 'config', 'recruiter_pi
 function normalizeTenantCode(tenantId) {
   if (!tenantId) return 'TNT00002';
   const str = String(tenantId).trim();
-  if (str === 'TNT00001' || str.toLowerCase().includes('supuja')) return 'TNT00001';
-  if (str === 'TNT00002' || str.toLowerCase().includes('swan')) return 'TNT00002';
+  if (str === 'TNT00001' || str === '0a37b8e8-1c28-4e19-8891-951fc3f8f8af' || str.toLowerCase().includes('supuja')) return 'TNT00001';
+  if (str === 'TNT00002' || str === '00000000-0000-0000-0000-000000000001' || str.toLowerCase().includes('swan')) return 'TNT00002';
   if (str === 'TNT00003' || str.toLowerCase().includes('testing')) return 'TNT00003';
   if (str.startsWith('TNT')) return str;
-  if (str === '00000000-0000-0000-0000-000000000001') return 'TNT00001';
   return 'TNT00002';
 }
 
@@ -101,7 +101,7 @@ const DEFAULT_STAGES = [
   {
     id: "S05",
     step_no: 5,
-    name: "S05 — ED Approval",
+    name: "S05 — Final Confirmation",
     short_code: "ED_APPROVAL",
     department: "Executive Director",
     tat_hours: 48,
@@ -110,7 +110,7 @@ const DEFAULT_STAGES = [
     is_enabled: true,
     default_note: "Candidate dossier submitted for Executive Director final approval.",
     authorized_roles: ["admin", "hr_manager", "ed"],
-    status_options: ["Pending ED", "ED Approved", "ED Rejected", "No Response", "ReSchedule"],
+    status_options: ["No Response", "ReSchedule", "Final Pending", "Final Rejected", "Final Confirmed"],
     custom_fields: []
   },
   {
@@ -172,6 +172,51 @@ const DEFAULT_STAGES = [
     authorized_roles: ["admin", "hr_manager", "recruiter"],
     status_options: ["Joining Pending", "Joined", "No Show", "No Response", "ReSchedule"],
     custom_fields: []
+  },
+  {
+    id: "S10",
+    step_no: 10,
+    name: "S10 — Document Collection",
+    short_code: "DOC_COLLECTION",
+    department: "Human Resource",
+    tat_hours: 48,
+    color: "#fed7aa",
+    textColor: "#9a3412",
+    is_enabled: true,
+    default_note: "Post-joining document verification, KYC, and background credentials.",
+    authorized_roles: ["admin", "hr_manager", "recruiter"],
+    status_options: ["Pending Documents", "Documents Submitted", "KYC & Verification Completed", "Discrepancy Found", "Hold", "ReSchedule"],
+    custom_fields: []
+  },
+  {
+    id: "S11",
+    step_no: 11,
+    name: "S11 — Employee ID & Final Mapping",
+    short_code: "EMP_ID_MAPPING",
+    department: "HR & Systems",
+    tat_hours: 24,
+    color: "#c7d2fe",
+    textColor: "#312e81",
+    is_enabled: true,
+    default_note: "Official Employee Code generation, branch allocation, email creation, and attendance handover.",
+    authorized_roles: ["admin", "hr_manager", "recruiter"],
+    status_options: ["Mapping Pending", "Employee ID Generated", "Biometric Enrolled", "System & Email Created", "Handover Completed", "Hold"],
+    custom_fields: []
+  },
+  {
+    id: "S12",
+    step_no: 12,
+    name: "S12 — Employee Working Rating",
+    short_code: "WORKING_RATING",
+    department: "HOD / Management / HR",
+    tat_hours: 720,
+    color: "#fef08a",
+    textColor: "#713f12",
+    is_enabled: true,
+    default_note: "Probation review, HOD working evaluation rating (1–5 stars), and confirmation status.",
+    authorized_roles: ["admin", "hr_manager", "hod"],
+    status_options: ["Under Probation", "30-Day Review Completed", "60-Day Review Completed", "Confirmed (Good)", "Average (Needs Monitoring)", "Probation Extended", "Early Left / Resigned"],
+    custom_fields: []
   }
 ];
 
@@ -199,7 +244,17 @@ export async function getRecruiterPipelineConfig(tenantId = 'TNT00002', branchNa
     }
 
     const tenantConfig = allConfigs[tenantCode] || allConfigs['TNT00002'] || {};
-    const defaultBranchConfig = tenantConfig['All Branches'] || DEFAULT_CONFIG;
+    const rawDefaultBranchConfig = tenantConfig['All Branches'] || DEFAULT_CONFIG;
+
+    // Ensure all standard DEFAULT_STAGES (S00 to S12) are present in defaultBranchConfig
+    const existingDefaultIds = new Set((rawDefaultBranchConfig.stages || []).map(s => s.id));
+    const missingDefaultStages = DEFAULT_STAGES.filter(s => !existingDefaultIds.has(s.id));
+    const defaultBranchConfig = {
+      ...rawDefaultBranchConfig,
+      stages: missingDefaultStages.length > 0 
+        ? [...(rawDefaultBranchConfig.stages || []), ...missingDefaultStages]
+        : (rawDefaultBranchConfig.stages || DEFAULT_STAGES)
+    };
 
     let branchConfig = tenantConfig[effectiveBranch];
     if (!branchConfig && effectiveBranch !== 'All Branches') {
@@ -400,4 +455,96 @@ export async function calculateRecruiterStageTimeline({
     currentStageId,
     timeline
   };
+}
+
+/**
+ * 4. GET RECRUITER WORKLOAD LIMITS
+ */
+export async function getRecruiterWorkloadLimits(tenantId = 'TNT00002') {
+  const tenantCode = normalizeTenantCode(tenantId);
+  try {
+    let allConfigs = {};
+    try {
+      const fileContent = await fs.readFile(CONFIG_FILE_PATH, 'utf-8');
+      allConfigs = JSON.parse(fileContent);
+    } catch (_) {
+      allConfigs = {};
+    }
+    const tenantConfig = allConfigs[tenantCode] || allConfigs['TNT00002'] || {};
+
+    // Live Server-Side Active Positions Counting (Bypasses client RLS)
+    const activeCounts = {};
+    try {
+      if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+        const adminClient = createSupabaseClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL,
+          process.env.SUPABASE_SERVICE_ROLE_KEY
+        );
+        const { data: positions } = await adminClient
+          .from('recruitment_positions')
+          .select('id, recruiter_assigned, status')
+          .in('status', ['S00', 'S01']);
+
+        if (positions) {
+          positions.forEach(p => {
+            if (p.recruiter_assigned && p.recruiter_assigned !== 'All') {
+              const key = String(p.recruiter_assigned).trim();
+              activeCounts[key] = (activeCounts[key] || 0) + 1;
+              if (key.includes('-')) {
+                const baseName = key.split('-')[0].trim();
+                activeCounts[baseName] = (activeCounts[baseName] || 0) + 1;
+              }
+            }
+          });
+        }
+      }
+    } catch (countErr) {
+      console.warn('Failed to calculate active counts on server:', countErr);
+    }
+
+    return {
+      success: true,
+      tenantCode,
+      workload_limits: tenantConfig.workload_limits || {},
+      active_counts: activeCounts
+    };
+  } catch (err) {
+    console.error('getRecruiterWorkloadLimits error:', err);
+    return { success: false, error: err.message, workload_limits: {}, active_counts: {} };
+  }
+}
+
+/**
+ * 5. SAVE RECRUITER WORKLOAD LIMITS (Per-recruiter or batch)
+ */
+export async function saveRecruiterWorkloadLimits(tenantId = 'TNT00002', recruiterKey, limitData = {}) {
+  const tenantCode = normalizeTenantCode(tenantId);
+  try {
+    let allConfigs = {};
+    try {
+      const fileContent = await fs.readFile(CONFIG_FILE_PATH, 'utf-8');
+      allConfigs = JSON.parse(fileContent);
+    } catch (_) {
+      allConfigs = {};
+    }
+    if (!allConfigs[tenantCode]) {
+      allConfigs[tenantCode] = { 'All Branches': { ...DEFAULT_CONFIG } };
+    }
+    if (!allConfigs[tenantCode].workload_limits) {
+      allConfigs[tenantCode].workload_limits = {};
+    }
+    allConfigs[tenantCode].workload_limits[recruiterKey] = {
+      ...(allConfigs[tenantCode].workload_limits[recruiterKey] || {}),
+      ...limitData
+    };
+    await fs.writeFile(CONFIG_FILE_PATH, JSON.stringify(allConfigs, null, 2), 'utf-8');
+    return {
+      success: true,
+      tenantCode,
+      workload_limits: allConfigs[tenantCode].workload_limits
+    };
+  } catch (err) {
+    console.error('saveRecruiterWorkloadLimits error:', err);
+    return { success: false, error: err.message };
+  }
 }

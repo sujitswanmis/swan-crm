@@ -1,10 +1,42 @@
 {
   "platform": "android",
-  "latest_version_code": 9,
-  "latest_version_name": "v9.0 (2.5.1245)",
-  "min_supported_version_code": 9,
+  "latest_version_code": 10,
+  "latest_version_name": "v10.0 (2.5.1333)",
+  "min_supported_version_code": 10,
   "download_url": "https://app.supujacreations.com/api/public/android-apk",
-  "release_notes": "Official direct branded APK download with user-approved bilingual force upgrade modal and zero third-party links.",
-  "updated_by": "SuPuja Creations (Official direct branded download URL)",
-  "updated_at": "2026-11-20T12:48:00.000+05:30"
+  "release_notes": "Official direct branded APK download with universal multi-platform push notifications, background wake lock, and battery saver protection.",
+  "updated_by": "SuPuja Creations",
+  "updated_at": "2026-11-23T03:19:00.000+05:30",
+  "platforms": {
+    "android": {
+      "platform": "android",
+      "latest_version_code": 10,
+      "latest_version_name": "v10.0 (2.5.1333)",
+      "min_supported_version_code": 10,
+      "download_url": "https://app.supujacreations.com/api/public/android-apk",
+      "release_notes": "Official direct branded APK download with universal multi-platform push notifications, background wake lock, and battery saver protection.",
+      "updated_by": "SuPuja Creations",
+      "updated_at": "2026-11-23T03:19:00.000+05:30"
+    },
+    "windows": {
+      "platform": "windows",
+      "latest_version_code": 3,
+      "latest_version_name": "v3.0 (2.5.1339)",
+      "min_supported_version_code": 3,
+      "download_url": "https://app.supujacreations.com/api/public/desktop-installer",
+      "release_notes": "Official SPC Workspace Desktop v3.0 with native Action Center toast notifications, persistent background sync, and dynamic Next.js runtime.",
+      "updated_by": "SuPuja Creations",
+      "updated_at": "2026-11-23T13:51:30.000+05:30"
+    },
+    "ios": {
+      "platform": "ios",
+      "latest_version_code": 1,
+      "latest_version_name": "v1.0 (2.5.1333)",
+      "min_supported_version_code": 1,
+      "download_url": "https://apps.apple.com/app/spc-workspace",
+      "release_notes": "Official iOS mobile application with live GPS telemetry, smart checklist, and multi-tenant push notifications.",
+      "updated_by": "SuPuja Creations",
+      "updated_at": "2026-11-23T03:19:00.000+05:30"
+    }
+  }
 }

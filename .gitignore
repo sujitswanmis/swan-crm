@@ -44,6 +44,7 @@ next-env.d.ts
 
 # local scratch scripts and heavy binary backups
 scratch/
+scratch_*
 backups/
 /CRM-Backups Plivo Calling Perfect 2.1/
 *.apk

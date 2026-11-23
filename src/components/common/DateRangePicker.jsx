@@ -252,17 +252,17 @@ export default function DateRangePicker({
           top: 'calc(100% + 6px)',
           left: 0,
           zIndex: 99999,
-          backgroundColor: '#ffffff',
+          backgroundColor: 'var(--bg-surface, #ffffff)',
           borderRadius: '12px',
           boxShadow: '0 12px 32px rgba(0, 0, 0, 0.18), 0 2px 6px rgba(0,0,0,0.08)',
-          border: '1px solid #e2e8f0',
+          border: '1px solid var(--border-light, #e2e8f0)',
           width: '260px',
           overflow: 'hidden',
           ...(presetOptions ? { maxHeight: 'min(50vh, 440px)', overflowY: 'auto' } : {}),
           padding: '0.4rem',
           animation: 'fadeIn 0.15s ease-out'
         }}>
-          <div style={{ padding: '0.4rem 0.6rem 0.3rem', fontSize: '0.72rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+          <div style={{ padding: '0.4rem 0.6rem 0.3rem', fontSize: '0.72rem', fontWeight: 800, color: 'var(--text-secondary, #94a3b8)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
             Quick Date Presets
           </div>
 
@@ -280,9 +280,9 @@ export default function DateRangePicker({
                     justifyContent: 'space-between',
                     padding: '0.55rem 0.65rem',
                     borderRadius: '8px',
-                    border: 'none',
-                    backgroundColor: isSelected ? '#eef2ff' : 'transparent',
-                    color: isSelected ? '#4338ca' : '#1e293b',
+                    border: isSelected ? '1px solid rgba(59, 130, 246, 0.3)' : '1px solid transparent',
+                    backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.12)' : 'transparent',
+                    color: isSelected ? 'var(--accent-color, #2563eb)' : 'var(--text-primary, #1e293b)',
                     fontSize: '0.84rem',
                     fontWeight: isSelected ? 700 : 500,
                     cursor: 'pointer',
@@ -290,7 +290,7 @@ export default function DateRangePicker({
                     transition: 'all 0.1s'
                   }}
                   onMouseEnter={(e) => {
-                    if (!isSelected) e.currentTarget.style.backgroundColor = '#f8fafc';
+                    if (!isSelected) e.currentTarget.style.backgroundColor = 'var(--th-bg, #f8fafc)';
                   }}
                   onMouseLeave={(e) => {
                     if (!isSelected) e.currentTarget.style.backgroundColor = 'transparent';
@@ -298,11 +298,11 @@ export default function DateRangePicker({
                 >
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                      {isSelected && <Check size={14} color="#4338ca" strokeWidth={3} />}
+                      {isSelected && <Check size={14} color="var(--accent-color, #2563eb)" strokeWidth={3} />}
                       <span>{p.label}</span>
                     </div>
                     {p.sub && (
-                      <div style={{ fontSize: '0.72rem', color: isSelected ? '#6366f1' : '#94a3b8', marginLeft: isSelected ? '1.25rem' : 0 }}>
+                      <div style={{ fontSize: '0.72rem', color: isSelected ? 'var(--accent-color, #2563eb)' : 'var(--text-secondary, #94a3b8)', marginLeft: isSelected ? '1.25rem' : 0 }}>
                         {p.sub}
                       </div>
                     )}
@@ -313,7 +313,7 @@ export default function DateRangePicker({
           </div>
 
           {/* Divider */}
-          <div style={{ height: '1px', backgroundColor: '#e2e8f0', margin: '0.35rem 0' }} />
+          <div style={{ height: '1px', backgroundColor: 'var(--border-light, #e2e8f0)', margin: '0.35rem 0' }} />
 
           {/* 🗓️ Custom Date Range Option (Triggers Popup Modal) */}
           <button
@@ -326,9 +326,9 @@ export default function DateRangePicker({
               justifyContent: 'space-between',
               padding: '0.6rem 0.65rem',
               borderRadius: '8px',
-              border: preset === 'custom' ? '1px solid #c7d2fe' : 'none',
-              backgroundColor: preset === 'custom' ? '#eef2ff' : 'transparent',
-              color: preset === 'custom' ? '#4338ca' : '#334155',
+              border: preset === 'custom' ? '1px solid rgba(59, 130, 246, 0.3)' : '1px solid transparent',
+              backgroundColor: preset === 'custom' ? 'rgba(59, 130, 246, 0.12)' : 'transparent',
+              color: preset === 'custom' ? 'var(--accent-color, #2563eb)' : 'var(--text-primary, #334155)',
               fontSize: '0.84rem',
               fontWeight: 700,
               cursor: 'pointer',
@@ -336,7 +336,7 @@ export default function DateRangePicker({
               transition: 'all 0.1s'
             }}
             onMouseEnter={(e) => {
-              if (preset !== 'custom') e.currentTarget.style.backgroundColor = '#f1f5f9';
+              if (preset !== 'custom') e.currentTarget.style.backgroundColor = 'var(--th-bg, #f1f5f9)';
             }}
             onMouseLeave={(e) => {
               if (preset !== 'custom') e.currentTarget.style.backgroundColor = 'transparent';

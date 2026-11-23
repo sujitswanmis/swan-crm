@@ -15,7 +15,7 @@ function rows(result) {
 // Preserve the frequency defaults/party shape used by the existing order actions.
 async function readSchedules(tenantId) {
   const client = getAdminClient();
-  const [parties, scheduleResult] = await Promise.all([
+  const [allParties, scheduleResult] = await Promise.all([
     getPartyList(tenantId, { throwOnError: true }),
     client.from('party_order_schedules').select('*').eq('tenant_id', tenantId)
   ]);
@@ -23,6 +23,13 @@ async function readSchedules(tenantId) {
   if (scheduleResult.error && !['42P01', 'PGRST205'].includes(scheduleResult.error.code)) throw scheduleResult.error;
   const schedules = new Map((scheduleResult.data || []).map(s => [s.party_id, s]));
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+
+  // Filter only verified onboarded channel partners (exact match with Party Master Report)
+  const parties = (allParties || []).filter(p => {
+    const isUnconfirmedHandoff = p.party_status === 'Draft_From_Lead' || p.onboarding_stage === 'S00_Party_Entry';
+    return !isUnconfirmedHandoff;
+  });
+
   return parties.map(p => {
     const s = schedules.get(p.id);
     return {
@@ -104,7 +111,13 @@ export async function getChannelWorkspaceData(tenantId, tab) {
     else if (tab === 'frequency_rules') data = await readSchedules(effectiveTenantId);
     else if (tab === 'order_pipeline') data = await getOrderPipelineList(effectiveTenantId);
     else if (tab === 'order_feedback') data = await getDeliveredOrdersPendingFeedback(effectiveTenantId);
-    else if (tab === 'complaints') data = await getPartyList(effectiveTenantId, { throwOnError: true });
+    else if (tab === 'complaints') {
+      const allParties = await getPartyList(effectiveTenantId, { throwOnError: true });
+      data = (allParties || []).filter(p => {
+        const isUnconfirmedHandoff = p.party_status === 'Draft_From_Lead' || p.onboarding_stage === 'S00_Party_Entry';
+        return !isUnconfirmedHandoff;
+      });
+    }
     else if (tab === 'monthly_feedback' || tab === 'end_customers') data = [];
     else throw new Error('Unknown operations tab');
     return { success: true, data };
