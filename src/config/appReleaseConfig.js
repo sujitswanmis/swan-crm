@@ -11,7 +11,7 @@ export const DEFAULT_ANDROID_RELEASE_POLICY = {
   latest_version_code: 10,
   latest_version_name: 'v10.0 (2.5.1333)',
   min_supported_version_code: 10,
-  download_url: 'https://app.supujacreations.com/api/public/android-apk',
+  download_url: 'https://qosmckbxvzpdccbrttkd.supabase.co/storage/v1/object/public/app_releases/SPC-Workspace-Android-v10.apk',
   release_notes:
     'Official direct branded APK download with universal multi-platform push notifications, background wake lock, and battery saver protection.'
 };

@@ -10,7 +10,11 @@ export const dynamic = 'force-dynamic';
 
 const APK_LOCAL_PATH = path.join(process.cwd(), 'SPC-APPS', 'SPC Workspace (Android).apk');
 const POLICY_FALLBACK_PATH = path.join(process.cwd(), 'src', 'config', 'app_release_policy.json');
-const DIRECT_STORAGE_URL = 'https://qosmckbxvzpdccbrttkd.supabase.co/storage/v1/object/public/app_releases/SPC-Workspace-Android-v9.apk';
+
+function getDirectStorageUrl(versionCode = 10) {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://qosmckbxvzpdccbrttkd.supabase.co';
+  return `${supabaseUrl}/storage/v1/object/public/app_releases/SPC-Workspace-Android-v${versionCode}.apk`;
+}
 
 function getAdminClient() {
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
@@ -129,11 +133,11 @@ export async function GET(request) {
       configuredUrl === request.url;
 
     // If external non-loop URL is configured, use it. Otherwise, redirect directly to Supabase Storage CDN binary
-    const targetUrl = isSelfReferencing ? DIRECT_STORAGE_URL : configuredUrl;
+    const targetUrl = isSelfReferencing ? getDirectStorageUrl(versionCode) : configuredUrl;
 
     return NextResponse.redirect(new URL(targetUrl, request.url), 307);
   } catch (err) {
     console.error('[android-apk] Download error:', err);
-    return NextResponse.redirect(DIRECT_STORAGE_URL, 307);
+    return NextResponse.redirect(getDirectStorageUrl(10), 307);
   }
 }

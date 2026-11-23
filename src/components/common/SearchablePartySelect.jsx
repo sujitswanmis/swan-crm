@@ -2,6 +2,40 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Search, Check, X, MapPin, Phone, Building2, ChevronDown } from 'lucide-react';
+import { B2B_OPERATIONAL_STATUSES } from '@/components/Party/StageConfigModal';
+
+const resolvePartnerOperationalStatus = (party) => {
+  if (!party) return { id: 'Draft', label: '📝 Draft', color: '#94a3b8', bg: 'rgba(100, 116, 139, 0.15)', border: '#64748b', substage: '' };
+  const rawStatus = party.activation_status || party.operational_status?.status || party.party_status || party.final_status || 'Draft';
+  const substage = party.activation_substage || party.operational_status?.substage || '';
+
+  const found = B2B_OPERATIONAL_STATUSES?.find(s => s.id === rawStatus);
+  if (found) {
+    return {
+      id: found.id,
+      label: found.label,
+      color: found.color,
+      bg: found.bg,
+      border: found.border,
+      substage
+    };
+  }
+
+  if (rawStatus === 'Active') {
+    return { id: 'Active', label: '🟢 Active', color: '#16a34a', bg: 'rgba(22, 163, 74, 0.15)', border: '#16a34a', substage };
+  }
+  if (rawStatus === 'Draft' || rawStatus === 'Draft_From_Lead') {
+    return { id: 'Draft', label: '📝 Draft', color: '#94a3b8', bg: 'rgba(100, 116, 139, 0.15)', border: '#64748b', substage };
+  }
+  return {
+    id: rawStatus,
+    label: rawStatus,
+    color: '#d97706',
+    bg: 'rgba(217, 119, 6, 0.15)',
+    border: '#d97706',
+    substage
+  };
+};
 
 function maskPhoneNumber(phone) {
   if (!phone) return '';
@@ -146,42 +180,79 @@ export default function SearchablePartySelect({
 
       {/* Selected Card View (When not actively searching) */}
       {selectedParty && !isOpen ? (
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '0.65rem 0.85rem',
-          borderRadius: '8px',
-          border: `1.5px solid ${color}40`,
-          background: 'var(--bg-primary)',
-          gap: '0.75rem',
-          transition: 'all 0.15s ease'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap', flex: 1, minWidth: 0 }}>
-            <span style={{
-              fontSize: '0.74rem',
-              fontWeight: 800,
-              padding: '0.15rem 0.45rem',
-              borderRadius: '4px',
-              background: 'rgba(239,68,68,0.12)',
-              color: color,
-              fontFamily: 'monospace',
-              letterSpacing: '0.3px',
-              flexShrink: 0
-            }}>
-              {selectedParty.party_universal_code || selectedParty.distributor_code || selectedParty.dealer_code || 'CODE'}
-            </span>
+        (() => {
+          const selOpStatus = resolvePartnerOperationalStatus(selectedParty);
+          const selTier = selectedParty.party_type || selectedParty.tier || 'Partner';
+          const isSelDist = selTier === 'Distributor';
 
-            <span style={{
-              fontWeight: 700,
-              color: 'var(--text-primary)',
-              fontSize: '0.88rem',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap'
+          return (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '0.65rem 0.85rem',
+              borderRadius: '8px',
+              border: `1.5px solid ${color}40`,
+              background: 'var(--bg-primary)',
+              gap: '0.75rem',
+              transition: 'all 0.15s ease'
             }}>
-              {selectedParty.firm_name}
-            </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', flex: 1, minWidth: 0 }}>
+                <span style={{
+                  fontSize: '0.74rem',
+                  fontWeight: 800,
+                  padding: '0.15rem 0.45rem',
+                  borderRadius: '4px',
+                  background: 'rgba(239,68,68,0.12)',
+                  color: color,
+                  fontFamily: 'monospace',
+                  letterSpacing: '0.3px',
+                  flexShrink: 0
+                }}>
+                  {selectedParty.party_universal_code || selectedParty.distributor_code || selectedParty.dealer_code || 'CODE'}
+                </span>
+
+                <span style={{
+                  fontSize: '0.66rem',
+                  fontWeight: 700,
+                  padding: '0.1rem 0.38rem',
+                  borderRadius: '3px',
+                  background: isSelDist ? 'rgba(56,189,248,0.2)' : 'rgba(16,185,129,0.2)',
+                  color: isSelDist ? '#38bdf8' : '#10b981',
+                  flexShrink: 0
+                }}>
+                  {selTier}
+                </span>
+
+                <span
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.2rem',
+                    fontSize: '0.66rem',
+                    fontWeight: 800,
+                    padding: '0.1rem 0.42rem',
+                    borderRadius: '3px',
+                    background: selOpStatus.bg,
+                    color: selOpStatus.color,
+                    border: `1px solid ${selOpStatus.border}`,
+                    flexShrink: 0
+                  }}
+                  title={`S08 Operational Status: ${selOpStatus.label}${selOpStatus.substage ? ' (' + selOpStatus.substage + ')' : ''}`}
+                >
+                  {selOpStatus.label}
+                </span>
+
+                <span style={{
+                  fontWeight: 700,
+                  color: 'var(--text-primary)',
+                  fontSize: '0.88rem',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap'
+                }}>
+                  {selectedParty.firm_name}
+                </span>
 
             {(selectedParty.district_name || selectedParty.district || selectedParty.state_name) && (
               <span style={{
@@ -256,7 +327,9 @@ export default function SearchablePartySelect({
             </button>
           </div>
         </div>
-      ) : (
+      );
+    })()
+  ) : (
         /* Search Box & Trigger */
         <div style={{ position: 'relative' }}>
           <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
@@ -412,6 +485,9 @@ export default function SearchablePartySelect({
                   const code = p.party_universal_code || p.distributor_code || p.dealer_code || 'CODE';
                   const loc = [p.district_name || p.district, p.state_name || p.state].filter(Boolean).join(', ');
                   const phone = p.primary_mobile || p.biz_contact_no_1 || p.phone;
+                  const opStatus = resolvePartnerOperationalStatus(p);
+                  const partyTier = p.party_type || p.tier || 'Partner';
+                  const isDist = partyTier === 'Distributor';
 
                   return (
                     <div
@@ -436,7 +512,7 @@ export default function SearchablePartySelect({
                       }}
                     >
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem', minWidth: 0, flex: 1 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
                           <span style={{
                             fontSize: '0.72rem',
                             fontWeight: 800,
@@ -447,6 +523,33 @@ export default function SearchablePartySelect({
                             fontFamily: 'monospace'
                           }}>
                             {code}
+                          </span>
+                          <span style={{
+                            fontSize: '0.66rem',
+                            fontWeight: 700,
+                            padding: '0.08rem 0.35rem',
+                            borderRadius: '3px',
+                            background: isDist ? 'rgba(56,189,248,0.2)' : 'rgba(16,185,129,0.2)',
+                            color: isDist ? '#38bdf8' : '#10b981'
+                          }}>
+                            {partyTier}
+                          </span>
+                          <span
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.2rem',
+                              fontSize: '0.66rem',
+                              fontWeight: 800,
+                              padding: '0.08rem 0.4rem',
+                              borderRadius: '3px',
+                              background: opStatus.bg,
+                              color: opStatus.color,
+                              border: `1px solid ${opStatus.border}`
+                            }}
+                            title={`S08 Operational Status: ${opStatus.label}${opStatus.substage ? ' (' + opStatus.substage + ')' : ''}`}
+                          >
+                            {opStatus.label}
                           </span>
                           <span style={{
                             fontWeight: 700,

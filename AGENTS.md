@@ -45,23 +45,48 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - **Deliverable App Upgrades Inside SPC-APPS/**: Whenever building or upgrading the Android APK or Desktop installers (`SPC Workspace`), ALWAYS archive any existing binary inside `SPC-APPS/archive/` (respecting Zero Deletion Policy) and place the upgraded build at `SPC-APPS/SPC Workspace (Android).apk` (or corresponding Desktop `.exe` inside `SPC-APPS/`). Keep `SPC-APPS/` `.gitignore`d.
 
 # Mandatory Complete Mobile App Release Policy & APK Synchronization Rule (Zero Omission)
-- **Universal Synchronization on Every Android Build/Upgrade**: Whenever the Android APK is upgraded or a new version is built, the AI assistant MUST ALWAYS synchronize ALL 5 interconnected components together without forgetting any single one:
-  1. **Android Gradle & Code**:
-     - `android/app/build.gradle`: Increment `versionCode` strictly by +1 (e.g. `9` -> `10`) and update `versionName` to match CRM version (e.g. `"v10.0 (2.5.1333)"`).
-     - `MainActivity.java`: Must dynamically read `versionCode` from runtime package info without hardcoding.
-  2. **Active Deliverable Binary in `SPC-APPS/`**:
-     - Archive previous APK to `SPC-APPS/archive/SPC Workspace (Android)_<timestamp>.apk` (Zero Deletion Policy).
-     - The active production APK MUST ALWAYS be placed with its explicit version in the file name: `SPC-APPS/SPC Workspace (Android) v{versionCode}.apk` (e.g. `SPC-APPS/SPC Workspace (Android) v10.apk`).
-     - A companion copy at `SPC-APPS/SPC Workspace (Android).apk` must also be kept for legacy static server references.
-  3. **Supabase Database Table (`app_release_policies`)**:
-     - MUST ALWAYS update the live `app_release_policies` database record for `platform: 'android'` with `latest_version_code`, `latest_version_name`, `min_supported_version_code`, `download_url`, `release_notes`, and `updated_at`. The Field Force / Device Health Audit UI reads this database table first!
-  4. **JSON Policy Store (`src/config/app_release_policy.json`)**:
-     - MUST ALWAYS update `latest_version_code`, `latest_version_name`, and `min_supported_version_code` to match the exact same values.
-  5. **Code Config Defaults (`src/config/appReleaseConfig.js`)**:
-     - MUST ALWAYS update `DEFAULT_ANDROID_RELEASE_POLICY` (`latest_version_code`, `latest_version_name`, `min_supported_version_code`) to prevent stale fallbacks.
-  6. **UI Verification**:
-     - Verify that **Field Force System ➔ App & Permission Health** (`FieldDeviceHealthAudit.jsx`) displays the correct `Target APK: v{latest_version_code} ({latest_version_name})` and `Download APK v{latest_version_code}` button.
-- **Strict Prohibition on Partial Updates**: Never update `build.gradle` or local APK without simultaneously updating Supabase `app_release_policies`, `app_release_policy.json`, and `appReleaseConfig.js`. All 5 MUST be updated in the same release step.
+- **Universal Synchronization on Every Android & Desktop Build/Upgrade**: Whenever a new app version (Android APK or Windows Desktop) is built or upgraded, the AI assistant MUST ALWAYS follow this **STRICT 6-PHASE EXECUTION PROTOCOL** in exact chronological order without skipping any single step:
+
+  ### Phase 1: Build & Version Increment
+  1. **Gradle / Package Configuration**:
+     - Android: Increment `versionCode` strictly by +1 (e.g. `9` -> `10`) in `android/app/build.gradle` and update `versionName` to match current CRM version (e.g. `"v10.0 (2.5.1333)"`).
+     - Windows Desktop: Update version in `desktop/package.json` and bridge `appVersionCode` in `desktop/preload.js`.
+  2. **Active Deliverables in `SPC-APPS/`**:
+     - Archive previous binary into `SPC-APPS/archive/` (Absolute Zero Deletion Policy).
+     - Save new binary with explicit version: `SPC-APPS/SPC Workspace (Android) v{versionCode}.apk` or `SPC-APPS/SPC Workspace Setup v{versionCode}.exe`.
+     - Maintain backward-compatible unversioned copy (`SPC Workspace (Android).apk`, `SPC Workspace Setup (Installer).exe`).
+
+  ### Phase 2: Mandatory Cloud Storage Upload & Live CDN Verification (CRITICAL — BEFORE DB UPDATE)
+  3. **Immediate Supabase Storage Upload (`app_releases` Bucket)**:
+     - **Vercel Serverless Reality**: Cloud serverless hosting DOES NOT hold local `SPC-APPS/` binaries on serverless disk!
+     - The AI assistant MUST ALWAYS immediately upload the new APK/installer to the Supabase Storage public bucket `app_releases`:
+       - Versioned key: `SPC-Workspace-Android-v{versionCode}.apk` (e.g. `SPC-Workspace-Android-v10.apk`).
+       - Generic key: `SPC-Workspace-Android.apk`.
+     - **Strict Pre-Condition**: The AI MUST verify the file is reachable and returns HTTP 200 OK via `HEAD / GET` request to `https://qosmckbxvzpdccbrttkd.supabase.co/storage/v1/object/public/app_releases/SPC-Workspace-Android-v{versionCode}.apk`.
+     - **STRICT PROHIBITION**: NEVER update database version codes before verifying the file is successfully uploaded and publicly downloadable from Supabase Storage! (If the database is updated first, all live employee phones instantly pop up the mandatory upgrade modal and download 404 or outdated files!).
+
+  ### Phase 3: Route Code Sync & Zero Hardcoded Version Strings
+  4. **Dynamic Download Routes (`/api/public/android-apk`, `/api/public/desktop-installer`)**:
+     - Must dynamically determine `versionCode` from the active policy.
+     - Content-Disposition attachment header MUST dynamically specify version: `filename="SPC-Workspace-Android-v{versionCode}.apk"`.
+     - **Zero Hardcoded Version Fallbacks**: Under NO circumstances should any route file ever hardcode fallback strings like `v8.apk`, `v9.apk`, or older versions. Fallbacks must dynamically construct the target URL from the active policy version code.
+
+  ### Phase 4: Database Policy Update (Trigger Realtime Popups Only After Storage Is Ready)
+  5. **Supabase Database Table (`app_release_policies`)**:
+     - Update live record with `latest_version_code`, `latest_version_name`, `min_supported_version_code`, `download_url` (pointing to the verified public CDN URL or `/api/public/android-apk`), `release_notes`, and `updated_at`.
+     - This immediately triggers the upgrade modal on active employee phones with 100% guarantee that the new binary is ready for instant download.
+
+  ### Phase 5: Local Config Store & Fallbacks
+  6. **JSON Policy Store & Code Defaults**:
+     - Update `src/config/app_release_policy.json` (`platforms.android`, `platforms.windows`) to match.
+     - Update `src/config/appReleaseConfig.js` (`DEFAULT_ANDROID_RELEASE_POLICY`, `DEFAULT_WINDOWS_RELEASE_POLICY`).
+
+  ### Phase 6: End-to-End Verification
+  7. **Audit & UI Verification**:
+     - Verify **Field Force System ➔ App & Permission Health** (`FieldDeviceHealthAudit.jsx`) displays target badges correctly.
+     - Test direct download link with a programmatic HTTP request to confirm the downloaded file matches the new version and expected byte size.
+
+- **Strict Prohibition on Partial or Out-of-Order Releases**: Never perform database updates before cloud storage uploads. All 6 phases MUST be completed and verified as a single cohesive atomic release operation.
 
 # Mandatory Explicit Version in Build File Names & Download Headers Rule (Zero Generic File Names)
 - **Always Include Version in Deliverable File Names**: Whenever building, upgrading, or copying deliverable application binaries into `SPC-APPS/`:

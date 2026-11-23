@@ -3,17 +3,17 @@
   "latest_version_code": 10,
   "latest_version_name": "v10.0 (2.5.1333)",
   "min_supported_version_code": 10,
-  "download_url": "https://app.supujacreations.com/api/public/android-apk",
+  "download_url": "https://qosmckbxvzpdccbrttkd.supabase.co/storage/v1/object/public/app_releases/SPC-Workspace-Android-v10.apk",
   "release_notes": "Official direct branded APK download with universal multi-platform push notifications, background wake lock, and battery saver protection.",
   "updated_by": "SuPuja Creations",
-  "updated_at": "2026-11-23T03:19:00.000+05:30",
+  "updated_at": "2026-11-23T16:08:00.000+05:30",
   "platforms": {
     "android": {
       "platform": "android",
       "latest_version_code": 10,
       "latest_version_name": "v10.0 (2.5.1333)",
       "min_supported_version_code": 10,
-      "download_url": "https://app.supujacreations.com/api/public/android-apk",
+      "download_url": "https://qosmckbxvzpdccbrttkd.supabase.co/storage/v1/object/public/app_releases/SPC-Workspace-Android-v10.apk",
       "release_notes": "Official direct branded APK download with universal multi-platform push notifications, background wake lock, and battery saver protection.",
       "updated_by": "SuPuja Creations",
       "updated_at": "2026-11-23T03:19:00.000+05:30"

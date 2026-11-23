@@ -22,6 +22,40 @@ import { INDIAN_STATE_DISTRICTS } from '@/config/indianStateDistricts';
 import MaskedPhoneDisplay from '../common/MaskedPhoneDisplay';
 import StandardTablePagination from '../common/StandardTablePagination';
 import { fetchPartyWorkspaceResource } from '@/utils/partyWorkspaceCache';
+import { B2B_OPERATIONAL_STATUSES } from '@/components/Party/StageConfigModal';
+
+const resolvePartnerOperationalStatus = (party) => {
+  if (!party) return { id: 'Draft', label: '📝 Draft', color: '#94a3b8', bg: 'rgba(100, 116, 139, 0.15)', border: '#64748b', substage: '' };
+  const rawStatus = party.activation_status || party.operational_status?.status || party.party_status || party.final_status || 'Draft';
+  const substage = party.activation_substage || party.operational_status?.substage || '';
+
+  const found = B2B_OPERATIONAL_STATUSES?.find(s => s.id === rawStatus);
+  if (found) {
+    return {
+      id: found.id,
+      label: found.label,
+      color: found.color,
+      bg: found.bg,
+      border: found.border,
+      substage
+    };
+  }
+
+  if (rawStatus === 'Active') {
+    return { id: 'Active', label: '🟢 Active', color: '#16a34a', bg: 'rgba(22, 163, 74, 0.15)', border: '#16a34a', substage };
+  }
+  if (rawStatus === 'Draft' || rawStatus === 'Draft_From_Lead') {
+    return { id: 'Draft', label: '📝 Draft', color: '#94a3b8', bg: 'rgba(100, 116, 139, 0.15)', border: '#64748b', substage };
+  }
+  return {
+    id: rawStatus,
+    label: rawStatus,
+    color: '#d97706',
+    bg: 'rgba(217, 119, 6, 0.15)',
+    border: '#d97706',
+    substage
+  };
+};
 
 const formatRescheduledDisplay = (val) => {
   if (!val) return '—';
@@ -1150,6 +1184,7 @@ export default function DailyFollowupQueueTable({
                       const isOverdue = item.next_due_date < todayStr;
                       const isDueToday = item.next_due_date === todayStr;
                       const latestCall = item.latestCall;
+                      const opStatus = resolvePartnerOperationalStatus(p);
 
                       return (
                         <tr key={item.party_id} style={{ borderBottom: '1px solid var(--border-light)' }}>
@@ -1157,18 +1192,36 @@ export default function DailyFollowupQueueTable({
                             <div style={{ fontWeight: 800, color: p?.party_type === 'Distributor' ? '#38bdf8' : '#34d399', fontSize: '0.9rem' }}>
                               {p?.distributor_code || p?.dealer_code || p?.party_universal_code}
                             </div>
-                            <span style={{
-                              display: 'inline-block',
-                              fontSize: '0.7rem',
-                              fontWeight: 700,
-                              padding: '0.12rem 0.45rem',
-                              borderRadius: '4px',
-                              marginTop: '0.2rem',
-                              background: p?.party_type === 'Distributor' ? 'rgba(56,189,248,0.2)' : 'rgba(16,185,129,0.2)',
-                              color: p?.party_type === 'Distributor' ? '#38bdf8' : '#34d399'
-                            }}>
-                              {p?.party_type}
-                            </span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '0.25rem', flexWrap: 'wrap' }}>
+                              <span style={{
+                                display: 'inline-block',
+                                fontSize: '0.68rem',
+                                fontWeight: 700,
+                                padding: '0.1rem 0.4rem',
+                                borderRadius: '4px',
+                                background: p?.party_type === 'Distributor' ? 'rgba(56,189,248,0.2)' : 'rgba(16,185,129,0.2)',
+                                color: p?.party_type === 'Distributor' ? '#38bdf8' : '#34d399'
+                              }}>
+                                {p?.party_type || 'Partner'}
+                              </span>
+                              <span
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.2rem',
+                                  fontSize: '0.68rem',
+                                  fontWeight: 800,
+                                  padding: '0.1rem 0.45rem',
+                                  borderRadius: '4px',
+                                  background: opStatus.bg,
+                                  color: opStatus.color,
+                                  border: `1px solid ${opStatus.border}`
+                                }}
+                                title={`S08 Operational Status: ${opStatus.label}${opStatus.substage ? ' (' + opStatus.substage + ')' : ''}`}
+                              >
+                                {opStatus.label}
+                              </span>
+                            </div>
                           </td>
 
                           <td style={{ padding: '0.85rem 1rem' }}>
