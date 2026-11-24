@@ -6,6 +6,7 @@ import { CRMPage, CRMPageHeader, CRMCard, CRMToolbar, CRMTabs, CRMTabPanel, CRMS
 import { ColumnResizer, useTableColumnResize } from '@/utils/tableColumnResize';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import WhatsappOfficialMessageLogs from '@/components/WhatsappOfficialMessageLogs';
+import WhatsappCampaignStudio from '@/components/WhatsappCampaignStudio';
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Save, Plus, Trash2, Image as ImageIcon, Upload, PlayCircle, PauseCircle, Settings, MessageSquare, Repeat,
@@ -43,6 +44,7 @@ const WA_EDGE_MAXIMUMS = { select: 72, actions: 180 };
 
 const ALL_WA_TABS = [
   { id: 'templates', label: 'Templates Library', icon: MessageSquare },
+  { id: 'campaigns', label: 'Broadcast Campaigns', icon: Send },
   { id: 'automations', label: 'Stage Automations', icon: Repeat },
   { id: 'sent_logs', label: 'API Message Sent Logs', icon: Send },
   { id: 'catalog', label: 'Master BSP Catalog (20+)', icon: Layers },
@@ -3879,6 +3881,20 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
             />
           )}
         </div>
+      )}
+
+      {/* BROADCAST CAMPAIGNS TAB */}
+      {activeTab === 'campaigns' && (
+        <WhatsappCampaignStudio
+          tenantId={tenantId}
+          tenantBranches={tenantBranches}
+          templates={templates}
+          onNavigateToLogs={() => {
+            if (visibleTabs.some(t => t.id === 'sent_logs')) {
+              handleTabChange('sent_logs');
+            }
+          }}
+        />
       )}
 
       {/* AUTOMATIONS TAB */}
