@@ -52,8 +52,8 @@ const ALL_WA_TABS = [
 
 export const WA_TEMPLATE_CATEGORIES = [
   { id: 'leads', label: 'Lead Management', icon: '🎯', defaultRecipient: 'party', color: '#10b981' },
-  { id: 'party', label: 'Party Master (Dealers/Channel)', icon: '🏢', defaultRecipient: 'party', color: '#0284c7' },
-  { id: 'end_customers', label: 'End Customer Master (Farmers)', icon: '🚜', defaultRecipient: 'end_customer', color: '#16a34a' },
+  { id: 'party', label: 'Party Master', icon: '🏢', defaultRecipient: 'party', color: '#0284c7' },
+  { id: 'end_customers', label: 'End Customer Master', icon: '🚜', defaultRecipient: 'end_customer', color: '#16a34a' },
   { id: 'orders', label: 'Order to Delivery Pipeline', icon: '🚚', defaultRecipient: 'party', color: '#3b82f6' },
   { id: 'complaints', label: 'Complaint Management', icon: '⚠️', defaultRecipient: 'end_customer', color: '#ef4444' },
   { id: 'delegation', label: 'Delegation Tasks', icon: '📋', defaultRecipient: 'employee', color: '#8b5cf6' },
@@ -64,32 +64,40 @@ export const WA_TEMPLATE_CATEGORIES = [
 ];
 
 export const WA_RECIPIENT_TYPES = [
-  { id: 'party', label: 'Party / Dealer / Distributor', icon: '🏢' },
-  { id: 'end_customer', label: 'End Customer / Farmer', icon: '🚜' },
+  { id: 'party', label: 'Party Master', icon: '🏢' },
+  { id: 'end_customer', label: 'End Customer', icon: '🚜' },
   { id: 'employee', label: 'Employee / Staff', icon: '🧑‍💼' },
   { id: 'hod', label: 'HOD / Reporting Manager', icon: '👔' },
   { id: 'candidate', label: 'Job Candidate / Applicant', icon: '🎓' },
 ];
 
 export const WA_CATEGORY_VARIABLE_TAGS = {
+  leads: [
+    { num: 1, name: 'Business Name', token: '{{1}}', desc: 'Company / Firm' },
+    { num: 2, name: 'Contact Person 1 (CP1)', token: '{{2}}', desc: 'Primary Contact' },
+    { num: 3, name: 'Contact Person 2 (CP2)', token: '{{3}}', desc: 'Secondary Contact' },
+    { num: 4, name: 'Contact Person 3 (CP3)', token: '{{4}}', desc: 'Tertiary Contact' },
+    { num: 5, name: 'Product / Requirement', token: '{{5}}', desc: 'Requirement' },
+    { num: 6, name: 'Executive Mobile No', token: '{{6}}', desc: '+91 XXXXX XXXXX' },
+  ],
   party: [
-    { num: 1, name: 'Party / Firm Name', token: '{{1}}', desc: 'Agency Name' },
-    { num: 2, name: 'Party Code / Dealer ID', token: '{{2}}', desc: 'PTY-XXXX' },
-    { num: 3, name: 'Contact Person Name', token: '{{3}}', desc: 'Proprietor' },
-    { num: 4, name: 'Branch / Territory', token: '{{4}}', desc: 'Headquarters / Raian' },
-    { num: 5, name: 'Credit Limit / Balance', token: '{{5}}', desc: 'Ledger Bal ₹' },
-    { num: 6, name: 'Sales Manager Mobile', token: '{{6}}', desc: '+91 XXXXX XXXXX' },
+    { num: 1, name: 'Firm / Trade Name', token: '{{1}}', desc: 'Trade Name' },
+    { num: 2, name: 'Legal Registered Name', token: '{{2}}', desc: 'Legal Entity' },
+    { num: 3, name: 'Contact Person 1 (CP1)', token: '{{3}}', desc: 'Primary Contact' },
+    { num: 4, name: 'Contact Person 2 (CP2)', token: '{{4}}', desc: 'Secondary Contact' },
+    { num: 5, name: 'Contact Person 3 (CP3)', token: '{{5}}', desc: 'Tertiary Contact' },
+    { num: 6, name: 'Party Code', token: '{{6}}', desc: 'PTY-XXXX' },
   ],
   end_customers: [
-    { num: 1, name: 'End Customer Name', token: '{{1}}', desc: 'Farmer Name' },
-    { num: 2, name: 'Model / Implement Name', token: '{{2}}', desc: 'Laser Leveller / Rotavator' },
-    { num: 3, name: 'Serial No / Chassis No', token: '{{3}}', desc: 'SN-XXXXXX' },
-    { num: 4, name: 'Purchase Date / Dealer', token: '{{4}}', desc: 'DD-MMM-YYYY' },
-    { num: 5, name: 'Warranty / Service Due', token: '{{5}}', desc: '1 Year Warranty' },
-    { num: 6, name: 'Customer Helpline No', token: '{{6}}', desc: 'Toll-free / Mobile' },
+    { num: 1, name: 'Customer Name', token: '{{1}}', desc: 'End Customer' },
+    { num: 2, name: 'Party Master', token: '{{2}}', desc: 'Linked Dealer / Firm' },
+    { num: 3, name: 'Machine / Model Name', token: '{{3}}', desc: 'Equipment' },
+    { num: 4, name: 'Serial / Chassis No', token: '{{4}}', desc: 'SN-XXXXXX' },
+    { num: 5, name: 'Purchase Date', token: '{{5}}', desc: 'DD-MMM-YYYY' },
+    { num: 6, name: 'Helpline / Support Phone', token: '{{6}}', desc: '+91 XXXXX XXXXX' },
   ],
   orders: [
-    { num: 1, name: 'Customer / Party Name', token: '{{1}}', desc: 'Party Name' },
+    { num: 1, name: 'Party / Customer Name', token: '{{1}}', desc: 'Party Name' },
     { num: 2, name: 'Order ID / PO No', token: '{{2}}', desc: 'ORD-2026-XXXX' },
     { num: 3, name: 'Order Value (₹)', token: '{{3}}', desc: 'Total Amount' },
     { num: 4, name: 'Dispatch / Delivery Date', token: '{{4}}', desc: 'DD-MMM-YYYY' },
@@ -133,14 +141,6 @@ export const WA_CATEGORY_VARIABLE_TAGS = {
     { num: 3, name: 'Interview Date & Time', token: '{{3}}', desc: 'Slot Time' },
     { num: 4, name: 'Interview Venue / Link', token: '{{4}}', desc: 'Plant Address / Google Meet' },
     { num: 5, name: 'HR Contact Mobile', token: '{{5}}', desc: '+91 XXXXX XXXXX' },
-  ],
-  leads: [
-    { num: 1, name: 'Lead / Customer Name', token: '{{1}}', desc: 'Prospect Name' },
-    { num: 2, name: 'Company Name', token: '{{2}}', desc: 'Client Firm' },
-    { num: 3, name: 'Product / Category', token: '{{3}}', desc: 'Requirement' },
-    { num: 4, name: 'Sales Executive Name', token: '{{4}}', desc: 'Assigned Agent' },
-    { num: 5, name: 'Executive Mobile No', token: '{{5}}', desc: '+91 XXXXX XXXXX' },
-    { num: 6, name: 'Branch Office', token: '{{6}}', desc: 'New Swan Group' },
   ],
   general: [
     { num: 1, name: 'Recipient Name', token: '{{1}}', desc: 'Person Name' },
