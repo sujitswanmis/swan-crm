@@ -236,12 +236,9 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
         val = 'NSTLP';
       }
 
-      let label = branchName;
-      if (val === 'NSMLR') {
-        label = 'New Swan Multitech Limited Raian (NSMLR)';
-      } else if (val === 'NSTLP') {
-        label = 'New Swan Technologies Limited Paharuwal (NSTLP)';
-      }
+      // Clean, consistent branch name across all branches without any appended short code
+      const cleanBranchName = branchName.replace(/\s*\((?:NSMLR|NSTLP|NSE\d|NSACPL\d*|NSG)\)/gi, '').trim();
+      const label = cleanBranchName;
 
       list.push({
         value: val,
