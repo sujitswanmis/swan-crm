@@ -62,6 +62,8 @@ export default function WhatsappCampaignStudio({
   const [selectedAudience, setSelectedAudience] = useState('party');
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [recipientPriority, setRecipientPriority] = useState('party_business');
+  const [showAllTemplates, setShowAllTemplates] = useState(true);
+  const [templateSearchTerm, setTemplateSearchTerm] = useState('');
 
   // Stats & Previews
   const [stats, setStats] = useState({ partyCount: 0, leadCount: 0, customerCount: 0, userCount: 0 });
@@ -123,15 +125,55 @@ export default function WhatsappCampaignStudio({
   // Filter templates matching chosen audience
   const relevantTemplates = useMemo(() => {
     if (!templates || templates.length === 0) return [];
-    return templates.filter(t => {
-      const comp = String(t.company || '').toLowerCase();
-      if (selectedAudience === 'party') return comp.includes('category:party') || comp.includes('general') || comp.includes('broadcast');
-      if (selectedAudience === 'leads') return comp.includes('category:leads') || comp.includes('general') || comp.includes('broadcast');
-      if (selectedAudience === 'end_customers') return comp.includes('category:end_customers') || comp.includes('general') || comp.includes('broadcast');
-      if (selectedAudience === 'users') return comp.includes('category:attendance') || comp.includes('category:leaves') || comp.includes('general');
-      return true;
-    });
-  }, [templates, selectedAudience]);
+    
+    // Parse meta helper
+    const parseMeta = (compStr) => {
+      const raw = String(compStr || '').trim();
+      let category = 'leads'; // Default legacy templates to leads/marketing
+      const metaMatch = raw.match(/\{category:(.*?),recipient:(.*?)\}/i);
+      if (metaMatch && metaMatch[1]) {
+        category = metaMatch[1].trim().toLowerCase();
+      }
+      return { category };
+    };
+
+    let list = templates;
+
+    // If not showing all templates, try to filter by matching audience
+    if (!showAllTemplates) {
+      const filtered = templates.filter(t => {
+        const { category } = parseMeta(t.company);
+        if (selectedAudience === 'party') {
+          return category === 'party' || category === 'general' || category === 'leads';
+        }
+        if (selectedAudience === 'leads') {
+          return category === 'leads' || category === 'general' || category === 'party';
+        }
+        if (selectedAudience === 'end_customers') {
+          return category === 'end_customers' || category === 'general';
+        }
+        if (selectedAudience === 'users') {
+          return category === 'attendance' || category === 'leaves' || category === 'general';
+        }
+        return true;
+      });
+      // Fallback to all templates if no specific filtered found
+      list = filtered.length > 0 ? filtered : templates;
+    }
+
+    // Apply templateSearchTerm if user types to search
+    if (templateSearchTerm.trim()) {
+      const q = templateSearchTerm.toLowerCase().trim();
+      list = list.filter(t => 
+        (t.template_name || '').toLowerCase().includes(q) ||
+        (t.campaign_name || '').toLowerCase().includes(q) ||
+        (t.message_body || '').toLowerCase().includes(q) ||
+        (t.company || '').toLowerCase().includes(q)
+      );
+    }
+
+    return list;
+  }, [templates, selectedAudience, showAllTemplates, templateSearchTerm]);
 
   // Auto-select first matching template if none or invalid
   useEffect(() => {
@@ -405,15 +447,40 @@ export default function WhatsappCampaignStudio({
             borderRadius: '10px',
             padding: '1.15rem'
           }}>
-            <label style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.65rem' }}>
-              <span style={{ display: 'inline-flex', width: '22px', height: '22px', borderRadius: '50%', backgroundColor: 'var(--accent-color, #2563eb)', color: '#fff', fontSize: '0.75rem', alignItems: 'center', justifyContent: 'center', fontWeight: 800 }}>2</span>
-              Step 2: Select Approved WhatsApp Template
-            </label>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.65rem' }}>
+              <label style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <span style={{ display: 'inline-flex', width: '22px', height: '22px', borderRadius: '50%', backgroundColor: 'var(--accent-color, #2563eb)', color: '#fff', fontSize: '0.75rem', alignItems: 'center', justifyContent: 'center', fontWeight: 800 }}>2</span>
+                Step 2: Select Approved WhatsApp Template
+              </label>
+              <span style={{ fontSize: '0.76rem', fontWeight: 600, color: 'var(--accent-color, #2563eb)', background: 'rgba(37, 99, 235, 0.08)', padding: '0.15rem 0.5rem', borderRadius: '4px' }}>
+                {relevantTemplates.length} Available
+              </span>
+            </div>
+
+            {/* Template Search & Toggle */}
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.65rem', alignItems: 'center' }}>
+              <input
+                type="text"
+                placeholder="Search templates..."
+                value={templateSearchTerm}
+                onChange={e => setTemplateSearchTerm(e.target.value)}
+                style={{ flex: 1, padding: '0.45rem 0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '0.82rem' }}
+              />
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.76rem', color: 'var(--text-secondary)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                <input 
+                  type="checkbox" 
+                  checked={showAllTemplates} 
+                  onChange={e => setShowAllTemplates(e.target.checked)} 
+                  style={{ cursor: 'pointer' }}
+                />
+                Show All ({templates?.length || 0})
+              </label>
+            </div>
 
             {relevantTemplates.length === 0 ? (
               <div style={{ padding: '1rem', background: 'rgba(239, 68, 68, 0.08)', borderRadius: '8px', border: '1px solid rgba(239, 68, 68, 0.25)', fontSize: '0.82rem', color: '#b91c1c' }}>
                 <AlertCircle size={15} style={{ verticalAlign: 'middle', marginRight: '0.35rem' }} />
-                No approved templates found matching <strong>{AUDIENCE_TYPES.find(a => a.id === selectedAudience)?.label}</strong>. Please create one in <strong>Templates Library</strong> tab.
+                No approved templates match &quot;{templateSearchTerm}&quot;. Try resetting search.
               </div>
             ) : (
               <div>
@@ -424,12 +491,12 @@ export default function WhatsappCampaignStudio({
                 >
                   {relevantTemplates.map(t => (
                     <option key={t.id} value={t.id}>
-                      ✉️ {t.template_name} ({t.campaign_name || 'Campaign'})
+                      ✉️ {t.template_name} ({t.campaign_name || t.company || 'Ready'})
                     </option>
                   ))}
                 </select>
                 <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.35rem', display: 'block' }}>
-                  Auto-filtered to templates configured for {AUDIENCE_TYPES.find(a => a.id === selectedAudience)?.label}.
+                  {showAllTemplates ? `Browsing all ${templates?.length || 0} templates across branches.` : `Auto-filtered to templates configured for ${AUDIENCE_TYPES.find(a => a.id === selectedAudience)?.label}.`}
                 </span>
               </div>
             )}
