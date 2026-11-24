@@ -50,11 +50,195 @@ const STATE_NAMES = {
 };
 
 /**
- * Helper to apply multi-category flexible filters directly on Supabase PostgREST query
+ * Normalizes input subFilter into either structured rules array, string tags array, or 'ALL'
+ */
+function normalizeSubFilterInput(subFilter) {
+  if (!subFilter) return 'ALL';
+  if (Array.isArray(subFilter)) {
+    if (subFilter.length > 0 && typeof subFilter[0] === 'object' && subFilter[0] !== null && 'field' in subFilter[0]) {
+      const activeRules = subFilter.filter(r => r && r.field && Array.isArray(r.values) && r.values.length > 0);
+      return activeRules.length > 0 ? activeRules : 'ALL';
+    }
+    return subFilter;
+  }
+  if (typeof subFilter === 'string') {
+    const trimmed = subFilter.trim();
+    if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'object' && parsed[0] !== null && 'field' in parsed[0]) {
+          const activeRules = parsed.filter(r => r && r.field && Array.isArray(r.values) && r.values.length > 0);
+          return activeRules.length > 0 ? activeRules : 'ALL';
+        }
+        return parsed;
+      } catch (e) {}
+    }
+    return trimmed;
+  }
+  return subFilter;
+}
+
+/**
+ * Helper to apply dynamic multi-field filter rules or legacy sub-filters on Supabase PostgREST query
  */
 function applyAudienceSubFilter(query, audienceType, subFilter) {
   if (!subFilter) return query;
-  const rawList = Array.isArray(subFilter) ? subFilter : String(subFilter).split(',');
+  const normalized = normalizeSubFilterInput(subFilter);
+  if (normalized === 'ALL') return query;
+
+  // CASE 1: DYNAMIC RULE BUILDER RULES [{ field, condition, values }]
+  if (Array.isArray(normalized) && normalized.length > 0 && typeof normalized[0] === 'object' && 'field' in normalized[0]) {
+    for (const rule of normalized) {
+      const field = String(rule.field || '').toLowerCase().trim();
+      const condition = String(rule.condition || 'IN').toUpperCase().trim();
+      const values = Array.isArray(rule.values) ? rule.values.filter(Boolean) : [rule.values].filter(Boolean);
+      if (values.length === 0) continue;
+
+      // 1. LEADS
+      if (audienceType === 'leads') {
+        if (field === 'status' || field === 'stage') {
+          const stageClauses = [];
+          values.forEach(v => {
+            const vStr = String(v).toLowerCase();
+            if (vStr.includes('01') || vStr.includes('new')) {
+              stageClauses.push('status.ilike.1;%', 'status.ilike.%New Stage%', 'status.eq.None', 'status.is.null', 'status.eq.');
+            } else if (vStr.includes('02') || vStr.includes('contact')) {
+              stageClauses.push('status.ilike.2;%', 'status.ilike.%Contact Stage%');
+            } else if (vStr.includes('03') || vStr.includes('qualification')) {
+              stageClauses.push('status.ilike.3;%', 'status.ilike.%Qualification Stage%');
+            } else if (vStr.includes('04') || vStr.includes('follow up') || vStr.includes('followup')) {
+              stageClauses.push('status.ilike.4;%', 'status.ilike.%Follow Up Stage%');
+            } else if (vStr.includes('05') || vStr.includes('sales process')) {
+              stageClauses.push('status.ilike.5;%', 'status.ilike.%Sales Process Stage%');
+            } else if (vStr.includes('06') || vStr.includes('conversion')) {
+              stageClauses.push('status.ilike.6;%', 'status.ilike.%Conversion Stage%');
+            } else if (vStr.includes('07') || vStr.includes('final')) {
+              stageClauses.push('status.ilike.7;%', 'status.ilike.%Final Stage%');
+            } else if (vStr.includes('08') || vStr.includes('transfer')) {
+              stageClauses.push('status.ilike.8;%', 'status.ilike.%Transfer to Party%');
+            } else {
+              stageClauses.push(`status.ilike.%${v}%`);
+            }
+          });
+          if (stageClauses.length > 0) {
+            if (condition === 'NOT_IN' || condition === 'NOT IN') {
+              values.forEach(v => {
+                const num = (String(v).match(/\d+/) || [])[0];
+                if (num) query = query.not('status', 'ilike', `${parseInt(num, 10)};%`);
+              });
+            } else {
+              query = query.or(Array.from(new Set(stageClauses)).join(','));
+            }
+          }
+        } else if (field === 'state') {
+          if (condition === 'NOT_IN' || condition === 'NOT IN') {
+            values.forEach(v => { query = query.not('state_name', 'ilike', `%${v.trim()}%`); });
+          } else {
+            const clauses = values.map(v => `state_name.ilike.%${v.trim()}%`);
+            query = query.or(clauses.join(','));
+          }
+        } else if (field === 'priority') {
+          const prioClauses = [];
+          values.forEach(v => {
+            const vStr = String(v).toLowerCase();
+            if (vStr.includes('high') || vStr.includes('hot')) {
+              prioClauses.push('priority.ilike.%High%', 'priority.ilike.%Hot%');
+            } else if (vStr.includes('medium') || vStr.includes('warm')) {
+              prioClauses.push('priority.ilike.%Medium%', 'priority.ilike.%Warm%');
+            } else if (vStr.includes('low') || vStr.includes('normal')) {
+              prioClauses.push('priority.ilike.%Low%', 'priority.ilike.%Normal%');
+            }
+          });
+          if (prioClauses.length > 0) {
+            query = query.or(Array.from(new Set(prioClauses)).join(','));
+          }
+        }
+      }
+
+      // 2. PARTY
+      if (audienceType === 'party') {
+        if (field === 'state') {
+          if (condition === 'NOT_IN' || condition === 'NOT IN') {
+            values.forEach(v => { query = query.not('business_nature', 'ilike', `%${v.trim()}%`); });
+          } else {
+            const clauses = values.flatMap(v => [
+              `business_nature.ilike.%${v.trim()}%`,
+              `party_universal_code.ilike.%${v.trim()}%`
+            ]);
+            query = query.or(Array.from(new Set(clauses)).join(','));
+          }
+        } else if (field === 'nature' || field === 'type') {
+          const natureClauses = [];
+          values.forEach(v => {
+            const vStr = String(v).toLowerCase();
+            if (vStr.includes('exclusive')) natureClauses.push('business_nature.ilike.%EXCLUSIVE_SWAN%');
+            if (vStr.includes('dealer')) natureClauses.push('business_nature.ilike.%"party_type":"Dealer"%', 'business_nature.ilike.%Dealer%');
+            if (vStr.includes('distributor')) natureClauses.push('business_nature.ilike.%"party_type":"Distributor"%', 'business_nature.ilike.%Distributor%');
+            if (vStr.includes('direct')) natureClauses.push('business_nature.ilike.%Direct%');
+          });
+          if (natureClauses.length > 0) {
+            query = query.or(Array.from(new Set(natureClauses)).join(','));
+          }
+        } else if (field === 'status') {
+          const statusClauses = [];
+          values.forEach(v => {
+            const vStr = String(v).toLowerCase();
+            if (vStr.includes('active')) statusClauses.push('party_status.eq.Active', 'business_nature.ilike.%"activation_status":"Active"%');
+            if (vStr.includes('hold')) statusClauses.push('party_status.ilike.%Hold%', 'business_nature.ilike.%"activation_status":"Hold"%');
+            if (vStr.includes('draft')) statusClauses.push('party_status.ilike.%Draft%');
+          });
+          if (statusClauses.length > 0) {
+            query = query.or(Array.from(new Set(statusClauses)).join(','));
+          }
+        }
+      }
+
+      // 3. USERS
+      if (audienceType === 'users') {
+        if (field === 'department') {
+          const deptClauses = [];
+          values.forEach(v => {
+            const vStr = String(v).toLowerCase();
+            if (vStr.includes('sales') || vStr.includes('marketing')) deptClauses.push('department.ilike.%Sales%', 'department.ilike.%Marketing%');
+            else if (vStr.includes('human') || vStr.includes('hr') || vStr.includes('admin')) deptClauses.push('department.ilike.%Human Resource%', 'department.ilike.%Administration%');
+            else if (vStr.includes('production') || vStr.includes('tool room')) deptClauses.push('department.ilike.%Production%', 'department.ilike.%Tool Room%');
+            else if (vStr.includes('quality') || vStr.includes('qa')) deptClauses.push('department.ilike.%Quality Assurance%');
+            else if (vStr.includes('service')) deptClauses.push('department.ilike.%Service%');
+            else if (vStr.includes('purchase')) deptClauses.push('department.ilike.%Purchase%');
+            else if (vStr.includes('accounts') || vStr.includes('finance')) deptClauses.push('department.ilike.%Accounts%', 'department.ilike.%Finance%');
+            else if (vStr.includes('it') || vStr.includes('information')) deptClauses.push('department.ilike.%Information Technology%', 'department.ilike.%IT%');
+            else if (vStr.includes('logistics') || vStr.includes('dispatch')) deptClauses.push('department.ilike.%Logistics%', 'department.ilike.%Dispatch%');
+            else if (vStr.includes('store')) deptClauses.push('department.ilike.%Store%');
+            else deptClauses.push(`department.ilike.%${v}%`);
+          });
+          if (deptClauses.length > 0) {
+            if (condition === 'NOT_IN' || condition === 'NOT IN') {
+              values.forEach(v => { query = query.not('department', 'ilike', `%${v}%`); });
+            } else {
+              query = query.or(Array.from(new Set(deptClauses)).join(','));
+            }
+          }
+        } else if (field === 'status') {
+          const hasActive = values.some(v => String(v).toLowerCase().includes('active') && !String(v).toLowerCase().includes('inactive'));
+          const hasInactive = values.some(v => String(v).toLowerCase().includes('inactive') || String(v).toLowerCase().includes('resigned'));
+          if (hasActive && !hasInactive) {
+            query = query.or('emp_status.eq.Active,status.eq.Active');
+          } else if (hasInactive && !hasActive) {
+            query = query.neq('emp_status', 'Active');
+          }
+        } else if (field === 'role') {
+          const roleClauses = values.map(v => `role.ilike.%${v}%`);
+          if (roleClauses.length > 0) {
+            query = query.or(Array.from(new Set(roleClauses)).join(','));
+          }
+        }
+      }
+    }
+    return query;
+  }
+
+  // CASE 2: LEGACY TAG KEYS (e.g. ['STAGE_01', 'STATE_UP'])
+  const rawList = Array.isArray(normalized) ? normalized : String(normalized).split(',');
   const filterKeys = rawList.map(s => String(s).trim().toUpperCase()).filter(Boolean);
 
   if (filterKeys.length === 0 || filterKeys.includes('ALL')) return query;
@@ -227,7 +411,7 @@ export async function getCampaignAudienceStats({ tenantId = null, branchFilter =
 
   const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
   const branchTag = normalizeBranchTag(branchFilter);
-  const cleanSubFilter = String(subFilter || 'ALL').trim().toUpperCase();
+  const normalizedFilter = normalizeSubFilterInput(subFilter);
 
   try {
     // 1. Party Master Count (Exact Head Query)
@@ -236,8 +420,8 @@ export async function getCampaignAudienceStats({ tenantId = null, branchFilter =
     if (branchTag !== 'ALL') {
       partyQuery = partyQuery.or(`party_universal_code.ilike.%${branchTag}%,business_nature.ilike.%${branchTag}%`);
     }
-    if ((!audienceType || audienceType === 'party') && cleanSubFilter !== 'ALL') {
-      partyQuery = applyAudienceSubFilter(partyQuery, 'party', cleanSubFilter);
+    if ((!audienceType || audienceType === 'party') && normalizedFilter !== 'ALL') {
+      partyQuery = applyAudienceSubFilter(partyQuery, 'party', normalizedFilter);
     }
     const { count: partyCount, error: pErr } = await partyQuery;
 
@@ -247,8 +431,8 @@ export async function getCampaignAudienceStats({ tenantId = null, branchFilter =
     if (branchTag !== 'ALL') {
       leadQuery = leadQuery.ilike('our_company', `%${branchTag}%`);
     }
-    if ((!audienceType || audienceType === 'leads') && cleanSubFilter !== 'ALL') {
-      leadQuery = applyAudienceSubFilter(leadQuery, 'leads', cleanSubFilter);
+    if ((!audienceType || audienceType === 'leads') && normalizedFilter !== 'ALL') {
+      leadQuery = applyAudienceSubFilter(leadQuery, 'leads', normalizedFilter);
     }
     const { count: leadCount, error: lErr } = await leadQuery;
 
@@ -266,8 +450,8 @@ export async function getCampaignAudienceStats({ tenantId = null, branchFilter =
     if (branchTag !== 'ALL') {
       userQuery = userQuery.or(`company.ilike.%${branchTag}%,branch_name.ilike.%${branchTag}%,branch_code.ilike.%${branchTag}%`);
     }
-    if ((!audienceType || audienceType === 'users') && cleanSubFilter !== 'ALL') {
-      userQuery = applyAudienceSubFilter(userQuery, 'users', cleanSubFilter);
+    if ((!audienceType || audienceType === 'users') && normalizedFilter !== 'ALL') {
+      userQuery = applyAudienceSubFilter(userQuery, 'users', normalizedFilter);
     }
     const { count: userCount, error: uErr } = await userQuery;
 
@@ -292,7 +476,7 @@ export async function getCampaignAudiencePreview({ tenantId = null, audienceType
 
   const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
   const branchTag = normalizeBranchTag(branchFilter);
-  const cleanSubFilter = String(subFilter || 'ALL').trim().toUpperCase();
+  const normalizedFilter = normalizeSubFilterInput(subFilter);
 
   try {
     if (audienceType === 'party') {
@@ -303,7 +487,7 @@ export async function getCampaignAudiencePreview({ tenantId = null, audienceType
       if (branchTag !== 'ALL') {
         q = q.or(`party_universal_code.ilike.%${branchTag}%,business_nature.ilike.%${branchTag}%`);
       }
-      q = applyAudienceSubFilter(q, 'party', cleanSubFilter);
+      q = applyAudienceSubFilter(q, 'party', normalizedFilter);
       const { data } = await q.limit(limit);
       return (data || []).map(p => ({
         id: p.id,
@@ -323,7 +507,7 @@ export async function getCampaignAudiencePreview({ tenantId = null, audienceType
       if (branchTag !== 'ALL') {
         q = q.ilike('our_company', `%${branchTag}%`);
       }
-      q = applyAudienceSubFilter(q, 'leads', cleanSubFilter);
+      q = applyAudienceSubFilter(q, 'leads', normalizedFilter);
       const { data } = await q.limit(limit);
       return (data || []).map(l => ({
         id: l.id,
@@ -362,7 +546,7 @@ export async function getCampaignAudiencePreview({ tenantId = null, audienceType
       if (branchTag !== 'ALL') {
         q = q.or(`company.ilike.%${branchTag}%,branch_name.ilike.%${branchTag}%`);
       }
-      q = applyAudienceSubFilter(q, 'users', cleanSubFilter);
+      q = applyAudienceSubFilter(q, 'users', normalizedFilter);
       const { data } = await q.limit(limit);
       return (data || []).map(u => ({
         id: u.id,
@@ -628,7 +812,7 @@ export async function launchWhatsappBroadcastCampaign({
     // BROADCAST SEND MODE
     const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
     const branchTag = normalizeBranchTag(branchFilter);
-    const cleanSubFilter = String(subFilter || 'ALL').trim().toUpperCase();
+    const normalizedFilter = normalizeSubFilterInput(subFilter);
 
     let audienceRecords = [];
 
@@ -640,7 +824,7 @@ export async function launchWhatsappBroadcastCampaign({
       if (branchTag !== 'ALL') {
         q = q.or(`party_universal_code.ilike.%${branchTag}%,business_nature.ilike.%${branchTag}%`);
       }
-      q = applyAudienceSubFilter(q, 'party', cleanSubFilter);
+      q = applyAudienceSubFilter(q, 'party', normalizedFilter);
       const { data } = await q;
       let list = data || [];
       audienceRecords = list.map(p => {
@@ -666,7 +850,7 @@ export async function launchWhatsappBroadcastCampaign({
       if (branchTag !== 'ALL') {
         q = q.ilike('our_company', `%${branchTag}%`);
       }
-      q = applyAudienceSubFilter(q, 'leads', cleanSubFilter);
+      q = applyAudienceSubFilter(q, 'leads', normalizedFilter);
       const { data } = await q;
       let list = data || [];
       audienceRecords = list.map(l => {
@@ -705,7 +889,7 @@ export async function launchWhatsappBroadcastCampaign({
       if (branchTag !== 'ALL') {
         q = q.or(`company.ilike.%${branchTag}%,branch_name.ilike.%${branchTag}%,branch_code.ilike.%${branchTag}%`);
       }
-      q = applyAudienceSubFilter(q, 'users', cleanSubFilter);
+      q = applyAudienceSubFilter(q, 'users', normalizedFilter);
       const { data } = await q;
       let list = data || [];
       audienceRecords = list.map(u => ({

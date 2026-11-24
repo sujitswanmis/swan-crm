@@ -4,7 +4,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Send, Users, Building2, CheckCircle2, AlertCircle, PlayCircle, Eye, RefreshCw, 
   Sparkles, Check, ChevronRight, ChevronLeft, ShieldCheck, Phone, Zap, ArrowRight, ArrowLeft, X, ExternalLink,
-  Megaphone, Filter, Clock, Calendar, Gauge, Plus, Search, RotateCcw, UserCheck, UserX, Info, Save, FileText
+  Megaphone, Filter, Clock, Calendar, Gauge, Plus, Search, RotateCcw, UserCheck, UserX, Info, Save, FileText,
+  Trash2, ChevronDown
 } from 'lucide-react';
 import { crmStyles } from '@/components/common/CRMDesignSystem';
 import { 
@@ -55,107 +56,133 @@ const AUDIENCE_TYPES = [
   }
 ];
 
-const AUDIENCE_FILTER_GROUPS = {
-  party: [
+const AUDIENCE_FILTER_FIELDS = {
+  leads: [
     {
-      group: '📍 States (Multi-Select Union: UP, MP, Bihar, Punjab...)',
-      items: [
-        { id: 'STATE_UP', label: 'Uttar Pradesh' },
-        { id: 'STATE_MP', label: 'Madhya Pradesh' },
-        { id: 'STATE_BIHAR', label: 'Bihar' },
-        { id: 'STATE_PB', label: 'Punjab' },
-        { id: 'STATE_HR', label: 'Haryana' },
-        { id: 'STATE_MH', label: 'Maharashtra' },
-        { id: 'STATE_RJ', label: 'Rajasthan' },
-        { id: 'STATE_GJ', label: 'Gujarat' },
-        { id: 'STATE_DL', label: 'Delhi' },
-        { id: 'STATE_OD', label: 'Odisha' },
-        { id: 'STATE_WB', label: 'West Bengal' },
-        { id: 'STATE_UK', label: 'Uttarakhand' }
+      id: 'status',
+      label: 'Pipeline Stage / Status',
+      options: [
+        '01 - New Stage',
+        '02 - Contact Stage',
+        '03 - Qualification Stage',
+        '04 - Follow Up Stage',
+        '05 - Sales Process Stage',
+        '06 - Conversion Stage',
+        '07 - Final Stage',
+        '08 - Transfer to Party'
       ]
     },
     {
-      group: '🏢 Partner Nature & Type',
-      items: [
-        { id: 'NATURE_EXCLUSIVE', label: 'Exclusive Swan' },
-        { id: 'NATURE_DEALER', label: 'Dealers Only' },
-        { id: 'NATURE_DISTRIBUTOR', label: 'Distributors' },
-        { id: 'NATURE_DIRECT', label: 'Direct Partners' }
+      id: 'state',
+      label: 'Lead State',
+      options: [
+        'Uttar Pradesh',
+        'Madhya Pradesh',
+        'Bihar',
+        'Punjab',
+        'Haryana',
+        'Maharashtra',
+        'Rajasthan',
+        'Gujarat',
+        'Delhi',
+        'Odisha',
+        'West Bengal',
+        'Uttarakhand'
       ]
     },
     {
-      group: '🛡️ Activation & Status',
-      items: [
-        { id: 'PARTY_STATUS_ACTIVE', label: 'Active Partners' },
-        { id: 'PARTY_STATUS_HOLD', label: 'Hold / Payment Hold' },
-        { id: 'PARTY_STATUS_DRAFT', label: 'Draft Status' }
+      id: 'priority',
+      label: 'Lead Priority',
+      options: [
+        'High / Hot',
+        'Medium / Warm',
+        'Normal / Low'
       ]
     }
   ],
-  leads: [
+  party: [
     {
-      group: '🎯 Pipeline Stages (Multi-Select Union)',
-      items: [
-        { id: 'STAGE_01', label: '01 - New Stage' },
-        { id: 'STAGE_02', label: '02 - Contact Stage' },
-        { id: 'STAGE_03', label: '03 - Qualification Stage' },
-        { id: 'STAGE_04', label: '04 - Follow Up Stage' },
-        { id: 'STAGE_05', label: '05 - Sales Process Stage' },
-        { id: 'STAGE_06', label: '06 - Conversion Stage' },
-        { id: 'STAGE_07', label: '07 - Final Stage' },
-        { id: 'STAGE_08', label: '08 - Transfer to Party' }
+      id: 'state',
+      label: 'State',
+      options: [
+        'Uttar Pradesh',
+        'Madhya Pradesh',
+        'Bihar',
+        'Punjab',
+        'Haryana',
+        'Maharashtra',
+        'Rajasthan',
+        'Gujarat',
+        'Delhi',
+        'Odisha',
+        'West Bengal',
+        'Uttarakhand'
       ]
     },
     {
-      group: '📍 Lead States (Multi-Select)',
-      items: [
-        { id: 'STATE_UP', label: 'Uttar Pradesh' },
-        { id: 'STATE_MP', label: 'Madhya Pradesh' },
-        { id: 'STATE_BIHAR', label: 'Bihar' },
-        { id: 'STATE_PB', label: 'Punjab' },
-        { id: 'STATE_HR', label: 'Haryana' },
-        { id: 'STATE_MH', label: 'Maharashtra' },
-        { id: 'STATE_RJ', label: 'Rajasthan' },
-        { id: 'STATE_GJ', label: 'Gujarat' }
+      id: 'nature',
+      label: 'Partner Nature / Type',
+      options: [
+        'Exclusive Swan',
+        'Dealer',
+        'Distributor',
+        'Direct Partner'
       ]
     },
     {
-      group: '⚡ Lead Priority',
-      items: [
-        { id: 'PRIORITY_HOT', label: '🔥 Hot / High Priority' },
-        { id: 'PRIORITY_WARM', label: '⚡ Warm / Follow-up' }
+      id: 'status',
+      label: 'Activation Status',
+      options: [
+        'Active',
+        'Hold / Payment Hold',
+        'Draft'
       ]
     }
   ],
   users: [
     {
-      group: '👥 Staff Departments (Multi-Select Union: HR + Sales)',
-      items: [
-        { id: 'DEPT_HR', label: 'Human Resource & Administration' },
-        { id: 'DEPT_SALES', label: 'Sales & Marketing' },
-        { id: 'DEPT_PRODUCTION', label: 'Production & Plant' },
-        { id: 'DEPT_QA', label: 'Quality Assurance' },
-        { id: 'DEPT_SERVICE', label: 'Service Team' },
-        { id: 'DEPT_PURCHASE', label: 'Purchase Dept' },
-        { id: 'DEPT_ACCOUNTS', label: 'Accounts & Finance' },
-        { id: 'DEPT_IT', label: 'Information Technology' },
-        { id: 'DEPT_LOGISTICS', label: 'Logistics & Dispatch' },
-        { id: 'DEPT_STORE', label: 'Store Dept' }
+      id: 'department',
+      label: 'Department',
+      options: [
+        'Human Resource & Administration',
+        'Sales & Marketing',
+        'Production & Plant',
+        'Quality Assurance',
+        'Service Team',
+        'Purchase Dept',
+        'Accounts & Finance',
+        'Information Technology',
+        'Logistics & Dispatch',
+        'Store Dept'
       ]
     },
     {
-      group: '🛡️ Employment Status',
-      items: [
-        { id: 'STATUS_ACTIVE', label: '🟢 Active Working Staff (165)' },
-        { id: 'STATUS_INACTIVE', label: '⚪ Inactive / Resigned Staff (33)' }
+      id: 'status',
+      label: 'Employment Status',
+      options: [
+        'Active Staff',
+        'Inactive / Resigned Staff'
+      ]
+    },
+    {
+      id: 'role',
+      label: 'Role / Designation',
+      options: [
+        'Admin',
+        'Manager',
+        'Executive'
       ]
     }
   ],
   end_customers: [
     {
-      group: '🚜 Customer Category',
-      items: [
-        { id: 'ALL', label: 'All Machine Owners & End Customers' }
+      id: 'state',
+      label: 'State',
+      options: [
+        'Uttar Pradesh',
+        'Punjab',
+        'Haryana',
+        'Madhya Pradesh'
       ]
     }
   ]
@@ -181,11 +208,28 @@ export default function WhatsappCampaignStudio({
   const [campaignName, setCampaignName] = useState('');
   const [selectedBranch, setSelectedBranch] = useState('All');
   const [selectedAudience, setSelectedAudience] = useState('leads');
-  const [selectedSubFilters, setSelectedSubFilters] = useState(['ALL']);
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [recipientPriority, setRecipientPriority] = useState('lead_business');
   const [showAllTemplates, setShowAllTemplates] = useState(true);
   const [templateSearchTerm, setTemplateSearchTerm] = useState('');
+
+  // Dynamic Filter Builder Rules State
+  const [filterRules, setFilterRules] = useState([
+    { id: 'rule_1', field: 'status', condition: 'IN', values: ['05 - Sales Process Stage'] }
+  ]);
+  const [activeDropdownRuleId, setActiveDropdownRuleId] = useState(null);
+  const [ruleSearchTerms, setRuleSearchTerms] = useState({});
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleOutsideClick = (e) => {
+      if (activeDropdownRuleId && !e.target.closest('[data-filter-popover="true"]')) {
+        setActiveDropdownRuleId(null);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [activeDropdownRuleId]);
 
   // Scheduling & Throttle state
   const [sendMode, setSendMode] = useState('immediate'); // 'immediate' | 'scheduled'
@@ -238,32 +282,75 @@ export default function WhatsappCampaignStudio({
     refreshCampaigns();
   }, [tenantId]);
 
-  // 2. Reset sub-filter when audience changes
+  // 2. Reset rules when audience changes
   const handleSelectAudience = (audId) => {
     setSelectedAudience(audId);
-    setSelectedSubFilters(['ALL']);
+    const fields = AUDIENCE_FILTER_FIELDS[audId] || [];
+    const defaultField = fields[0]?.id || 'status';
+    setFilterRules([
+      { id: `rule_${Date.now()}`, field: defaultField, condition: 'IN', values: [] }
+    ]);
+    setActiveDropdownRuleId(null);
     setPreviewPage(1);
   };
 
-  // 3. Multi-Select Sub-Filter Toggle
-  const handleToggleSubFilter = (fId) => {
-    setPreviewPage(1);
-    if (fId === 'ALL') {
-      setSelectedSubFilters(['ALL']);
-      return;
-    }
-
-    let next = selectedSubFilters.filter(id => id !== 'ALL');
-    if (next.includes(fId)) {
-      next = next.filter(id => id !== fId);
-      if (next.length === 0) next = ['ALL'];
-    } else {
-      next.push(fId);
-    }
-    setSelectedSubFilters(next);
+  // 3. Dynamic Rule Handlers
+  const handleAddRule = () => {
+    const fields = AUDIENCE_FILTER_FIELDS[selectedAudience] || [];
+    const defaultField = fields[0]?.id || 'status';
+    setFilterRules(prev => [
+      ...prev,
+      { id: `rule_${Date.now()}_${Math.random()}`, field: defaultField, condition: 'IN', values: [] }
+    ]);
   };
 
-  // 4. Fetch Audience Stats whenever Branch, Audience or SubFilters change
+  const handleRemoveRule = (ruleId) => {
+    setFilterRules(prev => {
+      if (prev.length <= 1) {
+        const fields = AUDIENCE_FILTER_FIELDS[selectedAudience] || [];
+        return [{ id: `rule_${Date.now()}`, field: fields[0]?.id || 'status', condition: 'IN', values: [] }];
+      }
+      return prev.filter(r => r.id !== ruleId);
+    });
+    if (activeDropdownRuleId === ruleId) setActiveDropdownRuleId(null);
+  };
+
+  const handleRuleChange = (ruleId, key, val) => {
+    setFilterRules(prev => prev.map(r => {
+      if (r.id !== ruleId) return r;
+      if (key === 'field') {
+        return { ...r, field: val, values: [] };
+      }
+      return { ...r, [key]: val };
+    }));
+  };
+
+  const handleToggleRuleValue = (ruleId, optionVal) => {
+    setFilterRules(prev => prev.map(r => {
+      if (r.id !== ruleId) return r;
+      const exists = r.values.includes(optionVal);
+      const newValues = exists 
+        ? r.values.filter(v => v !== optionVal)
+        : [...r.values, optionVal];
+      return { ...r, values: newValues };
+    }));
+  };
+
+  const handleSelectAllRuleValues = (ruleId, allOptions) => {
+    setFilterRules(prev => prev.map(r => {
+      if (r.id !== ruleId) return r;
+      return { ...r, values: [...allOptions] };
+    }));
+  };
+
+  const handleClearRuleValues = (ruleId) => {
+    setFilterRules(prev => prev.map(r => {
+      if (r.id !== ruleId) return r;
+      return { ...r, values: [] };
+    }));
+  };
+
+  // 4. Fetch Audience Stats whenever Branch, Audience or Filter Rules change
   useEffect(() => {
     let isMounted = true;
     async function loadStats() {
@@ -273,7 +360,7 @@ export default function WhatsappCampaignStudio({
           tenantId, 
           branchFilter: selectedBranch,
           audienceType: selectedAudience,
-          subFilter: selectedSubFilters
+          subFilter: filterRules
         });
         if (isMounted) setStats(res);
       } catch (err) {
@@ -284,7 +371,7 @@ export default function WhatsappCampaignStudio({
     }
     loadStats();
     return () => { isMounted = false; };
-  }, [tenantId, selectedBranch, selectedAudience, selectedSubFilters]);
+  }, [tenantId, selectedBranch, selectedAudience, filterRules]);
 
   // 5. Fetch Sample Records for Preview (Uncapped to display up to 200 matching leads)
   useEffect(() => {
@@ -296,7 +383,7 @@ export default function WhatsappCampaignStudio({
           tenantId, 
           audienceType: selectedAudience, 
           branchFilter: selectedBranch,
-          subFilter: selectedSubFilters,
+          subFilter: filterRules,
           limit: 200
         });
         if (isMounted) {
@@ -311,7 +398,7 @@ export default function WhatsappCampaignStudio({
     }
     loadPreview();
     return () => { isMounted = false; };
-  }, [tenantId, selectedAudience, selectedBranch, selectedSubFilters]);
+  }, [tenantId, selectedAudience, selectedBranch, filterRules]);
 
   // 6. Filter templates matching chosen audience
   const relevantTemplates = useMemo(() => {
@@ -456,7 +543,7 @@ export default function WhatsappCampaignStudio({
         campaignName: campaignName.trim() || `Draft ${new Date().toLocaleDateString('en-IN')}`,
         audienceType: selectedAudience,
         branchFilter: selectedBranch,
-        subFilter: selectedSubFilters,
+        subFilter: filterRules,
         templateId: selectedTemplateId || null,
         recipientPriority,
         sendMode,
@@ -507,7 +594,7 @@ export default function WhatsappCampaignStudio({
         campaignName: campaignName.trim() || `Broadcast ${new Date().toLocaleDateString('en-IN')}`,
         audienceType: selectedAudience,
         branchFilter: selectedBranch,
-        subFilter: selectedSubFilters,
+        subFilter: filterRules,
         templateId: selectedTemplateId,
         recipientPriority,
         sendMode,
@@ -553,19 +640,19 @@ export default function WhatsappCampaignStudio({
 
   const totalPages = Math.ceil(filteredCampaigns.length / pageSize) || 1;
 
-  // Active sub-filters display label across all categories
+  // Active dynamic filter rules display label
   const activeSubFiltersText = useMemo(() => {
-    if (selectedSubFilters.includes('ALL') || selectedSubFilters.length === 0) {
+    const activeWithValues = filterRules.filter(r => r.values && r.values.length > 0);
+    if (activeWithValues.length === 0) {
       return 'All Records (Entire Segment)';
     }
-    const filterGroups = AUDIENCE_FILTER_GROUPS[selectedAudience] || [];
-    const allItems = filterGroups.flatMap(g => g.items);
-    const labels = selectedSubFilters.map(sf => {
-      const found = allItems.find(f => f.id === sf);
-      return found ? found.label.replace(/🟢|⚪|🔥|⚡/g, '').trim() : sf;
-    });
-    return labels.join(' • ');
-  }, [selectedSubFilters, selectedAudience]);
+    const currentFields = AUDIENCE_FILTER_FIELDS[selectedAudience] || [];
+    return activeWithValues.map(r => {
+      const fObj = currentFields.find(f => f.id === r.field);
+      const label = fObj ? fObj.label : r.field;
+      return `${label} ${r.condition} [${r.values.join(', ')}]`;
+    }).join(' • ');
+  }, [filterRules, selectedAudience]);
 
   // Paginated Preview Records in Stage 1 Modal
   const paginatedPreviewRecords = useMemo(() => {
@@ -587,7 +674,12 @@ export default function WhatsappCampaignStudio({
       setCampaignName(existingDraft.campaignName || '');
       setSelectedAudience(existingDraft.audienceType || 'leads');
       setSelectedBranch(existingDraft.branchFilter || 'All');
-      setSelectedSubFilters(existingDraft.subFilters || ['ALL']);
+      if (Array.isArray(existingDraft.subFilters) && existingDraft.subFilters.length > 0 && typeof existingDraft.subFilters[0] === 'object' && existingDraft.subFilters[0].field) {
+        setFilterRules(existingDraft.subFilters);
+      } else {
+        const fields = AUDIENCE_FILTER_FIELDS[existingDraft.audienceType || 'leads'] || [];
+        setFilterRules([{ id: `rule_${Date.now()}`, field: fields[0]?.id || 'status', condition: 'IN', values: [] }]);
+      }
       setSelectedTemplateId(existingDraft.templateId || '');
       setSendMode(existingDraft.sendMode || 'immediate');
       setScheduledAt(existingDraft.scheduledAt || '');
@@ -595,9 +687,12 @@ export default function WhatsappCampaignStudio({
     } else {
       setCampaignName('');
       setSelectedAudience('leads');
-      setSelectedSubFilters(['ALL']);
+      setFilterRules([
+        { id: `rule_${Date.now()}`, field: 'status', condition: 'IN', values: ['05 - Sales Process Stage'] }
+      ]);
       setWizardStage(1);
     }
+    setActiveDropdownRuleId(null);
     setDraftNotice(null);
     setCampaignResult(null);
     setIsCreateModalOpen(true);
@@ -1350,89 +1445,355 @@ export default function WhatsappCampaignStudio({
                     </div>
                   </div>
 
-                  {/* Multi-Category Multi-Select Filter Groups */}
-                  {AUDIENCE_FILTER_GROUPS[selectedAudience] && (
-                    <div style={{
-                      padding: '1rem 1.15rem',
-                      borderRadius: '10px',
-                      backgroundColor: 'var(--bg-surface)',
-                      border: '1.5px solid var(--border-light)',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '0.85rem'
-                    }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', paddingBottom: '0.4rem', borderBottom: '1px solid var(--border-light)' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                          <span style={{ fontSize: '0.82rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                            <Filter size={14} color="var(--accent-color, #2563eb)" />
-                            Filter Criteria (Multi-Category & Multi-Select):
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => handleToggleSubFilter('ALL')}
-                            style={{
-                              padding: '0.2rem 0.6rem',
-                              borderRadius: '999px',
-                              fontSize: '0.72rem',
-                              fontWeight: 700,
-                              cursor: 'pointer',
-                              border: selectedSubFilters.includes('ALL') ? '1.5px solid var(--accent-color, #2563eb)' : '1px solid var(--border-light)',
-                              backgroundColor: selectedSubFilters.includes('ALL') ? 'var(--accent-color, #2563eb)' : 'var(--th-bg)',
-                              color: selectedSubFilters.includes('ALL') ? '#fff' : 'var(--text-primary)',
-                              transition: 'all 0.15s ease'
-                            }}
-                          >
-                            {selectedSubFilters.includes('ALL') ? '✓ All Records' : 'Reset to All'}
-                          </button>
-                        </div>
-                        <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
-                          Active Selection: <strong style={{ color: 'var(--accent-color, #2563eb)' }}>{activeSubFiltersText}</strong>
+                  {/* Dynamic Filter Builder Row-by-Row Interface */}
+                  <div style={{
+                    padding: '1.1rem 1.25rem',
+                    borderRadius: '10px',
+                    backgroundColor: 'var(--bg-surface)',
+                    border: '1.5px solid var(--border-light)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '1rem'
+                  }}>
+                    {/* Header */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', paddingBottom: '0.5rem', borderBottom: '1px solid var(--border-light)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                        <span style={{ fontSize: '0.84rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                          <Filter size={15} color="var(--accent-color, #2563eb)" />
+                          Dynamic Filter Builder:
                         </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const fields = AUDIENCE_FILTER_FIELDS[selectedAudience] || [];
+                            setFilterRules([{ id: `rule_${Date.now()}`, field: fields[0]?.id || 'status', condition: 'IN', values: [] }]);
+                            setActiveDropdownRuleId(null);
+                          }}
+                          style={{
+                            padding: '0.2rem 0.65rem',
+                            borderRadius: '999px',
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            border: '1px solid var(--border-light)',
+                            backgroundColor: 'var(--th-bg)',
+                            color: 'var(--text-secondary)'
+                          }}
+                        >
+                          Clear All Filters
+                        </button>
                       </div>
-
-                      {AUDIENCE_FILTER_GROUPS[selectedAudience].map((grp, gIdx) => (
-                        <div key={gIdx} style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                          <div style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.4px', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                            {grp.group}
-                          </div>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
-                            {grp.items.map(item => {
-                              const isActive = selectedSubFilters.includes(item.id);
-                              return (
-                                <button
-                                  key={item.id}
-                                  type="button"
-                                  onClick={() => handleToggleSubFilter(item.id)}
-                                  style={{
-                                    padding: '0.28rem 0.7rem',
-                                    borderRadius: '999px',
-                                    fontSize: '0.76rem',
-                                    fontWeight: 700,
-                                    cursor: 'pointer',
-                                    border: isActive ? '1.5px solid var(--accent-color, #2563eb)' : '1px solid var(--border-light)',
-                                    backgroundColor: isActive ? 'var(--accent-color, #2563eb)' : 'var(--th-bg)',
-                                    color: isActive ? '#fff' : 'var(--text-primary)',
-                                    boxShadow: isActive ? '0 2px 8px rgba(37, 99, 235, 0.25)' : 'none',
-                                    transition: 'all 0.15s ease',
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '0.25rem'
-                                  }}
-                                >
-                                  {isActive && <span>✓</span>}
-                                  {item.label}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      ))}
-
-                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted, #64748b)', fontStyle: 'italic', paddingTop: '0.2rem' }}>
-                        💡 Tip: You can select multiple states, departments, or categories at the same time (e.g., UP + MP + Bihar, or HR + Sales). Counts and preview recalculate dynamically.
-                      </div>
+                      <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
+                        Active: <strong style={{ color: 'var(--accent-color, #2563eb)' }}>{activeSubFiltersText}</strong>
+                      </span>
                     </div>
-                  )}
+
+                    {/* Filter Table Header */}
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: '180px 140px 1fr 40px',
+                      gap: '0.75rem',
+                      fontSize: '0.76rem',
+                      fontWeight: 700,
+                      color: 'var(--text-secondary)',
+                      padding: '0 0.25rem'
+                    }}>
+                      <div>Filter</div>
+                      <div>Condition*</div>
+                      <div>Values*</div>
+                      <div></div>
+                    </div>
+
+                    {/* Rules Rows */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                      {filterRules.map((rule) => {
+                        const currentFields = AUDIENCE_FILTER_FIELDS[selectedAudience] || [];
+                        const currentFieldObj = currentFields.find(f => f.id === rule.field) || currentFields[0];
+                        const availableOptions = currentFieldObj?.options || [];
+                        const isDropdownOpen = activeDropdownRuleId === rule.id;
+                        const searchTerm = (ruleSearchTerms[rule.id] || '').toLowerCase();
+                        const filteredOptions = availableOptions.filter(opt => opt.toLowerCase().includes(searchTerm));
+                        const hasNoValues = !rule.values || rule.values.length === 0;
+
+                        return (
+                          <div key={rule.id} style={{
+                            display: 'grid',
+                            gridTemplateColumns: '180px 140px 1fr 40px',
+                            gap: '0.75rem',
+                            alignItems: 'start'
+                          }}>
+                            {/* 1. Filter Field Dropdown */}
+                            <div>
+                              <select
+                                value={rule.field}
+                                onChange={(e) => handleRuleChange(rule.id, 'field', e.target.value)}
+                                style={{
+                                  width: '100%',
+                                  padding: '0.55rem 0.75rem',
+                                  borderRadius: '6px',
+                                  border: '1px solid var(--border-light)',
+                                  backgroundColor: 'var(--bg-surface)',
+                                  color: 'var(--text-primary)',
+                                  fontSize: '0.8rem',
+                                  fontWeight: 600,
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                {currentFields.map(f => (
+                                  <option key={f.id} value={f.id}>{f.label}</option>
+                                ))}
+                              </select>
+                            </div>
+
+                            {/* 2. Condition Dropdown */}
+                            <div>
+                              <select
+                                value={rule.condition}
+                                onChange={(e) => handleRuleChange(rule.id, 'condition', e.target.value)}
+                                style={{
+                                  width: '100%',
+                                  padding: '0.55rem 0.75rem',
+                                  borderRadius: '6px',
+                                  border: '1px solid var(--border-light)',
+                                  backgroundColor: 'var(--bg-surface)',
+                                  color: 'var(--text-primary)',
+                                  fontSize: '0.8rem',
+                                  fontWeight: 600,
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                <option value="IN">IN</option>
+                                <option value="NOT IN">NOT IN</option>
+                                <option value="EQUALS">EQUALS</option>
+                              </select>
+                            </div>
+
+                            {/* 3. Values Multi-Select Chip Input with Popover */}
+                            <div data-filter-popover="true" style={{ position: 'relative' }}>
+                              <div
+                                onClick={() => setActiveDropdownRuleId(isDropdownOpen ? null : rule.id)}
+                                style={{
+                                  minHeight: '38px',
+                                  padding: '0.35rem 0.65rem',
+                                  borderRadius: '6px',
+                                  border: hasNoValues ? '1px solid #ef4444' : '1px solid var(--border-light)',
+                                  backgroundColor: 'var(--bg-surface)',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  flexWrap: 'wrap',
+                                  gap: '0.35rem',
+                                  cursor: 'pointer',
+                                  boxShadow: isDropdownOpen ? '0 0 0 2px rgba(37, 99, 235, 0.2)' : 'none'
+                                }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.35rem', flex: 1 }}>
+                                  {hasNoValues ? (
+                                    <span style={{ color: 'var(--text-muted, #94a3b8)', fontSize: '0.8rem' }}>Please Select</span>
+                                  ) : (
+                                    rule.values.map(val => (
+                                      <span
+                                        key={val}
+                                        style={{
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: '0.3rem',
+                                          padding: '0.2rem 0.55rem',
+                                          borderRadius: '4px',
+                                          backgroundColor: 'var(--th-bg)',
+                                          border: '1px solid var(--border-light)',
+                                          fontSize: '0.75rem',
+                                          fontWeight: 600,
+                                          color: 'var(--text-primary)'
+                                        }}
+                                      >
+                                        {val}
+                                        <span
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleToggleRuleValue(rule.id, val);
+                                          }}
+                                          style={{
+                                            cursor: 'pointer',
+                                            fontWeight: 800,
+                                            color: 'var(--text-secondary)',
+                                            fontSize: '0.75rem',
+                                            lineHeight: 1
+                                          }}
+                                        >
+                                          ✕
+                                        </span>
+                                      </span>
+                                    ))
+                                  )}
+                                </div>
+                                <ChevronDown size={15} color="var(--text-secondary)" />
+                              </div>
+
+                              {/* Validation Message matching screenshot */}
+                              {hasNoValues && (
+                                <div style={{ color: '#ef4444', fontSize: '0.72rem', marginTop: '0.25rem', fontWeight: 500 }}>
+                                  Values is required.
+                                </div>
+                              )}
+
+                              {/* Options Dropdown Popover */}
+                              {isDropdownOpen && (
+                                <div style={{
+                                  position: 'absolute',
+                                  top: '100%',
+                                  left: 0,
+                                  right: 0,
+                                  marginTop: '4px',
+                                  backgroundColor: 'var(--bg-surface)',
+                                  border: '1px solid var(--border-light)',
+                                  borderRadius: '8px',
+                                  boxShadow: '0 10px 25px rgba(0,0,0,0.15)',
+                                  zIndex: 1000,
+                                  padding: '0.65rem',
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  gap: '0.5rem',
+                                  maxHeight: '260px'
+                                }}>
+                                  {/* Search & Bulk Select Actions */}
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                    <div style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '0.35rem',
+                                      padding: '0.25rem 0.5rem',
+                                      border: '1px solid var(--border-light)',
+                                      borderRadius: '4px',
+                                      flex: 1
+                                    }}>
+                                      <Search size={13} color="var(--text-secondary)" />
+                                      <input
+                                        type="text"
+                                        placeholder={`Search ${currentFieldObj?.label}...`}
+                                        value={ruleSearchTerms[rule.id] || ''}
+                                        onChange={(e) => setRuleSearchTerms(prev => ({ ...prev, [rule.id]: e.target.value }))}
+                                        onClick={(e) => e.stopPropagation()}
+                                        style={{ border: 'none', outline: 'none', background: 'transparent', width: '100%', fontSize: '0.76rem', color: 'var(--text-primary)' }}
+                                      />
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleSelectAllRuleValues(rule.id, availableOptions);
+                                      }}
+                                      style={{ padding: '0.25rem 0.5rem', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 600, cursor: 'pointer', border: '1px solid var(--border-light)', backgroundColor: 'var(--th-bg)', color: 'var(--text-primary)' }}
+                                    >
+                                      All
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleClearRuleValues(rule.id);
+                                      }}
+                                      style={{ padding: '0.25rem 0.5rem', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 600, cursor: 'pointer', border: '1px solid var(--border-light)', backgroundColor: 'var(--th-bg)', color: 'var(--text-primary)' }}
+                                    >
+                                      Clear
+                                    </button>
+                                  </div>
+
+                                  {/* Option Checkbox List */}
+                                  <div style={{ overflowY: 'auto', maxHeight: '180px', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                                    {filteredOptions.length === 0 ? (
+                                      <div style={{ padding: '0.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)', textAlign: 'center' }}>No options match</div>
+                                    ) : (
+                                      filteredOptions.map(opt => {
+                                        const isChecked = rule.values.includes(opt);
+                                        return (
+                                          <div
+                                            key={opt}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleToggleRuleValue(rule.id, opt);
+                                            }}
+                                            style={{
+                                              display: 'flex',
+                                              alignItems: 'center',
+                                              gap: '0.5rem',
+                                              padding: '0.3rem 0.5rem',
+                                              borderRadius: '4px',
+                                              cursor: 'pointer',
+                                              backgroundColor: isChecked ? 'rgba(37, 99, 235, 0.08)' : 'transparent',
+                                              fontSize: '0.78rem',
+                                              fontWeight: isChecked ? 700 : 500,
+                                              color: isChecked ? 'var(--accent-color, #2563eb)' : 'var(--text-primary)',
+                                              transition: 'background-color 0.1s ease'
+                                            }}
+                                          >
+                                            <input
+                                              type="checkbox"
+                                              checked={isChecked}
+                                              onChange={() => {}}
+                                              style={{ cursor: 'pointer', accentColor: 'var(--accent-color, #2563eb)' }}
+                                            />
+                                            <span>{opt}</span>
+                                          </div>
+                                        );
+                                      })
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* 4. Delete Row (Trash Can Icon) */}
+                            <div style={{ display: 'flex', justifyContent: 'center', paddingTop: '0.45rem' }}>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveRule(rule.id)}
+                                title="Remove Filter"
+                                style={{
+                                  border: 'none',
+                                  background: 'transparent',
+                                  cursor: 'pointer',
+                                  color: 'var(--text-secondary)',
+                                  padding: '0.2rem',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  borderRadius: '4px'
+                                }}
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Bottom Action: + Add More Button styled like Screenshot */}
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: '0.25rem' }}>
+                      <button
+                        type="button"
+                        onClick={handleAddRule}
+                        style={{
+                          padding: '0.45rem 1.15rem',
+                          borderRadius: '6px',
+                          border: '1.5px solid var(--border-light)',
+                          backgroundColor: 'var(--bg-surface)',
+                          color: 'var(--text-primary)',
+                          fontSize: '0.8rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.35rem',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        <Plus size={14} />
+                        Add More
+                      </button>
+                    </div>
+                  </div>
 
                   {/* Live Recipients Preview Table (Uncapped & Fully Scrollable/Paginated) */}
                   <div style={{
