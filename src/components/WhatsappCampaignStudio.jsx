@@ -56,25 +56,36 @@ const AUDIENCE_TYPES = [
 const AUDIENCE_SUB_FILTERS = {
   party: [
     { id: 'ALL', label: 'All Partners' },
+    { id: 'EXCLUSIVE', label: 'Exclusive Swan' },
     { id: 'DEALER', label: 'Dealers Only' },
-    { id: 'DISTRIBUTOR', label: 'Distributors' },
-    { id: 'RETAILER', label: 'Retailers' }
+    { id: 'ACTIVE', label: 'Active Status' },
+    { id: 'STATE_UP', label: 'Uttar Pradesh' },
+    { id: 'STATE_MH', label: 'Maharashtra' },
+    { id: 'STATE_PB', label: 'Punjab' },
+    { id: 'STATE_HR', label: 'Haryana' }
   ],
   leads: [
     { id: 'ALL', label: 'All Leads' },
-    { id: 'NEW', label: 'New Inquiries' },
-    { id: 'IN PROGRESS', label: 'In Progress / Followup' },
-    { id: 'QUALIFIED', label: 'Hot / Qualified' },
-    { id: 'WON', label: 'Won / Converted' }
+    { id: 'STAGE_01', label: '01 - New Stage' },
+    { id: 'STAGE_02', label: '02 - Contact Stage' },
+    { id: 'STAGE_03', label: '03 - Qualification Stage' },
+    { id: 'STAGE_04', label: '04 - Follow Up Stage' },
+    { id: 'STAGE_05', label: '05 - Sales Process Stage' },
+    { id: 'STAGE_06', label: '06 - Conversion Stage' },
+    { id: 'STAGE_07', label: '07 - Final Stage' },
+    { id: 'STAGE_08', label: '08 - Transfer to Party' }
   ],
   end_customers: [
     { id: 'ALL', label: 'All Customers' }
   ],
   users: [
-    { id: 'ALL', label: 'All Employees' },
-    { id: 'SALES', label: 'Sales & Field' },
-    { id: 'TELECALLER', label: 'Telecallers' },
-    { id: 'ADMIN', label: 'Management & Admin' }
+    { id: 'ALL', label: 'All Staff' },
+    { id: 'DEPT_SALES', label: 'Sales & Marketing' },
+    { id: 'DEPT_PRODUCTION', label: 'Production & Plant' },
+    { id: 'DEPT_QA', label: 'Quality Assurance' },
+    { id: 'DEPT_HR', label: 'HR & Administration' },
+    { id: 'DEPT_SERVICE', label: 'Service Team' },
+    { id: 'DEPT_PURCHASE', label: 'Purchase Dept' }
   ]
 };
 
@@ -563,7 +574,7 @@ export default function WhatsappCampaignStudio({
               </div>
             </div>
             <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
-              Active Segment: <strong>{subFilter === 'ALL' ? 'Entire Segment' : subFilter}</strong>
+              Active Segment: <strong>{AUDIENCE_SUB_FILTERS[selectedAudience]?.find(f => f.id === subFilter)?.label || (subFilter === 'ALL' ? 'Entire Segment' : subFilter)}</strong>
             </span>
           </div>
         )}
@@ -1114,7 +1125,7 @@ export default function WhatsappCampaignStudio({
             <div style={{ padding: '0.75rem', background: 'var(--th-bg)', borderRadius: '8px', fontSize: '0.82rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
               <div><strong>Campaign Name:</strong> {campaignName || 'Standard Broadcast'}</div>
               <div><strong>Template:</strong> {activeTemplate?.template_name}</div>
-              <div><strong>Audience:</strong> {AUDIENCE_TYPES.find(a => a.id === selectedAudience)?.label} ({subFilter === 'ALL' ? 'Entire Segment' : subFilter})</div>
+              <div><strong>Audience:</strong> {AUDIENCE_TYPES.find(a => a.id === selectedAudience)?.label} ({AUDIENCE_SUB_FILTERS[selectedAudience]?.find(f => f.id === subFilter)?.label || (subFilter === 'ALL' ? 'Entire Segment' : subFilter)})</div>
               <div><strong>Branch Filter:</strong> {selectedBranch}</div>
               <div><strong>Delivery Mode:</strong> {sendMode === 'scheduled' ? `📅 Scheduled for ${scheduledAt} IST` : '⚡ Send Immediately (Now)'}</div>
               <div><strong>Throttle Speed:</strong> {throttleSpeed === 'safe' ? '🛡️ Safe Pace (~40 msgs/min)' : throttleSpeed === 'standard' ? '⚡ Standard (~75 msgs/min)' : '🚀 High Speed (~150 msgs/min)'}</div>
