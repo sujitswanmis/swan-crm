@@ -262,6 +262,20 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
     return Array.from(set);
   }, [automations, tenantBranchOptions]);
 
+  const resolveBranchDisplayName = React.useCallback((comp) => {
+    if (!comp || comp === 'All') return 'All Companies';
+    const found = tenantBranchOptions.find(o => 
+      o.value.toUpperCase() === comp.toUpperCase() ||
+      o.customCode?.toUpperCase() === comp.toUpperCase() ||
+      o.branchName.toUpperCase() === comp.toUpperCase()
+    );
+    if (found) return found.branchName;
+    if (comp === 'NSMLR' || comp.toLowerCase().includes('multitech')) return 'New Swan Multitech Limited Raian';
+    if (comp === 'NSTLP' || comp.toLowerCase().includes('technologies')) return 'New Swan Technologies Limited Paharuwal';
+    if (comp === 'NSG' || comp.toLowerCase().includes('group')) return 'New Swan Group (Headquarters)';
+    return comp;
+  }, [tenantBranchOptions]);
+
   const filteredAutomations = React.useMemo(() => {
     return automations.filter(auto => {
       // 1. Search text
@@ -270,12 +284,17 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
         const stageMatch = (auto.stage_name || '').toLowerCase().includes(q);
         const tplIdMatch = (auto.template_id || '').toLowerCase().includes(q);
         const tplNameMatch = (auto.whatsapp_templates?.template_name || '').toLowerCase().includes(q);
-        const compMatch = (auto.company || '').toLowerCase().includes(q);
+        const compDisplay = resolveBranchDisplayName(auto.company);
+        const compMatch = (auto.company || '').toLowerCase().includes(q) || compDisplay.toLowerCase().includes(q);
         if (!stageMatch && !tplIdMatch && !tplNameMatch && !compMatch) return false;
       }
       // 2. Company filter
       if (autoCompanyFilter !== 'ALL') {
-        if ((auto.company || '').toUpperCase() !== autoCompanyFilter.toUpperCase()) return false;
+        const autoComp = (auto.company || '').toUpperCase();
+        const autoCompDisplay = resolveBranchDisplayName(auto.company).toUpperCase();
+        const filterComp = autoCompanyFilter.toUpperCase();
+        const filterCompDisplay = resolveBranchDisplayName(autoCompanyFilter).toUpperCase();
+        if (autoComp !== filterComp && autoCompDisplay !== filterCompDisplay) return false;
       }
       // 3. Status filter
       if (autoStatusFilter === 'ACTIVE' && !auto.is_active) return false;
@@ -3748,7 +3767,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                           />
                         </td>
                         <td style={{ padding: '1rem' }}>
-                          <CRMStatusBadge>{auto.company || 'All'}</CRMStatusBadge>
+                          <CRMStatusBadge>{resolveBranchDisplayName(auto.company)}</CRMStatusBadge>
                         </td>
                         <td style={{ padding: '1rem', fontWeight: 500 }}>{auto.stage_name}</td>
                         <td style={{ padding: '1rem' }}>
