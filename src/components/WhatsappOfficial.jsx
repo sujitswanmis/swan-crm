@@ -6,7 +6,7 @@ import { CRMPage, CRMPageHeader, CRMCard, CRMToolbar, CRMTabs, CRMTabPanel, CRMS
 import { ColumnResizer, useTableColumnResize } from '@/utils/tableColumnResize';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import WhatsappOfficialMessageLogs from '@/components/WhatsappOfficialMessageLogs';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Save, Plus, Trash2, Image as ImageIcon, Upload, PlayCircle, PauseCircle, Settings, MessageSquare, Repeat,
   CheckCircle2, AlertCircle, Eye, EyeOff, Send, ShieldCheck, Users, HelpCircle, RefreshCw, Zap,
@@ -49,6 +49,95 @@ const ALL_WA_TABS = [
   { id: 'allocations', label: 'Client Allocation Matrix', icon: Users },
   { id: 'settings', label: 'API Credentials & Setup', icon: Settings }
 ];
+
+export const WA_TEMPLATE_CATEGORIES = [
+  { id: 'leads', label: 'CRM Leads & Sales', icon: '🎯', defaultRecipient: 'customer', color: '#10b981' },
+  { id: 'orders', label: 'Order to Delivery Pipeline', icon: '🚚', defaultRecipient: 'customer', color: '#3b82f6' },
+  { id: 'complaints', label: 'Complaint Management', icon: '⚠️', defaultRecipient: 'customer', color: '#ef4444' },
+  { id: 'delegation', label: 'Delegation Tasks', icon: '📋', defaultRecipient: 'employee', color: '#8b5cf6' },
+  { id: 'attendance', label: 'Smart Attendance & Punch', icon: '⏱️', defaultRecipient: 'employee', color: '#f59e0b' },
+  { id: 'leaves', label: 'Leaves & Regularization', icon: '🏖️', defaultRecipient: 'employee', color: '#06b6d4' },
+  { id: 'recruitment', label: 'Recruitment Hub', icon: '🧑‍💼', defaultRecipient: 'candidate', color: '#ec4899' },
+  { id: 'general', label: 'General & Broadcast', icon: '📢', defaultRecipient: 'customer', color: '#64748b' },
+];
+
+export const WA_RECIPIENT_TYPES = [
+  { id: 'customer', label: 'Customer / Client / Dealer', icon: '🏢' },
+  { id: 'employee', label: 'Employee / Staff', icon: '🧑‍💼' },
+  { id: 'hod', label: 'HOD / Reporting Manager', icon: '👔' },
+  { id: 'candidate', label: 'Job Candidate / Applicant', icon: '🎓' },
+];
+
+export const WA_CATEGORY_VARIABLE_TAGS = {
+  orders: [
+    { num: 1, name: 'Customer / Party Name', token: '{{1}}', desc: 'Party Name' },
+    { num: 2, name: 'Order ID / PO No', token: '{{2}}', desc: 'ORD-2026-XXXX' },
+    { num: 3, name: 'Order Value (₹)', token: '{{3}}', desc: 'Total Amount' },
+    { num: 4, name: 'Dispatch / Delivery Date', token: '{{4}}', desc: 'DD-MMM-YYYY' },
+    { num: 5, name: 'Transporter Name', token: '{{5}}', desc: 'Logistics Partner' },
+    { num: 6, name: 'LR / Docket Tracking No', token: '{{6}}', desc: 'LR-XXXXXX' },
+    { num: 7, name: 'Sales Executive Name', token: '{{7}}', desc: 'Order Desk' },
+    { num: 8, name: 'Branch Contact Phone', token: '{{8}}', desc: '+91 XXXXX XXXXX' },
+  ],
+  complaints: [
+    { num: 1, name: 'Customer Name', token: '{{1}}', desc: 'Complainant' },
+    { num: 2, name: 'Ticket ID', token: '{{2}}', desc: 'CMP-XXXX' },
+    { num: 3, name: 'Service Engineer Name', token: '{{3}}', desc: 'Deputed Engineer' },
+    { num: 4, name: 'Engineer Mobile No', token: '{{4}}', desc: '+91 XXXXX XXXXX' },
+    { num: 5, name: 'OTP Verification Code', token: '{{5}}', desc: '6-digit OTP' },
+    { num: 6, name: 'SLA Target Date', token: '{{6}}', desc: 'Visit Deadline' },
+  ],
+  attendance: [
+    { num: 1, name: 'Employee Name', token: '{{1}}', desc: 'Staff Name' },
+    { num: 2, name: 'Punch Time (IST)', token: '{{2}}', desc: 'HH:MM AM/PM' },
+    { num: 3, name: 'Total Duty Hours', token: '{{3}}', desc: '8h 30m' },
+    { num: 4, name: 'Plant / Office Location', token: '{{4}}', desc: 'Raian / Paharuwal' },
+    { num: 5, name: 'Punch Date', token: '{{5}}', desc: 'DD-MMM-YYYY' },
+  ],
+  delegation: [
+    { num: 1, name: 'Assignee Employee Name', token: '{{1}}', desc: 'Task Owner' },
+    { num: 2, name: 'Task Title', token: '{{2}}', desc: 'Delegation Task' },
+    { num: 3, name: 'Deadline Due Date/Time', token: '{{3}}', desc: 'Target Time' },
+    { num: 4, name: 'Delegated By (HOD/Admin)', token: '{{4}}', desc: 'Supervisor' },
+    { num: 5, name: 'Priority Level', token: '{{5}}', desc: 'High / Medium' },
+  ],
+  leaves: [
+    { num: 1, name: 'Employee Name', token: '{{1}}', desc: 'Applicant' },
+    { num: 2, name: 'Leave Type', token: '{{2}}', desc: 'CL / EL / SL' },
+    { num: 3, name: 'Leave Dates / Days', token: '{{3}}', desc: '1 Day (25-Nov)' },
+    { num: 4, name: 'Status / HOD Name', token: '{{4}}', desc: 'Approved / Pending' },
+    { num: 5, name: 'Approver Remarks', token: '{{5}}', desc: 'HOD Notes' },
+  ],
+  recruitment: [
+    { num: 1, name: 'Candidate Name', token: '{{1}}', desc: 'Applicant' },
+    { num: 2, name: 'Job Role / Designation', token: '{{2}}', desc: 'CNC Operator / Engineer' },
+    { num: 3, name: 'Interview Date & Time', token: '{{3}}', desc: 'Slot Time' },
+    { num: 4, name: 'Interview Venue / Link', token: '{{4}}', desc: 'Plant Address / Google Meet' },
+    { num: 5, name: 'HR Contact Mobile', token: '{{5}}', desc: '+91 XXXXX XXXXX' },
+  ],
+  leads: [
+    { num: 1, name: 'Lead / Customer Name', token: '{{1}}', desc: 'Prospect Name' },
+    { num: 2, name: 'Company Name', token: '{{2}}', desc: 'Client Firm' },
+    { num: 3, name: 'Product / Category', token: '{{3}}', desc: 'Requirement' },
+    { num: 4, name: 'Sales Executive Name', token: '{{4}}', desc: 'Assigned Agent' },
+    { num: 5, name: 'Executive Mobile No', token: '{{5}}', desc: '+91 XXXXX XXXXX' },
+    { num: 6, name: 'Branch Office', token: '{{6}}', desc: 'New Swan Group' },
+  ],
+  general: [
+    { num: 1, name: 'Recipient Name', token: '{{1}}', desc: 'Person Name' },
+    { num: 2, name: 'Company Name', token: '{{2}}', desc: 'Organization' },
+    { num: 3, name: 'Announcement Subject', token: '{{3}}', desc: 'Notice Title' },
+    { num: 4, name: 'Date / Reference', token: '{{4}}', desc: 'Circular Date' },
+  ]
+};
+
+export const getCategoryMeta = (catId) => {
+  return WA_TEMPLATE_CATEGORIES.find(c => c.id === catId) || WA_TEMPLATE_CATEGORIES[0];
+};
+
+export const getRecipientMeta = (recId) => {
+  return WA_RECIPIENT_TYPES.find(r => r.id === recId) || WA_RECIPIENT_TYPES[0];
+};
 
 export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', userCompany = '', isMasterAdmin = false, userId = '', tenantId = null, isActive = true, allowedLogViews, initialTab = null, onTabChange = null }) {
   const rLower = String(userRole || '').trim().toLowerCase();
@@ -186,6 +275,10 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
   const [selectedTemplateBranch, setSelectedTemplateBranch] = useState('New Swan Group (Headquarters)');
   const [filterBsp, setFilterBsp] = useState('All');
   const [filterBranch, setFilterBranch] = useState('All');
+  const [filterCategory, setFilterCategory] = useState('All');
+  const [selectedTemplateCategory, setSelectedTemplateCategory] = useState('leads');
+  const [selectedTemplateRecipient, setSelectedTemplateRecipient] = useState('customer');
+  const messageBodyRef = useRef(null);
 
   // Automations State
   const [automations, setAutomations] = useState([]);
@@ -991,36 +1084,50 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
     const raw = String(compStr || '').trim();
     let bsp = defaultProvider || 'aisensy';
     let branch = 'New Swan Group (Headquarters)';
+    let category = 'leads';
+    let recipient = 'customer';
 
-    const match = raw.match(/\[(.*?)\]/);
+    // 1. Extract {category:...,recipient:...} if present
+    const metaMatch = raw.match(/\{category:(.*?),recipient:(.*?)\}/i);
+    if (metaMatch) {
+      if (metaMatch[1]) category = metaMatch[1].trim();
+      if (metaMatch[2]) recipient = metaMatch[2].trim();
+    }
+
+    // Clean out the {category:...,recipient:...} segment before parsing branch and bsp
+    const cleanRaw = raw.replace(/\{category:.*?,recipient:.*?\}/gi, '').trim();
+
+    const match = cleanRaw.match(/\[(.*?)\]/);
     if (match && match[1]) {
       bsp = match[1];
-      branch = raw.replace(/\[.*?\]/, '').trim() || 'New Swan Group (Headquarters)';
-    } else if (raw.toLowerCase() === 'nstlp') {
+      branch = cleanRaw.replace(/\[.*?\]/, '').trim() || 'New Swan Group (Headquarters)';
+    } else if (cleanRaw.toLowerCase() === 'nstlp') {
       bsp = 'nextel';
       branch = 'NSTLP';
-    } else if (raw.toLowerCase() === 'nsmlr') {
+    } else if (cleanRaw.toLowerCase() === 'nsmlr') {
       bsp = 'aisensy';
       branch = 'NSMLR';
-    } else if (['aisensy', 'interakt', 'meta', 'wati', 'nextel'].includes(raw.toLowerCase())) {
-      bsp = raw.toLowerCase();
+    } else if (['aisensy', 'interakt', 'meta', 'wati', 'nextel'].includes(cleanRaw.toLowerCase())) {
+      bsp = cleanRaw.toLowerCase();
       branch = 'New Swan Group (Headquarters)';
     } else {
-      const customMatch = customBsps.find(b => b.id.toLowerCase() === raw.toLowerCase() || (b.name && b.name.toLowerCase() === raw.toLowerCase()));
+      const customMatch = customBsps.find(b => b.id.toLowerCase() === cleanRaw.toLowerCase() || (b.name && b.name.toLowerCase() === cleanRaw.toLowerCase()));
       if (customMatch) {
         bsp = customMatch.id;
         branch = 'New Swan Group (Headquarters)';
-      } else if (raw && raw !== 'All') {
-        branch = raw;
+      } else if (cleanRaw && cleanRaw !== 'All') {
+        branch = cleanRaw;
       }
     }
-    return { bsp, branch };
+    return { bsp, branch, category, recipient };
   };
 
   const handleOpenCreateTemplate = () => {
     setSelectedTemplateBsp(defaultProvider || 'aisensy');
     const firstBranch = 'New Swan Group (Headquarters)';
     setSelectedTemplateBranch(firstBranch);
+    setSelectedTemplateCategory('leads');
+    setSelectedTemplateRecipient('customer');
     setCurrentTemplate({ template_name: '', campaign_name: '', message_body: '', image_url: '', company: 'All' });
     setShowTemplateForm(true);
   };
@@ -1029,6 +1136,8 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
     const meta = parseTemplateMeta(tpl.company);
     setSelectedTemplateBsp(meta.bsp);
     setSelectedTemplateBranch(meta.branch);
+    setSelectedTemplateCategory(meta.category || 'leads');
+    setSelectedTemplateRecipient(meta.recipient || 'customer');
     setCurrentTemplate(tpl);
     setShowTemplateForm(true);
     if (typeof window !== 'undefined') {
@@ -1044,7 +1153,9 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
     setLoading(true);
     const branchLabel = selectedTemplateBranch || 'New Swan Group (Headquarters)';
     const bspLabel = selectedTemplateBsp || defaultProvider || 'aisensy';
-    const combinedCompany = `${branchLabel} [${bspLabel}]`;
+    const catLabel = selectedTemplateCategory || 'leads';
+    const recipientLabel = selectedTemplateRecipient || 'customer';
+    const combinedCompany = `${branchLabel} [${bspLabel}] {category:${catLabel},recipient:${recipientLabel}}`;
 
     const res = await saveWhatsappTemplate({
       ...currentTemplate,
@@ -1060,6 +1171,46 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
     }
     setLoading(false);
   };
+
+  const handleInsertVariableToken = (token) => {
+    if (!messageBodyRef.current) {
+      setCurrentTemplate(prev => ({
+        ...prev,
+        message_body: (prev.message_body || '') + (prev.message_body ? ' ' : '') + token
+      }));
+      return;
+    }
+    const textarea = messageBodyRef.current;
+    const start = textarea.selectionStart ?? 0;
+    const end = textarea.selectionEnd ?? 0;
+    const text = currentTemplate.message_body || '';
+    const before = text.substring(0, start);
+    const after = text.substring(end);
+    const newText = before + token + after;
+    setCurrentTemplate(prev => ({ ...prev, message_body: newText }));
+    setTimeout(() => {
+      if (textarea) {
+        textarea.focus();
+        textarea.selectionStart = textarea.selectionEnd = start + token.length;
+      }
+    }, 0);
+  };
+
+  const detectedTemplateVariables = React.useMemo(() => {
+    const body = currentTemplate.message_body || '';
+    const matches = Array.from(body.matchAll(/{{\s*(\d+)\s*}}/g));
+    const nums = Array.from(new Set(matches.map(m => parseInt(m[1], 10)))).sort((a, b) => a - b);
+    const activeTags = WA_CATEGORY_VARIABLE_TAGS[selectedTemplateCategory] || WA_CATEGORY_VARIABLE_TAGS.leads;
+    return nums.map(num => {
+      const tag = activeTags.find(t => t.num === num);
+      return {
+        num,
+        token: `{{${num}}}`,
+        name: tag ? tag.name : `Parameter {{${num}}}`,
+        desc: tag ? tag.desc : 'Custom Variable'
+      };
+    });
+  }, [currentTemplate.message_body, selectedTemplateCategory]);
 
   const handleDeleteTemplate = async (id) => {
     if (!window.confirm('Are you sure you want to delete this template? Automations linked to it will break.')) return;
@@ -1084,7 +1235,11 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
         const bodyMatch = (tpl.message_body || '').toLowerCase().includes(q);
         const branchMatch = (meta.branch || '').toLowerCase().includes(q);
         const bspMatch = (meta.bsp || '').toLowerCase().includes(q) || getBspDisplayName(meta.bsp).toLowerCase().includes(q);
-        return nameMatch || campMatch || bodyMatch || branchMatch || bspMatch;
+        const catMeta = getCategoryMeta(meta.category);
+        const catMatch = (catMeta.label || '').toLowerCase().includes(q);
+        const recMeta = getRecipientMeta(meta.recipient);
+        const recMatch = (recMeta.label || '').toLowerCase().includes(q);
+        return nameMatch || campMatch || bodyMatch || branchMatch || bspMatch || catMatch || recMatch;
       });
     }
 
@@ -1108,8 +1263,16 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
       });
     }
 
+    // 4. Filter by Category / Module
+    if (filterCategory !== 'All') {
+      list = list.filter(tpl => {
+        const meta = parseTemplateMeta(tpl.company);
+        return (meta.category || 'leads') === filterCategory;
+      });
+    }
+
     return list;
-  }, [templates, templateSearch, filterBsp, filterBranch]);
+  }, [templates, templateSearch, filterBsp, filterBranch, filterCategory]);
 
   // Total pages
   const totalTemplatePages = Math.max(1, Math.ceil(filteredTemplates.length / templatePerPage));
@@ -2692,6 +2855,23 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                 ))}
               </select>
 
+              {/* Filter by Category / Module */}
+              <select aria-label="Filter templates by module category" className={crmStyles.field}
+                value={filterCategory}
+                onChange={(e) => {
+                  setFilterCategory(e.target.value);
+                  setTemplatePage(1);
+                }}
+                style={{ padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)' }}
+              >
+                <option value="All">All Modules / Purposes</option>
+                {WA_TEMPLATE_CATEGORIES.map(cat => (
+                  <option key={cat.id} value={cat.id}>
+                    {cat.icon} {cat.label}
+                  </option>
+                ))}
+              </select>
+
               {/* PER PAGE SELECTOR */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                 <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Show:</span>
@@ -2821,7 +3001,56 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
               </h3>
               
               <div className={crmStyles.formGrid} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.25rem', marginBottom: '1.25rem' }}>
-                {/* 1. Selected BSP Name */}
+                {/* 1. Target Module / Purpose */}
+                <div className="form-group">
+                  <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem', marginBottom: '0.45rem', color: 'var(--text-primary)' }}>
+                    <span>🎯</span> Target Module / Purpose <span style={{ color: 'var(--spc-view-danger)' }}>*</span>
+                  </label>
+                  <select className={crmStyles.field}
+                    value={selectedTemplateCategory} 
+                    onChange={e => {
+                      const newCat = e.target.value;
+                      setSelectedTemplateCategory(newCat);
+                      const found = WA_TEMPLATE_CATEGORIES.find(c => c.id === newCat);
+                      if (found && found.defaultRecipient) {
+                        setSelectedTemplateRecipient(found.defaultRecipient);
+                      }
+                    }} 
+                    style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontWeight: 600, fontSize: '0.85rem' }}
+                  >
+                    {WA_TEMPLATE_CATEGORIES.map(cat => (
+                      <option key={cat.id} value={cat.id}>
+                        {cat.icon} {cat.label}
+                      </option>
+                    ))}
+                  </select>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.2rem', display: 'block' }}>
+                    Defines the CRM workflow and auto-maps parameter tokens (e.g. &#123;&#123;1&#125;&#125;, &#123;&#123;2&#125;&#125;).
+                  </span>
+                </div>
+
+                {/* 2. Target Recipient */}
+                <div className="form-group">
+                  <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem', marginBottom: '0.45rem', color: 'var(--text-primary)' }}>
+                    <span>👥</span> Target Recipient (Kiske Liye) <span style={{ color: 'var(--spc-view-danger)' }}>*</span>
+                  </label>
+                  <select className={crmStyles.field}
+                    value={selectedTemplateRecipient} 
+                    onChange={e => setSelectedTemplateRecipient(e.target.value)} 
+                    style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontWeight: 600, fontSize: '0.85rem' }}
+                  >
+                    {WA_RECIPIENT_TYPES.map(rec => (
+                      <option key={rec.id} value={rec.id}>
+                        {rec.icon} {rec.label}
+                      </option>
+                    ))}
+                  </select>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.2rem', display: 'block' }}>
+                    Who will receive this message (Customer, Employee, HOD, or Candidate).
+                  </span>
+                </div>
+
+                {/* 3. Selected BSP Name */}
                 <div className="form-group">
                   <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem', marginBottom: '0.45rem', color: 'var(--text-primary)' }}>
                     <Zap size={15} color="#2563eb" /> Selected BSP Provider
@@ -2854,7 +3083,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                   </span>
                 </div>
 
-                {/* 2. Client Main Office & Branch List */}
+                {/* 4. Client Main Office & Branch List */}
                 <div className="form-group">
                   <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem', marginBottom: '0.45rem', color: 'var(--text-primary)' }}>
                     <Building2 size={15} color="#10b981" /> Client Office / Branch List
@@ -2876,7 +3105,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                   </span>
                 </div>
 
-                {/* 3. Template Name */}
+                {/* 5. Template Name */}
                 <div className="form-group">
                   <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.45rem', color: 'var(--text-primary)' }}>
                     Template Name (CRM Display) <span style={{ color: 'var(--spc-view-danger)' }}>*</span>
@@ -2890,7 +3119,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                   />
                 </div>
 
-                {/* 4. Campaign / API ID */}
+                {/* 6. Campaign / API ID */}
                 <div className="form-group">
                   <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.45rem', color: 'var(--text-primary)' }}>
                     API Campaign ID / Name <span style={{ color: 'var(--spc-view-danger)' }}>*</span>
@@ -2906,15 +3135,104 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
               </div>
 
               <div className="form-group" style={{ marginBottom: '1.25rem' }}>
-                <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.45rem', color: 'var(--text-primary)' }}>
-                  Message Content Body <span style={{ color: 'var(--spc-view-danger)' }}>*</span>
-                </label>
-                <textarea className={crmStyles.field}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.45rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  <label style={{ fontSize: '0.85rem', fontWeight: 600, margin: 0, color: 'var(--text-primary)' }}>
+                    Message Content Body <span style={{ color: 'var(--spc-view-danger)' }}>*</span>
+                  </label>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                    Click tokens below to insert into message at cursor position
+                  </span>
+                </div>
+
+                {/* Click-to-Insert Category Variables Toolbar */}
+                <div style={{
+                  padding: '0.65rem 0.85rem',
+                  backgroundColor: 'var(--th-bg)',
+                  border: '1px solid var(--border-light)',
+                  borderRadius: '6px 6px 0 0',
+                  borderBottom: 'none'
+                }}>
+                  <div style={{ fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '0.45rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                    <span>{getCategoryMeta(selectedTemplateCategory).icon}</span>
+                    <span>Insert {getCategoryMeta(selectedTemplateCategory).label} Variables:</span>
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                    {(WA_CATEGORY_VARIABLE_TAGS[selectedTemplateCategory] || WA_CATEGORY_VARIABLE_TAGS.leads).map(tag => (
+                      <button
+                        key={tag.num}
+                        type="button"
+                        onClick={() => handleInsertVariableToken(tag.token)}
+                        style={{
+                          padding: '0.28rem 0.6rem',
+                          borderRadius: '5px',
+                          border: '1px solid var(--border-light)',
+                          backgroundColor: 'var(--bg-surface)',
+                          color: 'var(--text-primary)',
+                          fontSize: '0.76rem',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.35rem',
+                          boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
+                          transition: 'all 0.15s ease'
+                        }}
+                        title={`Click to insert ${tag.token} (${tag.desc})`}
+                      >
+                        <span style={{ fontWeight: 800, color: 'var(--accent-color, #2563eb)' }}>{tag.token}</span>
+                        <span style={{ fontWeight: 600 }}>{tag.name}</span>
+                        <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>({tag.desc})</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <textarea
+                  ref={messageBodyRef}
+                  className={crmStyles.field}
                   value={currentTemplate.message_body} 
                   onChange={e => setCurrentTemplate({...currentTemplate, message_body: e.target.value})} 
-                  placeholder="Paste template message body here. Use {{1}} for customer name..." 
-                  style={{ width: '100%', padding: '0.75rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', minHeight: '120px', fontSize: '0.85rem' }} 
+                  placeholder={`Paste template message body here.\nExample: Hello {{1}}, your ${getCategoryMeta(selectedTemplateCategory).label} update for {{2}} is ready...`} 
+                  style={{ width: '100%', padding: '0.75rem', borderRadius: '0 0 6px 6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', minHeight: '125px', fontSize: '0.85rem' }} 
                 />
+
+                {/* Auto-Detected Variables Preview Card */}
+                {detectedTemplateVariables.length > 0 && (
+                  <div style={{
+                    marginTop: '0.65rem',
+                    padding: '0.65rem 0.85rem',
+                    backgroundColor: 'rgba(37, 99, 235, 0.05)',
+                    border: '1px solid rgba(37, 99, 235, 0.2)',
+                    borderRadius: '6px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.75rem',
+                    flexWrap: 'wrap'
+                  }}>
+                    <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--accent-color, #2563eb)', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                      <Zap size={14} /> Auto-Detected {detectedTemplateVariables.length} Variable{detectedTemplateVariables.length > 1 ? 's' : ''}:
+                    </span>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                      {detectedTemplateVariables.map(v => (
+                        <span key={v.num} style={{
+                          fontSize: '0.75rem',
+                          padding: '0.2rem 0.55rem',
+                          borderRadius: '4px',
+                          backgroundColor: 'var(--bg-surface)',
+                          border: '1px solid rgba(37, 99, 235, 0.3)',
+                          color: 'var(--text-primary)',
+                          fontWeight: 600,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.3rem'
+                        }}>
+                          <span style={{ color: 'var(--accent-color, #2563eb)', fontWeight: 800 }}>{v.token}</span>
+                          <span>{v.name}</span>
+                          <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>({v.desc})</span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="form-group" style={{ marginBottom: '1.5rem' }}>
@@ -2959,19 +3277,19 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
             <div className={crmStyles.empty} style={{ padding: '3.5rem 1rem', textAlign: 'center', color: 'var(--text-secondary)', background: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
               <div style={{ fontSize: '1.75rem', marginBottom: '0.5rem' }}>📄</div>
               <div style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.25rem' }}>
-                {templateSearch.trim() || filterBsp !== 'All' || filterBranch !== 'All'
+                {templateSearch.trim() || filterBsp !== 'All' || filterBranch !== 'All' || filterCategory !== 'All'
                   ? 'No templates match your filters or search.'
                   : 'No templates created yet.'}
               </div>
               <p style={{ margin: 0, fontSize: '0.85rem' }}>
-                {templateSearch.trim() || filterBsp !== 'All' || filterBranch !== 'All'
-                  ? 'Try clearing the search text or resetting the gateway/branch filters.'
+                {templateSearch.trim() || filterBsp !== 'All' || filterBranch !== 'All' || filterCategory !== 'All'
+                  ? 'Try clearing the search text or resetting the gateway/branch/module filters.'
                   : 'Click "Create New Template" above to start broadcasting.'}
               </p>
-              {(templateSearch.trim() || filterBsp !== 'All' || filterBranch !== 'All') && (
+              {(templateSearch.trim() || filterBsp !== 'All' || filterBranch !== 'All' || filterCategory !== 'All') && (
                 <button className={crmStyles.button}
                   type="button"
-                  onClick={() => { setTemplateSearch(''); setFilterBsp('All'); setFilterBranch('All'); setTemplatePage(1); }}
+                  onClick={() => { setTemplateSearch(''); setFilterBsp('All'); setFilterBranch('All'); setFilterCategory('All'); setTemplatePage(1); }}
                   style={{ marginTop: '1rem', padding: '0.45rem 0.95rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer' }}
                 >
                   Reset All Filters
@@ -3049,6 +3367,46 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                         <h4 style={{ margin: '0', fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)', wordBreak: 'break-word' }}>
                           {tpl.template_name}
                         </h4>
+                      </div>
+
+                      {/* CATEGORY & RECIPIENT BADGES */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.45rem' }}>
+                        {(() => {
+                          const catMeta = getCategoryMeta(meta.category);
+                          const recMeta = getRecipientMeta(meta.recipient);
+                          return (
+                            <>
+                              <span style={{ 
+                                fontSize: '0.72rem', 
+                                fontWeight: 700, 
+                                padding: '0.18rem 0.5rem', 
+                                borderRadius: '4px', 
+                                backgroundColor: `${catMeta.color}18`, 
+                                color: catMeta.color,
+                                border: `1px solid ${catMeta.color}40`,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.25rem'
+                              }}>
+                                <span>{catMeta.icon}</span> {catMeta.label}
+                              </span>
+                              <span style={{ 
+                                fontSize: '0.72rem', 
+                                fontWeight: 600, 
+                                padding: '0.18rem 0.5rem', 
+                                borderRadius: '4px', 
+                                backgroundColor: 'var(--th-bg)', 
+                                color: 'var(--text-secondary)',
+                                border: '1px solid var(--border-light)',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.25rem'
+                              }}>
+                                <span>{recMeta.icon}</span> {recMeta.label}
+                              </span>
+                            </>
+                          );
+                        })()}
                       </div>
 
                       {/* BRANCH BADGE */}
@@ -3184,11 +3542,49 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
 
                         {/* NAME */}
                         <td style={{ padding: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', wordBreak: 'break-word' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.35rem' }}>
                             {tpl.image_url && (
                               <img src={tpl.image_url} alt="img" style={{ width: '28px', height: '28px', objectFit: 'cover', borderRadius: '4px', border: '1px solid var(--border-light)' }} />
                             )}
                             <span>{tpl.template_name}</span>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
+                            {(() => {
+                              const catMeta = getCategoryMeta(meta.category);
+                              const recMeta = getRecipientMeta(meta.recipient);
+                              return (
+                                <>
+                                  <span style={{
+                                    fontSize: '0.68rem',
+                                    fontWeight: 700,
+                                    padding: '0.12rem 0.4rem',
+                                    borderRadius: '3px',
+                                    backgroundColor: `${catMeta.color}18`,
+                                    color: catMeta.color,
+                                    border: `1px solid ${catMeta.color}40`,
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '0.25rem'
+                                  }}>
+                                    <span>{catMeta.icon}</span> {catMeta.label}
+                                  </span>
+                                  <span style={{
+                                    fontSize: '0.68rem',
+                                    fontWeight: 600,
+                                    padding: '0.12rem 0.4rem',
+                                    borderRadius: '3px',
+                                    backgroundColor: 'var(--th-bg)',
+                                    color: 'var(--text-secondary)',
+                                    border: '1px solid var(--border-light)',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '0.25rem'
+                                  }}>
+                                    <span>{recMeta.icon}</span> {recMeta.label}
+                                  </span>
+                                </>
+                              );
+                            })()}
                           </div>
                         </td>
 
