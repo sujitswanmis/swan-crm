@@ -3,7 +3,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Send, Users, Building2, CheckCircle2, AlertCircle, PlayCircle, Eye, RefreshCw, 
-  Sparkles, Check, ChevronRight, ShieldCheck, Phone, Zap, ArrowRight, X, ExternalLink
+  Sparkles, Check, ChevronRight, ShieldCheck, Phone, Zap, ArrowRight, X, ExternalLink,
+  Megaphone, Filter, Clock, Calendar, Gauge
 } from 'lucide-react';
 import { crmStyles } from '@/components/common/CRMDesignSystem';
 import { 
@@ -52,18 +53,50 @@ const AUDIENCE_TYPES = [
   }
 ];
 
+const AUDIENCE_SUB_FILTERS = {
+  party: [
+    { id: 'ALL', label: 'All Partners' },
+    { id: 'DEALER', label: 'Dealers Only' },
+    { id: 'DISTRIBUTOR', label: 'Distributors' },
+    { id: 'RETAILER', label: 'Retailers' }
+  ],
+  leads: [
+    { id: 'ALL', label: 'All Leads' },
+    { id: 'NEW', label: 'New Inquiries' },
+    { id: 'IN PROGRESS', label: 'In Progress / Followup' },
+    { id: 'QUALIFIED', label: 'Hot / Qualified' },
+    { id: 'WON', label: 'Won / Converted' }
+  ],
+  end_customers: [
+    { id: 'ALL', label: 'All Customers' }
+  ],
+  users: [
+    { id: 'ALL', label: 'All Employees' },
+    { id: 'SALES', label: 'Sales & Field' },
+    { id: 'TELECALLER', label: 'Telecallers' },
+    { id: 'ADMIN', label: 'Management & Admin' }
+  ]
+};
+
 export default function WhatsappCampaignStudio({ 
   tenantId = null, 
   tenantBranches = [], 
   templates = [],
   onNavigateToLogs = null 
 }) {
+  const [campaignName, setCampaignName] = useState('');
   const [selectedBranch, setSelectedBranch] = useState('All');
   const [selectedAudience, setSelectedAudience] = useState('party');
+  const [subFilter, setSubFilter] = useState('ALL');
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [recipientPriority, setRecipientPriority] = useState('party_business');
   const [showAllTemplates, setShowAllTemplates] = useState(true);
   const [templateSearchTerm, setTemplateSearchTerm] = useState('');
+
+  // Scheduling & Throttle state
+  const [sendMode, setSendMode] = useState('immediate'); // 'immediate' | 'scheduled'
+  const [scheduledAt, setScheduledAt] = useState('');
+  const [throttleSpeed, setThrottleSpeed] = useState('safe'); // 'safe' | 'standard' | 'fast'
 
   // Stats & Previews
   const [stats, setStats] = useState({ partyCount: 0, leadCount: 0, customerCount: 0, userCount: 0 });
@@ -82,13 +115,24 @@ export default function WhatsappCampaignStudio({
   const [launchProgress, setLaunchProgress] = useState(null);
   const [campaignResult, setCampaignResult] = useState(null);
 
-  // Fetch Audience Stats whenever Branch changes
+  // Reset sub-filter when audience changes
+  const handleSelectAudience = (audId) => {
+    setSelectedAudience(audId);
+    setSubFilter('ALL');
+  };
+
+  // Fetch Audience Stats whenever Branch, Audience or SubFilter changes
   useEffect(() => {
     let isMounted = true;
     async function loadStats() {
       setLoadingStats(true);
       try {
-        const res = await getCampaignAudienceStats({ tenantId, branchFilter: selectedBranch });
+        const res = await getCampaignAudienceStats({ 
+          tenantId, 
+          branchFilter: selectedBranch,
+          audienceType: selectedAudience,
+          subFilter
+        });
         if (isMounted) setStats(res);
       } catch (err) {
         console.error('Failed to load audience stats:', err);
@@ -98,7 +142,7 @@ export default function WhatsappCampaignStudio({
     }
     loadStats();
     return () => { isMounted = false; };
-  }, [tenantId, selectedBranch]);
+  }, [tenantId, selectedBranch, selectedAudience, subFilter]);
 
   // Fetch Sample Records for Preview
   useEffect(() => {
@@ -109,7 +153,8 @@ export default function WhatsappCampaignStudio({
         const rows = await getCampaignAudiencePreview({ 
           tenantId, 
           audienceType: selectedAudience, 
-          branchFilter: selectedBranch 
+          branchFilter: selectedBranch,
+          subFilter
         });
         if (isMounted) setSamplePreviewRecords(rows);
       } catch (err) {
@@ -120,7 +165,7 @@ export default function WhatsappCampaignStudio({
     }
     loadPreview();
     return () => { isMounted = false; };
-  }, [tenantId, selectedAudience, selectedBranch]);
+  }, [tenantId, selectedAudience, selectedBranch, subFilter]);
 
   // Filter templates matching chosen audience
   const relevantTemplates = useMemo(() => {
@@ -245,6 +290,7 @@ export default function WhatsappCampaignStudio({
     try {
       const res = await launchWhatsappBroadcastCampaign({
         tenantId,
+        campaignName,
         audienceType: selectedAudience,
         branchFilter: selectedBranch,
         templateId: selectedTemplateId,
@@ -265,21 +311,32 @@ export default function WhatsappCampaignStudio({
       return;
     }
     if (currentTargetCount === 0) {
-      alert('No recipients available for the selected branch and audience.');
+      alert('No recipients available for the selected criteria.');
+      return;
+    }
+    if (sendMode === 'scheduled' && !scheduledAt) {
+      alert('Please select a scheduled date and time for the broadcast.');
       return;
     }
     setShowConfirmModal(false);
     setLaunching(true);
     setCampaignResult(null);
-    setLaunchProgress(`Preparing broadcast to ${Number(currentTargetCount || 0).toLocaleString()} recipients...`);
+    setLaunchProgress(sendMode === 'scheduled'
+      ? `Scheduling broadcast for ${scheduledAt}...`
+      : `Preparing broadcast to ${Number(currentTargetCount || 0).toLocaleString()} recipients...`);
 
     try {
       const res = await launchWhatsappBroadcastCampaign({
         tenantId,
+        campaignName,
         audienceType: selectedAudience,
         branchFilter: selectedBranch,
+        subFilter,
         templateId: selectedTemplateId,
-        recipientPriority
+        recipientPriority,
+        sendMode,
+        scheduledAt,
+        throttleSpeed
       });
       setCampaignResult(res);
     } catch (err) {
@@ -329,45 +386,71 @@ export default function WhatsappCampaignStudio({
           </p>
         </div>
 
-        {/* Dynamic Branch Filter */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <label style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-            <Building2 size={15} color="var(--accent-color, #2563eb)" /> Target Branch:
-          </label>
-          <select className={crmStyles.field}
-            value={selectedBranch}
-            onChange={e => setSelectedBranch(e.target.value)}
-            style={{ 
-              minWidth: '240px', 
-              maxWidth: '320px', 
-              padding: '0.55rem 0.85rem', 
-              borderRadius: '8px', 
-              fontSize: '0.84rem', 
-              fontWeight: 700,
-              border: '1.5px solid var(--border-light)',
-              backgroundColor: 'var(--bg-surface)'
-            }}
-          >
-            <option value="All">🌐 All Branches (Universal / Group-Wide)</option>
-            {tenantBranches && tenantBranches.length > 0 ? (
-              tenantBranches.map(b => (
-                <option key={b.branch_code || b.id} value={b.branch_name}>
-                  🏢 {b.branch_name} {b.custom_code ? `(${b.custom_code})` : ''}
-                </option>
-              ))
-            ) : (
-              <>
-                <option value="New Swan Group (Headquarters)">🏢 New Swan Group (Headquarters)</option>
-                <option value="New Swan Multitech Limited Raian">🏢 New Swan Multitech Limited Raian (NSMLR)</option>
-                <option value="New Swan Technologies Limited Paharuwal">🏢 New Swan Technologies Limited Paharuwal (NSTLP)</option>
-                <option value="New Swan Enterprises - 1">🏢 New Swan Enterprises - 1 (NSE1)</option>
-                <option value="New Swan Enterprises - 2">🏢 New Swan Enterprises - 2 (NSE2)</option>
-                <option value="New Swan Enterprises - 3">🏢 New Swan Enterprises - 3 (NSE3)</option>
-                <option value="New Swan Enterprises - 4">🏢 New Swan Enterprises - 4 (NSE4)</option>
-                <option value="New Swan Autocomp Pvt. Ltd.">🏢 New Swan Autocomp Pvt. Ltd. (NSACPL1)</option>
-              </>
-            )}
-          </select>
+        {/* Campaign Name Input & Dynamic Branch Filter */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', flexWrap: 'wrap' }}>
+          {/* Campaign Name Field */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <label style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+              <Megaphone size={15} color="var(--accent-color, #2563eb)" /> Campaign Name:
+            </label>
+            <input
+              type="text"
+              className={crmStyles.field}
+              value={campaignName}
+              onChange={e => setCampaignName(e.target.value)}
+              placeholder="e.g. Dev Diwali Wishes 2026"
+              style={{
+                width: '210px',
+                padding: '0.55rem 0.85rem',
+                borderRadius: '8px',
+                fontSize: '0.84rem',
+                fontWeight: 600,
+                border: '1.5px solid var(--border-light)',
+                backgroundColor: 'var(--bg-surface)'
+              }}
+            />
+          </div>
+
+          {/* Dynamic Branch Filter */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <label style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+              <Building2 size={15} color="var(--accent-color, #2563eb)" /> Target Branch:
+            </label>
+            <select className={crmStyles.field}
+              value={selectedBranch}
+              onChange={e => setSelectedBranch(e.target.value)}
+              style={{ 
+                minWidth: '220px', 
+                maxWidth: '300px', 
+                padding: '0.55rem 0.85rem', 
+                borderRadius: '8px', 
+                fontSize: '0.84rem', 
+                fontWeight: 700,
+                border: '1.5px solid var(--border-light)',
+                backgroundColor: 'var(--bg-surface)'
+              }}
+            >
+              <option value="All">🌐 All Branches (Universal / Group-Wide)</option>
+              {tenantBranches && tenantBranches.length > 0 ? (
+                tenantBranches.map(b => (
+                  <option key={b.branch_code || b.id} value={b.branch_name}>
+                    🏢 {b.branch_name} {b.custom_code ? `(${b.custom_code})` : ''}
+                  </option>
+                ))
+              ) : (
+                <>
+                  <option value="New Swan Group (Headquarters)">🏢 New Swan Group (Headquarters)</option>
+                  <option value="New Swan Multitech Limited Raian">🏢 New Swan Multitech Limited Raian (NSMLR)</option>
+                  <option value="New Swan Technologies Limited Paharuwal">🏢 New Swan Technologies Limited Paharuwal (NSTLP)</option>
+                  <option value="New Swan Enterprises - 1">🏢 New Swan Enterprises - 1 (NSE1)</option>
+                  <option value="New Swan Enterprises - 2">🏢 New Swan Enterprises - 2 (NSE2)</option>
+                  <option value="New Swan Enterprises - 3">🏢 New Swan Enterprises - 3 (NSE3)</option>
+                  <option value="New Swan Enterprises - 4">🏢 New Swan Enterprises - 4 (NSE4)</option>
+                  <option value="New Swan Autocomp Pvt. Ltd.">🏢 New Swan Autocomp Pvt. Ltd. (NSACPL1)</option>
+                </>
+              )}
+            </select>
+          </div>
         </div>
       </div>
 
@@ -390,7 +473,7 @@ export default function WhatsappCampaignStudio({
             return (
               <div 
                 key={aud.id}
-                onClick={() => setSelectedAudience(aud.id)}
+                onClick={() => handleSelectAudience(aud.id)}
                 style={{
                   padding: '1rem 1.15rem',
                   borderRadius: '10px',
@@ -432,6 +515,58 @@ export default function WhatsappCampaignStudio({
             );
           })}
         </div>
+
+        {/* Audience Sub-Filters */}
+        {AUDIENCE_SUB_FILTERS[selectedAudience] && (
+          <div style={{
+            marginTop: '0.85rem',
+            padding: '0.65rem 1rem',
+            borderRadius: '8px',
+            backgroundColor: 'var(--th-bg)',
+            border: '1px solid var(--border-light)',
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '0.65rem'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <Filter size={14} color="var(--accent-color, #2563eb)" />
+                Sub-Filter ({AUDIENCE_TYPES.find(a => a.id === selectedAudience)?.label}):
+              </span>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+                {AUDIENCE_SUB_FILTERS[selectedAudience].map(f => {
+                  const isActive = subFilter === f.id;
+                  return (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() => setSubFilter(f.id)}
+                      style={{
+                        padding: '0.25rem 0.75rem',
+                        borderRadius: '999px',
+                        fontSize: '0.75rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        border: isActive ? '1.5px solid var(--accent-color, #2563eb)' : '1px solid var(--border-light)',
+                        backgroundColor: isActive ? 'var(--accent-color, #2563eb)' : 'var(--bg-surface)',
+                        color: isActive ? '#fff' : 'var(--text-primary)',
+                        boxShadow: isActive ? '0 2px 8px rgba(37, 99, 235, 0.25)' : 'none',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      {f.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+              Active Segment: <strong>{subFilter === 'ALL' ? 'Entire Segment' : subFilter}</strong>
+            </span>
+          </div>
+        )}
       </div>
 
       {/* 3. STEP 2 & 3: TEMPLATE PICKER & LIVE PREVIEW BUBBLE */}
@@ -654,7 +789,150 @@ export default function WhatsappCampaignStudio({
         </div>
       </div>
 
-      {/* 4. STEP 4: TEST SEND & 1-CLICK LAUNCH CAMPAIGN */}
+      {/* 4. STEP 4: CAMPAIGN SCHEDULE & ANTI-BAN THROTTLE LIMITS */}
+      <div style={{
+        background: 'var(--bg-surface)',
+        border: '1px solid var(--border-light)',
+        borderRadius: '12px',
+        padding: '1.25rem 1.5rem',
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+        gap: '1.5rem',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.02)'
+      }}>
+        {/* Schedule Timing */}
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.65rem' }}>
+            <label style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <span style={{ display: 'inline-flex', width: '22px', height: '22px', borderRadius: '50%', backgroundColor: 'var(--accent-color, #2563eb)', color: '#fff', fontSize: '0.75rem', alignItems: 'center', justifyContent: 'center', fontWeight: 800 }}>4</span>
+              Campaign Schedule (Send Time)
+            </label>
+            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: sendMode === 'immediate' ? '#059669' : '#2563eb' }}>
+              {sendMode === 'immediate' ? '⚡ Instant Send' : '📅 Scheduled Broadcast'}
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '0.75rem' }}>
+            <label style={{
+              flex: 1,
+              padding: '0.65rem 0.85rem',
+              borderRadius: '8px',
+              border: sendMode === 'immediate' ? '2px solid #16a34a' : '1px solid var(--border-light)',
+              backgroundColor: sendMode === 'immediate' ? '#16a34a0a' : 'var(--bg-surface)',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              fontSize: '0.82rem',
+              fontWeight: 700,
+              color: sendMode === 'immediate' ? '#16a34a' : 'var(--text-primary)'
+            }}>
+              <input
+                type="radio"
+                name="sendMode"
+                checked={sendMode === 'immediate'}
+                onChange={() => setSendMode('immediate')}
+              />
+              <span>⚡ Send Immediately (Now)</span>
+            </label>
+
+            <label style={{
+              flex: 1,
+              padding: '0.65rem 0.85rem',
+              borderRadius: '8px',
+              border: sendMode === 'scheduled' ? '2px solid var(--accent-color, #2563eb)' : '1px solid var(--border-light)',
+              backgroundColor: sendMode === 'scheduled' ? 'rgba(37, 99, 235, 0.06)' : 'var(--bg-surface)',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              fontSize: '0.82rem',
+              fontWeight: 700,
+              color: sendMode === 'scheduled' ? 'var(--accent-color, #2563eb)' : 'var(--text-primary)'
+            }}>
+              <input
+                type="radio"
+                name="sendMode"
+                checked={sendMode === 'scheduled'}
+                onChange={() => setSendMode('scheduled')}
+              />
+              <span>📅 Schedule for Later</span>
+            </label>
+          </div>
+
+          {sendMode === 'scheduled' && (
+            <div style={{ padding: '0.75rem', borderRadius: '8px', backgroundColor: 'var(--th-bg)', border: '1px solid var(--border-light)' }}>
+              <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <Clock size={13} color="var(--accent-color, #2563eb)" /> Choose Send Date & Time (Indian Standard Time - IST):
+              </div>
+              <input
+                type="datetime-local"
+                value={scheduledAt}
+                onChange={e => setScheduledAt(e.target.value)}
+                className={crmStyles.field}
+                style={{ width: '100%', padding: '0.5rem 0.75rem', borderRadius: '6px', fontSize: '0.84rem' }}
+              />
+              <div style={{ fontSize: '0.72rem', color: '#2563eb', marginTop: '0.4rem' }}>
+                ℹ️ Messages will be queued in Sent Logs and automatically dispatched at this scheduled IST time.
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Throttle Limits & Anti-Ban Pace */}
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.65rem' }}>
+            <label style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <Gauge size={16} color="var(--accent-color, #2563eb)" />
+              Anti-Ban Throttle Speed
+            </label>
+            <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#059669', background: 'rgba(16, 185, 129, 0.1)', padding: '0.15rem 0.5rem', borderRadius: '999px' }}>
+              Meta Safe Rate
+            </span>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem', marginBottom: '0.65rem' }}>
+            {[
+              { id: 'safe', label: '🛡️ Safe Pace', speed: '~40 msgs/min', desc: 'Recommended (Anti-Spam)' },
+              { id: 'standard', label: '⚡ Standard', speed: '~75 msgs/min', desc: 'Warm WABA Number' },
+              { id: 'fast', label: '🚀 High Speed', speed: '~150 msgs/min', desc: 'Tier 2 / Tier 3 WABA' }
+            ].map(t => {
+              const isSelected = throttleSpeed === t.id;
+              return (
+                <div
+                  key={t.id}
+                  onClick={() => setThrottleSpeed(t.id)}
+                  style={{
+                    padding: '0.65rem 0.5rem',
+                    borderRadius: '8px',
+                    border: isSelected ? '2px solid var(--accent-color, #2563eb)' : '1px solid var(--border-light)',
+                    backgroundColor: isSelected ? 'rgba(37, 99, 235, 0.08)' : 'var(--bg-surface)',
+                    cursor: 'pointer',
+                    textAlign: 'center',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  <div style={{ fontSize: '0.78rem', fontWeight: 800, color: isSelected ? 'var(--accent-color, #2563eb)' : 'var(--text-primary)' }}>
+                    {t.label}
+                  </div>
+                  <div style={{ fontSize: '0.72rem', fontWeight: 700, color: isSelected ? '#1d4ed8' : 'var(--text-secondary)', marginTop: '0.15rem' }}>
+                    {t.speed}
+                  </div>
+                  <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', marginTop: '0.1rem' }}>
+                    {t.desc}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', padding: '0.5rem 0.75rem', borderRadius: '6px', backgroundColor: 'var(--th-bg)', border: '1px solid var(--border-light)', lineHeight: 1.45 }}>
+            ℹ️ <strong>Meta WABA Tier Reminder:</strong> Tier 1: 1,000 unique contacts/day • Tier 2: 10,000/day. Safe pacing ensures high quality score and prevents temporary rate blocks.
+          </div>
+        </div>
+      </div>
+
+      {/* 5. STEP 5: TEST SEND & 1-CLICK LAUNCH CAMPAIGN */}
       <div style={{
         background: 'var(--bg-surface)',
         border: '1.5px solid var(--accent-color, #2563eb)',
@@ -710,25 +988,31 @@ export default function WhatsappCampaignStudio({
           <button
             type="button"
             onClick={() => setShowConfirmModal(true)}
-            disabled={launching || currentTargetCount === 0 || !selectedTemplateId}
+            disabled={launching || currentTargetCount === 0 || !selectedTemplateId || (sendMode === 'scheduled' && !scheduledAt)}
             style={{
               padding: '0.75rem 1.8rem',
-              background: 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
+              background: sendMode === 'scheduled' 
+                ? 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)' 
+                : 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
               color: '#ffffff',
               border: 'none',
               borderRadius: '8px',
               fontSize: '0.98rem',
               fontWeight: 800,
-              cursor: (launching || currentTargetCount === 0 || !selectedTemplateId) ? 'not-allowed' : 'pointer',
+              cursor: (launching || currentTargetCount === 0 || !selectedTemplateId || (sendMode === 'scheduled' && !scheduledAt)) ? 'not-allowed' : 'pointer',
               display: 'flex',
               alignItems: 'center',
               gap: '0.5rem',
-              boxShadow: '0 4px 15px rgba(22, 163, 74, 0.35)',
-              opacity: (launching || currentTargetCount === 0 || !selectedTemplateId) ? 0.6 : 1
+              boxShadow: sendMode === 'scheduled' ? '0 4px 15px rgba(37, 99, 235, 0.35)' : '0 4px 15px rgba(22, 163, 74, 0.35)',
+              opacity: (launching || currentTargetCount === 0 || !selectedTemplateId || (sendMode === 'scheduled' && !scheduledAt)) ? 0.6 : 1
             }}
           >
-            <Send size={18} />
-            {launching ? 'Broadcasting Campaign...' : `Launch Broadcast to ${Number(currentTargetCount || 0).toLocaleString()} Recipients`}
+            {sendMode === 'scheduled' ? <Calendar size={18} /> : <Send size={18} />}
+            {launching 
+              ? (sendMode === 'scheduled' ? 'Scheduling Campaign...' : 'Broadcasting Campaign...') 
+              : (sendMode === 'scheduled'
+                  ? `Schedule Broadcast (${Number(currentTargetCount || 0).toLocaleString()} Recipients)`
+                  : `Launch Broadcast to ${Number(currentTargetCount || 0).toLocaleString()} Recipients`)}
           </button>
         </div>
       </div>
@@ -753,7 +1037,7 @@ export default function WhatsappCampaignStudio({
         }}>
           <div>
             <div style={{ fontWeight: 800, fontSize: '0.96rem', color: campaignResult.success ? '#065f46' : '#991b1b', marginBottom: '0.2rem' }}>
-              {campaignResult.success ? '✅ Broadcast Campaign Completed Successfully!' : '❌ Broadcast Campaign Failed'}
+              {campaignResult.success ? (campaignResult.isScheduled ? '📅 Campaign Scheduled Successfully!' : '✅ Broadcast Campaign Completed Successfully!') : '❌ Broadcast Campaign Failed'}
             </div>
             <div style={{ fontSize: '0.84rem', color: 'var(--text-secondary)' }}>
               {campaignResult.message || campaignResult.error}
@@ -815,7 +1099,7 @@ export default function WhatsappCampaignStudio({
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <span style={{ fontSize: '1.3rem' }}>📢</span>
                 <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                  Confirm WhatsApp Broadcast
+                  Confirm WhatsApp {sendMode === 'scheduled' ? 'Scheduled Broadcast' : 'Broadcast Campaign'}
                 </h3>
               </div>
               <button type="button" onClick={() => setShowConfirmModal(false)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}>
@@ -824,13 +1108,16 @@ export default function WhatsappCampaignStudio({
             </div>
 
             <div style={{ fontSize: '0.88rem', color: 'var(--text-primary)', lineHeight: 1.5 }}>
-              Are you sure you want to broadcast this WhatsApp message to <strong>{Number(currentTargetCount || 0).toLocaleString()} {AUDIENCE_TYPES.find(a => a.id === selectedAudience)?.label}</strong> in <strong>{selectedBranch}</strong>?
+              Are you sure you want to {sendMode === 'scheduled' ? 'schedule' : 'broadcast'} this WhatsApp campaign to <strong>{Number(currentTargetCount || 0).toLocaleString()} {AUDIENCE_TYPES.find(a => a.id === selectedAudience)?.label}</strong> in <strong>{selectedBranch}</strong>?
             </div>
 
-            <div style={{ padding: '0.75rem', background: 'var(--th-bg)', borderRadius: '8px', fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+            <div style={{ padding: '0.75rem', background: 'var(--th-bg)', borderRadius: '8px', fontSize: '0.82rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+              <div><strong>Campaign Name:</strong> {campaignName || 'Standard Broadcast'}</div>
               <div><strong>Template:</strong> {activeTemplate?.template_name}</div>
-              <div><strong>Audience:</strong> {AUDIENCE_TYPES.find(a => a.id === selectedAudience)?.label}</div>
+              <div><strong>Audience:</strong> {AUDIENCE_TYPES.find(a => a.id === selectedAudience)?.label} ({subFilter === 'ALL' ? 'Entire Segment' : subFilter})</div>
               <div><strong>Branch Filter:</strong> {selectedBranch}</div>
+              <div><strong>Delivery Mode:</strong> {sendMode === 'scheduled' ? `📅 Scheduled for ${scheduledAt} IST` : '⚡ Send Immediately (Now)'}</div>
+              <div><strong>Throttle Speed:</strong> {throttleSpeed === 'safe' ? '🛡️ Safe Pace (~40 msgs/min)' : throttleSpeed === 'standard' ? '⚡ Standard (~75 msgs/min)' : '🚀 High Speed (~150 msgs/min)'}</div>
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.5rem' }}>
@@ -844,9 +1131,18 @@ export default function WhatsappCampaignStudio({
               <button
                 type="button"
                 onClick={handleLaunchCampaign}
-                style={{ padding: '0.55rem 1.4rem', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 700, fontSize: '0.85rem' }}
+                style={{
+                  padding: '0.55rem 1.4rem',
+                  backgroundColor: sendMode === 'scheduled' ? '#2563eb' : '#16a34a',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontWeight: 700,
+                  fontSize: '0.85rem'
+                }}
               >
-                Yes, Launch Campaign Now
+                {sendMode === 'scheduled' ? 'Yes, Schedule Campaign' : 'Yes, Launch Campaign Now'}
               </button>
             </div>
           </div>

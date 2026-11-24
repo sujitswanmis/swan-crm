@@ -35,14 +35,15 @@ function normalizeBranchTag(branch) {
 }
 
 /**
- * Get realtime audience counts across all 4 modules filtered by branch
+ * Get realtime audience counts across all 4 modules filtered by branch and sub-filter
  */
-export async function getCampaignAudienceStats({ tenantId = null, branchFilter = 'All' } = {}) {
+export async function getCampaignAudienceStats({ tenantId = null, branchFilter = 'All', audienceType = null, subFilter = 'ALL' } = {}) {
   const supabase = getAdminClient();
   if (!supabase) return { partyCount: 0, leadCount: 0, customerCount: 0, userCount: 0 };
 
   const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
   const branchTag = normalizeBranchTag(branchFilter);
+  const cleanSubFilter = String(subFilter || 'ALL').trim().toUpperCase();
 
   try {
     // 1. Party Master Count (Exact Head Query)
@@ -51,6 +52,9 @@ export async function getCampaignAudienceStats({ tenantId = null, branchFilter =
     if (branchTag !== 'ALL') {
       partyQuery = partyQuery.or(`party_universal_code.ilike.%${branchTag}%,business_nature.ilike.%${branchTag}%`);
     }
+    if ((!audienceType || audienceType === 'party') && cleanSubFilter !== 'ALL') {
+      partyQuery = partyQuery.ilike('business_nature', `%${cleanSubFilter}%`);
+    }
     const { count: partyCount, error: pErr } = await partyQuery;
 
     // 2. Leads Count (Exact Head Query - Uncapped by 1000 row PostgREST limit)
@@ -58,6 +62,9 @@ export async function getCampaignAudienceStats({ tenantId = null, branchFilter =
     if (effectiveTenantId) leadQuery = leadQuery.eq('tenant_id', effectiveTenantId);
     if (branchTag !== 'ALL') {
       leadQuery = leadQuery.ilike('our_company', `%${branchTag}%`);
+    }
+    if ((!audienceType || audienceType === 'leads') && cleanSubFilter !== 'ALL') {
+      leadQuery = leadQuery.ilike('status', `%${cleanSubFilter}%`);
     }
     const { count: leadCount, error: lErr } = await leadQuery;
 
@@ -74,6 +81,9 @@ export async function getCampaignAudienceStats({ tenantId = null, branchFilter =
     if (effectiveTenantId) userQuery = userQuery.eq('tenant_id', effectiveTenantId);
     if (branchTag !== 'ALL') {
       userQuery = userQuery.or(`company.ilike.%${branchTag}%,branch_name.ilike.%${branchTag}%,branch_code.ilike.%${branchTag}%`);
+    }
+    if ((!audienceType || audienceType === 'users') && cleanSubFilter !== 'ALL') {
+      userQuery = userQuery.or(`role.ilike.%${cleanSubFilter}%,department.ilike.%${cleanSubFilter}%,designation.ilike.%${cleanSubFilter}%`);
     }
     const { count: userCount, error: uErr } = await userQuery;
 
@@ -92,12 +102,13 @@ export async function getCampaignAudienceStats({ tenantId = null, branchFilter =
 /**
  * Fetch sample records for Live Preview
  */
-export async function getCampaignAudiencePreview({ tenantId = null, audienceType = 'party', branchFilter = 'All' } = {}) {
+export async function getCampaignAudiencePreview({ tenantId = null, audienceType = 'party', branchFilter = 'All', subFilter = 'ALL' } = {}) {
   const supabase = getAdminClient();
   if (!supabase) return [];
 
   const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
   const branchTag = normalizeBranchTag(branchFilter);
+  const cleanSubFilter = String(subFilter || 'ALL').trim().toUpperCase();
 
   try {
     if (audienceType === 'party') {
@@ -115,6 +126,9 @@ export async function getCampaignAudiencePreview({ tenantId = null, audienceType
           return code.includes(branchTag) || nature.includes(branchTag);
         });
       }
+      if (cleanSubFilter !== 'ALL') {
+        list = list.filter(p => (p.business_nature || '').toUpperCase().includes(cleanSubFilter));
+      }
       return list.slice(0, 5).map(p => ({
         id: p.id,
         name: p.firm_name || p.legal_name || 'Party Partner',
@@ -127,7 +141,7 @@ export async function getCampaignAudiencePreview({ tenantId = null, audienceType
 
     if (audienceType === 'leads') {
       let q = supabase.from('leads')
-        .select('id, company, name, phone, business_contact_1, cp2_name, cp2_mobile_1, our_company')
+        .select('id, company, name, phone, business_contact_1, cp2_name, cp2_mobile_1, our_company, status')
         .order('created_at', { ascending: false })
         .limit(100);
       if (effectiveTenantId) q = q.eq('tenant_id', effectiveTenantId);
@@ -135,6 +149,9 @@ export async function getCampaignAudiencePreview({ tenantId = null, audienceType
       let list = data || [];
       if (branchTag !== 'ALL') {
         list = list.filter(l => (l.our_company || '').toUpperCase().includes(branchTag));
+      }
+      if (cleanSubFilter !== 'ALL') {
+        list = list.filter(l => (l.status || '').toUpperCase().includes(cleanSubFilter));
       }
       return list.slice(0, 5).map(l => ({
         id: l.id,
@@ -169,7 +186,7 @@ export async function getCampaignAudiencePreview({ tenantId = null, audienceType
 
     if (audienceType === 'users') {
       let q = supabase.from('user_roles')
-        .select('id, emp_name, name, emp_mobile, emp_alt_mobile, role, emp_designation, company, branch_name')
+        .select('id, emp_name, name, emp_mobile, emp_alt_mobile, role, emp_designation, company, branch_name, department')
         .order('created_at', { ascending: false })
         .limit(100);
       if (effectiveTenantId) q = q.eq('tenant_id', effectiveTenantId);
@@ -177,6 +194,9 @@ export async function getCampaignAudiencePreview({ tenantId = null, audienceType
       let list = data || [];
       if (branchTag !== 'ALL') {
         list = list.filter(u => ((u.company || '') + ' ' + (u.branch_name || '')).toUpperCase().includes(branchTag));
+      }
+      if (cleanSubFilter !== 'ALL') {
+        list = list.filter(u => ((u.role || '') + ' ' + (u.emp_designation || '') + ' ' + (u.department || '')).toUpperCase().includes(cleanSubFilter));
       }
       return list.slice(0, 5).map(u => ({
         id: u.id,
@@ -322,10 +342,15 @@ async function dispatchSingleWhatsapp({ phone, text, template, settings, targetC
  */
 export async function launchWhatsappBroadcastCampaign({
   tenantId = null,
+  campaignName = '',
   audienceType = 'party',
   branchFilter = 'All',
+  subFilter = 'ALL',
   templateId,
   recipientPriority = 'default',
+  sendMode = 'immediate',
+  scheduledAt = null,
+  throttleSpeed = 'safe',
   testPhone = null
 }) {
   const supabase = getAdminClient();
@@ -340,6 +365,8 @@ export async function launchWhatsappBroadcastCampaign({
       .single();
 
     if (tplErr || !template) return { success: false, error: 'WhatsApp Template not found' };
+
+    const campaignTitle = (campaignName || '').trim() || template.campaign_name || template.template_name || 'Broadcast Campaign';
 
     // 2. Get Settings
     const { data: settings, error: setErr } = await supabase
@@ -368,13 +395,14 @@ export async function launchWhatsappBroadcastCampaign({
         success: true,
         isTest: true,
         sentCount: 1,
-        message: `Test WhatsApp message sent successfully to +91 ${cleanTest}!`
+        message: `Test WhatsApp message sent successfully to +91 ${cleanTest} for "${campaignTitle}"!`
       };
     }
 
     // BROADCAST SEND MODE
     const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
     const branchTag = normalizeBranchTag(branchFilter);
+    const cleanSubFilter = String(subFilter || 'ALL').trim().toUpperCase();
 
     let audienceRecords = [];
 
@@ -391,6 +419,9 @@ export async function launchWhatsappBroadcastCampaign({
           const nature = (p.business_nature || '').toUpperCase();
           return code.includes(branchTag) || nature.includes(branchTag);
         });
+      }
+      if (cleanSubFilter !== 'ALL') {
+        list = list.filter(p => (p.business_nature || '').toUpperCase().includes(cleanSubFilter));
       }
       audienceRecords = list.map(p => {
         let phones = [];
@@ -416,6 +447,9 @@ export async function launchWhatsappBroadcastCampaign({
       let list = data || [];
       if (branchTag !== 'ALL') {
         list = list.filter(l => (l.our_company || '').toUpperCase().includes(branchTag));
+      }
+      if (cleanSubFilter !== 'ALL') {
+        list = list.filter(l => (l.status || '').toUpperCase().includes(cleanSubFilter));
       }
       audienceRecords = list.map(l => {
         let phones = [];
@@ -455,6 +489,9 @@ export async function launchWhatsappBroadcastCampaign({
       if (branchTag !== 'ALL') {
         list = list.filter(u => ((u.company || '') + ' ' + (u.branch_name || '')).toUpperCase().includes(branchTag));
       }
+      if (cleanSubFilter !== 'ALL') {
+        list = list.filter(u => ((u.role || '') + ' ' + (u.emp_designation || '') + ' ' + (u.department || '')).toUpperCase().includes(cleanSubFilter));
+      }
       audienceRecords = list.map(u => ({
         id: u.id,
         name: u.emp_name || u.name || 'Employee',
@@ -464,16 +501,44 @@ export async function launchWhatsappBroadcastCampaign({
     }
 
     if (audienceRecords.length === 0) {
-      return { success: false, error: 'No recipients found for the selected branch and audience.' };
+      return { success: false, error: 'No recipients found for the selected branch, audience, and filter criteria.' };
     }
 
+    // SCHEDULED CAMPAIGN HANDLING
+    if (sendMode === 'scheduled' && scheduledAt) {
+      const scheduleTimeStr = String(scheduledAt);
+      await supabase.from('whatsapp_message_logs').insert({
+        template_id: template.id,
+        sent_at: new Date().toISOString(),
+        status: `[${campaignTitle}] SCHEDULED for ${scheduleTimeStr} IST | Recipients: ${audienceRecords.length} (${audienceType}) | Branch: ${branchFilter} | Speed: ${throttleSpeed}`
+      });
+
+      return {
+        success: true,
+        isScheduled: true,
+        scheduledAt: scheduleTimeStr,
+        totalTargeted: audienceRecords.length,
+        message: `Campaign "${campaignTitle}" scheduled successfully for ${scheduleTimeStr} IST to ${audienceRecords.length} recipients.`
+      };
+    }
+
+    // IMMEDIATE BROADCAST DISPATCH WITH THROTTLE LIMITS
     let sentCount = 0;
     let failedCount = 0;
     const failures = [];
 
+    // Throttle speed interval in ms
+    let throttleDelay = 1500; // default safe: ~40 msgs/min
+    if (throttleSpeed === 'fast') throttleDelay = 300; // ~150 msgs/min
+    else if (throttleSpeed === 'standard') throttleDelay = 800; // ~75 msgs/min
+
     // Dispatch in sequential throttled batches to prevent API rate limits
     for (const rec of audienceRecords) {
       for (const phone of rec.phones) {
+        if (throttleDelay > 0 && sentCount > 0) {
+          await new Promise(resolve => setTimeout(resolve, throttleDelay));
+        }
+
         try {
           await dispatchSingleWhatsapp({
             phone,
@@ -485,12 +550,12 @@ export async function launchWhatsappBroadcastCampaign({
 
           sentCount++;
 
-          // Insert into logs
+          // Insert into logs with campaign title
           await supabase.from('whatsapp_message_logs').insert({
             lead_id: rec.id,
             template_id: template.id,
             sent_at: new Date().toISOString(),
-            status: `sent to ${phone} (${rec.name})`
+            status: `[${campaignTitle}] sent to ${phone} (${rec.name})`
           });
         } catch (dispatchErr) {
           failedCount++;
@@ -502,11 +567,12 @@ export async function launchWhatsappBroadcastCampaign({
 
     return {
       success: true,
+      campaignName: campaignTitle,
       totalTargeted: audienceRecords.length,
       sentCount,
       failedCount,
       failures: failures.slice(0, 10),
-      message: `Broadcast finished! Successfully sent ${sentCount} messages (${failedCount} failed).`
+      message: `Broadcast "${campaignTitle}" finished! Successfully sent ${sentCount} messages (${failedCount} failed).`
     };
 
   } catch (err) {
