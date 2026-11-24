@@ -34,85 +34,23 @@ function normalizeBranchTag(branch) {
   return branch.trim();
 }
 
-/**
- * Helper to get PostgREST filter clauses for a single sub-filter tag
- */
-function getSingleSubFilterClauses(audienceType, filterKey) {
-  const f = String(filterKey || '').trim().toUpperCase();
-  if (!f || f === 'ALL') return null;
-
-  if (audienceType === 'leads') {
-    switch (f) {
-      case 'STAGE_01':
-        return ['status.ilike.1;%', 'status.ilike.%New Stage%', 'status.eq.None', 'status.is.null', 'status.eq.'];
-      case 'STAGE_02':
-        return ['status.ilike.2;%', 'status.ilike.%Contact Stage%'];
-      case 'STAGE_03':
-        return ['status.ilike.3;%', 'status.ilike.%Qualification Stage%'];
-      case 'STAGE_04':
-        return ['status.ilike.4;%', 'status.ilike.%Follow Up Stage%'];
-      case 'STAGE_05':
-        return ['status.ilike.5;%', 'status.ilike.%Sales Process Stage%'];
-      case 'STAGE_06':
-        return ['status.ilike.6;%', 'status.ilike.%Conversion Stage%'];
-      case 'STAGE_07':
-        return ['status.ilike.7;%', 'status.ilike.%Final Stage%'];
-      case 'STAGE_08':
-        return ['status.ilike.8;%', 'status.ilike.%Transfer to Party%'];
-      default:
-        if (f.startsWith('STATE_')) {
-          const state = f.replace('STATE_', '');
-          return [`state_name.ilike.%${state}%`];
-        }
-        return [`status.ilike.%${f}%`];
-    }
-  }
-
-  if (audienceType === 'party') {
-    switch (f) {
-      case 'EXCLUSIVE':
-        return ['business_nature.ilike.%EXCLUSIVE_SWAN%'];
-      case 'DEALER':
-        return ['business_nature.ilike.%"party_type":"Dealer"%', 'business_nature.ilike.%Dealer%'];
-      case 'ACTIVE':
-        return ['business_nature.ilike.%"activation_status":"Active"%', 'business_nature.ilike.%"status":"Active"%'];
-      case 'STATE_UP':
-        return ['business_nature.ilike.%"state_name":"Uttar Pradesh"%', 'business_nature.ilike.%"state":"Uttar Pradesh"%'];
-      case 'STATE_MH':
-        return ['business_nature.ilike.%"state_name":"Maharashtra"%', 'business_nature.ilike.%"state":"Maharashtra"%'];
-      case 'STATE_PB':
-        return ['business_nature.ilike.%"state_name":"Punjab"%', 'business_nature.ilike.%"state":"Punjab"%'];
-      case 'STATE_HR':
-        return ['business_nature.ilike.%"state_name":"Haryana"%', 'business_nature.ilike.%"state":"Haryana"%'];
-      default:
-        return [`business_nature.ilike.%${f}%`];
-    }
-  }
-
-  if (audienceType === 'users') {
-    switch (f) {
-      case 'DEPT_SALES':
-        return ['department.ilike.%Sales%', 'department.ilike.%Marketing%'];
-      case 'DEPT_PRODUCTION':
-        return ['department.ilike.%Production%', 'department.ilike.%Tool Room%'];
-      case 'DEPT_QA':
-        return ['department.ilike.%Quality Assurance%'];
-      case 'DEPT_HR':
-        return ['department.ilike.%Human Resource%', 'department.ilike.%Administration%'];
-      case 'DEPT_SERVICE':
-        return ['department.ilike.%Service%'];
-      case 'DEPT_PURCHASE':
-        return ['department.ilike.%Purchase%'];
-      default:
-        return [`role.ilike.%${f}%`, `department.ilike.%${f}%`, `designation.ilike.%${f}%`];
-    }
-  }
-
-  return null;
-}
+const STATE_NAMES = {
+  STATE_UP: 'Uttar Pradesh',
+  STATE_MP: 'Madhya Pradesh',
+  STATE_BIHAR: 'Bihar',
+  STATE_PB: 'Punjab',
+  STATE_HR: 'Haryana',
+  STATE_MH: 'Maharashtra',
+  STATE_RJ: 'Rajasthan',
+  STATE_GJ: 'Gujarat',
+  STATE_DL: 'Delhi',
+  STATE_OD: 'Odisha',
+  STATE_WB: 'West Bengal',
+  STATE_UK: 'Uttarakhand'
+};
 
 /**
- * Helper to apply single or multiple sub-filters directly on Supabase PostgREST query
+ * Helper to apply multi-category flexible filters directly on Supabase PostgREST query
  */
 function applyAudienceSubFilter(query, audienceType, subFilter) {
   if (!subFilter) return query;
@@ -121,7 +59,9 @@ function applyAudienceSubFilter(query, audienceType, subFilter) {
 
   if (filterKeys.length === 0 || filterKeys.includes('ALL')) return query;
 
+  // 1. USER MANAGE FILTERS
   if (audienceType === 'users') {
+    // Employment Status (Active vs Inactive)
     const hasActive = filterKeys.includes('STATUS_ACTIVE');
     const hasInactive = filterKeys.includes('STATUS_INACTIVE');
 
@@ -131,13 +71,46 @@ function applyAudienceSubFilter(query, audienceType, subFilter) {
       query = query.neq('emp_status', 'Active');
     }
 
-    const deptKeys = filterKeys.filter(k => k !== 'STATUS_ACTIVE' && k !== 'STATUS_INACTIVE');
+    // Departments (Multi-Select Union)
+    const deptKeys = filterKeys.filter(k => k.startsWith('DEPT_'));
     if (deptKeys.length > 0) {
       const deptClauses = [];
-      for (const k of deptKeys) {
-        const clauses = getSingleSubFilterClauses('users', k);
-        if (clauses) deptClauses.push(...clauses);
-      }
+      deptKeys.forEach(k => {
+        switch (k) {
+          case 'DEPT_SALES':
+            deptClauses.push('department.ilike.%Sales%', 'department.ilike.%Marketing%');
+            break;
+          case 'DEPT_HR':
+            deptClauses.push('department.ilike.%Human Resource%', 'department.ilike.%Administration%');
+            break;
+          case 'DEPT_PRODUCTION':
+            deptClauses.push('department.ilike.%Production%', 'department.ilike.%Tool Room%');
+            break;
+          case 'DEPT_QA':
+            deptClauses.push('department.ilike.%Quality Assurance%');
+            break;
+          case 'DEPT_SERVICE':
+            deptClauses.push('department.ilike.%Service%');
+            break;
+          case 'DEPT_PURCHASE':
+            deptClauses.push('department.ilike.%Purchase%');
+            break;
+          case 'DEPT_ACCOUNTS':
+            deptClauses.push('department.ilike.%Accounts%', 'department.ilike.%Finance%');
+            break;
+          case 'DEPT_IT':
+            deptClauses.push('department.ilike.%Information Technology%', 'department.ilike.%IT%');
+            break;
+          case 'DEPT_LOGISTICS':
+            deptClauses.push('department.ilike.%Logistics%', 'department.ilike.%Dispatch%');
+            break;
+          case 'DEPT_STORE':
+            deptClauses.push('department.ilike.%Store%');
+            break;
+          default:
+            deptClauses.push(`department.ilike.%${k.replace('DEPT_', '')}%`);
+        }
+      });
       if (deptClauses.length > 0) {
         query = query.or(Array.from(new Set(deptClauses)).join(','));
       }
@@ -145,15 +118,101 @@ function applyAudienceSubFilter(query, audienceType, subFilter) {
     return query;
   }
 
-  // Leads or Party multi-filter OR union
-  const allClauses = [];
-  for (const k of filterKeys) {
-    const clauses = getSingleSubFilterClauses(audienceType, k);
-    if (clauses) allClauses.push(...clauses);
+  // 2. PARTY MASTER FILTERS
+  if (audienceType === 'party') {
+    // States (Multi-Select Union: UP, MP, Bihar, Punjab, etc.)
+    const stateKeys = filterKeys.filter(k => k.startsWith('STATE_'));
+    if (stateKeys.length > 0) {
+      const stateClauses = [];
+      stateKeys.forEach(k => {
+        const stateName = STATE_NAMES[k] || k.replace('STATE_', '');
+        stateClauses.push(`business_nature.ilike.%${stateName}%`, `party_universal_code.ilike.%${stateName}%`);
+      });
+      if (stateClauses.length > 0) {
+        query = query.or(Array.from(new Set(stateClauses)).join(','));
+      }
+    }
+
+    // Partner Nature / Type
+    const natureKeys = filterKeys.filter(k => k.startsWith('NATURE_') || ['EXCLUSIVE', 'DEALER', 'DISTRIBUTOR', 'DIRECT'].includes(k));
+    if (natureKeys.length > 0) {
+      const natureClauses = [];
+      natureKeys.forEach(k => {
+        if (k.includes('EXCLUSIVE')) natureClauses.push('business_nature.ilike.%EXCLUSIVE_SWAN%');
+        if (k.includes('DEALER')) natureClauses.push('business_nature.ilike.%"party_type":"Dealer"%', 'business_nature.ilike.%Dealer%');
+        if (k.includes('DISTRIBUTOR')) natureClauses.push('business_nature.ilike.%"party_type":"Distributor"%', 'business_nature.ilike.%Distributor%');
+        if (k.includes('DIRECT')) natureClauses.push('business_nature.ilike.%Direct%');
+      });
+      if (natureClauses.length > 0) {
+        query = query.or(Array.from(new Set(natureClauses)).join(','));
+      }
+    }
+
+    // Activation & Status
+    const statusKeys = filterKeys.filter(k => k.startsWith('PARTY_STATUS_') || ['ACTIVE', 'HOLD', 'DRAFT'].includes(k));
+    if (statusKeys.length > 0) {
+      const statusClauses = [];
+      statusKeys.forEach(k => {
+        if (k.includes('ACTIVE')) statusClauses.push('party_status.eq.Active', 'business_nature.ilike.%"activation_status":"Active"%');
+        if (k.includes('HOLD')) statusClauses.push('party_status.ilike.%Hold%', 'business_nature.ilike.%"activation_status":"Hold"%');
+        if (k.includes('DRAFT')) statusClauses.push('party_status.ilike.%Draft%');
+      });
+      if (statusClauses.length > 0) {
+        query = query.or(Array.from(new Set(statusClauses)).join(','));
+      }
+    }
+    return query;
   }
 
-  if (allClauses.length > 0) {
-    query = query.or(Array.from(new Set(allClauses)).join(','));
+  // 3. LEAD MANAGEMENT FILTERS
+  if (audienceType === 'leads') {
+    // Pipeline Stages (Multi-Select Union)
+    const stageKeys = filterKeys.filter(k => k.startsWith('STAGE_'));
+    if (stageKeys.length > 0) {
+      const stageClauses = [];
+      stageKeys.forEach(k => {
+        switch (k) {
+          case 'STAGE_01': stageClauses.push('status.ilike.1;%', 'status.ilike.%New Stage%', 'status.eq.None', 'status.is.null', 'status.eq.'); break;
+          case 'STAGE_02': stageClauses.push('status.ilike.2;%', 'status.ilike.%Contact Stage%'); break;
+          case 'STAGE_03': stageClauses.push('status.ilike.3;%', 'status.ilike.%Qualification Stage%'); break;
+          case 'STAGE_04': stageClauses.push('status.ilike.4;%', 'status.ilike.%Follow Up Stage%'); break;
+          case 'STAGE_05': stageClauses.push('status.ilike.5;%', 'status.ilike.%Sales Process Stage%'); break;
+          case 'STAGE_06': stageClauses.push('status.ilike.6;%', 'status.ilike.%Conversion Stage%'); break;
+          case 'STAGE_07': stageClauses.push('status.ilike.7;%', 'status.ilike.%Final Stage%'); break;
+          case 'STAGE_08': stageClauses.push('status.ilike.8;%', 'status.ilike.%Transfer to Party%'); break;
+        }
+      });
+      if (stageClauses.length > 0) {
+        query = query.or(Array.from(new Set(stageClauses)).join(','));
+      }
+    }
+
+    // States (Multi-Select Union)
+    const stateKeys = filterKeys.filter(k => k.startsWith('STATE_'));
+    if (stateKeys.length > 0) {
+      const stateClauses = [];
+      stateKeys.forEach(k => {
+        const stateName = STATE_NAMES[k] || k.replace('STATE_', '');
+        stateClauses.push(`state_name.ilike.%${stateName}%`);
+      });
+      if (stateClauses.length > 0) {
+        query = query.or(Array.from(new Set(stateClauses)).join(','));
+      }
+    }
+
+    // Priority
+    const priorityKeys = filterKeys.filter(k => k.startsWith('PRIORITY_'));
+    if (priorityKeys.length > 0) {
+      const prioClauses = [];
+      priorityKeys.forEach(k => {
+        if (k.includes('HOT')) prioClauses.push('priority.ilike.%High%', 'priority.ilike.%Hot%');
+        if (k.includes('WARM')) prioClauses.push('priority.ilike.%Medium%', 'priority.ilike.%Warm%');
+      });
+      if (prioClauses.length > 0) {
+        query = query.or(Array.from(new Set(prioClauses)).join(','));
+      }
+    }
+    return query;
   }
 
   return query;

@@ -55,41 +55,109 @@ const AUDIENCE_TYPES = [
   }
 ];
 
-const AUDIENCE_SUB_FILTERS = {
+const AUDIENCE_FILTER_GROUPS = {
   party: [
-    { id: 'ALL', label: 'All Partners' },
-    { id: 'EXCLUSIVE', label: 'Exclusive Swan' },
-    { id: 'DEALER', label: 'Dealers Only' },
-    { id: 'ACTIVE', label: 'Active Status' },
-    { id: 'STATE_UP', label: 'Uttar Pradesh' },
-    { id: 'STATE_MH', label: 'Maharashtra' },
-    { id: 'STATE_PB', label: 'Punjab' },
-    { id: 'STATE_HR', label: 'Haryana' }
+    {
+      group: '📍 States (Multi-Select Union: UP, MP, Bihar, Punjab...)',
+      items: [
+        { id: 'STATE_UP', label: 'Uttar Pradesh' },
+        { id: 'STATE_MP', label: 'Madhya Pradesh' },
+        { id: 'STATE_BIHAR', label: 'Bihar' },
+        { id: 'STATE_PB', label: 'Punjab' },
+        { id: 'STATE_HR', label: 'Haryana' },
+        { id: 'STATE_MH', label: 'Maharashtra' },
+        { id: 'STATE_RJ', label: 'Rajasthan' },
+        { id: 'STATE_GJ', label: 'Gujarat' },
+        { id: 'STATE_DL', label: 'Delhi' },
+        { id: 'STATE_OD', label: 'Odisha' },
+        { id: 'STATE_WB', label: 'West Bengal' },
+        { id: 'STATE_UK', label: 'Uttarakhand' }
+      ]
+    },
+    {
+      group: '🏢 Partner Nature & Type',
+      items: [
+        { id: 'NATURE_EXCLUSIVE', label: 'Exclusive Swan' },
+        { id: 'NATURE_DEALER', label: 'Dealers Only' },
+        { id: 'NATURE_DISTRIBUTOR', label: 'Distributors' },
+        { id: 'NATURE_DIRECT', label: 'Direct Partners' }
+      ]
+    },
+    {
+      group: '🛡️ Activation & Status',
+      items: [
+        { id: 'PARTY_STATUS_ACTIVE', label: 'Active Partners' },
+        { id: 'PARTY_STATUS_HOLD', label: 'Hold / Payment Hold' },
+        { id: 'PARTY_STATUS_DRAFT', label: 'Draft Status' }
+      ]
+    }
   ],
   leads: [
-    { id: 'ALL', label: 'All Leads' },
-    { id: 'STAGE_01', label: '01 - New Stage' },
-    { id: 'STAGE_02', label: '02 - Contact Stage' },
-    { id: 'STAGE_03', label: '03 - Qualification Stage' },
-    { id: 'STAGE_04', label: '04 - Follow Up Stage' },
-    { id: 'STAGE_05', label: '05 - Sales Process Stage' },
-    { id: 'STAGE_06', label: '06 - Conversion Stage' },
-    { id: 'STAGE_07', label: '07 - Final Stage' },
-    { id: 'STAGE_08', label: '08 - Transfer to Party' }
-  ],
-  end_customers: [
-    { id: 'ALL', label: 'All Customers' }
+    {
+      group: '🎯 Pipeline Stages (Multi-Select Union)',
+      items: [
+        { id: 'STAGE_01', label: '01 - New Stage' },
+        { id: 'STAGE_02', label: '02 - Contact Stage' },
+        { id: 'STAGE_03', label: '03 - Qualification Stage' },
+        { id: 'STAGE_04', label: '04 - Follow Up Stage' },
+        { id: 'STAGE_05', label: '05 - Sales Process Stage' },
+        { id: 'STAGE_06', label: '06 - Conversion Stage' },
+        { id: 'STAGE_07', label: '07 - Final Stage' },
+        { id: 'STAGE_08', label: '08 - Transfer to Party' }
+      ]
+    },
+    {
+      group: '📍 Lead States (Multi-Select)',
+      items: [
+        { id: 'STATE_UP', label: 'Uttar Pradesh' },
+        { id: 'STATE_MP', label: 'Madhya Pradesh' },
+        { id: 'STATE_BIHAR', label: 'Bihar' },
+        { id: 'STATE_PB', label: 'Punjab' },
+        { id: 'STATE_HR', label: 'Haryana' },
+        { id: 'STATE_MH', label: 'Maharashtra' },
+        { id: 'STATE_RJ', label: 'Rajasthan' },
+        { id: 'STATE_GJ', label: 'Gujarat' }
+      ]
+    },
+    {
+      group: '⚡ Lead Priority',
+      items: [
+        { id: 'PRIORITY_HOT', label: '🔥 Hot / High Priority' },
+        { id: 'PRIORITY_WARM', label: '⚡ Warm / Follow-up' }
+      ]
+    }
   ],
   users: [
-    { id: 'ALL', label: 'All Staff' },
-    { id: 'STATUS_ACTIVE', label: '🟢 Active Staff (165)' },
-    { id: 'STATUS_INACTIVE', label: '⚪ Inactive / Resigned (33)' },
-    { id: 'DEPT_SALES', label: 'Sales & Marketing' },
-    { id: 'DEPT_PRODUCTION', label: 'Production & Plant' },
-    { id: 'DEPT_QA', label: 'Quality Assurance' },
-    { id: 'DEPT_HR', label: 'HR & Administration' },
-    { id: 'DEPT_SERVICE', label: 'Service Team' },
-    { id: 'DEPT_PURCHASE', label: 'Purchase Dept' }
+    {
+      group: '👥 Staff Departments (Multi-Select Union: HR + Sales)',
+      items: [
+        { id: 'DEPT_HR', label: 'Human Resource & Administration' },
+        { id: 'DEPT_SALES', label: 'Sales & Marketing' },
+        { id: 'DEPT_PRODUCTION', label: 'Production & Plant' },
+        { id: 'DEPT_QA', label: 'Quality Assurance' },
+        { id: 'DEPT_SERVICE', label: 'Service Team' },
+        { id: 'DEPT_PURCHASE', label: 'Purchase Dept' },
+        { id: 'DEPT_ACCOUNTS', label: 'Accounts & Finance' },
+        { id: 'DEPT_IT', label: 'Information Technology' },
+        { id: 'DEPT_LOGISTICS', label: 'Logistics & Dispatch' },
+        { id: 'DEPT_STORE', label: 'Store Dept' }
+      ]
+    },
+    {
+      group: '🛡️ Employment Status',
+      items: [
+        { id: 'STATUS_ACTIVE', label: '🟢 Active Working Staff (165)' },
+        { id: 'STATUS_INACTIVE', label: '⚪ Inactive / Resigned Staff (33)' }
+      ]
+    }
+  ],
+  end_customers: [
+    {
+      group: '🚜 Customer Category',
+      items: [
+        { id: 'ALL', label: 'All Machine Owners & End Customers' }
+      ]
+    }
   ]
 };
 
@@ -485,17 +553,18 @@ export default function WhatsappCampaignStudio({
 
   const totalPages = Math.ceil(filteredCampaigns.length / pageSize) || 1;
 
-  // Active sub-filters display label
+  // Active sub-filters display label across all categories
   const activeSubFiltersText = useMemo(() => {
     if (selectedSubFilters.includes('ALL') || selectedSubFilters.length === 0) {
       return 'All Records (Entire Segment)';
     }
-    const filterDefs = AUDIENCE_SUB_FILTERS[selectedAudience] || [];
+    const filterGroups = AUDIENCE_FILTER_GROUPS[selectedAudience] || [];
+    const allItems = filterGroups.flatMap(g => g.items);
     const labels = selectedSubFilters.map(sf => {
-      const found = filterDefs.find(f => f.id === sf);
-      return found ? found.label.replace(/🟢|⚪/g, '').trim() : sf;
+      const found = allItems.find(f => f.id === sf);
+      return found ? found.label.replace(/🟢|⚪|🔥|⚡/g, '').trim() : sf;
     });
-    return labels.join(' + ');
+    return labels.join(' • ');
   }, [selectedSubFilters, selectedAudience]);
 
   // Paginated Preview Records in Stage 1 Modal
@@ -1281,52 +1350,86 @@ export default function WhatsappCampaignStudio({
                     </div>
                   </div>
 
-                  {/* Multi-Select Sub-Filters Chips */}
-                  {AUDIENCE_SUB_FILTERS[selectedAudience] && (
+                  {/* Multi-Category Multi-Select Filter Groups */}
+                  {AUDIENCE_FILTER_GROUPS[selectedAudience] && (
                     <div style={{
-                      padding: '0.9rem 1.15rem',
+                      padding: '1rem 1.15rem',
                       borderRadius: '10px',
                       backgroundColor: 'var(--bg-surface)',
                       border: '1.5px solid var(--border-light)',
                       display: 'flex',
                       flexDirection: 'column',
-                      gap: '0.65rem'
+                      gap: '0.85rem'
                     }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
-                        <span style={{ fontSize: '0.82rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                          <Filter size={14} color="var(--accent-color, #2563eb)" />
-                          Filter Criteria (Multi-Select Enabled):
-                        </span>
-                        <span style={{ fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
-                          Active Selection: <strong>{activeSubFiltersText}</strong>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', paddingBottom: '0.4rem', borderBottom: '1px solid var(--border-light)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                          <span style={{ fontSize: '0.82rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                            <Filter size={14} color="var(--accent-color, #2563eb)" />
+                            Filter Criteria (Multi-Category & Multi-Select):
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleSubFilter('ALL')}
+                            style={{
+                              padding: '0.2rem 0.6rem',
+                              borderRadius: '999px',
+                              fontSize: '0.72rem',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              border: selectedSubFilters.includes('ALL') ? '1.5px solid var(--accent-color, #2563eb)' : '1px solid var(--border-light)',
+                              backgroundColor: selectedSubFilters.includes('ALL') ? 'var(--accent-color, #2563eb)' : 'var(--th-bg)',
+                              color: selectedSubFilters.includes('ALL') ? '#fff' : 'var(--text-primary)',
+                              transition: 'all 0.15s ease'
+                            }}
+                          >
+                            {selectedSubFilters.includes('ALL') ? '✓ All Records' : 'Reset to All'}
+                          </button>
+                        </div>
+                        <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
+                          Active Selection: <strong style={{ color: 'var(--accent-color, #2563eb)' }}>{activeSubFiltersText}</strong>
                         </span>
                       </div>
 
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
-                        {AUDIENCE_SUB_FILTERS[selectedAudience].map(f => {
-                          const isActive = selectedSubFilters.includes(f.id);
-                          return (
-                            <button
-                              key={f.id}
-                              type="button"
-                              onClick={() => handleToggleSubFilter(f.id)}
-                              style={{
-                                padding: '0.3rem 0.75rem',
-                                borderRadius: '999px',
-                                fontSize: '0.78rem',
-                                fontWeight: 700,
-                                cursor: 'pointer',
-                                border: isActive ? '1.5px solid var(--accent-color, #2563eb)' : '1px solid var(--border-light)',
-                                backgroundColor: isActive ? 'var(--accent-color, #2563eb)' : 'var(--th-bg)',
-                                color: isActive ? '#fff' : 'var(--text-primary)',
-                                boxShadow: isActive ? '0 2px 8px rgba(37, 99, 235, 0.25)' : 'none',
-                                transition: 'all 0.15s ease'
-                              }}
-                            >
-                              {f.label}
-                            </button>
-                          );
-                        })}
+                      {AUDIENCE_FILTER_GROUPS[selectedAudience].map((grp, gIdx) => (
+                        <div key={gIdx} style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                          <div style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.4px', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                            {grp.group}
+                          </div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+                            {grp.items.map(item => {
+                              const isActive = selectedSubFilters.includes(item.id);
+                              return (
+                                <button
+                                  key={item.id}
+                                  type="button"
+                                  onClick={() => handleToggleSubFilter(item.id)}
+                                  style={{
+                                    padding: '0.28rem 0.7rem',
+                                    borderRadius: '999px',
+                                    fontSize: '0.76rem',
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                    border: isActive ? '1.5px solid var(--accent-color, #2563eb)' : '1px solid var(--border-light)',
+                                    backgroundColor: isActive ? 'var(--accent-color, #2563eb)' : 'var(--th-bg)',
+                                    color: isActive ? '#fff' : 'var(--text-primary)',
+                                    boxShadow: isActive ? '0 2px 8px rgba(37, 99, 235, 0.25)' : 'none',
+                                    transition: 'all 0.15s ease',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '0.25rem'
+                                  }}
+                                >
+                                  {isActive && <span>✓</span>}
+                                  {item.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted, #64748b)', fontStyle: 'italic', paddingTop: '0.2rem' }}>
+                        💡 Tip: You can select multiple states, departments, or categories at the same time (e.g., UP + MP + Bihar, or HR + Sales). Counts and preview recalculate dynamically.
                       </div>
                     </div>
                   )}
