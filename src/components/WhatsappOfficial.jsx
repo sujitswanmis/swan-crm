@@ -50,7 +50,7 @@ const ALL_WA_TABS = [
   { id: 'settings', label: 'API Credentials & Setup', icon: Settings }
 ];
 
-export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', userCompany = '', isMasterAdmin = false, userId = '', tenantId = null, isActive = true, allowedLogViews }) {
+export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', userCompany = '', isMasterAdmin = false, userId = '', tenantId = null, isActive = true, allowedLogViews, initialTab = null, onTabChange = null }) {
   const rLower = String(userRole || '').trim().toLowerCase();
   const isAdmin = !userRole || rLower === 'admin' || rLower === 'superadmin' || rLower === 'super_admin' || rLower === 'masteradmin' || rLower === 'owner' || rLower.includes('admin');
 
@@ -63,12 +63,20 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
   }, [moduleAccess, userRole, isMasterAdmin]);
 
   const [activeTab, setActiveTab] = useState(() => {
+    if (initialTab && visibleTabs.some(t => t.id === initialTab)) return initialTab;
     if (typeof window !== 'undefined') {
       const param = new URLSearchParams(window.location.search).get('wa_tab');
       if (param && visibleTabs.some(t => t.id === param)) return param;
     }
     return visibleTabs[0]?.id || 'templates';
   });
+
+  // Sync state if initialTab prop changes externally (e.g. from sidebar subpage click)
+  useEffect(() => {
+    if (initialTab && visibleTabs.some(t => t.id === initialTab) && initialTab !== activeTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab, visibleTabs]);
 
   // Ensure active tab stays within allowed tabs if permissions change
   useEffect(() => {
@@ -90,6 +98,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
   const handleTabChange = (tabId) => {
     if (!visibleTabs.some(t => t.id === tabId)) return;
     setActiveTab(tabId);
+    if (onTabChange) onTabChange(tabId);
     setTemplatePage(1);
     setAutoPage(1);
     setAllocationPage(1);

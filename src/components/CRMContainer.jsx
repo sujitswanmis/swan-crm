@@ -12,7 +12,7 @@ import { isFeatureEntitled } from '@/utils/saasEntitlements';
 import SubscriptionExpiryBanner from './SaaS/SubscriptionExpiryBanner';
 import SubscriptionExpiredModal from './SaaS/SubscriptionExpiredModal';
 import AddonPurchaseModal from './SaaS/AddonPurchaseModal';
-import { Database, LayoutDashboard, Home, Users, UserCheck, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, MessageSquare, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen, Building2, MapPin, ShieldCheck, Camera, User, Upload, Loader2, Trash2, Calendar, Clock, AlertTriangle, AlertCircle, X, ExternalLink, CheckSquare, WifiOff, Sparkles, Volume2, CheckCircle2, Play, Settings2, FormInput, Workflow, Monitor, Target, FileType, Compass, Layers, Network, Activity, Crown, GitMerge, Sliders, Send, Mail, Zap, Package, Truck, Navigation as NavigationIcon } from 'lucide-react';
+import { Database, LayoutDashboard, Home, Users, UserCheck, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, MessageSquare, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen, Building2, MapPin, ShieldCheck, Camera, User, Upload, Loader2, Trash2, Calendar, Clock, AlertTriangle, AlertCircle, X, ExternalLink, CheckSquare, WifiOff, Sparkles, Volume2, CheckCircle2, Play, Settings2, FormInput, Workflow, Monitor, Target, FileType, Compass, Layers, Network, Activity, Crown, GitMerge, Sliders, Send, Mail, Zap, Package, Truck, Navigation as NavigationIcon, CalendarCheck, Repeat } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { getTeamMembers } from '@/app/actions/team';
@@ -53,6 +53,7 @@ import HeaderBranchFilter from '@/components/common/HeaderBranchFilter';
 const OfflineBlockScreen = dynamic(() => import('./Offline/OfflineBlockScreen'));
 const WorkspaceHome = dynamic(() => import('./Home/WorkspaceHome'), { loading: () => <WorkspaceSkeleton variant="analytics" /> });
 const AnalyticsDashboard = dynamic(() => import('@/components/AnalyticsDashboard'), { loading: () => <WorkspaceSkeleton variant="analytics" /> });
+const ChannelAnalyticsDashboard = dynamic(() => import('@/components/Analytics/ChannelAnalyticsDashboard'), { loading: () => <WorkspaceSkeleton variant="analytics" /> });
 const ClientRegistration = dynamic(() => import('@/components/ClientRegistration'), { loading: () => <WorkspaceSkeleton variant="form" /> });
 const CallCenterModule = dynamic(() => import('./CallCenter/CallCenterModule'), { loading: () => <WorkspaceSkeleton variant="callcenter" /> });
 const PartyMasterModule = dynamic(() => import('./Party/PartyMasterModule'), { loading: () => <WorkspaceSkeleton variant="table" /> });
@@ -77,6 +78,7 @@ const AdminMessageConfig = dynamic(() => import('./AdminMessageConfig/AdminMessa
 const EmailConfigModule = dynamic(() => import('./EmailConfig/EmailConfigModule'), { loading: () => <WorkspaceSkeleton variant="settings" /> });
 const ChecklistModule = dynamic(() => import('./Checklist/ChecklistModule'), { loading: () => <WorkspaceSkeleton variant="checklist" /> });
 const DelegationTaskModule = dynamic(() => import('./Delegation/DelegationTaskModule'), { loading: () => <WorkspaceSkeleton variant="checklist" /> });
+const TaskPlannerModule = dynamic(() => import('./TaskPlanner/TaskPlannerModule'), { loading: () => <WorkspaceSkeleton variant="checklist" /> });
 const OfflineRuleModule = dynamic(() => import('./Offline/OfflineRuleModule'), { loading: () => <WorkspaceSkeleton variant="settings" /> });
 const SuperAdminSaasPanel = dynamic(() => import('./SaaS/SuperAdminSaasPanel'), { loading: () => <WorkspaceSkeleton variant="settings" /> });
 const ConfigMasterPanel = dynamic(() => import('./MasterAdmin/ConfigMasterPanel'), { loading: () => <WorkspaceSkeleton variant="settings" /> });
@@ -92,6 +94,8 @@ markLeadStartupTiming('crm-module-ready');
 
 const THEMES = [
   { id: 'default', name: 'Default', icon: '🔵' },
+  { id: 'theme-spc-pearl', name: 'Pearl Light', icon: '◈' },
+  { id: 'theme-spc-midnight', name: 'Midnight Dark', icon: '◆' },
   { id: 'theme-light', name: 'Light', icon: '⚪' },
   { id: 'theme-dark', name: 'Dark', icon: '⚫' },
   { id: 'theme-m3-light', name: 'Material 3 Light', icon: '🎨' },
@@ -259,6 +263,7 @@ export function isTabPermitted(tabId, moduleAccess = {}, userRole = '', tenantEn
   if (tabId === 'attendance') return moduleAccess['attendance']?.view !== false;
   if (tabId === 'checklist') return moduleAccess['checklist']?.view !== false;
   if (tabId === 'delegation') return moduleAccess['delegation']?.view !== false;
+  if (tabId === 'task_planner') return moduleAccess['task_planner']?.view !== false;
   if (tabId === 'team') return moduleAccess['team']?.view === true;
   if (tabId === 'user_management_new') return moduleAccess['user_management_new']?.view === true || moduleAccess['team']?.view === true || isAdmin;
   if (tabId === 'party' || (typeof tabId === 'string' && (tabId.startsWith('party/') || tabId.startsWith('party_')))) return moduleAccess['party']?.view === true || moduleAccess['team']?.view === true;
@@ -310,6 +315,15 @@ export const CHANNEL_OPS_SUBTAB_TITLES = {
   end_customers: 'End Customer Master'
 };
 
+const ANALYTICS_CHANNEL_PAGES = [
+  { id: 'party-master-dashboard', moduleId: 'party', moduleTab: 'dashboard', reportId: 'party_master', label: 'Party Master Dashboard', icon: '📊' },
+  { id: 'order-desk-calling', moduleId: 'channel_ops', moduleTab: 'order_followup', label: 'Order Desk Calling', icon: '📞' },
+  { id: 'order-pipeline', moduleId: 'channel_ops', moduleTab: 'order_pipeline', label: 'Order Pipeline', icon: '📦' },
+  { id: 'complaint-dashboard', moduleId: 'channel_ops', moduleTab: 'complaints', label: 'Complaint Dashboard', icon: '⚠️' }
+];
+
+const getAnalyticsChannelPage = id => ANALYTICS_CHANNEL_PAGES.find(page => page.id === id);
+
 export const MODULE_COLORS = {
   home: '#2563eb',
   saas_master: '#f59e0b',
@@ -324,6 +338,7 @@ export const MODULE_COLORS = {
   attendance: '#f97316',
   checklist: '#10b981',
   delegation: '#0ea5e9',
+  task_planner: '#6366f1',
   field_force: '#14b8a6',
   registration: '#8b5cf6',
   report: '#8b5cf6',
@@ -414,6 +429,7 @@ export const MODULE_DISPLAY_NAMES = {
   attendance: 'Smart Attendance Station',
   checklist: 'Smart Checklist Management',
   delegation: 'Delegation Task Management',
+  task_planner: 'Smart Task Planner & Daily Scheduler',
   party: 'Party Master Directory',
   location_master: 'Location Management',
   location_territory: 'Location Management',
@@ -461,6 +477,8 @@ export default function CRMContainer({
   initialRoute = '',
   initialSearchParams = null,
   initialTheme = 'default',
+  initialSidebarCollapsed = false,
+  initialExpandedCategories = null,
   tenantId = null,
   tenantEntitlements = null,
   tenantSubscription = null
@@ -707,6 +725,16 @@ export default function CRMContainer({
     return true;
   });
 
+  // Ensure browser address bar displays /home when landing on root or home tab
+  useEffect(() => {
+    if (typeof window !== 'undefined' && activeTab === 'home') {
+      const path = window.location.pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
+      if (!path) {
+        window.history.replaceState(null, '', '/home');
+      }
+    }
+  }, [activeTab]);
+
   // Publish the hydration gate in the layout commit so cached rows do not
   // wait for passive/background startup work.
   React.useLayoutEffect(() => {
@@ -804,6 +832,8 @@ export default function CRMContainer({
     return () => window.removeEventListener('crm_recruiter_config_updated', handleRecruiterConfigUpdated);
   }, [loadRecruiterStages]);
   const [messageMenuExpanded, setMessageMenuExpanded] = useState(false);
+  const [waOfficialMenuExpanded, setWaOfficialMenuExpanded] = useState(false);
+  const [emailConfigMenuExpanded, setEmailConfigMenuExpanded] = useState(false);
   const [aiMenuExpanded, setAiMenuExpanded] = useState(false);
   const resolveAttendanceSubTab = (rawSub) => {
     if (!rawSub) return 'my_attendance';
@@ -845,6 +875,8 @@ export default function CRMContainer({
   const [checklistSubTab, setChecklistSubTab] = useState('dashboard');
   const [delegationMenuExpanded, setDelegationMenuExpanded] = useState(false);
   const [delegationSubTab, setDelegationSubTab] = useState('dashboard');
+  const [taskPlannerMenuExpanded, setTaskPlannerMenuExpanded] = useState(false);
+  const [taskPlannerSubTab, setTaskPlannerSubTab] = useState('day');
   const resolveFieldForceSubTab = (rawSub) => {
     if (!rawSub) return 'mobile_dashboard';
     const clean = String(rawSub).toLowerCase().trim().replace(/^\/+|\/+$/g, '');
@@ -1093,6 +1125,13 @@ export default function CRMContainer({
     }
     return 'smtp';
   });
+  const [waOfficialSubTab, setWaOfficialSubTab] = useState(() => {
+    const queryTab = (searchParams?.get('wa_tab') || initialSearchParams?.wa_tab || '').toLowerCase();
+    if (queryTab && ['templates', 'automations', 'sent_logs', 'catalog', 'allocations', 'settings'].includes(queryTab)) {
+      return queryTab;
+    }
+    return 'templates';
+  });
 
   // Load and listen for pending Stage 07 transferred leads count
   useEffect(() => {
@@ -1164,6 +1203,9 @@ export default function CRMContainer({
       if (attTab && (path === 'delegation' || (path && path.startsWith('delegation/')))) {
         setDelegationSubTab(attTab);
       }
+      if (attTab && (path === 'task_planner' || (path && path.startsWith('task_planner/')))) {
+        setTaskPlannerSubTab(attTab);
+      }
       if (attTab && (path === 'calladmin' || path === 'call-admin' || (path && (path.startsWith('calladmin/') || path.startsWith('call-admin/'))))) {
         setCallAdminSubTab(attTab);
       }
@@ -1214,8 +1256,12 @@ export default function CRMContainer({
         let sub = path.split('/')[1];
         if (sub === 'pipeline' || sub === 'leads-data') sub = 'lead-data';
         if (sub) setDashboardSubTab(sub);
-      } else if (path === 'dashboard' && attTab) {
-        setDashboardSubTab(attTab === 'pipeline' || attTab === 'leads-data' ? 'lead-data' : attTab);
+      } else if (path === 'dashboard') {
+        if (attTab) {
+          setDashboardSubTab(attTab === 'pipeline' || attTab === 'leads-data' ? 'lead-data' : attTab);
+        } else {
+          setDashboardSubTab(previous => getAnalyticsChannelPage(previous) ? 'overview' : previous);
+        }
       }
     }
   }, [pathname]);
@@ -1528,27 +1574,73 @@ export default function CRMContainer({
     return null;
   };
 
+  const saveSidebarCollapsed = (collapsed) => {
+    try {
+      const val = collapsed ? 'true' : 'false';
+      localStorage.setItem('crm-sidebar-collapsed', val);
+      if (typeof document !== 'undefined') {
+        document.cookie = `crm-sidebar-collapsed=${val}; path=/; max-age=31536000; SameSite=Lax`;
+      }
+    } catch (_e) {}
+  };
+
+  const saveExpandedCategories = (categories) => {
+    try {
+      const jsonStr = JSON.stringify(categories);
+      localStorage.setItem('crm-expanded-categories', jsonStr);
+      if (typeof document !== 'undefined') {
+        document.cookie = `crm-expanded-categories=${encodeURIComponent(jsonStr)}; path=/; max-age=31536000; SameSite=Lax`;
+      }
+    } catch (_e) {}
+  };
+
   const [leadDataExpanded, setLeadDataExpanded] = useState(false);
   const [recruiterMenuExpanded, setRecruiterMenuExpanded] = useState(false);
   const [recruiterFilterStage, setRecruiterFilterStage] = useState('dashboard');
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    if (typeof initialSidebarCollapsed === 'boolean') {
+      return initialSidebarCollapsed;
+    }
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('crm-sidebar-collapsed');
+        if (saved !== null) return saved === 'true';
+      } catch (_e) {}
+    }
+    return false;
+  });
   const [isSidebarScrolled, setIsSidebarScrolled] = useState(false);
   const sidebarRef = useRef(null);
   const navListRef = useRef(null);
   const [expandedCategories, setExpandedCategories] = useState(() => {
-    const defaults = {
-      'Sales': true,
-      'Purchase': false,
-      'Human Resource': false,
-      'User Management': false,
-      'Workflow Builder': false,
-      'Communication Center': false,
-      'System': false,
-      'Settings': false
-    };
+    if (initialExpandedCategories && typeof initialExpandedCategories === 'object') {
+      return initialExpandedCategories;
+    }
     const targetCat = getCategoryForTab(initialRoute || pathname);
-    if (targetCat) {
-      defaults[targetCat] = true;
+    const defaults = {
+      'Sales': Boolean(targetCat === 'Sales'),
+      'Purchase': Boolean(targetCat === 'Purchase'),
+      'Human Resource': Boolean(targetCat === 'Human Resource'),
+      'User Management': Boolean(targetCat === 'User Management'),
+      'Workflow Builder': Boolean(targetCat === 'Workflow Builder'),
+      'Communication Center': Boolean(targetCat === 'Communication Center'),
+      'System': Boolean(targetCat === 'System'),
+      'Settings': Boolean(targetCat === 'Settings')
+    };
+    if (typeof window !== 'undefined') {
+      try {
+        const savedCats = localStorage.getItem('crm-expanded-categories');
+        if (savedCats) {
+          const parsed = JSON.parse(savedCats);
+          if (parsed && typeof parsed === 'object') {
+            return {
+              ...defaults,
+              ...parsed,
+              ...(targetCat ? { [targetCat]: true } : {})
+            };
+          }
+        }
+      } catch (_e) {}
     }
     return defaults;
   });
@@ -1558,19 +1650,22 @@ export default function CRMContainer({
   useEffect(() => {
     try {
       const savedCollapsed = localStorage.getItem('crm-sidebar-collapsed');
-      if (savedCollapsed === 'true') {
-        setIsSidebarCollapsed(true);
+      if (savedCollapsed !== null) {
+        const shouldCollapse = savedCollapsed === 'true';
+        setIsSidebarCollapsed(prev => (prev !== shouldCollapse ? shouldCollapse : prev));
+        saveSidebarCollapsed(shouldCollapse);
       }
       const savedCats = localStorage.getItem('crm-expanded-categories');
       if (savedCats) {
         const parsed = JSON.parse(savedCats);
         if (parsed && typeof parsed === 'object') {
           const targetCat = getCategoryForTab(activeTab || initialRoute || pathname);
-          setExpandedCategories(prev => ({
-            ...prev,
+          const next = {
             ...parsed,
             ...(targetCat ? { [targetCat]: true } : {})
-          }));
+          };
+          setExpandedCategories(prev => ({ ...prev, ...next }));
+          saveExpandedCategories(next);
         }
       }
     } catch (_e) {}
@@ -1610,9 +1705,7 @@ export default function CRMContainer({
 
   useEffect(() => {
     if (!sidebarMountedRef.current) return;
-    try {
-      localStorage.setItem('crm-sidebar-collapsed', isSidebarCollapsed ? 'true' : 'false');
-    } catch (_e) {}
+    saveSidebarCollapsed(isSidebarCollapsed);
   }, [isSidebarCollapsed]);
 
   // Auto-expand categories and submenus when activeTab changes
@@ -1626,9 +1719,7 @@ export default function CRMContainer({
           ...prev,
           [categoryToExpand]: true
         };
-        try {
-          localStorage.setItem('crm-expanded-categories', JSON.stringify(next));
-        } catch (_e) {}
+        saveExpandedCategories(next);
         return next;
       });
     }
@@ -1642,6 +1733,7 @@ export default function CRMContainer({
     if (cleanTab === 'attendance' || cleanTab.startsWith('attendance/')) setAttendanceMenuExpanded(true);
     if (cleanTab === 'checklist' || cleanTab.startsWith('checklist/')) setChecklistMenuExpanded(true);
     if (cleanTab === 'delegation' || cleanTab.startsWith('delegation/')) setDelegationMenuExpanded(true);
+    if (cleanTab === 'task_planner' || cleanTab.startsWith('task_planner/')) setTaskPlannerMenuExpanded(true);
     if (cleanTab === 'party' || cleanTab.startsWith('party/')) setPartyMenuExpanded(true);
     if (cleanTab === 'channel_ops' || cleanTab === 'channel-operations' || cleanTab.startsWith('channel_ops/') || cleanTab.startsWith('channel-operations/')) {
       if (channelOpsSubTab === 'complaints') {
@@ -1651,7 +1743,15 @@ export default function CRMContainer({
       }
     }
     if (['ai', 'aiadmin', 'aiknowledgebase'].includes(cleanTab) || cleanTab.startsWith('aiadmin/')) setAiMenuExpanded(true);
-    if (['whatsapp_official', 'whatsapp_unofficial', 'sms_config', 'rcs_config', 'email_config'].includes(cleanTab) || cleanTab.startsWith('email-config') || cleanTab.startsWith('email_config')) setMessageMenuExpanded(true);
+    if (cleanTab === 'whatsapp_official') {
+      setMessageMenuExpanded(true);
+      setWaOfficialMenuExpanded(true);
+    }
+    if (['whatsapp_unofficial', 'sms_config', 'rcs_config'].includes(cleanTab)) setMessageMenuExpanded(true);
+    if (cleanTab === 'email_config' || cleanTab.startsWith('email-config') || cleanTab.startsWith('email_config')) {
+      setMessageMenuExpanded(true);
+      setEmailConfigMenuExpanded(true);
+    }
     if (['callcenter', 'calladmin', 'aicallcenter'].includes(cleanTab) || cleanTab.startsWith('calladmin/')) setCallCenterMenuExpanded(true);
     if (cleanTab === 'workplace' || cleanTab === 'workflow' || cleanTab.startsWith('workflow/')) setWorkflowMenuExpanded(true);
     if (cleanTab === 'settings' || cleanTab.startsWith('settings/') || cleanTab === 'sessions') setSettingsMenuExpanded(true);
@@ -1689,15 +1789,14 @@ export default function CRMContainer({
   const toggleCategory = (categoryName) => {
     if (isSidebarCollapsed) {
       setIsSidebarCollapsed(false);
+      saveSidebarCollapsed(false);
     }
     setExpandedCategories(prev => {
       const next = {
         ...prev,
         [categoryName]: !prev[categoryName]
       };
-      try {
-        localStorage.setItem('crm-expanded-categories', JSON.stringify(next));
-      } catch (_e) {}
+      saveExpandedCategories(next);
       return next;
     });
   };
@@ -3158,9 +3257,12 @@ export default function CRMContainer({
   }, [leadsFilterStage]);
 
   useEffect(() => {
-    // Sync initial sidebar collapse state from localStorage on mount
-    const collapsed = localStorage.getItem('crm-sidebar-collapsed') === 'true';
-    setIsSidebarCollapsed(collapsed);
+    // Sync initial sidebar collapse state from localStorage on mount if present
+    const savedSidebar = localStorage.getItem('crm-sidebar-collapsed');
+    if (savedSidebar !== null) {
+      const isColl = savedSidebar === 'true';
+      setIsSidebarCollapsed(prev => (prev !== isColl ? isColl : prev));
+    }
 
     // Sync initial route path and parameters on mount
     const path = window.location.pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
@@ -3270,6 +3372,13 @@ export default function CRMContainer({
       }
       tab = 'delegation';
       setDelegationMenuExpanded(true);
+    } else if (tab === 'task_planner' || (tab && tab.startsWith('task_planner/'))) {
+      let sub = tab.startsWith('task_planner/') ? tab.split('/')[1] : (params.get('tab') || params.get('subtab'));
+      if (sub) {
+        setTaskPlannerSubTab(sub.toLowerCase());
+      }
+      tab = 'task_planner';
+      setTaskPlannerMenuExpanded(true);
     } else if (tab === 'field_force' || tab === 'field-force' || (tab && (tab.startsWith('field_force/') || tab.startsWith('field-force/')))) {
       let sub = tab.includes('/') ? tab.split('/')[1] : (params.get('tab') || params.get('subtab'));
       if (sub) {
@@ -3321,7 +3430,7 @@ export default function CRMContainer({
         setExpandedCategories(prev => {
           if (prev[cat]) return prev;
           const next = { ...prev, [cat]: true };
-          try { localStorage.setItem('crm-expanded-categories', JSON.stringify(next)); } catch (_e) {}
+          saveExpandedCategories(next);
           return next;
         });
       }
@@ -3361,6 +3470,7 @@ export default function CRMContainer({
         let sub = params.get('subtab') || params.get('tab');
         if (sub === 'pipeline' || sub === 'leads-data') sub = 'lead-data';
         if (sub) setDashboardSubTab(sub);
+        else setDashboardSubTab(previous => getAnalyticsChannelPage(previous) ? 'overview' : previous);
         setAnalyticsMenuExpanded(true);
       } else if (tab === 'user_management_new') {
         const sub = (params.get('tab') || params.get('subtab') || '').toLowerCase();
@@ -3453,6 +3563,13 @@ export default function CRMContainer({
         }
         tab = 'delegation';
         setDelegationMenuExpanded(true);
+      } else if (tab === 'task_planner' || (tab && tab.startsWith('task_planner/'))) {
+        let sub = tab.startsWith('task_planner/') ? tab.split('/')[1] : (params.get('tab') || params.get('subtab'));
+        if (sub) {
+          setTaskPlannerSubTab(sub.toLowerCase());
+        }
+        tab = 'task_planner';
+        setTaskPlannerMenuExpanded(true);
       } else if (tab === 'field_force' || tab === 'field-force' || (tab && (tab.startsWith('field_force/') || tab.startsWith('field-force/')))) {
         let sub = tab.includes('/') ? tab.split('/')[1] : (params.get('tab') || params.get('subtab'));
         if (sub) {
@@ -3498,7 +3615,9 @@ export default function CRMContainer({
         if (isMasterAdmin) setConfigMasterMenuExpanded(true);
       }
       
-      if (!tab) {
+      if (!tab || tab === 'home') {
+        tab = 'home';
+      } else if (!tab) {
         const isAdmin = userRole === 'admin' || userRole === 'Admin';
         if (isAdmin || moduleAccess['analytics']?.view) tab = 'dashboard';
         else if (moduleAccess['new_swan_ai']?.view) tab = 'ai';
@@ -3520,7 +3639,7 @@ export default function CRMContainer({
         setExpandedCategories(prev => {
           if (prev[cat]) return prev;
           const next = { ...prev, [cat]: true };
-          try { localStorage.setItem('crm-expanded-categories', JSON.stringify(next)); } catch (_e) {}
+          saveExpandedCategories(next);
           return next;
         });
       }
@@ -3606,7 +3725,7 @@ export default function CRMContainer({
 
     if (tabId === 'home') {
       setActiveTab('home');
-      window.history.pushState(null, '', '/');
+      window.history.pushState(null, '', '/home');
       if (window.innerWidth <= 768) setIsSidebarOpen(false);
       return;
     }
@@ -3614,12 +3733,18 @@ export default function CRMContainer({
     if (tabId === 'dashboard') {
       if (!isTabPermitted('dashboard', moduleAccess, userRole)) return;
       setActiveTab('dashboard');
-      setAnalyticsMenuExpanded(true);
-      const targetSub = dashboardSubTab || 'overview';
+      if (activeTab !== 'dashboard') {
+        setAnalyticsMenuExpanded(true);
+      }
+      const targetSub = selectedAnalyticsChannelPage && !allowedAnalyticsChannelPages.includes(selectedAnalyticsChannelPage)
+        ? 'overview'
+        : dashboardSubTab || 'overview';
       let path = `/dashboard?tab=${targetSub}`;
       if (targetSub === 'overview') path = '/dashboard';
       else if (targetSub === 'scorecard') path = '/scorecard';
       else if (targetSub === 'lead-data') path = '/lead-data';
+      else if (selectedAnalyticsChannelPage) path = `/dashboard/${targetSub}`;
+      if (selectedAnalyticsChannelPage && targetSub === 'overview') setDashboardSubTab(targetSub);
       window.history.pushState(null, '', path);
       if (window.innerWidth <= 768) setIsSidebarOpen(false);
       return;
@@ -3732,6 +3857,16 @@ export default function CRMContainer({
       return;
     }
 
+    if (tabId === 'whatsapp_official' || tabId === 'whatsapp-official') {
+      setActiveTab('whatsapp_official');
+      const targetSub = waOfficialSubTab || 'templates';
+      window.history.pushState(null, '', `/whatsapp_official?wa_tab=${targetSub}`);
+      if (window.innerWidth <= 768) {
+        setIsSidebarOpen(false);
+      }
+      return;
+    }
+
     if (tabId === 'email_config' || tabId === 'email' || tabId === 'email-config') {
       setActiveTab('email_config');
       const targetSub = emailSubTab || 'smtp';
@@ -3766,6 +3901,16 @@ export default function CRMContainer({
       setActiveTab('attendance');
       const targetSub = attendanceSubTab || 'my_attendance';
       window.history.pushState(null, '', `/attendance?tab=${targetSub}`);
+      if (window.innerWidth <= 768) {
+        setIsSidebarOpen(false);
+      }
+      return;
+    }
+
+    if (tabId === 'task_planner') {
+      setActiveTab('task_planner');
+      const targetSub = taskPlannerSubTab || 'day';
+      window.history.pushState(null, '', `/task_planner?tab=${targetSub}`);
       if (window.innerWidth <= 768) {
         setIsSidebarOpen(false);
       }
@@ -3824,6 +3969,8 @@ export default function CRMContainer({
 
   const handleAnalyticsSubTabChange = (subTabId) => {
     const canonical = (subTabId === 'pipeline' || subTabId === 'leads-data') ? 'lead-data' : subTabId;
+    const channelPage = getAnalyticsChannelPage(canonical);
+    if (channelPage && !allowedAnalyticsChannelPages.includes(channelPage)) return;
     setDashboardSubTab(canonical);
     if (activeTab !== 'dashboard') {
       setActiveTab('dashboard');
@@ -3833,6 +3980,7 @@ export default function CRMContainer({
     if (canonical === 'overview') newPath = '/dashboard';
     else if (canonical === 'scorecard') newPath = '/scorecard';
     else if (canonical === 'lead-data') newPath = '/lead-data';
+    else if (channelPage) newPath = `/dashboard/${canonical}`;
     window.history.pushState(null, '', newPath);
     
     if (window.innerWidth <= 768) {
@@ -3866,6 +4014,19 @@ export default function CRMContainer({
     }
   };
 
+  const handleTaskPlannerSubTabChange = (subTabId) => {
+    setTaskPlannerSubTab(subTabId);
+    if (activeTab !== 'task_planner') {
+      setActiveTab('task_planner');
+    }
+    const newPath = `/task_planner?tab=${subTabId}`;
+    window.history.pushState(null, '', newPath);
+    
+    if (window.innerWidth <= 768) {
+      setIsSidebarOpen(false);
+    }
+  };
+
   const handleWorkflowSubTabChange = (subTabId) => {
     setWorkflowSubTab(subTabId);
     if (activeTab !== 'workplace') {
@@ -3874,6 +4035,30 @@ export default function CRMContainer({
     const newPath = `/workflow?tab=${subTabId}`;
     window.history.pushState(null, '', newPath);
     
+    if (window.innerWidth <= 768) {
+      setIsSidebarOpen(false);
+    }
+  };
+
+  const handleWaOfficialSubTabChange = (subTabId) => {
+    setWaOfficialSubTab(subTabId);
+    if (activeTab !== 'whatsapp_official') {
+      setActiveTab('whatsapp_official');
+    }
+    const newPath = `/whatsapp_official?wa_tab=${subTabId}`;
+    window.history.pushState(null, '', newPath);
+    if (window.innerWidth <= 768) {
+      setIsSidebarOpen(false);
+    }
+  };
+
+  const handleEmailSubTabChange = (subTabId) => {
+    setEmailSubTab(subTabId);
+    if (activeTab !== 'email_config') {
+      setActiveTab('email_config');
+    }
+    const newPath = `/email-config?tab=${subTabId}`;
+    window.history.pushState(null, '', newPath);
     if (window.innerWidth <= 768) {
       setIsSidebarOpen(false);
     }
@@ -4874,6 +5059,15 @@ export default function CRMContainer({
     return Boolean(legacyAllowed);
   };
 
+  const allowedAnalyticsChannelPages = isTabPermitted('dashboard', moduleAccess, userRole, effectiveTenantEntitlements, effectiveTenantId, userEmail)
+    ? ANALYTICS_CHANNEL_PAGES.filter(page =>
+        isTabPermitted(page.moduleId, moduleAccess, userRole, effectiveTenantEntitlements, effectiveTenantId, userEmail) &&
+        getSubItemPermissions(moduleAccess, userRole, page.moduleId, page.moduleTab).view)
+    : [];
+  const selectedAnalyticsChannelPage = getAnalyticsChannelPage(dashboardSubTab);
+  const activeAnalyticsChannelPage = activeTab === 'dashboard' ? selectedAnalyticsChannelPage : undefined;
+  const showAnalyticsChannelPage = allowedAnalyticsChannelPages.includes(activeAnalyticsChannelPage);
+
   return (
     <div className="app-layout">
       <ResponsiveTableResizer />
@@ -4890,7 +5084,7 @@ export default function CRMContainer({
       {/* Sidebar */}
       <aside 
         ref={sidebarRef}
-        className={`sidebar ${isSidebarOpen ? 'open' : ''} ${isSidebarCollapsed ? 'collapsed' : ''}`}
+        className={`sidebar spc-sidebar ${isSidebarOpen ? 'open' : ''} ${isSidebarCollapsed ? 'collapsed' : ''}`}
         onScroll={(e) => {
           const scrolled = e.currentTarget.scrollTop > 35;
           if (scrolled !== isSidebarScrolled) {
@@ -4904,7 +5098,7 @@ export default function CRMContainer({
             style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', overflow: 'hidden', minWidth: 0, cursor: isSidebarCollapsed ? 'pointer' : 'default', justifyContent: isSidebarCollapsed ? 'center' : 'flex-start', width: isSidebarCollapsed ? '100%' : 'auto' }}
             title={isSidebarCollapsed ? "Click to expand sidebar" : undefined}
           >
-            <div style={{
+            <div className="spc-sidebar-logo" style={{
               width: isSidebarCollapsed ? '38px' : '36px',
               height: isSidebarCollapsed ? '38px' : '36px',
               borderRadius: '10px',
@@ -4998,8 +5192,8 @@ export default function CRMContainer({
                 backgroundColor: 'var(--bg-surface)',
                 boxShadow: isSidebarScrolled ? '0 4px 12px rgba(0,0,0,0.06), 0 1px 0 var(--border-light)' : 'none',
                 transition: 'box-shadow 0.2s ease, border-color 0.2s ease',
-                margin: isSidebarCollapsed ? '0 auto 0.25rem' : (isSidebarScrolled ? '-0.65rem -0.4rem 0.35rem -0.4rem' : '0 0 0.25rem 0'),
-                padding: isSidebarCollapsed ? '0' : (isSidebarScrolled ? '0.45rem 0.5rem' : '0'),
+                margin: isSidebarCollapsed ? '0 auto 2px' : (isSidebarScrolled ? '-0.45rem -0.35rem 3px -0.35rem' : '0 0 2px 0'),
+                padding: isSidebarCollapsed ? '0' : (isSidebarScrolled ? '0.35rem 0.45rem' : '0'),
                 borderBottom: isSidebarScrolled ? '1px solid var(--border-light)' : 'none',
                 display: 'flex',
                 alignItems: 'center',
@@ -5097,7 +5291,7 @@ export default function CRMContainer({
                   alignItems: 'center', 
                   gap: isSidebarScrolled && !isSidebarCollapsed ? '0.5rem' : '0.75rem',
                   padding: isSidebarCollapsed ? '0' : (isSidebarScrolled ? '0.35rem 0.6rem' : undefined),
-                  marginBottom: isSidebarScrolled ? '0' : '0.25rem',
+                  marginBottom: '0',
                   borderRadius: isSidebarScrolled ? '8px' : undefined
                 }}
               >
@@ -5326,10 +5520,16 @@ export default function CRMContainer({
                   if (isSidebarCollapsed) {
                     setIsSidebarCollapsed(false);
                     setAnalyticsMenuExpanded(true);
+                    if (activeTab !== 'dashboard') {
+                      handleTabChange('dashboard');
+                    }
                   } else {
-                    setAnalyticsMenuExpanded(!analyticsMenuExpanded);
+                    const nextExpanded = !analyticsMenuExpanded;
+                    setAnalyticsMenuExpanded(nextExpanded);
+                    if (activeTab !== 'dashboard') {
+                      handleTabChange('dashboard');
+                    }
                   }
-                  handleTabChange('dashboard');
                 }}
                 className="nav-item" 
                 data-active={activeTab === 'dashboard'}
@@ -5408,6 +5608,17 @@ export default function CRMContainer({
                       🧑‍💼 Recruiter Hub
                     </button>
                   )}
+                  {allowedAnalyticsChannelPages.map(page => (
+                    <button
+                      key={page.id}
+                      onClick={() => handleAnalyticsSubTabChange(page.id)}
+                      className="submenu-item"
+                      data-active={activeAnalyticsChannelPage === page}
+                      aria-current={activeAnalyticsChannelPage === page ? 'page' : undefined}
+                    >
+                      <span aria-hidden="true">{page.icon}</span>{' '}{page.label}
+                    </button>
+                  ))}
                 </div>
               </div>
             </SidebarSubmenu>
@@ -5771,6 +5982,80 @@ export default function CRMContainer({
                       👥 Team Task Board
                     </button>
                   )}
+                </div>
+              </div>
+            </SidebarSubmenu>
+          )}
+
+          {/* Smart Task Planner & Daily Scheduler */}
+          {canShowSidebarModule('task_planner', (userRole === 'admin' || userRole === 'Admin') || isTabPermitted('task_planner', moduleAccess, userRole)) && (
+            <SidebarSubmenu collapsed={isSidebarCollapsed}>
+              <button 
+                onClick={() => {
+                  if (isSidebarCollapsed) {
+                    setIsSidebarCollapsed(false);
+                    setTaskPlannerMenuExpanded(true);
+                  } else {
+                    setTaskPlannerMenuExpanded(!taskPlannerMenuExpanded);
+                  }
+                  handleTabChange('task_planner');
+                }}
+                className="nav-item" 
+                data-active={activeTab === 'task_planner'}
+                title={isSidebarCollapsed ? "Task Planner" : undefined}
+                style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
+              >
+                <span className="nav-chevron" style={{ marginRight: '-0.25rem' }}>
+                  {taskPlannerMenuExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                </span>
+                {renderNavIconBadge(<CalendarCheck />, '#6366f1')}
+                <span>Task Planner</span>
+              </button>
+              
+              <div className={`submenu-list ${taskPlannerMenuExpanded ? 'expanded' : ''}`}>
+                <div className="submenu-inner">
+                  <button
+                    onClick={() => handleTaskPlannerSubTabChange('dashboard')}
+                    className="submenu-item"
+                    data-active={activeTab === 'task_planner' && taskPlannerSubTab === 'dashboard'}
+                  >
+                    📊 Dashboard
+                  </button>
+                  <button
+                    onClick={() => handleTaskPlannerSubTabChange('day')}
+                    className="submenu-item"
+                    data-active={activeTab === 'task_planner' && taskPlannerSubTab === 'day'}
+                  >
+                    📅 Day Time-Block
+                  </button>
+                  <button
+                    onClick={() => handleTaskPlannerSubTabChange('week')}
+                    className="submenu-item"
+                    data-active={activeTab === 'task_planner' && taskPlannerSubTab === 'week'}
+                  >
+                    📆 Week Matrix
+                  </button>
+                  <button
+                    onClick={() => handleTaskPlannerSubTabChange('kanban')}
+                    className="submenu-item"
+                    data-active={activeTab === 'task_planner' && taskPlannerSubTab === 'kanban'}
+                  >
+                    📋 Kanban Board
+                  </button>
+                  <button
+                    onClick={() => handleTaskPlannerSubTabChange('table')}
+                    className="submenu-item"
+                    data-active={activeTab === 'task_planner' && taskPlannerSubTab === 'table'}
+                  >
+                    📑 All Tasks (Table)
+                  </button>
+                  <button
+                    onClick={() => handleTaskPlannerSubTabChange('trash')}
+                    className="submenu-item"
+                    data-active={activeTab === 'task_planner' && taskPlannerSubTab === 'trash'}
+                  >
+                    🗑️ Deleted Tasks
+                  </button>
                 </div>
               </div>
             </SidebarSubmenu>
@@ -6852,16 +7137,106 @@ export default function CRMContainer({
                 >
                   <div className="category-modules-inner">
                     {canShowSidebarModule('whatsapp_official', (userRole === 'admin' || userRole === 'Admin') || moduleAccess['whatsapp_official']?.view) && (
-                      <button 
-                        onClick={() => handleTabChange('whatsapp_official')}
-                        className="nav-item" 
-                        data-active={activeTab === 'whatsapp_official'}
-                        title={isSidebarCollapsed ? "WhatsApp Official" : undefined}
-                        style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
-                      >
-                        {renderNavIconBadge(<MessageSquare />, '#22c55e')}
-                        <span>WhatsApp Official</span>
-                      </button>
+                      <SidebarSubmenu collapsed={isSidebarCollapsed}>
+                        <button 
+                          onClick={() => {
+                            if (isSidebarCollapsed) {
+                              setIsSidebarCollapsed(false);
+                              setWaOfficialMenuExpanded(true);
+                            } else {
+                              setWaOfficialMenuExpanded(!waOfficialMenuExpanded);
+                            }
+                            if (activeTab !== 'whatsapp_official') {
+                              handleTabChange('whatsapp_official');
+                            }
+                          }}
+                          className="nav-item" 
+                          data-active={activeTab === 'whatsapp_official'}
+                          title={isSidebarCollapsed ? "WhatsApp Official" : undefined}
+                          style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
+                        >
+                          <span className="nav-chevron" style={{ marginRight: '-0.25rem' }}>
+                            {waOfficialMenuExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                          </span>
+                          {renderNavIconBadge(<MessageSquare />, '#22c55e')}
+                          <span>WhatsApp Official</span>
+                        </button>
+
+                        <div className={`submenu-list ${waOfficialMenuExpanded ? 'expanded' : ''}`}>
+                          <div className="submenu-inner">
+                            {getSubItemPermissions(moduleAccess, userRole, 'whatsapp_official', 'templates').view && (
+                              <button
+                                onClick={() => handleWaOfficialSubTabChange('templates')}
+                                className="submenu-item"
+                                data-active={activeTab === 'whatsapp_official' && (waOfficialSubTab === 'templates' || !waOfficialSubTab)}
+                                style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}
+                              >
+                                {renderMiniSubBadge(<MessageSquare />, '#22c55e')}
+                                <span>Templates Library</span>
+                              </button>
+                            )}
+
+                            {getSubItemPermissions(moduleAccess, userRole, 'whatsapp_official', 'automations').view && (
+                              <button
+                                onClick={() => handleWaOfficialSubTabChange('automations')}
+                                className="submenu-item"
+                                data-active={activeTab === 'whatsapp_official' && waOfficialSubTab === 'automations'}
+                                style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}
+                              >
+                                {renderMiniSubBadge(<Repeat />, '#16a34a')}
+                                <span>Stage Automations</span>
+                              </button>
+                            )}
+
+                            {getSubItemPermissions(moduleAccess, userRole, 'whatsapp_official', 'sent_logs').view && (
+                              <button
+                                onClick={() => handleWaOfficialSubTabChange('sent_logs')}
+                                className="submenu-item"
+                                data-active={activeTab === 'whatsapp_official' && waOfficialSubTab === 'sent_logs'}
+                                style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}
+                              >
+                                {renderMiniSubBadge(<Send />, '#0284c7')}
+                                <span>API Message Sent Logs</span>
+                              </button>
+                            )}
+
+                            {isMasterAdmin && (
+                              <>
+                                <button
+                                  onClick={() => handleWaOfficialSubTabChange('catalog')}
+                                  className="submenu-item"
+                                  data-active={activeTab === 'whatsapp_official' && waOfficialSubTab === 'catalog'}
+                                  style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}
+                                >
+                                  {renderMiniSubBadge(<Layers />, '#8b5cf6')}
+                                  <span>Master BSP Catalog (20+)</span>
+                                </button>
+                                <button
+                                  onClick={() => handleWaOfficialSubTabChange('allocations')}
+                                  className="submenu-item"
+                                  data-active={activeTab === 'whatsapp_official' && waOfficialSubTab === 'allocations'}
+                                  style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}
+                                >
+                                  {renderMiniSubBadge(<Users />, '#f59e0b')}
+                                  <span>Client Allocation Matrix</span>
+                                </button>
+                              </>
+                            )}
+
+                            {getSubItemPermissions(moduleAccess, userRole, 'whatsapp_official', 'settings').view && (
+                              <button
+                                onClick={() => handleWaOfficialSubTabChange('settings')}
+                                className="submenu-item"
+                                data-active={activeTab === 'whatsapp_official' && waOfficialSubTab === 'settings'}
+                                style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}
+                              >
+                                {renderMiniSubBadge(<Settings2 />, '#64748b')}
+                                <span>API Credentials & Setup</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </SidebarSubmenu>
                     )}
 
                     {canShowSidebarModule('whatsapp_unofficial', (userRole === 'admin' || userRole === 'Admin') || moduleAccess['whatsapp_unofficial']?.view) && (
@@ -6904,16 +7279,95 @@ export default function CRMContainer({
                     )}
 
                     {canShowSidebarModule('email_config', (userRole === 'admin' || userRole === 'Admin') || moduleAccess['email_config']?.view) && (
-                      <button 
-                        onClick={() => handleTabChange('email_config')}
-                        className="nav-item" 
-                        data-active={activeTab === 'email_config'}
-                        title={isSidebarCollapsed ? "Email" : undefined}
-                        style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
-                      >
-                        {renderNavIconBadge(<Mail />, '#3b82f6')}
-                        <span>Email</span>
-                      </button>
+                      <SidebarSubmenu collapsed={isSidebarCollapsed}>
+                        <button 
+                          onClick={() => {
+                            if (isSidebarCollapsed) {
+                              setIsSidebarCollapsed(false);
+                              setEmailConfigMenuExpanded(true);
+                            } else {
+                              setEmailConfigMenuExpanded(!emailConfigMenuExpanded);
+                            }
+                            if (activeTab !== 'email_config') {
+                              handleTabChange('email_config');
+                            }
+                          }}
+                          className="nav-item" 
+                          data-active={activeTab === 'email_config'}
+                          title={isSidebarCollapsed ? "Email" : undefined}
+                          style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
+                        >
+                          <span className="nav-chevron" style={{ marginRight: '-0.25rem' }}>
+                            {emailConfigMenuExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                          </span>
+                          {renderNavIconBadge(<Mail />, '#3b82f6')}
+                          <span>Email</span>
+                        </button>
+
+                        <div className={`submenu-list ${emailConfigMenuExpanded ? 'expanded' : ''}`}>
+                          <div className="submenu-inner">
+                            {getSubItemPermissions(moduleAccess, userRole, 'email_config', 'smtp').view && (
+                              <button
+                                onClick={() => handleEmailSubTabChange('smtp')}
+                                className="submenu-item"
+                                data-active={activeTab === 'email_config' && (emailSubTab === 'smtp' || !emailSubTab)}
+                                style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}
+                              >
+                                {renderMiniSubBadge(<Settings2 />, '#3b82f6')}
+                                <span>SMTP Server Settings</span>
+                              </button>
+                            )}
+
+                            {getSubItemPermissions(moduleAccess, userRole, 'email_config', 'templates').view && (
+                              <button
+                                onClick={() => handleEmailSubTabChange('templates')}
+                                className="submenu-item"
+                                data-active={activeTab === 'email_config' && emailSubTab === 'templates'}
+                                style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}
+                              >
+                                {renderMiniSubBadge(<FileText />, '#0284c7')}
+                                <span>Email Templates</span>
+                              </button>
+                            )}
+
+                            {getSubItemPermissions(moduleAccess, userRole, 'email_config', 'automations').view && (
+                              <button
+                                onClick={() => handleEmailSubTabChange('automations')}
+                                className="submenu-item"
+                                data-active={activeTab === 'email_config' && emailSubTab === 'automations'}
+                                style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}
+                              >
+                                {renderMiniSubBadge(<Repeat />, '#10b981')}
+                                <span>Stage Automations</span>
+                              </button>
+                            )}
+
+                            {getSubItemPermissions(moduleAccess, userRole, 'email_config', 'test').view && (
+                              <button
+                                onClick={() => handleEmailSubTabChange('test')}
+                                className="submenu-item"
+                                data-active={activeTab === 'email_config' && emailSubTab === 'test'}
+                                style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}
+                              >
+                                {renderMiniSubBadge(<Send />, '#f59e0b')}
+                                <span>Live Email Test</span>
+                              </button>
+                            )}
+
+                            {getSubItemPermissions(moduleAccess, userRole, 'email_config', 'logs').view && (
+                              <button
+                                onClick={() => handleEmailSubTabChange('logs')}
+                                className="submenu-item"
+                                data-active={activeTab === 'email_config' && emailSubTab === 'logs'}
+                                style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}
+                              >
+                                {renderMiniSubBadge(<Clock />, '#8b5cf6')}
+                                <span>Sent History</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </SidebarSubmenu>
                     )}
                   </div>
                 </div>
@@ -7076,7 +7530,10 @@ export default function CRMContainer({
         )}
 
         {/* Top Header */}
-        <header className="top-header" style={{ position: 'sticky', top: 0, zIndex: 40, flexShrink: 0 }}>
+        <header
+          className="top-header spc-header"
+          data-task-planner-active={activeTab === 'task_planner' ? true : undefined}
+          style={{ position: 'sticky', top: 0, zIndex: 40, flexShrink: 0 }}>
           {isSyncing && (
             <div 
               className="sync-progress-bar" 
@@ -7093,9 +7550,11 @@ export default function CRMContainer({
             
             {activeTab !== 'ai' && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0, flexShrink: 0, overflow: 'hidden' }}>
-                <h1 suppressHydrationWarning style={{ fontSize: '0.96rem', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', margin: 0, minWidth: 0, flexShrink: 0, letterSpacing: '-0.015em' }}>
+                <h1 className="spc-header-title" suppressHydrationWarning style={{ fontSize: '0.96rem', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', margin: 0, minWidth: 0, flexShrink: 0, letterSpacing: '-0.015em' }}>
                   {activeTab === 'home' && 'Home Workspace'}
-                  {activeTab === 'dashboard' && 'Analytics Dashboard'}
+                  {activeTab === 'dashboard' && (
+                    activeAnalyticsChannelPage ? `Analytics Dashboard • ${activeAnalyticsChannelPage.label}` : 'Analytics Dashboard'
+                  )}
                   {activeTab === 'leads' && (
                     leadsFilterStage === 'hourly_work' 
                       ? 'Hourly Work Report'
@@ -7182,7 +7641,7 @@ export default function CRMContainer({
             <button
               type="button"
               onClick={() => setIsGlobalSearchOpen(true)}
-              className="global-search-trigger-btn desktop-only"
+              className="global-search-trigger-btn spc-header-search desktop-only"
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -7254,7 +7713,7 @@ export default function CRMContainer({
             <button
               type="button"
               onClick={() => setIsGlobalSearchOpen(true)}
-              className="header-icon-btn mobile-only"
+              className="header-icon-btn spc-header-search mobile-only"
               style={{
                 width: '34px',
                 height: '34px',
@@ -8493,11 +8952,13 @@ export default function CRMContainer({
             </div>
 
             {/* Theme Switcher Button (Desktop) */}
-            <div className="desktop-only" style={{ position: 'relative' }} ref={themeMenuRef}>
+            <div className="spc-header-theme desktop-only" style={{ position: 'relative' }} ref={themeMenuRef}>
               <button
                 type="button"
                 onClick={() => setShowThemeMenu(!showThemeMenu)}
                 className="header-icon-btn"
+                aria-label="Change color theme"
+                aria-expanded={showThemeMenu}
                 style={{
                   width: '36px',
                   height: '36px',
@@ -8556,6 +9017,7 @@ export default function CRMContainer({
                     {THEMES.map(theme => (
                       <button
                         key={theme.id}
+                        aria-pressed={currentTheme === theme.id}
                         onClick={() => {
                           applyTheme(theme.id);
                           setShowThemeMenu(false);
@@ -8596,6 +9058,7 @@ export default function CRMContainer({
               <button
                 type="button"
                 onClick={() => setShowProfileMenu(!showProfileMenu)}
+                className="spc-header-profile"
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -8841,6 +9304,8 @@ export default function CRMContainer({
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.82rem' }}>
                         <span style={{ color: 'var(--text-secondary)' }}>Theme</span>
                         <select
+                          className="spc-header-mobile-theme"
+                          aria-label="Color theme"
                           value={currentTheme}
                           onChange={(e) => applyTheme(e.target.value)}
                           style={{ padding: '0.3rem 0.5rem', borderRadius: '6px', border: '1px solid var(--border-light)', background: 'var(--bg-surface)', color: 'var(--text-primary)', fontSize: '0.8rem', outline: 'none' }}
@@ -8941,6 +9406,8 @@ export default function CRMContainer({
         {/* Page Content */}
         <div 
           className="page-content" 
+          data-spc-home={activeTab === 'home' ? 'true' : undefined}
+          data-task-planner-active={activeTab === 'task_planner' ? true : undefined}
           style={{ 
             padding: activeTab === 'ai' ? '0' : 'var(--content-padding, 0.5rem)', 
             display: 'flex', 
@@ -9041,7 +9508,7 @@ export default function CRMContainer({
 
               {/* Dashboard */}
               <KeepAliveTab 
-                isActive={activeTab === 'dashboard'} 
+                isActive={activeTab === 'dashboard' && !activeAnalyticsChannelPage}
                 isVisited={isTabPermitted('dashboard', moduleAccess, userRole) && visitedTabs.has('dashboard')}
               >
                 <ErrorBoundary>
@@ -9055,7 +9522,7 @@ export default function CRMContainer({
                     moduleAccess={moduleAccess}
                     isSyncing={isSyncing}
                     syncLoadedCount={syncLoadedCount}
-                    initialSubTab={dashboardSubTab}
+                    initialSubTab={selectedAnalyticsChannelPage ? undefined : dashboardSubTab}
                     onSubTabChange={(tab) => handleAnalyticsSubTabChange(tab)}
                     tenantId={effectiveTenantId}
                     userCompany={userCompany}
@@ -9080,6 +9547,34 @@ export default function CRMContainer({
                   />
                 </ErrorBoundary>
               </KeepAliveTab>
+
+              {showAnalyticsChannelPage && (
+                <ErrorBoundary>
+                  <ChannelAnalyticsDashboard
+                    key={activeAnalyticsChannelPage.id}
+                    page={activeAnalyticsChannelPage.reportId || activeAnalyticsChannelPage.moduleTab}
+                    tenantId={effectiveTenantId}
+                    viewer={isImpersonating ? userId : undefined}
+                    branch={adminCompanyFilter}
+                    localDbStatus={isSyncing ? 'syncing' : hasLeadsAccess ? 'active' : 'unavailable'}
+                    onOpenOperations={() => {
+                      const { moduleId, moduleTab } = activeAnalyticsChannelPage;
+                      if (moduleId === 'party') handlePartySubTabChange(moduleTab);
+                      else handleChannelOpsSubTabChange(moduleTab);
+                    }}
+                  />
+                </ErrorBoundary>
+              )}
+
+              {activeAnalyticsChannelPage && !showAnalyticsChannelPage && (
+                <div
+                  data-spc-module-theme
+                  role="status"
+                  style={{ margin: '1rem', padding: '1.25rem', background: 'var(--spc-view-surface)', border: '1px solid var(--spc-view-border)', borderRadius: '12px' }}
+                >
+                  You do not have access to this page.
+                </div>
+              )}
 
               {/* Leads Database */}
               <KeepAliveTab 
@@ -9214,6 +9709,28 @@ export default function CRMContainer({
                 </ErrorBoundary>
               </KeepAliveTab>
 
+              {/* Smart Task Planner & Daily Scheduler */}
+              <KeepAliveTab 
+                isActive={activeTab === 'task_planner'} 
+                isVisited={isTabPermitted('task_planner', moduleAccess, userRole) && visitedTabs.has('task_planner')}
+              >
+                <ErrorBoundary>
+                  <TaskPlannerModule 
+                    userRole={userRole} 
+                    userId={userId} 
+                    userName={userName} 
+                    userEmail={userEmail} 
+                    moduleAccess={moduleAccess}
+                    initialSubTab={taskPlannerSubTab}
+                    onSubTabChange={(tab) => handleTaskPlannerSubTabChange(tab)}
+                    userCompany={userCompany}
+                    tenantId={effectiveTenantId}
+                    isMasterAdmin={isMasterAdmin}
+                    adminCompanyFilter={adminCompanyFilter}
+                  />
+                </ErrorBoundary>
+              </KeepAliveTab>
+
               {/* Field Force Management (Mobile App, Tasks, Custom Forms, Radar) */}
               <KeepAliveTab 
                 isActive={activeTab === 'field_force'} 
@@ -9221,15 +9738,17 @@ export default function CRMContainer({
               >
                 <ErrorBoundary>
                   {/* Top Subpage Navigation Bar for Field Force System */}
-                  <div role="navigation" aria-label="Field Force System subpages" style={{
+                  <div role="navigation" aria-label="Field Force System subpages"
+                    data-spc-module-theme={['mobile_dashboard', 'task_manager', 'form_studio', 'device_health'].includes(fieldForceSubTab) ? true : undefined}
+                    style={{
                     display: 'flex',
                     flexShrink: 0,
                     minHeight: '60px',
                     alignItems: 'center',
                     gap: '8px',
                     padding: '10px 20px',
-                    background: '#ffffff',
-                    borderBottom: '1px solid #e2e8f0',
+                    background: 'var(--spc-view-surface, #ffffff)',
+                    borderBottom: '1px solid var(--spc-view-border, #e2e8f0)',
                     overflowX: 'auto',
                     flexWrap: 'nowrap',
                     boxShadow: '0 1px 2px rgba(0,0,0,0.03)'
@@ -9255,9 +9774,9 @@ export default function CRMContainer({
                             minHeight: '38px',
                             padding: '6px 14px',
                             borderRadius: '6px',
-                            border: isActive ? '1px solid #2563eb' : '1px solid #cbd5e1',
-                            background: isActive ? '#eff6ff' : '#ffffff',
-                            color: isActive ? '#1d4ed8' : '#475569',
+                            border: isActive ? '1px solid var(--spc-view-info-border, #2563eb)' : '1px solid var(--spc-view-border, #cbd5e1)',
+                            background: isActive ? 'var(--spc-view-info-bg, #eff6ff)' : 'var(--spc-view-surface, #ffffff)',
+                            color: isActive ? 'var(--spc-view-info, #1d4ed8)' : 'var(--spc-view-muted, #475569)',
                             fontWeight: isActive ? 700 : 500,
                             fontSize: '0.82rem',
                             cursor: 'pointer',
@@ -9553,7 +10072,7 @@ export default function CRMContainer({
 
               {/* Channel Operations */}
               <KeepAliveTab 
-                isActive={activeTab === 'channel_ops' || activeTab === 'channel-operations'} 
+                isActive={activeTab === 'channel_ops' || activeTab === 'channel-operations'}
                 isVisited={isTabPermitted('channel_ops', moduleAccess, userRole) && (visitedTabs.has('channel_ops') || visitedTabs.has('channel-operations') || activeTab === 'channel_ops' || activeTab === 'channel-operations')}
               >
                 <ErrorBoundary>
@@ -9603,7 +10122,21 @@ export default function CRMContainer({
                 isVisited={isTabPermitted('whatsapp_official', moduleAccess, userRole) && visitedTabs.has('whatsapp_official')}
               >
                 <ErrorBoundary>
-                  <WhatsappOfficial moduleAccess={moduleAccess} userRole={userRole} userCompany={userCompany} isMasterAdmin={isMasterAdmin} userId={userId} tenantId={effectiveTenantId} isActive={activeTab === 'whatsapp_official'} allowedLogViews={isMasterAdmin ? WHATSAPP_LOG_VIEW_IDS : WHATSAPP_LOG_VIEW_IDS.filter(id => getSubItemPermissions(moduleAccess, userRole, 'whatsapp_official', id).view)} />
+                  <WhatsappOfficial 
+                    moduleAccess={moduleAccess} 
+                    userRole={userRole} 
+                    userCompany={userCompany} 
+                    isMasterAdmin={isMasterAdmin} 
+                    userId={userId} 
+                    tenantId={effectiveTenantId} 
+                    isActive={activeTab === 'whatsapp_official'} 
+                    allowedLogViews={isMasterAdmin ? WHATSAPP_LOG_VIEW_IDS : WHATSAPP_LOG_VIEW_IDS.filter(id => getSubItemPermissions(moduleAccess, userRole, 'whatsapp_official', id).view)} 
+                    initialTab={waOfficialSubTab}
+                    onTabChange={(sub) => {
+                      setWaOfficialSubTab(sub);
+                      window.history.pushState(null, '', `/whatsapp_official?wa_tab=${sub}`);
+                    }}
+                  />
                 </ErrorBoundary>
               </KeepAliveTab>
 
