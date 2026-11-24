@@ -51,7 +51,7 @@ const ALL_WA_TABS = [
 ];
 
 export const WA_TEMPLATE_CATEGORIES = [
-  { id: 'leads', label: 'CRM Leads & Sales', icon: '🎯', defaultRecipient: 'customer', color: '#10b981' },
+  { id: 'leads', label: 'Lead Management', icon: '🎯', defaultRecipient: 'customer', color: '#10b981' },
   { id: 'orders', label: 'Order to Delivery Pipeline', icon: '🚚', defaultRecipient: 'customer', color: '#3b82f6' },
   { id: 'complaints', label: 'Complaint Management', icon: '⚠️', defaultRecipient: 'customer', color: '#ef4444' },
   { id: 'delegation', label: 'Delegation Tasks', icon: '📋', defaultRecipient: 'employee', color: '#8b5cf6' },
