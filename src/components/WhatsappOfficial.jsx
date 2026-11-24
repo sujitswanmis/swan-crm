@@ -2994,282 +2994,365 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
             </div>
           )}
 
+          {/* CREATE / EDIT TEMPLATE MODAL POPUP DIALOG */}
           {showTemplateForm && (
-            <CRMCard style={{ backgroundColor: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '10px', padding: '1.75rem', marginBottom: '2rem', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
-              <h3 style={{ marginTop: 0, marginBottom: '1.25rem', fontSize: '1.15rem', fontWeight: 700 }}>
-                {currentTemplate.id ? 'Edit Template' : 'Create New WhatsApp Template'}
-              </h3>
-              
-              <div className={crmStyles.formGrid} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.25rem', marginBottom: '1.25rem' }}>
-                {/* 1. Target Module / Purpose */}
-                <div className="form-group">
-                  <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem', marginBottom: '0.45rem', color: 'var(--text-primary)' }}>
-                    <span>🎯</span> Target Module / Purpose <span style={{ color: 'var(--spc-view-danger)' }}>*</span>
-                  </label>
-                  <select className={crmStyles.field}
-                    value={selectedTemplateCategory} 
-                    onChange={e => {
-                      const newCat = e.target.value;
-                      setSelectedTemplateCategory(newCat);
-                      const found = WA_TEMPLATE_CATEGORIES.find(c => c.id === newCat);
-                      if (found && found.defaultRecipient) {
-                        setSelectedTemplateRecipient(found.defaultRecipient);
-                      }
-                    }} 
-                    style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontWeight: 600, fontSize: '0.85rem' }}
-                  >
-                    {WA_TEMPLATE_CATEGORIES.map(cat => (
-                      <option key={cat.id} value={cat.id}>
-                        {cat.icon} {cat.label}
-                      </option>
-                    ))}
-                  </select>
-                  <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.2rem', display: 'block' }}>
-                    Defines the CRM workflow and auto-maps parameter tokens (e.g. &#123;&#123;1&#125;&#125;, &#123;&#123;2&#125;&#125;).
-                  </span>
-                </div>
-
-                {/* 2. Target Recipient */}
-                <div className="form-group">
-                  <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem', marginBottom: '0.45rem', color: 'var(--text-primary)' }}>
-                    <span>👥</span> Target Recipient (Kiske Liye) <span style={{ color: 'var(--spc-view-danger)' }}>*</span>
-                  </label>
-                  <select className={crmStyles.field}
-                    value={selectedTemplateRecipient} 
-                    onChange={e => setSelectedTemplateRecipient(e.target.value)} 
-                    style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontWeight: 600, fontSize: '0.85rem' }}
-                  >
-                    {WA_RECIPIENT_TYPES.map(rec => (
-                      <option key={rec.id} value={rec.id}>
-                        {rec.icon} {rec.label}
-                      </option>
-                    ))}
-                  </select>
-                  <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.2rem', display: 'block' }}>
-                    Who will receive this message (Customer, Employee, HOD, or Candidate).
-                  </span>
-                </div>
-
-                {/* 3. Selected BSP Name */}
-                <div className="form-group">
-                  <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem', marginBottom: '0.45rem', color: 'var(--text-primary)' }}>
-                    <Zap size={15} color="#2563eb" /> Selected BSP Provider
-                  </label>
-                  <select className={crmStyles.field}
-                    value={selectedTemplateBsp} 
-                    onChange={e => setSelectedTemplateBsp(e.target.value)} 
-                    style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontWeight: 600, fontSize: '0.85rem' }}
-                  >
-                    {isClientScoped && assignedBsps.length > 0 ? (
-                      <optgroup label="Assigned BSP Gateways">
-                        {assignedBsps.map(pId => (
-                          <option key={pId} value={pId}>
-                            {getBspDisplayName(pId)}
-                          </option>
-                        ))}
-                      </optgroup>
-                    ) : (
-                      <optgroup label="Active Workspace Gateways">
-                        {enabledProviders.map(pId => (
-                          <option key={pId} value={pId}>
-                            {getBspDisplayName(pId)}
-                          </option>
-                        ))}
-                      </optgroup>
-                    )}
-                  </select>
-                  <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.2rem', display: 'block' }}>
-                    Auto-selected to active workspace default ({getBspDisplayName(defaultProvider)}).
-                  </span>
-                </div>
-
-                {/* 4. Client Main Office & Branch List */}
-                <div className="form-group">
-                  <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem', marginBottom: '0.45rem', color: 'var(--text-primary)' }}>
-                    <Building2 size={15} color="#10b981" /> Client Office / Branch List
-                  </label>
-                  <select className={crmStyles.field}
-                    value={selectedTemplateBranch} 
-                    onChange={e => setSelectedTemplateBranch(e.target.value)} 
-                    style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontWeight: 600, fontSize: '0.85rem' }}
-                  >
-                    <option value="All Branches (Universal)">🏢 All Branches (Universal)</option>
-                    {tenantBranchOptions.map(opt => (
-                      <option key={opt.branchName} value={opt.branchName}>
-                        🏢 {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                  <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.2rem', display: 'block' }}>
-                    Select target branch or All Branches for universal broadcasting.
-                  </span>
-                </div>
-
-                {/* 5. Template Name */}
-                <div className="form-group">
-                  <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.45rem', color: 'var(--text-primary)' }}>
-                    Template Name (CRM Display) <span style={{ color: 'var(--spc-view-danger)' }}>*</span>
-                  </label>
-                  <input className={crmStyles.field}
-                    type="text" 
-                    value={currentTemplate.template_name} 
-                    onChange={e => setCurrentTemplate({...currentTemplate, template_name: e.target.value})} 
-                    placeholder="e.g. welcome_offer" 
-                    style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontSize: '0.85rem' }} 
-                  />
-                </div>
-
-                {/* 6. Campaign / API ID */}
-                <div className="form-group">
-                  <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.45rem', color: 'var(--text-primary)' }}>
-                    API Campaign ID / Name <span style={{ color: 'var(--spc-view-danger)' }}>*</span>
-                  </label>
-                  <input className={crmStyles.field}
-                    type="text" 
-                    value={currentTemplate.campaign_name} 
-                    onChange={e => setCurrentTemplate({...currentTemplate, campaign_name: e.target.value})} 
-                    placeholder="Exact template name in BSP" 
-                    style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontFamily: 'monospace', fontSize: '0.85rem' }} 
-                  />
-                </div>
-              </div>
-
-              <div className="form-group" style={{ marginBottom: '1.25rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.45rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-                  <label style={{ fontSize: '0.85rem', fontWeight: 600, margin: 0, color: 'var(--text-primary)' }}>
-                    Message Content Body <span style={{ color: 'var(--spc-view-danger)' }}>*</span>
-                  </label>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                    Click tokens below to insert into message at cursor position
-                  </span>
-                </div>
-
-                {/* Click-to-Insert Category Variables Toolbar */}
-                <div style={{
-                  padding: '0.65rem 0.85rem',
-                  backgroundColor: 'var(--th-bg)',
+            <div 
+              style={{ 
+                position: 'fixed', 
+                top: 0, 
+                left: 0, 
+                right: 0, 
+                bottom: 0, 
+                backgroundColor: 'rgba(15, 23, 42, 0.65)', 
+                backdropFilter: 'blur(3px)',
+                zIndex: 99999, 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center',
+                padding: '1rem'
+              }}
+              onClick={() => setShowTemplateForm(false)}
+            >
+              <div 
+                style={{ 
+                  backgroundColor: 'var(--bg-surface)', 
+                  borderRadius: '12px', 
+                  width: '100%', 
+                  maxWidth: '840px', 
+                  maxHeight: '92vh',
+                  boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
                   border: '1px solid var(--border-light)',
-                  borderRadius: '6px 6px 0 0',
-                  borderBottom: 'none'
+                  display: 'flex',
+                  flexDirection: 'column',
+                  overflow: 'hidden'
+                }}
+                onClick={e => e.stopPropagation()}
+              >
+                {/* Modal Header */}
+                <div style={{
+                  padding: '1.15rem 1.5rem',
+                  borderBottom: '1px solid var(--border-light)',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  backgroundColor: 'var(--bg-primary)'
                 }}>
-                  <div style={{ fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '0.45rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                    <span>{getCategoryMeta(selectedTemplateCategory).icon}</span>
-                    <span>Insert {getCategoryMeta(selectedTemplateCategory).label} Variables:</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                    <div style={{
+                      width: '36px',
+                      height: '36px',
+                      borderRadius: '8px',
+                      backgroundColor: 'rgba(37, 99, 235, 0.12)',
+                      color: 'var(--accent-color, #2563eb)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}>
+                      {currentTemplate.id ? <Edit3 size={18} /> : <MessageSquare size={18} />}
+                    </div>
+                    <div>
+                      <h3 style={{ margin: 0, fontSize: '1.08rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                        {currentTemplate.id ? `Edit WhatsApp Template: ${currentTemplate.template_name || ''}` : 'Create New WhatsApp Template'}
+                      </h3>
+                      <span style={{ fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
+                        Map template purpose, target recipient, office branch, and API campaign identifiers.
+                      </span>
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
-                    {(WA_CATEGORY_VARIABLE_TAGS[selectedTemplateCategory] || WA_CATEGORY_VARIABLE_TAGS.leads).map(tag => (
-                      <button
-                        key={tag.num}
-                        type="button"
-                        onClick={() => handleInsertVariableToken(tag.token)}
-                        style={{
-                          padding: '0.28rem 0.6rem',
-                          borderRadius: '5px',
-                          border: '1px solid var(--border-light)',
-                          backgroundColor: 'var(--bg-surface)',
-                          color: 'var(--text-primary)',
-                          fontSize: '0.76rem',
-                          cursor: 'pointer',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '0.35rem',
-                          boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
-                          transition: 'all 0.15s ease'
-                        }}
-                        title={`Click to insert ${tag.token} (${tag.desc})`}
+                  <button className={crmStyles.button}
+                    type="button"
+                    onClick={() => setShowTemplateForm(false)} 
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '0.25rem', borderRadius: '4px' }}
+                    title="Close"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+
+                {/* Modal Scrollable Body */}
+                <div style={{ padding: '1.5rem', flex: 1, overflowY: 'auto' }}>
+                  <div className={crmStyles.formGrid} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.25rem', marginBottom: '1.25rem' }}>
+                    {/* 1. Target Module / Purpose */}
+                    <div className="form-group">
+                      <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem', marginBottom: '0.45rem', color: 'var(--text-primary)' }}>
+                        <span>🎯</span> Target Module / Purpose <span style={{ color: 'var(--spc-view-danger)' }}>*</span>
+                      </label>
+                      <select className={crmStyles.field}
+                        value={selectedTemplateCategory} 
+                        onChange={e => {
+                          const newCat = e.target.value;
+                          setSelectedTemplateCategory(newCat);
+                          const found = WA_TEMPLATE_CATEGORIES.find(c => c.id === newCat);
+                          if (found && found.defaultRecipient) {
+                            setSelectedTemplateRecipient(found.defaultRecipient);
+                          }
+                        }} 
+                        style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontWeight: 600, fontSize: '0.85rem' }}
                       >
-                        <span style={{ fontWeight: 800, color: 'var(--accent-color, #2563eb)' }}>{tag.token}</span>
-                        <span style={{ fontWeight: 600 }}>{tag.name}</span>
-                        <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>({tag.desc})</span>
-                      </button>
-                    ))}
+                        {WA_TEMPLATE_CATEGORIES.map(cat => (
+                          <option key={cat.id} value={cat.id}>
+                            {cat.icon} {cat.label}
+                          </option>
+                        ))}
+                      </select>
+                      <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.2rem', display: 'block' }}>
+                        Defines the CRM workflow and auto-maps parameter tokens (e.g. &#123;&#123;1&#125;&#125;, &#123;&#123;2&#125;&#125;).
+                      </span>
+                    </div>
+
+                    {/* 2. Target Recipient */}
+                    <div className="form-group">
+                      <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem', marginBottom: '0.45rem', color: 'var(--text-primary)' }}>
+                        <span>👥</span> Target Recipient (Kiske Liye) <span style={{ color: 'var(--spc-view-danger)' }}>*</span>
+                      </label>
+                      <select className={crmStyles.field}
+                        value={selectedTemplateRecipient} 
+                        onChange={e => setSelectedTemplateRecipient(e.target.value)} 
+                        style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontWeight: 600, fontSize: '0.85rem' }}
+                      >
+                        {WA_RECIPIENT_TYPES.map(rec => (
+                          <option key={rec.id} value={rec.id}>
+                            {rec.icon} {rec.label}
+                          </option>
+                        ))}
+                      </select>
+                      <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.2rem', display: 'block' }}>
+                        Who will receive this message (Customer, Employee, HOD, or Candidate).
+                      </span>
+                    </div>
+
+                    {/* 3. Selected BSP Name */}
+                    <div className="form-group">
+                      <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem', marginBottom: '0.45rem', color: 'var(--text-primary)' }}>
+                        <Zap size={15} color="#2563eb" /> Selected BSP Provider
+                      </label>
+                      <select className={crmStyles.field}
+                        value={selectedTemplateBsp} 
+                        onChange={e => setSelectedTemplateBsp(e.target.value)} 
+                        style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontWeight: 600, fontSize: '0.85rem' }}
+                      >
+                        {isClientScoped && assignedBsps.length > 0 ? (
+                          <optgroup label="Assigned BSP Gateways">
+                            {assignedBsps.map(pId => (
+                              <option key={pId} value={pId}>
+                                {getBspDisplayName(pId)}
+                              </option>
+                            ))}
+                          </optgroup>
+                        ) : (
+                          <optgroup label="Active Workspace Gateways">
+                            {enabledProviders.map(pId => (
+                              <option key={pId} value={pId}>
+                                {getBspDisplayName(pId)}
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                      </select>
+                      <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.2rem', display: 'block' }}>
+                        Auto-selected to active workspace default ({getBspDisplayName(defaultProvider)}).
+                      </span>
+                    </div>
+
+                    {/* 4. Client Main Office & Branch List */}
+                    <div className="form-group">
+                      <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem', marginBottom: '0.45rem', color: 'var(--text-primary)' }}>
+                        <Building2 size={15} color="#10b981" /> Client Office / Branch List
+                      </label>
+                      <select className={crmStyles.field}
+                        value={selectedTemplateBranch} 
+                        onChange={e => setSelectedTemplateBranch(e.target.value)} 
+                        style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontWeight: 600, fontSize: '0.85rem' }}
+                      >
+                        <option value="All Branches (Universal)">🏢 All Branches (Universal)</option>
+                        {tenantBranchOptions.map(opt => (
+                          <option key={opt.branchName} value={opt.branchName}>
+                            🏢 {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                      <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.2rem', display: 'block' }}>
+                        Select target branch or All Branches for universal broadcasting.
+                      </span>
+                    </div>
+
+                    {/* 5. Template Name */}
+                    <div className="form-group">
+                      <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.45rem', color: 'var(--text-primary)' }}>
+                        Template Name (CRM Display) <span style={{ color: 'var(--spc-view-danger)' }}>*</span>
+                      </label>
+                      <input className={crmStyles.field}
+                        type="text" 
+                        value={currentTemplate.template_name} 
+                        onChange={e => setCurrentTemplate({...currentTemplate, template_name: e.target.value})} 
+                        placeholder="e.g. welcome_offer" 
+                        style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontSize: '0.85rem' }} 
+                      />
+                    </div>
+
+                    {/* 6. Campaign / API ID */}
+                    <div className="form-group">
+                      <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.45rem', color: 'var(--text-primary)' }}>
+                        API Campaign ID / Name <span style={{ color: 'var(--spc-view-danger)' }}>*</span>
+                      </label>
+                      <input className={crmStyles.field}
+                        type="text" 
+                        value={currentTemplate.campaign_name} 
+                        onChange={e => setCurrentTemplate({...currentTemplate, campaign_name: e.target.value})} 
+                        placeholder="Exact template name in BSP" 
+                        style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontFamily: 'monospace', fontSize: '0.85rem' }} 
+                      />
+                    </div>
                   </div>
-                </div>
 
-                <textarea
-                  ref={messageBodyRef}
-                  className={crmStyles.field}
-                  value={currentTemplate.message_body} 
-                  onChange={e => setCurrentTemplate({...currentTemplate, message_body: e.target.value})} 
-                  placeholder={`Paste template message body here.\nExample: Hello {{1}}, your ${getCategoryMeta(selectedTemplateCategory).label} update for {{2}} is ready...`} 
-                  style={{ width: '100%', padding: '0.75rem', borderRadius: '0 0 6px 6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', minHeight: '125px', fontSize: '0.85rem' }} 
-                />
+                  <div className="form-group" style={{ marginBottom: '1.25rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.45rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                      <label style={{ fontSize: '0.85rem', fontWeight: 600, margin: 0, color: 'var(--text-primary)' }}>
+                        Message Content Body <span style={{ color: 'var(--spc-view-danger)' }}>*</span>
+                      </label>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                        Click tokens below to insert into message at cursor position
+                      </span>
+                    </div>
 
-                {/* Auto-Detected Variables Preview Card */}
-                {detectedTemplateVariables.length > 0 && (
-                  <div style={{
-                    marginTop: '0.65rem',
-                    padding: '0.65rem 0.85rem',
-                    backgroundColor: 'rgba(37, 99, 235, 0.05)',
-                    border: '1px solid rgba(37, 99, 235, 0.2)',
-                    borderRadius: '6px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.75rem',
-                    flexWrap: 'wrap'
-                  }}>
-                    <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--accent-color, #2563eb)', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
-                      <Zap size={14} /> Auto-Detected {detectedTemplateVariables.length} Variable{detectedTemplateVariables.length > 1 ? 's' : ''}:
-                    </span>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
-                      {detectedTemplateVariables.map(v => (
-                        <span key={v.num} style={{
-                          fontSize: '0.75rem',
-                          padding: '0.2rem 0.55rem',
-                          borderRadius: '4px',
-                          backgroundColor: 'var(--bg-surface)',
-                          border: '1px solid rgba(37, 99, 235, 0.3)',
-                          color: 'var(--text-primary)',
-                          fontWeight: 600,
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '0.3rem'
-                        }}>
-                          <span style={{ color: 'var(--accent-color, #2563eb)', fontWeight: 800 }}>{v.token}</span>
-                          <span>{v.name}</span>
-                          <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>({v.desc})</span>
+                    {/* Click-to-Insert Category Variables Toolbar */}
+                    <div style={{
+                      padding: '0.65rem 0.85rem',
+                      backgroundColor: 'var(--th-bg)',
+                      border: '1px solid var(--border-light)',
+                      borderRadius: '6px 6px 0 0',
+                      borderBottom: 'none'
+                    }}>
+                      <div style={{ fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '0.45rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                        <span>{getCategoryMeta(selectedTemplateCategory).icon}</span>
+                        <span>Insert {getCategoryMeta(selectedTemplateCategory).label} Variables:</span>
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                        {(WA_CATEGORY_VARIABLE_TAGS[selectedTemplateCategory] || WA_CATEGORY_VARIABLE_TAGS.leads).map(tag => (
+                          <button
+                            key={tag.num}
+                            type="button"
+                            onClick={() => handleInsertVariableToken(tag.token)}
+                            style={{
+                              padding: '0.28rem 0.6rem',
+                              borderRadius: '5px',
+                              border: '1px solid var(--border-light)',
+                              backgroundColor: 'var(--bg-surface)',
+                              color: 'var(--text-primary)',
+                              fontSize: '0.76rem',
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.35rem',
+                              boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
+                              transition: 'all 0.15s ease'
+                            }}
+                            title={`Click to insert ${tag.token} (${tag.desc})`}
+                          >
+                            <span style={{ fontWeight: 800, color: 'var(--accent-color, #2563eb)' }}>{tag.token}</span>
+                            <span style={{ fontWeight: 600 }}>{tag.name}</span>
+                            <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>({tag.desc})</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <textarea
+                      ref={messageBodyRef}
+                      className={crmStyles.field}
+                      value={currentTemplate.message_body} 
+                      onChange={e => setCurrentTemplate({...currentTemplate, message_body: e.target.value})} 
+                      placeholder={`Paste template message body here.\nExample: Hello {{1}}, your ${getCategoryMeta(selectedTemplateCategory).label} update for {{2}} is ready...`} 
+                      style={{ width: '100%', padding: '0.75rem', borderRadius: '0 0 6px 6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', minHeight: '125px', fontSize: '0.85rem' }} 
+                    />
+
+                    {/* Auto-Detected Variables Preview Card */}
+                    {detectedTemplateVariables.length > 0 && (
+                      <div style={{
+                        marginTop: '0.65rem',
+                        padding: '0.65rem 0.85rem',
+                        backgroundColor: 'rgba(37, 99, 235, 0.05)',
+                        border: '1px solid rgba(37, 99, 235, 0.2)',
+                        borderRadius: '6px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.75rem',
+                        flexWrap: 'wrap'
+                      }}>
+                        <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--accent-color, #2563eb)', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                          <Zap size={14} /> Auto-Detected {detectedTemplateVariables.length} Variable{detectedTemplateVariables.length > 1 ? 's' : ''}:
                         </span>
-                      ))}
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                          {detectedTemplateVariables.map(v => (
+                            <span key={v.num} style={{
+                              fontSize: '0.75rem',
+                              padding: '0.2rem 0.55rem',
+                              borderRadius: '4px',
+                              backgroundColor: 'var(--bg-surface)',
+                              border: '1px solid rgba(37, 99, 235, 0.3)',
+                              color: 'var(--text-primary)',
+                              fontWeight: 600,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.3rem'
+                            }}>
+                              <span style={{ color: 'var(--accent-color, #2563eb)', fontWeight: 800 }}>{v.token}</span>
+                              <span>{v.name}</span>
+                              <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>({v.desc})</span>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="form-group" style={{ marginBottom: '0.5rem' }}>
+                    <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.45rem', color: 'var(--text-primary)' }}>
+                      Header Media Image Attachment (Optional)
+                    </label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                      <label style={{ padding: '0.5rem 1rem', background: 'var(--th-hover-bg, #f1f5f9)', color: 'var(--text-primary)', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', fontWeight: 500, border: '1px solid var(--border-light)' }}>
+                        <Upload size={16} /> {uploadingImage ? 'Uploading...' : 'Upload Image File'}
+                        <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleImageUpload} disabled={uploadingImage} />
+                      </label>
+                      
+                      {currentTemplate.image_url && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.82rem', color: 'var(--spc-view-success)' }}>
+                          <ImageIcon size={16} /> Image Attached
+                          <img src={currentTemplate.image_url} alt="preview" style={{ height: '32px', width: '32px', objectFit: 'cover', borderRadius: '4px', marginLeft: '0.5rem', border: '1px solid #10b981' }} />
+                        </div>
+                      )}
                     </div>
                   </div>
-                )}
-              </div>
+                </div>
 
-              <div className="form-group" style={{ marginBottom: '1.5rem' }}>
-                <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.45rem', color: 'var(--text-primary)' }}>
-                  Header Media Image Attachment (Optional)
-                </label>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                  <label style={{ padding: '0.5rem 1rem', background: 'var(--th-hover-bg, #f1f5f9)', color: 'var(--text-primary)', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', fontWeight: 500, border: '1px solid var(--border-light)' }}>
-                    <Upload size={16} /> {uploadingImage ? 'Uploading...' : 'Upload Image File'}
-                    <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleImageUpload} disabled={uploadingImage} />
-                  </label>
-                  
-                  {currentTemplate.image_url && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.82rem', color: 'var(--spc-view-success)' }}>
-                      <ImageIcon size={16} /> Image Attached
-                      <img src={currentTemplate.image_url} alt="preview" style={{ height: '32px', width: '32px', objectFit: 'cover', borderRadius: '4px', marginLeft: '0.5rem', border: '1px solid #10b981' }} />
-                    </div>
-                  )}
+                {/* Modal Sticky Footer */}
+                <div style={{
+                  padding: '1rem 1.5rem',
+                  borderTop: '1px solid var(--border-light)',
+                  display: 'flex',
+                  justifyContent: 'flex-end',
+                  gap: '0.75rem',
+                  backgroundColor: 'var(--bg-primary)'
+                }}>
+                  <button className={crmStyles.button}
+                    type="button"
+                    onClick={() => setShowTemplateForm(false)} 
+                    style={{ padding: '0.6rem 1.3rem', background: 'transparent', color: 'var(--text-secondary)', border: '1px solid var(--border-light)', borderRadius: '6px', cursor: 'pointer', fontWeight: 500, fontSize: '0.86rem' }}
+                  >
+                    Cancel
+                  </button>
+                  <button className={crmStyles.button}
+                    type="button"
+                    onClick={handleSaveTemplate} 
+                    disabled={loading} 
+                    style={{ padding: '0.6rem 1.6rem', background: 'var(--accent-color, #2563eb)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.86rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+                  >
+                    {loading ? 'Saving Template...' : (currentTemplate.id ? 'Update Template' : 'Save Template')}
+                  </button>
                 </div>
               </div>
-
-              <div style={{ display: 'flex', gap: '1rem' }}>
-                <button className={crmStyles.button}
-                  onClick={handleSaveTemplate} 
-                  disabled={loading} 
-                  style={{ padding: '0.65rem 1.6rem', background: 'var(--accent-color, #2563eb)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.88rem' }}
-                >
-                  {loading ? 'Saving...' : 'Save Template'}
-                </button>
-                <button className={crmStyles.button}
-                  onClick={() => setShowTemplateForm(false)} 
-                  style={{ padding: '0.65rem 1.4rem', background: 'transparent', color: 'var(--text-secondary)', border: '1px solid var(--border-light)', borderRadius: '6px', cursor: 'pointer', fontWeight: 500, fontSize: '0.88rem' }}
-                >
-                  Cancel
-                </button>
-              </div>
-            </CRMCard>
+            </div>
           )}
 
           {/* TEMPLATES DISPLAY (GRID VIEW OR TABLE LIST VIEW) */}
