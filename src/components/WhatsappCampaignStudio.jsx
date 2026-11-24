@@ -271,7 +271,7 @@ export default function WhatsappCampaignStudio({
     setShowConfirmModal(false);
     setLaunching(true);
     setCampaignResult(null);
-    setLaunchProgress(`Preparing broadcast to ${currentTargetCount} recipients...`);
+    setLaunchProgress(`Preparing broadcast to ${Number(currentTargetCount || 0).toLocaleString()} recipients...`);
 
     try {
       const res = await launchWhatsappBroadcastCampaign({
@@ -416,7 +416,7 @@ export default function WhatsappCampaignStudio({
                     backgroundColor: isSelected ? `${aud.color}20` : 'var(--th-bg)',
                     border: `1px solid ${isSelected ? aud.color + '40' : 'var(--border-light)'}`
                   }}>
-                    {loadingStats ? '...' : `${count} Available`}
+                    {loadingStats ? '...' : `${Number(count || 0).toLocaleString()} Available`}
                   </span>
                 </div>
                 <div style={{ fontWeight: 800, fontSize: '0.96rem', color: 'var(--text-primary)', marginTop: '0.2rem' }}>
@@ -728,7 +728,7 @@ export default function WhatsappCampaignStudio({
             }}
           >
             <Send size={18} />
-            {launching ? 'Broadcasting Campaign...' : `Launch Broadcast to ${currentTargetCount} Recipients`}
+            {launching ? 'Broadcasting Campaign...' : `Launch Broadcast to ${Number(currentTargetCount || 0).toLocaleString()} Recipients`}
           </button>
         </div>
       </div>
@@ -824,7 +824,7 @@ export default function WhatsappCampaignStudio({
             </div>
 
             <div style={{ fontSize: '0.88rem', color: 'var(--text-primary)', lineHeight: 1.5 }}>
-              Are you sure you want to broadcast this WhatsApp message to <strong>{currentTargetCount} {AUDIENCE_TYPES.find(a => a.id === selectedAudience)?.label}</strong> in <strong>{selectedBranch}</strong>?
+              Are you sure you want to broadcast this WhatsApp message to <strong>{Number(currentTargetCount || 0).toLocaleString()} {AUDIENCE_TYPES.find(a => a.id === selectedAudience)?.label}</strong> in <strong>{selectedBranch}</strong>?
             </div>
 
             <div style={{ padding: '0.75rem', background: 'var(--th-bg)', borderRadius: '8px', fontSize: '0.82rem', color: 'var(--text-secondary)' }}>

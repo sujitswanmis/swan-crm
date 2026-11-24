@@ -45,72 +45,44 @@ export async function getCampaignAudienceStats({ tenantId = null, branchFilter =
   const branchTag = normalizeBranchTag(branchFilter);
 
   try {
-    // 1. Party Master Count
-    let partyQuery = supabase.from('party_master').select('id, party_universal_code, business_nature', { count: 'exact', head: false });
+    // 1. Party Master Count (Exact Head Query)
+    let partyQuery = supabase.from('party_master').select('*', { count: 'exact', head: true });
     if (effectiveTenantId) partyQuery = partyQuery.eq('tenant_id', effectiveTenantId);
-    const { data: partyRows, error: pErr } = await partyQuery;
-    let partyCount = 0;
-    if (!pErr && partyRows) {
-      if (branchTag === 'ALL') {
-        partyCount = partyRows.length;
-      } else {
-        partyCount = partyRows.filter(p => {
-          const code = (p.party_universal_code || '').toUpperCase();
-          const nature = (p.business_nature || '').toUpperCase();
-          return code.includes(branchTag) || nature.includes(branchTag);
-        }).length;
-      }
+    if (branchTag !== 'ALL') {
+      partyQuery = partyQuery.or(`party_universal_code.ilike.%${branchTag}%,business_nature.ilike.%${branchTag}%`);
     }
+    const { count: partyCount, error: pErr } = await partyQuery;
 
-    // 2. Leads Count
-    let leadQuery = supabase.from('leads').select('id, our_company', { count: 'exact', head: false });
+    // 2. Leads Count (Exact Head Query - Uncapped by 1000 row PostgREST limit)
+    let leadQuery = supabase.from('leads').select('*', { count: 'exact', head: true });
     if (effectiveTenantId) leadQuery = leadQuery.eq('tenant_id', effectiveTenantId);
-    const { data: leadRows, error: lErr } = await leadQuery;
-    let leadCount = 0;
-    if (!lErr && leadRows) {
-      if (branchTag === 'ALL') {
-        leadCount = leadRows.length;
-      } else {
-        leadCount = leadRows.filter(l => {
-          const comp = (l.our_company || '').toUpperCase();
-          return comp.includes(branchTag);
-        }).length;
-      }
+    if (branchTag !== 'ALL') {
+      leadQuery = leadQuery.ilike('our_company', `%${branchTag}%`);
     }
+    const { count: leadCount, error: lErr } = await leadQuery;
 
-    // 3. End Customers Count
-    let custQuery = supabase.from('end_customers').select('id, our_company, branch_code', { count: 'exact', head: false });
+    // 3. End Customers Count (Exact Head Query)
+    let custQuery = supabase.from('end_customers').select('*', { count: 'exact', head: true });
     if (effectiveTenantId) custQuery = custQuery.eq('tenant_id', effectiveTenantId);
-    const { data: custRows, error: cErr } = await custQuery;
-    let customerCount = 0;
-    if (!cErr && custRows) {
-      if (branchTag === 'ALL') {
-        customerCount = custRows.length;
-      } else {
-        customerCount = custRows.filter(c => {
-          const comp = (c.our_company || c.branch_code || '').toUpperCase();
-          return comp.includes(branchTag);
-        }).length;
-      }
+    if (branchTag !== 'ALL') {
+      custQuery = custQuery.or(`our_company.ilike.%${branchTag}%,branch_code.ilike.%${branchTag}%`);
     }
+    const { count: customerCount, error: cErr } = await custQuery;
 
-    // 4. User Manage Count
-    let userQuery = supabase.from('user_roles').select('id, company, branch_name, branch_code', { count: 'exact', head: false });
+    // 4. User Manage Count (Exact Head Query)
+    let userQuery = supabase.from('user_roles').select('*', { count: 'exact', head: true });
     if (effectiveTenantId) userQuery = userQuery.eq('tenant_id', effectiveTenantId);
-    const { data: userRows, error: uErr } = await userQuery;
-    let userCount = 0;
-    if (!uErr && userRows) {
-      if (branchTag === 'ALL') {
-        userCount = userRows.length;
-      } else {
-        userCount = userRows.filter(u => {
-          const bInfo = ((u.company || '') + ' ' + (u.branch_name || '') + ' ' + (u.branch_code || '')).toUpperCase();
-          return bInfo.includes(branchTag);
-        }).length;
-      }
+    if (branchTag !== 'ALL') {
+      userQuery = userQuery.or(`company.ilike.%${branchTag}%,branch_name.ilike.%${branchTag}%,branch_code.ilike.%${branchTag}%`);
     }
+    const { count: userCount, error: uErr } = await userQuery;
 
-    return { partyCount, leadCount, customerCount, userCount };
+    return {
+      partyCount: typeof partyCount === 'number' ? partyCount : 0,
+      leadCount: typeof leadCount === 'number' ? leadCount : 0,
+      customerCount: typeof customerCount === 'number' ? customerCount : 0,
+      userCount: typeof userCount === 'number' ? userCount : 0
+    };
   } catch (err) {
     console.error('getCampaignAudienceStats error:', err);
     return { partyCount: 0, leadCount: 0, customerCount: 0, userCount: 0 };
