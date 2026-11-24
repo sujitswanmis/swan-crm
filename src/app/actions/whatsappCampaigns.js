@@ -225,9 +225,9 @@ export async function getCampaignAudienceStats({ tenantId = null, branchFilter =
 }
 
 /**
- * Fetch sample records for Live Preview
+ * Fetch records for Live Preview (Uncapped to display up to 200 matching contacts)
  */
-export async function getCampaignAudiencePreview({ tenantId = null, audienceType = 'party', branchFilter = 'All', subFilter = 'ALL' } = {}) {
+export async function getCampaignAudiencePreview({ tenantId = null, audienceType = 'party', branchFilter = 'All', subFilter = 'ALL', limit = 200 } = {}) {
   const supabase = getAdminClient();
   if (!supabase) return [];
 
@@ -245,8 +245,8 @@ export async function getCampaignAudiencePreview({ tenantId = null, audienceType
         q = q.or(`party_universal_code.ilike.%${branchTag}%,business_nature.ilike.%${branchTag}%`);
       }
       q = applyAudienceSubFilter(q, 'party', cleanSubFilter);
-      const { data } = await q.limit(25);
-      return (data || []).slice(0, 5).map(p => ({
+      const { data } = await q.limit(limit);
+      return (data || []).map(p => ({
         id: p.id,
         name: p.firm_name || p.legal_name || 'Party Partner',
         subName: p.contact_person_name_1 || 'Primary Contact',
@@ -265,8 +265,8 @@ export async function getCampaignAudiencePreview({ tenantId = null, audienceType
         q = q.ilike('our_company', `%${branchTag}%`);
       }
       q = applyAudienceSubFilter(q, 'leads', cleanSubFilter);
-      const { data } = await q.limit(25);
-      return (data || []).slice(0, 5).map(l => ({
+      const { data } = await q.limit(limit);
+      return (data || []).map(l => ({
         id: l.id,
         name: l.company || l.name || 'Lead Client',
         subName: l.name || 'CP1',
@@ -284,8 +284,8 @@ export async function getCampaignAudiencePreview({ tenantId = null, audienceType
       if (branchTag !== 'ALL') {
         q = q.or(`our_company.ilike.%${branchTag}%,branch_code.ilike.%${branchTag}%`);
       }
-      const { data } = await q.limit(25);
-      return (data || []).slice(0, 5).map(c => ({
+      const { data } = await q.limit(limit);
+      return (data || []).map(c => ({
         id: c.id,
         name: c.full_name || 'End Customer',
         subName: c.linked_party_name ? `Via ${c.linked_party_name}` : (c.product_name || 'Equipment'),
@@ -301,11 +301,11 @@ export async function getCampaignAudiencePreview({ tenantId = null, audienceType
         .order('created_at', { ascending: false });
       if (effectiveTenantId) q = q.eq('tenant_id', effectiveTenantId);
       if (branchTag !== 'ALL') {
-        q = q.or(`company.ilike.%${branchTag}%,branch_name.ilike.%${branchTag}%,branch_code.ilike.%${branchTag}%`);
+        q = q.or(`company.ilike.%${branchTag}%,branch_name.ilike.%${branchTag}%`);
       }
       q = applyAudienceSubFilter(q, 'users', cleanSubFilter);
-      const { data } = await q.limit(25);
-      return (data || []).slice(0, 5).map(u => ({
+      const { data } = await q.limit(limit);
+      return (data || []).map(u => ({
         id: u.id,
         name: u.emp_name || u.name || 'Employee',
         subName: u.emp_designation || u.department || 'Staff',
@@ -319,6 +319,66 @@ export async function getCampaignAudiencePreview({ tenantId = null, audienceType
   } catch (err) {
     console.error('getCampaignAudiencePreview error:', err);
     return [];
+  }
+}
+
+/**
+ * Save campaign configuration as a Draft
+ */
+export async function saveWhatsappCampaignDraft({
+  tenantId = null,
+  campaignName = '',
+  audienceType = 'leads',
+  branchFilter = 'All',
+  subFilter = ['ALL'],
+  templateId = null,
+  recipientPriority = null,
+  sendMode = 'immediate',
+  scheduledAt = null,
+  throttleSpeed = 'safe'
+} = {}) {
+  const supabase = getAdminClient();
+  if (!supabase) return { success: false, error: 'Database client unavailable' };
+
+  try {
+    const campaignTitle = (campaignName || '').trim() || `Draft Campaign ${new Date().toLocaleDateString('en-IN')}`;
+
+    let templateName = 'Not Selected';
+    if (templateId) {
+      const { data: tpl } = await supabase.from('whatsapp_templates').select('template_name').eq('id', templateId).single();
+      if (tpl?.template_name) templateName = tpl.template_name;
+    }
+
+    const { data, error } = await supabase.from('whatsapp_message_logs').insert({
+      template_id: templateId || null,
+      sent_at: new Date().toISOString(),
+      status: `[CAMPAIGN_SUMMARY] ${JSON.stringify({
+        campaignName: campaignTitle,
+        audienceType,
+        subFilters: Array.isArray(subFilter) ? subFilter : [subFilter],
+        branchFilter,
+        templateId: templateId || null,
+        templateName,
+        recipientPriority,
+        sendMode,
+        scheduledAt,
+        throttleSpeed,
+        status: 'Draft',
+        createdAt: new Date().toISOString()
+      })}`
+    }).select('id');
+
+    if (error) throw error;
+
+    return {
+      success: true,
+      id: data?.[0]?.id,
+      campaignName: campaignTitle,
+      message: `Campaign "${campaignTitle}" saved as Draft successfully!`
+    };
+  } catch (err) {
+    console.error('saveWhatsappCampaignDraft error:', err);
+    return { success: false, error: err.message || 'Failed to save draft' };
   }
 }
 
