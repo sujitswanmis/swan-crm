@@ -1100,7 +1100,11 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
     if (filterBranch !== 'All') {
       list = list.filter(tpl => {
         const meta = parseTemplateMeta(tpl.company);
-        return meta.branch.toLowerCase().includes(filterBranch.toLowerCase());
+        const resolvedBranch = resolveBranchDisplayName(meta.branch).toLowerCase();
+        const targetFilter = resolveBranchDisplayName(filterBranch).toLowerCase();
+        return resolvedBranch.includes(targetFilter) ||
+               meta.branch.toLowerCase().includes(filterBranch.toLowerCase()) ||
+               (filterBranch === 'All Branches (Universal)' && (meta.branch.toLowerCase().includes('all') || meta.branch.toLowerCase().includes('universal')));
       });
     }
 
@@ -2680,12 +2684,10 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                 style={{ padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)' }}
               >
                 <option value="All">All Offices / Branches</option>
-                <option value="New Swan Group (Headquarters)">New Swan Group (Headquarters)</option>
-                <option value="NSMLR">🏢 NSMLR</option>
-                <option value="NSTLP">🏢 NSTLP</option>
-                {branches.filter(b => !['New Swan Group', 'New Swan Group (Headquarters)', 'NSMLR', 'NSTLP'].includes(b.branch_name)).map(b => (
-                  <option key={b.id || b.branch_name} value={b.branch_name}>
-                    🏢 {b.branch_name}
+                <option value="All Branches (Universal)">🏢 All Branches (Universal)</option>
+                {tenantBranchOptions.map(opt => (
+                  <option key={opt.branchName} value={opt.branchName}>
+                    🏢 {opt.label}
                   </option>
                 ))}
               </select>
@@ -2862,18 +2864,15 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                     onChange={e => setSelectedTemplateBranch(e.target.value)} 
                     style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontWeight: 600, fontSize: '0.85rem' }}
                   >
-                    <option value="New Swan Group (Headquarters)">🏢 New Swan Group (Headquarters)</option>
-                    <option value="NSMLR">🏢 NSMLR (Branch)</option>
-                    <option value="NSTLP">🏢 NSTLP (Branch)</option>
                     <option value="All Branches (Universal)">🏢 All Branches (Universal)</option>
-                    {branches.filter(b => !['New Swan Group', 'New Swan Group (Headquarters)', 'NSMLR', 'NSTLP'].includes(b.branch_name)).map(b => (
-                      <option key={b.id || b.branch_name} value={b.branch_name}>
-                        🏢 {b.branch_name} ({b.location_type || 'Branch'})
+                    {tenantBranchOptions.map(opt => (
+                      <option key={opt.branchName} value={opt.branchName}>
+                        🏢 {opt.label}
                       </option>
                     ))}
                   </select>
                   <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.2rem', display: 'block' }}>
-                    New Swan Group (Headquarters) is selected by default.
+                    Select target branch or All Branches for universal broadcasting.
                   </span>
                 </div>
 
@@ -3066,7 +3065,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                           alignItems: 'center',
                           gap: '0.25rem'
                         }}>
-                          <Building2 size={11} /> {meta.branch}
+                          <Building2 size={11} /> {resolveBranchDisplayName(meta.branch)}
                         </span>
                       </div>
 
@@ -3227,7 +3226,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                             gap: '0.25rem',
                             whiteSpace: 'nowrap'
                           }}>
-                            <Building2 size={11} /> {meta.branch}
+                            <Building2 size={11} /> {resolveBranchDisplayName(meta.branch)}
                           </span>
                         </td>
 
