@@ -194,13 +194,76 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
   const [autoPage, setAutoPage] = useState(1);
   const [autoPageSize, setAutoPageSize] = useCRMPageSize(setAutoPage);
 
+  const currentTenantCode = React.useMemo(() => {
+    const comp = String(userCompany || '').toLowerCase();
+    if (tenantId === '0a37b8e8-1c28-4e19-8891-951fc3f8f8af' || comp.includes('supuja')) return 'TNT00001';
+    if (tenantId === '922d3e72-6588-457f-a562-4f1bdbf10d98' || comp.includes('testing')) return 'TNT00003';
+    return 'TNT00002'; // New Swan Group default
+  }, [userCompany, tenantId]);
+
+  const tenantBranches = React.useMemo(() => {
+    const activeBranches = (branches || []).filter(b => b && b.is_active !== false);
+    return activeBranches.filter(b => {
+      if (b.tenant_code) return b.tenant_code === currentTenantCode;
+      if (currentTenantCode === 'TNT00002') return !String(b.branch_name || '').toLowerCase().includes('supuja');
+      return true;
+    });
+  }, [branches, currentTenantCode]);
+
+  const tenantBranchOptions = React.useMemo(() => {
+    const list = [];
+    const fallbackSwanBranches = [
+      { branch_name: 'New Swan Group (Headquarters)', custom_code: 'NSG', branch_code: 'TNT00002-B0001' },
+      { branch_name: 'New Swan Multitech Limited Raian', custom_code: 'NSMLR', branch_code: 'TNT00002-B0002' },
+      { branch_name: 'New Swan Technologies Limited Paharuwal', custom_code: 'NSTLP', branch_code: 'TNT00002-B0003' },
+      { branch_name: 'New Swan Enterprises - 1', custom_code: 'NSE1', branch_code: 'TNT00002-B0004' },
+      { branch_name: 'New Swan Enterprises - 2', custom_code: 'NSE2', branch_code: 'TNT00002-B0005' },
+      { branch_name: 'New Swan Enterprises - 3', custom_code: 'NSE3', branch_code: 'TNT00002-B0006' },
+      { branch_name: 'New Swan Enterprises - 4', custom_code: 'NSE4', branch_code: 'TNT00002-B0007' },
+      { branch_name: 'New Swan Autocomp Pvt. Ltd.', custom_code: 'NSACPL1', branch_code: 'TNT00002-B0008' }
+    ];
+
+    const source = (tenantBranches && tenantBranches.length > 0) ? tenantBranches : fallbackSwanBranches;
+
+    source.forEach(b => {
+      const customCode = (b.custom_code || b.legacy_code || '').trim();
+      const branchName = (b.branch_name || b.name || '').trim();
+      
+      let val = branchName;
+      if (customCode === 'NSMLR' || branchName.toLowerCase().includes('multitech')) {
+        val = 'NSMLR';
+      } else if (customCode === 'NSTLP' || branchName.toLowerCase().includes('technologies')) {
+        val = 'NSTLP';
+      }
+
+      let label = branchName;
+      if (val === 'NSMLR') {
+        label = 'New Swan Multitech Limited Raian (NSMLR)';
+      } else if (val === 'NSTLP') {
+        label = 'New Swan Technologies Limited Paharuwal (NSTLP)';
+      }
+
+      list.push({
+        value: val,
+        customCode: customCode,
+        branchName: branchName,
+        label: label
+      });
+    });
+
+    return list;
+  }, [tenantBranches]);
+
   const autoCompanyOptions = React.useMemo(() => {
     const set = new Set();
+    tenantBranchOptions.forEach(opt => {
+      if (opt.value && opt.value !== 'All') set.add(opt.value);
+    });
     automations.forEach(a => {
       if (a.company && a.company !== 'All') set.add(a.company);
     });
-    return Array.from(set).sort();
-  }, [automations]);
+    return Array.from(set);
+  }, [automations, tenantBranchOptions]);
 
   const filteredAutomations = React.useMemo(() => {
     return automations.filter(auto => {
@@ -1174,14 +1237,15 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
   if (visibleTabs.length === 0) {
     return (
       <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
-        <h3 style={{ color: '#ef4444', marginBottom: '0.5rem' }}>Access Denied</h3>
+        <h3 style={{ color: 'var(--spc-view-danger)', marginBottom: '0.5rem' }}>Access Denied</h3>
         <p>You do not have permission to view any sub-pages under WhatsApp Official.</p>
       </div>
     );
   }
 
   return (
-    <CRMPage style={{ minHeight: '80vh' }}>
+    <div data-spc-module-theme>
+    <CRMPage data-spc-theme="whatsapp-official" style={{ minHeight: '80vh' }}>
       
       {/* Enterprise B2B SaaS Segmented Sub-Tab Navigation */}
       <CRMTabs id="wa-official" label="WhatsApp Official pages" items={visibleTabs} value={activeTab} onChange={handleTabChange} />
@@ -1286,7 +1350,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                         style={{
                           padding: '1.15rem',
                           borderRadius: '10px',
-                          border: isEnabled ? (b.isCustom ? '2px solid #8b5cf6' : '2px solid var(--accent-color, #2563eb)') : '1px solid var(--border-light)',
+                          border: isEnabled ? (b.isCustom ? '2px solid var(--spc-view-violet-border)' : '2px solid var(--accent-color, #2563eb)') : '1px solid var(--border-light)',
                           backgroundColor: isEnabled ? (b.isCustom ? 'rgba(139, 92, 246, 0.04)' : 'rgba(37, 99, 235, 0.04)') : 'var(--bg-primary)',
                           display: 'flex',
                           flexDirection: 'column',
@@ -1311,7 +1375,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                                 padding: '0.2rem 0.45rem',
                                 borderRadius: '4px',
                                 backgroundColor: 'rgba(234, 88, 12, 0.15)',
-                                color: '#ea580c',
+                                color: 'var(--spc-view-warning)',
                                 border: '1px solid rgba(234, 88, 12, 0.3)'
                               }}>
                                 ⚡ Upgraded
@@ -1323,7 +1387,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                               padding: '0.2rem 0.5rem',
                               borderRadius: '4px',
                               backgroundColor: b.isCustom ? 'rgba(139, 92, 246, 0.15)' : 'var(--bg-surface)',
-                              color: b.isCustom ? '#7c3aed' : 'var(--text-secondary)',
+                              color: b.isCustom ? 'var(--spc-view-violet)' : 'var(--text-secondary)',
                               border: '1px solid var(--border-light)'
                             }}>
                               {b.category || (b.isCustom ? 'Custom BSP' : 'Meta BSP')}
@@ -1355,7 +1419,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                               <button className={crmStyles.button}
                                 type="button"
                                 onClick={(e) => handleOpenEditBsp(b, e)}
-                                style={{ background: 'none', border: 'none', color: b.hasOverride ? '#ea580c' : (b.isCustom ? '#7c3aed' : 'var(--accent-color, #2563eb)'), fontSize: '0.74rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.2rem' }}
+                                style={{ background: 'none', border: 'none', color: b.hasOverride ? 'var(--spc-view-warning)' : (b.isCustom ? 'var(--spc-view-violet)' : 'var(--accent-color, #2563eb)'), fontSize: '0.74rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.2rem' }}
                                 title="Edit / Upgrade API endpoint, method, headers, or payload template"
                               >
                                 <Edit3 size={12} /> {b.hasOverride ? 'Edit Upgrade' : 'Edit / Upgrade'}
@@ -1365,7 +1429,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                               <button className={crmStyles.button}
                                 type="button"
                                 onClick={(e) => handleResetBspOverride(b.id, b.name, e)}
-                                style={{ background: 'none', border: 'none', color: '#64748b', fontSize: '0.74rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.2rem' }}
+                                style={{ background: 'none', border: 'none', color: 'var(--spc-view-muted)', fontSize: '0.74rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.2rem' }}
                                 title="Reset back to official catalog defaults"
                               >
                                 <RotateCcw size={12} /> Reset
@@ -1375,7 +1439,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                               <button className={crmStyles.button}
                                 type="button"
                                 onClick={(e) => handleDeleteCustomBsp(b.id, b.name, e)}
-                                style={{ background: 'none', border: 'none', color: '#ef4444', fontSize: '0.74rem', cursor: 'pointer' }}
+                                style={{ background: 'none', border: 'none', color: 'var(--spc-view-danger)', fontSize: '0.74rem', cursor: 'pointer' }}
                                 title="Delete custom BSP"
                               >
                                 <Trash2 size={12} />
@@ -1650,7 +1714,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                   </button>
 
                   {allocationFeedback && (
-                    <span style={{ fontSize: '0.84rem', fontWeight: 600, color: allocationFeedback.success ? '#10b981' : '#ef4444' }}>
+                    <span style={{ fontSize: '0.84rem', fontWeight: 600, color: allocationFeedback.success ? 'var(--spc-view-success)' : 'var(--spc-view-danger)' }}>
                       {allocationFeedback.message}
                     </span>
                   )}
@@ -1758,7 +1822,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                                 fontSize: '0.7rem',
                                 fontWeight: 700,
                                 backgroundColor: isHQ ? 'rgba(37, 99, 235, 0.1)' : 'rgba(16, 185, 129, 0.1)',
-                                color: isHQ ? 'var(--accent-color, #2563eb)' : '#059669',
+                                color: isHQ ? 'var(--accent-color, #2563eb)' : 'var(--spc-view-success)',
                                 border: isHQ ? '1px solid rgba(37, 99, 235, 0.25)' : '1px solid rgba(16, 185, 129, 0.25)',
                                 whiteSpace: 'nowrap'
                               }}>
@@ -1776,7 +1840,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                             </td>
                             <td style={{ padding: '0.75rem', fontWeight: 600 }}>
                               <span style={{
-                                color: isNstlp || alloc.default_bsp === 'nextel' ? '#7c3aed' : 'var(--accent-color, #2563eb)',
+                                color: isNstlp || alloc.default_bsp === 'nextel' ? 'var(--spc-view-violet)' : 'var(--accent-color, #2563eb)',
                                 fontWeight: 700
                               }}>
                                 {getBspDisplayName(alloc.default_bsp)}
@@ -1938,7 +2002,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                   border: isNewSwan ? '1px solid rgba(37, 99, 235, 0.25)' : '1px solid rgba(16, 185, 129, 0.3)', 
                   borderRadius: '8px', 
                   fontSize: '0.83rem', 
-                  color: isNewSwan ? '#1e40af' : '#065f46',
+                  color: isNewSwan ? 'var(--spc-view-info)' : 'var(--spc-view-success)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
@@ -2003,14 +2067,14 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
               {/* 1. Meta Direct */}
               {((isClientScoped && assignedBsps.length > 0) ? assignedBsps : enabledProviders).includes('meta') && (
                 <CRMCard style={{ marginBottom: '1.5rem', padding: '1.5rem', backgroundColor: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', color: '#2563eb' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', color: 'var(--spc-view-info)' }}>
                     <ShieldCheck size={20} />
                     <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>Meta Cloud API Credentials (v21.0)</h3>
                   </div>
                   <div className={crmStyles.formGrid} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
                     <div>
                       <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
-                        Phone Number ID <span style={{ color: '#ef4444' }}>*</span>
+                        Phone Number ID <span style={{ color: 'var(--spc-view-danger)' }}>*</span>
                       </label>
                       <input className={crmStyles.field}
                         type="text"
@@ -2038,7 +2102,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                   <div style={{ marginBottom: '1rem' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
                       <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>
-                        System User Permanent Access Token <span style={{ color: '#ef4444' }}>*</span>
+                        System User Permanent Access Token <span style={{ color: 'var(--spc-view-danger)' }}>*</span>
                       </label>
                       <button className={crmStyles.button}
                         type="button" 
@@ -2073,13 +2137,13 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
               {/* 2. AiSensy */}
               {((isClientScoped && assignedBsps.length > 0) ? assignedBsps : enabledProviders).includes('aisensy') && (
                 <CRMCard style={{ marginBottom: '1.5rem', padding: '1.5rem', backgroundColor: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', color: '#0284c7' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', color: 'var(--spc-view-info)' }}>
                     <ShieldCheck size={20} />
                     <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>AiSensy WhatsApp API Credentials {isNewSwan ? '(NSMLR / Global)' : `(${activeClientName})`}</h3>
                   </div>
                   <div style={{ marginBottom: '1rem' }}>
                     <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
-                      AiSensy API Key <span style={{ color: '#ef4444' }}>*</span>
+                      AiSensy API Key <span style={{ color: 'var(--spc-view-danger)' }}>*</span>
                     </label>
                     <textarea className={crmStyles.field}
                       value={aisensyConfig.api_key}
@@ -2108,13 +2172,13 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
               {/* 3. Interakt */}
               {((isClientScoped && assignedBsps.length > 0) ? assignedBsps : enabledProviders).includes('interakt') && (
                 <CRMCard style={{ marginBottom: '1.5rem', padding: '1.5rem', backgroundColor: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', color: '#7c3aed' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', color: 'var(--spc-view-violet)' }}>
                     <ShieldCheck size={20} />
                     <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>Interakt (Jio Haptik) API Credentials</h3>
                   </div>
                   <div style={{ marginBottom: '1rem' }}>
                     <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
-                      Interakt Secret API Key <span style={{ color: '#ef4444' }}>*</span>
+                      Interakt Secret API Key <span style={{ color: 'var(--spc-view-danger)' }}>*</span>
                     </label>
                     <input className={crmStyles.field}
                       type="password"
@@ -2131,13 +2195,13 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
               {/* 4. Wati */}
               {((isClientScoped && assignedBsps.length > 0) ? assignedBsps : enabledProviders).includes('wati') && (
                 <CRMCard style={{ marginBottom: '1.5rem', padding: '1.5rem', backgroundColor: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', color: '#059669' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', color: 'var(--spc-view-success)' }}>
                     <ShieldCheck size={20} />
                     <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>Wati (Clare.ai) API Credentials</h3>
                   </div>
                   <div style={{ marginBottom: '1rem' }}>
                     <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
-                      Wati API Endpoint URL <span style={{ color: '#ef4444' }}>*</span>
+                      Wati API Endpoint URL <span style={{ color: 'var(--spc-view-danger)' }}>*</span>
                     </label>
                     <input className={crmStyles.field}
                       type="text"
@@ -2150,7 +2214,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                   </div>
                   <div>
                     <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
-                      Wati Access Token <span style={{ color: '#ef4444' }}>*</span>
+                      Wati Access Token <span style={{ color: 'var(--spc-view-danger)' }}>*</span>
                     </label>
                     <textarea className={crmStyles.field}
                       value={watiConfig.access_token}
@@ -2166,13 +2230,13 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
               {/* 5. Nextel */}
               {((isClientScoped && assignedBsps.length > 0) ? assignedBsps : enabledProviders).includes('nextel') && (
                 <CRMCard style={{ marginBottom: '1.5rem', padding: '1.5rem', backgroundColor: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', color: '#d97706' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', color: 'var(--spc-view-warning)' }}>
                     <ShieldCheck size={20} />
                     <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>Nextel.io API Credentials {isNewSwan ? '(NSTLP)' : `(${activeClientName})`}</h3>
                   </div>
                   <div>
                     <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
-                      Nextel Session Endpoint URL <span style={{ color: '#ef4444' }}>*</span>
+                      Nextel Session Endpoint URL <span style={{ color: 'var(--spc-view-danger)' }}>*</span>
                     </label>
                     <textarea className={crmStyles.field}
                       value={nextelConfig.endpoint_url}
@@ -2194,7 +2258,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                   return (
                     <CRMCard key={pId} style={{ marginBottom: '1.5rem', padding: '1.5rem', backgroundColor: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#0284c7' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--spc-view-info)' }}>
                           <ShieldCheck size={20} />
                           <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>{bspInfo.name} API Credentials</h3>
                           <span style={{ fontSize: '0.72rem', padding: '0.15rem 0.45rem', borderRadius: '4px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
@@ -2211,7 +2275,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                       <div className={crmStyles.formGrid} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
                         <div>
                           <label style={{ fontWeight: 600, fontSize: '0.85rem', display: 'block', marginBottom: '0.35rem' }}>
-                            API Key / Auth Token <span style={{ color: '#ef4444' }}>*</span>
+                            API Key / Auth Token <span style={{ color: 'var(--spc-view-danger)' }}>*</span>
                           </label>
                           <input className={crmStyles.field}
                             type="password"
@@ -2308,10 +2372,10 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
               {customBsps.filter(b => ((isClientScoped && assignedBsps.length > 0) ? assignedBsps : enabledProviders).includes(b.id)).map(cb => (
                 <div key={cb.id} style={{ marginBottom: '1.5rem', padding: '1.5rem', backgroundColor: 'var(--bg-primary)', borderRadius: '10px', border: '1px solid rgba(139, 92, 246, 0.3)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#7c3aed' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--spc-view-violet)' }}>
                       <Globe size={20} />
                       <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>{cb.name} Gateway Configuration</h3>
-                      <span style={{ fontSize: '0.72rem', fontWeight: 600, padding: '0.15rem 0.45rem', borderRadius: '4px', backgroundColor: 'rgba(139, 92, 246, 0.15)', color: '#6d28d9' }}>Custom BSP</span>
+                      <span style={{ fontSize: '0.72rem', fontWeight: 600, padding: '0.15rem 0.45rem', borderRadius: '4px', backgroundColor: 'rgba(139, 92, 246, 0.15)', color: 'var(--spc-view-violet)' }}>Custom BSP</span>
                     </div>
                     {settingsPerms.edit && (
                       <button className={crmStyles.button}
@@ -2325,9 +2389,9 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                           fontSize: '0.8rem',
                           fontWeight: 600,
                           borderRadius: '6px',
-                          border: '1px solid #8b5cf6',
+                          border: '1px solid var(--spc-view-violet-border)',
                           backgroundColor: 'transparent',
-                          color: '#7c3aed',
+                          color: 'var(--spc-view-violet)',
                           cursor: 'pointer'
                         }}
                       >
@@ -2341,7 +2405,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                         API Endpoint URL:
                       </label>
                       <div style={{ padding: '0.6rem 0.75rem', borderRadius: '6px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-light)', fontFamily: 'monospace', fontSize: '0.82rem', wordBreak: 'break-all' }}>
-                        <span style={{ fontWeight: 700, color: '#7c3aed', marginRight: '0.4rem' }}>{cb.method || 'POST'}</span> {cb.endpoint_url}
+                        <span style={{ fontWeight: 700, color: 'var(--spc-view-violet)', marginRight: '0.4rem' }}>{cb.method || 'POST'}</span> {cb.endpoint_url}
                       </div>
                     </div>
                     <div>
@@ -2374,7 +2438,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                   border: '1px dashed rgba(2, 132, 199, 0.35)', 
                   borderRadius: '8px' 
                 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.35rem', color: '#0369a1', fontWeight: 600, fontSize: '0.88rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.35rem', color: 'var(--spc-view-info)', fontWeight: 600, fontSize: '0.88rem' }}>
                     <HelpCircle size={16} /> Legacy Dual Routing Synchronization (NSMLR & NSTLP)
                   </div>
                   <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: '1.35' }}>
@@ -2389,7 +2453,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                   border: '1px dashed rgba(16, 185, 129, 0.35)', 
                   borderRadius: '8px' 
                 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.35rem', color: '#059669', fontWeight: 600, fontSize: '0.88rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.35rem', color: 'var(--spc-view-success)', fontWeight: 600, fontSize: '0.88rem' }}>
                     <ShieldCheck size={16} /> Dedicated Tenant Credentials ({activeClientName})
                   </div>
                   <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: '1.35' }}>
@@ -2476,8 +2540,8 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                     padding: '0.75rem 1rem', 
                     borderRadius: '6px', 
                     backgroundColor: testFeedback.success ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)', 
-                    border: testFeedback.success ? '1px solid #10b981' : '1px solid #ef4444',
-                    color: testFeedback.success ? '#065f46' : '#991b1b',
+                    border: testFeedback.success ? '1px solid #10b981' : '1px solid var(--spc-view-danger-border)',
+                    color: testFeedback.success ? 'var(--spc-view-success)' : 'var(--spc-view-danger)',
                     fontSize: '0.85rem',
                     display: 'flex',
                     alignItems: 'center',
@@ -2704,8 +2768,8 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                   disabled={deletingBulkTemplates}
                   style={{
                     padding: '0.45rem 0.85rem',
-                    backgroundColor: '#fee2e2',
-                    color: '#ef4444',
+                    backgroundColor: 'var(--spc-view-danger-bg)',
+                    color: 'var(--spc-view-danger)',
                     border: '1px solid rgba(239, 68, 68, 0.3)',
                     borderRadius: '6px',
                     fontSize: '0.82rem',
@@ -2791,7 +2855,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                 {/* 3. Template Name */}
                 <div className="form-group">
                   <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.45rem', color: 'var(--text-primary)' }}>
-                    Template Name (CRM Display) <span style={{ color: '#ef4444' }}>*</span>
+                    Template Name (CRM Display) <span style={{ color: 'var(--spc-view-danger)' }}>*</span>
                   </label>
                   <input className={crmStyles.field}
                     type="text" 
@@ -2805,7 +2869,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                 {/* 4. Campaign / API ID */}
                 <div className="form-group">
                   <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.45rem', color: 'var(--text-primary)' }}>
-                    API Campaign ID / Name <span style={{ color: '#ef4444' }}>*</span>
+                    API Campaign ID / Name <span style={{ color: 'var(--spc-view-danger)' }}>*</span>
                   </label>
                   <input className={crmStyles.field}
                     type="text" 
@@ -2819,7 +2883,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
 
               <div className="form-group" style={{ marginBottom: '1.25rem' }}>
                 <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.45rem', color: 'var(--text-primary)' }}>
-                  Message Content Body <span style={{ color: '#ef4444' }}>*</span>
+                  Message Content Body <span style={{ color: 'var(--spc-view-danger)' }}>*</span>
                 </label>
                 <textarea className={crmStyles.field}
                   value={currentTemplate.message_body} 
@@ -2840,7 +2904,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                   </label>
                   
                   {currentTemplate.image_url && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.82rem', color: '#10b981' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.82rem', color: 'var(--spc-view-success)' }}>
                       <ImageIcon size={16} /> Image Attached
                       <img src={currentTemplate.image_url} alt="preview" style={{ height: '32px', width: '32px', objectFit: 'cover', borderRadius: '4px', marginLeft: '0.5rem', border: '1px solid #10b981' }} />
                     </div>
@@ -2940,7 +3004,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                         padding: '0.15rem 0.45rem', 
                         borderRadius: '4px', 
                         backgroundColor: 'rgba(37, 99, 235, 0.1)', 
-                        color: '#2563eb',
+                        color: 'var(--spc-view-info)',
                         border: '1px solid rgba(37, 99, 235, 0.25)',
                         display: 'inline-flex',
                         alignItems: 'center',
@@ -2971,7 +3035,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                           padding: '0.18rem 0.5rem', 
                           borderRadius: '4px', 
                           backgroundColor: 'rgba(16, 185, 129, 0.1)', 
-                          color: '#065f46',
+                          color: 'var(--spc-view-success)',
                           border: '1px solid rgba(16, 185, 129, 0.25)',
                           display: 'inline-flex',
                           alignItems: 'center',
@@ -3001,7 +3065,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                         {templatesPerms.delete && (
                           <button className={crmStyles.button}
                             onClick={() => handleDeleteTemplate(tpl.id)} 
-                            style={{ padding: '0.45rem 0.75rem', background: '#fee2e2', color: '#ef4444', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                            style={{ padding: '0.45rem 0.75rem', background: 'var(--spc-view-danger-bg)', color: 'var(--spc-view-danger)', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                             title="Delete Template"
                           >
                             <Trash2 size={16} />
@@ -3112,7 +3176,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                             padding: '0.15rem 0.45rem', 
                             borderRadius: '4px', 
                             backgroundColor: 'rgba(37, 99, 235, 0.1)', 
-                            color: '#2563eb',
+                            color: 'var(--spc-view-info)',
                             border: '1px solid rgba(37, 99, 235, 0.25)',
                             display: 'inline-flex',
                             alignItems: 'center',
@@ -3131,7 +3195,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                             padding: '0.15rem 0.45rem', 
                             borderRadius: '4px', 
                             backgroundColor: 'rgba(16, 185, 129, 0.1)', 
-                            color: '#065f46',
+                            color: 'var(--spc-view-success)',
                             border: '1px solid rgba(16, 185, 129, 0.25)',
                             display: 'inline-flex',
                             alignItems: 'center',
@@ -3170,7 +3234,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                               <button className={crmStyles.button}
                                 type="button"
                                 onClick={() => handleDeleteTemplate(tpl.id)}
-                                style={{ padding: '0.28rem 0.45rem', borderRadius: '4px', border: 'none', backgroundColor: '#fee2e2', color: '#ef4444', fontSize: '0.75rem', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                                style={{ padding: '0.28rem 0.45rem', borderRadius: '4px', border: 'none', backgroundColor: 'var(--spc-view-danger-bg)', color: 'var(--spc-view-danger)', fontSize: '0.75rem', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
                                 title="Delete Template"
                               >
                                 <Trash2 size={14} />
@@ -3267,15 +3331,18 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                 <div style={{ padding: '1.5rem' }}>
                   <div className={crmStyles.formGrid} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem', marginBottom: '1.5rem' }}>
                     <div className="form-group">
-                      <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.4rem' }}>Company</label>
+                      <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.4rem' }}>Company / Branch</label>
                       <select className={crmStyles.field}
                         value={currentAuto.company || 'All'} 
                         onChange={e => setCurrentAuto({...currentAuto, company: e.target.value})}
                         style={{ width: '100%', padding: '0.6rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}
                       >
                         <option value="All">All Companies</option>
-                        <option value="NSMLR">NSMLR Only</option>
-                        <option value="NSTLP">NSTLP Only</option>
+                        {tenantBranchOptions.map(opt => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
                       </select>
                     </div>
 
@@ -3284,7 +3351,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                       <select className={crmStyles.field}
                         value={currentAuto.is_active ? 'active' : 'inactive'} 
                         onChange={e => setCurrentAuto({...currentAuto, is_active: e.target.value === 'active'})}
-                        style={{ width: '100%', padding: '0.6rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', color: currentAuto.is_active ? '#16a34a' : '#ef4444', fontWeight: 600 }}
+                        style={{ width: '100%', padding: '0.6rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', color: currentAuto.is_active ? 'var(--spc-view-success)' : 'var(--spc-view-danger)', fontWeight: 600 }}
                       >
                         <option value="active">Active (Sending)</option>
                         <option value="inactive">Paused (Inactive)</option>
@@ -3405,9 +3472,9 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                     alignItems: 'center',
                     gap: '0.4rem',
                     padding: '0.45rem 0.9rem',
-                    backgroundColor: '#fff1f2',
-                    color: '#e11d48',
-                    border: '1px solid #fecdd3',
+                    backgroundColor: 'var(--spc-view-danger-bg)',
+                    color: 'var(--spc-view-danger)',
+                    border: '1px solid var(--spc-view-danger-border)',
                     borderRadius: '6px',
                     fontWeight: 600,
                     fontSize: '0.85rem',
@@ -3427,9 +3494,9 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                     alignItems: 'center',
                     gap: '0.4rem',
                     padding: '0.45rem 0.9rem',
-                    backgroundColor: '#f0fdf4',
-                    color: '#16a34a',
-                    border: '1px solid #bbf7d0',
+                    backgroundColor: 'var(--spc-view-success-bg)',
+                    color: 'var(--spc-view-success)',
+                    border: '1px solid var(--spc-view-success-border)',
                     borderRadius: '6px',
                     fontWeight: 600,
                     fontSize: '0.85rem',
@@ -3512,9 +3579,13 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                 }}
               >
                 <option value="ALL">All Companies</option>
-                {autoCompanyOptions.map(comp => (
-                  <option key={comp} value={comp}>{comp}</option>
-                ))}
+                {autoCompanyOptions.map(comp => {
+                  const matchedOpt = tenantBranchOptions.find(o => o.value === comp);
+                  const label = matchedOpt ? matchedOpt.label : comp;
+                  return (
+                    <option key={comp} value={comp}>{label}</option>
+                  );
+                })}
               </select>
 
               {/* Status Filter */}
@@ -3684,7 +3755,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                         </td>
                         <td style={{ padding: '1rem', fontWeight: 500 }}>{auto.stage_name}</td>
                         <td style={{ padding: '1rem' }}>
-                          {auto.whatsapp_templates?.template_name || <span style={{color: '#ef4444'}}>Missing Template</span>}
+                          {auto.whatsapp_templates?.template_name || <span style={{color: 'var(--spc-view-danger)'}}>Missing Template</span>}
                         </td>
                         <td style={{ padding: '1rem' }}>
                           <CRMStatusBadge tone="info">{auto.frequency}</CRMStatusBadge>
@@ -3699,10 +3770,10 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                         <td className={crmStyles.actionsColumn} style={{ padding: '1rem' }}>
                           <div className={crmStyles.rowActions}>
                           {automationsPerms.edit && (
-                            <button className={crmStyles.button} onClick={() => { const { whatsapp_templates, ...cleanAuto } = auto; setCurrentAuto(cleanAuto); setShowAutoForm(true); }} style={{ padding: '0.4rem', background: 'transparent', color: '#475569', border: 'none', cursor: 'pointer' }}>Edit</button>
+                            <button className={crmStyles.button} onClick={() => { const { whatsapp_templates, ...cleanAuto } = auto; setCurrentAuto(cleanAuto); setShowAutoForm(true); }} style={{ padding: '0.4rem', background: 'transparent', color: 'var(--spc-view-muted)', border: 'none', cursor: 'pointer' }}>Edit</button>
                           )}
                           {automationsPerms.delete && (
-                            <button className={crmStyles.button} onClick={() => handleDeleteAutomation(auto.id)} style={{ padding: '0.4rem', background: 'transparent', color: '#ef4444', border: 'none', cursor: 'pointer' }}>Delete</button>
+                            <button className={crmStyles.button} onClick={() => handleDeleteAutomation(auto.id)} style={{ padding: '0.4rem', background: 'transparent', color: 'var(--spc-view-danger)', border: 'none', cursor: 'pointer' }}>Delete</button>
                           )}
                           </div>
                         </td>
@@ -3764,7 +3835,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
             {/* Header */}
             <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border-light)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'var(--bg-primary)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                <div style={{ width: '34px', height: '34px', borderRadius: '8px', backgroundColor: 'rgba(139, 92, 246, 0.15)', color: '#7c3aed', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ width: '34px', height: '34px', borderRadius: '8px', backgroundColor: 'rgba(139, 92, 246, 0.15)', color: 'var(--spc-view-violet)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <Globe size={18} />
                 </div>
                 <div>
@@ -3869,7 +3940,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
               <div className={crmStyles.formGrid} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
                 <div>
                   <label style={{ fontSize: '0.82rem', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
-                    BSP Display Name <span style={{ color: '#ef4444' }}>*</span>
+                    BSP Display Name <span style={{ color: 'var(--spc-view-danger)' }}>*</span>
                   </label>
                   <input className={crmStyles.field}
                     type="text"
@@ -3898,7 +3969,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
               {/* Endpoint URL */}
               <div style={{ marginBottom: '1rem' }}>
                 <label style={{ fontSize: '0.82rem', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
-                  API Endpoint URL <span style={{ color: '#ef4444' }}>*</span>
+                  API Endpoint URL <span style={{ color: 'var(--spc-view-danger)' }}>*</span>
                 </label>
                 <input className={crmStyles.field}
                   type="text"
@@ -3930,7 +4001,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                 {customBspForm.auth_type === 'HeaderKey' && (
                   <div>
                     <label style={{ fontSize: '0.82rem', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
-                      Auth Header Name <span style={{ color: '#ef4444' }}>*</span>
+                      Auth Header Name <span style={{ color: 'var(--spc-view-danger)' }}>*</span>
                     </label>
                     <input className={crmStyles.field}
                       type="text"
@@ -3947,7 +4018,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                 <div style={{ marginBottom: '1rem' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
                     <label style={{ fontSize: '0.82rem', fontWeight: 600 }}>
-                      API Token / Secret Key <span style={{ color: '#ef4444' }}>*</span>
+                      API Token / Secret Key <span style={{ color: 'var(--spc-view-danger)' }}>*</span>
                     </label>
                     <button className={crmStyles.button}
                       type="button" 
@@ -3971,7 +4042,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
               <div style={{ marginBottom: '1.25rem' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem', flexWrap: 'wrap', gap: '0.4rem' }}>
                   <label style={{ fontSize: '0.82rem', fontWeight: 600 }}>
-                    Dynamic JSON Payload Format <span style={{ color: '#ef4444' }}>*</span>
+                    Dynamic JSON Payload Format <span style={{ color: 'var(--spc-view-danger)' }}>*</span>
                   </label>
                   <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
                     {['{{PHONE}}', '{{NAME}}', '{{TEMPLATE_NAME}}', '{{MESSAGE}}', '{{IMAGE_URL}}'].map(tag => (
@@ -3984,7 +4055,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                           backgroundColor: 'var(--bg-primary)',
                           fontSize: '0.72rem',
                           fontFamily: 'monospace',
-                          color: '#2563eb'
+                          color: 'var(--spc-view-info)'
                         }}
                       >
                         {tag}
@@ -4043,5 +4114,6 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
 
     </CRMTabPanel>
     </CRMPage>
+    </div>
   );
 }
