@@ -51,24 +51,43 @@ const ALL_WA_TABS = [
 ];
 
 export const WA_TEMPLATE_CATEGORIES = [
-  { id: 'leads', label: 'Lead Management', icon: '🎯', defaultRecipient: 'customer', color: '#10b981' },
-  { id: 'orders', label: 'Order to Delivery Pipeline', icon: '🚚', defaultRecipient: 'customer', color: '#3b82f6' },
-  { id: 'complaints', label: 'Complaint Management', icon: '⚠️', defaultRecipient: 'customer', color: '#ef4444' },
+  { id: 'leads', label: 'Lead Management', icon: '🎯', defaultRecipient: 'party', color: '#10b981' },
+  { id: 'party', label: 'Party Master (Dealers/Channel)', icon: '🏢', defaultRecipient: 'party', color: '#0284c7' },
+  { id: 'end_customers', label: 'End Customer Master (Farmers)', icon: '🚜', defaultRecipient: 'end_customer', color: '#16a34a' },
+  { id: 'orders', label: 'Order to Delivery Pipeline', icon: '🚚', defaultRecipient: 'party', color: '#3b82f6' },
+  { id: 'complaints', label: 'Complaint Management', icon: '⚠️', defaultRecipient: 'end_customer', color: '#ef4444' },
   { id: 'delegation', label: 'Delegation Tasks', icon: '📋', defaultRecipient: 'employee', color: '#8b5cf6' },
   { id: 'attendance', label: 'Smart Attendance & Punch', icon: '⏱️', defaultRecipient: 'employee', color: '#f59e0b' },
   { id: 'leaves', label: 'Leaves & Regularization', icon: '🏖️', defaultRecipient: 'employee', color: '#06b6d4' },
   { id: 'recruitment', label: 'Recruitment Hub', icon: '🧑‍💼', defaultRecipient: 'candidate', color: '#ec4899' },
-  { id: 'general', label: 'General & Broadcast', icon: '📢', defaultRecipient: 'customer', color: '#64748b' },
+  { id: 'general', label: 'General & Broadcast', icon: '📢', defaultRecipient: 'party', color: '#64748b' },
 ];
 
 export const WA_RECIPIENT_TYPES = [
-  { id: 'customer', label: 'Customer / Client / Dealer', icon: '🏢' },
+  { id: 'party', label: 'Party / Dealer / Distributor', icon: '🏢' },
+  { id: 'end_customer', label: 'End Customer / Farmer', icon: '🚜' },
   { id: 'employee', label: 'Employee / Staff', icon: '🧑‍💼' },
   { id: 'hod', label: 'HOD / Reporting Manager', icon: '👔' },
   { id: 'candidate', label: 'Job Candidate / Applicant', icon: '🎓' },
 ];
 
 export const WA_CATEGORY_VARIABLE_TAGS = {
+  party: [
+    { num: 1, name: 'Party / Firm Name', token: '{{1}}', desc: 'Agency Name' },
+    { num: 2, name: 'Party Code / Dealer ID', token: '{{2}}', desc: 'PTY-XXXX' },
+    { num: 3, name: 'Contact Person Name', token: '{{3}}', desc: 'Proprietor' },
+    { num: 4, name: 'Branch / Territory', token: '{{4}}', desc: 'Headquarters / Raian' },
+    { num: 5, name: 'Credit Limit / Balance', token: '{{5}}', desc: 'Ledger Bal ₹' },
+    { num: 6, name: 'Sales Manager Mobile', token: '{{6}}', desc: '+91 XXXXX XXXXX' },
+  ],
+  end_customers: [
+    { num: 1, name: 'End Customer Name', token: '{{1}}', desc: 'Farmer Name' },
+    { num: 2, name: 'Model / Implement Name', token: '{{2}}', desc: 'Laser Leveller / Rotavator' },
+    { num: 3, name: 'Serial No / Chassis No', token: '{{3}}', desc: 'SN-XXXXXX' },
+    { num: 4, name: 'Purchase Date / Dealer', token: '{{4}}', desc: 'DD-MMM-YYYY' },
+    { num: 5, name: 'Warranty / Service Due', token: '{{5}}', desc: '1 Year Warranty' },
+    { num: 6, name: 'Customer Helpline No', token: '{{6}}', desc: 'Toll-free / Mobile' },
+  ],
   orders: [
     { num: 1, name: 'Customer / Party Name', token: '{{1}}', desc: 'Party Name' },
     { num: 2, name: 'Order ID / PO No', token: '{{2}}', desc: 'ORD-2026-XXXX' },
@@ -136,6 +155,9 @@ export const getCategoryMeta = (catId) => {
 };
 
 export const getRecipientMeta = (recId) => {
+  if (recId === 'customer') {
+    return { id: 'customer', label: 'Customer / Client / Dealer', icon: '🏢' };
+  }
   return WA_RECIPIENT_TYPES.find(r => r.id === recId) || WA_RECIPIENT_TYPES[0];
 };
 
