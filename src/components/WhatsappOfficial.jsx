@@ -51,19 +51,84 @@ const ALL_WA_TABS = [
 ];
 
 export const WA_TEMPLATE_CATEGORIES = [
-  { id: 'leads', label: 'Lead Management', icon: '🎯', defaultRecipient: 'party', color: '#10b981' },
-  { id: 'party', label: 'Party Master', icon: '🏢', defaultRecipient: 'party', color: '#0284c7' },
-  { id: 'end_customers', label: 'End Customer Master', icon: '🚜', defaultRecipient: 'end_customer', color: '#16a34a' },
-  { id: 'orders', label: 'Order to Delivery Pipeline', icon: '🚚', defaultRecipient: 'party', color: '#3b82f6' },
-  { id: 'complaints', label: 'Complaint Management', icon: '⚠️', defaultRecipient: 'end_customer', color: '#ef4444' },
-  { id: 'delegation', label: 'Delegation Tasks', icon: '📋', defaultRecipient: 'employee', color: '#8b5cf6' },
+  { id: 'leads', label: 'Lead Management', icon: '🎯', defaultRecipient: 'lead_business', color: '#10b981' },
+  { id: 'party', label: 'Party Master', icon: '🏢', defaultRecipient: 'party_business', color: '#0284c7' },
+  { id: 'end_customers', label: 'End Customer Master', icon: '🚜', defaultRecipient: 'end_customer_p1', color: '#16a34a' },
+  { id: 'orders', label: 'Order to Delivery Pipeline', icon: '🚚', defaultRecipient: 'order_party_business', color: '#3b82f6' },
+  { id: 'complaints', label: 'Complaint Management', icon: '⚠️', defaultRecipient: 'complaint_end_customer_p1', color: '#ef4444' },
+  { id: 'delegation', label: 'Delegation Tasks', icon: '📋', defaultRecipient: 'assignee_employee', color: '#8b5cf6' },
   { id: 'attendance', label: 'Smart Attendance & Punch', icon: '⏱️', defaultRecipient: 'employee', color: '#f59e0b' },
   { id: 'leaves', label: 'Leaves & Regularization', icon: '🏖️', defaultRecipient: 'employee', color: '#06b6d4' },
   { id: 'recruitment', label: 'Recruitment Hub', icon: '🧑‍💼', defaultRecipient: 'candidate', color: '#ec4899' },
-  { id: 'general', label: 'General & Broadcast', icon: '📢', defaultRecipient: 'party', color: '#64748b' },
+  { id: 'general', label: 'General & Broadcast', icon: '📢', defaultRecipient: 'party_business', color: '#64748b' },
 ];
 
+export const WA_MODULE_RECIPIENT_OPTIONS = {
+  leads: [
+    { id: 'lead_business', label: 'Business Contact (1st Priority - Firm Mobile)', icon: '🏢', desc: 'Auto-fallback to CP1 if blank' },
+    { id: 'lead_cp1', label: 'Contact Person 1 - CP1 (2nd Priority - Primary Contact)', icon: '👤', desc: 'Main Lead Contact / Owner' },
+    { id: 'lead_cp2', label: 'Contact Person 2 - CP2 (3rd Priority - Secondary Contact)', icon: '👥', desc: 'Secondary Contact Person' },
+    { id: 'lead_cp3', label: 'Contact Person 3 - CP3 (4th Priority - Tertiary Contact)', icon: '👥', desc: 'Tertiary Contact Person' },
+    { id: 'lead_all', label: 'All Contacts (Firm + All CPs - Multi-Send)', icon: '📢', desc: 'Deliver to all available numbers' },
+  ],
+  party: [
+    { id: 'party_business', label: 'Party Business Contact (1st Priority - Official Mobile)', icon: '🏢', desc: 'Official Firm Contact / Landline' },
+    { id: 'party_cp1', label: 'Party CP1 (2nd Priority - Primary Contact Person)', icon: '👤', desc: 'Main Party Contact / Owner' },
+    { id: 'party_cp2', label: 'Party CP2 (3rd Priority - Secondary Contact Person)', icon: '👥', desc: 'Manager / Operations Contact' },
+    { id: 'party_cp3', label: 'Party CP3 (4th Priority - Tertiary Contact Person)', icon: '👥', desc: 'Accounts / Staff Contact' },
+    { id: 'party_all', label: 'All Party Contacts (Firm + All CPs - Multi-Send)', icon: '📢', desc: 'Deliver to all party channels' },
+  ],
+  end_customers: [
+    { id: 'end_customer_p1', label: 'End Customer (1st Priority - Primary Mobile 1)', icon: '🚜', desc: 'Main Customer Contact' },
+    { id: 'end_customer_p2', label: 'End Customer (2nd Priority - Alternate Mobile 2)', icon: '📱', desc: 'Secondary / Alternate Mobile' },
+    { id: 'linked_party_master', label: 'Linked Party Master (3rd Priority - Linked Dealer)', icon: '🏢', desc: 'Dealer who sold equipment' },
+    { id: 'end_customer_all', label: 'Both Customer & Linked Party (Multi-Send)', icon: '📢', desc: 'Deliver to customer & dealer' },
+  ],
+  complaints: [
+    { id: 'complaint_end_customer_p1', label: 'End Customer (1st Priority - Mobile 1)', icon: '🚜', desc: 'Machine / Service breakdown' },
+    { id: 'complaint_end_customer_p2', label: 'End Customer (2nd Priority - Mobile 2)', icon: '📱', desc: 'Alternate customer phone' },
+    { id: 'complaint_party_business', label: 'Party Business Contact (1st Priority - Official Mobile)', icon: '🏢', desc: 'Party billing/dispatch/warranty' },
+    { id: 'complaint_party_cp1', label: 'Party CP1 (2nd Priority - Contact Person 1)', icon: '👤', desc: 'Primary party representative' },
+    { id: 'complaint_party_cp2', label: 'Party CP2 (3rd Priority - Contact Person 2)', icon: '👥', desc: 'Secondary party representative' },
+    { id: 'complaint_linked_party', label: 'Linked Party Master (Dealer Intimation / Update)', icon: '🏢', desc: 'Notify selling dealer' },
+    { id: 'complaint_all_concerned', label: 'All Concerned (End Customer + Linked Party)', icon: '📢', desc: 'Multi-send to both parties' },
+  ],
+  orders: [
+    { id: 'order_party_business', label: 'Party Business Contact (1st Priority - Official Mobile)', icon: '🏢', desc: 'Official Firm Phone' },
+    { id: 'order_party_cp1', label: 'Party CP1 (2nd Priority - Primary Contact)', icon: '👤', desc: 'Main Order Desk Contact' },
+    { id: 'order_party_all', label: 'All Party Contacts (Firm + CPs - Multi-Send)', icon: '📢', desc: 'Multi-send to all party channels' },
+  ],
+  attendance: [
+    { id: 'employee', label: 'Employee / Staff', icon: '🧑‍💼', desc: 'Direct staff mobile' },
+    { id: 'hod', label: 'HOD / Reporting Manager', icon: '👔', desc: 'Supervisor alert' },
+  ],
+  leaves: [
+    { id: 'employee', label: 'Employee / Staff', icon: '🧑‍💼', desc: 'Applicant staff' },
+    { id: 'hod', label: 'HOD / Reporting Manager', icon: '👔', desc: 'Approving manager' },
+  ],
+  delegation: [
+    { id: 'assignee_employee', label: 'Assignee Employee', icon: '🧑‍💼', desc: 'Task owner' },
+    { id: 'delegator_hod', label: 'Delegator / HOD / Admin', icon: '👔', desc: 'Task assigner' },
+  ],
+  recruitment: [
+    { id: 'candidate', label: 'Job Candidate / Applicant', icon: '🎓', desc: 'Candidate phone' },
+    { id: 'recruiter_hr', label: 'HR / Recruiter', icon: '🧑‍💼', desc: 'Interviewer phone' },
+  ],
+  general: [
+    { id: 'party_business', label: 'Party Business Contact', icon: '🏢', desc: 'Firm / Channel' },
+    { id: 'end_customer_p1', label: 'End Customer', icon: '🚜', desc: 'Retail user' },
+    { id: 'employee', label: 'Employee / Staff', icon: '🧑‍💼', desc: 'Internal team' },
+    { id: 'general_all', label: 'All Entities (Broadcast)', icon: '📢', desc: 'Mass broadcast' },
+  ],
+};
+
+export const getRecipientsForCategory = (catId) => {
+  return WA_MODULE_RECIPIENT_OPTIONS[catId] || WA_MODULE_RECIPIENT_OPTIONS.leads || [];
+};
+
 export const WA_RECIPIENT_TYPES = [
+  { id: 'lead_business', label: 'Business Contact (1st Priority)', icon: '🏢' },
+  { id: 'party_business', label: 'Party Business Contact (1st Priority)', icon: '🏢' },
   { id: 'party', label: 'Party Master', icon: '🏢' },
   { id: 'end_customer', label: 'End Customer', icon: '🚜' },
   { id: 'employee', label: 'Employee / Staff', icon: '🧑‍💼' },
@@ -73,28 +138,31 @@ export const WA_RECIPIENT_TYPES = [
 
 export const WA_CATEGORY_VARIABLE_TAGS = {
   leads: [
-    { num: 1, name: 'Business Name', token: '{{1}}', desc: 'Company / Firm' },
-    { num: 2, name: 'Contact Person 1 (CP1)', token: '{{2}}', desc: 'Primary Contact' },
-    { num: 3, name: 'Contact Person 2 (CP2)', token: '{{3}}', desc: 'Secondary Contact' },
-    { num: 4, name: 'Contact Person 3 (CP3)', token: '{{4}}', desc: 'Tertiary Contact' },
-    { num: 5, name: 'Product / Requirement', token: '{{5}}', desc: 'Requirement' },
-    { num: 6, name: 'Executive Mobile No', token: '{{6}}', desc: '+91 XXXXX XXXXX' },
+    { num: 1, name: 'Business Name', token: '{{1}}', desc: 'Firm Name (Auto-fallback to CP1 if blank)' },
+    { num: 2, name: 'Business Contact 1', token: '{{2}}', desc: 'Official Mobile (Auto-fallback to CP1 if blank)' },
+    { num: 3, name: 'Contact Person 1 (CP1)', token: '{{3}}', desc: 'Primary Lead Contact / Owner' },
+    { num: 4, name: 'Contact Person 2 (CP2)', token: '{{4}}', desc: 'Secondary Contact Person' },
+    { num: 5, name: 'Contact Person 3 (CP3)', token: '{{5}}', desc: 'Tertiary Contact Person' },
+    { num: 6, name: 'Product / Requirement', token: '{{6}}', desc: 'Inquiry Requirement' },
+    { num: 7, name: 'Executive Mobile No', token: '{{7}}', desc: '+91 XXXXX XXXXX' },
   ],
   party: [
-    { num: 1, name: 'Firm / Trade Name', token: '{{1}}', desc: 'Trade Name' },
+    { num: 1, name: 'Firm / Trade Name', token: '{{1}}', desc: 'Trade Name (Auto-fallback to CP1 if blank)' },
     { num: 2, name: 'Legal Registered Name', token: '{{2}}', desc: 'Legal Entity' },
-    { num: 3, name: 'Contact Person 1 (CP1)', token: '{{3}}', desc: 'Primary Contact' },
-    { num: 4, name: 'Contact Person 2 (CP2)', token: '{{4}}', desc: 'Secondary Contact' },
-    { num: 5, name: 'Contact Person 3 (CP3)', token: '{{5}}', desc: 'Tertiary Contact' },
-    { num: 6, name: 'Party Code', token: '{{6}}', desc: 'PTY-XXXX' },
+    { num: 3, name: 'Official Business Contact 1', token: '{{3}}', desc: 'Official Mobile (Auto-fallback to CP1 if blank)' },
+    { num: 4, name: 'Contact Person 1 (CP1)', token: '{{4}}', desc: 'Primary Contact Person / Owner' },
+    { num: 5, name: 'Contact Person 2 (CP2)', token: '{{5}}', desc: 'Secondary Contact Person' },
+    { num: 6, name: 'Contact Person 3 (CP3)', token: '{{6}}', desc: 'Tertiary Contact Person' },
+    { num: 7, name: 'Party Code', token: '{{7}}', desc: 'PTY-XXXX' },
   ],
   end_customers: [
-    { num: 1, name: 'Customer Name', token: '{{1}}', desc: 'End Customer' },
-    { num: 2, name: 'Party Master', token: '{{2}}', desc: 'Linked Dealer / Firm' },
-    { num: 3, name: 'Machine / Model Name', token: '{{3}}', desc: 'Equipment' },
-    { num: 4, name: 'Serial / Chassis No', token: '{{4}}', desc: 'SN-XXXXXX' },
-    { num: 5, name: 'Purchase Date', token: '{{5}}', desc: 'DD-MMM-YYYY' },
-    { num: 6, name: 'Helpline / Support Phone', token: '{{6}}', desc: '+91 XXXXX XXXXX' },
+    { num: 1, name: 'Customer Name', token: '{{1}}', desc: 'End Customer Name' },
+    { num: 2, name: 'Customer Mobile 1', token: '{{2}}', desc: 'Primary Mobile' },
+    { num: 3, name: 'Party Master', token: '{{3}}', desc: 'Linked Dealer / Firm' },
+    { num: 4, name: 'Machine / Model Name', token: '{{4}}', desc: 'Equipment Model' },
+    { num: 5, name: 'Serial / Chassis No', token: '{{5}}', desc: 'SN-XXXXXX' },
+    { num: 6, name: 'Purchase Date', token: '{{6}}', desc: 'DD-MMM-YYYY' },
+    { num: 7, name: 'Helpline / Support Phone', token: '{{7}}', desc: '+91 XXXXX XXXXX' },
   ],
   orders: [
     { num: 1, name: 'Party / Customer Name', token: '{{1}}', desc: 'Party Name' },
@@ -108,13 +176,15 @@ export const WA_CATEGORY_VARIABLE_TAGS = {
   ],
   complaints: [
     { num: 1, name: 'Ticket ID', token: '{{1}}', desc: 'CMP-2026-XXXX' },
-    { num: 2, name: 'End Customer Name', token: '{{2}}', desc: 'Customer Name' },
-    { num: 3, name: 'Party Master', token: '{{3}}', desc: 'Linked Dealer / Firm' },
-    { num: 4, name: 'Machine / Serial No', token: '{{4}}', desc: 'Model & SN' },
-    { num: 5, name: 'Service Engineer Name & No', token: '{{5}}', desc: 'Engineer Mobile' },
-    { num: 6, name: 'OTP Verification Code', token: '{{6}}', desc: '6-digit OTP' },
-    { num: 7, name: 'Complaint Status / Stage', token: '{{7}}', desc: 'Job Card Stage' },
-    { num: 8, name: 'SLA Resolution Target', token: '{{8}}', desc: '48h SLA' },
+    { num: 2, name: 'Party Firm / Trade Name', token: '{{2}}', desc: 'Party Name (B2B Complaint)' },
+    { num: 3, name: 'Party Business Contact', token: '{{3}}', desc: 'Party Phone (B2B)' },
+    { num: 4, name: 'Party CP1 Name', token: '{{4}}', desc: 'Party Owner / CP1' },
+    { num: 5, name: 'End Customer Name', token: '{{5}}', desc: 'End Customer (B2C Complaint)' },
+    { num: 6, name: 'End Customer Mobile', token: '{{6}}', desc: 'Customer Mobile' },
+    { num: 7, name: 'Linked Party Master', token: '{{7}}', desc: 'Linked Dealer / Firm' },
+    { num: 8, name: 'Machine / Serial No', token: '{{8}}', desc: 'Model & SN' },
+    { num: 9, name: 'Service Engineer Name & No', token: '{{9}}', desc: 'Engineer Mobile' },
+    { num: 10, name: 'Complaint Status / Stage', token: '{{10}}', desc: 'Job Card Stage' },
   ],
   attendance: [
     { num: 1, name: 'Employee Name', token: '{{1}}', desc: 'Staff Name' },
@@ -156,11 +226,22 @@ export const getCategoryMeta = (catId) => {
   return WA_TEMPLATE_CATEGORIES.find(c => c.id === catId) || WA_TEMPLATE_CATEGORIES[0];
 };
 
-export const getRecipientMeta = (recId) => {
-  if (recId === 'customer') {
-    return { id: 'customer', label: 'Customer / Client / Dealer', icon: '🏢' };
+export const getRecipientMeta = (recId, categoryId = null) => {
+  if (categoryId && WA_MODULE_RECIPIENT_OPTIONS[categoryId]) {
+    const found = WA_MODULE_RECIPIENT_OPTIONS[categoryId].find(r => r.id === recId);
+    if (found) return found;
   }
-  return WA_RECIPIENT_TYPES.find(r => r.id === recId) || WA_RECIPIENT_TYPES[0];
+  for (const cat of Object.keys(WA_MODULE_RECIPIENT_OPTIONS)) {
+    const found = WA_MODULE_RECIPIENT_OPTIONS[cat].find(r => r.id === recId);
+    if (found) return found;
+  }
+  if (recId === 'party' || recId === 'customer') {
+    return { id: recId, label: 'Party Master / Business', icon: '🏢' };
+  }
+  if (recId === 'end_customer') {
+    return { id: 'end_customer', label: 'End Customer', icon: '🚜' };
+  }
+  return WA_RECIPIENT_TYPES.find(r => r.id === recId) || { id: recId || 'unknown', label: recId || 'General', icon: '👥' };
 };
 
 export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', userCompany = '', isMasterAdmin = false, userId = '', tenantId = null, isActive = true, allowedLogViews, initialTab = null, onTabChange = null }) {
@@ -1151,7 +1232,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
     const firstBranch = 'New Swan Group (Headquarters)';
     setSelectedTemplateBranch(firstBranch);
     setSelectedTemplateCategory('leads');
-    setSelectedTemplateRecipient('customer');
+    setSelectedTemplateRecipient(WA_TEMPLATE_CATEGORIES[0]?.defaultRecipient || 'lead_business');
     setCurrentTemplate({ template_name: '', campaign_name: '', message_body: '', image_url: '', company: 'All' });
     setShowTemplateForm(true);
   };
@@ -1160,8 +1241,11 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
     const meta = parseTemplateMeta(tpl.company);
     setSelectedTemplateBsp(meta.bsp);
     setSelectedTemplateBranch(meta.branch);
-    setSelectedTemplateCategory(meta.category || 'leads');
-    setSelectedTemplateRecipient(meta.recipient || 'customer');
+    const cat = meta.category || 'leads';
+    setSelectedTemplateCategory(cat);
+    const recipients = getRecipientsForCategory(cat);
+    const defRec = getCategoryMeta(cat).defaultRecipient || recipients[0]?.id || 'lead_business';
+    setSelectedTemplateRecipient(meta.recipient || defRec);
     setCurrentTemplate(tpl);
     setShowTemplateForm(true);
     if (typeof window !== 'undefined') {
@@ -1178,7 +1262,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
     const branchLabel = selectedTemplateBranch || 'New Swan Group (Headquarters)';
     const bspLabel = selectedTemplateBsp || defaultProvider || 'aisensy';
     const catLabel = selectedTemplateCategory || 'leads';
-    const recipientLabel = selectedTemplateRecipient || 'customer';
+    const recipientLabel = selectedTemplateRecipient || getCategoryMeta(catLabel).defaultRecipient || 'lead_business';
     const combinedCompany = `${branchLabel} [${bspLabel}] {category:${catLabel},recipient:${recipientLabel}}`;
 
     const res = await saveWhatsappTemplate({
@@ -1261,7 +1345,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
         const bspMatch = (meta.bsp || '').toLowerCase().includes(q) || getBspDisplayName(meta.bsp).toLowerCase().includes(q);
         const catMeta = getCategoryMeta(meta.category);
         const catMatch = (catMeta.label || '').toLowerCase().includes(q);
-        const recMeta = getRecipientMeta(meta.recipient);
+        const recMeta = getRecipientMeta(meta.recipient, meta.category);
         const recMatch = (recMeta.label || '').toLowerCase().includes(q);
         return nameMatch || campMatch || bodyMatch || branchMatch || bspMatch || catMatch || recMatch;
       });
@@ -3106,10 +3190,10 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                         onChange={e => {
                           const newCat = e.target.value;
                           setSelectedTemplateCategory(newCat);
+                          const recipients = getRecipientsForCategory(newCat);
                           const found = WA_TEMPLATE_CATEGORIES.find(c => c.id === newCat);
-                          if (found && found.defaultRecipient) {
-                            setSelectedTemplateRecipient(found.defaultRecipient);
-                          }
+                          const defRec = (found && found.defaultRecipient) || recipients[0]?.id || 'lead_business';
+                          setSelectedTemplateRecipient(defRec);
                         }} 
                         style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontWeight: 600, fontSize: '0.85rem' }}
                       >
@@ -3134,14 +3218,14 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                         onChange={e => setSelectedTemplateRecipient(e.target.value)} 
                         style={{ width: '100%', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', fontWeight: 600, fontSize: '0.85rem' }}
                       >
-                        {WA_RECIPIENT_TYPES.map(rec => (
+                        {getRecipientsForCategory(selectedTemplateCategory).map(rec => (
                           <option key={rec.id} value={rec.id}>
                             {rec.icon} {rec.label}
                           </option>
                         ))}
                       </select>
                       <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.2rem', display: 'block' }}>
-                        Who will receive this message (Customer, Employee, HOD, or Candidate).
+                        {getRecipientMeta(selectedTemplateRecipient, selectedTemplateCategory)?.desc || 'Who will receive this message (Waterfall cascade with smart fallbacks).'}
                       </span>
                     </div>
 
@@ -3480,7 +3564,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.45rem' }}>
                         {(() => {
                           const catMeta = getCategoryMeta(meta.category);
-                          const recMeta = getRecipientMeta(meta.recipient);
+                          const recMeta = getRecipientMeta(meta.recipient, meta.category);
                           return (
                             <>
                               <span style={{ 
@@ -3658,7 +3742,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
                             {(() => {
                               const catMeta = getCategoryMeta(meta.category);
-                              const recMeta = getRecipientMeta(meta.recipient);
+                              const recMeta = getRecipientMeta(meta.recipient, meta.category);
                               return (
                                 <>
                                   <span style={{
