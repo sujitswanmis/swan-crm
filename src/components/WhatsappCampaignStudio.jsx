@@ -13,7 +13,8 @@ import {
   getCampaignAudiencePreview, 
   launchWhatsappBroadcastCampaign,
   saveWhatsappCampaignDraft,
-  getBroadcastCampaignsList
+  getBroadcastCampaignsList,
+  getSyncedDepartmentsList
 } from '@/app/actions/whatsappCampaigns';
 import { getCategoryMeta, getRecipientMeta } from '@/components/WhatsappOfficial';
 
@@ -144,16 +145,37 @@ const AUDIENCE_FILTER_FIELDS = {
       id: 'department',
       label: 'Department',
       options: [
-        'Human Resource & Administration',
-        'Sales & Marketing',
-        'Production & Plant',
-        'Quality Assurance',
-        'Service Team',
-        'Purchase Dept',
         'Accounts & Finance',
+        'Administration',
+        'Audit',
+        'Corporate Strategy and Planning',
+        'Customer Support',
+        'Director',
+        'Dispatch',
+        'Electrical & Maintenance',
+        'General',
+        'Human Resource',
+        'Human Resource & Administration',
         'Information Technology',
-        'Logistics & Dispatch',
-        'Store Dept'
+        'Logistics',
+        'Manufacturing Engineering',
+        'Marketing',
+        'Operations',
+        'Production',
+        'Production Planning and Control',
+        'Purchase',
+        'Quality Assurance',
+        'Research & Development',
+        'Sales',
+        'Sales & Marketing',
+        'Security',
+        'Service',
+        'Store',
+        'Testing',
+        'Tool Room',
+        'Training and Development',
+        'Transport',
+        'Vendor Development'
       ]
     },
     {
@@ -219,6 +241,24 @@ export default function WhatsappCampaignStudio({
   ]);
   const [activeDropdownRuleId, setActiveDropdownRuleId] = useState(null);
   const [ruleSearchTerms, setRuleSearchTerms] = useState({});
+  const [syncedDepartments, setSyncedDepartments] = useState([]);
+
+  // Fetch departments synced with Settings ➔ Manage Departments on mount
+  useEffect(() => {
+    let isMounted = true;
+    async function loadDepts() {
+      try {
+        const list = await getSyncedDepartmentsList();
+        if (isMounted && list && list.length > 0) {
+          setSyncedDepartments(list);
+        }
+      } catch (err) {
+        console.error('Failed to load synced departments:', err);
+      }
+    }
+    loadDepts();
+    return () => { isMounted = false; };
+  }, []);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -1509,7 +1549,9 @@ export default function WhatsappCampaignStudio({
                       {filterRules.map((rule) => {
                         const currentFields = AUDIENCE_FILTER_FIELDS[selectedAudience] || [];
                         const currentFieldObj = currentFields.find(f => f.id === rule.field) || currentFields[0];
-                        const availableOptions = currentFieldObj?.options || [];
+                        const availableOptions = (rule.field === 'department' && syncedDepartments.length > 0)
+                          ? syncedDepartments
+                          : (currentFieldObj?.options || []);
                         const isDropdownOpen = activeDropdownRuleId === rule.id;
                         const searchTerm = (ruleSearchTerms[rule.id] || '').toLowerCase();
                         const filteredOptions = availableOptions.filter(opt => opt.toLowerCase().includes(searchTerm));

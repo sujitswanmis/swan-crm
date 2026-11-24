@@ -198,22 +198,32 @@ function applyAudienceSubFilter(query, audienceType, subFilter) {
         if (field === 'department') {
           const deptClauses = [];
           values.forEach(v => {
-            const vStr = String(v).toLowerCase();
-            if (vStr.includes('sales') || vStr.includes('marketing')) deptClauses.push('department.ilike.%Sales%', 'department.ilike.%Marketing%');
-            else if (vStr.includes('human') || vStr.includes('hr') || vStr.includes('admin')) deptClauses.push('department.ilike.%Human Resource%', 'department.ilike.%Administration%');
-            else if (vStr.includes('production') || vStr.includes('tool room')) deptClauses.push('department.ilike.%Production%', 'department.ilike.%Tool Room%');
-            else if (vStr.includes('quality') || vStr.includes('qa')) deptClauses.push('department.ilike.%Quality Assurance%');
-            else if (vStr.includes('service')) deptClauses.push('department.ilike.%Service%');
-            else if (vStr.includes('purchase')) deptClauses.push('department.ilike.%Purchase%');
-            else if (vStr.includes('accounts') || vStr.includes('finance')) deptClauses.push('department.ilike.%Accounts%', 'department.ilike.%Finance%');
-            else if (vStr.includes('it') || vStr.includes('information')) deptClauses.push('department.ilike.%Information Technology%', 'department.ilike.%IT%');
-            else if (vStr.includes('logistics') || vStr.includes('dispatch')) deptClauses.push('department.ilike.%Logistics%', 'department.ilike.%Dispatch%');
-            else if (vStr.includes('store')) deptClauses.push('department.ilike.%Store%');
-            else deptClauses.push(`department.ilike.%${v}%`);
+            const vStr = String(v).toLowerCase().trim();
+            if (vStr === 'sales & marketing' || vStr === 'sales and marketing') {
+              deptClauses.push('department.ilike.%Sales%', 'department.ilike.%Marketing%');
+            } else if (vStr === 'human resource & administration' || vStr === 'hr & administration') {
+              deptClauses.push('department.ilike.%Human Resource%', 'department.ilike.%Administration%');
+            } else if (vStr === 'production planning and control' || vStr === 'ppc') {
+              deptClauses.push('department.ilike.%Production Planning%', 'department.ilike.%PPC%');
+            } else if (vStr === 'electrical & maintenance') {
+              deptClauses.push('department.ilike.%Electrical%', 'department.ilike.%Maintenance%');
+            } else if (vStr === 'research & development' || vStr === 'r&d') {
+              deptClauses.push('department.ilike.%Research%', 'department.ilike.%Development%', 'department.ilike.%R&D%');
+            } else if (vStr === 'corporate strategy and planning') {
+              deptClauses.push('department.ilike.%Corporate Strategy%', 'department.ilike.%Planning%');
+            } else if (vStr === 'training and development') {
+              deptClauses.push('department.ilike.%Training%');
+            } else if (vStr === 'manufacturing engineering') {
+              deptClauses.push('department.ilike.%Manufacturing%');
+            } else if (vStr === 'vendor development') {
+              deptClauses.push('department.ilike.%Vendor%');
+            } else {
+              deptClauses.push(`department.ilike.%${v.trim()}%`);
+            }
           });
           if (deptClauses.length > 0) {
             if (condition === 'NOT_IN' || condition === 'NOT IN') {
-              values.forEach(v => { query = query.not('department', 'ilike', `%${v}%`); });
+              values.forEach(v => { query = query.not('department', 'ilike', `%${v.trim()}%`); });
             } else {
               query = query.or(Array.from(new Set(deptClauses)).join(','));
             }
@@ -400,6 +410,44 @@ function applyAudienceSubFilter(query, audienceType, subFilter) {
   }
 
   return query;
+}
+
+/**
+ * Fetch all available departments synchronized with Settings ➔ Manage Departments (departments table)
+ */
+export async function getSyncedDepartmentsList() {
+  const supabase = getAdminClient();
+  if (!supabase) return [];
+  try {
+    const { data: deptRows, error: dErr } = await supabase
+      .from('departments')
+      .select('name')
+      .order('name', { ascending: true });
+
+    const dbDepts = (deptRows || [])
+      .map(d => (d.name || '').trim())
+      .filter(d => d && d.toLowerCase() !== 'all');
+
+    // Also get distinct departments from user_roles table
+    const { data: userRows } = await supabase
+      .from('user_roles')
+      .select('department')
+      .not('department', 'is', null);
+
+    const userDepts = (userRows || [])
+      .map(u => (u.department || '').trim())
+      .filter(Boolean);
+
+    // Merge and deduplicate
+    const combined = Array.from(new Set([...dbDepts, ...userDepts]))
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b));
+
+    return combined;
+  } catch (err) {
+    console.error('getSyncedDepartmentsList error:', err);
+    return [];
+  }
 }
 
 /**
