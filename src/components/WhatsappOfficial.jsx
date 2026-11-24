@@ -34,10 +34,10 @@ import { getTenantBranches, getAllTenantBranches } from '@/app/actions/tenantBra
 import { filterVisibleSubTabs, getSubItemPermissions } from '@/utils/permissionUtils';
 
 const ALLOCATION_WIDTHS = { office: 240, type: 140, bsps: 260, defaultBsp: 160, quota: 110, action: 90 };
-const TEMPLATE_WIDTHS = { select: 48, name: 240, provider: 150, branch: 180, campaign: 170, preview: 280, actions: 144 };
+const TEMPLATE_WIDTHS = { select: 48, name: 220, provider: 130, branch: 240, campaign: 180, preview: 280, actions: 144 };
 const AUTOMATION_WIDTHS = { select: 48, company: 160, stage: 240, template: 250, frequency: 140, status: 130, actions: 144 };
 const ALLOCATION_MINIMUMS = { office: 160, type: 110, bsps: 180, defaultBsp: 120, quota: 80, action: 70 };
-const TEMPLATE_MINIMUMS = { select: 48, name: 110, provider: 100, branch: 110, campaign: 110, preview: 140, actions: 144 };
+const TEMPLATE_MINIMUMS = { select: 48, name: 110, provider: 100, branch: 150, campaign: 120, preview: 140, actions: 144 };
 const AUTOMATION_MINIMUMS = { select: 48, company: 100, stage: 110, template: 120, frequency: 100, status: 100, actions: 144 };
 const WA_EDGE_MAXIMUMS = { select: 72, actions: 180 };
 
@@ -3212,26 +3212,29 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                         </td>
 
                         {/* BRANCH */}
-                        <td style={{ padding: '0.75rem' }}>
+                        <td style={{ padding: '0.75rem', overflow: 'hidden' }}>
                           <span style={{ 
                             fontSize: '0.72rem', 
                             fontWeight: 600, 
-                            padding: '0.15rem 0.45rem', 
+                            padding: '0.2rem 0.5rem', 
                             borderRadius: '4px', 
                             backgroundColor: 'rgba(16, 185, 129, 0.1)', 
                             color: 'var(--spc-view-success)',
                             border: '1px solid rgba(16, 185, 129, 0.25)',
                             display: 'inline-flex',
                             alignItems: 'center',
-                            gap: '0.25rem',
-                            whiteSpace: 'nowrap'
-                          }}>
-                            <Building2 size={11} /> {resolveBranchDisplayName(meta.branch)}
+                            gap: '0.35rem',
+                            lineHeight: 1.35,
+                            wordBreak: 'break-word',
+                            maxWidth: '100%'
+                          }} title={resolveBranchDisplayName(meta.branch)}>
+                            <Building2 size={12} style={{ flexShrink: 0 }} /> 
+                            <span>{resolveBranchDisplayName(meta.branch)}</span>
                           </span>
                         </td>
 
                         {/* CAMPAIGN */}
-                        <td style={{ padding: '0.75rem', fontFamily: 'monospace', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                        <td style={{ padding: '0.75rem', fontFamily: 'monospace', fontSize: '0.78rem', color: 'var(--text-secondary)', overflow: 'hidden', wordBreak: 'break-all' }}>
                           {tpl.campaign_name}
                         </td>
 
