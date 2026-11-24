@@ -35,76 +35,125 @@ function normalizeBranchTag(branch) {
 }
 
 /**
- * Helper to apply sub-filters directly on Supabase PostgREST query
+ * Helper to get PostgREST filter clauses for a single sub-filter tag
  */
-function applyAudienceSubFilter(query, audienceType, subFilter) {
-  if (!subFilter || subFilter === 'ALL') return query;
+function getSingleSubFilterClauses(audienceType, filterKey) {
+  const f = String(filterKey || '').trim().toUpperCase();
+  if (!f || f === 'ALL') return null;
 
   if (audienceType === 'leads') {
-    switch (subFilter) {
+    switch (f) {
       case 'STAGE_01':
-        return query.or('status.ilike.1;%,status.ilike.%New Stage%,status.eq.None,status.is.null,status.eq.');
+        return ['status.ilike.1;%', 'status.ilike.%New Stage%', 'status.eq.None', 'status.is.null', 'status.eq.'];
       case 'STAGE_02':
-        return query.or('status.ilike.2;%,status.ilike.%Contact Stage%');
+        return ['status.ilike.2;%', 'status.ilike.%Contact Stage%'];
       case 'STAGE_03':
-        return query.or('status.ilike.3;%,status.ilike.%Qualification Stage%');
+        return ['status.ilike.3;%', 'status.ilike.%Qualification Stage%'];
       case 'STAGE_04':
-        return query.or('status.ilike.4;%,status.ilike.%Follow Up Stage%');
+        return ['status.ilike.4;%', 'status.ilike.%Follow Up Stage%'];
       case 'STAGE_05':
-        return query.or('status.ilike.5;%,status.ilike.%Sales Process Stage%');
+        return ['status.ilike.5;%', 'status.ilike.%Sales Process Stage%'];
       case 'STAGE_06':
-        return query.or('status.ilike.6;%,status.ilike.%Conversion Stage%');
+        return ['status.ilike.6;%', 'status.ilike.%Conversion Stage%'];
       case 'STAGE_07':
-        return query.or('status.ilike.7;%,status.ilike.%Final Stage%');
+        return ['status.ilike.7;%', 'status.ilike.%Final Stage%'];
       case 'STAGE_08':
-        return query.or('status.ilike.8;%,status.ilike.%Transfer to Party%');
+        return ['status.ilike.8;%', 'status.ilike.%Transfer to Party%'];
       default:
-        if (subFilter.startsWith('STATE_')) {
-          const state = subFilter.replace('STATE_', '');
-          return query.ilike('state_name', `%${state}%`);
+        if (f.startsWith('STATE_')) {
+          const state = f.replace('STATE_', '');
+          return [`state_name.ilike.%${state}%`];
         }
-        return query.ilike('status', `%${subFilter}%`);
+        return [`status.ilike.%${f}%`];
     }
   }
 
   if (audienceType === 'party') {
-    switch (subFilter) {
+    switch (f) {
       case 'EXCLUSIVE':
-        return query.ilike('business_nature', '%EXCLUSIVE_SWAN%');
+        return ['business_nature.ilike.%EXCLUSIVE_SWAN%'];
       case 'DEALER':
-        return query.or('business_nature.ilike.%"party_type":"Dealer"%,business_nature.ilike.%Dealer%');
+        return ['business_nature.ilike.%"party_type":"Dealer"%', 'business_nature.ilike.%Dealer%'];
       case 'ACTIVE':
-        return query.or('business_nature.ilike.%"activation_status":"Active"%,business_nature.ilike.%"status":"Active"%');
+        return ['business_nature.ilike.%"activation_status":"Active"%', 'business_nature.ilike.%"status":"Active"%'];
       case 'STATE_UP':
-        return query.or('business_nature.ilike.%"state_name":"Uttar Pradesh"%,business_nature.ilike.%"state":"Uttar Pradesh"%');
+        return ['business_nature.ilike.%"state_name":"Uttar Pradesh"%', 'business_nature.ilike.%"state":"Uttar Pradesh"%'];
       case 'STATE_MH':
-        return query.or('business_nature.ilike.%"state_name":"Maharashtra"%,business_nature.ilike.%"state":"Maharashtra"%');
+        return ['business_nature.ilike.%"state_name":"Maharashtra"%', 'business_nature.ilike.%"state":"Maharashtra"%'];
       case 'STATE_PB':
-        return query.or('business_nature.ilike.%"state_name":"Punjab"%,business_nature.ilike.%"state":"Punjab"%');
+        return ['business_nature.ilike.%"state_name":"Punjab"%', 'business_nature.ilike.%"state":"Punjab"%'];
       case 'STATE_HR':
-        return query.or('business_nature.ilike.%"state_name":"Haryana"%,business_nature.ilike.%"state":"Haryana"%');
+        return ['business_nature.ilike.%"state_name":"Haryana"%', 'business_nature.ilike.%"state":"Haryana"%'];
       default:
-        return query.ilike('business_nature', `%${subFilter}%`);
+        return [`business_nature.ilike.%${f}%`];
     }
   }
 
   if (audienceType === 'users') {
-    switch (subFilter) {
+    switch (f) {
       case 'DEPT_SALES':
-        return query.or('department.ilike.%Sales%,department.ilike.%Marketing%');
+        return ['department.ilike.%Sales%', 'department.ilike.%Marketing%'];
       case 'DEPT_PRODUCTION':
-        return query.or('department.ilike.%Production%,department.ilike.%Tool Room%');
+        return ['department.ilike.%Production%', 'department.ilike.%Tool Room%'];
       case 'DEPT_QA':
-        return query.ilike('department', '%Quality Assurance%');
+        return ['department.ilike.%Quality Assurance%'];
       case 'DEPT_HR':
-        return query.or('department.ilike.%Human Resource%,department.ilike.%Administration%');
+        return ['department.ilike.%Human Resource%', 'department.ilike.%Administration%'];
       case 'DEPT_SERVICE':
-        return query.ilike('department', '%Service%');
+        return ['department.ilike.%Service%'];
       case 'DEPT_PURCHASE':
-        return query.ilike('department', '%Purchase%');
+        return ['department.ilike.%Purchase%'];
       default:
-        return query.or(`role.ilike.%${subFilter}%,department.ilike.%${subFilter}%,designation.ilike.%${subFilter}%`);
+        return [`role.ilike.%${f}%`, `department.ilike.%${f}%`, `designation.ilike.%${f}%`];
     }
+  }
+
+  return null;
+}
+
+/**
+ * Helper to apply single or multiple sub-filters directly on Supabase PostgREST query
+ */
+function applyAudienceSubFilter(query, audienceType, subFilter) {
+  if (!subFilter) return query;
+  const rawList = Array.isArray(subFilter) ? subFilter : String(subFilter).split(',');
+  const filterKeys = rawList.map(s => String(s).trim().toUpperCase()).filter(Boolean);
+
+  if (filterKeys.length === 0 || filterKeys.includes('ALL')) return query;
+
+  if (audienceType === 'users') {
+    const hasActive = filterKeys.includes('STATUS_ACTIVE');
+    const hasInactive = filterKeys.includes('STATUS_INACTIVE');
+
+    if (hasActive && !hasInactive) {
+      query = query.or('emp_status.eq.Active,status.eq.Active');
+    } else if (hasInactive && !hasActive) {
+      query = query.neq('emp_status', 'Active');
+    }
+
+    const deptKeys = filterKeys.filter(k => k !== 'STATUS_ACTIVE' && k !== 'STATUS_INACTIVE');
+    if (deptKeys.length > 0) {
+      const deptClauses = [];
+      for (const k of deptKeys) {
+        const clauses = getSingleSubFilterClauses('users', k);
+        if (clauses) deptClauses.push(...clauses);
+      }
+      if (deptClauses.length > 0) {
+        query = query.or(Array.from(new Set(deptClauses)).join(','));
+      }
+    }
+    return query;
+  }
+
+  // Leads or Party multi-filter OR union
+  const allClauses = [];
+  for (const k of filterKeys) {
+    const clauses = getSingleSubFilterClauses(audienceType, k);
+    if (clauses) allClauses.push(...clauses);
+  }
+
+  if (allClauses.length > 0) {
+    query = query.or(Array.from(new Set(allClauses)).join(','));
   }
 
   return query;
@@ -555,10 +604,29 @@ export async function launchWhatsappBroadcastCampaign({
     // SCHEDULED CAMPAIGN HANDLING
     if (sendMode === 'scheduled' && scheduledAt) {
       const scheduleTimeStr = String(scheduledAt);
+      
+      // 1. Structured campaign summary for Campaigns List table
       await supabase.from('whatsapp_message_logs').insert({
         template_id: template.id,
         sent_at: new Date().toISOString(),
-        status: `[${campaignTitle}] SCHEDULED for ${scheduleTimeStr} IST | Recipients: ${audienceRecords.length} (${audienceType}) | Branch: ${branchFilter} | Speed: ${throttleSpeed}`
+        status: `[CAMPAIGN_SUMMARY] ${JSON.stringify({
+          campaignName: campaignTitle,
+          audienceType,
+          subFilters: Array.isArray(subFilter) ? subFilter : [subFilter],
+          branchFilter,
+          templateName: template.template_name,
+          totalTargeted: audienceRecords.length,
+          sentCount: 0,
+          failedCount: 0,
+          skippedCappedCount: 0,
+          scheduledAt: scheduleTimeStr,
+          sendMode: 'scheduled',
+          throttleSpeed,
+          dailyLimit: 3,
+          retryPolicy: '3 attempts / 3 days',
+          status: 'Scheduled',
+          createdAt: new Date().toISOString()
+        })}`
       });
 
       return {
@@ -570,10 +638,18 @@ export async function launchWhatsappBroadcastCampaign({
       };
     }
 
-    // IMMEDIATE BROADCAST DISPATCH WITH THROTTLE LIMITS
+    // IMMEDIATE BROADCAST DISPATCH WITH THROTTLE LIMITS & ANTI-SPAM SAFEGUARDS
     let sentCount = 0;
     let failedCount = 0;
+    let skippedCappedCount = 0;
     const failures = [];
+
+    // Daily Recipient Cap (IST): Max 3 messages per recipient phone per day
+    const now = new Date();
+    const istOffset = 5.5 * 60 * 60 * 1000;
+    const istDate = new Date(now.getTime() + istOffset);
+    const istStart = new Date(Date.UTC(istDate.getUTCFullYear(), istDate.getUTCMonth(), istDate.getUTCDate(), 0, 0, 0));
+    const istStartUTC = new Date(istStart.getTime() - istOffset).toISOString();
 
     // Throttle speed interval in ms
     let throttleDelay = 1500; // default safe: ~40 msgs/min
@@ -583,6 +659,20 @@ export async function launchWhatsappBroadcastCampaign({
     // Dispatch in sequential throttled batches to prevent API rate limits
     for (const rec of audienceRecords) {
       for (const phone of rec.phones) {
+        const cleanPhone = String(phone).replace(/\D/g, '').slice(-10);
+        if (!cleanPhone || cleanPhone.length < 10) continue;
+
+        // Anti-Spam Frequency Cap: check if recipient has already received 3 messages today (IST)
+        const { count: dailyMsgCount } = await supabase.from('whatsapp_message_logs')
+          .select('id', { count: 'exact', head: true })
+          .gte('sent_at', istStartUTC)
+          .ilike('status', `%sent to %${cleanPhone}%`);
+
+        if (typeof dailyMsgCount === 'number' && dailyMsgCount >= 3) {
+          skippedCappedCount++;
+          continue;
+        }
+
         if (throttleDelay > 0 && sentCount > 0) {
           await new Promise(resolve => setTimeout(resolve, throttleDelay));
         }
@@ -609,8 +699,47 @@ export async function launchWhatsappBroadcastCampaign({
           failedCount++;
           failures.push({ name: rec.name, phone, error: dispatchErr.message });
           console.error(`Failed to dispatch to ${phone}:`, dispatchErr.message);
+
+          // Auto-Retry Tracking: Log with [RETRY_PENDING_1] for up to 3 attempts over 3 days
+          await supabase.from('whatsapp_message_logs').insert({
+            lead_id: rec.id,
+            template_id: template.id,
+            sent_at: new Date().toISOString(),
+            status: `[${campaignTitle}] [RETRY_PENDING_1] Failed send to ${phone} (${rec.name}) - Attempt 1/3 - Error: ${dispatchErr.message || 'Dispatch error'}`
+          });
         }
       }
+    }
+
+    // Insert Campaign Summary record so it displays in Campaigns History Table
+    await supabase.from('whatsapp_message_logs').insert({
+      template_id: template.id,
+      sent_at: new Date().toISOString(),
+      status: `[CAMPAIGN_SUMMARY] ${JSON.stringify({
+        campaignName: campaignTitle,
+        audienceType,
+        subFilters: Array.isArray(subFilter) ? subFilter : [subFilter],
+        branchFilter,
+        templateName: template.template_name,
+        totalTargeted: audienceRecords.length,
+        sentCount,
+        failedCount,
+        skippedCappedCount,
+        sendMode: 'immediate',
+        throttleSpeed,
+        dailyLimit: 3,
+        retryPolicy: '3 attempts / 3 days',
+        status: failedCount > 0 && sentCount === 0 ? 'Failed' : 'Completed',
+        createdAt: new Date().toISOString()
+      })}`
+    });
+
+    let resultMsg = `Broadcast "${campaignTitle}" finished! Successfully sent ${sentCount} messages.`;
+    if (skippedCappedCount > 0) {
+      resultMsg += ` (${skippedCappedCount} skipped due to 3-message daily limit).`;
+    }
+    if (failedCount > 0) {
+      resultMsg += ` (${failedCount} failed, queued for 3-day auto-retry).`;
     }
 
     return {
@@ -619,12 +748,53 @@ export async function launchWhatsappBroadcastCampaign({
       totalTargeted: audienceRecords.length,
       sentCount,
       failedCount,
+      skippedCappedCount,
       failures: failures.slice(0, 10),
-      message: `Broadcast "${campaignTitle}" finished! Successfully sent ${sentCount} messages (${failedCount} failed).`
+      message: resultMsg
     };
 
   } catch (err) {
     console.error('launchWhatsappBroadcastCampaign error:', err);
     return { success: false, error: err.message || 'Failed to execute campaign broadcast' };
+  }
+}
+
+/**
+ * Get persistent list of Broadcast Campaigns from database summary logs
+ */
+export async function getBroadcastCampaignsList({ tenantId = null } = {}) {
+  const supabase = getAdminClient();
+  if (!supabase) return [];
+  try {
+    const { data, error } = await supabase.from('whatsapp_message_logs')
+      .select('id, template_id, sent_at, status, created_at')
+      .ilike('status', '[CAMPAIGN_SUMMARY]%')
+      .order('sent_at', { ascending: false })
+      .limit(100);
+
+    if (error || !data) return [];
+
+    return data.map(row => {
+      try {
+        const jsonStr = row.status.replace('[CAMPAIGN_SUMMARY]', '').trim();
+        const parsed = JSON.parse(jsonStr);
+        return {
+          id: row.id,
+          ...parsed,
+          logId: row.id,
+          sentAt: row.sent_at || row.created_at
+        };
+      } catch (e) {
+        return {
+          id: row.id,
+          campaignName: 'Broadcast Campaign',
+          rawStatus: row.status,
+          sentAt: row.sent_at || row.created_at
+        };
+      }
+    });
+  } catch (err) {
+    console.error('getBroadcastCampaignsList error:', err);
+    return [];
   }
 }
