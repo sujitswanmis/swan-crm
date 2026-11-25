@@ -14,7 +14,8 @@ import {
   launchWhatsappBroadcastCampaign,
   saveWhatsappCampaignDraft,
   getBroadcastCampaignsList,
-  getSyncedDepartmentsList
+  getSyncedDepartmentsList,
+  getSyncedUserFilterOptions
 } from '@/app/actions/whatsappCampaigns';
 import { getCategoryMeta, getRecipientMeta } from '@/components/WhatsappOfficial';
 
@@ -195,20 +196,127 @@ const AUDIENCE_FILTER_FIELDS = {
       ]
     },
     {
+      id: 'sub_department',
+      label: 'Sub-Department',
+      options: [
+        'Administration',
+        'Design',
+        'Digital Marketing',
+        'Dispatch',
+        'Lead Generation',
+        'Logistics',
+        'Production',
+        'Purchase',
+        'Quality Assurance',
+        'Sales Person',
+        'Service',
+        'Tool Room'
+      ]
+    },
+    {
+      id: 'designation',
+      label: 'Designation',
+      options: [
+        'Area Sales Manager',
+        'Assistant Manager',
+        'Coordinator',
+        'Engineer',
+        'Executive',
+        'Manager',
+        'Supervisor'
+      ]
+    },
+    {
       id: 'status',
       label: 'Employment Status',
       options: [
         'Active Staff',
-        'Inactive / Resigned Staff'
+        'InActive Staff',
+        'Resigned Staff'
       ]
     },
     {
       id: 'role',
-      label: 'Role / Designation',
+      label: 'Role / Template',
       options: [
-        'Admin',
+        'admin',
         'Manager',
-        'Executive'
+        'agent'
+      ]
+    },
+    {
+      id: 'company',
+      label: 'Company / Unit',
+      options: [
+        'NSMLR',
+        'NSTLP',
+        'NSACPL',
+        'NSE-1',
+        'NSE-2',
+        'NSE-6',
+        'NSCPL',
+        'New Swan Group'
+      ]
+    },
+    {
+      id: 'work_location_type',
+      label: 'Work Location Type',
+      options: [
+        'Primary',
+        'Regional',
+        'Factory / Plant',
+        'National',
+        'Secondary',
+        'Territorial'
+      ]
+    },
+    {
+      id: 'work_location_name',
+      label: 'Work Location / State',
+      options: [
+        'Uttar Pradesh',
+        'Punjab',
+        'Haryana',
+        'Maharashtra',
+        'Bihar',
+        'Madhya Pradesh',
+        'Rajasthan',
+        'Gujarat',
+        'Odisha',
+        'Jharkhand',
+        'Uttarakhand',
+        'Assam',
+        'Tamil Nadu',
+        'WFH',
+        'NSMLR',
+        'NSTL',
+        'PAN INDIA'
+      ]
+    },
+    {
+      id: 'hod_person',
+      label: 'HOD (Head of Dept)',
+      options: []
+    },
+    {
+      id: 'reporting_manager',
+      label: 'Reporting Manager',
+      options: []
+    },
+    {
+      id: 'tracking_policy',
+      label: 'Tracking Policy',
+      options: [
+        'LIVE_TRACKING',
+        'PUNCH_ONLY'
+      ]
+    },
+    {
+      id: 'approval_status',
+      label: 'Approval Status',
+      options: [
+        'Approved',
+        'Pending Approval'
       ]
     },
     {
@@ -219,6 +327,11 @@ const AUDIENCE_FILTER_FIELDS = {
         'No Phone Number (Missing Primary & Alt)',
         'Missing Primary Mobile Only'
       ]
+    },
+    {
+      id: 'employee',
+      label: 'Specific Employee (Name)',
+      options: []
     }
   ],
   end_customers: [
@@ -275,23 +388,28 @@ export default function WhatsappCampaignStudio({
   const [activeDropdownRuleId, setActiveDropdownRuleId] = useState(null);
   const [ruleSearchTerms, setRuleSearchTerms] = useState({});
   const [syncedDepartments, setSyncedDepartments] = useState([]);
+  const [syncedUserOptions, setSyncedUserOptions] = useState({});
 
-  // Fetch departments synced with Settings ➔ Manage Departments on mount
+  // Fetch departments & live User Manage filter options on mount
   useEffect(() => {
     let isMounted = true;
-    async function loadDepts() {
+    async function loadFilterOptions() {
       try {
-        const list = await getSyncedDepartmentsList();
-        if (isMounted && list && list.length > 0) {
-          setSyncedDepartments(list);
+        const [deptList, userOpts] = await Promise.all([
+          getSyncedDepartmentsList(),
+          getSyncedUserFilterOptions({ tenantId })
+        ]);
+        if (isMounted) {
+          if (deptList && deptList.length > 0) setSyncedDepartments(deptList);
+          if (userOpts && typeof userOpts === 'object') setSyncedUserOptions(userOpts);
         }
       } catch (err) {
-        console.error('Failed to load synced departments:', err);
+        console.error('Failed to load synced filter options:', err);
       }
     }
-    loadDepts();
+    loadFilterOptions();
     return () => { isMounted = false; };
-  }, []);
+  }, [tenantId]);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -1582,9 +1700,11 @@ export default function WhatsappCampaignStudio({
                       {filterRules.map((rule) => {
                         const currentFields = AUDIENCE_FILTER_FIELDS[selectedAudience] || [];
                         const currentFieldObj = currentFields.find(f => f.id === rule.field) || currentFields[0];
-                        const availableOptions = (rule.field === 'department' && syncedDepartments.length > 0)
-                          ? syncedDepartments
-                          : (currentFieldObj?.options || []);
+                        const availableOptions = (selectedAudience === 'users' && syncedUserOptions[rule.field]?.length > 0)
+                          ? syncedUserOptions[rule.field]
+                          : (rule.field === 'department' && syncedDepartments.length > 0)
+                            ? syncedDepartments
+                            : (currentFieldObj?.options || []);
                         const isDropdownOpen = activeDropdownRuleId === rule.id;
                         const searchTerm = (ruleSearchTerms[rule.id] || '').toLowerCase();
                         const filteredOptions = availableOptions.filter(opt => opt.toLowerCase().includes(searchTerm));

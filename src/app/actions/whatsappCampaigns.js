@@ -78,6 +78,45 @@ function normalizeSubFilterInput(subFilter) {
   return subFilter;
 }
 
+function sanitizePgPattern(val) {
+  const s = String(val || '').trim().replace(/"/g, '');
+  return /[(),]/.test(s) ? `"%${s}%"` : `%${s}%`;
+}
+
+function sanitizePgExact(val) {
+  const s = String(val || '').trim().replace(/"/g, '');
+  return /[(),]/.test(s) ? `"${s}"` : s;
+}
+
+function applyMultiSourceFieldFilter(query, cols = [], jsonKeys = [], values = [], condition = 'IN') {
+  const isNegated = condition === 'NOT_IN' || condition === 'NOT IN';
+  const isExact = condition === 'EQUALS';
+
+  if (isNegated) {
+    values.forEach(v => {
+      const pat = isExact ? sanitizePgExact(v) : sanitizePgPattern(v);
+      cols.forEach(col => {
+        query = query.or(`${col}.is.null,${col}.not.ilike.${pat}`);
+      });
+      jsonKeys.forEach(jk => {
+        query = query.or(`module_access->>${jk}.is.null,module_access->>${jk}.not.ilike.${pat}`);
+      });
+    });
+    return query;
+  }
+
+  const clauses = [];
+  values.forEach(v => {
+    const valStr = isExact ? sanitizePgExact(v) : sanitizePgPattern(v);
+    cols.forEach(col => clauses.push(`${col}.ilike.${valStr}`));
+    jsonKeys.forEach(jk => clauses.push(`module_access->>${jk}.ilike.${valStr}`));
+  });
+  if (clauses.length > 0) {
+    query = query.or(Array.from(new Set(clauses)).join(','));
+  }
+  return query;
+}
+
 /**
  * Helper to apply dynamic multi-field filter rules or legacy sub-filters on Supabase PostgREST query
  */
@@ -259,18 +298,58 @@ function applyAudienceSubFilter(query, audienceType, subFilter) {
             }
           }
         } else if (field === 'status') {
-          const hasActive = values.some(v => String(v).toLowerCase().includes('active') && !String(v).toLowerCase().includes('inactive'));
-          const hasInactive = values.some(v => String(v).toLowerCase().includes('inactive') || String(v).toLowerCase().includes('resigned'));
-          if (hasActive && !hasInactive) {
-            query = query.or('emp_status.eq.Active,status.eq.Active');
-          } else if (hasInactive && !hasActive) {
-            query = query.neq('emp_status', 'Active');
+          const isNegated = condition === 'NOT_IN' || condition === 'NOT IN';
+          const wantActive = values.some(v => String(v).toLowerCase().includes('active') && !String(v).toLowerCase().includes('inactive'));
+          const wantInactive = values.some(v => String(v).toLowerCase().includes('inactive'));
+          const wantResigned = values.some(v => String(v).toLowerCase().includes('resigned'));
+          const statusClauses = [];
+          if (wantActive) statusClauses.push('emp_status.eq.Active', 'status.eq.Active');
+          if (wantInactive) statusClauses.push('emp_status.ilike.InActive', 'status.ilike.InActive');
+          if (wantResigned) statusClauses.push('emp_status.ilike.Resigned', 'status.ilike.Resigned');
+
+          if (statusClauses.length > 0) {
+            if (isNegated) {
+              if (wantActive) query = query.neq('emp_status', 'Active');
+              if (wantInactive) query = query.not('emp_status', 'ilike', 'InActive');
+              if (wantResigned) query = query.not('emp_status', 'ilike', 'Resigned');
+            } else {
+              query = query.or(Array.from(new Set(statusClauses)).join(','));
+            }
           }
+        } else if (field === 'sub_department') {
+          query = applyMultiSourceFieldFilter(query, ['emp_sub_department'], ['emp_sub_department'], values, condition);
+        } else if (field === 'designation') {
+          query = applyMultiSourceFieldFilter(query, ['emp_designation'], [], values, condition);
         } else if (field === 'role') {
-          const roleClauses = values.map(v => `role.ilike.%${v}%`);
-          if (roleClauses.length > 0) {
-            query = query.or(Array.from(new Set(roleClauses)).join(','));
+          query = applyMultiSourceFieldFilter(query, ['role'], ['role_preset_name'], values, condition);
+        } else if (field === 'company') {
+          query = applyMultiSourceFieldFilter(query, ['company', 'branch_name', 'company_name'], ['company_name', 'branch_name'], values, condition);
+        } else if (field === 'work_location_type') {
+          query = applyMultiSourceFieldFilter(query, ['work_location_type'], ['work_location_type'], values, condition);
+        } else if (field === 'work_location_name') {
+          query = applyMultiSourceFieldFilter(query, ['work_location_name'], ['work_location_name'], values, condition);
+        } else if (field === 'hod_person') {
+          query = applyMultiSourceFieldFilter(query, ['hod_person'], ['hod_person'], values, condition);
+        } else if (field === 'reporting_manager') {
+          query = applyMultiSourceFieldFilter(query, ['primary_reporting_person', 'secondary_reporting_person'], ['primary_reporting_person', 'secondary_reporting_person'], values, condition);
+        } else if (field === 'tracking_policy') {
+          query = applyMultiSourceFieldFilter(query, ['tracking_policy'], ['tracking_policy'], values, condition);
+        } else if (field === 'approval_status') {
+          const isNegated = condition === 'NOT_IN' || condition === 'NOT IN';
+          let wantApproved = values.some(v => String(v).toLowerCase().includes('approved'));
+          let wantPending = values.some(v => String(v).toLowerCase().includes('pending'));
+          if (isNegated) {
+            const origA = wantApproved;
+            wantApproved = wantPending;
+            wantPending = origA;
           }
+          if (wantApproved && !wantPending) {
+            query = query.eq('is_approved', true);
+          } else if (wantPending && !wantApproved) {
+            query = query.or('is_approved.is.null,is_approved.eq.false');
+          }
+        } else if (field === 'employee') {
+          query = applyMultiSourceFieldFilter(query, ['emp_name', 'name', 'emp_code'], [], values, condition);
         } else if (field === 'phone_status') {
           const isNegated = condition === 'NOT_IN' || condition === 'NOT IN';
           const rawHasAny = values.some(v => String(v).toLowerCase().includes('has phone'));
@@ -539,6 +618,53 @@ export async function getSyncedDepartmentsList() {
   } catch (err) {
     console.error('getSyncedDepartmentsList error:', err);
     return [];
+  }
+}
+
+/**
+ * Fetch live synchronized filter dropdown options across all User Manage fields
+ */
+export async function getSyncedUserFilterOptions({ tenantId = null } = {}) {
+  const supabase = getAdminClient();
+  if (!supabase) return {};
+  const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
+
+  try {
+    let q = supabase
+      .from('user_roles')
+      .select('emp_name, name, emp_code, role, emp_designation, emp_status, status, is_approved, company, branch_name, department, emp_sub_department, work_location_type, work_location_name, hod_person, primary_reporting_person, tracking_policy, module_access');
+    if (effectiveTenantId) q = q.eq('tenant_id', effectiveTenantId);
+
+    const [{ data: users }, { data: deptRows }] = await Promise.all([
+      q,
+      supabase.from('departments').select('name').order('name', { ascending: true })
+    ]);
+
+    const uniq = (arr) => Array.from(new Set(
+      arr
+        .map(v => String(v || '').trim())
+        .filter(v => v && v.toLowerCase() !== 'none' && v.toLowerCase() !== 'all')
+    )).sort((a, b) => a.localeCompare(b));
+
+    const uList = users || [];
+    const dbDepts = (deptRows || []).map(d => d.name);
+
+    return {
+      department: uniq([...dbDepts, ...uList.map(u => u.department)]),
+      sub_department: uniq(uList.flatMap(u => [u.emp_sub_department, u.module_access?.emp_sub_department])),
+      designation: uniq(uList.map(u => u.emp_designation)),
+      role: uniq(uList.flatMap(u => [u.role, u.module_access?.role_preset_name]).filter(r => String(r || '').toLowerCase() !== 'customer')),
+      company: uniq(uList.flatMap(u => [u.company, u.branch_name, u.module_access?.branch_name])),
+      work_location_type: uniq(uList.flatMap(u => [u.work_location_type, u.module_access?.work_location_type])),
+      work_location_name: uniq(uList.flatMap(u => [u.work_location_name, u.module_access?.work_location_name])),
+      hod_person: uniq(uList.flatMap(u => [u.hod_person, u.module_access?.hod_person])),
+      reporting_manager: uniq(uList.flatMap(u => [u.primary_reporting_person, u.module_access?.primary_reporting_person])),
+      tracking_policy: uniq(uList.flatMap(u => [u.tracking_policy, u.module_access?.tracking_policy])),
+      employee: uniq(uList.map(u => u.emp_name || u.name))
+    };
+  } catch (err) {
+    console.error('getSyncedUserFilterOptions error:', err);
+    return {};
   }
 }
 
