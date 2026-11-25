@@ -152,6 +152,22 @@ function applyAudienceSubFilter(query, audienceType, subFilter) {
           if (prioClauses.length > 0) {
             query = query.or(Array.from(new Set(prioClauses)).join(','));
           }
+        } else if (field === 'phone_status') {
+          const isNegated = condition === 'NOT_IN' || condition === 'NOT IN';
+          let wantHas = values.some(v => String(v).toLowerCase().includes('has phone'));
+          let wantMissing = values.some(v => String(v).toLowerCase().includes('no phone') || String(v).toLowerCase().includes('missing'));
+          if (isNegated) {
+            const origHas = wantHas;
+            wantHas = wantMissing;
+            wantMissing = origHas;
+          }
+          if (wantHas && !wantMissing) {
+            query = query.or('and(business_contact_1.not.is.null,business_contact_1.neq.,business_contact_1.not.ilike.%N/A%),and(phone.not.is.null,phone.neq.,phone.not.ilike.%N/A%)');
+          } else if (wantMissing && !wantHas) {
+            query = query
+              .or('business_contact_1.is.null,business_contact_1.eq.,business_contact_1.ilike.%N/A%')
+              .or('phone.is.null,phone.eq.,phone.ilike.%N/A%');
+          }
         }
       }
 
@@ -189,6 +205,20 @@ function applyAudienceSubFilter(query, audienceType, subFilter) {
           });
           if (statusClauses.length > 0) {
             query = query.or(Array.from(new Set(statusClauses)).join(','));
+          }
+        } else if (field === 'phone_status') {
+          const isNegated = condition === 'NOT_IN' || condition === 'NOT IN';
+          let wantHas = values.some(v => String(v).toLowerCase().includes('has phone'));
+          let wantMissing = values.some(v => String(v).toLowerCase().includes('no phone') || String(v).toLowerCase().includes('missing'));
+          if (isNegated) {
+            const origHas = wantHas;
+            wantHas = wantMissing;
+            wantMissing = origHas;
+          }
+          if (wantHas && !wantMissing) {
+            query = query.not('primary_mobile', 'is', null).neq('primary_mobile', '').not('primary_mobile', 'ilike', '%N/A%');
+          } else if (wantMissing && !wantHas) {
+            query = query.or('primary_mobile.is.null,primary_mobile.eq.,primary_mobile.ilike.%N/A%');
           }
         }
       }
@@ -240,6 +270,68 @@ function applyAudienceSubFilter(query, audienceType, subFilter) {
           const roleClauses = values.map(v => `role.ilike.%${v}%`);
           if (roleClauses.length > 0) {
             query = query.or(Array.from(new Set(roleClauses)).join(','));
+          }
+        } else if (field === 'phone_status') {
+          const isNegated = condition === 'NOT_IN' || condition === 'NOT IN';
+          const rawHasAny = values.some(v => String(v).toLowerCase().includes('has phone'));
+          const rawMissingAll = values.some(v => String(v).toLowerCase().includes('no phone'));
+          const rawMissingPrimary = values.some(v => String(v).toLowerCase().includes('missing primary'));
+
+          if (!isNegated) {
+            if (rawHasAny && rawMissingAll) {
+              // Both selected -> no phone restriction
+            } else if (rawHasAny) {
+              query = query.or('and(emp_mobile.not.is.null,emp_mobile.neq.,emp_mobile.not.ilike.%N/A%),and(emp_alt_mobile.not.is.null,emp_alt_mobile.neq.,emp_alt_mobile.not.ilike.%N/A%),and(module_access->>emp_alt_mobile.not.is.null,module_access->>emp_alt_mobile.neq.)');
+            } else if (rawMissingPrimary) {
+              query = query.or('emp_mobile.is.null,emp_mobile.eq.,emp_mobile.ilike.%N/A%');
+            } else if (rawMissingAll) {
+              query = query
+                .or('emp_mobile.is.null,emp_mobile.eq.,emp_mobile.ilike.%N/A%')
+                .or('emp_alt_mobile.is.null,emp_alt_mobile.eq.,emp_alt_mobile.ilike.%N/A%')
+                .or('module_access->>emp_alt_mobile.is.null,module_access->>emp_alt_mobile.eq.');
+            }
+          } else {
+            if (rawMissingAll && !rawHasAny) {
+              // Exclude missing all -> Has Any Phone
+              query = query.or('and(emp_mobile.not.is.null,emp_mobile.neq.,emp_mobile.not.ilike.%N/A%),and(emp_alt_mobile.not.is.null,emp_alt_mobile.neq.,emp_alt_mobile.not.ilike.%N/A%),and(module_access->>emp_alt_mobile.not.is.null,module_access->>emp_alt_mobile.neq.)');
+            } else if (rawHasAny && !rawMissingAll) {
+              // Exclude has phone -> Missing All
+              query = query
+                .or('emp_mobile.is.null,emp_mobile.eq.,emp_mobile.ilike.%N/A%')
+                .or('emp_alt_mobile.is.null,emp_alt_mobile.eq.,emp_alt_mobile.ilike.%N/A%')
+                .or('module_access->>emp_alt_mobile.is.null,module_access->>emp_alt_mobile.eq.');
+            } else if (rawMissingPrimary) {
+              // Exclude missing primary -> Has Primary Mobile
+              query = query.not('emp_mobile', 'is', null).neq('emp_mobile', '').not('emp_mobile', 'ilike', '%N/A%');
+            }
+          }
+        }
+      }
+
+      // 4. END CUSTOMERS
+      if (audienceType === 'end_customers') {
+        if (field === 'phone_status') {
+          const isNegated = condition === 'NOT_IN' || condition === 'NOT IN';
+          let wantHas = values.some(v => String(v).toLowerCase().includes('has phone'));
+          let wantMissing = values.some(v => String(v).toLowerCase().includes('no phone') || String(v).toLowerCase().includes('missing'));
+          if (isNegated) {
+            const origHas = wantHas;
+            wantHas = wantMissing;
+            wantMissing = origHas;
+          }
+          if (wantHas && !wantMissing) {
+            query = query.or('and(mobile_1.not.is.null,mobile_1.neq.,mobile_1.not.ilike.%N/A%),and(mobile_2.not.is.null,mobile_2.neq.,mobile_2.not.ilike.%N/A%)');
+          } else if (wantMissing && !wantHas) {
+            query = query
+              .or('mobile_1.is.null,mobile_1.eq.,mobile_1.ilike.%N/A%')
+              .or('mobile_2.is.null,mobile_2.eq.,mobile_2.ilike.%N/A%');
+          }
+        } else if (field === 'state') {
+          if (condition === 'NOT_IN' || condition === 'NOT IN') {
+            values.forEach(v => { query = query.not('state', 'ilike', `%${v.trim()}%`); });
+          } else {
+            const clauses = values.map(v => `state.ilike.%${v.trim()}%`);
+            query = query.or(clauses.join(','));
           }
         }
       }
@@ -450,6 +542,21 @@ export async function getSyncedDepartmentsList() {
   }
 }
 
+function extractPartyMeta(businessNature) {
+  const str = String(businessNature || '');
+  if (!str.includes('SWAN_PARTY_META:')) return {};
+  try {
+    return JSON.parse(str.replace(/^.*?SWAN_PARTY_META:/, '').trim());
+  } catch (e) {
+    return {};
+  }
+}
+
+function isValidPhoneStr(val) {
+  const s = String(val || '').trim();
+  return Boolean(s && s.toUpperCase() !== 'N/A');
+}
+
 /**
  * Get realtime audience counts across all 4 modules filtered by branch and sub-filter
  */
@@ -490,6 +597,9 @@ export async function getCampaignAudienceStats({ tenantId = null, branchFilter =
     if (branchTag !== 'ALL') {
       custQuery = custQuery.or(`our_company.ilike.%${branchTag}%,branch_code.ilike.%${branchTag}%`);
     }
+    if ((!audienceType || audienceType === 'end_customers') && normalizedFilter !== 'ALL') {
+      custQuery = applyAudienceSubFilter(custQuery, 'end_customers', normalizedFilter);
+    }
     const { count: customerCount, error: cErr } = await custQuery;
 
     // 4. User Manage Count (Exact Head Query)
@@ -529,7 +639,7 @@ export async function getCampaignAudiencePreview({ tenantId = null, audienceType
   try {
     if (audienceType === 'party') {
       let q = supabase.from('party_master')
-        .select('id, firm_name, legal_name, biz_contact_no_1, primary_mobile, contact_person_name_1, contact_mobile_1_1, party_universal_code, business_nature')
+        .select('id, firm_name, legal_name, primary_mobile, party_universal_code, business_nature')
         .order('created_at', { ascending: false });
       if (effectiveTenantId) q = q.eq('tenant_id', effectiveTenantId);
       if (branchTag !== 'ALL') {
@@ -537,14 +647,20 @@ export async function getCampaignAudiencePreview({ tenantId = null, audienceType
       }
       q = applyAudienceSubFilter(q, 'party', normalizedFilter);
       const { data } = await q.limit(limit);
-      return (data || []).map(p => ({
-        id: p.id,
-        name: p.firm_name || p.legal_name || 'Party Partner',
-        subName: p.contact_person_name_1 || 'Primary Contact',
-        phone: p.biz_contact_no_1 || p.primary_mobile || p.contact_mobile_1_1 || 'N/A',
-        altPhone: p.contact_mobile_1_1 || '',
-        tag: p.party_universal_code || 'Party'
-      }));
+      return (data || []).map(p => {
+        const meta = extractPartyMeta(p.business_nature);
+        const primary = isValidPhoneStr(p.primary_mobile) ? p.primary_mobile.trim() : '';
+        const bizPhone = isValidPhoneStr(meta.biz_contact_no_1) ? meta.biz_contact_no_1.trim() : '';
+        const cpPhone = isValidPhoneStr(meta.contact_mobile_1_1) ? meta.contact_mobile_1_1.trim() : '';
+        return {
+          id: p.id,
+          name: p.firm_name || p.legal_name || 'Party Partner',
+          subName: meta.contact_person_name_1 || 'Primary Contact',
+          phone: bizPhone || primary || cpPhone || 'N/A',
+          altPhone: cpPhone && cpPhone !== (bizPhone || primary) ? cpPhone : '',
+          tag: p.party_universal_code || 'Party'
+        };
+      });
     }
 
     if (audienceType === 'leads') {
@@ -557,14 +673,19 @@ export async function getCampaignAudiencePreview({ tenantId = null, audienceType
       }
       q = applyAudienceSubFilter(q, 'leads', normalizedFilter);
       const { data } = await q.limit(limit);
-      return (data || []).map(l => ({
-        id: l.id,
-        name: l.company || l.name || 'Lead Client',
-        subName: l.name || 'CP1',
-        phone: l.business_contact_1 || l.phone || 'N/A',
-        altPhone: l.phone || '',
-        tag: l.our_company || 'Lead'
-      }));
+      return (data || []).map(l => {
+        const p1 = isValidPhoneStr(l.business_contact_1) ? l.business_contact_1.trim() : '';
+        const p2 = isValidPhoneStr(l.phone) ? l.phone.trim() : '';
+        return {
+          id: l.id,
+          name: l.company || l.name || 'Lead Client',
+          subName: l.name || 'CP1',
+          phone: p1 || p2 || 'N/A',
+          isAltPhone: !p1 && Boolean(p2),
+          altPhone: p1 && p2 && p1 !== p2 ? p2 : '',
+          tag: l.our_company || 'Lead'
+        };
+      });
     }
 
     if (audienceType === 'end_customers') {
@@ -575,20 +696,26 @@ export async function getCampaignAudiencePreview({ tenantId = null, audienceType
       if (branchTag !== 'ALL') {
         q = q.or(`our_company.ilike.%${branchTag}%,branch_code.ilike.%${branchTag}%`);
       }
+      q = applyAudienceSubFilter(q, 'end_customers', normalizedFilter);
       const { data } = await q.limit(limit);
-      return (data || []).map(c => ({
-        id: c.id,
-        name: c.full_name || 'End Customer',
-        subName: c.linked_party_name ? `Via ${c.linked_party_name}` : (c.product_name || 'Equipment'),
-        phone: c.mobile_1 || 'N/A',
-        altPhone: c.mobile_2 || '',
-        tag: c.product_name || 'Customer'
-      }));
+      return (data || []).map(c => {
+        const m1 = isValidPhoneStr(c.mobile_1) ? c.mobile_1.trim() : '';
+        const m2 = isValidPhoneStr(c.mobile_2) ? c.mobile_2.trim() : '';
+        return {
+          id: c.id,
+          name: c.full_name || 'End Customer',
+          subName: c.linked_party_name ? `Via ${c.linked_party_name}` : (c.product_name || 'Equipment'),
+          phone: m1 || m2 || 'N/A',
+          isAltPhone: !m1 && Boolean(m2),
+          altPhone: m1 && m2 && m1 !== m2 ? m2 : '',
+          tag: c.product_name || 'Customer'
+        };
+      });
     }
 
     if (audienceType === 'users') {
       let q = supabase.from('user_roles')
-        .select('id, emp_name, name, emp_mobile, emp_alt_mobile, role, emp_designation, company, branch_name, department')
+        .select('id, emp_name, name, emp_mobile, emp_alt_mobile, module_access, role, emp_designation, company, branch_name, department')
         .order('created_at', { ascending: false });
       if (effectiveTenantId) q = q.eq('tenant_id', effectiveTenantId);
       if (branchTag !== 'ALL') {
@@ -596,14 +723,20 @@ export async function getCampaignAudiencePreview({ tenantId = null, audienceType
       }
       q = applyAudienceSubFilter(q, 'users', normalizedFilter);
       const { data } = await q.limit(limit);
-      return (data || []).map(u => ({
-        id: u.id,
-        name: u.emp_name || u.name || 'Employee',
-        subName: u.emp_designation || u.department || 'Staff',
-        phone: u.emp_mobile || 'N/A',
-        altPhone: u.emp_alt_mobile || '',
-        tag: u.department || u.branch_name || 'Team'
-      }));
+      return (data || []).map(u => {
+        const primary = isValidPhoneStr(u.emp_mobile) ? u.emp_mobile.trim() : '';
+        const altRaw = u.emp_alt_mobile || u.module_access?.emp_alt_mobile || '';
+        const alt = isValidPhoneStr(altRaw) ? String(altRaw).trim() : '';
+        return {
+          id: u.id,
+          name: u.emp_name || u.name || 'Employee',
+          subName: u.emp_designation || u.department || 'Staff',
+          phone: primary || alt || 'N/A',
+          isAltPhone: !primary && Boolean(alt),
+          altPhone: primary && alt && primary !== alt ? alt : '',
+          tag: u.department || u.branch_name || 'Team'
+        };
+      });
     }
 
     return [];
@@ -876,14 +1009,15 @@ export async function launchWhatsappBroadcastCampaign({
       const { data } = await q;
       let list = data || [];
       audienceRecords = list.map(p => {
+        const meta = extractPartyMeta(p.business_nature);
         let phones = [];
         if (recipientPriority === 'party_all') {
-          phones = [p.biz_contact_no_1, p.primary_mobile, p.contact_mobile_1_1, p.contact_mobile_2_1].filter(Boolean);
+          phones = [meta.biz_contact_no_1, p.primary_mobile, meta.contact_mobile_1_1, meta.contact_mobile_2_1].filter(isValidPhoneStr);
         } else if (recipientPriority === 'party_cp1') {
-          phones = [p.contact_mobile_1_1 || p.biz_contact_no_1 || p.primary_mobile].filter(Boolean);
+          phones = [meta.contact_mobile_1_1 || meta.biz_contact_no_1 || p.primary_mobile].filter(isValidPhoneStr);
         } else {
           // 1st Priority Business Contact with Fallback to CP1
-          phones = [p.biz_contact_no_1 || p.primary_mobile || p.contact_mobile_1_1].filter(Boolean);
+          phones = [meta.biz_contact_no_1 || p.primary_mobile || meta.contact_mobile_1_1].filter(isValidPhoneStr);
         }
         return {
           id: p.id,
@@ -904,11 +1038,11 @@ export async function launchWhatsappBroadcastCampaign({
       audienceRecords = list.map(l => {
         let phones = [];
         if (recipientPriority === 'lead_all') {
-          phones = [l.business_contact_1, l.phone, l.cp2_mobile_1].filter(Boolean);
+          phones = [l.business_contact_1, l.phone, l.cp2_mobile_1].filter(isValidPhoneStr);
         } else if (recipientPriority === 'lead_cp1') {
-          phones = [l.phone || l.business_contact_1].filter(Boolean);
+          phones = [l.phone || l.business_contact_1].filter(isValidPhoneStr);
         } else {
-          phones = [l.business_contact_1 || l.phone].filter(Boolean);
+          phones = [l.business_contact_1 || l.phone].filter(isValidPhoneStr);
         }
         return {
           id: l.id,
@@ -923,12 +1057,13 @@ export async function launchWhatsappBroadcastCampaign({
       if (branchTag !== 'ALL') {
         q = q.or(`our_company.ilike.%${branchTag}%,branch_code.ilike.%${branchTag}%`);
       }
+      q = applyAudienceSubFilter(q, 'end_customers', normalizedFilter);
       const { data } = await q;
       let list = data || [];
       audienceRecords = list.map(c => ({
         id: c.id,
         name: c.full_name || 'Customer',
-        phones: [c.mobile_1, c.mobile_2].filter(Boolean),
+        phones: [c.mobile_1, c.mobile_2].filter(isValidPhoneStr),
         company: c.our_company || 'NSMLR'
       }));
     } else if (audienceType === 'users') {
@@ -940,12 +1075,15 @@ export async function launchWhatsappBroadcastCampaign({
       q = applyAudienceSubFilter(q, 'users', normalizedFilter);
       const { data } = await q;
       let list = data || [];
-      audienceRecords = list.map(u => ({
-        id: u.id,
-        name: u.emp_name || u.name || 'Employee',
-        phones: [u.emp_mobile, u.emp_alt_mobile].filter(Boolean),
-        company: u.company || 'NSMLR'
-      }));
+      audienceRecords = list.map(u => {
+        const alt = u.emp_alt_mobile || u.module_access?.emp_alt_mobile || '';
+        return {
+          id: u.id,
+          name: u.emp_name || u.name || 'Employee',
+          phones: Array.from(new Set([u.emp_mobile, alt].filter(isValidPhoneStr).map(s => String(s).trim()))),
+          company: u.company || 'NSMLR'
+        };
+      });
     }
 
     if (audienceRecords.length === 0) {

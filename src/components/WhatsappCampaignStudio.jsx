@@ -99,6 +99,14 @@ const AUDIENCE_FILTER_FIELDS = {
         'Medium / Warm',
         'Normal / Low'
       ]
+    },
+    {
+      id: 'phone_status',
+      label: 'Phone Number',
+      options: [
+        'Has Phone Number (Available)',
+        'No Phone Number (Missing / N/A)'
+      ]
     }
   ],
   party: [
@@ -137,6 +145,14 @@ const AUDIENCE_FILTER_FIELDS = {
         'Active',
         'Hold / Payment Hold',
         'Draft'
+      ]
+    },
+    {
+      id: 'phone_status',
+      label: 'Phone Number',
+      options: [
+        'Has Phone Number (Available)',
+        'No Phone Number (Missing / N/A)'
       ]
     }
   ],
@@ -194,6 +210,15 @@ const AUDIENCE_FILTER_FIELDS = {
         'Manager',
         'Executive'
       ]
+    },
+    {
+      id: 'phone_status',
+      label: 'Phone Number',
+      options: [
+        'Has Phone Number (Primary or Alt)',
+        'No Phone Number (Missing Primary & Alt)',
+        'Missing Primary Mobile Only'
+      ]
     }
   ],
   end_customers: [
@@ -205,6 +230,14 @@ const AUDIENCE_FILTER_FIELDS = {
         'Punjab',
         'Haryana',
         'Madhya Pradesh'
+      ]
+    },
+    {
+      id: 'phone_status',
+      label: 'Phone Number',
+      options: [
+        'Has Phone Number (Available)',
+        'No Phone Number (Missing / N/A)'
       ]
     }
   ]
@@ -1918,8 +1951,36 @@ export default function WhatsappCampaignStudio({
                                   <td style={{ padding: '0.5rem 0.85rem', color: 'var(--text-secondary)' }}>
                                     {rec.subName || '-'}
                                   </td>
-                                  <td style={{ padding: '0.5rem 0.85rem', fontWeight: 600, color: '#059669' }}>
-                                    +91 {rec.phone}
+                                  <td style={{ padding: '0.5rem 0.85rem', fontWeight: 600 }}>
+                                    {(!rec.phone || rec.phone === 'N/A') ? (
+                                      <span style={{
+                                        display: 'inline-block',
+                                        padding: '0.15rem 0.5rem',
+                                        borderRadius: '4px',
+                                        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                                        color: '#dc2626',
+                                        fontSize: '0.72rem',
+                                        fontWeight: 700
+                                      }}>
+                                        No Number (N/A)
+                                      </span>
+                                    ) : (
+                                      <span style={{ color: '#059669', display: 'inline-flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
+                                        <span>+91 {rec.phone}</span>
+                                        {rec.isAltPhone && (
+                                          <span style={{
+                                            fontSize: '0.68rem',
+                                            padding: '0.08rem 0.35rem',
+                                            borderRadius: '4px',
+                                            backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                                            color: '#2563eb',
+                                            fontWeight: 700
+                                          }}>
+                                            Alt
+                                          </span>
+                                        )}
+                                      </span>
+                                    )}
                                   </td>
                                   <td style={{ padding: '0.5rem 0.85rem', color: 'var(--text-secondary)' }}>
                                     {rec.tag || selectedBranch}
