@@ -12,7 +12,7 @@ import { isFeatureEntitled } from '@/utils/saasEntitlements';
 import SubscriptionExpiryBanner from './SaaS/SubscriptionExpiryBanner';
 import SubscriptionExpiredModal from './SaaS/SubscriptionExpiredModal';
 import AddonPurchaseModal from './SaaS/AddonPurchaseModal';
-import { Database, LayoutDashboard, Home, Users, UserCheck, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, MessageSquare, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen, Building2, MapPin, ShieldCheck, Camera, User, Upload, Loader2, Trash2, Calendar, Clock, AlertTriangle, AlertCircle, X, ExternalLink, CheckSquare, WifiOff, Sparkles, Volume2, CheckCircle2, Play, Settings2, FormInput, Workflow, Monitor, Target, FileType, Compass, Layers, Network, Activity, Crown, GitMerge, Sliders, Send, Mail, Zap, Package, Truck, Navigation as NavigationIcon, CalendarCheck, Repeat } from 'lucide-react';
+import { Database, LayoutDashboard, Home, Users, UserCheck, Settings, Bell, Search, Shield, LogOut, FilePlus2, FileSpreadsheet, CheckCircle, Archive, FileText, PieChart, UserPlus, MessageCircle, MessageSquare, ChevronDown, ChevronRight, ChevronLeft, Menu, Palette, Check, Bot, PhoneCall, Phone, BookOpen, Building2, MapPin, ShieldCheck, Camera, User, Upload, Loader2, Trash2, Calendar, Clock, AlertTriangle, AlertCircle, X, ExternalLink, CheckSquare, WifiOff, Sparkles, Volume2, CheckCircle2, Play, Settings2, FormInput, Workflow, Monitor, Target, FileType, Compass, Layers, Network, Activity, Crown, GitMerge, Sliders, Send, Mail, Zap, Package, Truck, Navigation as NavigationIcon, CalendarCheck, Repeat, Megaphone } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { getTeamMembers } from '@/app/actions/team';
@@ -7195,6 +7195,18 @@ export default function CRMContainer({
                               >
                                 {renderMiniSubBadge(<MessageSquare />, '#22c55e')}
                                 <span>Templates Library</span>
+                              </button>
+                            )}
+
+                            {getSubItemPermissions(moduleAccess, userRole, 'whatsapp_official', 'campaigns').view && (
+                              <button
+                                onClick={() => handleWaOfficialSubTabChange('campaigns')}
+                                className="submenu-item"
+                                data-active={activeTab === 'whatsapp_official' && waOfficialSubTab === 'campaigns'}
+                                style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}
+                              >
+                                {renderMiniSubBadge(<Megaphone />, '#2563eb')}
+                                <span>Broadcast Campaigns</span>
                               </button>
                             )}
 

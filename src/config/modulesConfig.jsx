@@ -407,6 +407,7 @@ export const MODULES_CONFIG = [
     subItemGroups: [WHATSAPP_LOG_PAGE],
     subItems: [
       { id: 'templates', label: 'Templates Library' },
+      { id: 'campaigns', label: 'Broadcast Campaigns' },
       { id: 'automations', label: 'Stage Automations' },
       ...WHATSAPP_LOG_PERMISSION_ITEMS,
       { id: 'settings', label: 'API Credentials & Setup' }
