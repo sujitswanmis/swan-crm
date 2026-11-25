@@ -246,6 +246,127 @@ export const getRecipientMeta = (recId, categoryId = null) => {
   return WA_RECIPIENT_TYPES.find(r => r.id === recId) || { id: recId || 'unknown', label: recId || 'General', icon: '👥' };
 };
 
+export const WA_AUTOMATION_MODULE_STAGES = {
+  party: [
+    'Party Onboarded / Registered',
+    'KYC & GST Approved',
+    'Credit Limit Updated',
+    'Order Placed / Invoice Raised',
+    'Payment Overdue Reminder',
+    'Price List / Catalog Updated',
+  ],
+  end_customers: [
+    'Machine Purchased / Registered',
+    'Installation & Commissioning Done',
+    'Free Service Due Reminder',
+    'AMC Renewal Reminder',
+    'Warranty Expiring Soon',
+    'Festival / Seasonal Greeting',
+  ],
+  orders: [
+    'S01 - Order Confirmation',
+    'S02 - Advance Payment Receipt',
+    'S03 - Technical Approval',
+    'S04 - Dispatch Planning',
+    'S05 - Material Allocation',
+    'S06 - Quality Check & Packing',
+    'S07 - Transport Booking',
+    'S08 - Dispatched / LR Shared',
+    'S09 - In Transit Tracking',
+    'S10 - Reached Destination Hub',
+    'S11 - Balance Payment Reminder',
+    'S12 - Delivered to Party',
+    'S13 - Post-Delivery Feedback & Installation',
+  ],
+  complaints: [
+    'C01 - Complaint Registered',
+    'C02 - Technician / Team Assigned',
+    'C03 - Field Visit Scheduled',
+    'C04 - Parts Dispatched / Under Repair',
+    'C05 - Resolved & Closed',
+    'C06 - Feedback Requested',
+  ],
+  delegation: [
+    'Task Assigned to Assignee',
+    'Task Due Today Reminder',
+    'Task Overdue Escalation',
+    'Task Completed / Closed',
+    'Task Sent Back / Reopened',
+  ],
+  attendance: [
+    'Daily Morning Punch-In Reminder',
+    'Missed Punch-In Alert',
+    'Late Arrival Notification',
+    'Missed Punch-Out Reminder',
+    'Daily Attendance Summary',
+  ],
+  leaves: [
+    'Leave / Regularization Applied',
+    'Leave Approved by HOD',
+    'Leave Rejected by HOD',
+    'Upcoming Approved Leave Reminder',
+  ],
+  recruitment: [
+    'Application Shortlisted',
+    'Interview Scheduled',
+    'Interview Reminder (Same Day)',
+    'Selected / Offer Letter Issued',
+    'Joining Welcome & Onboarding',
+  ],
+  general: [
+    'Daily Scheduled Digest',
+    'Weekly Scheduled Update',
+    'Monthly Scheduled Notice',
+    'Manual / Event Trigger',
+  ],
+};
+
+export const parseAutomationStage = (rawStageName) => {
+  const raw = String(rawStageName || '').trim();
+  const match = raw.match(/^\[([A-Z_]+)(?:\|([a-z0-9_]+))?\]\s*(.*)$/i);
+  if (match) {
+    const candidateMod = String(match[1] || '').toLowerCase();
+    const catMeta = WA_TEMPLATE_CATEGORIES.find(c => c.id === candidateMod);
+    if (catMeta) {
+      return {
+        moduleId: catMeta.id,
+        recipientId: match[2] ? match[2].toLowerCase() : catMeta.defaultRecipient,
+        stageLabel: (match[3] || '').trim(),
+      };
+    }
+  }
+  return {
+    moduleId: 'leads',
+    recipientId: getCategoryMeta('leads').defaultRecipient,
+    stageLabel: raw,
+  };
+};
+
+export const encodeAutomationStage = (moduleId, recipientId, rawStage) => {
+  const cleanStage = parseAutomationStage(rawStage).stageLabel || String(rawStage || '').trim();
+  if (!cleanStage) return '';
+  const mod = moduleId || 'leads';
+  const defaultRec = getCategoryMeta(mod).defaultRecipient;
+  const rec = recipientId || defaultRec;
+  // Preserve bare stage string for standard Leads automation rules so triggerStageAutomation matches 100%
+  if (mod === 'leads' && rec === defaultRec) {
+    return cleanStage;
+  }
+  return `[${mod.toUpperCase()}|${rec}] ${cleanStage}`;
+};
+
+export const renderAutomationPreviewBody = (rawBody, moduleId) => {
+  const text = String(rawBody || '').trim();
+  if (!text) return '';
+  const tags = WA_CATEGORY_VARIABLE_TAGS[moduleId] || WA_CATEGORY_VARIABLE_TAGS.leads || [];
+  return text.replace(/\{\{(\d+)\}\}/g, (full, numStr) => {
+    const num = Number(numStr);
+    const found = tags.find(t => t.num === num);
+    if (!found) return full;
+    return `[${found.name}: ${found.desc}]`;
+  });
+};
+
 export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', userCompany = '', isMasterAdmin = false, userId = '', tenantId = null, isActive = true, allowedLogViews, initialTab = null, onTabChange = null }) {
   const rLower = String(userRole || '').trim().toLowerCase();
   const isAdmin = !userRole || rLower === 'admin' || rLower === 'superadmin' || rLower === 'super_admin' || rLower === 'masteradmin' || rLower === 'owner' || rLower.includes('admin');
@@ -425,8 +546,13 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
   const [showAutoForm, setShowAutoForm] = useState(false);
   const [savingAuto, setSavingAuto] = useState(false);
   const [currentAuto, setCurrentAuto] = useState({ stage_name: '', template_id: '', frequency: 'Once', company: 'All', is_active: true });
+  const [autoModule, setAutoModule] = useState('leads');
+  const [autoRecipient, setAutoRecipient] = useState(WA_TEMPLATE_CATEGORIES[0]?.defaultRecipient || 'lead_business');
+  const [autoRawStage, setAutoRawStage] = useState('');
+  const [showAllCategoryTemplates, setShowAllCategoryTemplates] = useState(false);
   const [stages, setStages] = useState([]);
   const [autoSearch, setAutoSearch] = useState('');
+  const [autoModuleFilter, setAutoModuleFilter] = useState('ALL');
   const [autoCompanyFilter, setAutoCompanyFilter] = useState('ALL');
   const [autoStatusFilter, setAutoStatusFilter] = useState('ALL');
   const [autoFrequencyFilter, setAutoFrequencyFilter] = useState('ALL');
@@ -518,17 +644,24 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
 
   const filteredAutomations = React.useMemo(() => {
     return automations.filter(auto => {
+      const parsedStage = parseAutomationStage(auto.stage_name);
+      const catMeta = getCategoryMeta(parsedStage.moduleId);
       // 1. Search text
       if (autoSearch.trim()) {
         const q = autoSearch.toLowerCase().trim();
-        const stageMatch = (auto.stage_name || '').toLowerCase().includes(q);
+        const stageMatch = (auto.stage_name || '').toLowerCase().includes(q) || parsedStage.stageLabel.toLowerCase().includes(q);
+        const modMatch = catMeta.label.toLowerCase().includes(q) || parsedStage.moduleId.toLowerCase().includes(q);
         const tplIdMatch = (auto.template_id || '').toLowerCase().includes(q);
         const tplNameMatch = (auto.whatsapp_templates?.template_name || '').toLowerCase().includes(q);
         const compDisplay = resolveBranchDisplayName(auto.company);
         const compMatch = (auto.company || '').toLowerCase().includes(q) || compDisplay.toLowerCase().includes(q);
-        if (!stageMatch && !tplIdMatch && !tplNameMatch && !compMatch) return false;
+        if (!stageMatch && !modMatch && !tplIdMatch && !tplNameMatch && !compMatch) return false;
       }
-      // 2. Company filter
+      // 2. Module filter
+      if (autoModuleFilter !== 'ALL') {
+        if (parsedStage.moduleId !== autoModuleFilter) return false;
+      }
+      // 3. Company filter
       if (autoCompanyFilter !== 'ALL') {
         const autoComp = (auto.company || '').toUpperCase();
         const autoCompDisplay = resolveBranchDisplayName(auto.company).toUpperCase();
@@ -536,16 +669,16 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
         const filterCompDisplay = resolveBranchDisplayName(autoCompanyFilter).toUpperCase();
         if (autoComp !== filterComp && autoCompDisplay !== filterCompDisplay) return false;
       }
-      // 3. Status filter
+      // 4. Status filter
       if (autoStatusFilter === 'ACTIVE' && !auto.is_active) return false;
       if (autoStatusFilter === 'PAUSED' && auto.is_active) return false;
-      // 4. Frequency filter
+      // 5. Frequency filter
       if (autoFrequencyFilter !== 'ALL') {
         if ((auto.frequency || '').toLowerCase() !== autoFrequencyFilter.toLowerCase()) return false;
       }
       return true;
     });
-  }, [automations, autoSearch, autoCompanyFilter, autoStatusFilter, autoFrequencyFilter]);
+  }, [automations, autoSearch, autoModuleFilter, autoCompanyFilter, autoStatusFilter, autoFrequencyFilter]);
 
   const paginatedAutomations = React.useMemo(() => {
     if (autoPageSize === 100000) return filteredAutomations;
@@ -1474,19 +1607,95 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
   };
 
   // --- AUTOMATIONS LOGIC ---
+  const handleOpenCreateAuto = () => {
+    const defMod = 'leads';
+    const defRec = getCategoryMeta(defMod).defaultRecipient;
+    setAutoModule(defMod);
+    setAutoRecipient(defRec);
+    setAutoRawStage('');
+    setShowAllCategoryTemplates(false);
+    setCurrentAuto({ stage_name: '', template_id: '', frequency: 'Once', company: 'All', is_active: true });
+    setShowAutoForm(true);
+  };
+
+  const handleOpenEditAuto = (auto) => {
+    const { whatsapp_templates, ...cleanAuto } = auto;
+    const parsed = parseAutomationStage(auto.stage_name);
+    setAutoModule(parsed.moduleId);
+    setAutoRecipient(parsed.recipientId);
+    setAutoRawStage(parsed.stageLabel);
+    setShowAllCategoryTemplates(false);
+    setCurrentAuto(cleanAuto);
+    setShowAutoForm(true);
+  };
+
+  const handleSelectAutoModule = (nextMod) => {
+    const catMeta = getCategoryMeta(nextMod);
+    const nextRec = catMeta.defaultRecipient || getRecipientsForCategory(nextMod)[0]?.id || 'lead_business';
+    setAutoModule(nextMod);
+    setAutoRecipient(nextRec);
+    setAutoRawStage('');
+    setCurrentAuto(prev => {
+      const curTpl = templates.find(t => t.id === prev.template_id);
+      const keepTpl = curTpl && (showAllCategoryTemplates || parseTemplateMeta(curTpl.company).category === nextMod);
+      return {
+        ...prev,
+        stage_name: '',
+        template_id: keepTpl ? prev.template_id : '',
+      };
+    });
+  };
+
+  const handleSelectAutoRawStage = (nextRawStage) => {
+    setAutoRawStage(nextRawStage);
+    setCurrentAuto(prev => ({
+      ...prev,
+      stage_name: encodeAutomationStage(autoModule, autoRecipient, nextRawStage),
+    }));
+  };
+
+  const handleSelectAutoRecipient = (nextRec) => {
+    setAutoRecipient(nextRec);
+    setCurrentAuto(prev => ({
+      ...prev,
+      stage_name: autoRawStage ? encodeAutomationStage(autoModule, nextRec, autoRawStage) : '',
+    }));
+  };
+
+  const handleSelectAutoTemplate = (nextTplId) => {
+    const tpl = templates.find(t => t.id === nextTplId);
+    let nextRec = autoRecipient;
+    if (tpl) {
+      const tplMeta = parseTemplateMeta(tpl.company);
+      const validRecs = getRecipientsForCategory(autoModule);
+      if (tplMeta.recipient && validRecs.some(r => r.id === tplMeta.recipient)) {
+        nextRec = tplMeta.recipient;
+        setAutoRecipient(nextRec);
+      }
+    }
+    setCurrentAuto(prev => ({
+      ...prev,
+      template_id: nextTplId,
+      stage_name: autoRawStage ? encodeAutomationStage(autoModule, nextRec, autoRawStage) : prev.stage_name,
+    }));
+  };
+
   const handleSaveAutomation = async () => {
+    const computedStageName = autoRawStage ? encodeAutomationStage(autoModule, autoRecipient, autoRawStage) : currentAuto.stage_name;
+    if (!computedStageName) {
+      alert('Please select a target stage or trigger event');
+      return;
+    }
     if (!currentAuto.template_id) {
       alert('Please select a template');
       return;
     }
-    if (!currentAuto.stage_name) {
-      alert('Please select a target stage');
-      return;
-    }
     setSavingAuto(true);
-    const res = await saveWhatsappAutomation(currentAuto);
+    const payloadToSave = { ...currentAuto, stage_name: computedStageName };
+    const res = await saveWhatsappAutomation(payloadToSave);
     if (res.success) {
       setShowAutoForm(false);
+      setAutoRawStage('');
       setCurrentAuto({ stage_name: '', template_id: '', frequency: 'Once', company: 'All', is_active: true });
       const autoRes = await getWhatsappAutomations();
       if (autoRes.success && Array.isArray(autoRes.data)) {
@@ -3931,11 +4140,27 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
       {/* AUTOMATIONS TAB */}
       {activeTab === 'automations' && (
         <div>
-          <CRMPageHeader icon={Repeat} title="Stage-Based Automation Rules" description="Map your templates to specific CRM stages to send automated drip campaigns." actions={automationsPerms.add && (
-            <button type="button" onClick={() => { setCurrentAuto({ stage_name: '', template_id: '', frequency: 'Once', company: 'All', is_active: true }); setShowAutoForm(true); }} className={`${crmStyles.button} ${crmStyles.primaryButton}`}><Plus size={16} /> Add New Rule</button>
+          <CRMPageHeader icon={Repeat} title="Stage-Based Automation Rules" description="Map your templates to CRM module stages and triggers to send automated WhatsApp workflows." actions={automationsPerms.add && (
+            <button type="button" onClick={handleOpenCreateAuto} className={`${crmStyles.button} ${crmStyles.primaryButton}`}><Plus size={16} /> Add New Rule</button>
           )} />
 
-          {showAutoForm && (
+          {showAutoForm && (() => {
+            const activeCatMeta = getCategoryMeta(autoModule);
+            const moduleRecipientOpts = getRecipientsForCategory(autoModule);
+            const moduleStageOpts = WA_AUTOMATION_MODULE_STAGES[autoModule] || [];
+            const modalTemplates = templates.filter(tpl => {
+              if (tpl.id === currentAuto.template_id) return true;
+              const tplMeta = parseTemplateMeta(tpl.company);
+              const selComp = currentAuto.company || 'All';
+              const branchMatch = selComp === 'All' || tpl.company === 'All' || tpl.company === selComp || tplMeta.branch === 'All' || tplMeta.branch === 'New Swan Group (Headquarters)' || tplMeta.branch.toUpperCase() === selComp.toUpperCase() || resolveBranchDisplayName(tplMeta.branch).toUpperCase() === resolveBranchDisplayName(selComp).toUpperCase();
+              const catMatch = showAllCategoryTemplates || tplMeta.category === autoModule;
+              return branchMatch && catMatch;
+            });
+            const selectedTemplateObj = templates.find(t => t.id === currentAuto.template_id) || null;
+            const selectedTplMeta = selectedTemplateObj ? parseTemplateMeta(selectedTemplateObj.company) : null;
+            const selectedTplCatMeta = selectedTplMeta ? getCategoryMeta(selectedTplMeta.category) : null;
+            const selectedTplRecMeta = selectedTplMeta ? getRecipientMeta(selectedTplMeta.recipient, selectedTplMeta.category) : null;
+            return (
             <div 
               style={{ 
                 position: 'fixed', 
@@ -3958,8 +4183,8 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                   backgroundColor: 'var(--bg-surface)', 
                   borderRadius: '12px', 
                   width: '100%', 
-                  maxWidth: '620px', 
-                  maxHeight: '90vh',
+                  maxWidth: '720px', 
+                  maxHeight: '92vh',
                   overflowY: 'auto', 
                   boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
                   border: '1px solid var(--border-light)'
@@ -3967,15 +4192,15 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                 onClick={e => e.stopPropagation()}
               >
                 {/* Header */}
-                <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border-light)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'var(--bg-primary)' }}>
+                <div style={{ padding: '1.15rem 1.5rem', borderBottom: '1px solid var(--border-light)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'var(--bg-primary)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                    <div style={{ width: '32px', height: '32px', borderRadius: '8px', backgroundColor: 'var(--accent-subtle, rgba(37,99,235,0.1))', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent-color)' }}>
+                    <div style={{ width: '34px', height: '34px', borderRadius: '8px', backgroundColor: 'var(--accent-subtle, rgba(37,99,235,0.1))', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent-color)' }}>
                       <Zap size={18} />
                     </div>
                     <div>
                       <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600 }}>{currentAuto.id ? 'Edit' : 'New'} Automation Rule</h3>
                       <p style={{ margin: '0.15rem 0 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                        {currentAuto.id ? 'Update trigger stage and template for this rule' : 'Configure a new automated WhatsApp message rule'}
+                        {currentAuto.id ? 'Update CRM module, trigger stage, recipient priority, and template' : 'Configure multi-module CRM stage automation synced with Message Templates Library'}
                       </p>
                     </div>
                   </div>
@@ -3989,8 +4214,47 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                 </div>
 
                 {/* Form Body */}
-                <div style={{ padding: '1.5rem' }}>
-                  <div className={crmStyles.formGrid} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem', marginBottom: '1.5rem' }}>
+                <div style={{ padding: '1.35rem 1.5rem' }}>
+                  {/* Step 1: CRM Module / Category Selector */}
+                  <div style={{ marginBottom: '1.25rem' }}>
+                    <label style={{ fontSize: '0.82rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem', color: 'var(--text-primary)' }}>
+                      <span>1. Target CRM Module / Category</span>
+                      <span style={{ fontSize: '0.74rem', fontWeight: 500, color: activeCatMeta.color }}>
+                        Active: {activeCatMeta.icon} {activeCatMeta.label}
+                      </span>
+                    </label>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.45rem' }}>
+                      {WA_TEMPLATE_CATEGORIES.map(cat => {
+                        const isCatActive = autoModule === cat.id;
+                        return (
+                          <button
+                            key={cat.id}
+                            type="button"
+                            onClick={() => handleSelectAutoModule(cat.id)}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.35rem',
+                              padding: '0.4rem 0.7rem',
+                              borderRadius: '8px',
+                              fontSize: '0.78rem',
+                              fontWeight: isCatActive ? 700 : 500,
+                              cursor: 'pointer',
+                              border: isCatActive ? `1.5px solid ${cat.color}` : '1px solid var(--border-light)',
+                              backgroundColor: isCatActive ? `${cat.color}18` : 'var(--bg-primary)',
+                              color: isCatActive ? cat.color : 'var(--text-primary)',
+                              transition: 'all 0.15s ease',
+                            }}
+                          >
+                            <span>{cat.icon}</span>
+                            <span>{cat.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className={crmStyles.formGrid} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.1rem', marginBottom: '1.25rem' }}>
                     <div className="form-group">
                       <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.4rem' }}>Company / Branch</label>
                       <select className={crmStyles.field}
@@ -4020,41 +4284,130 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                     </div>
 
                     <div className="form-group" style={{ gridColumn: 'span 2' }}>
-                      <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.4rem' }}>If Lead is in Stage:</label>
-                      <select className={crmStyles.field} value={currentAuto.stage_name} onChange={e => setCurrentAuto({...currentAuto, stage_name: e.target.value})} style={{ width: '100%', padding: '0.6rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}>
-                        <option value="">Select Stage</option>
-                        {stages.map((stageObj, i) => {
-                          const stageNum = i + 1;
-                          const cleanStageName = stageObj.name.replace(/^\d+\s*-\s*/, '');
-                          return (
-                            <optgroup key={`wa-stage-${i}`} label={stageObj.name}>
-                              {stageObj.substages.map((sub, j) => {
-                                const subNum = String(j + 1).padStart(2, '0');
-                                const prefix = `${stageNum};${subNum}>${cleanStageName}>`;
-                                const val = sub.startsWith(prefix) ? sub : `${prefix}${sub.includes('>') ? sub.split('>').pop() : sub}`;
-                                return <option key={val} value={val}>{val}</option>;
-                              })}
-                            </optgroup>
-                          );
-                        })}
-                      </select>
+                      <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.4rem' }}>
+                        {activeCatMeta.icon} If {activeCatMeta.label} reaches Stage / Trigger Event:
+                      </label>
+                      {autoModule === 'leads' ? (
+                        <select className={crmStyles.field} value={autoRawStage} onChange={e => handleSelectAutoRawStage(e.target.value)} style={{ width: '100%', padding: '0.6rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}>
+                          <option value="">Select Lead Stage</option>
+                          {autoRawStage && !stages.some(st => st.substages?.some((sub, j) => {
+                            const stageNum = stages.indexOf(st) + 1;
+                            const cleanStageName = st.name.replace(/^\d+\s*-\s*/, '');
+                            const subNum = String(j + 1).padStart(2, '0');
+                            const prefix = `${stageNum};${subNum}>${cleanStageName}>`;
+                            const val = sub.startsWith(prefix) ? sub : `${prefix}${sub.includes('>') ? sub.split('>').pop() : sub}`;
+                            return val === autoRawStage;
+                          })) && (
+                            <option value={autoRawStage}>{autoRawStage}</option>
+                          )}
+                          {stages.map((stageObj, i) => {
+                            const stageNum = i + 1;
+                            const cleanStageName = stageObj.name.replace(/^\d+\s*-\s*/, '');
+                            return (
+                              <optgroup key={`wa-stage-${i}`} label={stageObj.name}>
+                                {stageObj.substages.map((sub, j) => {
+                                  const subNum = String(j + 1).padStart(2, '0');
+                                  const prefix = `${stageNum};${subNum}>${cleanStageName}>`;
+                                  const val = sub.startsWith(prefix) ? sub : `${prefix}${sub.includes('>') ? sub.split('>').pop() : sub}`;
+                                  return <option key={val} value={val}>{val}</option>;
+                                })}
+                              </optgroup>
+                            );
+                          })}
+                        </select>
+                      ) : (
+                        <select className={crmStyles.field} value={autoRawStage} onChange={e => handleSelectAutoRawStage(e.target.value)} style={{ width: '100%', padding: '0.6rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}>
+                          <option value="">Select {activeCatMeta.label} Stage / Event</option>
+                          {autoRawStage && !moduleStageOpts.includes(autoRawStage) && (
+                            <option value={autoRawStage}>{autoRawStage}</option>
+                          )}
+                          {moduleStageOpts.map(st => (
+                            <option key={st} value={st}>{st}</option>
+                          ))}
+                        </select>
+                      )}
                     </div>
 
                     <div className="form-group" style={{ gridColumn: 'span 2' }}>
-                      <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.4rem' }}>Send this Template:</label>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                        <label style={{ fontSize: '0.85rem', fontWeight: 600, margin: 0 }}>
+                          Send this Template: <span style={{ fontSize: '0.75rem', fontWeight: 500, color: 'var(--text-secondary)' }}>({modalTemplates.length} matching)</span>
+                        </label>
+                        <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.75rem', color: 'var(--text-secondary)', cursor: 'pointer', userSelect: 'none' }}>
+                          <input
+                            type="checkbox"
+                            checked={showAllCategoryTemplates}
+                            onChange={e => setShowAllCategoryTemplates(e.target.checked)}
+                            style={{ cursor: 'pointer' }}
+                          />
+                          <span>Show templates from all 10 categories</span>
+                        </label>
+                      </div>
                       <select className={crmStyles.field}
                         value={currentAuto.template_id} 
-                        onChange={e => setCurrentAuto({...currentAuto, template_id: e.target.value})}
+                        onChange={e => handleSelectAutoTemplate(e.target.value)}
                         style={{ width: '100%', padding: '0.6rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}
                       >
                         <option value="">-- Select Template --</option>
-                        {templates.filter(tpl => !currentAuto.company || currentAuto.company === 'All' || tpl.company === 'All' || tpl.company === currentAuto.company).map(tpl => (
-                          <option key={tpl.id} value={tpl.id}>{tpl.template_name} ({tpl.company || 'All'})</option>
+                        {modalTemplates.map(tpl => {
+                          const meta = parseTemplateMeta(tpl.company);
+                          const cMeta = getCategoryMeta(meta.category);
+                          return (
+                            <option key={tpl.id} value={tpl.id}>
+                              {cMeta.icon} {tpl.template_name} [{cMeta.label} • {meta.bsp.toUpperCase()} • {resolveBranchDisplayName(meta.branch)}]
+                            </option>
+                          );
+                        })}
+                      </select>
+
+                      {selectedTemplateObj && (
+                        <div style={{ marginTop: '0.65rem', padding: '0.75rem 0.9rem', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-primary)' }}>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.45rem', marginBottom: selectedTemplateObj.message_body ? '0.5rem' : 0 }}>
+                            {selectedTplCatMeta && (
+                              <span style={{ fontSize: '0.72rem', fontWeight: 600, padding: '0.18rem 0.5rem', borderRadius: '999px', backgroundColor: `${selectedTplCatMeta.color}18`, color: selectedTplCatMeta.color }}>
+                                {selectedTplCatMeta.icon} {selectedTplCatMeta.label}
+                              </span>
+                            )}
+                            {selectedTplRecMeta && (
+                              <span style={{ fontSize: '0.72rem', fontWeight: 600, padding: '0.18rem 0.5rem', borderRadius: '999px', backgroundColor: 'rgba(100,116,139,0.12)', color: 'var(--text-primary)' }}>
+                                {selectedTplRecMeta.icon} {selectedTplRecMeta.label}
+                              </span>
+                            )}
+                            {selectedTplMeta && (
+                              <span style={{ fontSize: '0.72rem', fontWeight: 500, color: 'var(--text-secondary)' }}>
+                                {selectedTplMeta.bsp.toUpperCase()} • {resolveBranchDisplayName(selectedTplMeta.branch)}
+                              </span>
+                            )}
+                          </div>
+                          {selectedTemplateObj.message_body ? (
+                            <div style={{ fontSize: '0.78rem', lineHeight: 1.45, color: 'var(--text-primary)', whiteSpace: 'pre-wrap', padding: '0.55rem 0.7rem', borderRadius: '6px', backgroundColor: 'var(--bg-surface)', borderLeft: '3px solid #10b981' }}>
+                              {renderAutomationPreviewBody(selectedTemplateObj.message_body, autoModule)}
+                            </div>
+                          ) : (
+                            <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
+                              Template body preview not stored locally — campaign/template ID: {selectedTemplateObj.campaign_name || selectedTemplateObj.template_name}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="form-group">
+                      <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.4rem' }}>Target Recipient Priority:</label>
+                      <select className={crmStyles.field}
+                        value={autoRecipient}
+                        onChange={e => handleSelectAutoRecipient(e.target.value)}
+                        style={{ width: '100%', padding: '0.6rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}
+                      >
+                        {moduleRecipientOpts.map(rec => (
+                          <option key={rec.id} value={rec.id}>
+                            {rec.icon} {rec.label}
+                          </option>
                         ))}
                       </select>
                     </div>
 
-                    <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                    <div className="form-group">
                       <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.4rem' }}>Frequency:</label>
                       <select className={crmStyles.field}
                         value={currentAuto.frequency} 
@@ -4062,6 +4415,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                         style={{ width: '100%', padding: '0.6rem', borderRadius: '6px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}
                       >
                         <option value="Once">Send Once (On Entry)</option>
+                        <option value="Daily">Daily (Every 24 Hours)</option>
                         <option value="Weekly">Weekly (Every 7 Days)</option>
                         <option value="Monthly">Monthly (Every 30 Days)</option>
                         <option value="Quarterly">Quarterly (Every 90 Days)</option>
@@ -4090,7 +4444,8 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                 </div>
               </div>
             </div>
-          )}
+            );
+          })()}
 
           {/* Bulk Selection Action Bar */}
           {selectedAutoIds.length > 0 && (
@@ -4222,6 +4577,29 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                 )}
               </div>
 
+              {/* Module / Category Filter */}
+              <select aria-label="Filter automation module" className={crmStyles.field}
+                value={autoModuleFilter}
+                onChange={(e) => {
+                  setAutoModuleFilter(e.target.value);
+                  setAutoPage(1);
+                }}
+                style={{
+                  padding: '0.45rem 0.75rem',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border-light)',
+                  backgroundColor: 'var(--bg-primary)',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.85rem',
+                  cursor: 'pointer'
+                }}
+              >
+                <option value="ALL">All Modules (10)</option>
+                {WA_TEMPLATE_CATEGORIES.map(cat => (
+                  <option key={cat.id} value={cat.id}>{cat.icon} {cat.label}</option>
+                ))}
+              </select>
+
               {/* Company Filter */}
               <select aria-label="Filter automation company" className={crmStyles.field}
                 value={autoCompanyFilter}
@@ -4290,17 +4668,19 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
               >
                 <option value="ALL">All Frequencies</option>
                 <option value="Once">Once</option>
+                <option value="Daily">Daily</option>
                 <option value="Weekly">Weekly</option>
                 <option value="Monthly">Monthly</option>
                 <option value="Quarterly">Quarterly</option>
               </select>
 
               {/* Clear Filters Button */}
-              {(autoSearch || autoCompanyFilter !== 'ALL' || autoStatusFilter !== 'ALL' || autoFrequencyFilter !== 'ALL') && (
+              {(autoSearch || autoModuleFilter !== 'ALL' || autoCompanyFilter !== 'ALL' || autoStatusFilter !== 'ALL' || autoFrequencyFilter !== 'ALL') && (
                 <button className={crmStyles.button}
                   type="button"
                   onClick={() => {
                     setAutoSearch('');
+                    setAutoModuleFilter('ALL');
                     setAutoCompanyFilter('ALL');
                     setAutoStatusFilter('ALL');
                     setAutoFrequencyFilter('ALL');
@@ -4365,11 +4745,12 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                         <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>
                           {automations.length === 0 ? 'No automation rules defined yet.' : 'No automation rules match your filters or search.'}
                         </div>
-                        {(autoSearch || autoCompanyFilter !== 'ALL' || autoStatusFilter !== 'ALL' || autoFrequencyFilter !== 'ALL') && (
+                        {(autoSearch || autoModuleFilter !== 'ALL' || autoCompanyFilter !== 'ALL' || autoStatusFilter !== 'ALL' || autoFrequencyFilter !== 'ALL') && (
                           <button className={crmStyles.button}
                             type="button"
                             onClick={() => {
                               setAutoSearch('');
+                              setAutoModuleFilter('ALL');
                               setAutoCompanyFilter('ALL');
                               setAutoStatusFilter('ALL');
                               setAutoFrequencyFilter('ALL');
@@ -4414,9 +4795,41 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                         <td style={{ padding: '1rem' }}>
                           <CRMStatusBadge>{resolveBranchDisplayName(auto.company)}</CRMStatusBadge>
                         </td>
-                        <td style={{ padding: '1rem', fontWeight: 500 }}>{auto.stage_name}</td>
                         <td style={{ padding: '1rem' }}>
-                          {auto.whatsapp_templates?.template_name || <span style={{color: 'var(--spc-view-danger)'}}>Missing Template</span>}
+                          {(() => {
+                            const parsedStage = parseAutomationStage(auto.stage_name);
+                            const catMeta = getCategoryMeta(parsedStage.moduleId);
+                            const recMeta = getRecipientMeta(parsedStage.recipientId, parsedStage.moduleId);
+                            return (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                                  <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '0.12rem 0.45rem', borderRadius: '999px', backgroundColor: `${catMeta.color}18`, color: catMeta.color }}>
+                                    {catMeta.icon} {catMeta.label}
+                                  </span>
+                                  <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
+                                    {recMeta.icon} {recMeta.label.split('(')[0].trim()}
+                                  </span>
+                                </div>
+                                <div style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{parsedStage.stageLabel}</div>
+                              </div>
+                            );
+                          })()}
+                        </td>
+                        <td style={{ padding: '1rem' }}>
+                          {auto.whatsapp_templates?.template_name ? (() => {
+                            const tplMeta = auto.whatsapp_templates?.company ? parseTemplateMeta(auto.whatsapp_templates.company) : null;
+                            const tplCat = tplMeta ? getCategoryMeta(tplMeta.category) : null;
+                            return (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                                <span style={{ fontWeight: 500 }}>{auto.whatsapp_templates.template_name}</span>
+                                {tplMeta && tplCat && (
+                                  <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
+                                    {tplCat.icon} {tplCat.label} • {tplMeta.bsp.toUpperCase()}
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })() : <span style={{color: 'var(--spc-view-danger)'}}>Missing Template</span>}
                         </td>
                         <td style={{ padding: '1rem' }}>
                           <CRMStatusBadge tone="info">{auto.frequency}</CRMStatusBadge>
@@ -4431,7 +4844,7 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
                         <td className={crmStyles.actionsColumn} style={{ padding: '1rem' }}>
                           <div className={crmStyles.rowActions}>
                           {automationsPerms.edit && (
-                            <button className={crmStyles.button} onClick={() => { const { whatsapp_templates, ...cleanAuto } = auto; setCurrentAuto(cleanAuto); setShowAutoForm(true); }} style={{ padding: '0.4rem', background: 'transparent', color: 'var(--spc-view-muted)', border: 'none', cursor: 'pointer' }}>Edit</button>
+                            <button className={crmStyles.button} onClick={() => handleOpenEditAuto(auto)} style={{ padding: '0.4rem', background: 'transparent', color: 'var(--spc-view-muted)', border: 'none', cursor: 'pointer' }}>Edit</button>
                           )}
                           {automationsPerms.delete && (
                             <button className={crmStyles.button} onClick={() => handleDeleteAutomation(auto.id)} style={{ padding: '0.4rem', background: 'transparent', color: 'var(--spc-view-danger)', border: 'none', cursor: 'pointer' }}>Delete</button>

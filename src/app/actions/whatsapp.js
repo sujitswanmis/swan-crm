@@ -469,13 +469,13 @@ export async function getWhatsappAutomations() {
   if (autoError) return { success: false, error: autoError.message };
 
   // Fetch templates for manual join to avoid schema cache issues
-  const { data: templates } = await supabase.from('whatsapp_templates').select('id, template_name, campaign_name');
+  const { data: templates } = await supabase.from('whatsapp_templates').select('id, template_name, campaign_name, company, message_body');
 
   const mappedData = automations.map(auto => {
     const tpl = (templates || []).find(t => t.id === auto.template_id);
     return {
       ...auto,
-      whatsapp_templates: tpl ? { template_name: tpl.template_name, campaign_name: tpl.campaign_name } : null
+      whatsapp_templates: tpl ? { template_name: tpl.template_name, campaign_name: tpl.campaign_name, company: tpl.company, message_body: tpl.message_body } : null
     };
   });
 
