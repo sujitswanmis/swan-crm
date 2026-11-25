@@ -44,8 +44,8 @@ const WA_EDGE_MAXIMUMS = { select: 72, actions: 180 };
 
 const ALL_WA_TABS = [
   { id: 'templates', label: 'Templates Library', icon: MessageSquare },
-  { id: 'campaigns', label: 'Broadcast Campaigns', icon: Send },
   { id: 'automations', label: 'Stage Automations', icon: Repeat },
+  { id: 'campaigns', label: 'Broadcast Campaigns', icon: Send },
   { id: 'sent_logs', label: 'API Message Sent Logs', icon: Send },
   { id: 'catalog', label: 'Master BSP Catalog (20+)', icon: Layers },
   { id: 'allocations', label: 'Client Allocation Matrix', icon: Users },

@@ -7198,18 +7198,6 @@ export default function CRMContainer({
                               </button>
                             )}
 
-                            {getSubItemPermissions(moduleAccess, userRole, 'whatsapp_official', 'campaigns').view && (
-                              <button
-                                onClick={() => handleWaOfficialSubTabChange('campaigns')}
-                                className="submenu-item"
-                                data-active={activeTab === 'whatsapp_official' && waOfficialSubTab === 'campaigns'}
-                                style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}
-                              >
-                                {renderMiniSubBadge(<Megaphone />, '#2563eb')}
-                                <span>Broadcast Campaigns</span>
-                              </button>
-                            )}
-
                             {getSubItemPermissions(moduleAccess, userRole, 'whatsapp_official', 'automations').view && (
                               <button
                                 onClick={() => handleWaOfficialSubTabChange('automations')}
@@ -7219,6 +7207,18 @@ export default function CRMContainer({
                               >
                                 {renderMiniSubBadge(<Repeat />, '#16a34a')}
                                 <span>Stage Automations</span>
+                              </button>
+                            )}
+
+                            {getSubItemPermissions(moduleAccess, userRole, 'whatsapp_official', 'campaigns').view && (
+                              <button
+                                onClick={() => handleWaOfficialSubTabChange('campaigns')}
+                                className="submenu-item"
+                                data-active={activeTab === 'whatsapp_official' && waOfficialSubTab === 'campaigns'}
+                                style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}
+                              >
+                                {renderMiniSubBadge(<Megaphone />, '#2563eb')}
+                                <span>Broadcast Campaigns</span>
                               </button>
                             )}
 
