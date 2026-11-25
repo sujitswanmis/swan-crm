@@ -259,20 +259,44 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
   }, [moduleAccess, userRole, isMasterAdmin]);
 
   const [activeTab, setActiveTab] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const param = (new URLSearchParams(window.location.search).get('wa_tab') || '').toLowerCase();
+      if (param && visibleTabs.some(t => t.id === param)) return param;
+    }
     if (initialTab && visibleTabs.some(t => t.id === initialTab)) return initialTab;
     if (typeof window !== 'undefined') {
-      const param = new URLSearchParams(window.location.search).get('wa_tab');
-      if (param && visibleTabs.some(t => t.id === param)) return param;
+      try {
+        const saved = (localStorage.getItem('crm_wa_official_subtab') || '').toLowerCase();
+        if (saved && visibleTabs.some(t => t.id === saved)) return saved;
+      } catch (_e) {}
     }
     return visibleTabs[0]?.id || 'templates';
   });
 
-  // Sync state if initialTab prop changes externally (e.g. from sidebar subpage click)
+  // Sync state only if initialTab prop actually changes externally (e.g. from sidebar subpage click)
+  const prevInitialTabRef = React.useRef(initialTab);
   useEffect(() => {
-    if (initialTab && visibleTabs.some(t => t.id === initialTab) && initialTab !== activeTab) {
-      setActiveTab(initialTab);
+    if (initialTab !== prevInitialTabRef.current) {
+      prevInitialTabRef.current = initialTab;
+      if (initialTab && visibleTabs.some(t => t.id === initialTab) && initialTab !== activeTab) {
+        setActiveTab(initialTab);
+      }
     }
-  }, [initialTab, visibleTabs]);
+  }, [initialTab, visibleTabs, activeTab]);
+
+  // Keep URL query & localStorage synced while WhatsApp Official is active
+  useEffect(() => {
+    if (!isActive || typeof window === 'undefined' || !activeTab) return;
+    try { localStorage.setItem('crm_wa_official_subtab', activeTab); } catch (_e) {}
+    const pathLower = window.location.pathname.toLowerCase();
+    if (pathLower.includes('whatsapp_official')) {
+      const params = new URLSearchParams(window.location.search);
+      if ((params.get('wa_tab') || '').toLowerCase() !== activeTab) {
+        params.set('wa_tab', activeTab);
+        window.history.replaceState(null, '', `${window.location.pathname}?${params.toString()}`);
+      }
+    }
+  }, [isActive, activeTab]);
 
   // Ensure active tab stays within allowed tabs if permissions change
   useEffect(() => {
@@ -284,8 +308,11 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
   // Listen for browser back/forward navigation
   React.useEffect(() => {
     const handlePopState = () => {
-      const param = new URLSearchParams(window.location.search).get('wa_tab');
-      if (param && param !== activeTab && visibleTabs.some(t => t.id === param)) setActiveTab(param);
+      const param = (new URLSearchParams(window.location.search).get('wa_tab') || '').toLowerCase();
+      if (param && param !== activeTab && visibleTabs.some(t => t.id === param)) {
+        setActiveTab(param);
+        try { localStorage.setItem('crm_wa_official_subtab', param); } catch (_e) {}
+      }
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
@@ -294,16 +321,20 @@ export default function WhatsappOfficial({ moduleAccess = {}, userRole = '', use
   const handleTabChange = (tabId) => {
     if (!visibleTabs.some(t => t.id === tabId)) return;
     setActiveTab(tabId);
-    if (onTabChange) onTabChange(tabId);
+    try { localStorage.setItem('crm_wa_official_subtab', tabId); } catch (_e) {}
     setTemplatePage(1);
     setAutoPage(1);
     setAllocationPage(1);
     if (tabId === 'catalog') setActiveAdminSubTab('catalog');
     if (tabId === 'allocations') setActiveAdminSubTab('allocations');
     if (tabId === 'settings') setActiveAdminSubTab('credentials');
-    const params = new URLSearchParams(window.location.search);
-    params.set('wa_tab', tabId);
-    window.history.pushState(null, '', `${window.location.pathname}?${params.toString()}`);
+    if (onTabChange) {
+      onTabChange(tabId);
+    } else if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      params.set('wa_tab', tabId);
+      window.history.pushState(null, '', `${window.location.pathname}?${params.toString()}`);
+    }
   };
   const [loading, setLoading] = useState(false);
   const supabase = createClient();

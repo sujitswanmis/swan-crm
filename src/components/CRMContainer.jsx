@@ -1126,9 +1126,21 @@ export default function CRMContainer({
     return 'smtp';
   });
   const [waOfficialSubTab, setWaOfficialSubTab] = useState(() => {
-    const queryTab = (searchParams?.get('wa_tab') || initialSearchParams?.wa_tab || '').toLowerCase();
-    if (queryTab && ['templates', 'automations', 'sent_logs', 'catalog', 'allocations', 'settings'].includes(queryTab)) {
+    const validTabs = ['templates', 'campaigns', 'automations', 'sent_logs', 'catalog', 'allocations', 'settings'];
+    let queryTab = (searchParams?.get('wa_tab') || initialSearchParams?.wa_tab || '').toLowerCase();
+    if (!queryTab && typeof window !== 'undefined') {
+      try {
+        queryTab = (new URLSearchParams(window.location.search).get('wa_tab') || '').toLowerCase();
+      } catch (_e) {}
+    }
+    if (queryTab && validTabs.includes(queryTab)) {
       return queryTab;
+    }
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = (localStorage.getItem('crm_wa_official_subtab') || '').toLowerCase();
+        if (saved && validTabs.includes(saved)) return saved;
+      } catch (_e) {}
     }
     return 'templates';
   });
@@ -3584,6 +3596,15 @@ export default function CRMContainer({
         }
         tab = 'workplace';
         setWorkflowMenuExpanded(true);
+      } else if (tab === 'whatsapp_official' || tab === 'whatsapp-official') {
+        const waSub = (params.get('wa_tab') || '').toLowerCase();
+        if (waSub && ['templates', 'campaigns', 'automations', 'sent_logs', 'catalog', 'allocations', 'settings'].includes(waSub)) {
+          setWaOfficialSubTab(waSub);
+          try { localStorage.setItem('crm_wa_official_subtab', waSub); } catch (_e) {}
+        }
+        tab = 'whatsapp_official';
+        setMessageMenuExpanded(true);
+        setWaOfficialMenuExpanded(true);
       } else if (['saas-master', 'saas_master', 'saas-studio', 'saas_studio', 'saasstudio'].includes(tab) || (tab && (tab.startsWith('saas-master/') || tab.startsWith('saas_master/') || tab.startsWith('saas-studio/') || tab.startsWith('saas_studio/')))) {
         let sub = '';
         if (tab.includes('/')) {
@@ -4042,6 +4063,7 @@ export default function CRMContainer({
 
   const handleWaOfficialSubTabChange = (subTabId) => {
     setWaOfficialSubTab(subTabId);
+    try { localStorage.setItem('crm_wa_official_subtab', subTabId); } catch (_e) {}
     if (activeTab !== 'whatsapp_official') {
       setActiveTab('whatsapp_official');
     }
@@ -10134,6 +10156,7 @@ export default function CRMContainer({
                     initialTab={waOfficialSubTab}
                     onTabChange={(sub) => {
                       setWaOfficialSubTab(sub);
+                      try { localStorage.setItem('crm_wa_official_subtab', sub); } catch (_e) {}
                       window.history.pushState(null, '', `/whatsapp_official?wa_tab=${sub}`);
                     }}
                   />
