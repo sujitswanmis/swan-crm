@@ -3,6 +3,7 @@
 import { getAdminClient } from '@/utils/supabase/adminClient';
 import { calculateNextDueDate, getISTDateString, getISTCurrentPeriod } from '@/utils/orderFrequency';
 import { getPartyList, resolveDbTenantUuid } from './partyMaster';
+import { logAuditAction } from './audit';
 
 const DEFAULT_TENANT_ID = '00000000-0000-0000-0000-000000000001';
 
@@ -378,6 +379,13 @@ export async function saveOrderFollowupAndRecur(followupData, tenantId = DEFAULT
     console.warn('Update next due date warning:', e.message);
   }
 
+  try {
+    await logAuditAction(
+      'Save Order Follow-up',
+      `Recorded order follow-up (${followupData.call_status || 'LOGGED'}) for party ${followupData.party_name || followupData.party_id}${generatedOrderNo ? ` — Order: ${generatedOrderNo}` : ''}`
+    );
+  } catch (_) {}
+
   return {
     success: true,
     generated_order_no: generatedOrderNo,
@@ -640,6 +648,13 @@ export async function updateOrderLifecycleStatus(orderId, updateData, tenantId =
       resultData = fbData;
     }
 
+    try {
+      await logAuditAction(
+        'Update Order Stage',
+        `Updated order ${resultData?.order_number || orderId} to ${updateData?.stage_name || updateData?.stage_id || resultData?.order_status || 'updated'}`
+      );
+    } catch (_) {}
+
     return { success: true, order: resultData };
   } catch (err) {
     console.error('updateOrderLifecycleStatus error:', err);
@@ -782,6 +797,12 @@ export async function cancelOrder(orderId, cancelReason = '', cancelledBy = 'Sal
         .single();
 
       if (error) throw error;
+      try {
+        await logAuditAction(
+          'Cancel Order',
+          `Cancelled order ${currentOrder?.order_number || orderId} by ${cancelledBy}. Reason: ${cancelReason}`
+        );
+      } catch (_) {}
       return { success: true, order: data };
     } catch (_) {
       const { data, error } = await adminClient
@@ -793,6 +814,12 @@ export async function cancelOrder(orderId, cancelReason = '', cancelledBy = 'Sal
         .single();
 
       if (error) throw error;
+      try {
+        await logAuditAction(
+          'Cancel Order',
+          `Cancelled order ${currentOrder?.order_number || orderId} by ${cancelledBy}. Reason: ${cancelReason}`
+        );
+      } catch (_) {}
       return { success: true, order: data };
     }
   } catch (err) {
@@ -979,6 +1006,12 @@ export async function dispatchPartialLot(orderId, lotData = {}, dispatchedBy = '
         .single();
 
       if (error) throw error;
+      try {
+        await logAuditAction(
+          'Dispatch Order Lot',
+          `Dispatched ${lotData.dispatched_qty} units for order ${currentOrder?.order_number || orderId} by ${dispatchedBy}`
+        );
+      } catch (_) {}
       return { success: true, order: data };
     } catch (_) {
       const { data, error } = await adminClient
@@ -990,6 +1023,12 @@ export async function dispatchPartialLot(orderId, lotData = {}, dispatchedBy = '
         .single();
 
       if (error) throw error;
+      try {
+        await logAuditAction(
+          'Dispatch Order Lot',
+          `Dispatched ${lotData.dispatched_qty} units for order ${currentOrder?.order_number || orderId} by ${dispatchedBy}`
+        );
+      } catch (_) {}
       return { success: true, order: data };
     }
   } catch (err) {
@@ -1478,6 +1517,12 @@ export async function createComplaintTicketDirect(complaintData, tenantId = DEFA
       .single();
 
     if (error) throw error;
+    try {
+      await logAuditAction(
+        'Create Complaint Ticket',
+        `Logged complaint ${data?.ticket_number || data?.id} for ${complaintData.customer_name || complaintData.party_id || 'Customer'}`
+      );
+    } catch (_) {}
     return { success: true, ticket: data };
   } catch (err) {
     console.error('createComplaintTicketDirect error:', err);
@@ -1618,6 +1663,13 @@ export async function advanceComplaintTicketStage(ticketId, stagePayload, tenant
       }
     }
 
+    try {
+      await logAuditAction(
+        'Advance Complaint Stage',
+        `Moved complaint ${currentTicket?.ticket_number || ticketId} to ${targetStage.id} (${targetStage.name}) by ${executedBy}`
+      );
+    } catch (_) {}
+
     return { success: true, ticket: updatedData };
   } catch (err) {
     console.error('advanceComplaintTicketStage error:', err);
@@ -1680,6 +1732,12 @@ export async function verifyAndCloseComplaintTicket(ticketId, closureData, tenan
       .single();
 
     if (error) throw error;
+    try {
+      await logAuditAction(
+        'Close Complaint Ticket',
+        `Verified and closed complaint ${data?.ticket_number || ticketId} (Rating: ${payload.dealer_satisfaction_rating}★)`
+      );
+    } catch (_) {}
     return { success: true, ticket: data };
   } catch (err) {
     console.error('verifyAndCloseComplaintTicket error:', err);

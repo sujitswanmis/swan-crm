@@ -338,23 +338,43 @@ export async function getPartyList(tenantId = DEFAULT_TENANT_ID, options = {}) {
 }
 
 /**
- * Helper to generate atomic branch-prefixed party codes (e.g., PTY-NSMLR-100001, PTY-NSTLP-100001)
+ * Helper to generate atomic branch-prefixed party codes (e.g., PTY-NSMLR-000000001, PTY-NSTLP-000000001)
+ * Now fully dynamic and synchronized with Party Master Config (tenants can set prefixes, padding & start numbers)
  */
-export async function generateBranchPartyCode(adminClient, rawBranch = 'NSMLR') {
+export async function generateBranchPartyCode(adminClient, rawBranch = 'NSMLR', tenantId = 'TNT00002') {
   const branch = ['NSTL', 'NSTLP'].includes(String(rawBranch || '').toUpperCase().trim())
     ? 'NSTLP'
     : String(rawBranch || 'NSMLR').toUpperCase().trim().replace(/[^A-Z0-9]/g, '') || 'NSMLR';
 
-  const prefix = `PTY-${branch}-`;
+  let codePrefix = 'PTY-';
+  let includeBranch = true;
+  let padLength = 9;
+  let startSeq = 1;
+
+  try {
+    const { getPartyMasterConfig } = await import('@/app/actions/partyMasterConfig');
+    const cfgRes = await getPartyMasterConfig(tenantId, branch);
+    if (cfgRes?.success && cfgRes.config?.general) {
+      const g = cfgRes.config.general;
+      if (g.party_code_prefix) codePrefix = g.party_code_prefix.trim();
+      if (g.include_branch_code !== undefined) includeBranch = g.include_branch_code;
+      if (g.sequence_padding) padLength = parseInt(g.sequence_padding, 10) || 9;
+      if (g.start_sequence) startSeq = parseInt(g.start_sequence, 10) || 1;
+    }
+  } catch (_) {
+    // Graceful fallback to standard defaults
+  }
+
+  const prefix = includeBranch ? `${codePrefix}${branch}-` : `${codePrefix}`;
 
   const { data: latest } = await adminClient
     .from('party_master')
     .select('party_universal_code')
     .like('party_universal_code', `${prefix}%`)
     .order('party_universal_code', { ascending: false })
-    .limit(10);
+    .limit(20);
 
-  let maxNum = 100000;
+  let maxNum = startSeq > 0 ? (startSeq - 1) : 0;
   if (latest && latest.length > 0) {
     for (const row of latest) {
       const code = row.party_universal_code || '';
@@ -368,14 +388,32 @@ export async function generateBranchPartyCode(adminClient, rawBranch = 'NSMLR') 
   }
 
   const nextSeq = maxNum + 1;
-  return `${prefix}${nextSeq}`;
+  const seqFormatted = String(nextSeq).padStart(padLength, '0');
+  return `${prefix}${seqFormatted}`;
 }
 
 /**
  * Helper to generate a block of consecutive branch party codes for batch importing
  */
-export async function generateBranchPartyCodesBatch(adminClient, branchCounts = {}) {
+export async function generateBranchPartyCodesBatch(adminClient, branchCounts = {}, tenantId = 'TNT00002') {
   const result = {};
+
+  let codePrefix = 'PTY-';
+  let includeBranch = true;
+  let padLength = 9;
+  let startSeq = 1;
+
+  try {
+    const { getPartyMasterConfig } = await import('@/app/actions/partyMasterConfig');
+    const cfgRes = await getPartyMasterConfig(tenantId, 'All Branches');
+    if (cfgRes?.success && cfgRes.config?.general) {
+      const g = cfgRes.config.general;
+      if (g.party_code_prefix) codePrefix = g.party_code_prefix.trim();
+      if (g.include_branch_code !== undefined) includeBranch = g.include_branch_code;
+      if (g.sequence_padding) padLength = parseInt(g.sequence_padding, 10) || 9;
+      if (g.start_sequence) startSeq = parseInt(g.start_sequence, 10) || 1;
+    }
+  } catch (_) {}
 
   for (const [rawBranch, count] of Object.entries(branchCounts)) {
     if (!count || count <= 0) continue;
@@ -383,16 +421,16 @@ export async function generateBranchPartyCodesBatch(adminClient, branchCounts = 
       ? 'NSTLP'
       : String(rawBranch || 'NSMLR').toUpperCase().trim().replace(/[^A-Z0-9]/g, '') || 'NSMLR';
 
-    const prefix = `PTY-${branch}-`;
+    const prefix = includeBranch ? `${codePrefix}${branch}-` : `${codePrefix}`;
 
     const { data: latest } = await adminClient
       .from('party_master')
       .select('party_universal_code')
       .like('party_universal_code', `${prefix}%`)
       .order('party_universal_code', { ascending: false })
-      .limit(10);
+      .limit(20);
 
-    let maxNum = 100000;
+    let maxNum = startSeq > 0 ? (startSeq - 1) : 0;
     if (latest && latest.length > 0) {
       for (const row of latest) {
         const code = row.party_universal_code || '';
@@ -407,7 +445,8 @@ export async function generateBranchPartyCodesBatch(adminClient, branchCounts = 
 
     const codes = [];
     for (let i = 1; i <= count; i++) {
-      codes.push(`${prefix}${maxNum + i}`);
+      const seqFormatted = String(maxNum + i).padStart(padLength, '0');
+      codes.push(`${prefix}${seqFormatted}`);
     }
     result[branch] = codes;
   }
@@ -416,10 +455,30 @@ export async function generateBranchPartyCodesBatch(adminClient, branchCounts = 
 }
 
 /**
- * Helper to generate atomic channel codes (e.g. DLR-NSMLR-100001, DIS-NSTLP-100001)
+ * Helper to generate atomic channel codes (e.g. DLR-NSMLR-000000001, DST-NSTLP-000000001)
  */
-async function generateChannelCode(adminClient, partyType, branchCode = 'NSMLR', seqNumber = null) {
-  const pfx = partyType === 'Distributor' ? 'DIS' : partyType === 'Sub-Dealer' ? 'SDL' : 'DLR';
+async function generateChannelCode(adminClient, partyType, branchCode = 'NSMLR', seqNumber = null, tenantId = 'TNT00002') {
+  let distPfx = 'DST-';
+  let dlrPfx = 'DLR-';
+  let subPfx = 'SUB-';
+
+  try {
+    const { getPartyMasterConfig } = await import('@/app/actions/partyMasterConfig');
+    const cfgRes = await getPartyMasterConfig(tenantId, branchCode);
+    if (cfgRes?.success && cfgRes.config?.general) {
+      const g = cfgRes.config.general;
+      if (g.distributor_code_prefix) distPfx = g.distributor_code_prefix;
+      if (g.dealer_code_prefix) dlrPfx = g.dealer_code_prefix;
+      if (g.subdealer_code_prefix) subPfx = g.subdealer_code_prefix;
+    }
+  } catch (_) {}
+
+  const pfx = partyType === 'Distributor' 
+    ? distPfx.replace(/-$/, '') 
+    : partyType === 'Sub-Dealer' 
+      ? subPfx.replace(/-$/, '') 
+      : dlrPfx.replace(/-$/, '');
+
   const cleanBranch = ['NSTL', 'NSTLP'].includes(String(branchCode || '').toUpperCase().trim()) ? 'NSTLP' : 'NSMLR';
   if (seqNumber) {
     return `${pfx}-${cleanBranch}-${seqNumber}`;
@@ -477,13 +536,13 @@ export async function createPartyMaster(partyData, tenantId = DEFAULT_TENANT_ID,
     branchCode = cleanCompUpper.replace(/[^A-Z0-9]/g, '').slice(0, 10) || 'NSMLR';
   }
 
-  // Generate branch-prefixed atomic PTY code (e.g., PTY-NSMLR-100001)
-  const partyCode = await generateBranchPartyCode(adminClient, branchCode);
+  // Generate branch-prefixed atomic PTY code (e.g., PTY-NSMLR-000000001)
+  const partyCode = await generateBranchPartyCode(adminClient, branchCode, resolvedTenantUuid || tenantId);
   const seqMatch = partyCode.match(/-(\d+)$/);
   const seqNumber = seqMatch ? seqMatch[1] : null;
 
   const partyType = partyData.party_type || partyData.party_category || 'Dealer';
-  const channelCode = await generateChannelCode(adminClient, partyType, branchCode, seqNumber);
+  const channelCode = await generateChannelCode(adminClient, partyType, branchCode, seqNumber, resolvedTenantUuid || tenantId);
 
   const sanitizedStatus = VALID_PARTY_STATUSES.includes(cleanPartyData.party_status)
     ? cleanPartyData.party_status
@@ -657,6 +716,13 @@ export async function createPartyMaster(partyData, tenantId = DEFAULT_TENANT_ID,
   };
 
   await updatePartyMeta(adminClient, party.id, initialMeta);
+
+  try {
+    await logAuditAction(
+      'Create Party',
+      `Created ${partyType} "${party.firm_name}" (${party.party_universal_code || party.id}) by ${empName}`
+    );
+  } catch (_) {}
 
   return party;
 }
@@ -984,6 +1050,13 @@ export async function updatePartyStep(partyId, stepName, stepData, tenantId = DE
     await updatePartyMeta(adminClient, partyId, metaUpdates);
   }
 
+  try {
+    await logAuditAction(
+      'Update Party Onboarding',
+      `Updated ${stepName || 'details'} (${actionType}) for party "${updated?.firm_name || partyId}"`
+    );
+  } catch (_) {}
+
   return updated;
 }
 
@@ -1286,6 +1359,13 @@ export async function activatePartner(
       console.warn('Could not update lead_party_handoffs status:', hErr.message);
     }
   }
+
+  try {
+    await logAuditAction(
+      'Activate Party',
+      `Updated activation status for "${activated?.firm_name || partyId}" to ${finalStatus} by ${empName}`
+    );
+  } catch (_) {}
 
   return { success: true, party: activated, status: finalStatus };
 }
@@ -1947,7 +2027,7 @@ export async function bulkImportPartyMaster(partiesList = [], importMode = 'FULL
       branchCounts[comp] = (branchCounts[comp] || 0) + 1;
     });
 
-    const branchCodesPool = await generateBranchPartyCodesBatch(adminClient, branchCounts);
+    const branchCodesPool = await generateBranchPartyCodesBatch(adminClient, branchCounts, tenantId);
     const branchCodeIndex = {};
 
     for (let i = 0; i < partiesList.length; i++) {
@@ -1999,7 +2079,7 @@ export async function bulkImportPartyMaster(partiesList = [], importMode = 'FULL
       // Pick next sequential branch-prefixed party code
       branchCodeIndex[ourCompany] = branchCodeIndex[ourCompany] || 0;
       const partyCode = (branchCodesPool[ourCompany] && branchCodesPool[ourCompany][branchCodeIndex[ourCompany]])
-        || await generateBranchPartyCode(adminClient, ourCompany);
+        || await generateBranchPartyCode(adminClient, ourCompany, tenantId);
       branchCodeIndex[ourCompany]++;
 
       const seqMatch = partyCode.match(/-(\d+)$/);

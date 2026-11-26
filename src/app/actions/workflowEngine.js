@@ -4,6 +4,7 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { createClient as createSessionClient } from '@/utils/supabase/server';
 import { getSubItemPermissions } from '@/utils/permissionUtils';
 import { tatHours, validatePlanningMode } from '@/utils/workflowTiming.mjs';
+import { logAuditAction } from './audit';
 
 const DEFAULT_TENANT_ID = '00000000-0000-0000-0000-000000000001';
 const isUUID = value => /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(String(value || ''));
@@ -149,6 +150,9 @@ export async function createWorkflowDefinition(workflowData, tenantId) {
     planning_mode: workflowData.planning_mode || 'ACTUAL_PLUS_TAT',
     branch_code: workflowData.branch_code || 'All',
     stages: [] });
+  try {
+    await logAuditAction('Create Workflow', `Created workflow "${workflow.workflow_name}" (${workflow.workflow_code})`);
+  } catch (_) {}
   return { workflow: { ...workflow, branch_code: workflowData.branch_code || 'All', company_tenant: workflowData.company_tenant || 'TNT00002' } };
 }
 
@@ -162,6 +166,9 @@ export async function importWorkflowDefinition(workflowData) {
   const workflow = await save(ctx, { ...workflowData, id: null, updated_at: null,
     stages: (workflowData.stages || []).map(s => ({ ...s, id: null,
       fields: (s.fields || []).map(f => ({ ...f, id: null })) })) });
+  try {
+    await logAuditAction('Import Workflow', `Imported workflow "${workflow.workflow_name}" (${workflow.workflow_code})`);
+  } catch (_) {}
   return { workflow };
 }
 
@@ -217,6 +224,10 @@ async function setVisibility(id, changes) {
   const targetTenant = wf.tenant_id || ctx.tenantId;
   checked(await ctx.client.from('workflow_definitions').update({ ...changes, updated_at: new Date().toISOString() })
     .eq('id', id).eq('tenant_id', targetTenant).select('id'));
+  try {
+    const wfAction = changes.is_purged ? 'Purge Workflow' : (changes.is_deleted ? 'Delete Workflow' : 'Restore Workflow');
+    await logAuditAction(wfAction, `${wfAction} "${wf.workflow_name || id}"`);
+  } catch (_) {}
   return { success: true };
 }
 export async function deleteWorkflowDefinition(id) { return setVisibility(id, { is_deleted: true }); }
@@ -267,6 +278,12 @@ export async function startWorkflowInstance(workflowVersionId, s00Context = {}, 
     request_key: isUUID(s00Context.request_key) ? s00Context.request_key : crypto.randomUUID(), started_by: ctx.user.id };
   const id = checked(await ctx.client.rpc('crm_start_workflow', { p_tenant_id: ctx.tenantId,
     p_version_id: workflowVersionId, p_context: context, p_party_id: partyId }));
+  try {
+    await logAuditAction(
+      'Start Workflow Instance',
+      `Started workflow instance ${id} (${context.customer_name || context.reference_no || 'Instance'})`
+    );
+  } catch (_) {}
   return instanceById(ctx, id);
 }
 
@@ -315,5 +332,11 @@ export async function advanceWorkflowInstance(id, expectedStageInstanceId, value
   if (stage.approval_required) data._approved_by = ctx.user.id;
   const savedId = checked(await ctx.client.rpc('crm_advance_workflow', { p_tenant_id: ctx.tenantId,
     p_instance_id: id, p_expected_stage_instance_id: expectedStageInstanceId, p_values: data }));
+  try {
+    await logAuditAction(
+      'Advance Workflow Stage',
+      `Completed workflow stage "${stage.stage_name || stage.id}" for "${inst.workflow_name || id}"`
+    );
+  } catch (_) {}
   return instanceById(ctx, savedId);
 }

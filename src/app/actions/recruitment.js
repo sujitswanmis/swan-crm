@@ -6,6 +6,7 @@ import { getRecruiterWorkloadLimits } from './recruiterConfig';
 import { createClient } from '@/utils/supabase/server';
 import { getUserBranchAccess, matchesCompanyToken } from '@/utils/branchAccess';
 import { checkIsAdminRole, checkIsMasterAdmin, getModulePermissions, getSubItemPermissions } from '@/utils/permissionUtils';
+import { logAuditAction } from './audit';
 
 const getAdminClient = () => {
   return createSupabaseClient(
@@ -627,6 +628,12 @@ async function writePosition(posForm, tenantId, userCompany, userName, branchCod
     }
 
     if (res.error) throw res.error;
+    try {
+      await logAuditAction(
+        isUpdate ? 'Update Recruitment Position' : 'Create Recruitment Position',
+        `${isUpdate ? 'Updated' : 'Created'} position "${res.data?.title || posForm.title || posForm.id}" (${res.data?.department || posForm.department || 'HR'})`
+      );
+    } catch (_) {}
     const meta = parsePositionWorkspace(res.data);
     return { 
       success: true, 
@@ -695,6 +702,9 @@ export async function deletePosition(posId, tenantId = DEFAULT_TENANT_ID, userCo
       .eq('id', posId);
 
     if (delErr) throw delErr;
+    try {
+      await logAuditAction('Delete Recruitment Position', `Deleted position "${pos.title || posId}"`);
+    } catch (_) {}
     return { success: true };
   } catch (err) {
     console.error('deletePosition error:', err);
@@ -858,6 +868,12 @@ async function writeCandidate(candForm, userName, writer = null) {
       }
 
       if (res.error) throw res.error;
+      try {
+        await logAuditAction(
+          'Update Candidate',
+          `Updated candidate "${res.data?.name || candForm.id}" (Stage: ${res.data?.current_stage || '—'}, Status: ${res.data?.candidate_status || '—'})`
+        );
+      } catch (_) {}
       return { success: true, data: res.data };
     } else {
       // Create new candidate
@@ -948,6 +964,12 @@ async function writeCandidate(candForm, userName, writer = null) {
       }
 
       if (res.error) throw res.error;
+      try {
+        await logAuditAction(
+          'Add Candidate',
+          `Added candidate "${res.data?.name || candForm.name || ''}" for position ${res.data?.recruitment_positions?.title || positionId}`
+        );
+      } catch (_) {}
       return { success: true, data: res.data };
     }
   } catch (err) {
@@ -967,6 +989,9 @@ export async function deleteCandidate(candId) {
     await adminClient.from('recruitment_candidate_notes').delete().eq('candidate_id', candId);
     const { error } = await adminClient.from('recruitment_candidates').delete().eq('id', candId);
     if (error) throw error;
+    try {
+      await logAuditAction('Delete Candidate', `Deleted candidate ID: ${candId}`);
+    } catch (_) {}
     return { success: true };
   } catch (err) {
     console.error('deleteCandidate error:', err);
@@ -1043,6 +1068,9 @@ export async function releasePosition(positionId, reason, actor = 'Recruiter') {
       .single();
 
     if (error) throw error;
+    try {
+      await logAuditAction('Release Recruitment Position', `Released position "${pos?.title || positionId}" to Open Pool by ${actor}. Reason: ${reason || 'N/A'}`);
+    } catch (_) {}
     return { success: true, data };
   } catch (err) {
     console.error('releasePosition error:', err);
@@ -1085,6 +1113,13 @@ export async function adminOverrideCandidateStage(candidateId, newStage, newStat
       note_text: `🔀 ADMIN STAGE OVERRIDE: Stage changed from ${oldStage} to ${newStage} by ${actor}. Mandatory Reason: ${reason || 'Administrative Decision'}`,
       created_by: actor
     }]);
+
+    try {
+      await logAuditAction(
+        'Override Candidate Stage',
+        `Admin override for candidate "${cand?.name || candidateId}": ${oldStage} → ${newStage} by ${actor}`
+      );
+    } catch (_) {}
 
     return { success: true, data };
   } catch (err) {

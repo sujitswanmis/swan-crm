@@ -3,6 +3,7 @@
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import crypto from 'crypto';
 import { resolveDbTenantUuid } from './partyMaster';
+import { logAuditAction } from './audit';
 
 const DEFAULT_TENANT_ID = '00000000-0000-0000-0000-000000000001';
 
@@ -67,6 +68,15 @@ export async function createDelegationTask(taskData, tenantId = DEFAULT_TENANT_I
       metadata: { priority: payload.priority, deadline: payload.deadline },
       tenantId
     });
+
+    try {
+      await logAuditAction({
+        action: 'Create Delegation Task',
+        target: `Delegated "${payload.title}" (${payload.task_code}) to ${payload.assigned_to_name} [Priority: ${payload.priority}]`,
+        userEmail: payload.delegated_by_email,
+        userName: payload.delegated_by_name
+      });
+    } catch (_) {}
 
     return { success: true, data };
   } catch (err) {
@@ -215,6 +225,15 @@ export async function updateTaskStatus({
       tenantId
     });
 
+    try {
+      await logAuditAction({
+        action: 'Update Delegation Status',
+        target: `Updated delegation "${data?.title || taskId}" (${data?.task_code || ''}) status to ${status.toUpperCase()}`,
+        userEmail: user?.email,
+        userName: user?.name
+      });
+    } catch (_) {}
+
     return { success: true, data };
   } catch (err) {
     console.error('Error updating task status:', err.message);
@@ -259,6 +278,15 @@ export async function verifyAndCompleteTask({
       metadata: { rating, feedbackRemarks },
       tenantId
     });
+
+    try {
+      await logAuditAction({
+        action: 'Verify Delegation Task',
+        target: `Approved & closed delegation "${data?.title || taskId}" (${rating}★ rating)`,
+        userEmail: user?.email,
+        userName: user?.name
+      });
+    } catch (_) {}
 
     return { success: true, data };
   } catch (err) {
@@ -306,6 +334,15 @@ export async function reopenTask({
       metadata: { remarks, newDeadline },
       tenantId
     });
+
+    try {
+      await logAuditAction({
+        action: 'Reopen Delegation Task',
+        target: `Reopened delegation "${data?.title || taskId}". Reason: "${remarks}"`,
+        userEmail: user?.email,
+        userName: user?.name
+      });
+    } catch (_) {}
 
     return { success: true, data };
   } catch (err) {

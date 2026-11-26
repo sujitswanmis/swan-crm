@@ -11,6 +11,7 @@ import {
   CLIENT_PLATFORM_COOKIE,
   CLIENT_PLATFORM_DETAILS_COOKIE
 } from '@/utils/platformDetection';
+import { extractSessionDeviceId } from '@/utils/deviceSessionId';
 
 const getAdminClient = () => {
   return createSupabaseClient(
@@ -119,11 +120,34 @@ export async function logAuditAction(action, target, details = {}) {
     let targetStr = target;
     let detailsInfo = details;
 
-    // Handle single object parameter e.g. logAuditAction({ action, target, ... })
+    // Handle single object parameter e.g. logAuditAction({ action, module, target, details, ... })
     if (actionObj) {
       actionStr = actionObj.action || 'Action';
-      targetStr = actionObj.target || (typeof actionObj.details === 'string' ? actionObj.details : '') || '';
       detailsInfo = actionObj.details ?? '';
+      if (actionObj.target) {
+        targetStr = actionObj.target;
+      } else if (typeof detailsInfo === 'string' && detailsInfo.trim()) {
+        targetStr = detailsInfo.trim();
+      } else if (detailsInfo && typeof detailsInfo === 'object') {
+        const parts = Object.entries(detailsInfo)
+          .filter(([k, v]) => !['platform', 'platformDetails', 'platform_details', 'ip'].includes(k) && v !== undefined && v !== null && v !== '')
+          .map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`);
+        targetStr = parts.join(', ');
+      } else {
+        targetStr = '';
+      }
+      if (actionObj.module && targetStr && !targetStr.toLowerCase().includes(String(actionObj.module).toLowerCase()) && !String(actionStr).toLowerCase().includes(String(actionObj.module).toLowerCase())) {
+        targetStr = `[${String(actionObj.module).toUpperCase()}] ${targetStr}`;
+      }
+    } else if (!targetStr && detailsInfo) {
+      if (typeof detailsInfo === 'string') {
+        targetStr = detailsInfo;
+      } else if (typeof detailsInfo === 'object') {
+        const parts = Object.entries(detailsInfo)
+          .filter(([k, v]) => !['platform', 'platformDetails', 'platform_details', 'ip'].includes(k) && v !== undefined && v !== null && v !== '')
+          .map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`);
+        if (parts.length > 0) targetStr = parts.join(', ');
+      }
     }
 
     const explicitPlatform =
@@ -138,8 +162,9 @@ export async function logAuditAction(action, target, details = {}) {
         : '') ||
       '';
 
-    let empName = actionObj?.userName || actionObj?.performedBy || 'System User';
-    let userEmail = actionObj?.userEmail || 'system@internal';
+    const fallbackPerformedBy = actionObj?.userName || actionObj?.performedBy || '';
+    let empName = fallbackPerformedBy || 'System User';
+    let userEmail = actionObj?.userEmail || (fallbackPerformedBy.includes('@') ? fallbackPerformedBy : '') || 'system@internal';
     let userId = actionObj?.userId || null;
 
     try {
@@ -149,7 +174,7 @@ export async function logAuditAction(action, target, details = {}) {
       if (user) {
         userId = user.id;
         userEmail = user.email || userEmail;
-        empName = user.user_metadata?.full_name || user.user_metadata?.emp_name || actionObj?.userName;
+        empName = user.user_metadata?.full_name || user.user_metadata?.emp_name || actionObj?.userName || fallbackPerformedBy;
         if (!empName) {
           const adminClient = getAdminClient();
           const { data: roleData } = await adminClient
@@ -181,7 +206,7 @@ export async function logAuditAction(action, target, details = {}) {
     const basePayload = {
       user_id: userId,
       emp_name: empName,
-      email: userEmail,
+      email: String(userEmail || 'system@internal').trim().toLowerCase(),
       action: String(actionStr || 'Action'),
       target: String(targetStr || ''),
       ip_address: String(ipAddressVal || '127.0.0.1 (Local)'),
@@ -349,43 +374,61 @@ export async function getAuditLogs({
     const isSwan = effectiveTenantId === '00000000-0000-0000-0000-000000000001' && (!company || compLower === 'all' || compLower === 'all companies' || SWAN_COMPANIES.includes(compLower));
 
     let targetEmails = null;
+    let targetUserIds = [];
     if (company || effectiveTenantId) {
       const { data: companyUsers } = await adminClient
         .from('user_roles')
-        .select('user_id, email, company, tenant_id');
+        .select('user_id, email, emp_official_mail_id, company, tenant_id');
 
-      targetEmails = (companyUsers || [])
-        .filter(u => {
-          const uComp = String(u.company || '').toLowerCase().trim();
-          const rawUTenant = String(u.tenant_id || '').toLowerCase().trim();
-          const uTenant = (() => {
-            if (uComp.includes('supuja') || uComp === 'tnt00001' || rawUTenant === '0a37b8e8-1c28-4e19-8891-951fc3f8f8af' || rawUTenant === 'tnt00001') return '0a37b8e8-1c28-4e19-8891-951fc3f8f8af';
-            if (uComp.includes('testing') || uComp === 'tnt00003' || rawUTenant === '922d3e72-6588-457f-a562-4f1bdbf10d98' || rawUTenant === 'tnt00003') return '922d3e72-6588-457f-a562-4f1bdbf10d98';
-            if (u.tenant_id && u.tenant_id !== '00000000-0000-0000-0000-000000000001') return u.tenant_id;
-            return '00000000-0000-0000-0000-000000000001';
-          })();
+      const matchedUsers = (companyUsers || []).filter(u => {
+        const uComp = String(u.company || '').toLowerCase().trim();
+        const rawUTenant = String(u.tenant_id || '').toLowerCase().trim();
+        const uTenant = (() => {
+          if (uComp.includes('supuja') || uComp === 'tnt00001' || rawUTenant === '0a37b8e8-1c28-4e19-8891-951fc3f8f8af' || rawUTenant === 'tnt00001') return '0a37b8e8-1c28-4e19-8891-951fc3f8f8af';
+          if (uComp.includes('testing') || uComp === 'tnt00003' || rawUTenant === '922d3e72-6588-457f-a562-4f1bdbf10d98' || rawUTenant === 'tnt00003') return '922d3e72-6588-457f-a562-4f1bdbf10d98';
+          if (u.tenant_id && u.tenant_id !== '00000000-0000-0000-0000-000000000001') return u.tenant_id;
+          return '00000000-0000-0000-0000-000000000001';
+        })();
 
-          // If specific client tenant workspace
-          if (effectiveTenantId && effectiveTenantId !== '00000000-0000-0000-0000-000000000001') {
-            return uTenant === effectiveTenantId;
+        // If specific client tenant workspace
+        if (effectiveTenantId && effectiveTenantId !== '00000000-0000-0000-0000-000000000001') {
+          return uTenant === effectiveTenantId;
+        }
+
+        if (!isSwan) {
+          return uTenant === effectiveTenantId || uComp === compLower;
+        }
+
+        // Swan Group All / Group level: match strictly Swan plants, exclude other external tenants
+        if (!company || compLower === 'all' || compLower === 'all companies' || compLower === 'new swan group' || compLower === 'tnt00002') {
+          return uTenant === '00000000-0000-0000-0000-000000000001' && (SWAN_COMPANIES.includes(uComp) || !uComp);
+        }
+
+        // Specific Swan sub-company selected (e.g. NSMLR, NSTLP)
+        return uTenant === '00000000-0000-0000-0000-000000000001' && uComp === compLower;
+      });
+
+      const emailSet = new Set();
+      const userIdSet = new Set();
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+      matchedUsers.forEach(u => {
+        if (u.user_id && uuidRegex.test(String(u.user_id).trim())) {
+          userIdSet.add(String(u.user_id).trim());
+        }
+        [u.email, u.emp_official_mail_id].forEach(raw => {
+          const clean = String(raw || '').trim();
+          if (clean) {
+            emailSet.add(clean);
+            emailSet.add(clean.toLowerCase());
           }
+        });
+      });
 
-          if (!isSwan) {
-            return uTenant === effectiveTenantId || uComp === compLower;
-          }
+      targetEmails = Array.from(emailSet);
+      targetUserIds = Array.from(userIdSet);
 
-          // Swan Group All / Group level: match strictly Swan plants, exclude other external tenants
-          if (!company || compLower === 'all' || compLower === 'all companies' || compLower === 'new swan group' || compLower === 'tnt00002') {
-            return uTenant === '00000000-0000-0000-0000-000000000001' && (SWAN_COMPANIES.includes(uComp) || !uComp);
-          }
-
-          // Specific Swan sub-company selected (e.g. NSMLR, NSTLP)
-          return uTenant === '00000000-0000-0000-0000-000000000001' && uComp === compLower;
-        })
-        .map(u => (u.email || '').toLowerCase().trim())
-        .filter(Boolean);
-
-      if (targetEmails.length === 0) {
+      if (targetEmails.length === 0 && targetUserIds.length === 0) {
         return { success: true, logs: [], totalCount: 0, page, pageSize };
       }
     }
@@ -404,8 +447,21 @@ export async function getAuditLogs({
         .from('audit_logs')
         .select('*', { count: 'exact' });
 
-      if (targetEmails && targetEmails.length > 0) {
-        query = query.in('email', targetEmails);
+      if ((targetEmails && targetEmails.length > 0) || targetUserIds.length > 0) {
+        const tenantOrParts = [];
+        if (targetEmails && targetEmails.length > 0) {
+          const safeEmails = targetEmails.map(e => `"${e.replace(/["\\]/g, '')}"`).join(',');
+          tenantOrParts.push(`email.in.(${safeEmails})`);
+        }
+        if (targetUserIds.length > 0) {
+          tenantOrParts.push(`user_id.in.(${targetUserIds.join(',')})`);
+        }
+        if (tenantOrParts.length === 1) {
+          if (targetEmails && targetEmails.length > 0) query = query.in('email', targetEmails);
+          else query = query.in('user_id', targetUserIds);
+        } else if (tenantOrParts.length > 1) {
+          query = query.or(tenantOrParts.join(','));
+        }
       }
 
       // 1. Action Filter (supports groups and exact substrings)
@@ -426,21 +482,39 @@ export async function getAuditLogs({
 
       // 2. Module Filter (executed at database level for full pagination accuracy)
       if (module && module !== 'all') {
-        const modLower = module.toLowerCase();
-        if (modLower.includes('lead') || modLower.includes('pipeline') || modLower.includes('crm')) {
-          query = query.or('action.ilike.%lead%,action.ilike.%stage%,action.ilike.%claim%,target.ilike.%lead%,target.ilike.%stage%,target.ilike.%pipeline%');
-        } else if (modLower.includes('team') || modLower.includes('access')) {
-          query = query.or('action.ilike.%team%,action.ilike.%employee%,action.ilike.%user%,action.ilike.%role%,action.ilike.%permission%,target.ilike.%team%,target.ilike.%employee%,target.ilike.%user%,target.ilike.%role%');
-        } else if (modLower.includes('setting') || modLower.includes('config')) {
-          query = query.or('action.ilike.%setting%,action.ilike.%profile%,action.ilike.%config%,action.ilike.%branch%,action.ilike.%department%,target.ilike.%setting%,target.ilike.%config%,target.ilike.%branch%,target.ilike.%department%');
-        } else if (modLower.includes('auth') || modLower.includes('security')) {
-          query = query.or('action.ilike.%auth%,action.ilike.%login%,action.ilike.%logout%,action.ilike.%password%,action.ilike.%session%,target.ilike.%login%,target.ilike.%logout%,target.ilike.%session%');
-        } else if (modLower.includes('report') || modLower.includes('data')) {
-          query = query.or('action.ilike.%report%,action.ilike.%export%,action.ilike.%import%,action.ilike.%download%,target.ilike.%report%,target.ilike.%export%,target.ilike.%import%');
-        } else if (modLower.includes('call')) {
+        const modLower = module.toLowerCase().trim();
+        if (modLower === 'auth' || modLower.includes('auth') || modLower.includes('security')) {
+          query = query.or('action.ilike.%auth%,action.ilike.%login%,action.ilike.%logout%,action.ilike.%session%,action.ilike.%impersonat%,action.ilike.%restore admin%,action.ilike.%break%,target.ilike.%login%,target.ilike.%logout%,target.ilike.%session%');
+        } else if (modLower === 'user_access' || modLower.includes('team') || modLower.includes('access')) {
+          query = query.or('action.ilike.%user%,action.ilike.%role%,action.ilike.%permission%,action.ilike.%password%,action.ilike.%team%,action.ilike.%employee%,target.ilike.%role%,target.ilike.%permission%,target.ilike.%password%');
+        } else if (modLower === 'attendance' || modLower.includes('attendance') || modLower.includes('leave')) {
+          query = query.or('action.ilike.%punch%,action.ilike.%attendance%,action.ilike.%regularization%,action.ilike.%leave%,action.ilike.%holiday%,action.ilike.%shift%,action.ilike.%geofence%,target.ilike.%punch%,target.ilike.%attendance%,target.ilike.%leave%,target.ilike.%holiday%');
+        } else if (modLower === 'checklist') {
+          query = query.or('action.ilike.%checklist%,target.ilike.%checklist%');
+        } else if (modLower === 'delegation' || modLower.includes('delegat')) {
+          query = query.or('action.ilike.%delegat%,target.ilike.%delegat%');
+        } else if (modLower === 'task_planner' || modLower.includes('planner')) {
+          query = query.or('action.ilike.%planner%,action.ilike.%carry forward task%,target.ilike.%planner%,target.ilike.%deleted tasks%');
+        } else if (modLower === 'field_force' || modLower.includes('field')) {
+          query = query.or('action.ilike.%field task%,action.ilike.%field visit%,action.ilike.%custom form%,action.ilike.%form studio%,target.ilike.%field task%,target.ilike.%custom form%');
+        } else if (modLower === 'party_orders' || modLower.includes('party') || modLower.includes('order')) {
+          query = query.or('action.ilike.%party%,action.ilike.%end customer%,action.ilike.%order%,action.ilike.%dispatch%,action.ilike.%complaint%,target.ilike.%party%,target.ilike.%order%,target.ilike.%complaint%,target.ilike.%end customer%');
+        } else if (modLower === 'workflow') {
+          query = query.or('action.ilike.%workflow%,target.ilike.%workflow%');
+        } else if (modLower === 'recruitment' || modLower.includes('recruit')) {
+          query = query.or('action.ilike.%recruit%,action.ilike.%position%,action.ilike.%candidate%,action.ilike.%vacancy%,target.ilike.%recruit%,target.ilike.%candidate%,target.ilike.%position%');
+        } else if (modLower === 'call_center' || modLower.includes('call')) {
           query = query.or('action.ilike.%call%,action.ilike.%dial%,action.ilike.%ivr%,target.ilike.%call%,target.ilike.%dial%');
-        } else if (modLower.includes('message') || modLower.includes('sms') || modLower.includes('whatsapp')) {
-          query = query.or('action.ilike.%message%,action.ilike.%whatsapp%,action.ilike.%sms%,target.ilike.%whatsapp%,target.ilike.%sms%');
+        } else if (modLower === 'messaging' || modLower.includes('message') || modLower.includes('sms') || modLower.includes('whatsapp') || modLower.includes('email')) {
+          query = query.or('action.ilike.%whatsapp%,action.ilike.%email%,action.ilike.%smtp%,action.ilike.%sms%,action.ilike.%rcs%,action.ilike.%campaign%,action.ilike.%message%,target.ilike.%whatsapp%,target.ilike.%smtp%,target.ilike.%email%');
+        } else if (modLower === 'leads' || modLower.includes('lead') || modLower.includes('crm')) {
+          query = query.or('action.ilike.%lead%,action.ilike.%stage changed%,action.ilike.%add note%,action.ilike.%follow-up%,action.ilike.%claim reporting%,target.ilike.%lead%,target.ilike.%pipeline%');
+        } else if (modLower === 'settings' || modLower.includes('setting') || modLower.includes('config')) {
+          query = query.or('action.ilike.%setting%,action.ilike.%profile%,action.ilike.%config%,action.ilike.%branch%,action.ilike.%department%,action.ilike.%product%,action.ilike.%offline%,action.ilike.%custom field%,action.ilike.%notification%,target.ilike.%setting%,target.ilike.%config%,target.ilike.%branch%,target.ilike.%department%');
+        } else if (modLower === 'reports' || modLower.includes('report') || modLower.includes('data')) {
+          query = query.or('action.ilike.%report%,action.ilike.%export%,action.ilike.%import%,action.ilike.%download%,target.ilike.%report%,target.ilike.%export%,target.ilike.%import%');
+        } else if (modLower === 'system') {
+          query = query.or('action.ilike.%audit%,action.ilike.%system%,action.ilike.%purge%,target.ilike.%audit%');
         }
       }
 
@@ -579,14 +653,22 @@ export async function getAuditLogs({
     // Helper to derive clean module
     const deriveModule = (action = '', target = '') => {
       const a = (action + ' ' + target).toLowerCase();
-      if (a.includes('lead') || a.includes('stage') || a.includes('status') || a.includes('pipeline') || a.includes('claim')) return 'Leads & CRM';
-      if (a.includes('team') || a.includes('employee') || a.includes('user') || a.includes('role') || a.includes('permission')) return 'Team & Access';
-      if (a.includes('setting') || a.includes('profile') || a.includes('config') || a.includes('branch') || a.includes('department')) return 'Enterprise Settings';
-      if (a.includes('auth') || a.includes('login') || a.includes('logout') || a.includes('password') || a.includes('session')) return 'Auth & Security';
-      if (a.includes('report') || a.includes('export') || a.includes('import') || a.includes('download')) return 'Data & Reports';
+      if (a.includes('checklist')) return 'Smart Checklist';
+      if (a.includes('delegat')) return 'Task Delegation';
+      if (a.includes('planner') || a.includes('carry forward task')) return 'Task Planner';
+      if (a.includes('field task') || a.includes('field visit') || a.includes('custom form') || a.includes('form studio')) return 'Field Force';
+      if (a.includes('punch') || a.includes('attendance') || a.includes('regularization') || a.includes('leave') || a.includes('holiday') || a.includes('geofence')) return 'Attendance & Leave';
+      if (a.includes('workflow')) return 'Workflow Builder';
+      if (a.includes('recruit') || a.includes('candidate') || a.includes('position') || a.includes('vacancy')) return 'Recruitment & HR';
+      if (a.includes('party') || a.includes('end customer') || a.includes('order') || a.includes('dispatch') || a.includes('complaint') || a.includes('ticket')) return 'Party & Orders';
+      if (a.includes('whatsapp') || a.includes('email') || a.includes('smtp') || a.includes('sms') || a.includes('rcs') || a.includes('campaign') || a.includes('message template') || a.includes('admin message')) return 'Messaging & Email';
       if (a.includes('call') || a.includes('dial') || a.includes('ivr')) return 'Call Center';
-      if (a.includes('message') || a.includes('whatsapp') || a.includes('sms')) return 'Messaging';
-      return 'General Activity';
+      if (a.includes('login') || a.includes('logout') || a.includes('session') || a.includes('impersonat') || a.includes('restore admin') || a.includes('break')) return 'Auth & Session';
+      if (a.includes('role') || a.includes('permission') || a.includes('password') || a.includes('user') || a.includes('team') || a.includes('employee')) return 'User & Access';
+      if (a.includes('lead') || a.includes('stage changed') || a.includes('add note') || a.includes('follow-up') || a.includes('claim reporting') || a.includes('pipeline')) return 'Leads & CRM';
+      if (a.includes('setting') || a.includes('profile') || a.includes('config') || a.includes('branch') || a.includes('department') || a.includes('product') || a.includes('offline') || a.includes('custom field') || a.includes('notification')) return 'Settings & Config';
+      if (a.includes('report') || a.includes('export') || a.includes('import') || a.includes('download')) return 'Reports & Data';
+      return 'System / Audit';
     };
 
     // Helper to clean raw stage/status strings
@@ -872,22 +954,56 @@ export async function getAuditLogFilters() {
 // -------------------------------------------------------------
 // USER SESSIONS & FORCE LOGOUT ENGINE
 // -------------------------------------------------------------
+function getSessionDeviceBucket(deviceStr = '') {
+  return /Android|iPhone|iPad|iPod|Mobile|SPC Workspace APK|; wv\)/i.test(String(deviceStr || ''))
+    ? 'mobile'
+    : 'desktop';
+}
+
+function findMatchingSessionRow(rows = [], deviceInfo = '') {
+  if (!Array.isArray(rows) || rows.length === 0) return null;
+  if (!deviceInfo) return rows[0];
+
+  const incomingSid = extractSessionDeviceId(deviceInfo);
+  const bucket = getSessionDeviceBucket(deviceInfo);
+
+  if (incomingSid) {
+    // 1. Exact persistent device instance match ([SID:...])
+    const exactMatch = rows.find((r) => extractSessionDeviceId(r?.device || '') === incomingSid);
+    if (exactMatch) return exactMatch;
+
+    // 2. Claim a pre-existing untagged session in the same device bucket (seamless upgrade without duplicates)
+    const legacyBucketMatch = rows.find(
+      (r) => !extractSessionDeviceId(r?.device || '') && getSessionDeviceBucket(r?.device || '') === bucket
+    );
+    if (legacyBucketMatch) return legacyBucketMatch;
+
+    return null;
+  }
+
+  return rows.find((r) => getSessionDeviceBucket(r?.device || '') === bucket) || null;
+}
+
 export async function activateUserSession(userId, deviceInfo) {
   try {
     const adminClient = getAdminClient();
     const nowIso = new Date().toISOString();
+    const clientIp = await resolveClientIp().catch(() => 'Logged via Web App');
 
     const { data: recentSessions } = await adminClient.from('user_sessions')
-      .select('id, user_id')
+      .select('id, user_id, device')
       .eq('user_id', userId)
-      .limit(1);
+      .order('last_active', { ascending: false })
+      .limit(20);
 
-    if (recentSessions && recentSessions.length > 0) {
+    const matched = findMatchingSessionRow(recentSessions || [], deviceInfo);
+    if (matched) {
       await adminClient.from('user_sessions').update({
         is_active: true,
         last_active: nowIso,
-        device: deviceInfo || 'Web Browser'
-      }).eq('user_id', userId);
+        device: deviceInfo || matched.device || 'Web Browser',
+        ip_address: clientIp || 'Logged via Web App'
+      }).eq('id', matched.id);
     } else {
       const { data: roleData } = await adminClient.from('user_roles')
         .select('emp_name, email')
@@ -899,7 +1015,7 @@ export async function activateUserSession(userId, deviceInfo) {
         emp_name: roleData?.emp_name || 'Employee',
         email: roleData?.email || '',
         device: deviceInfo || 'Web Browser',
-        ip_address: 'Logged via Web App',
+        ip_address: clientIp || 'Logged via Web App',
         is_active: true,
         last_active: nowIso
       }]);
@@ -921,14 +1037,14 @@ export async function logUserSession(deviceInfo) {
     const nowIso = new Date().toISOString();
     const today = nowIso.split('T')[0];
 
-    // 1. Check if user's session was terminated by Admin recently
+    // 1. Check if this device instance's session was terminated by Admin recently
     const { data: recentSessions } = await adminClient.from('user_sessions')
-      .select('id, is_active, last_active')
+      .select('id, is_active, last_active, device')
       .eq('user_id', user.id)
       .order('last_active', { ascending: false })
-      .limit(1);
+      .limit(20);
 
-    const existing = recentSessions && recentSessions.length > 0 ? recentSessions[0] : null;
+    const existing = findMatchingSessionRow(recentSessions || [], deviceInfo);
 
     if (existing && existing.is_active === false) {
       const lastActiveMs = existing.last_active ? new Date(existing.last_active).getTime() : 0;
@@ -953,14 +1069,16 @@ export async function logUserSession(deviceInfo) {
       }
     } catch (e) { /* ignore */ }
 
-    // 2. Upsert user session
+    // 2. Upsert device-scoped user session (keeps Mobile, PC 1, PC 2, etc. separate)
+    const clientIp = await resolveClientIp().catch(() => 'Logged via Web App');
     if (existing) {
       await adminClient.from('user_sessions').update({
         last_active: nowIso,
         is_active: true,
         emp_name: empName,
         email: user.email,
-        device: deviceInfo || 'Web Browser'
+        device: deviceInfo || existing.device || 'Web Browser',
+        ip_address: clientIp || 'Logged via Web App'
       }).eq('id', existing.id);
     } else {
       await adminClient.from('user_sessions').insert([{
@@ -968,7 +1086,7 @@ export async function logUserSession(deviceInfo) {
         emp_name: empName,
         email: user.email,
         device: deviceInfo || 'Web Browser',
-        ip_address: 'Logged via Web App',
+        ip_address: clientIp || 'Logged via Web App',
         is_active: true,
         last_active: nowIso
       }]);
@@ -1013,14 +1131,14 @@ export async function checkSessionValidity(deviceInfo) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return { valid: true }; // Do not force logout on network blips or offline sessions
 
-    const { data: session } = await adminClient
+    const { data: sessions } = await adminClient
       .from('user_sessions')
-      .select('is_active, last_active')
+      .select('is_active, last_active, device')
       .eq('user_id', user.id)
       .order('last_active', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .limit(20);
 
+    const session = findMatchingSessionRow(sessions || [], deviceInfo);
     if (session && session.is_active === false) {
       const lastActiveMs = session.last_active ? new Date(session.last_active).getTime() : 0;
       const diffSec = Math.floor((Date.now() - lastActiveMs) / 1000);
@@ -1089,20 +1207,57 @@ export async function forceLogoutSession(sessionId) {
       if (!isAdmin && !canManage) return { success: false, error: 'Permission denied' };
     }
 
-    // 2. Mark this session inactive
-    const { error: revokeError } = await adminClient.from('user_sessions').update({ is_active: false }).eq('id', sessionId);
+    // 2. Mark ONLY this targeted session inactive so Mobile & PC can be managed independently
+    const { error: revokeError } = await adminClient
+      .from('user_sessions')
+      .update({ is_active: false, last_active: new Date().toISOString() })
+      .eq('id', sessionId);
     if (revokeError) throw revokeError;
 
-    // 3. Also mark all active sessions for this user_id / email as inactive
-    if (sessionData?.user_id) {
-      const { error } = await adminClient.from('user_sessions').update({ is_active: false }).eq('user_id', sessionData.user_id);
-      if (error) throw error;
-    } else if (sessionData?.email) {
-      const { error } = await adminClient.from('user_sessions').update({ is_active: false }).eq('email', sessionData.email);
-      if (error) throw error;
+    await logAuditAction('Force Logout', `Revoked active user session for: ${sessionData?.emp_name || sessionData?.email || sessionId}`);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function forceLogoutUserSessions(targetUserId) {
+  try {
+    if (!targetUserId) return { success: false, error: 'Target user ID required' };
+    const sessionClient = await createClient();
+    const { data: { user }, error: authError } = await sessionClient.auth.getUser();
+    if (authError || !user) return { success: false, error: 'Authentication required' };
+
+    const adminClient = getAdminClient();
+    if (targetUserId !== user.id) {
+      const { data: actor, error: roleError } = await adminClient
+        .from('user_roles')
+        .select('role, module_access')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      if (roleError || !actor) return { success: false, error: 'Permission denied' };
+      const isAdmin = ['admin', 'superadmin', 'masteradmin'].includes((actor.role || '').toLowerCase());
+      const canManage = actor.module_access?.user_management_new?.write === true || actor.module_access?.team?.write === true;
+      if (!isAdmin && !canManage) return { success: false, error: 'Permission denied' };
     }
 
-    await logAuditAction('Force Logout', `Revoked active user session for: ${sessionData?.emp_name || sessionData?.email || sessionId}`);
+    const { data: targetRole } = await adminClient
+      .from('user_roles')
+      .select('emp_name, email')
+      .eq('user_id', targetUserId)
+      .maybeSingle();
+
+    const { error: revokeError } = await adminClient
+      .from('user_sessions')
+      .update({ is_active: false, last_active: new Date().toISOString() })
+      .eq('user_id', targetUserId)
+      .eq('is_active', true);
+    if (revokeError) throw revokeError;
+
+    await logAuditAction(
+      'Force Logout All',
+      `Revoked all active sessions for: ${targetRole?.emp_name || targetRole?.email || targetUserId}`
+    );
     return { success: true };
   } catch (err) {
     return { success: false, error: err.message };
@@ -1117,14 +1272,15 @@ export async function forceLogoutAllOtherSessions(currentDevice) {
     if (!user) return { success: false, error: 'Not authenticated' };
     
     // Deactivate all devices for this user EXCEPT the current one
+    const nowIso = new Date().toISOString();
     if (currentDevice) {
       await adminClient.from('user_sessions')
-        .update({ is_active: false })
+        .update({ is_active: false, last_active: nowIso })
         .eq('user_id', user.id)
         .neq('device', currentDevice);
     } else {
       await adminClient.from('user_sessions')
-        .update({ is_active: false })
+        .update({ is_active: false, last_active: nowIso })
         .eq('user_id', user.id);
     }
     await logAuditAction('Force Logout All', 'Terminated all other active device sessions');

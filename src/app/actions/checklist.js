@@ -3,6 +3,7 @@
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import fs from 'fs/promises';
 import path from 'path';
+import { logAuditAction } from './audit';
 import {
   getCurrentPeriodKey,
   calculateChecklistCompletion,
@@ -220,6 +221,12 @@ export async function saveChecklistTemplate(templateData, tenantId = DEFAULT_TEN
       .single();
 
     if (error) throw error;
+    try {
+      await logAuditAction(
+        templateData.id ? 'Update Checklist Template' : 'Create Checklist Template',
+        `Checklist "${payload.title}" (${payload.frequency}) assigned to ${payload.assigned_employee_name}`
+      );
+    } catch (_) {}
     return {
       success: true,
       data: {
@@ -252,6 +259,9 @@ export async function deleteChecklistTemplate(templateId, tenantId = DEFAULT_TEN
       .eq('tenant_id', tenantId);
 
     if (error) throw error;
+    try {
+      await logAuditAction('Delete Checklist Template', `Deleted checklist template ID: ${templateId}`);
+    } catch (_) {}
     return { success: true };
   } catch (err) {
     console.error('Error deleting checklist template:', err.message);
@@ -296,6 +306,10 @@ export async function setChecklistTemplateStatus(templateId, newStatus, tenantId
       .eq('tenant_id', tenantId);
 
     if (error) throw error;
+
+    try {
+      await logAuditAction('Update Checklist Status', `Updated checklist template ${templateId} status to ${statusClean}`);
+    } catch (_) {}
 
     return { success: true, status: statusClean, is_active: isActive };
   } catch (err) {
@@ -739,6 +753,14 @@ export async function submitChecklistResponse(submissionData, tenantId = DEFAULT
       .single();
 
     if (saveErr) throw saveErr;
+    try {
+      await logAuditAction({
+        action: 'Submit Checklist',
+        target: `${finalEmpName} submitted "${payload.template_title}" (${payload.period_key}) — ${stats.completedCount}/${stats.totalCount} items (${status})`,
+        userEmail: emailClean,
+        userName: finalEmpName
+      });
+    } catch (_) {}
     return { success: true, data: saved };
   } catch (err) {
     console.error('Error submitting checklist response:', err.message);
@@ -778,6 +800,12 @@ export async function verifyChecklistSubmission({
       .single();
 
     if (error) throw error;
+    try {
+      await logAuditAction(
+        'Verify Checklist Submission',
+        `${verifiedBy} marked checklist submission ${submissionId} as ${verificationStatus}${verificationRemarks ? ` (${verificationRemarks})` : ''}`
+      );
+    } catch (_) {}
     return { success: true, data };
   } catch (err) {
     console.error('Error verifying checklist submission:', err.message);
@@ -1162,6 +1190,9 @@ export async function saveCompanyHoliday(holidayData, tenantId = DEFAULT_TENANT_
     } catch (_) {}
 
     holidaysCache.clear();
+    try {
+      await logAuditAction('Save Company Holiday', `Saved holiday "${cleanName}" (${cleanDate}, Branch: ${assignedBranch})`);
+    } catch (_) {}
     return await getCompanyHolidays(tenantId, branchName);
   } catch (err) {
     console.error('Error saving holiday:', err.message);
@@ -1200,6 +1231,9 @@ export async function deleteCompanyHoliday(holidayId, tenantId = DEFAULT_TENANT_
     } catch (_) {}
 
     holidaysCache.clear();
+    try {
+      await logAuditAction('Delete Company Holiday', `Deleted holiday "${holidayId}" (Branch: ${branchName})`);
+    } catch (_) {}
     return await getCompanyHolidays(tenantId, branchName);
   } catch (err) {
     console.error('Error deleting holiday:', err.message);
@@ -1242,6 +1276,9 @@ export async function resetCompanyHolidaysToDefault(tenantId = DEFAULT_TENANT_ID
     } catch (_) {}
 
     holidaysCache.clear();
+    try {
+      await logAuditAction('Reset Company Holidays', `Reset company holidays to defaults (Branch: ${branchName})`);
+    } catch (_) {}
     return await getCompanyHolidays(tenantId, branchName);
   } catch (err) {
     console.error('Error resetting holidays:', err.message);

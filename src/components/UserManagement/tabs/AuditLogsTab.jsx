@@ -45,29 +45,75 @@ function getPlatformBadge(platform = '') {
   return PLATFORM_STYLES[platform] || PLATFORM_STYLES['Legacy / N/A'];
 }
 
+const AUDIT_MODULE_OPTIONS = [
+  { value: 'all', label: 'All Modules' },
+  { value: 'auth', label: 'Auth & Session' },
+  { value: 'user_access', label: 'User & Access' },
+  { value: 'leads', label: 'Leads & CRM' },
+  { value: 'attendance', label: 'Attendance & Leave' },
+  { value: 'checklist', label: 'Smart Checklist' },
+  { value: 'delegation', label: 'Task Delegation' },
+  { value: 'task_planner', label: 'Task Planner' },
+  { value: 'field_force', label: 'Field Force' },
+  { value: 'party_orders', label: 'Party & Orders' },
+  { value: 'workflow', label: 'Workflow Builder' },
+  { value: 'call_center', label: 'Call Center' },
+  { value: 'messaging', label: 'Messaging & Email' },
+  { value: 'recruitment', label: 'Recruitment & HR' },
+  { value: 'settings', label: 'Settings & Config' },
+  { value: 'reports', label: 'Reports & Data' },
+  { value: 'system', label: 'System / Audit' }
+];
+
 function getAuditLogModule(log) {
   const act = String(log.action || '').toLowerCase();
   const tgt = String(log.target || '').toLowerCase();
-  if (act.includes('lead') || act.includes('stage') || act.includes('note') || tgt.includes('lead') || tgt.includes('pipeline')) {
-    return { name: 'Leads & CRM', color: '#2563eb', bg: '#eff6ff', border: '#bfdbfe' };
-  }
-  if (act.includes('punch') || act.includes('attendance') || tgt.includes('punch') || tgt.includes('attendance')) {
-    return { name: 'Attendance', color: '#059669', bg: '#ecfdf5', border: '#a7f3d0' };
-  }
-  if (act.includes('login') || act.includes('logout') || act.includes('session') || tgt.includes('session')) {
-    return { name: 'Session & Auth', color: '#7c3aed', bg: '#f5f3ff', border: '#ddd6fe' };
-  }
-  if (act.includes('role') || act.includes('permission') || act.includes('password') || act.includes('user') || act.includes('team')) {
-    return { name: 'User & Access', color: '#ea580c', bg: '#fff7ed', border: '#fed7aa' };
-  }
-  if (act.includes('call') || act.includes('dial') || tgt.includes('call')) {
-    return { name: 'Call Center', color: '#0284c7', bg: '#f0f9ff', border: '#bae6fd' };
-  }
-  if (act.includes('checklist') || tgt.includes('checklist')) {
+  const combined = `${act} ${tgt}`;
+
+  if (combined.includes('checklist')) {
     return { name: 'Smart Checklist', color: '#0891b2', bg: '#ecfeff', border: '#a5f3fc' };
   }
-  if (act.includes('delegat') || tgt.includes('delegat')) {
+  if (combined.includes('delegat')) {
     return { name: 'Task Delegation', color: '#4f46e5', bg: '#eef2ff', border: '#c7d2fe' };
+  }
+  if (combined.includes('planner') || combined.includes('carry forward task')) {
+    return { name: 'Task Planner', color: '#0d9488', bg: '#f0fdfa', border: '#99f6e4' };
+  }
+  if (combined.includes('field task') || combined.includes('field visit') || combined.includes('custom form') || combined.includes('form studio')) {
+    return { name: 'Field Force', color: '#0369a1', bg: '#f0f9ff', border: '#bae6fd' };
+  }
+  if (combined.includes('punch') || combined.includes('attendance') || combined.includes('regularization') || combined.includes('leave') || combined.includes('holiday') || combined.includes('geofence')) {
+    return { name: 'Attendance & Leave', color: '#059669', bg: '#ecfdf5', border: '#a7f3d0' };
+  }
+  if (combined.includes('workflow')) {
+    return { name: 'Workflow Builder', color: '#6d28d9', bg: '#f5f3ff', border: '#ddd6fe' };
+  }
+  if (combined.includes('recruit') || combined.includes('candidate') || combined.includes('position') || combined.includes('vacancy')) {
+    return { name: 'Recruitment & HR', color: '#be185d', bg: '#fdf2f8', border: '#fbcfe8' };
+  }
+  if (combined.includes('party') || combined.includes('end customer') || combined.includes('order') || combined.includes('dispatch') || combined.includes('complaint') || combined.includes('ticket')) {
+    return { name: 'Party & Orders', color: '#b45309', bg: '#fffbeb', border: '#fde68a' };
+  }
+  if (combined.includes('whatsapp') || combined.includes('email') || combined.includes('smtp') || combined.includes('sms') || combined.includes('rcs') || combined.includes('campaign') || combined.includes('message template') || combined.includes('admin message')) {
+    return { name: 'Messaging & Email', color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0' };
+  }
+  if (combined.includes('call') || combined.includes('dial') || combined.includes('ivr')) {
+    return { name: 'Call Center', color: '#0284c7', bg: '#f0f9ff', border: '#bae6fd' };
+  }
+  if (combined.includes('login') || combined.includes('logout') || combined.includes('session') || combined.includes('impersonat') || combined.includes('restore admin') || combined.includes('break')) {
+    return { name: 'Auth & Session', color: '#7c3aed', bg: '#f5f3ff', border: '#ddd6fe' };
+  }
+  if (combined.includes('role') || combined.includes('permission') || combined.includes('password') || combined.includes('user') || combined.includes('team') || combined.includes('employee')) {
+    return { name: 'User & Access', color: '#ea580c', bg: '#fff7ed', border: '#fed7aa' };
+  }
+  if (combined.includes('lead') || combined.includes('stage changed') || combined.includes('add note') || combined.includes('follow-up') || combined.includes('claim reporting') || combined.includes('pipeline')) {
+    return { name: 'Leads & CRM', color: '#2563eb', bg: '#eff6ff', border: '#bfdbfe' };
+  }
+  if (combined.includes('setting') || combined.includes('profile') || combined.includes('config') || combined.includes('branch') || combined.includes('department') || combined.includes('product') || combined.includes('offline') || combined.includes('custom field') || combined.includes('notification')) {
+    return { name: 'Settings & Config', color: '#334155', bg: '#f1f5f9', border: '#cbd5e1' };
+  }
+  if (combined.includes('report') || combined.includes('export') || combined.includes('import') || combined.includes('download')) {
+    return { name: 'Reports & Data', color: '#4338ca', bg: '#eef2ff', border: '#c7d2fe' };
   }
   return { name: 'System / Audit', color: '#475569', bg: '#f8fafc', border: '#e2e8f0' };
 }
@@ -76,6 +122,7 @@ export default function AuditLogsTab({ currentUserCompany = '', tenantId = null 
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [moduleFilter, setModuleFilter] = useState('all');
   const [platformFilter, setPlatformFilter] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
@@ -117,15 +164,16 @@ export default function AuditLogsTab({ currentUserCompany = '', tenantId = null 
     MIN_AUDIT_LOGS_COL_WIDTHS
   );
 
-  const fetchLogs = async (page = currentPage) => {
+  const fetchLogs = async (page = currentPage, overrideSearch = null) => {
     setLoading(true);
     setLoadError('');
     try {
+      const activeSearch = overrideSearch !== null ? overrideSearch : searchQuery;
       const res = await getAuditLogs({
         page,
         pageSize,
-        searchQuery: searchQuery.trim(),
-        module: 'all',
+        searchQuery: String(activeSearch || '').trim(),
+        module: moduleFilter,
         platform: platformFilter,
         company: currentUserCompany,
         tenantId,
@@ -149,7 +197,7 @@ export default function AuditLogsTab({ currentUserCompany = '', tenantId = null 
 
   useEffect(() => {
     fetchLogs(currentPage);
-  }, [currentPage, pageSize, currentUserCompany, tenantId, dateFrom, dateTo, platformFilter]);
+  }, [currentPage, pageSize, currentUserCompany, tenantId, dateFrom, dateTo, moduleFilter, platformFilter]);
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
@@ -183,7 +231,7 @@ export default function AuditLogsTab({ currentUserCompany = '', tenantId = null 
           </p>
         </div>
 
-        {/* Toolbar Controls: Date Preset, Search, View Toggle, Refresh */}
+        {/* Toolbar Controls: Date Preset, Module Filter, Platform Filter, Search, View Toggle, Refresh */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexWrap: 'wrap' }}>
           <DateRangePicker
             preset={datePreset}
@@ -198,6 +246,30 @@ export default function AuditLogsTab({ currentUserCompany = '', tenantId = null 
               setCurrentPage(1);
             }}
           />
+
+          <select
+            value={moduleFilter}
+            onChange={e => {
+              setModuleFilter(e.target.value);
+              setCurrentPage(1);
+            }}
+            aria-label="Filter Audit Logs by Module"
+            title="Filter by Module"
+            style={{
+              padding: '0.42rem 0.7rem',
+              borderRadius: '8px',
+              border: '1px solid var(--border-light)',
+              backgroundColor: moduleFilter !== 'all' ? '#eff6ff' : 'var(--bg-primary, #f8fafc)',
+              color: moduleFilter !== 'all' ? '#1d4ed8' : 'var(--text-primary)',
+              fontSize: '0.8rem',
+              fontWeight: 600,
+              cursor: 'pointer'
+            }}
+          >
+            {AUDIT_MODULE_OPTIONS.map(opt => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
 
           <select
             value={platformFilter}
@@ -249,7 +321,7 @@ export default function AuditLogsTab({ currentUserCompany = '', tenantId = null 
                   type="button"
                   onClick={() => {
                     setSearchQuery('');
-                    if (currentPage === 1) fetchLogs(1);
+                    if (currentPage === 1) fetchLogs(1, '');
                     else setCurrentPage(1);
                   }}
                   style={{

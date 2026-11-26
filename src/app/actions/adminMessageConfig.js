@@ -4,6 +4,7 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import fs from 'fs/promises';
 import path from 'path';
 import nodemailer from 'nodemailer';
+import { logAuditAction } from '@/app/actions/audit';
 
 const CONFIG_FILE_PATH = path.join(process.cwd(), 'src', 'config', 'admin_message_settings.json');
 
@@ -244,6 +245,10 @@ export async function saveAdminMessageConfig(channelKey, channelConfig) {
     } catch (dbErr) {
       console.warn('Supabase admin_message_settings write notice (saved to config file):', dbErr.message);
     }
+
+    try {
+      await logAuditAction('Update Admin Message Config', `Saved admin message channel settings (${channelKey})`);
+    } catch (_) {}
 
     return { success: true, data: updatedConfig };
   } catch (err) {

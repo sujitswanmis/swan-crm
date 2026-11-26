@@ -7,6 +7,7 @@ import nodemailer from 'nodemailer';
 import { getTenantSmtpLimitsMap } from '@/app/actions/saasSubscription';
 import { compileEmailTemplateHtml } from '@/utils/emailTemplateCompiler';
 import { PREBUILT_EMAIL_TEMPLATES } from '@/config/crmPreBuiltTemplates';
+import { logAuditAction } from '@/app/actions/audit';
 
 const CONFIG_FILE_PATH = path.join(process.cwd(), 'src', 'config', 'email_campaign_settings.json');
 
@@ -373,6 +374,13 @@ export async function saveEmailConfig(newConfig, companyOrTenantId = '') {
     } catch (dbErr) {
       console.warn('Could not sync email config to supabase system_settings:', dbErr.message);
     }
+
+    try {
+      await logAuditAction(
+        'Update Email Config',
+        `Saved email/SMTP configuration (${companyOrTenantId || 'workspace'} — ${accounts.length} SMTP, ${(configToSave.templates || []).length} templates)`
+      );
+    } catch (_) {}
 
     return { success: true, message: 'Email configuration saved successfully!' };
   } catch (error) {

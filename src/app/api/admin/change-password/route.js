@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { createClient as createServerClient } from '@/utils/supabase/server';
+import { logAuditAction } from '@/app/actions/audit';
 
 export async function POST(req) {
   try {
@@ -48,6 +49,11 @@ export async function POST(req) {
     if (error) {
       throw error;
     }
+
+    try {
+      const targetEmail = data?.user?.email || userId;
+      await logAuditAction('Admin Reset Password', `Admin changed login password for user ${targetEmail}`);
+    } catch (_) {}
 
     return NextResponse.json({ success: true, message: 'Password updated successfully' }, { status: 200 });
   } catch (error) {

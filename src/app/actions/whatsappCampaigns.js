@@ -3,6 +3,7 @@
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { getTenantBranches } from './tenantBranches';
 import { dispatchWhatsappTemplateDirect } from './whatsapp';
+import { logAuditAction } from './audit';
 
 const getAdminClient = () => {
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
@@ -1277,6 +1278,13 @@ export async function launchWhatsappBroadcastCampaign({
         })}`
       });
 
+      try {
+        await logAuditAction(
+          'Schedule WhatsApp Campaign',
+          `Scheduled campaign "${campaignTitle}" for ${scheduleTimeStr} IST (${audienceRecords.length} recipients)`
+        );
+      } catch (_) {}
+
       return {
         success: true,
         isScheduled: true,
@@ -1330,6 +1338,13 @@ export async function launchWhatsappBroadcastCampaign({
     if (failedCount > 0) {
       resultMsg += ` (${failedCount} failed, queued for 3-day auto-retry).`;
     }
+
+    try {
+      await logAuditAction(
+        'Launch WhatsApp Campaign',
+        `Launched campaign "${campaignTitle}" (${audienceType}, Sent: ${sentCount}/${audienceRecords.length}, Failed: ${failedCount})`
+      );
+    } catch (_) {}
 
     return {
       success: true,

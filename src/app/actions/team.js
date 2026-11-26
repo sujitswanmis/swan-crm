@@ -813,6 +813,14 @@ export async function updateEmployeeDetailsAdmin(userId, details) {
     console.error('Error updating employee details:', error);
     return { success: false, error: error.message };
   }
+
+  try {
+    await logAuditAction(
+      'Update Employee Profile',
+      `Updated profile details for ${details?.emp_name || details?.email || userId}`
+    );
+  } catch (_) {}
+
   return { success: true };
 }
 
@@ -1804,6 +1812,13 @@ export async function toggleSelfPasswordReset(userId, currentStatus) {
       .eq('user_id', userId);
   }
 
+  try {
+    await logAuditAction(
+      'Toggle Self Password Reset',
+      `${nextStatus ? 'Enabled' : 'Disabled'} self password reset permission for user ID: ${userId}`
+    );
+  } catch (_) {}
+
   return { success: true, can_self_reset_password: nextStatus };
 }
 
@@ -1911,6 +1926,15 @@ export async function verifyPasswordResetOtpAndSetPassword(email, otp, newPasswo
     // Clear OTP from store
     OTP_STORE.delete(cleanEmail);
 
+    try {
+      await logAuditAction({
+        action: 'Password Reset via OTP',
+        target: `User ${cleanEmail} reset their password via Email OTP`,
+        userEmail: cleanEmail,
+        userId: record.userId
+      });
+    } catch (_) {}
+
     return { success: true, message: 'Password updated successfully! You can now sign in.' };
   } catch (err) {
     return { success: false, error: err.message };
@@ -1959,6 +1983,13 @@ export async function sendAdminPasswordResetLink(userId) {
   if (!sendRes.success) {
     return { success: false, error: sendRes.error };
   }
+
+  try {
+    await logAuditAction(
+      'Send Password Setup Email',
+      `Sent password setup/reset email to ${user.emp_name || email} (${email})`
+    );
+  } catch (_) {}
 
   return { success: true, message: `Password setup email sent to ${email}!` };
 }

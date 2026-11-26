@@ -8,6 +8,7 @@ import { createClient as createSessionClient } from '@/utils/supabase/server';
 import { getSubItemPermissions } from '@/utils/permissionUtils';
 import { getPartyList } from '@/app/actions/partyMaster';
 import { getTenantProducts } from '@/app/actions/tenantProducts';
+import { logAuditAction } from '@/app/actions/audit';
 import { INDIAN_STATE_DISTRICTS } from '@/config/indianStateDistricts';
 import { PRODUCT_GROUPS } from '@/config/productCatalog';
 import { validateEndCustomerRows, IMPORT_BATCH_SIZE, END_CUSTOMER_COMPANIES, normalizeEndCustomerCompany, endCustomerDealerCompany, partyCode } from '@/utils/endCustomerTransfer';
@@ -286,6 +287,13 @@ export async function createEndCustomer(customerData, tenantId = 'TNT00002') {
       warning = 'Customer was saved to the database, but the local backup could not be updated.';
     }
 
+    try {
+      await logAuditAction(
+        'Create End Customer',
+        `Registered end customer "${payload.customer_name || payload.name || payload.id}" (${payload.phone || payload.mobile || payload.chassis_serial_number || ''})`
+      );
+    } catch (_) {}
+
     return {
       success: true,
       customer: {
@@ -332,6 +340,12 @@ export async function updateEndCustomer(customerId, updateData, tenantId = 'TNT0
       list[idx] = { ...list[idx], ...updateData, updated_at: timestamp };
       allData[tenantKey] = list;
       await writeLocalCustomers(allData);
+      try {
+        await logAuditAction(
+          'Update End Customer',
+          `Updated end customer "${list[idx]?.customer_name || customerId}"`
+        );
+      } catch (_) {}
       return {
         success: true,
         customer: {
