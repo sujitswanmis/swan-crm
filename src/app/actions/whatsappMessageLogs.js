@@ -81,13 +81,42 @@ async function logLookups(db, tenant) {
   return { branches, frequencyRules, lookupWarning: warnings.join(' ') };
 }
 
+function parseNonLeadLogMeta(rawStatus) {
+  const match = String(rawStatus || '').match(/\[MOD:([^|\]]+)\|REC:([^|\]]*)\|CO:([^|\]]*)\|NAME:([^\]]*)\]/i);
+  if (!match) return null;
+  const modLabels = {
+    party: 'Party Master',
+    end_customers: 'End Customer',
+    users: 'Employee / Team',
+    orders: 'Order Pipeline',
+    complaints: 'Complaint',
+    delegation: 'Delegation',
+    attendance: 'Attendance',
+    leaves: 'Leaves',
+    recruitment: 'Recruitment',
+    general: 'Broadcast'
+  };
+  const modId = String(match[1] || '').toLowerCase();
+  return {
+    moduleId: modId,
+    moduleLabel: modLabels[modId] || modId,
+    entityId: match[2] || '',
+    company: match[3] || '',
+    name: match[4] || ''
+  };
+}
+
 function logView(row, tenantCode, branches) {
   const raw = String(row.status || '');
-  const failed = /^failed\b/i.test(raw);
-  const sent = /^sent\b/i.test(raw);
-  const phone = raw.match(/^(?:sent\s+to|failed\s+for)\s+(\+?[\d ()-]+)/i)?.[1]?.replace(/[^\d+]/g, '') || '';
-  const error = failed ? raw.replace(/^failed\s+for\s+[^:]+:\s*/i, '') : '';
-  const operatingCompany = normalized(row.lead?.our_company);
+  const nonLeadMeta = parseNonLeadLogMeta(raw);
+  const cleanedRaw = raw
+    .replace(/\[MOD:[^\]]+\]\s*/i, '')
+    .replace(/^\[[^\]]+\]\s*/, '');
+  const failed = /^failed\b/i.test(cleanedRaw) || /\[RETRY_(?:PENDING|EXHAUSTED)_\d+\]/i.test(raw);
+  const sent = !failed && /\bsent\s+to\b/i.test(cleanedRaw);
+  const phone = cleanedRaw.match(/(?:sent\s+to|failed\s+(?:send\s+to|for))\s+(\+?[\d ()-]+)/i)?.[1]?.replace(/[^\d+]/g, '') || '';
+  const error = failed ? cleanedRaw.replace(/^.*?failed\s+(?:send\s+to|for)\s+[^:]+:\s*/i, '') : '';
+  const operatingCompany = normalized(row.lead?.our_company || nonLeadMeta?.company);
   const matchingBranches = branches.filter(branch => branch.aliases.includes(operatingCompany));
   const branch = matchingBranches.length === 1 ? matchingBranches[0] : null;
   return {
@@ -101,8 +130,8 @@ function logView(row, tenantCode, branches) {
     templateId: row.template_id,
     frequencyScopes: [...new Set([operatingCompany, ...(branch?.aliases || [])].filter(Boolean))],
     recipient: phone,
-    leadName: safeText(row.lead?.name || row.lead?.company || 'Unknown customer'),
-    customerCompany: safeText(row.lead?.company),
+    leadName: safeText(row.lead?.name || row.lead?.company || nonLeadMeta?.name || 'Unknown customer'),
+    customerCompany: safeText(row.lead?.company || (nonLeadMeta ? `${nonLeadMeta.moduleLabel}${nonLeadMeta.company ? ` (${nonLeadMeta.company})` : ''}` : '')),
     templateName: safeText(row.template?.template_name || 'Unavailable template'),
     campaignName: safeText(row.template?.campaign_name),
     status: failed ? 'failed' : sent ? 'sent' : 'other',
@@ -111,7 +140,7 @@ function logView(row, tenantCode, branches) {
   };
 }
 
-// Read-only endpoint. Existing dispatch and logging code is deliberately unchanged.
+// Read-only endpoint.
 export async function getWhatsappMessageLogs(input = {}) {
   try {
     const session = await createClient();
@@ -157,8 +186,8 @@ export async function getWhatsappMessageLogs(input = {}) {
     const end = new Date(lastDay.getTime() + 86400000);
     const until = input.until ? timestamp(input.until) : new Date().toISOString();
     let query = db.from('whatsapp_message_logs')
-      .select('id,lead_id,template_id,created_at,sent_at,status,lead:leads!inner(name,company,tenant_id,our_company),template:whatsapp_templates(template_name,campaign_name)')
-      .eq('lead.tenant_id', tenant.id)
+      .select('id,lead_id,template_id,created_at,sent_at,status,lead:leads(name,company,tenant_id,our_company),template:whatsapp_templates(template_name,campaign_name)')
+      .not('status', 'ilike', '[CAMPAIGN_SUMMARY]%')
       .gte('created_at', start.toISOString()).lt('created_at', end.toISOString())
       .lte('created_at', until)
       .order('created_at', { ascending: true }).order('id', { ascending: true }).limit(PAGE_SIZE + 1);
@@ -171,8 +200,24 @@ export async function getWhatsappMessageLogs(input = {}) {
     const [{ data, error }, lookups] = await Promise.all([query, logLookups(db, tenant)]);
     if (error) throw error;
     const hasMore = data.length > PAGE_SIZE;
-    const page = data.slice(0, PAGE_SIZE);
-    const last = page[page.length - 1];
+    const rawPage = data.slice(0, PAGE_SIZE);
+    const last = rawPage[rawPage.length - 1];
+
+    const tenantAliases = new Set([
+      normalized(tenant.tenant_code),
+      normalized(tenant.name),
+      ...lookups.branches.flatMap(b => [normalized(b.code), normalized(b.name), ...b.aliases])
+    ].filter(Boolean));
+
+    const page = rawPage.filter(row => {
+      if (row.lead_id && row.lead) return row.lead.tenant_id === tenant.id;
+      const nonLead = parseNonLeadLogMeta(row.status);
+      if (!nonLead) return false;
+      const compNorm = normalized(nonLead.company);
+      if (!compNorm || compNorm === 'all') return tenant.tenant_code === 'TNT00002' || tenant.id === '00000000-0000-0000-0000-000000000001';
+      return tenantAliases.has(compNorm) || lookups.branches.some(b => b.aliases.includes(compNorm));
+    });
+
     return {
       success: true,
       data: page.map(row => {

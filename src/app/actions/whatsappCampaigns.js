@@ -2,6 +2,7 @@
 
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { getTenantBranches } from './tenantBranches';
+import { dispatchWhatsappTemplateDirect } from './whatsapp';
 
 const getAdminClient = () => {
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
@@ -932,126 +933,239 @@ export async function saveWhatsappCampaignDraft({
   }
 }
 
-/**
- * Dispatch single message through active WhatsApp BSP Gateway
- */
-async function dispatchSingleWhatsapp({ phone, text, template, settings, targetCompany = 'NSMLR' }) {
-  let phoneStr = String(phone).replace(/\D/g, '');
-  if (phoneStr.length === 10) phoneStr = '91' + phoneStr;
-
-  let parsedProviderConfig = null;
-  if (settings.api_key && typeof settings.api_key === 'string' && settings.api_key.trim().startsWith('{')) {
-    try { parsedProviderConfig = JSON.parse(settings.api_key); } catch (_) {}
-  }
-
-  const customBsps = Array.isArray(parsedProviderConfig?.custom_bsps) ? parsedProviderConfig.custom_bsps : [];
-  let activeProvider = null;
-
-  const tplTarget = String(template.provider || template.company || '').trim().toLowerCase();
-  if (tplTarget.includes('aisensy')) activeProvider = 'aisensy';
-  else if (tplTarget.includes('interakt')) activeProvider = 'interakt';
-  else if (tplTarget.includes('meta')) activeProvider = 'meta';
-  else if (tplTarget.includes('wati')) activeProvider = 'wati';
-  else if (tplTarget.includes('nextel')) activeProvider = 'nextel';
-  else {
-    const matchedCustom = customBsps.find(b => 
-      tplTarget.includes(b.id?.toLowerCase()) || 
-      (b.name && tplTarget.includes(b.name.toLowerCase()))
-    );
-    if (matchedCustom) activeProvider = matchedCustom.id;
-  }
-
-  if (!activeProvider) {
-    const clientAlloc = parsedProviderConfig?.client_allocations?.[targetCompany] || 
-                        parsedProviderConfig?.client_allocations?.[targetCompany.toLowerCase()] ||
-                        parsedProviderConfig?.client_allocations?.[targetCompany.toUpperCase()];
-    if (clientAlloc?.default_bsp) {
-      activeProvider = clientAlloc.default_bsp;
-    } else if (targetCompany === 'NSTLP' || tplTarget === 'nstlp') {
-      activeProvider = 'nextel';
-    } else {
-      activeProvider = 'aisensy';
-    }
-  }
-
-  const clientCreds = parsedProviderConfig?.client_allocations?.[targetCompany]?.credentials || {};
-
-  // 1. Meta Direct Cloud API
-  if (activeProvider === 'meta') {
-    const meta = clientCreds?.meta || parsedProviderConfig?.meta || {};
-    if (!meta.phone_number_id || !meta.access_token) {
-      throw new Error("Meta Cloud API Phone ID or Access Token is missing in WhatsApp Settings");
-    }
-    const version = meta.api_version || 'v21.0';
-    const endpoint = `https://graph.facebook.com/${version}/${meta.phone_number_id}/messages`;
-
-    const components = [];
-    if (template.image_url) {
-      components.push({
-        type: "header",
-        parameters: [{ type: "image", image: { link: template.image_url } }]
-      });
-    }
-    components.push({
-      type: "body",
-      parameters: [{ type: "text", text }]
-    });
-
-    const payload = {
-      messaging_product: "whatsapp",
-      recipient_type: "individual",
-      to: phoneStr,
-      type: "template",
-      template: {
-        name: template.campaign_name || template.template_name,
-        language: { code: "en" },
-        components
+function buildAudienceDispatchRecords(audienceType, rows, branchTag, recipientPriority = 'default') {
+  if (audienceType === 'party') {
+    return (rows || []).map(p => {
+      const meta = extractPartyMeta(p.business_nature);
+      let phones = [];
+      if (recipientPriority === 'party_all') {
+        phones = [meta.biz_contact_no_1, p.primary_mobile, meta.contact_mobile_1_1, meta.contact_mobile_2_1].filter(isValidPhoneStr);
+      } else if (recipientPriority === 'party_cp1') {
+        phones = [meta.contact_mobile_1_1 || meta.biz_contact_no_1 || p.primary_mobile].filter(isValidPhoneStr);
+      } else if (recipientPriority === 'party_cp2') {
+        phones = [meta.contact_mobile_2_1 || meta.contact_mobile_1_1 || meta.biz_contact_no_1].filter(isValidPhoneStr);
+      } else {
+        phones = [meta.biz_contact_no_1 || p.primary_mobile || meta.contact_mobile_1_1].filter(isValidPhoneStr);
       }
-    };
-
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${meta.access_token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(payload)
+      const uniquePhones = Array.from(new Set(phones.map(s => String(s).trim())));
+      const name = p.firm_name || p.legal_name || 'Channel Partner';
+      const contactPerson = meta.contact_person_name_1 || name;
+      const comp = branchTag !== 'ALL' ? branchTag : 'NSMLR';
+      return {
+        id: p.id,
+        name,
+        phones: uniquePhones,
+        company: comp,
+        params: [name, contactPerson, uniquePhones[0] || '', p.party_universal_code || comp, p.party_status || 'Active']
+      };
     });
-    const resData = await res.json();
-    if (!res.ok || resData.error) {
-      throw new Error(resData.error?.message || "Failed to send Meta WhatsApp message");
+  }
+
+  if (audienceType === 'leads') {
+    return (rows || []).map(l => {
+      let phones = [];
+      if (recipientPriority === 'lead_all') {
+        phones = [l.business_contact_1, l.phone, l.cp1_mobile_1, l.cp2_mobile_1, l.cp3_mobile_1].filter(isValidPhoneStr);
+      } else if (recipientPriority === 'lead_cp1') {
+        phones = [l.phone, l.cp1_mobile_1, l.cp1_mobile_2, l.business_contact_1].filter(isValidPhoneStr);
+      } else if (recipientPriority === 'lead_cp2') {
+        phones = [l.cp2_mobile_1, l.cp2_mobile_2].filter(isValidPhoneStr);
+      } else if (recipientPriority === 'lead_cp3') {
+        phones = [l.cp3_mobile_1, l.cp3_mobile_2].filter(isValidPhoneStr);
+      } else {
+        phones = [l.business_contact_1, l.phone, l.cp1_mobile_1].filter(isValidPhoneStr);
+      }
+      const uniquePhones = Array.from(new Set(phones.map(s => String(s).trim())));
+      const name = l.company || l.name || 'Lead Client';
+      const cp1 = l.cp1_name || l.name || name;
+      const comp = l.our_company || 'NSMLR';
+      return {
+        id: l.id,
+        name,
+        phones: uniquePhones,
+        company: comp,
+        params: [name, uniquePhones[0] || '', cp1, l.cp2_name || cp1, l.cp3_name || cp1, l.requirement || 'Inquiry', l.cp1_mobile_1 || uniquePhones[0] || '']
+      };
+    });
+  }
+
+  if (audienceType === 'end_customers') {
+    return (rows || []).map(c => {
+      let phones = [];
+      if (recipientPriority === 'end_customer_p2') {
+        phones = [c.mobile_2, c.mobile_1].filter(isValidPhoneStr);
+      } else if (recipientPriority === 'end_customer_all') {
+        phones = [c.mobile_1, c.mobile_2].filter(isValidPhoneStr);
+      } else {
+        phones = [c.mobile_1 || c.mobile_2].filter(isValidPhoneStr);
+      }
+      const uniquePhones = Array.from(new Set(phones.map(s => String(s).trim())));
+      const name = c.full_name || 'Customer';
+      const comp = c.our_company || 'NSMLR';
+      return {
+        id: c.id,
+        name,
+        phones: uniquePhones,
+        company: comp,
+        params: [name, c.linked_party_name || name, uniquePhones[0] || '', comp, c.product_name || 'Equipment']
+      };
+    });
+  }
+
+  if (audienceType === 'users') {
+    return (rows || []).map(u => {
+      const alt = u.emp_alt_mobile || u.module_access?.emp_alt_mobile || '';
+      const uniquePhones = Array.from(new Set([u.emp_mobile, alt].filter(isValidPhoneStr).map(s => String(s).trim())));
+      const name = u.emp_name || u.name || 'Employee';
+      const comp = u.company || 'NSMLR';
+      return {
+        id: u.id,
+        name,
+        phones: uniquePhones,
+        company: comp,
+        params: [name, u.emp_designation || 'Staff', uniquePhones[0] || '', u.branch_name || comp, u.department || 'Team']
+      };
+    });
+  }
+
+  return [];
+}
+
+async function queryAudienceRecordsForBroadcast({ supabase, tenantId, audienceType, branchFilter, subFilter, recipientPriority = 'default' }) {
+  const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
+  const branchTag = normalizeBranchTag(branchFilter);
+  const normalizedFilter = normalizeSubFilterInput(subFilter);
+
+  if (audienceType === 'party') {
+    let q = supabase.from('party_master').select('*').order('created_at', { ascending: false });
+    if (effectiveTenantId) q = q.eq('tenant_id', effectiveTenantId);
+    if (branchTag !== 'ALL') q = q.or(`party_universal_code.ilike.%${branchTag}%,business_nature.ilike.%${branchTag}%`);
+    q = applyAudienceSubFilter(q, 'party', normalizedFilter);
+    const { data } = await q;
+    return buildAudienceDispatchRecords('party', data, branchTag, recipientPriority);
+  }
+
+  if (audienceType === 'leads') {
+    let q = supabase.from('leads').select('*').order('created_at', { ascending: false });
+    if (effectiveTenantId) q = q.eq('tenant_id', effectiveTenantId);
+    if (branchTag !== 'ALL') q = q.ilike('our_company', `%${branchTag}%`);
+    q = applyAudienceSubFilter(q, 'leads', normalizedFilter);
+    const { data } = await q;
+    return buildAudienceDispatchRecords('leads', data, branchTag, recipientPriority);
+  }
+
+  if (audienceType === 'end_customers') {
+    let q = supabase.from('end_customers').select('*').order('created_at', { ascending: false });
+    if (effectiveTenantId) q = q.eq('tenant_id', effectiveTenantId);
+    if (branchTag !== 'ALL') q = q.or(`our_company.ilike.%${branchTag}%,branch_code.ilike.%${branchTag}%`);
+    q = applyAudienceSubFilter(q, 'end_customers', normalizedFilter);
+    const { data } = await q;
+    return buildAudienceDispatchRecords('end_customers', data, branchTag, recipientPriority);
+  }
+
+  if (audienceType === 'users') {
+    let q = supabase.from('user_roles').select('*').order('created_at', { ascending: false });
+    if (effectiveTenantId) q = q.eq('tenant_id', effectiveTenantId);
+    if (branchTag !== 'ALL') q = q.or(`company.ilike.%${branchTag}%,branch_name.ilike.%${branchTag}%,branch_code.ilike.%${branchTag}%`);
+    q = applyAudienceSubFilter(q, 'users', normalizedFilter);
+    const { data } = await q;
+    return buildAudienceDispatchRecords('users', data, branchTag, recipientPriority);
+  }
+
+  return [];
+}
+
+function buildBroadcastLogTag(audienceType, rec) {
+  if (audienceType === 'leads') return '';
+  const safeComp = String(rec.company || 'NSMLR').replace(/[|\]]/g, '');
+  const safeName = String(rec.name || 'Partner').replace(/[|\]]/g, '').slice(0, 80);
+  return `[MOD:${audienceType}|REC:${rec.id || ''}|CO:${safeComp}|NAME:${safeName}] `;
+}
+
+async function executeAudienceBatchDispatch({
+  supabase,
+  campaignTitle,
+  audienceType,
+  audienceRecords,
+  template,
+  settings,
+  throttleSpeed = 'safe'
+}) {
+  let sentCount = 0;
+  let failedCount = 0;
+  let skippedCappedCount = 0;
+  const failures = [];
+
+  // Daily Recipient Cap (IST): Max 3 messages per recipient phone per day
+  const now = new Date();
+  const istOffset = 5.5 * 60 * 60 * 1000;
+  const istDate = new Date(now.getTime() + istOffset);
+  const istStart = new Date(Date.UTC(istDate.getUTCFullYear(), istDate.getUTCMonth(), istDate.getUTCDate(), 0, 0, 0));
+  const istStartUTC = new Date(istStart.getTime() - istOffset).toISOString();
+
+  let throttleDelay = 1500;
+  if (throttleSpeed === 'fast') throttleDelay = 300;
+  else if (throttleSpeed === 'standard') throttleDelay = 800;
+
+  for (const rec of audienceRecords) {
+    for (const phone of rec.phones) {
+      const cleanPhone = String(phone).replace(/\D/g, '').slice(-10);
+      if (!cleanPhone || cleanPhone.length < 10) continue;
+
+      const { count: dailyMsgCount } = await supabase.from('whatsapp_message_logs')
+        .select('id', { count: 'exact', head: true })
+        .gte('sent_at', istStartUTC)
+        .ilike('status', `%${cleanPhone}%`)
+        .not('status', 'ilike', '%Failed%')
+        .not('status', 'ilike', '[CAMPAIGN_SUMMARY]%');
+
+      if (typeof dailyMsgCount === 'number' && dailyMsgCount >= 3) {
+        skippedCappedCount++;
+        continue;
+      }
+
+      if (throttleDelay > 0 && sentCount > 0) {
+        await new Promise(resolve => setTimeout(resolve, throttleDelay));
+      }
+
+      const modTag = buildBroadcastLogTag(audienceType, rec);
+      // Only attach lead_id for 'leads' audience because whatsapp_message_logs.lead_id is FK -> leads.id
+      const safeLeadId = audienceType === 'leads' ? rec.id : null;
+
+      try {
+        const res = await dispatchWhatsappTemplateDirect({
+          phone,
+          template,
+          settings,
+          targetCompany: rec.company,
+          templateParams: rec.params && rec.params.length > 0 ? rec.params : [rec.name],
+          recipientName: rec.name
+        });
+
+        sentCount++;
+
+        await supabase.from('whatsapp_message_logs').insert({
+          lead_id: safeLeadId,
+          template_id: template.id,
+          sent_at: new Date().toISOString(),
+          status: `[${campaignTitle}] ${modTag}sent to ${res.phone} (${rec.name})`
+        });
+      } catch (dispatchErr) {
+        failedCount++;
+        failures.push({ name: rec.name, phone, error: dispatchErr.message });
+        console.error(`Failed to dispatch to ${phone}:`, dispatchErr.message);
+
+        await supabase.from('whatsapp_message_logs').insert({
+          lead_id: safeLeadId,
+          template_id: template.id,
+          sent_at: new Date().toISOString(),
+          status: `[${campaignTitle}] [RETRY_PENDING_1] ${modTag}Failed send to ${phone} (${rec.name}) - Attempt 1/3 - Error: ${dispatchErr.message || 'Dispatch error'}`
+        });
+      }
     }
-    return { success: true, provider: 'meta' };
   }
 
-  // 2. AiSensy / Default Gateway
-  const endpointUrl = parsedProviderConfig?.aisensy?.endpoint_url || 'https://backend.aisensy.com/campaign/t1/api/v2';
-  const apiKey = parsedProviderConfig?.aisensy?.api_key || settings.api_key;
-
-  const payload = {
-    apiKey: apiKey || '',
-    campaignName: template.campaign_name || template.template_name,
-    destination: phoneStr,
-    userName: text || 'Partner',
-    templateParams: [text || 'Partner'],
-    media: template.image_url ? { url: template.image_url, filename: 'image.jpg' } : undefined
-  };
-
-  const response = await fetch(endpointUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
-
-  const resText = await response.text();
-  let resJson = null;
-  try { resJson = JSON.parse(resText); } catch (_) {}
-
-  if (!response.ok || (resJson && resJson.success === false)) {
-    throw new Error(resJson?.message || resJson?.error || `HTTP ${response.status}: Failed to send WhatsApp message`);
-  }
-
-  return { success: true, provider: activeProvider };
+  return { sentCount, failedCount, skippedCappedCount, failures };
 }
 
 /**
@@ -1084,6 +1198,8 @@ export async function launchWhatsappBroadcastCampaign({
     if (tplErr || !template) return { success: false, error: 'WhatsApp Template not found' };
 
     const campaignTitle = (campaignName || '').trim() || template.campaign_name || template.template_name || 'Broadcast Campaign';
+    const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
+    const branchTag = normalizeBranchTag(branchFilter);
 
     // 2. Get Settings
     const { data: settings, error: setErr } = await supabase
@@ -1098,14 +1214,15 @@ export async function launchWhatsappBroadcastCampaign({
     if (testPhone && String(testPhone).trim()) {
       const cleanTest = String(testPhone).replace(/\D/g, '');
       if (cleanTest.length < 10) return { success: false, error: 'Invalid 10-digit test phone number' };
-      
+
       const testName = 'Test Partner (Shiva Auto Parts)';
-      await dispatchSingleWhatsapp({
+      await dispatchWhatsappTemplateDirect({
         phone: cleanTest,
-        text: testName,
         template,
         settings,
-        targetCompany: 'NSMLR'
+        targetCompany: branchTag !== 'ALL' ? branchTag : 'NSMLR',
+        templateParams: [testName, 'Ramesh Kumar (CP1)', cleanTest, branchTag !== 'ALL' ? branchTag : 'New Swan Group', 'Active Partner'],
+        recipientName: testName
       });
 
       return {
@@ -1117,100 +1234,14 @@ export async function launchWhatsappBroadcastCampaign({
     }
 
     // BROADCAST SEND MODE
-    const effectiveTenantId = tenantId || DEFAULT_TENANT_ID;
-    const branchTag = normalizeBranchTag(branchFilter);
-    const normalizedFilter = normalizeSubFilterInput(subFilter);
-
-    let audienceRecords = [];
-
-    if (audienceType === 'party') {
-      let q = supabase.from('party_master')
-        .select('*')
-        .order('created_at', { ascending: false });
-      if (effectiveTenantId) q = q.eq('tenant_id', effectiveTenantId);
-      if (branchTag !== 'ALL') {
-        q = q.or(`party_universal_code.ilike.%${branchTag}%,business_nature.ilike.%${branchTag}%`);
-      }
-      q = applyAudienceSubFilter(q, 'party', normalizedFilter);
-      const { data } = await q;
-      let list = data || [];
-      audienceRecords = list.map(p => {
-        const meta = extractPartyMeta(p.business_nature);
-        let phones = [];
-        if (recipientPriority === 'party_all') {
-          phones = [meta.biz_contact_no_1, p.primary_mobile, meta.contact_mobile_1_1, meta.contact_mobile_2_1].filter(isValidPhoneStr);
-        } else if (recipientPriority === 'party_cp1') {
-          phones = [meta.contact_mobile_1_1 || meta.biz_contact_no_1 || p.primary_mobile].filter(isValidPhoneStr);
-        } else {
-          // 1st Priority Business Contact with Fallback to CP1
-          phones = [meta.biz_contact_no_1 || p.primary_mobile || meta.contact_mobile_1_1].filter(isValidPhoneStr);
-        }
-        return {
-          id: p.id,
-          name: p.firm_name || p.legal_name || 'Channel Partner',
-          phones: Array.from(new Set(phones)),
-          company: branchTag !== 'ALL' ? branchTag : 'NSMLR'
-        };
-      });
-    } else if (audienceType === 'leads') {
-      let q = supabase.from('leads').select('*').order('created_at', { ascending: false });
-      if (effectiveTenantId) q = q.eq('tenant_id', effectiveTenantId);
-      if (branchTag !== 'ALL') {
-        q = q.ilike('our_company', `%${branchTag}%`);
-      }
-      q = applyAudienceSubFilter(q, 'leads', normalizedFilter);
-      const { data } = await q;
-      let list = data || [];
-      audienceRecords = list.map(l => {
-        let phones = [];
-        if (recipientPriority === 'lead_all') {
-          phones = [l.business_contact_1, l.phone, l.cp2_mobile_1].filter(isValidPhoneStr);
-        } else if (recipientPriority === 'lead_cp1') {
-          phones = [l.phone || l.business_contact_1].filter(isValidPhoneStr);
-        } else {
-          phones = [l.business_contact_1 || l.phone].filter(isValidPhoneStr);
-        }
-        return {
-          id: l.id,
-          name: l.company || l.name || 'Lead Client',
-          phones: Array.from(new Set(phones)),
-          company: l.our_company || 'NSMLR'
-        };
-      });
-    } else if (audienceType === 'end_customers') {
-      let q = supabase.from('end_customers').select('*').order('created_at', { ascending: false });
-      if (effectiveTenantId) q = q.eq('tenant_id', effectiveTenantId);
-      if (branchTag !== 'ALL') {
-        q = q.or(`our_company.ilike.%${branchTag}%,branch_code.ilike.%${branchTag}%`);
-      }
-      q = applyAudienceSubFilter(q, 'end_customers', normalizedFilter);
-      const { data } = await q;
-      let list = data || [];
-      audienceRecords = list.map(c => ({
-        id: c.id,
-        name: c.full_name || 'Customer',
-        phones: [c.mobile_1, c.mobile_2].filter(isValidPhoneStr),
-        company: c.our_company || 'NSMLR'
-      }));
-    } else if (audienceType === 'users') {
-      let q = supabase.from('user_roles').select('*').order('created_at', { ascending: false });
-      if (effectiveTenantId) q = q.eq('tenant_id', effectiveTenantId);
-      if (branchTag !== 'ALL') {
-        q = q.or(`company.ilike.%${branchTag}%,branch_name.ilike.%${branchTag}%,branch_code.ilike.%${branchTag}%`);
-      }
-      q = applyAudienceSubFilter(q, 'users', normalizedFilter);
-      const { data } = await q;
-      let list = data || [];
-      audienceRecords = list.map(u => {
-        const alt = u.emp_alt_mobile || u.module_access?.emp_alt_mobile || '';
-        return {
-          id: u.id,
-          name: u.emp_name || u.name || 'Employee',
-          phones: Array.from(new Set([u.emp_mobile, alt].filter(isValidPhoneStr).map(s => String(s).trim()))),
-          company: u.company || 'NSMLR'
-        };
-      });
-    }
+    const audienceRecords = await queryAudienceRecordsForBroadcast({
+      supabase,
+      tenantId: effectiveTenantId,
+      audienceType,
+      branchFilter,
+      subFilter,
+      recipientPriority
+    });
 
     if (audienceRecords.length === 0) {
       return { success: false, error: 'No recipients found for the selected branch, audience, and filter criteria.' };
@@ -1219,17 +1250,19 @@ export async function launchWhatsappBroadcastCampaign({
     // SCHEDULED CAMPAIGN HANDLING
     if (sendMode === 'scheduled' && scheduledAt) {
       const scheduleTimeStr = String(scheduledAt);
-      
-      // 1. Structured campaign summary for Campaigns List table
+
       await supabase.from('whatsapp_message_logs').insert({
         template_id: template.id,
         sent_at: new Date().toISOString(),
         status: `[CAMPAIGN_SUMMARY] ${JSON.stringify({
+          tenantId: effectiveTenantId,
           campaignName: campaignTitle,
           audienceType,
           subFilters: Array.isArray(subFilter) ? subFilter : [subFilter],
           branchFilter,
+          templateId: template.id,
           templateName: template.template_name,
+          recipientPriority,
           totalTargeted: audienceRecords.length,
           sentCount: 0,
           failedCount: 0,
@@ -1254,88 +1287,29 @@ export async function launchWhatsappBroadcastCampaign({
     }
 
     // IMMEDIATE BROADCAST DISPATCH WITH THROTTLE LIMITS & ANTI-SPAM SAFEGUARDS
-    let sentCount = 0;
-    let failedCount = 0;
-    let skippedCappedCount = 0;
-    const failures = [];
-
-    // Daily Recipient Cap (IST): Max 3 messages per recipient phone per day
-    const now = new Date();
-    const istOffset = 5.5 * 60 * 60 * 1000;
-    const istDate = new Date(now.getTime() + istOffset);
-    const istStart = new Date(Date.UTC(istDate.getUTCFullYear(), istDate.getUTCMonth(), istDate.getUTCDate(), 0, 0, 0));
-    const istStartUTC = new Date(istStart.getTime() - istOffset).toISOString();
-
-    // Throttle speed interval in ms
-    let throttleDelay = 1500; // default safe: ~40 msgs/min
-    if (throttleSpeed === 'fast') throttleDelay = 300; // ~150 msgs/min
-    else if (throttleSpeed === 'standard') throttleDelay = 800; // ~75 msgs/min
-
-    // Dispatch in sequential throttled batches to prevent API rate limits
-    for (const rec of audienceRecords) {
-      for (const phone of rec.phones) {
-        const cleanPhone = String(phone).replace(/\D/g, '').slice(-10);
-        if (!cleanPhone || cleanPhone.length < 10) continue;
-
-        // Anti-Spam Frequency Cap: check if recipient has already received 3 messages today (IST)
-        const { count: dailyMsgCount } = await supabase.from('whatsapp_message_logs')
-          .select('id', { count: 'exact', head: true })
-          .gte('sent_at', istStartUTC)
-          .ilike('status', `%sent to %${cleanPhone}%`);
-
-        if (typeof dailyMsgCount === 'number' && dailyMsgCount >= 3) {
-          skippedCappedCount++;
-          continue;
-        }
-
-        if (throttleDelay > 0 && sentCount > 0) {
-          await new Promise(resolve => setTimeout(resolve, throttleDelay));
-        }
-
-        try {
-          await dispatchSingleWhatsapp({
-            phone,
-            text: rec.name,
-            template,
-            settings,
-            targetCompany: rec.company
-          });
-
-          sentCount++;
-
-          // Insert into logs with campaign title
-          await supabase.from('whatsapp_message_logs').insert({
-            lead_id: rec.id,
-            template_id: template.id,
-            sent_at: new Date().toISOString(),
-            status: `[${campaignTitle}] sent to ${phone} (${rec.name})`
-          });
-        } catch (dispatchErr) {
-          failedCount++;
-          failures.push({ name: rec.name, phone, error: dispatchErr.message });
-          console.error(`Failed to dispatch to ${phone}:`, dispatchErr.message);
-
-          // Auto-Retry Tracking: Log with [RETRY_PENDING_1] for up to 3 attempts over 3 days
-          await supabase.from('whatsapp_message_logs').insert({
-            lead_id: rec.id,
-            template_id: template.id,
-            sent_at: new Date().toISOString(),
-            status: `[${campaignTitle}] [RETRY_PENDING_1] Failed send to ${phone} (${rec.name}) - Attempt 1/3 - Error: ${dispatchErr.message || 'Dispatch error'}`
-          });
-        }
-      }
-    }
+    const { sentCount, failedCount, skippedCappedCount, failures } = await executeAudienceBatchDispatch({
+      supabase,
+      campaignTitle,
+      audienceType,
+      audienceRecords,
+      template,
+      settings,
+      throttleSpeed
+    });
 
     // Insert Campaign Summary record so it displays in Campaigns History Table
     await supabase.from('whatsapp_message_logs').insert({
       template_id: template.id,
       sent_at: new Date().toISOString(),
       status: `[CAMPAIGN_SUMMARY] ${JSON.stringify({
+        tenantId: effectiveTenantId,
         campaignName: campaignTitle,
         audienceType,
         subFilters: Array.isArray(subFilter) ? subFilter : [subFilter],
         branchFilter,
+        templateId: template.id,
         templateName: template.template_name,
+        recipientPriority,
         totalTargeted: audienceRecords.length,
         sentCount,
         failedCount,
@@ -1374,6 +1348,275 @@ export async function launchWhatsappBroadcastCampaign({
   }
 }
 
+function parseScheduledIstToUtcMs(scheduledAt) {
+  const s = String(scheduledAt || '').trim();
+  if (!s) return NaN;
+  if (/(?:Z|[+-]\d{2}:\d{2})$/i.test(s)) return Date.parse(s);
+  const normalized = s.length === 16 ? `${s}:00+05:30` : `${s}+05:30`;
+  return Date.parse(normalized);
+}
+
+/**
+ * Process Scheduled Broadcasts, Failed Auto-Retries (3 attempts / 3 days), and Recurring Automations
+ */
+export async function processScheduledWhatsappQueue({ maxPerRun = 40 } = {}) {
+  const supabase = getAdminClient();
+  if (!supabase) return { success: false, error: 'Database connection failed' };
+
+  const stats = {
+    scheduledExecuted: 0,
+    scheduledSent: 0,
+    scheduledFailed: 0,
+    retriesResolved: 0,
+    retriesFailed: 0,
+    recurringSent: 0,
+    errors: []
+  };
+
+  try {
+    const { data: settings } = await supabase.from('whatsapp_settings').select('*').limit(1).single();
+    if (!settings) return { success: false, error: 'WhatsApp settings not configured', stats };
+
+    const nowMs = Date.now();
+
+    // ---------------------------------------------------------
+    // 1. PROCESS DUE SCHEDULED BROADCAST CAMPAIGNS
+    // ---------------------------------------------------------
+    const { data: summaryRows } = await supabase
+      .from('whatsapp_message_logs')
+      .select('id, template_id, status')
+      .ilike('status', '[CAMPAIGN_SUMMARY]%')
+      .ilike('status', '%"status":"Scheduled"%')
+      .order('sent_at', { ascending: true })
+      .limit(10);
+
+    for (const row of summaryRows || []) {
+      try {
+        const meta = JSON.parse(row.status.replace('[CAMPAIGN_SUMMARY]', '').trim());
+        if (meta.status !== 'Scheduled') continue;
+        const dueMs = parseScheduledIstToUtcMs(meta.scheduledAt);
+        if (!Number.isFinite(dueMs) || dueMs > nowMs) continue;
+
+        const tplId = meta.templateId || row.template_id;
+        const { data: template } = await supabase.from('whatsapp_templates').select('*').eq('id', tplId).single();
+        if (!template) {
+          await supabase.from('whatsapp_message_logs').update({
+            status: `[CAMPAIGN_SUMMARY] ${JSON.stringify({ ...meta, status: 'Failed', error: 'Template not found', executedAt: new Date().toISOString() })}`
+          }).eq('id', row.id);
+          continue;
+        }
+
+        const records = await queryAudienceRecordsForBroadcast({
+          supabase,
+          tenantId: meta.tenantId || DEFAULT_TENANT_ID,
+          audienceType: meta.audienceType || 'leads',
+          branchFilter: meta.branchFilter || 'All',
+          subFilter: meta.subFilters || 'ALL',
+          recipientPriority: meta.recipientPriority || 'default'
+        });
+
+        const { sentCount, failedCount, skippedCappedCount } = await executeAudienceBatchDispatch({
+          supabase,
+          campaignTitle: meta.campaignName || template.template_name,
+          audienceType: meta.audienceType || 'leads',
+          audienceRecords: records.slice(0, maxPerRun),
+          template,
+          settings,
+          throttleSpeed: meta.throttleSpeed || 'safe'
+        });
+
+        await supabase.from('whatsapp_message_logs').update({
+          sent_at: new Date().toISOString(),
+          status: `[CAMPAIGN_SUMMARY] ${JSON.stringify({
+            ...meta,
+            sentCount,
+            failedCount,
+            skippedCappedCount,
+            status: failedCount > 0 && sentCount === 0 ? 'Failed' : 'Completed',
+            executedAt: new Date().toISOString()
+          })}`
+        }).eq('id', row.id);
+
+        stats.scheduledExecuted++;
+        stats.scheduledSent += sentCount;
+        stats.scheduledFailed += failedCount;
+      } catch (e) {
+        stats.errors.push(`Scheduled error: ${e.message}`);
+      }
+    }
+
+    // ---------------------------------------------------------
+    // 2. PROCESS PENDING AUTO-RETRIES (UP TO 3 ATTEMPTS / 3 DAYS)
+    // ---------------------------------------------------------
+    const threeDaysAgoIso = new Date(nowMs - 3 * 86400000).toISOString();
+    const { data: retryRows } = await supabase
+      .from('whatsapp_message_logs')
+      .select('id, lead_id, template_id, status, sent_at')
+      .ilike('status', '%[RETRY_PENDING_%')
+      .gte('sent_at', threeDaysAgoIso)
+      .order('sent_at', { ascending: true })
+      .limit(15);
+
+    for (const rRow of retryRows || []) {
+      try {
+        // Enforce minimum 4 hour cooldown between retry attempts
+        const lastAt = Date.parse(rRow.sent_at || '');
+        if (Number.isFinite(lastAt) && nowMs - lastAt < 4 * 3600000) continue;
+
+        const attemptMatch = rRow.status.match(/\[RETRY_PENDING_(\d+)\]/);
+        const currentAttempt = attemptMatch ? parseInt(attemptMatch[1], 10) : 1;
+        if (currentAttempt >= 3) continue;
+
+        const phoneMatch = rRow.status.match(/Failed send to\s+(\+?[\d]+)/i);
+        const modMatch = rRow.status.match(/\[MOD:([^|\]]+)\|REC:([^|\]]*)\|CO:([^|\]]*)\|NAME:([^\]]*)\]/i);
+        const phone = phoneMatch?.[1];
+        if (!phone || !rRow.template_id) continue;
+
+        const { data: template } = await supabase.from('whatsapp_templates').select('*').eq('id', rRow.template_id).single();
+        if (!template) continue;
+
+        const recName = modMatch?.[4] || 'Partner';
+        const company = modMatch?.[3] || 'NSMLR';
+        const modTag = modMatch ? `${modMatch[0]} ` : '';
+
+        try {
+          const res = await dispatchWhatsappTemplateDirect({
+            phone,
+            template,
+            settings,
+            targetCompany: company,
+            templateParams: [recName],
+            recipientName: recName
+          });
+
+          await supabase.from('whatsapp_message_logs').update({
+            sent_at: new Date().toISOString(),
+            status: rRow.status.replace(/\[RETRY_PENDING_\d+\].*$/, `${modTag}sent to ${res.phone} (${recName}) [Retry #${currentAttempt + 1}]`)
+          }).eq('id', rRow.id);
+          stats.retriesResolved++;
+        } catch (retryErr) {
+          const nextAttempt = currentAttempt + 1;
+          const nextTag = nextAttempt >= 3 ? '[RETRY_EXHAUSTED_3]' : `[RETRY_PENDING_${nextAttempt}]`;
+          await supabase.from('whatsapp_message_logs').update({
+            sent_at: new Date().toISOString(),
+            status: rRow.status
+              .replace(/\[RETRY_PENDING_\d+\]/, nextTag)
+              .replace(/Attempt \d+\/3/, `Attempt ${nextAttempt}/3`) + ` | ${retryErr.message}`
+          }).eq('id', rRow.id);
+          stats.retriesFailed++;
+        }
+      } catch (e) {
+        stats.errors.push(`Retry error: ${e.message}`);
+      }
+    }
+
+    // ---------------------------------------------------------
+    // 3. PROCESS RECURRING STAGE AUTOMATIONS (Daily/Weekly/Monthly/Quarterly)
+    // ---------------------------------------------------------
+    const FREQ_COOLDOWN_MS = {
+      daily: 23 * 3600000,
+      weekly: 6.9 * 86400000,
+      monthly: 29.5 * 86400000,
+      quarterly: 89.5 * 86400000
+    };
+
+    const { data: recurringRules } = await supabase
+      .from('whatsapp_automations')
+      .select('*')
+      .eq('is_active', true)
+      .in('frequency', ['Daily', 'Weekly', 'Monthly', 'Quarterly']);
+
+    for (const rule of recurringRules || []) {
+      if (stats.recurringSent >= maxPerRun) break;
+      try {
+        const freqKey = String(rule.frequency || '').toLowerCase();
+        const cooldownMs = FREQ_COOLDOWN_MS[freqKey];
+        if (!cooldownMs || !rule.template_id) continue;
+
+        const matchPref = String(rule.stage_name || '').trim().match(/^\[([A-Z_]+)(?:\|([a-z0-9_]+))?\]\s*(.*)$/i);
+        const modId = matchPref ? matchPref[1].toLowerCase() : 'leads';
+        const stageLabel = matchPref ? matchPref[3].trim() : String(rule.stage_name || '').trim();
+        if (modId !== 'leads' && modId !== 'party' && modId !== 'end_customers') continue;
+
+        const { data: template } = await supabase.from('whatsapp_templates').select('*').eq('id', rule.template_id).single();
+        if (!template) continue;
+
+        const cutoffIso = new Date(nowMs - cooldownMs).toISOString();
+        const { data: recentLogs } = await supabase
+          .from('whatsapp_message_logs')
+          .select('lead_id, status')
+          .eq('template_id', rule.template_id)
+          .gte('sent_at', cutoffIso)
+          .not('status', 'ilike', '%Failed%')
+          .limit(1000);
+
+        const recentlySentLeads = new Set((recentLogs || []).map(l => l.lead_id).filter(Boolean));
+        const recentlySentPhones = new Set(
+          (recentLogs || [])
+            .map(l => String(l.status || '').match(/sent\s+to\s+(\+?[\d]+)/i)?.[1]?.slice(-10))
+            .filter(Boolean)
+        );
+
+        let targets = [];
+        if (modId === 'leads') {
+          let lq = supabase.from('leads').select('*').eq('status', stageLabel).limit(20);
+          if (rule.company && rule.company !== 'All') lq = lq.eq('our_company', rule.company);
+          const { data: lRows } = await lq;
+          targets = buildAudienceDispatchRecords('leads', lRows, rule.company || 'ALL', matchPref?.[2] || 'lead_business')
+            .filter(r => !recentlySentLeads.has(r.id));
+        } else if (modId === 'party') {
+          let pq = supabase.from('party_master').select('*').limit(20);
+          if (rule.company && rule.company !== 'All') pq = pq.or(`party_universal_code.ilike.%${rule.company}%,business_nature.ilike.%${rule.company}%`);
+          const { data: pRows } = await pq;
+          targets = buildAudienceDispatchRecords('party', pRows, rule.company || 'ALL', matchPref?.[2] || 'party_business');
+        } else if (modId === 'end_customers') {
+          let eq = supabase.from('end_customers').select('*').limit(20);
+          if (rule.company && rule.company !== 'All') eq = eq.or(`our_company.ilike.%${rule.company}%,branch_code.ilike.%${rule.company}%`);
+          const { data: eRows } = await eq;
+          targets = buildAudienceDispatchRecords('end_customers', eRows, rule.company || 'ALL', matchPref?.[2] || 'end_customer_p1');
+        }
+
+        for (const rec of targets) {
+          if (stats.recurringSent >= maxPerRun) break;
+          const phone = rec.phones?.[0];
+          const clean10 = String(phone || '').replace(/\D/g, '').slice(-10);
+          if (!clean10 || recentlySentPhones.has(clean10)) continue;
+
+          try {
+            const res = await dispatchWhatsappTemplateDirect({
+              phone,
+              template,
+              settings,
+              targetCompany: rec.company,
+              templateParams: rec.params,
+              recipientName: rec.name
+            });
+
+            const modTag = buildBroadcastLogTag(modId, rec);
+            await supabase.from('whatsapp_message_logs').insert({
+              lead_id: modId === 'leads' ? rec.id : null,
+              template_id: template.id,
+              sent_at: new Date().toISOString(),
+              status: `[AUTO:${rule.frequency}] ${modTag}sent to ${res.phone}`
+            });
+            recentlySentPhones.add(clean10);
+            stats.recurringSent++;
+          } catch (recErr) {
+            stats.errors.push(`Recurring (${rule.id}) failed for ${phone}: ${recErr.message}`);
+          }
+        }
+      } catch (e) {
+        stats.errors.push(`Recurring rule error: ${e.message}`);
+      }
+    }
+
+    return { success: true, stats, executedAt: new Date().toISOString() };
+  } catch (err) {
+    console.error('processScheduledWhatsappQueue error:', err);
+    return { success: false, error: err.message, stats };
+  }
+}
+
 /**
  * Get persistent list of Broadcast Campaigns from database summary logs
  */
@@ -1407,7 +1650,7 @@ export async function getBroadcastCampaignsList({ tenantId = null } = {}) {
           sentAt: row.sent_at || row.created_at
         };
       }
-    });
+    }).filter(item => !tenantId || !item.tenantId || item.tenantId === tenantId);
   } catch (err) {
     console.error('getBroadcastCampaignsList error:', err);
     return [];

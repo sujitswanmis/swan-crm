@@ -15,7 +15,8 @@ import {
   saveWhatsappCampaignDraft,
   getBroadcastCampaignsList,
   getSyncedDepartmentsList,
-  getSyncedUserFilterOptions
+  getSyncedUserFilterOptions,
+  processScheduledWhatsappQueue
 } from '@/app/actions/whatsappCampaigns';
 import { getCategoryMeta, getRecipientMeta } from '@/components/WhatsappOfficial';
 
@@ -451,6 +452,8 @@ export default function WhatsappCampaignStudio({
   const [launching, setLaunching] = useState(false);
   const [launchProgress, setLaunchProgress] = useState(null);
   const [campaignResult, setCampaignResult] = useState(null);
+  const [runningQueue, setRunningQueue] = useState(false);
+  const [queueNotice, setQueueNotice] = useState(null);
 
   // Pagination for Campaigns Main Table
   const [currentPage, setCurrentPage] = useState(1);
@@ -466,6 +469,25 @@ export default function WhatsappCampaignStudio({
       console.error('Failed to load campaigns list:', err);
     } finally {
       setLoadingCampaigns(false);
+    }
+  };
+
+  const handleRunScheduledQueue = async () => {
+    setRunningQueue(true);
+    setQueueNotice(null);
+    try {
+      const res = await processScheduledWhatsappQueue({ maxPerRun: 50 });
+      if (res?.success) {
+        const s = res.stats || {};
+        setQueueNotice(`Queue processed: ${s.scheduledExecuted || 0} scheduled (${s.scheduledSent || 0} sent), ${s.retriesResolved || 0} retries resolved, ${s.recurringSent || 0} recurring rules sent.`);
+        await refreshCampaigns();
+      } else {
+        setQueueNotice(`Queue error: ${res?.error || 'Failed to process queue'}`);
+      }
+    } catch (err) {
+      setQueueNotice(`Queue error: ${err.message || 'Failed to process queue'}`);
+    } finally {
+      setRunningQueue(false);
     }
   };
 
@@ -933,8 +955,32 @@ export default function WhatsappCampaignStudio({
             </p>
           </div>
 
-          {/* Action Bar: Refresh & + Add Campaign Pop-up Trigger */}
+          {/* Action Bar: Queue Runner, Refresh & + Add Campaign Pop-up Trigger */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              onClick={handleRunScheduledQueue}
+              disabled={runningQueue}
+              className={crmStyles.button}
+              title="Execute due Scheduled Broadcasts, Failed Auto-Retries, and Recurring Automations immediately"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                padding: '0.6rem 0.95rem',
+                fontSize: '0.82rem',
+                fontWeight: 700,
+                borderRadius: '8px',
+                backgroundColor: 'var(--bg-surface)',
+                border: '1px solid rgba(139, 92, 246, 0.35)',
+                color: '#7c3aed',
+                cursor: runningQueue ? 'not-allowed' : 'pointer'
+              }}
+            >
+              <Clock size={14} className={runningQueue ? 'animate-spin' : ''} />
+              {runningQueue ? 'Running Queue...' : 'Run Scheduled Queue'}
+            </button>
+
             <button
               type="button"
               onClick={refreshCampaigns}
@@ -982,6 +1028,25 @@ export default function WhatsappCampaignStudio({
             </button>
           </div>
         </div>
+
+        {queueNotice && (
+          <div style={{
+            padding: '0.7rem 1rem',
+            borderRadius: '8px',
+            backgroundColor: queueNotice.startsWith('Queue error') ? 'rgba(239, 68, 68, 0.08)' : 'rgba(16, 185, 129, 0.08)',
+            border: queueNotice.startsWith('Queue error') ? '1px solid rgba(239, 68, 68, 0.25)' : '1px solid rgba(16, 185, 129, 0.25)',
+            color: queueNotice.startsWith('Queue error') ? '#b91c1c' : '#047857',
+            fontSize: '0.82rem',
+            fontWeight: 600,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '0.75rem'
+          }}>
+            <span>{queueNotice}</span>
+            <button type="button" onClick={() => setQueueNotice(null)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'inherit' }}><X size={14} /></button>
+          </div>
+        )}
 
         {/* Quick Stats Metrics Cards */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.85rem' }}>

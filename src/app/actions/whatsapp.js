@@ -536,370 +536,463 @@ export async function toggleWhatsappAutomationStatus(id, isActive) {
 }
 
 // ==========================================
-// SEND MESSAGE LOGIC (AiSensy & Nextel Integration)
+// INTERNAL STAGE & PARAM HELPERS
 // ==========================================
-export async function sendWhatsappMessage(leadId, templateId, selectedPhones = []) {
+function parseAutomationStageServer(rawStageName) {
+  const raw = String(rawStageName || '').trim();
+  const match = raw.match(/^\[([A-Z_]+)(?:\|([a-z0-9_]+))?\]\s*(.*)$/i);
+  if (match) {
+    return {
+      hasPrefix: true,
+      moduleId: String(match[1] || 'leads').toLowerCase(),
+      recipientId: match[2] ? String(match[2]).toLowerCase() : null,
+      stageLabel: String(match[3] || '').trim(),
+    };
+  }
+  return {
+    hasPrefix: false,
+    moduleId: 'leads',
+    recipientId: null,
+    stageLabel: raw,
+  };
+}
+
+function getRequiredTemplateParamCount(template) {
+  const body = String(template?.message_body || '');
+  const matches = Array.from(body.matchAll(/\{\{\s*(\d+)\s*\}\}/g));
+  if (matches.length === 0) return 1;
+  const maxNum = Math.max(...matches.map(m => parseInt(m[1], 10)).filter(Number.isFinite));
+  return Math.max(1, Math.min(maxNum, 10));
+}
+
+function normalizeTemplateParams(template, rawParams = [], fallbackName = 'Customer') {
+  const safeFallback = String(fallbackName || 'Customer').trim() || 'Customer';
+  const cleaned = Array.isArray(rawParams)
+    ? rawParams.map(v => String(v ?? '').trim())
+    : [];
+  const requiredCount = getRequiredTemplateParamCount(template);
+  const out = [];
+  for (let i = 0; i < requiredCount; i++) {
+    const val = cleaned[i];
+    out.push(val && val !== 'N/A' ? val : safeFallback);
+  }
+  return out;
+}
+
+function buildLeadTemplateParams(lead) {
+  const bizOrName = lead.company || lead.name || lead.business_type || 'Customer';
+  const bizPhone = lead.business_contact_1 || lead.phone || lead.cp1_mobile_1 || bizOrName;
+  const cp1 = lead.cp1_name || lead.name || bizOrName;
+  const cp2 = lead.cp2_name || cp1;
+  const cp3 = lead.cp3_name || cp1;
+  const req = lead.requirement || lead.business_type || 'Inquiry';
+  const cp1Mob = lead.cp1_mobile_1 || lead.phone || bizPhone;
+  return [bizOrName, bizPhone, cp1, cp2, cp3, req, cp1Mob];
+}
+
+function resolveLeadPhonesByPriority(lead, recipientId = null) {
+  const unique = arr => Array.from(new Set((arr || []).filter(p => p && String(p).trim() !== '' && String(p).trim().toUpperCase() !== 'N/A')));
+  const allPhones = unique([
+    lead.phone, lead.cp1_mobile_1, lead.cp1_mobile_2, lead.cp1_alt_1, lead.cp1_alt_2,
+    lead.cp2_mobile_1, lead.cp2_mobile_2, lead.cp2_alt_1, lead.cp2_alt_2,
+    lead.cp3_mobile_1, lead.cp3_mobile_2, lead.cp3_alt_1, lead.cp3_alt_2,
+    lead.business_contact_1, lead.business_contact_2, lead.business_alt_1, lead.business_alt_2
+  ]);
+  if (!recipientId || recipientId === 'lead_all') return allPhones;
+  if (recipientId === 'lead_business') {
+    const biz = unique([lead.business_contact_1, lead.business_contact_2, lead.business_alt_1, lead.business_alt_2]);
+    return biz.length > 0 ? biz : unique([lead.phone, lead.cp1_mobile_1, lead.cp1_mobile_2]);
+  }
+  if (recipientId === 'lead_cp1') {
+    const cp1 = unique([lead.phone, lead.cp1_mobile_1, lead.cp1_mobile_2, lead.cp1_alt_1, lead.cp1_alt_2]);
+    return cp1.length > 0 ? cp1 : unique([lead.business_contact_1]);
+  }
+  if (recipientId === 'lead_cp2') {
+    return unique([lead.cp2_mobile_1, lead.cp2_mobile_2, lead.cp2_alt_1, lead.cp2_alt_2]);
+  }
+  if (recipientId === 'lead_cp3') {
+    return unique([lead.cp3_mobile_1, lead.cp3_mobile_2, lead.cp3_alt_1, lead.cp3_alt_2]);
+  }
+  return allPhones;
+}
+
+// ==========================================
+// UNIFIED MULTI-BSP TEMPLATE DISPATCH ENGINE
+// ==========================================
+export async function dispatchWhatsappTemplateDirect({
+  phone,
+  template,
+  settings,
+  targetCompany = 'NSMLR',
+  templateParams = ['Customer'],
+  recipientName = 'Customer'
+}) {
+  let phoneStr = String(phone || '').replace(/\D/g, '');
+  if (phoneStr.length === 10) phoneStr = '91' + phoneStr;
+  if (!phoneStr || phoneStr.length < 10) {
+    throw new Error('Invalid recipient phone number');
+  }
+
+  let parsedProviderConfig = null;
+  if (settings?.api_key && typeof settings.api_key === 'string' && settings.api_key.trim().startsWith('{')) {
+    try { parsedProviderConfig = JSON.parse(settings.api_key); } catch (_e) {}
+  }
+
+  const company = String(targetCompany || 'NSMLR').trim() || 'NSMLR';
+  const customBsps = Array.isArray(parsedProviderConfig?.custom_bsps) ? parsedProviderConfig.custom_bsps : [];
+  let activeProvider = null;
+
+  // OPTION A: Template-Level Specific Provider Selection
+  const tplTarget = String(template?.provider || template?.company || '').trim().toLowerCase();
+  if (tplTarget.includes('[aisensy]') || tplTarget.includes('aisensy')) activeProvider = 'aisensy';
+  else if (tplTarget.includes('[interakt]') || tplTarget.includes('interakt')) activeProvider = 'interakt';
+  else if (tplTarget.includes('[meta]') || tplTarget.includes('meta')) activeProvider = 'meta';
+  else if (tplTarget.includes('[wati]') || tplTarget.includes('wati')) activeProvider = 'wati';
+  else if (tplTarget.includes('[nextel]') || tplTarget.includes('nextel')) activeProvider = 'nextel';
+  else {
+    const matchedCatalog = globalCatalogData.find(b =>
+      tplTarget.includes(b.id?.toLowerCase()) ||
+      (b.name && tplTarget.includes(b.name.toLowerCase()))
+    );
+    if (matchedCatalog) {
+      activeProvider = matchedCatalog.id;
+    } else {
+      const matchedCustom = customBsps.find(b =>
+        tplTarget.includes(b.id?.toLowerCase()) ||
+        (b.name && tplTarget.includes(b.name.toLowerCase()))
+      );
+      if (matchedCustom) activeProvider = matchedCustom.id;
+    }
+  }
+
+  // OPTION B: Company/Client Allocation Routing
+  const clientAlloc = parsedProviderConfig?.client_allocations?.[company] ||
+                      parsedProviderConfig?.client_allocations?.[company.toLowerCase()] ||
+                      parsedProviderConfig?.client_allocations?.[company.toUpperCase()];
+
+  if (!activeProvider) {
+    if (clientAlloc?.default_bsp) {
+      activeProvider = clientAlloc.default_bsp;
+    } else if (company.toUpperCase() === 'NSTLP' || tplTarget === 'nstlp') {
+      activeProvider = 'nextel';
+    } else if (company.toUpperCase() === 'NSMLR' || tplTarget === 'nsmlr') {
+      activeProvider = 'aisensy';
+    }
+  }
+
+  // OPTION C: Primary Default Provider Fallback
+  if (!activeProvider) {
+    activeProvider = parsedProviderConfig?.default_provider ||
+                     parsedProviderConfig?.provider ||
+                     (Array.isArray(parsedProviderConfig?.enabled_providers) ? parsedProviderConfig.enabled_providers[0] : null) ||
+                     (settings?.api_key_nstlp ? 'nextel' : 'aisensy');
+  }
+
+  const matchedCatalogBsp = globalCatalogData.find(b => b.id === activeProvider);
+  const matchedCustomBsp = customBsps.find(b => b.id === activeProvider || (b.name && b.name.toLowerCase() === String(activeProvider).toLowerCase()));
+  const bspDefinition = matchedCustomBsp || (activeProvider !== 'aisensy' ? matchedCatalogBsp : null);
+
+  const clientCreds = clientAlloc?.credentials || {};
+  const bspCreds = clientCreds?.[activeProvider] || clientCreds?.bsp_credentials?.[activeProvider] || parsedProviderConfig?.bsp_credentials?.[activeProvider] || parsedProviderConfig?.[activeProvider] || {};
+
+  const finalParams = normalizeTemplateParams(template, templateParams, recipientName);
+  const primaryText = finalParams[0] || recipientName || 'Customer';
+
+  if (activeProvider === 'meta') {
+    const meta = clientCreds?.meta?.access_token ? clientCreds.meta : (parsedProviderConfig?.meta || {});
+    if (!meta.phone_number_id || !meta.access_token) {
+      throw new Error('Meta Cloud API Phone ID or Access Token is missing in WhatsApp Settings');
+    }
+    const version = meta.api_version || 'v21.0';
+    const endpoint = `https://graph.facebook.com/${version}/${meta.phone_number_id}/messages`;
+
+    const components = [];
+    if (template.image_url) {
+      components.push({
+        type: 'header',
+        parameters: [{ type: 'image', image: { link: template.image_url } }]
+      });
+    }
+    components.push({
+      type: 'body',
+      parameters: finalParams.map(val => ({ type: 'text', text: val }))
+    });
+
+    const payload = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: phoneStr,
+      type: 'template',
+      template: {
+        name: template.campaign_name || template.template_name,
+        language: { code: 'en' },
+        components
+      }
+    };
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${meta.access_token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+    const responseData = await response.json();
+    if (!response.ok || responseData.error) {
+      throw new Error(responseData.error?.message || 'Failed to send Meta WhatsApp message');
+    }
+    return { success: true, provider: 'meta', phone: phoneStr };
+  }
+
+  if (activeProvider === 'interakt') {
+    const interaktKey = clientCreds?.interakt?.api_key || parsedProviderConfig?.interakt?.api_key;
+    if (!interaktKey) throw new Error('Interakt API Key is missing in WhatsApp Settings');
+
+    const payload = {
+      countryCode: '+91',
+      phoneNumber: phoneStr.replace(/^91/, ''),
+      type: 'Template',
+      template: {
+        name: template.campaign_name || template.template_name,
+        languageCode: 'en',
+        bodyValues: finalParams
+      }
+    };
+
+    const response = await fetch('https://api.interakt.ai/v1/public/message/', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${interaktKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+    const responseData = await response.json();
+    if (!response.ok || responseData.result === false) {
+      throw new Error(responseData.message || 'Failed to send Interakt WhatsApp message');
+    }
+    return { success: true, provider: 'interakt', phone: phoneStr };
+  }
+
+  if (activeProvider === 'wati') {
+    const wati = clientCreds?.wati?.access_token ? clientCreds.wati : (parsedProviderConfig?.wati || {});
+    if (!wati.endpoint_url || !wati.access_token) {
+      throw new Error('Wati Endpoint URL or Access Token is missing in WhatsApp Settings');
+    }
+    const cleanUrl = wati.endpoint_url.replace(/\/+$/, '');
+    const endpoint = `${cleanUrl}/api/v1/sendTemplateMessage`;
+
+    const payload = {
+      template_name: template.campaign_name || template.template_name,
+      broadcast_name: 'crm_send',
+      parameters: finalParams.map((val, idx) => ({ name: idx === 0 ? 'name' : `param_${idx + 1}`, value: val })),
+      receiverNumber: phoneStr
+    };
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${wati.access_token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+    const responseData = await response.json();
+    if (!response.ok || responseData.result === false) {
+      throw new Error(responseData.info || 'Failed to send Wati WhatsApp message');
+    }
+    return { success: true, provider: 'wati', phone: phoneStr };
+  }
+
+  if (activeProvider === 'nextel') {
+    const nextelUrl = clientCreds?.nextel?.endpoint_url || parsedProviderConfig?.nextel?.endpoint_url || settings?.api_key_nstlp;
+    if (!nextelUrl) throw new Error('Nextel API Endpoint is not configured in settings');
+
+    const endpoint = nextelUrl.includes('http')
+      ? nextelUrl
+      : `https://api.nextel.io/API_V2/Whatsapp/send_session/${nextelUrl}`;
+
+    let payload;
+    if (template.image_url) {
+      payload = {
+        type: 'image',
+        message: template.image_url,
+        caption: template.message_body || 'Image attachment',
+        sender_phone: phoneStr
+      };
+    } else {
+      payload = {
+        type: 'buttonTemplate',
+        templateId: template.campaign_name || template.template_name,
+        templateLanguage: 'en',
+        sender_phone: phoneStr,
+        templateArgs: finalParams
+      };
+    }
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    const responseData = await response.json();
+    if (!response.ok || responseData.status === 'error') {
+      throw new Error(responseData.message || responseData.error || 'Failed to send to ' + phoneStr);
+    }
+    return { success: true, provider: 'nextel', phone: phoneStr };
+  }
+
+  if (bspDefinition) {
+    const endpointUrl = bspCreds.endpoint_url || bspDefinition.default_endpoint || bspDefinition.endpoint_url;
+    const authToken = bspCreds.api_key || bspCreds.access_token || bspCreds.auth_token || bspDefinition.auth_token || '';
+
+    if (!endpointUrl) {
+      throw new Error(`WhatsApp Gateway "${bspDefinition.name}" endpoint URL is not configured`);
+    }
+
+    const headers = { 'Content-Type': 'application/json' };
+    const authType = bspDefinition.auth_type || 'Bearer';
+    const headerName = bspDefinition.auth_header_name || 'Authorization';
+
+    if (authToken) {
+      if (authType === 'Bearer') {
+        headers[headerName] = `Bearer ${authToken.trim()}`;
+      } else if (authType === 'HeaderKey') {
+        headers[headerName] = authToken.trim();
+      } else if (authType === 'Basic') {
+        headers[headerName] = authToken.trim().startsWith('Basic ') ? authToken.trim() : `Basic ${authToken.trim()}`;
+      }
+    }
+
+    const tplName = template.campaign_name || template.template_name || '';
+    const msgBody = template.message_body || '';
+    const imgUrl = template.image_url || '';
+
+    const cleanName = JSON.stringify(primaryText).slice(1, -1);
+    const cleanTplName = JSON.stringify(tplName).slice(1, -1);
+    const cleanMsg = JSON.stringify(msgBody).slice(1, -1);
+    const cleanImg = JSON.stringify(imgUrl).slice(1, -1);
+
+    let renderedPayload = (bspDefinition.payload_format || '{\n  "to": "{{PHONE}}",\n  "message": "{{MESSAGE}}"\n}')
+      .replace(/\{\{PHONE\}\}/g, phoneStr)
+      .replace(/\{\{NAME\}\}/g, cleanName)
+      .replace(/\{\{TEMPLATE_NAME\}\}/g, cleanTplName)
+      .replace(/\{\{MESSAGE\}\}/g, cleanMsg)
+      .replace(/\{\{IMAGE_URL\}\}/g, cleanImg)
+      .replace(/\{\{AUTH_TOKEN\}\}/g, authToken)
+      .replace(/\{\{API_KEY\}\}/g, authToken);
+
+    finalParams.forEach((pVal, idx) => {
+      const escapedVal = JSON.stringify(pVal).slice(1, -1);
+      renderedPayload = renderedPayload.replace(new RegExp(`\\{\\{PARAM_${idx + 1}\\}\\}`, 'g'), escapedVal);
+    });
+
+    const response = await fetch(endpointUrl, {
+      method: bspDefinition.method || 'POST',
+      headers,
+      body: renderedPayload
+    });
+
+    const responseText = await response.text();
+    let responseData = null;
+    try { responseData = JSON.parse(responseText); } catch (_) {}
+
+    if (!response.ok) {
+      throw new Error(responseData?.message || responseData?.error || responseText.substring(0, 160) || `${bspDefinition.name} HTTP Error ${response.status}`);
+    }
+    return { success: true, provider: activeProvider, phone: phoneStr };
+  }
+
+  // AISENSY DEFAULT INTEGRATION
+  const aisensyCreds = clientCreds?.aisensy || {};
+  const apiKey = aisensyCreds.api_key || parsedProviderConfig?.aisensy?.api_key || settings?.api_key_nsmlr || (typeof settings?.api_key === 'string' && !settings.api_key.trim().startsWith('{') ? settings.api_key : '');
+  if (!apiKey) throw new Error('AiSensy API Key is not configured in settings');
+
+  const endpointUrl = aisensyCreds.endpoint_url || parsedProviderConfig?.aisensy?.endpoint_url || 'https://backend.aisensy.com/campaign/t1/api/v2';
+
+  const payload = {
+    apiKey,
+    campaignName: template.campaign_name || template.template_name,
+    destination: phoneStr,
+    userName: aisensyCreds.user_name || parsedProviderConfig?.aisensy?.user_name || company || 'New Swan Group',
+    templateParams: finalParams,
+    source: 'CRM App',
+    media: template.image_url ? {
+      url: template.image_url,
+      filename: 'media_file'
+    } : undefined,
+    buttons: [],
+    carouselCards: [],
+    location: {},
+    attributes: {},
+    paramsFallbackValue: {
+      FirstName: primaryText
+    }
+  };
+
+  const response = await fetch(endpointUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+
+  const responseData = await response.json();
+  if (!response.ok) {
+    throw new Error(responseData.errorMessage || responseData.message || 'Failed to send to ' + phoneStr);
+  }
+  return { success: true, provider: 'aisensy', phone: phoneStr };
+}
+
+// ==========================================
+// SEND MESSAGE LOGIC (Multi-BSP & Multi-Variable)
+// ==========================================
+export async function sendWhatsappMessage(leadId, templateId, selectedPhones = [], overrideParams = null, overrideRecipientName = null) {
   const supabase = await createClient();
 
   try {
     // 1. Get Template
     const { data: template } = await supabase.from('whatsapp_templates').select('*').eq('id', templateId).single();
-    if (!template) throw new Error("Template not found");
+    if (!template) throw new Error('Template not found');
 
     // 2. Get Settings (API Keys)
     const { data: settings } = await supabase.from('whatsapp_settings').select('*').limit(1).single();
-    if (!settings) throw new Error("WhatsApp API settings not found");
+    if (!settings) throw new Error('WhatsApp API settings not found');
 
     // 3. Get Lead
     const { data: lead } = await supabase.from('leads').select('*').eq('id', leadId).single();
-    if (!lead) throw new Error("Lead not found");
+    if (!lead) throw new Error('Lead not found');
 
     if (!selectedPhones || selectedPhones.length === 0) {
-      throw new Error("No phone numbers provided");
+      throw new Error('No phone numbers provided');
     }
 
     let successCount = 0;
     let failCount = 0;
     let lastError = null;
 
-    const company = lead.our_company || 'NSMLR'; // Default to NSMLR if unknown
+    const company = lead.our_company || 'NSMLR';
+    const recipientName = overrideRecipientName || lead.name || lead.company || lead.business_type || 'Customer';
+    const paramsToUse = Array.isArray(overrideParams) && overrideParams.length > 0
+      ? overrideParams
+      : buildLeadTemplateParams(lead);
 
-    // Loop through all selected phones
     for (const phone of selectedPhones) {
       try {
-        // Clean phone number (ensure country code)
-        let phoneStr = String(phone).replace(/\D/g, '');
-        if (phoneStr.length === 10) phoneStr = '91' + phoneStr;
+        const res = await dispatchWhatsappTemplateDirect({
+          phone,
+          template,
+          settings,
+          targetCompany: company,
+          templateParams: paramsToUse,
+          recipientName
+        });
 
-        let parsedProviderConfig = null;
-        if (settings.api_key && typeof settings.api_key === 'string' && settings.api_key.trim().startsWith('{')) {
-          try { parsedProviderConfig = JSON.parse(settings.api_key); } catch (_e) {}
-        }
-
-        // =========================================================================
-        // HYBRID PROVIDER ROUTING: OPTION A (Template) -> OPTION B (Company) -> OPTION C (Default)
-        // =========================================================================
-        const customBsps = Array.isArray(parsedProviderConfig?.custom_bsps) ? parsedProviderConfig.custom_bsps : [];
-        let activeProvider = null;
-
-        // OPTION A: Template-Level Specific Provider Selection
-        const tplTarget = String(template.provider || template.company || '').trim().toLowerCase();
-        if (tplTarget.includes('aisensy')) activeProvider = 'aisensy';
-        else if (tplTarget.includes('interakt')) activeProvider = 'interakt';
-        else if (tplTarget.includes('meta')) activeProvider = 'meta';
-        else if (tplTarget.includes('wati')) activeProvider = 'wati';
-        else if (tplTarget.includes('nextel')) activeProvider = 'nextel';
-        else {
-          const matchedCatalog = globalCatalogData.find(b => 
-            tplTarget.includes(b.id?.toLowerCase()) || 
-            (b.name && tplTarget.includes(b.name.toLowerCase()))
-          );
-          if (matchedCatalog) {
-            activeProvider = matchedCatalog.id;
-          } else {
-            const matchedCustom = customBsps.find(b => 
-              tplTarget.includes(b.id?.toLowerCase()) || 
-              (b.name && tplTarget.includes(b.name.toLowerCase()))
-            );
-            if (matchedCustom) activeProvider = matchedCustom.id;
-          }
-        }
-
-        // OPTION B: Company/Client Allocation Routing
-        if (!activeProvider) {
-          const clientAlloc = parsedProviderConfig?.client_allocations?.[company] || 
-                              parsedProviderConfig?.client_allocations?.[company.toLowerCase()] ||
-                              parsedProviderConfig?.client_allocations?.[company.toUpperCase()];
-          if (clientAlloc?.default_bsp) {
-            activeProvider = clientAlloc.default_bsp;
-          } else if (company === 'NSTLP' || tplTarget === 'nstlp') {
-            activeProvider = 'nextel';
-          } else if (company === 'NSMLR' || tplTarget === 'nsmlr') {
-            activeProvider = 'aisensy';
-          }
-        }
-
-        // OPTION C: Primary Default Provider Fallback
-        if (!activeProvider) {
-          activeProvider = parsedProviderConfig?.default_provider || 
-                           parsedProviderConfig?.provider || 
-                           (Array.isArray(parsedProviderConfig?.enabled_providers) ? parsedProviderConfig.enabled_providers[0] : null) || 
-                           (settings.api_key_nstlp ? 'nextel' : 'aisensy');
-        }
-
-        const matchedCatalogBsp = globalCatalogData.find(b => b.id === activeProvider);
-        const matchedCustomBsp = customBsps.find(b => b.id === activeProvider || (b.name && b.name.toLowerCase() === String(activeProvider).toLowerCase()));
-        const bspDefinition = matchedCustomBsp || (activeProvider !== 'aisensy' ? matchedCatalogBsp : null);
-        
-        const clientAllocCreds = parsedProviderConfig?.client_allocations?.[company] || 
-                                 parsedProviderConfig?.client_allocations?.[company.toLowerCase()] ||
-                                 parsedProviderConfig?.client_allocations?.[company.toUpperCase()];
-        const clientCreds = clientAllocCreds?.credentials || {};
-        const bspCreds = clientCreds?.[activeProvider] || parsedProviderConfig?.bsp_credentials?.[activeProvider] || parsedProviderConfig?.[activeProvider] || {};
-
-        if (activeProvider === 'meta') {
-          // =======================
-          // META DIRECT CLOUD API
-          // =======================
-          const meta = clientCreds?.meta || parsedProviderConfig?.meta || {};
-          if (!meta.phone_number_id || !meta.access_token) {
-            throw new Error("Meta Cloud API Phone ID or Access Token is missing in WhatsApp Settings");
-          }
-          const version = meta.api_version || 'v21.0';
-          const endpoint = `https://graph.facebook.com/${version}/${meta.phone_number_id}/messages`;
-
-          const components = [];
-          if (template.image_url) {
-            components.push({
-              type: "header",
-              parameters: [{ type: "image", image: { link: template.image_url } }]
-            });
-          }
-          components.push({
-            type: "body",
-            parameters: [
-              { type: "text", text: lead.name || lead.company || lead.business_type || "Customer" }
-            ]
-          });
-
-          const payload = {
-            messaging_product: "whatsapp",
-            recipient_type: "individual",
-            to: phoneStr,
-            type: "template",
-            template: {
-              name: template.campaign_name || template.template_name,
-              language: { code: "en" },
-              components
-            }
-          };
-
-          const response = await fetch(endpoint, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${meta.access_token}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(payload)
-          });
-          const responseData = await response.json();
-          if (!response.ok || responseData.error) {
-            throw new Error(responseData.error?.message || "Failed to send Meta WhatsApp message");
-          }
-
-        } else if (activeProvider === 'interakt') {
-          // =======================
-          // INTERAKT API
-          // =======================
-          const interaktKey = parsedProviderConfig?.interakt?.api_key;
-          if (!interaktKey) throw new Error("Interakt API Key is missing in WhatsApp Settings");
-
-          const payload = {
-            countryCode: "+91",
-            phoneNumber: phoneStr.replace(/^91/, ''),
-            type: "Template",
-            template: {
-              name: template.campaign_name || template.template_name,
-              languageCode: "en",
-              bodyValues: [lead.name || lead.company || lead.business_type || "Customer"]
-            }
-          };
-
-          const response = await fetch('https://api.interakt.ai/v1/public/message/', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Basic ${interaktKey}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(payload)
-          });
-          const responseData = await response.json();
-          if (!response.ok || responseData.result === false) {
-            throw new Error(responseData.message || "Failed to send Interakt WhatsApp message");
-          }
-
-        } else if (activeProvider === 'wati') {
-          // =======================
-          // WATI API
-          // =======================
-          const wati = parsedProviderConfig?.wati || {};
-          if (!wati.endpoint_url || !wati.access_token) {
-            throw new Error("Wati Endpoint URL or Access Token is missing in WhatsApp Settings");
-          }
-          const cleanUrl = wati.endpoint_url.replace(/\/+$/, '');
-          const endpoint = `${cleanUrl}/api/v1/sendTemplateMessage`;
-
-          const payload = {
-            template_name: template.campaign_name || template.template_name,
-            broadcast_name: "crm_send",
-            parameters: [
-              { name: "name", value: lead.name || lead.company || lead.business_type || "Customer" }
-            ],
-            receiverNumber: phoneStr
-          };
-
-          const response = await fetch(endpoint, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${wati.access_token}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(payload)
-          });
-          const responseData = await response.json();
-          if (!response.ok || responseData.result === false) {
-            throw new Error(responseData.info || "Failed to send Wati WhatsApp message");
-          }
-
-        } else if (activeProvider === 'nextel' || company === 'NSTLP') {
-          // =======================
-          // NEXTEL API INTEGRATION
-          // =======================
-          const nextelUrl = clientCreds?.nextel?.endpoint_url || parsedProviderConfig?.nextel?.endpoint_url || settings.api_key_nstlp;
-          if (!nextelUrl) throw new Error("Nextel API Endpoint is not configured in settings");
-
-          const endpoint = nextelUrl.includes('http') 
-                           ? nextelUrl 
-                           : `https://api.nextel.io/API_V2/Whatsapp/send_session/${nextelUrl}`;
-
-          let payload;
-          if (template.image_url) {
-             payload = {
-               type: "image",
-               message: template.image_url,
-               caption: template.message_body || "Image attachment",
-               sender_phone: phoneStr
-             };
-          } else {
-             payload = {
-               type: "buttonTemplate",
-               templateId: template.campaign_name,
-               templateLanguage: "en",
-               sender_phone: phoneStr,
-               templateArgs: [
-                 lead.name || lead.company || lead.business_type || "Customer"
-               ]
-             };
-          }
-
-          const response = await fetch(endpoint, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(payload)
-          });
-
-          const responseData = await response.json();
-          if (!response.ok || responseData.status === 'error') {
-             throw new Error((responseData.message || responseData.error || "Failed to send to " + phoneStr));
-          }
-
-        } else if (bspDefinition) {
-          // =======================
-          // GLOBAL BSP & CUSTOM GATEWAY DISPATCH ENGINE
-          // =======================
-          const endpointUrl = bspCreds.endpoint_url || bspDefinition.default_endpoint || bspDefinition.endpoint_url;
-          const authToken = bspCreds.api_key || bspCreds.access_token || bspCreds.auth_token || bspDefinition.auth_token || '';
-
-          if (!endpointUrl) {
-            throw new Error(`WhatsApp Gateway "${bspDefinition.name}" endpoint URL is not configured`);
-          }
-
-          const headers = { 'Content-Type': 'application/json' };
-          const authType = bspDefinition.auth_type || 'Bearer';
-          const headerName = bspDefinition.auth_header_name || 'Authorization';
-
-          if (authToken) {
-            if (authType === 'Bearer') {
-              headers[headerName] = `Bearer ${authToken.trim()}`;
-            } else if (authType === 'HeaderKey') {
-              headers[headerName] = authToken.trim();
-            } else if (authType === 'Basic') {
-              headers[headerName] = authToken.trim().startsWith('Basic ') ? authToken.trim() : `Basic ${authToken.trim()}`;
-            }
-          }
-
-          const custName = lead.name || lead.company || lead.business_type || "Customer";
-          const tplName = template.campaign_name || template.template_name || "";
-          const msgBody = template.message_body || "";
-          const imgUrl = template.image_url || "";
-
-          const cleanName = JSON.stringify(custName).slice(1, -1);
-          const cleanTplName = JSON.stringify(tplName).slice(1, -1);
-          const cleanMsg = JSON.stringify(msgBody).slice(1, -1);
-          const cleanImg = JSON.stringify(imgUrl).slice(1, -1);
-
-          const renderedPayload = (bspDefinition.payload_format || '{\n  "to": "{{PHONE}}",\n  "message": "{{MESSAGE}}"\n}')
-            .replace(/\{\{PHONE\}\}/g, phoneStr)
-            .replace(/\{\{NAME\}\}/g, cleanName)
-            .replace(/\{\{TEMPLATE_NAME\}\}/g, cleanTplName)
-            .replace(/\{\{MESSAGE\}\}/g, cleanMsg)
-            .replace(/\{\{IMAGE_URL\}\}/g, cleanImg)
-            .replace(/\{\{AUTH_TOKEN\}\}/g, authToken)
-            .replace(/\{\{API_KEY\}\}/g, authToken);
-
-          const response = await fetch(endpointUrl, {
-            method: bspDefinition.method || 'POST',
-            headers,
-            body: renderedPayload
-          });
-
-          const responseText = await response.text();
-          let responseData = null;
-          try { responseData = JSON.parse(responseText); } catch (_) {}
-
-          if (!response.ok) {
-            throw new Error(responseData?.message || responseData?.error || responseText.substring(0, 160) || `${bspDefinition.name} HTTP Error ${response.status}`);
-          }
-
-        } else {
-          // =======================
-          // AISENSY API INTEGRATION
-          // =======================
-          const aisensyCreds = clientCreds?.aisensy || {};
-          const apiKey = aisensyCreds.api_key || parsedProviderConfig?.aisensy?.api_key || settings.api_key_nsmlr || settings.api_key;
-          if (!apiKey) throw new Error("AiSensy API Key is not configured in settings");
-
-          const payload = {
-            apiKey: apiKey,
-            campaignName: template.campaign_name,
-            destination: phoneStr,
-            userName: aisensyCreds.user_name || parsedProviderConfig?.aisensy?.user_name || company || "New Swan Group",
-            templateParams: [
-              lead.name || lead.company || lead.business_type || "Customer"
-            ],
-            source: "CRM App",
-            media: template.image_url ? {
-              url: template.image_url,
-              filename: "media_file"
-            } : undefined,
-            buttons: [],
-            carouselCards: [],
-            location: {},
-            attributes: {},
-            paramsFallbackValue: {
-              FirstName: lead.name || lead.company || lead.business_type || "Customer"
-            }
-          };
-
-          const response = await fetch('https://backend.aisensy.com/campaign/t1/api/v2', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-          });
-
-          const responseData = await response.json();
-          if (!response.ok) {
-            throw new Error(responseData.errorMessage || responseData.message || "Failed to send to " + phoneStr);
-          }
-        }
-
-        // Log success
         await supabase.from('whatsapp_message_logs').insert([{
           lead_id: lead.id,
           template_id: template.id,
-          status: 'sent to ' + phoneStr,
+          status: 'sent to ' + res.phone,
           sent_at: new Date().toISOString()
         }]);
 
@@ -908,7 +1001,6 @@ export async function sendWhatsappMessage(leadId, templateId, selectedPhones = [
         console.error(`WhatsApp Send Error for ${phone} (${company}):`, err);
         lastError = err;
         failCount++;
-        // Log failure
         await supabase.from('whatsapp_message_logs').insert([{
           lead_id: leadId,
           template_id: templateId,
@@ -919,59 +1011,169 @@ export async function sendWhatsappMessage(leadId, templateId, selectedPhones = [
     }
 
     if (successCount === 0 && failCount > 0) {
-      return { success: false, error: "Failed to send to all numbers: " + (lastError?.message || 'Unknown error') };
+      return { success: false, error: 'Failed to send to all numbers: ' + (lastError?.message || 'Unknown error') };
     }
 
     return { success: true, message: `Successfully sent to ${successCount} number(s).` + (failCount > 0 ? ` Failed: ${failCount}.` : '') };
 
   } catch (error) {
-    console.error("WhatsApp Send Error:", error);
+    console.error('WhatsApp Send Error:', error);
     return { success: false, error: error.message };
   }
 }
 
 // ==========================================
-// AUTOMATION TRIGGER
+// AUTOMATION TRIGGER (LEADS + MULTI-MODULE)
 // ==========================================
 export async function triggerWhatsappAutomationForStage(leadId, newStage) {
   try {
     const supabase = await createClient();
-    
-    // 2. Fetch Lead to get all possible phones and company
+
     const { data: lead } = await supabase.from('leads').select('*').eq('id', leadId).single();
     if (!lead) return { success: false, error: 'Lead not found' };
-    
-    // 1. Check if there's an active "Once" automation for this stage that matches the lead's company
+
+    // Fetch active Once rules and match cleanly in JS so stages containing ';' or '>' and prefixed [LEADS|recipient] both match reliably
     const { data: rules, error: rulesError } = await supabase
       .from('whatsapp_automations')
       .select('*')
-      .eq('stage_name', newStage)
       .eq('frequency', 'Once')
       .eq('is_active', true);
 
     if (rulesError) {
-      console.error("Rule fetch error:", rulesError);
+      console.error('Rule fetch error:', rulesError);
       return { success: false, error: rulesError.message };
     }
 
-    // Find a rule that matches the lead's company or is applied to 'All'
-    const rule = rules?.find(r => !r.company || r.company === 'All' || r.company === lead.our_company);
-    if (!rule) return { success: true, message: 'No automation rule found for this stage and company.' };
+    const matchingRules = (rules || []).filter(r => {
+      const parsed = parseAutomationStageServer(r.stage_name);
+      if (parsed.moduleId !== 'leads') return false;
+      if (parsed.stageLabel !== String(newStage || '').trim()) return false;
+      return !r.company || r.company === 'All' || r.company === lead.our_company;
+    });
 
-    const allPhones = Array.from(new Set([
-      lead.phone, lead.cp1_mobile_2, lead.cp1_alt_1, lead.cp1_alt_2,
-      lead.cp2_mobile_1, lead.cp2_mobile_2, lead.cp2_alt_1, lead.cp2_alt_2,
-      lead.cp3_mobile_1, lead.cp3_mobile_2, lead.cp3_alt_1, lead.cp3_alt_2,
-      lead.business_contact_1, lead.business_contact_2, lead.business_alt_1, lead.business_alt_2
-    ].filter(p => p && String(p).trim() !== '')));
+    if (matchingRules.length === 0) {
+      return { success: true, message: 'No automation rule found for this stage and company.' };
+    }
 
-    if (allPhones.length === 0) return { success: false, error: 'No phone numbers found for automation.' };
+    // Prefer company-specific rule over global 'All' rule if both exist
+    const rule = matchingRules.find(r => r.company && r.company !== 'All') || matchingRules[0];
+    const parsedRule = parseAutomationStageServer(rule.stage_name);
+    const targetPhones = resolveLeadPhonesByPriority(lead, parsedRule.hasPrefix ? parsedRule.recipientId : null);
 
-    // Trigger sending to ALL available numbers for the lead
-    return await sendWhatsappMessage(leadId, rule.template_id, allPhones);
+    if (targetPhones.length === 0) return { success: false, error: 'No phone numbers found for automation.' };
+
+    return await sendWhatsappMessage(
+      leadId,
+      rule.template_id,
+      targetPhones,
+      buildLeadTemplateParams(lead),
+      lead.name || lead.company || 'Customer'
+    );
 
   } catch (error) {
-    console.error("Automation Trigger Error:", error);
+    console.error('Automation Trigger Error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+export async function triggerWhatsappAutomationForModule({
+  moduleId,
+  stageName,
+  company = 'All',
+  leadId = null,
+  entityId = null,
+  recipientPhones = [],
+  templateParams = [],
+  recipientName = 'Partner'
+}) {
+  try {
+    const mod = String(moduleId || '').trim().toLowerCase();
+    const targetStage = String(stageName || '').trim();
+    if (!mod || !targetStage) return { success: false, error: 'Module and stageName are required' };
+
+    if (mod === 'leads' && leadId) {
+      return await triggerWhatsappAutomationForStage(leadId, targetStage);
+    }
+
+    const admin = getAdminSupabase();
+    const { data: rules, error: rulesError } = await admin
+      .from('whatsapp_automations')
+      .select('*')
+      .eq('frequency', 'Once')
+      .eq('is_active', true);
+
+    if (rulesError) return { success: false, error: rulesError.message };
+
+    const matchingRules = (rules || []).filter(r => {
+      const parsed = parseAutomationStageServer(r.stage_name);
+      if (parsed.moduleId !== mod) return false;
+      if (parsed.stageLabel !== targetStage) return false;
+      return !r.company || r.company === 'All' || !company || company === 'All' || r.company === company;
+    });
+
+    if (matchingRules.length === 0) {
+      return { success: true, message: `No automation rule found for ${mod} (${targetStage}).` };
+    }
+
+    const rule = matchingRules.find(r => r.company && r.company !== 'All') || matchingRules[0];
+    const phones = Array.from(new Set((recipientPhones || []).filter(p => p && String(p).trim() !== '' && String(p).trim().toUpperCase() !== 'N/A')));
+    if (phones.length === 0) {
+      return { success: false, error: 'No recipient phone numbers provided for automation.' };
+    }
+
+    const [{ data: template }, { data: settings }] = await Promise.all([
+      admin.from('whatsapp_templates').select('*').eq('id', rule.template_id).single(),
+      admin.from('whatsapp_settings').select('*').limit(1).single()
+    ]);
+
+    if (!template || !settings) {
+      return { success: false, error: 'WhatsApp template or settings missing' };
+    }
+
+    const safeComp = String(company || 'All').replace(/[|\]]/g, '');
+    const safeRecName = String(recipientName || 'Partner').replace(/[|\]]/g, '').slice(0, 80);
+    const metaTag = `[MOD:${mod}|REC:${entityId || ''}|CO:${safeComp}|NAME:${safeRecName}]`;
+
+    let sent = 0;
+    let failed = 0;
+    let lastError = null;
+
+    for (const phone of phones) {
+      try {
+        const res = await dispatchWhatsappTemplateDirect({
+          phone,
+          template,
+          settings,
+          targetCompany: company || 'NSMLR',
+          templateParams: templateParams.length > 0 ? templateParams : [recipientName],
+          recipientName
+        });
+
+        await admin.from('whatsapp_message_logs').insert([{
+          lead_id: null,
+          template_id: template.id,
+          status: `${metaTag} sent to ${res.phone}`,
+          sent_at: new Date().toISOString()
+        }]);
+        sent++;
+      } catch (err) {
+        lastError = err;
+        failed++;
+        await admin.from('whatsapp_message_logs').insert([{
+          lead_id: null,
+          template_id: template.id,
+          status: `${metaTag} failed for ${phone}: ${err.message}`,
+          sent_at: new Date().toISOString()
+        }]);
+      }
+    }
+
+    if (sent === 0 && failed > 0) {
+      return { success: false, error: lastError?.message || 'Automation dispatch failed' };
+    }
+    return { success: true, sentCount: sent, failedCount: failed };
+  } catch (error) {
+    console.error('Module Automation Trigger Error:', error);
     return { success: false, error: error.message };
   }
 }
