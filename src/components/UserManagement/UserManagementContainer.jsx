@@ -1070,42 +1070,56 @@ export default function UserManagementContainer({
           const isActive = activeTab === sub.id;
 
           return (
-            <button
-              key={sub.id}
-              type="button"
-              onClick={() => handleTabSwitch(sub.id)}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.5rem',
-                padding: '0.55rem 1.15rem',
-                borderRadius: '8px',
-                border: 'none',
-                background: isActive ? 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)' : 'transparent',
-                color: isActive ? '#ffffff' : 'var(--text-secondary, #64748b)',
-                fontWeight: isActive ? 700 : 600,
-                fontSize: '0.85rem',
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-                whiteSpace: 'nowrap',
-                flexShrink: 0
-              }}
-            >
-              <Icon size={16} />
-              <span>{sub.label}</span>
-              {typeof sub.badge === 'number' && sub.badge > 0 && (
-                <span style={{
-                  fontSize: '0.72rem',
-                  padding: '0.1rem 0.45rem',
-                  borderRadius: '10px',
-                  backgroundColor: isActive ? 'rgba(255, 255, 255, 0.25)' : 'var(--bg-primary, #f1f5f9)',
-                  color: isActive ? '#ffffff' : 'var(--text-primary)',
-                  fontWeight: 700
-                }}>
-                  {sub.badge}
-                </span>
+            <React.Fragment key={sub.id}>
+              {sub.id === 'sessions' && (
+                <div 
+                  key="group-divider-audit"
+                  style={{
+                    width: '1px',
+                    height: '24px',
+                    backgroundColor: 'var(--border-light, #e2e8f0)',
+                    margin: '0 0.35rem',
+                    flexShrink: 0
+                  }}
+                  title="User Audit System"
+                />
               )}
-            </button>
+              <button
+                type="button"
+                onClick={() => handleTabSwitch(sub.id)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  padding: '0.55rem 1.15rem',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: isActive ? 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)' : 'transparent',
+                  color: isActive ? '#ffffff' : 'var(--text-secondary, #64748b)',
+                  fontWeight: isActive ? 700 : 600,
+                  fontSize: '0.85rem',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0
+                }}
+              >
+                <Icon size={16} />
+                <span>{sub.label}</span>
+                {typeof sub.badge === 'number' && sub.badge > 0 && (
+                  <span style={{
+                    fontSize: '0.72rem',
+                    padding: '0.1rem 0.45rem',
+                    borderRadius: '10px',
+                    backgroundColor: isActive ? 'rgba(255, 255, 255, 0.25)' : 'var(--bg-primary, #f1f5f9)',
+                    color: isActive ? '#ffffff' : 'var(--text-primary)',
+                    fontWeight: 700
+                  }}>
+                    {sub.badge}
+                  </span>
+                )}
+              </button>
+            </React.Fragment>
           );
         })}
       </div>

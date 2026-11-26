@@ -1,7 +1,7 @@
 import React from 'react';
 import { INTEGRATION_PAGE, INTEGRATION_PAGES, CONFIG_MASTER_PAGES } from './integrationsConfig';
 import { WHATSAPP_LOG_PAGE, WHATSAPP_LOG_PERMISSION_ITEMS } from './whatsappMessageLogsConfig.js';
-import { Home, UserPlus, FileText, Users, Building2, CheckCircle, Archive, Globe, Bot, Shield, PhoneCall, Phone, MessageCircle, Settings2, PieChart, ShieldCheck, Clock, CheckSquare, WifiOff, GitMerge, Navigation } from 'lucide-react';
+import { Home, UserPlus, FileText, Users, Building2, CheckCircle, Archive, Globe, Bot, Shield, PhoneCall, Phone, MessageCircle, Settings2, PieChart, ShieldCheck, Clock, CheckSquare, WifiOff, GitMerge, Navigation, CalendarCheck } from 'lucide-react';
 
 // Channel Operations / Daily Order Follow-up Sub-Item Groups (Aligned 1:1 with CRM Navigation Bar)
 export const CHANNEL_OPS_ORDER_TABS = [
@@ -65,8 +65,8 @@ export const USER_MGMT_SYSTEM_TABS = [
 ];
 
 export const USER_MGMT_AUDIT_TABS = [
-  { id: 'audit', label: 'Audit Logs' },
   { id: 'sessions', label: 'Active Sessions' },
+  { id: 'audit', label: 'Audit Logs' },
 ];
 
 export const USER_MGMT_GROUPS = [
@@ -223,6 +223,22 @@ export const MODULES_CONFIG = [
       { id: 'to_me', label: '📥 Tasks To Me' },
       { id: 'by_me', label: '📤 Tasks By Me' },
       { id: 'all', label: '👥 Team Task Board' }
+    ]
+  },
+  {
+    id: 'task_planner',
+    path: 'task_planner',
+    label: 'Task Planner',
+    category: 'General',
+    icon: <CalendarCheck size={20} />,
+    subItemsType: 'tabs',
+    subItems: [
+      { id: 'dashboard', label: '📊 Dashboard' },
+      { id: 'day', label: '📅 Day Time-Block' },
+      { id: 'week', label: '📆 Week Matrix' },
+      { id: 'kanban', label: '📋 Kanban Board' },
+      { id: 'table', label: '📑 All Tasks' },
+      { id: 'trash', label: '🗑️ Deleted Tasks' }
     ]
   },
 
@@ -494,7 +510,9 @@ export const MODULES_CONFIG = [
     subItemGroups: [INTEGRATION_PAGE],
     subItems: [
       { id: 'business', label: 'Business Profile & Branches' },
+      { id: 'subscription_billing', label: 'Plan & Billing History' },
       { id: 'products', label: 'Product List & Branches' },
+      { id: 'party_config', label: 'Party Master Config' },
       { id: 'order_pipeline', label: 'Order to Delivery Config' },
       { id: 'complaints_config', label: 'Complaint Management Config' },
       { id: 'crm', label: 'CRM & Lead Config' },
