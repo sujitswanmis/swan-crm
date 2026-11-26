@@ -1,0 +1,746 @@
+.dashboard {
+  --report-surface: var(--spc-view-surface);
+  --report-text: var(--spc-view-text);
+  --report-muted: color-mix(in srgb, var(--spc-view-muted) 74%, var(--report-text));
+  --report-line: var(--spc-view-border);
+  --report-raised: var(--spc-view-raised);
+  --report-accent: color-mix(in srgb, var(--spc-view-accent) 68%, var(--report-text));
+  --report-series-primary: color-mix(in srgb, var(--accent-color) 66%, var(--report-text));
+  --report-series-secondary: color-mix(in srgb, #0e9c84 64%, var(--report-text));
+
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 100%;
+  padding: clamp(0.5rem, 1vw, 0.85rem);
+  color: var(--report-text);
+}
+
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem 1rem;
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--report-line);
+  border-radius: 0.75rem;
+  background: var(--report-surface);
+  box-shadow: 0 4px 12px #0000000a;
+}
+
+.headerSummary {
+  flex: 1 1 15rem;
+  min-width: 0;
+}
+
+.headerTitle {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0;
+  color: var(--report-text);
+  font-size: 1.2rem;
+  font-weight: 750;
+  line-height: 1.25;
+}
+
+.headerTitle svg {
+  flex: none;
+  color: var(--report-accent);
+}
+
+.reportHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  margin-bottom: 1rem;
+  padding: 0.8rem 1rem;
+  border: 1px solid var(--report-line);
+  border-radius: 0.75rem;
+  background: var(--report-surface);
+}
+
+.heading {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex: 1 1 22rem;
+  min-width: 0;
+}
+
+.headingIcon,
+.metricIcon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 0.6rem;
+  background: color-mix(in srgb, var(--report-accent) 11%, var(--report-surface));
+  color: var(--report-accent);
+}
+
+.heading h1 {
+  margin: 0;
+  font-size: 1.15rem;
+  line-height: 1.19;
+  letter-spacing: -0.015em;
+}
+
+.heading p {
+  margin: 0.2rem 0 0;
+  color: var(--report-muted);
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.dashboard button.openOperations,
+.dashboard button.refresh,
+.dashboard button.employeeTrigger,
+.dashboard .workScope button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: 2.35rem;
+  padding: 0.4rem 0.65rem;
+  border: 1px solid var(--report-line);
+  border-radius: 0.65rem;
+  background: var(--report-surface);
+  color: var(--report-text);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.dashboard button.openOperations {
+  color: var(--report-accent);
+}
+
+.dashboard button.refresh:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.dashboard :is(button, input):focus-visible {
+  outline: 2px solid var(--report-accent);
+  outline-offset: 2px;
+}
+
+.toolbar {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
+  width: max-content;
+  max-width: 100%;
+  min-width: 0;
+  margin-inline-start: auto;
+}
+
+.workScope {
+  display: inline-flex;
+  gap: 0.2rem;
+  padding: 0.18rem;
+  border: 1px solid var(--report-line);
+  border-radius: 0.5rem;
+  background: var(--report-raised);
+}
+
+.dashboard .workScope button {
+  min-height: 1.9rem;
+  padding: 0.25rem 0.55rem;
+  border-radius: 0.375rem;
+  border-color: transparent;
+  background: transparent;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.dashboard .workScope button[aria-pressed='true'] {
+  border-color: var(--report-accent);
+  background: color-mix(in srgb, var(--report-accent) 12%, var(--report-surface));
+  color: var(--report-accent);
+}
+
+.employeeFilter {
+  position: relative;
+  width: 18rem;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.dashboard button.employeeTrigger {
+  justify-content: flex-start;
+  width: 100%;
+  text-align: left;
+}
+
+.employeeTrigger span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.employeeTrigger svg {
+  flex: none;
+}
+
+.employeePanel {
+  position: absolute;
+  z-index: 15;
+  inset: calc(100% + 0.4rem) 0 auto;
+  padding: 0.65rem;
+  border: 1px solid var(--report-line);
+  border-radius: 0.75rem;
+  background: var(--report-surface);
+  color: var(--report-text);
+  box-shadow: 0 0.5rem 1.4rem #0003;
+}
+
+.employeeSearch {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--report-muted);
+}
+
+.dashboard .employeeSearch input {
+  width: 100%;
+  min-width: 0;
+  min-height: 2.2rem;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--report-line);
+  border-radius: 0.45rem;
+  background: var(--report-raised);
+  color: var(--report-text);
+  font: inherit;
+  font-size: 0.85rem;
+}
+
+.employeeSearch input::placeholder {
+  color: var(--report-muted);
+}
+
+.dashboard button.clearFilter {
+  padding: 0.4rem 0;
+  border: 0;
+  background: transparent;
+  color: var(--report-accent);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.employeeOptions {
+  max-height: 12rem;
+  margin-top: 0.5rem;
+  overflow-y: auto;
+  font-size: 0.85rem;
+}
+
+.employeeOptions label {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.4rem 0.3rem;
+  border-radius: 0.4rem;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.employeeOptions label:is(:hover, :focus-within) {
+  background: var(--report-raised);
+}
+
+.employeeOptions input {
+  flex: none;
+  accent-color: var(--report-accent);
+}
+
+.employeeOptions :is(small, p) {
+  color: var(--report-muted);
+}
+
+.employeeOptions small {
+  margin-inline-start: 0.4rem;
+}
+
+.datePicker {
+  --bg-surface: var(--report-surface);
+  --text-primary: var(--report-text);
+  --text-secondary: var(--report-muted);
+  --accent-color: var(--report-accent);
+  max-width: 100%;
+  min-width: 0;
+}
+
+.datePicker > div {
+  position: static !important;
+  max-width: 100%;
+}
+
+.datePicker > div > button {
+  max-width: 100%;
+  text-align: left;
+}
+
+.datePicker > div > button > svg {
+  flex: none;
+}
+
+/* Position the shared menu within the toolbar when its trigger is narrower. */
+.datePicker > div > div:has(> button) {
+  left: auto !important;
+  right: clamp(0px, 100% - 260px, 9rem);
+  max-width: 100%;
+}
+
+.dbStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  white-space: nowrap;
+  padding: 0.4rem 0.65rem;
+  border: 1px solid var(--report-line);
+  border-radius: 0.65rem;
+  background: var(--report-raised);
+  color: var(--report-muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.dbStatus[data-status='active'] {
+  background: var(--spc-view-success-bg, var(--report-raised));
+  border-color: var(--spc-view-success-border, var(--report-line));
+  color: color-mix(in srgb, var(--spc-view-success) 65%, var(--report-text));
+}
+
+.dbStatus[data-status='syncing'] {
+  color: var(--report-accent);
+}
+
+.scope {
+  margin: 0.2rem 0 0;
+  overflow-wrap: anywhere;
+  color: var(--report-muted);
+  font-size: 0.8rem;
+}
+
+.scope strong {
+  color: var(--report-accent);
+}
+
+.dashboard button.refresh {
+  padding-inline: 0.75rem;
+}
+
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
+  gap: 0.8rem;
+  margin: 0 0 1.25rem;
+}
+
+.metric,
+.panel,
+.status {
+  border: 1px solid var(--report-line);
+  border-radius: 0.85rem;
+  background: var(--report-surface);
+}
+
+.metric {
+  min-width: 0;
+  padding: 0.9rem 1rem 1rem;
+}
+
+.metricIcon {
+  width: 2.1rem;
+  height: 2.1rem;
+  margin-bottom: 0.7rem;
+  border-radius: 0.6rem;
+}
+
+.metric dt {
+  color: var(--report-muted);
+  font-size: 0.8rem;
+  font-weight: 650;
+}
+
+.metric dd {
+  margin: 0.3rem 0 0;
+  color: var(--report-text);
+  font-size: clamp(1.35rem, 2.2vw, 2rem);
+  font-weight: 780;
+  line-height: 1.16;
+  letter-spacing: -0.035em;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+
+.reports {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.breakdowns {
+  display: grid;
+  gap: 1rem;
+}
+
+.panel,
+.status {
+  min-width: 0;
+  padding: clamp(0.85rem, 2vw, 1.15rem);
+}
+
+.panel h2 {
+  margin: 0;
+  color: var(--report-text);
+  font-size: 1rem;
+  line-height: 1.4;
+}
+
+.chart {
+  width: 100%;
+  min-width: 0;
+  height: clamp(15rem, 34vw, 23rem);
+}
+
+.compactChart {
+  height: 10.5rem;
+  min-width: 0;
+}
+
+.compactPanel .legend i {
+  background: var(--report-series-secondary);
+}
+
+.dashboard button.callMetricButton,
+.dashboard button.queueButton {
+  border: 1px solid var(--report-line);
+  border-radius: 0.85rem;
+  background: var(--report-surface);
+  color: var(--report-text);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.dashboard button.callMetricButton {
+  padding: 0.9rem 1rem 1rem;
+}
+
+.dashboard button.callMetricButton[data-metric='unreachable'],
+.dashboard button.queueButton[data-bucket='overdue'] {
+  border-color: var(--spc-view-danger-border, var(--report-line));
+}
+
+.dashboard :is(.callMetricButton, .queueButton)[aria-pressed='true'] {
+  border-color: var(--report-accent);
+  background: var(--report-raised);
+}
+
+.callMetricLabel,
+.metricShare {
+  display: block;
+  color: var(--report-muted);
+  font-size: 0.8rem;
+  font-weight: 650;
+}
+
+.callMetricValue {
+  display: block;
+  margin-top: 0.3rem;
+  font-size: clamp(1.35rem, 2.2vw, 2rem);
+  line-height: 1.16;
+  font-variant-numeric: tabular-nums;
+}
+
+.metricShare {
+  margin-top: 0.25rem;
+  color: var(--spc-view-danger, var(--report-accent));
+}
+
+.panelCaption {
+  margin: 0.35rem 0 0;
+  color: var(--report-muted);
+  font-size: 0.8rem;
+}
+
+.queueBuckets {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(5.6rem, 1fr));
+  gap: 0.45rem;
+  margin-top: 0.7rem;
+}
+
+.dashboard button.queueButton {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.55rem;
+  border-radius: 0.55rem;
+  font-size: 0.78rem;
+}
+
+.queueButton strong {
+  font-size: 1.05rem;
+}
+
+.outcomeList,
+.compareList,
+.callbackPreview {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0.65rem 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.82rem;
+}
+
+.dashboard button.outcomeButton,
+.compareList li,
+.callbackPreview li {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+  color: var(--report-text);
+}
+
+.dashboard button.outcomeButton {
+  width: 100%;
+  padding: 0.15rem 0 0.3rem;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.compareList small,
+.callbackPreview small,
+.recordsTable small {
+  display: block;
+  color: var(--report-muted);
+}
+
+.callGroups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.callGroups ul {
+  max-height: 19rem;
+  overflow: auto;
+}
+
+.recordsPanel {
+  min-width: 0;
+  margin-bottom: 1rem;
+  padding: 0.75rem;
+  border: 1px solid var(--report-line);
+  border-radius: 0.85rem;
+  background: var(--report-surface);
+  scroll-margin-top: 7rem;
+}
+
+.recordsHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+}
+
+.recordsHeading h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.dashboard button.closeRecords {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid var(--report-line);
+  background: var(--report-surface);
+  color: var(--report-text);
+  cursor: pointer;
+}
+
+.recordsScroll {
+  min-height: 10rem;
+  max-height: min(54vh, 30rem);
+  overflow: auto;
+  border: 1px solid var(--report-line);
+  border-radius: 0.55rem;
+}
+
+.recordsTable {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.8rem;
+}
+
+.recordsTable :is(th, td) {
+  padding: 0.6rem;
+  border-bottom: 1px solid var(--report-line);
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.dashboard .recordsTable thead,
+.dashboard .recordsTable th {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background-color: var(--bg-surface);
+  box-shadow: inset 0 -1px 0 var(--border-light);
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  margin: 0.7rem 0 0.5rem;
+  color: var(--report-muted);
+  font-size: 0.8rem;
+}
+
+.legend span {
+  display: inline-flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.legend i {
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 0.2rem;
+  background: var(--report-series-primary);
+}
+
+.legend span + span i {
+  background: var(--report-series-secondary);
+}
+
+.breakdown {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0.8rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.breakdown li > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.3rem;
+  color: var(--report-text);
+  font-size: 0.8rem;
+}
+
+.breakdown strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.barTrack {
+  display: block;
+  height: 0.35rem;
+  border-radius: 100px;
+  background: var(--report-raised);
+  overflow: hidden;
+}
+
+.barTrack > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--report-series-primary);
+}
+
+.status,
+.note {
+  color: var(--report-muted);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.note {
+  margin: 0.7rem 0 0;
+}
+
+@media (max-width: 900px) {
+  .toolbar {
+    margin-inline-start: 0;
+  }
+
+  .reports,
+  .callGroups {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 680px) {
+  .datePicker > div > div:has(> button) {
+    max-height: min(440px, 38dvh) !important;
+  }
+}
+
+@media (max-width: 460px) {
+  .employeeFilter {
+    width: 100%;
+  }
+
+  .recordsPanel {
+    scroll-margin-top: 14rem;
+  }
+
+  .datePicker {
+    position: relative;
+  }
+
+  .datePicker > div > div:has(> button) {
+    left: 0 !important;
+    right: auto;
+    max-width: calc(100vw - 3rem);
+  }
+
+  .datePicker div:has(> div > input[type='date']) {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .datePicker input[type='date'] {
+    min-width: 0;
+  }
+
+  .kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .headingIcon {
+    display: none;
+  }
+}

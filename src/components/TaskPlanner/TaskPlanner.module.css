@@ -1,0 +1,88 @@
+.planner {
+  --bg-page: var(--bg-primary);
+  --bg-subtle: color-mix(in srgb, var(--bg-surface) 92%, var(--text-primary));
+  --task-track: color-mix(in srgb, var(--bg-surface) 82%, var(--text-primary));
+  --task-accent: color-mix(in srgb, var(--accent-color) 65%, var(--text-primary));
+  --task-accent-bg: color-mix(in srgb, var(--accent-color) 14%, var(--bg-surface));
+  --task-accent-border: color-mix(in srgb, var(--accent-color) 45%, var(--border-light));
+  --task-action: color-mix(in srgb, var(--accent-color) 52%, #1b1730);
+  --task-action-danger: #b91c1c;
+  --task-action-success: #047857;
+  --task-danger: #a51b30;
+  --task-info: #1c4ea4;
+  --task-warning: #864200;
+  --task-success: #12643b;
+  --task-violet: #6333a6;
+  --task-danger-bg: color-mix(in srgb, var(--task-danger) 11%, var(--bg-surface));
+  --task-info-bg: color-mix(in srgb, var(--task-info) 11%, var(--bg-surface));
+  --task-warning-bg: color-mix(in srgb, var(--task-warning) 11%, var(--bg-surface));
+  --task-success-bg: color-mix(in srgb, var(--task-success) 11%, var(--bg-surface));
+  --task-violet-bg: color-mix(in srgb, var(--task-violet) 11%, var(--bg-surface));
+  --task-danger-border: color-mix(in srgb, var(--task-danger) 40%, var(--border-light));
+  --task-info-border: color-mix(in srgb, var(--task-info) 40%, var(--border-light));
+  --task-warning-border: color-mix(in srgb, var(--task-warning) 40%, var(--border-light));
+  --task-success-border: color-mix(in srgb, var(--task-success) 40%, var(--border-light));
+  --task-violet-border: color-mix(in srgb, var(--task-violet) 40%, var(--border-light));
+  color-scheme: light;
+}
+
+:global(.theme-spc-pearl) .planner,
+:global(.theme-spc-midnight) .planner {
+  --bg-primary: var(--spc-canvas);
+  --bg-surface: var(--spc-surface);
+  --text-primary: var(--spc-text);
+  --text-secondary: var(--spc-muted);
+  --border-light: var(--spc-line);
+  --accent-color: var(--spc-accent);
+}
+
+:global(:is(
+  .theme-dark, .theme-m3-dark, .theme-stylish-1, .theme-stylish-2,
+  .theme-stylish-3, .theme-stylish-4, .theme-premium-1, .theme-premium-3,
+  .theme-premium-4, .theme-aurora, .theme-forest, .theme-carbon, .theme-sunset,
+  .theme-spc-midnight
+)) .planner {
+  --task-danger: #ff9da7;
+  --task-info: #a4c1ff;
+  --task-warning: #ffd295;
+  --task-success: #88dca9;
+  --task-violet: #d3b6ff;
+  color-scheme: dark;
+}
+
+
+.planner :is(button, input, select, textarea):focus-visible {
+  outline: 2px solid var(--task-accent);
+  outline-offset: 2px;
+}
+
+.planner .table thead {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.planner .table :is(thead, th) {
+  background-color: var(--bg-surface) !important;
+  box-shadow: inset 0 -1px 0 var(--border-light);
+}
+
+.planner .table th {
+  color: var(--text-secondary) !important;
+}
+
+.planner .table tbody tr:nth-child(n) {
+  background-color: var(--bg-surface) !important;
+}
+
+.planner .table tbody tr[data-completed="true"]:nth-child(n) {
+  background-color: var(--bg-subtle) !important;
+}
+
+.planner .table tbody tr:nth-child(n):hover {
+  background-color: var(--task-accent-bg) !important;
+}
+
+.planner .pagination {
+  --accent-color: var(--task-action);
+}
