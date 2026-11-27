@@ -8,6 +8,50 @@ import {
   ShieldCheck, AlertTriangle, Play, CheckCircle2, Check
 } from 'lucide-react';
 import { resolveLocationName } from '@/app/actions/liveTracking';
+import { KNOWN_BRANCH_ALIAS_MAP, STANDARD_SWAN_BRANCH_MAP } from '@/utils/branchAccess';
+
+const IGNORED_WORK_LOCATIONS = new Set(['none', 'wfh', 'na', 'n/a', 'remote', 'field', '-']);
+
+export function resolveDisplayBranchName(emp = {}, livePing = null) {
+  const candidates = [
+    livePing?.branch_name,
+    emp?.branch_name,
+    emp?.module_access?.branch_name,
+    livePing?.branch_code,
+    emp?.branch_code,
+    emp?.module_access?.branch_code,
+    emp?.company,
+    livePing?.company,
+    emp?.company_name
+  ]
+    .map(v => String(v || '').trim())
+    .filter(v => v && !IGNORED_WORK_LOCATIONS.has(v.toLowerCase()));
+
+  for (const cand of candidates) {
+    const upper = cand.toUpperCase();
+    for (const [key, info] of Object.entries(STANDARD_SWAN_BRANCH_MAP)) {
+      const aliases = KNOWN_BRANCH_ALIAS_MAP[key] || [];
+      if (
+        key.toUpperCase() === upper ||
+        info.branch_code.toUpperCase() === upper ||
+        info.branch_name.toUpperCase() === upper ||
+        aliases.some(a => a.toUpperCase() === upper)
+      ) {
+        return info.branch_name;
+      }
+    }
+  }
+
+  const explicit = [livePing?.branch_name, emp?.branch_name, emp?.module_access?.branch_name]
+    .map(v => String(v || '').trim())
+    .find(v => v && !IGNORED_WORK_LOCATIONS.has(v.toLowerCase()));
+  if (explicit) return explicit;
+
+  const workLoc = String(emp?.work_location_name || '').trim();
+  if (workLoc && !IGNORED_WORK_LOCATIONS.has(workLoc.toLowerCase())) return workLoc;
+
+  return 'Main Branch';
+}
 
 const IST_TIME_FMT = new Intl.DateTimeFormat('en-IN', {
   timeZone: 'Asia/Kolkata',
@@ -221,7 +265,7 @@ export default function LiveFleetTrackingTab({
         code: cleanCode,
         phone: emp.phone || emp.emp_mobile || '',
         role: emp.role || 'Field Staff',
-        branch_name: emp.branch_name || emp.work_location_name || 'Main Branch',
+        branch_name: resolveDisplayBranchName(emp, live),
         latitude: hasValidCoords ? lat : null,
         longitude: hasValidCoords ? lng : null,
         hasValidCoords,
@@ -391,18 +435,27 @@ export default function LiveFleetTrackingTab({
     map.tileLayerInstance = newLayer;
   }, [mapStyle]);
 
-  // Center Map whenever Selected Employee changes (preserving zoom without zooming out)
+  const prevCenteredUserIdRef = useRef(null);
+
+  // Center Map only when Selected Employee changes or Follow Live is active (preserves manual pan/zoom across 30s refreshes)
   useEffect(() => {
-    if (!selectedEmployee || !mapInstanceRef.current) return;
+    if (!selectedEmployee || !mapInstanceRef.current) {
+      prevCenteredUserIdRef.current = null;
+      return;
+    }
+
+    const userChanged = prevCenteredUserIdRef.current !== selectedEmployee.user_id;
+    if (!userChanged && !followLive) return;
 
     if (selectedEmployee.hasValidCoords) {
+      prevCenteredUserIdRef.current = selectedEmployee.user_id;
       const map = mapInstanceRef.current;
       map.invalidateSize();
       const currentZoom = map.getZoom();
       const targetZoom = Math.max(currentZoom || 16, 17.5);
       map.setView([selectedEmployee.latitude, selectedEmployee.longitude], targetZoom, { animate: true });
     }
-  }, [selectedEmployee]);
+  }, [selectedEmployee, followLive]);
 
   // Render & Update Fleet Markers on Map
   useEffect(() => {

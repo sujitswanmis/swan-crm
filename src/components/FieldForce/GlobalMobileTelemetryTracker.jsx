@@ -645,8 +645,8 @@ export default function GlobalMobileTelemetryTracker({
       }
 
       // Employee IS ON DUTY (Punched in):
-      await reportMobileHealthAudit(true);
       const started = await startOrRefreshNativeService(forceStart);
+      await reportMobileHealthAudit(true);
       if (!started && !disposed && isPunchedInRef.current && watchId === null) {
         try {
           watchId = navigator.geolocation?.watchPosition(
@@ -678,11 +678,12 @@ export default function GlobalMobileTelemetryTracker({
       }).catch(() => {});
     } catch { /* Older WebViews still report on resume and the independent timer. */ }
 
-    // Listen to real-time punch-in and punch-out events in AttendanceModule
+    // Listen to real-time punch-in and punch-out events in AttendanceModule & WorkspaceHome Quick Punch
     const handleAttendanceChange = () => {
       void refreshDutyAndTracking(true);
     };
     window.addEventListener('crm_attendance_changed', handleAttendanceChange);
+    window.addEventListener('attendance_updated', handleAttendanceChange);
 
     const handleResume = () => {
       if (document.visibilityState === 'hidden') return;
@@ -714,6 +715,7 @@ export default function GlobalMobileTelemetryTracker({
       if (healthTimer) clearInterval(healthTimer);
       permissionStatus?.removeEventListener('change', handlePermissionChange);
       window.removeEventListener('crm_attendance_changed', handleAttendanceChange);
+      window.removeEventListener('attendance_updated', handleAttendanceChange);
       document.removeEventListener('visibilitychange', handleResume);
       window.removeEventListener('focus', handleResume);
       window.removeEventListener('online', handleOnline);

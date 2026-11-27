@@ -1789,6 +1789,8 @@ export default function CRMContainer({
     }
   }, [activeTab]);
 
+  const [expiredBillingView, setExpiredBillingView] = useState(false);
+
   useEffect(() => {
     const handleSubTabChange = (e) => {
       if (e.detail) {
@@ -1799,6 +1801,7 @@ export default function CRMContainer({
       try {
         sessionStorage.setItem('open_saas_renewal_modal', '1');
       } catch (_e) {}
+      setExpiredBillingView(true);
       setCurrentSettingSubTab('subscription_billing');
       setActiveTab('settings');
       window.history.pushState(null, '', '/settings/subscription_billing');
@@ -5118,10 +5121,19 @@ export default function CRMContainer({
   const activeAnalyticsChannelPage = activeTab === 'dashboard' ? selectedAnalyticsChannelPage : undefined;
   const showAnalyticsChannelPage = allowedAnalyticsChannelPages.includes(activeAnalyticsChannelPage);
 
+  const canManageSaaSBilling = !isMasterAdmin && ['admin', 'tenant_admin', 'superadmin'].includes(String(userRole || '').trim().toLowerCase());
+  const allowExpiredBilling = Boolean(canManageSaaSBilling && expiredBillingView && activeTab === 'settings' && currentSettingSubTab === 'subscription_billing');
+
   return (
     <div className="app-layout">
       <ResponsiveTableResizer />
-      <SubscriptionExpiredModal subscription={tenantSubscription} isMasterAdmin={isMasterAdmin} />
+      <SubscriptionExpiredModal
+        subscription={tenantSubscription}
+        isMasterAdmin={isMasterAdmin}
+        canManageBilling={canManageSaaSBilling}
+        allowBillingView={allowExpiredBilling}
+        onExitBillingView={() => setExpiredBillingView(false)}
+      />
       <AddonPurchaseModal
         tenantId={effectiveTenantId}
         subscription={tenantSubscription}
@@ -7574,7 +7586,7 @@ export default function CRMContainer({
 
       {/* Main Content Area */}
       <main className="main-content">
-        <SubscriptionExpiryBanner subscription={tenantSubscription} isMasterAdmin={isMasterAdmin} />
+        <SubscriptionExpiryBanner subscription={tenantSubscription} isMasterAdmin={isMasterAdmin} canManageBilling={canManageSaaSBilling} />
         {/* Impersonation Floating Notification Banner */}
         {impersonationInfo && (
           <div style={{
@@ -10856,13 +10868,27 @@ export default function CRMContainer({
       />
 
       {/* Always-On Mobile GPS & Battery Telemetry Tracker (Inactive on Desktop PCs) */}
-      {isMounted && userId && (
-        <GlobalMobileTelemetryTracker
-          userId={userId}
-          company={userCompany || 'TNT00001'}
-          trackingPolicy={moduleAccess?.tracking_policy || 'PUNCH_ONLY'}
-        />
-      )}
+      {isMounted && userId && (() => {
+        const directBranchCode = moduleAccess?.branch_code || '';
+        const candidates = [
+          directBranchCode,
+          moduleAccess?.branch_name,
+          userCompany
+        ].map(v => String(v || '').trim().toLowerCase()).filter(Boolean);
+        const matchedBranch = (liveTenantBranches || []).find(b =>
+          [b?.branch_code, b?.id, b?.custom_code, b?.legacy_code, b?.branch_name, b?.company]
+            .some(tok => tok && candidates.includes(String(tok).trim().toLowerCase()))
+        );
+        const resolvedTelemetryBranchCode = directBranchCode || matchedBranch?.branch_code || matchedBranch?.id || null;
+        return (
+          <GlobalMobileTelemetryTracker
+            userId={userId}
+            company={userCompany || 'TNT00001'}
+            branchCode={resolvedTelemetryBranchCode}
+            trackingPolicy={moduleAccess?.tracking_policy || 'PUNCH_ONLY'}
+          />
+        );
+      })()}
 
       {/* Universal On-Demand Device Permission Prompt Modal (Future Modules Need Zero APK Upgrade) */}
       {isMounted && userId && (

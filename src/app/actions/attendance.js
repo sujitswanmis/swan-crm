@@ -176,11 +176,19 @@ async function persistAttendancePunch(adminClient, record, tenantId, existingDb,
   }
 }
 
+let cachedAdminClient = null;
+let cachedAdminClientKey = '';
+
 const getAdminClient = () => {
-  return createSupabaseClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY
-  );
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+  const cacheKey = `${url}::${key}`;
+  if (cachedAdminClient && cachedAdminClientKey === cacheKey) {
+    return cachedAdminClient;
+  }
+  cachedAdminClient = createSupabaseClient(url, key);
+  cachedAdminClientKey = cacheKey;
+  return cachedAdminClient;
 };
 
 const DEFAULT_TENANT_ID = '00000000-0000-0000-0000-000000000001';
@@ -417,6 +425,13 @@ export async function getTenantAttendancePolicy(tenantId = null, userCompany = '
     return { success: true, data: cached.data };
   }
 
+  const returnCachedPolicy = (policy) => {
+    if (policy) {
+      tenantPolicyMemCache.set(cacheKey, { data: policy, ts: Date.now() });
+    }
+    return { success: true, data: policy };
+  };
+
   const adminClient = getAdminClient();
   const fallbackPolicies = await getFallbackPolicies();
 
@@ -452,7 +467,7 @@ export async function getTenantAttendancePolicy(tenantId = null, userCompany = '
 
         if (!branchErr && dbBranchPolicy && dbBranchPolicy.tenant_id) {
           const merged = mergePolicy(branchFallback || fallbackPolicies[effectiveTenantId] || {}, dbBranchPolicy);
-          return { success: true, data: merged };
+          return returnCachedPolicy(merged);
         }
       }
     } catch (err) {
@@ -461,7 +476,7 @@ export async function getTenantAttendancePolicy(tenantId = null, userCompany = '
 
     // 1b. If not in DB, check local JSON fallback for this specific branch
     if (branchFallback) {
-      return { success: true, data: branchFallback };
+      return returnCachedPolicy(branchFallback);
     }
   }
 
@@ -511,7 +526,7 @@ export async function getTenantAttendancePolicy(tenantId = null, userCompany = '
           const aggregated = getAllTenantLocations();
           if (aggregated.length > 0) merged.geofence_locations = aggregated;
         }
-        return { success: true, data: merged };
+        return returnCachedPolicy(merged);
       }
 
       // Fallback check: any policy for this tenant
@@ -529,7 +544,7 @@ export async function getTenantAttendancePolicy(tenantId = null, userCompany = '
           const aggregated = getAllTenantLocations();
           if (aggregated.length > 0) merged.geofence_locations = aggregated;
         }
-        return { success: true, data: merged };
+        return returnCachedPolicy(merged);
       }
     }
   } catch (err) {
@@ -545,7 +560,7 @@ export async function getTenantAttendancePolicy(tenantId = null, userCompany = '
       const aggregated = getAllTenantLocations();
       if (aggregated.length > 0) resPolicy.geofence_locations = aggregated;
     }
-    return { success: true, data: resPolicy };
+    return returnCachedPolicy(resPolicy);
   }
 
   // 4. Match by company name in fallback
@@ -558,7 +573,7 @@ export async function getTenantAttendancePolicy(tenantId = null, userCompany = '
         const aggregated = getAllTenantLocations();
         if (aggregated.length > 0) resPolicy.geofence_locations = aggregated;
       }
-      return { success: true, data: resPolicy };
+      return returnCachedPolicy(resPolicy);
     }
   }
 
@@ -574,7 +589,7 @@ export async function getTenantAttendancePolicy(tenantId = null, userCompany = '
     geofence_locations: []
   };
 
-  return { success: true, data: defaultPol };
+  return returnCachedPolicy(defaultPol);
 }
 
 /**
@@ -684,6 +699,7 @@ export async function saveTenantAttendancePolicy(tenantId, userCompany, policyDa
     }
   }
   await saveFallbackPolicies(fallbackPolicies);
+  tenantPolicyMemCache.clear();
 
   // 2. Dual-write to Supabase DB (Defensive for missing columns & unique constraints)
   try {
@@ -761,6 +777,7 @@ export async function saveTenantAttendancePolicy(tenantId, userCompany, policyDa
   } catch (err) {
     console.warn('Notice: Could not write attendance policy to Supabase table (saved to local config file):', err?.message);
   }
+  tenantPolicyMemCache.clear();
 
   // 3. Log Audit
   try {
@@ -845,15 +862,29 @@ function matchesEmployeeBranchFilter(userRow, company = '', branchScope = null, 
   return true;
 }
 
-// Helper to read JSON fallback data
+let fallbackDataMemCache = { mtimeMs: 0, ts: 0, data: null };
+
+// Helper to read JSON fallback data with mtime validation to avoid re-parsing 650KB JSON on every punch
 async function getFallbackData() {
   try {
+    const canStat = typeof fs.stat === 'function';
+    const stat = canStat ? await fs.stat(ATTENDANCE_FILE_PATH).catch(() => null) : null;
+    if (stat && fallbackDataMemCache.data && fallbackDataMemCache.mtimeMs === stat.mtimeMs) {
+      return fallbackDataMemCache.data;
+    }
+    if (!canStat && fallbackDataMemCache.data && (Date.now() - fallbackDataMemCache.ts) < 5000) {
+      return fallbackDataMemCache.data;
+    }
     const raw = await fs.readFile(ATTENDANCE_FILE_PATH, 'utf8');
     const parsed = JSON.parse(raw);
-    return {
+    const normalized = {
       records: Array.isArray(parsed.records) ? parsed.records : [],
       requests: Array.isArray(parsed.requests) ? parsed.requests : []
     };
+    if (stat) {
+      fallbackDataMemCache = { mtimeMs: stat.mtimeMs, ts: Date.now(), data: normalized };
+    }
+    return normalized;
   } catch (err) {
     const initial = { records: [], requests: [] };
     try {
@@ -869,6 +900,8 @@ async function saveFallbackData(data) {
   try {
     await fs.mkdir(path.dirname(ATTENDANCE_FILE_PATH), { recursive: true });
     await fs.writeFile(ATTENDANCE_FILE_PATH, JSON.stringify(data, null, 2), 'utf8');
+    const stat = typeof fs.stat === 'function' ? await fs.stat(ATTENDANCE_FILE_PATH).catch(() => null) : null;
+    fallbackDataMemCache = { mtimeMs: stat?.mtimeMs || 0, ts: Date.now(), data };
   } catch (err) {
     console.error('Error saving fallback attendance data:', err);
   }
@@ -1246,6 +1279,79 @@ async function getUserRoleAttendanceProfile(adminClient, normalizedEmail) {
   return null;
 }
 
+async function fetchPunchInitialContext({
+  adminClient,
+  normalizedEmail,
+  today,
+  startDateStr,
+  endDateStr,
+  tenantId,
+  userCompany,
+  branchName
+}) {
+  const [local, todayDbRes, monthDbRes, userRole, initialPolicyRes] = await Promise.all([
+    getFallbackData(),
+    (async () => {
+      try {
+        return await adminClient
+          .from('attendance_records')
+          .select('*')
+          .ilike('email', normalizedEmail)
+          .eq('attendance_date', today)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+      } catch (err) {
+        return { error: err };
+      }
+    })(),
+    (async () => {
+      try {
+        return await adminClient
+          .from('attendance_records')
+          .select('attendance_date, short_leave_type')
+          .ilike('email', normalizedEmail)
+          .gte('attendance_date', startDateStr)
+          .lte('attendance_date', endDateStr);
+      } catch {
+        return { data: [] };
+      }
+    })(),
+    getUserRoleAttendanceProfile(adminClient, normalizedEmail),
+    getAttendancePolicyForUserScope(tenantId, userCompany, branchName || '').catch(() => null)
+  ]);
+  return { local, todayDbRes, monthDbRes, userRole, initialPolicyRes };
+}
+
+async function resolveEffectivePunchPolicy({
+  initialPolicyRes,
+  requestedTenantId,
+  userCompany,
+  requestedBranch,
+  effectiveTenant,
+  effectiveCompany,
+  employeeBranch,
+  employeeModuleAccess
+}) {
+  const ma = employeeModuleAccess || {};
+  const hasScopeOverride = Boolean(
+    String(ma.assigned_branch_scope || '').trim() ||
+    (Array.isArray(ma.assigned_branches) && ma.assigned_branches.length > 0) ||
+    (Array.isArray(ma.assigned_branch_names) && ma.assigned_branch_names.length > 0)
+  );
+  const sameScope = (
+    effectiveTenant === requestedTenantId &&
+    (effectiveCompany || '') === (userCompany || '') &&
+    (employeeBranch || '') === (requestedBranch || '') &&
+    !hasScopeOverride
+  );
+  if (sameScope && initialPolicyRes?.data) {
+    return initialPolicyRes.data;
+  }
+  const policyRes = await getAttendancePolicyForUserScope(effectiveTenant, effectiveCompany, employeeBranch, employeeModuleAccess);
+  return policyRes?.data || initialPolicyRes?.data || null;
+}
+
 /**
  * 2. Punch In (Strict 1-Time Punch In per day)
  */
@@ -1277,37 +1383,17 @@ export async function punchIn({
     const lastDay = new Date(Date.UTC(nowYear, nowMonth, 0)).getUTCDate();
     const endDateStr = `${nowYear}-${String(nowMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
 
-    // Execute independent initial reads concurrently in parallel via Promise.all for <300ms response
-    const [local, todayDbRes, monthDbRes, userRole] = await Promise.all([
-      getFallbackData(),
-      (async () => {
-        try {
-          return await adminClient
-            .from('attendance_records')
-            .select('*')
-            .ilike('email', normalizedEmail)
-            .eq('attendance_date', today)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-        } catch (err) {
-          return { error: err };
-        }
-      })(),
-      (async () => {
-        try {
-          return await adminClient
-            .from('attendance_records')
-            .select('*')
-            .ilike('email', normalizedEmail)
-            .gte('attendance_date', startDateStr)
-            .lte('attendance_date', endDateStr);
-        } catch {
-          return { data: [] };
-        }
-      })(),
-      getUserRoleAttendanceProfile(adminClient, normalizedEmail)
-    ]);
+    // Execute all independent reads + policy lookup concurrently in 1 batch
+    const { local, todayDbRes, monthDbRes, userRole, initialPolicyRes } = await fetchPunchInitialContext({
+      adminClient,
+      normalizedEmail,
+      today,
+      startDateStr,
+      endDateStr,
+      tenantId,
+      userCompany,
+      branchName
+    });
 
     if (todayDbRes.error && todayDbRes.error.code !== 'PGRST116') {
       console.warn('Attendance punch-in verification notice:', todayDbRes.error);
@@ -1381,8 +1467,16 @@ export async function punchIn({
 
   const effectiveCompany = userCompany || roleCompanyFromDb || '';
   const effectiveTenant = resolveTenantId(tenantId || roleTenantFromDb, effectiveCompany);
-  const policyRes = await getAttendancePolicyForUserScope(effectiveTenant, effectiveCompany, employeeBranchFromDb, employeeModuleAccess);
-  const tenantPolicy = policyRes?.data || null;
+  const tenantPolicy = await resolveEffectivePunchPolicy({
+    initialPolicyRes,
+    requestedTenantId: tenantId,
+    userCompany,
+    requestedBranch: branchName || '',
+    effectiveTenant,
+    effectiveCompany,
+    employeeBranch: employeeBranchFromDb,
+    employeeModuleAccess
+  });
 
   // 1. Mandatory GPS Permission Check (ON / OFF / AUTO)
   const rawGpsMode = tenantPolicy?.require_gps;
@@ -1620,38 +1714,17 @@ export async function punchOut({
     const lastDay = new Date(Date.UTC(nowYear, nowMonth, 0)).getUTCDate();
     const endDateStr = `${nowYear}-${String(nowMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
 
-    // Execute independent initial reads concurrently via Promise.all for <300ms response
-    // Match by email + attendance_date without tenant restriction so cross-tenant or UUID mismatches never lose today's record
-    const [local, todayDbRes, monthDbRes, uRole] = await Promise.all([
-      getFallbackData(),
-      (async () => {
-        try {
-          return await adminClient
-            .from('attendance_records')
-            .select('*')
-            .ilike('email', normalizedEmail)
-            .eq('attendance_date', today)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-        } catch (err) {
-          return { error: err };
-        }
-      })(),
-      (async () => {
-        try {
-          return await adminClient
-            .from('attendance_records')
-            .select('*')
-            .ilike('email', normalizedEmail)
-            .gte('attendance_date', startDateStr)
-            .lte('attendance_date', endDateStr);
-        } catch {
-          return { data: [] };
-        }
-      })(),
-      getUserRoleAttendanceProfile(adminClient, normalizedEmail)
-    ]);
+    // Execute all independent reads + policy lookup concurrently in 1 batch
+    const { local, todayDbRes, monthDbRes, userRole: uRole, initialPolicyRes } = await fetchPunchInitialContext({
+      adminClient,
+      normalizedEmail,
+      today,
+      startDateStr,
+      endDateStr,
+      tenantId,
+      userCompany,
+      branchName
+    });
 
     if (todayDbRes.error && todayDbRes.error.code !== 'PGRST116') {
       console.warn('Attendance punch-out today query notice:', todayDbRes.error);
@@ -1716,8 +1789,16 @@ export async function punchOut({
     }
     if (!employeeBranch && branchCode) employeeBranch = branchCode;
     const effectiveTenant = resolveTenantId(tenantId || uRole?.tenant_id || uRole?.module_access?._tenantId || existing.tenant_id, effectiveCompany);
-    const policyRes = await getAttendancePolicyForUserScope(effectiveTenant, effectiveCompany, employeeBranch, employeeModuleAccess);
-    const tenantPolicy = policyRes?.data || null;
+    const tenantPolicy = await resolveEffectivePunchPolicy({
+      initialPolicyRes,
+      requestedTenantId: tenantId,
+      userCompany,
+      requestedBranch: branchName || '',
+      effectiveTenant,
+      effectiveCompany,
+      employeeBranch,
+      employeeModuleAccess
+    });
 
     // 1. Mandatory GPS Permission Check (ON / OFF / AUTO)
     const rawGpsMode = tenantPolicy?.require_gps;

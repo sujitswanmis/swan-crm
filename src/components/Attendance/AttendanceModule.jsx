@@ -1099,23 +1099,61 @@ export default function AttendanceModule({
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [playingVoice, setPlayingVoice] = useState(false);
   const audioPlayerRef = useRef(null);
-  const gpsCacheRef = useRef({ location: null, timestamp: 0 });
+  const gpsCacheRef = useRef({ location: null, timestamp: 0, isFallback: false });
+  const gpsPreWarmPromiseRef = useRef(null);
 
-  // Pre-warm GPS location in background so punch action has instant 0ms access
-  const preWarmGPSLocation = useCallback(() => {
-    if (typeof window === 'undefined' || !navigator.geolocation) return;
-    const policy = moduleAccess?.tracking_policy || 'PUNCH_ONLY';
-    if (policy === 'ATTENDANCE_ONLY') return; // Zero GPS tracking/permission for Attendance Only policy
-    const now = Date.now();
-    if (gpsCacheRef.current.location && (now - gpsCacheRef.current.timestamp) < 300000) return;
-    getCurrentGPSLocation({ timeout: 1500, enableHighAccuracy: false, maximumAge: 300000 }).then(gps => {
-      if (gps && gps.success) {
-        gpsCacheRef.current = {
-          location: `GPS (${gps.latitude.toFixed(4)}, ${gps.longitude.toFixed(4)})`,
-          timestamp: Date.now()
-        };
+  const checkGeolocationDeniedFast = async () => {
+    try {
+      if (typeof navigator !== 'undefined' && navigator.permissions?.query) {
+        const status = await navigator.permissions.query({ name: 'geolocation' });
+        return status?.state === 'denied';
       }
-    }).catch(() => {});
+    } catch {}
+    return false;
+  };
+
+  // Pre-warm GPS location in background (deduplicated Promise) so confirm click has 0ms access
+  const preWarmGPSLocation = useCallback(() => {
+    if (typeof window === 'undefined' || !navigator?.geolocation) return Promise.resolve(null);
+    const policy = moduleAccess?.tracking_policy || 'PUNCH_ONLY';
+    if (policy === 'ATTENDANCE_ONLY') return Promise.resolve({ success: true, location: 'Office Web Terminal' });
+    const now = Date.now();
+    if (gpsCacheRef.current.location && !gpsCacheRef.current.isFallback && (now - gpsCacheRef.current.timestamp) < 120000) {
+      return Promise.resolve({ success: true, location: gpsCacheRef.current.location });
+    }
+    if (gpsPreWarmPromiseRef.current) {
+      return gpsPreWarmPromiseRef.current;
+    }
+
+    const promise = (async () => {
+      try {
+        if (await checkGeolocationDeniedFast()) {
+          gpsCacheRef.current = { location: null, timestamp: 0, isFallback: false };
+          return { success: false, isPermissionDenied: true, errorCode: 1 };
+        }
+        const gps = await getCurrentGPSLocation({ timeout: 1500, enableHighAccuracy: false, maximumAge: 300000 });
+        if (gps && gps.success) {
+          const locStr = `GPS (${gps.latitude.toFixed(4)}, ${gps.longitude.toFixed(4)})`;
+          gpsCacheRef.current = { location: locStr, timestamp: Date.now(), isFallback: false };
+          return { ...gps, location: locStr };
+        }
+        if (gps?.isPermissionDenied || gps?.errorCode === 1) {
+          gpsCacheRef.current = { location: null, timestamp: 0, isFallback: false };
+          return gps;
+        }
+        if (policy !== 'LIVE_TRACKING') {
+          gpsCacheRef.current = { location: 'Office/Plant Punch (Indoor GPS)', timestamp: Date.now(), isFallback: true };
+        }
+        return gps;
+      } catch {
+        return null;
+      } finally {
+        gpsPreWarmPromiseRef.current = null;
+      }
+    })();
+
+    gpsPreWarmPromiseRef.current = promise;
+    return promise;
   }, [moduleAccess?.tracking_policy]);
 
   // Pre-warm GPS location when viewing Daily Punch Station
@@ -3254,6 +3292,112 @@ export default function AttendanceModule({
     }
   };
 
+  /**
+   * Shared, fast GPS/location resolver across Punch In & Punch Out.
+   * Honors 3-tier policy: ATTENDANCE_ONLY (0ms), LIVE_TRACKING (mandatory real GPS / background),
+   * and PUNCH_ONLY (fast cached GPS or non-denied indoor fallback without repeated 5s stalls).
+   */
+  const resolvePunchGpsLocation = async (userTrackingPolicy) => {
+    if (userTrackingPolicy === 'ATTENDANCE_ONLY') {
+      return { ok: true, location: 'Office Web Terminal' };
+    }
+
+    const denied = await checkGeolocationDeniedFast();
+    if (denied) {
+      gpsCacheRef.current = { location: null, timestamp: 0, isFallback: false };
+      if (userTrackingPolicy === 'LIVE_TRACKING') {
+        setShowLiveTrackingPermissionModal(true);
+        return {
+          ok: false,
+          error: '🚗 Live Tracking (Field Force) ke liye Location permission anivarya hai. Kripya Phone Settings me "Allow all the time" allow karein.'
+        };
+      }
+      return {
+        ok: false,
+        error: 'Office/Plant Punch ke liye Location permission zaroori hai. Kripya location access allow karein ("While using the app" ya "Only this time").'
+      };
+    }
+
+    const nowTs = Date.now();
+
+    if (userTrackingPolicy === 'LIVE_TRACKING') {
+      const isNative = typeof window !== 'undefined' && Boolean(window.Capacitor?.isNativePlatform?.());
+      if (isNative) {
+        const perm = await checkFieldTrackerBackgroundPermission();
+        if (!perm.hasBg) {
+          setShowLiveTrackingPermissionModal(true);
+          return {
+            ok: false,
+            error: '🚗 Live Tracking (Field Force) ke liye Phone Settings me Location permission ko "Allow all the time" karna anivarya hai.'
+          };
+        }
+      }
+
+      // Use real GPS cached within last 2 minutes immediately (0ms) — never accept indoor fallback here
+      if (
+        gpsCacheRef.current.location &&
+        !gpsCacheRef.current.isFallback &&
+        gpsCacheRef.current.location.startsWith('GPS') &&
+        (nowTs - gpsCacheRef.current.timestamp) < 120000
+      ) {
+        return { ok: true, location: gpsCacheRef.current.location };
+      }
+
+      try {
+        let gps = gpsPreWarmPromiseRef.current ? await gpsPreWarmPromiseRef.current : null;
+        if (!gps?.success && !(gps?.isPermissionDenied || gps?.errorCode === 1)) {
+          // Fast fused/network GPS fix (<=1800ms) instead of 5000ms high-accuracy satellite stall
+          gps = await getCurrentGPSLocation({ timeout: 1800, enableHighAccuracy: false, maximumAge: 180000 });
+        }
+        if (gps?.success) {
+          const locStr = `GPS (${gps.latitude.toFixed(4)}, ${gps.longitude.toFixed(4)})`;
+          gpsCacheRef.current = { location: locStr, timestamp: Date.now(), isFallback: false };
+          return { ok: true, location: locStr };
+        }
+      } catch {}
+
+      setShowLiveTrackingPermissionModal(true);
+      return {
+        ok: false,
+        error: '🚗 Live Tracking (Field Force) ke liye Location permission anivarya hai. Kripya Phone Settings me "Allow all the time" allow karein.'
+      };
+    }
+
+    // Tier 2: PUNCH_ONLY (Office/Plant) — "dont allow pr kam na kare baki sab pr kam kare"
+    if (gpsCacheRef.current.location) {
+      const ttl = gpsCacheRef.current.isFallback ? 60000 : 300000;
+      if ((nowTs - gpsCacheRef.current.timestamp) < ttl) {
+        return { ok: true, location: gpsCacheRef.current.location };
+      }
+    }
+
+    try {
+      let gps = gpsPreWarmPromiseRef.current ? await gpsPreWarmPromiseRef.current : null;
+      if (!gps) {
+        gps = await getCurrentGPSLocation({ timeout: 1500, enableHighAccuracy: false, maximumAge: 300000 });
+      }
+      if (gps?.success) {
+        const locStr = `GPS (${gps.latitude.toFixed(4)}, ${gps.longitude.toFixed(4)})`;
+        gpsCacheRef.current = { location: locStr, timestamp: Date.now(), isFallback: false };
+        return { ok: true, location: locStr };
+      }
+      if (gps?.isPermissionDenied || gps?.errorCode === 1) {
+        gpsCacheRef.current = { location: null, timestamp: 0, isFallback: false };
+        return {
+          ok: false,
+          error: 'Office/Plant Punch ke liye Location permission zaroori hai. Kripya location access allow karein ("While using the app" ya "Only this time").'
+        };
+      }
+      const fallbackLoc = 'Office/Plant Punch (Indoor GPS)';
+      gpsCacheRef.current = { location: fallbackLoc, timestamp: Date.now(), isFallback: true };
+      return { ok: true, location: fallbackLoc };
+    } catch {
+      const fallbackLoc = 'Office/Plant Punch (Indoor GPS)';
+      gpsCacheRef.current = { location: fallbackLoc, timestamp: Date.now(), isFallback: true };
+      return { ok: true, location: fallbackLoc };
+    }
+  };
+
   const handleConfirmedPunchIn = async () => {
     setPunchConfirm(null);
     if (punchInFlightRef.current === attendanceScope) return;
@@ -3297,72 +3441,14 @@ export default function AttendanceModule({
         return;
       }
       // Resolve Attendance & Field GPS Policy (ATTENDANCE_ONLY | PUNCH_ONLY | LIVE_TRACKING)
-      const userTrackingPolicy = moduleAccess?.tracking_policy || 'PUNCH_ONLY';
-      const nowTs = Date.now();
-
-      if (userTrackingPolicy === 'ATTENDANCE_ONLY') {
-        // Tier 1: Only Attendance - Zero GPS permission required, instant web/desk punch
-        punchLocation = 'Office Web Terminal';
-      } else if (userTrackingPolicy === 'LIVE_TRACKING') {
-        // Tier 3: Live Tracking (Field Force) - STRICTLY MANDATORY "Allow all the time"
-        const isNative = typeof window !== 'undefined' && Boolean(window.Capacitor?.isNativePlatform?.());
-        if (isNative) {
-          const perm = await checkFieldTrackerBackgroundPermission();
-          if (!perm.hasBg) {
-            setPunchingIn(false);
-            setLoadingToday(false);
-            setShowLiveTrackingPermissionModal(true);
-            setPunchError('🚗 Live Tracking (Field Force) ke liye Phone Settings me Location permission ko "Allow all the time" karna anivarya hai.');
-            return;
-          }
-        }
-        try {
-          const gps = await getCurrentGPSLocation({ timeout: 5000, enableHighAccuracy: true });
-          if (gps?.success) {
-            punchLocation = `GPS (${gps.latitude.toFixed(4)}, ${gps.longitude.toFixed(4)})`;
-            gpsCacheRef.current = { location: punchLocation, timestamp: Date.now() };
-          } else {
-            setPunchingIn(false);
-            setLoadingToday(false);
-            setShowLiveTrackingPermissionModal(true);
-            setPunchError('🚗 Live Tracking (Field Force) ke liye Location permission anivarya hai. Kripya Phone Settings me "Allow all the time" allow karein.');
-            return;
-          }
-        } catch (e) {
-          setPunchingIn(false);
-          setLoadingToday(false);
-          setShowLiveTrackingPermissionModal(true);
-          setPunchError('🚗 Live Tracking (Field Force) ke liye Location permission anivarya hai. Kripya Phone Settings me "Allow all the time" allow karein.');
-          return;
-        }
-      } else {
-        // Tier 2: Punch GPS Only (Office/Plant)
-        // Rule: "ye dont allow pr kam na kare baki sab pr kam kare"
-        if (gpsCacheRef.current.location && (nowTs - gpsCacheRef.current.timestamp) < 300000) {
-          punchLocation = gpsCacheRef.current.location;
-        } else {
-          try {
-            const gps = await getCurrentGPSLocation({ timeout: 5000, enableHighAccuracy: false, maximumAge: 300000 });
-            if (gps?.success) {
-              punchLocation = `GPS (${gps.latitude.toFixed(4)}, ${gps.longitude.toFixed(4)})`;
-              gpsCacheRef.current = { location: punchLocation, timestamp: Date.now() };
-            } else if (gps?.isPermissionDenied || gps?.errorCode === 1) {
-              // ONLY block when user explicitly clicked "Don't allow"
-              setPunchingIn(false);
-              setLoadingToday(false);
-              setPunchError('Office/Plant Punch ke liye Location permission zaroori hai. Kripya location access allow karein ("While using the app" ya "Only this time").');
-              return;
-            } else {
-              // Permission was granted ("While using app", "Only this time", or indoor timeout). Allow punch gracefully!
-              punchLocation = 'Office/Plant Punch (Indoor GPS)';
-              gpsCacheRef.current = { location: punchLocation, timestamp: Date.now() };
-            }
-          } catch (e) {
-            punchLocation = 'Office/Plant Punch (Indoor GPS)';
-            gpsCacheRef.current = { location: punchLocation, timestamp: Date.now() };
-          }
-        }
+      const gpsResult = await resolvePunchGpsLocation(moduleAccess?.tracking_policy || 'PUNCH_ONLY');
+      if (!gpsResult.ok) {
+        setPunchingIn(false);
+        setLoadingToday(false);
+        setPunchError(gpsResult.error);
+        return;
       }
+      punchLocation = gpsResult.location;
 
       const res = await punchIn({
         email: userEmail,
@@ -3459,72 +3545,14 @@ export default function AttendanceModule({
         return;
       }
       // Resolve Attendance & Field GPS Policy (ATTENDANCE_ONLY | PUNCH_ONLY | LIVE_TRACKING)
-      const userTrackingPolicy = moduleAccess?.tracking_policy || 'PUNCH_ONLY';
-      const nowTsOut = Date.now();
-
-      if (userTrackingPolicy === 'ATTENDANCE_ONLY') {
-        // Tier 1: Only Attendance - Zero GPS permission required, instant web/desk punch
-        punchLocation = 'Office Web Terminal';
-      } else if (userTrackingPolicy === 'LIVE_TRACKING') {
-        // Tier 3: Live Tracking (Field Force) - STRICTLY MANDATORY "Allow all the time"
-        const isNative = typeof window !== 'undefined' && Boolean(window.Capacitor?.isNativePlatform?.());
-        if (isNative) {
-          const perm = await checkFieldTrackerBackgroundPermission();
-          if (!perm.hasBg) {
-            setPunchingOut(false);
-            setLoadingToday(false);
-            setShowLiveTrackingPermissionModal(true);
-            setPunchError('🚗 Live Tracking (Field Force) ke liye Phone Settings me Location permission ko "Allow all the time" karna anivarya hai.');
-            return;
-          }
-        }
-        try {
-          const gps = await getCurrentGPSLocation({ timeout: 5000, enableHighAccuracy: true });
-          if (gps?.success) {
-            punchLocation = `GPS (${gps.latitude.toFixed(4)}, ${gps.longitude.toFixed(4)})`;
-            gpsCacheRef.current = { location: punchLocation, timestamp: Date.now() };
-          } else {
-            setPunchingOut(false);
-            setLoadingToday(false);
-            setShowLiveTrackingPermissionModal(true);
-            setPunchError('🚗 Live Tracking (Field Force) ke liye Location permission anivarya hai. Kripya Phone Settings me "Allow all the time" allow karein.');
-            return;
-          }
-        } catch (e) {
-          setPunchingOut(false);
-          setLoadingToday(false);
-          setShowLiveTrackingPermissionModal(true);
-          setPunchError('🚗 Live Tracking (Field Force) ke liye Location permission anivarya hai. Kripya Phone Settings me "Allow all the time" allow karein.');
-          return;
-        }
-      } else {
-        // Tier 2: Punch GPS Only (Office/Plant)
-        // Rule: "ye dont allow pr kam na kare baki sab pr kam kare"
-        if (gpsCacheRef.current.location && (nowTsOut - gpsCacheRef.current.timestamp) < 300000) {
-          punchLocation = gpsCacheRef.current.location;
-        } else {
-          try {
-            const gps = await getCurrentGPSLocation({ timeout: 5000, enableHighAccuracy: false, maximumAge: 300000 });
-            if (gps?.success) {
-              punchLocation = `GPS (${gps.latitude.toFixed(4)}, ${gps.longitude.toFixed(4)})`;
-              gpsCacheRef.current = { location: punchLocation, timestamp: Date.now() };
-            } else if (gps?.isPermissionDenied || gps?.errorCode === 1) {
-              // ONLY block when user explicitly clicked "Don't allow"
-              setPunchingOut(false);
-              setLoadingToday(false);
-              setPunchError('Office/Plant Punch ke liye Location permission zaroori hai. Kripya location access allow karein ("While using the app" ya "Only this time").');
-              return;
-            } else {
-              // Permission was granted ("While using app", "Only this time", or indoor timeout). Allow punch gracefully!
-              punchLocation = 'Office/Plant Punch (Indoor GPS)';
-              gpsCacheRef.current = { location: punchLocation, timestamp: Date.now() };
-            }
-          } catch (e) {
-            punchLocation = 'Office/Plant Punch (Indoor GPS)';
-            gpsCacheRef.current = { location: punchLocation, timestamp: Date.now() };
-          }
-        }
+      const gpsResultOut = await resolvePunchGpsLocation(moduleAccess?.tracking_policy || 'PUNCH_ONLY');
+      if (!gpsResultOut.ok) {
+        setPunchingOut(false);
+        setLoadingToday(false);
+        setPunchError(gpsResultOut.error);
+        return;
       }
+      punchLocation = gpsResultOut.location;
       const res = await punchOut({
         email: userEmail,
         userId,

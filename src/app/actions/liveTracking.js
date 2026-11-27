@@ -762,31 +762,100 @@ export async function getEmployee360Route(userId, dateStr, { rejectUnsupportedDe
 }
 
 /**
+ * Resolves canonical tenant branch code & branch name from dynamic tenant_branches + standard maps.
+ */
+async function resolveCanonicalBranchInfo(empRow = {}, companyHint = '', branchesCache = null) {
+  const { KNOWN_BRANCH_ALIAS_MAP, STANDARD_SWAN_BRANCH_MAP } = await import('@/utils/branchAccess');
+  const ignoreWorkLoc = new Set(['none', 'wfh', 'na', 'n/a', 'remote', 'field', '-']);
+  const workLoc = String(empRow?.work_location_name || '').trim();
+  const safeWorkLoc = workLoc && !ignoreWorkLoc.has(workLoc.toLowerCase()) ? workLoc : '';
+
+  const rawCandidates = [
+    empRow?.branch_code,
+    empRow?.module_access?.branch_code,
+    empRow?.branch_name,
+    empRow?.module_access?.branch_name,
+    empRow?.company,
+    empRow?.company_name,
+    safeWorkLoc
+  ]
+    .map((v) => String(v || '').trim())
+    .filter(Boolean);
+
+  if (Array.isArray(branchesCache) && branchesCache.length > 0) {
+    for (const branch of branchesCache) {
+      const aliases = [
+        branch?.branch_code,
+        branch?.id,
+        branch?.custom_code,
+        branch?.legacy_code,
+        branch?.branch_name,
+        branch?.company
+      ]
+        .map((v) => String(v || '').trim().toLowerCase())
+        .filter(Boolean);
+
+      if (rawCandidates.some((c) => aliases.includes(c.toLowerCase()))) {
+        return {
+          branch_code: branch.branch_code || branch.id || null,
+          branch_name: branch.branch_name || branch.name || branch.company || null
+        };
+      }
+    }
+  }
+
+  for (const cand of rawCandidates) {
+    const upper = cand.toUpperCase();
+    for (const [key, info] of Object.entries(STANDARD_SWAN_BRANCH_MAP)) {
+      const aliases = KNOWN_BRANCH_ALIAS_MAP[key] || [];
+      if (
+        key.toUpperCase() === upper ||
+        info.branch_code.toUpperCase() === upper ||
+        info.branch_name.toUpperCase() === upper ||
+        aliases.some((a) => a.toUpperCase() === upper)
+      ) {
+        return {
+          branch_code: info.branch_code,
+          branch_name: info.branch_name
+        };
+      }
+    }
+  }
+
+  const explicitName = [empRow?.branch_name, empRow?.module_access?.branch_name]
+    .map((v) => String(v || '').trim())
+    .find((v) => v && !ignoreWorkLoc.has(v.toLowerCase()));
+
+  return {
+    branch_code: empRow?.branch_code || empRow?.module_access?.branch_code || null,
+    branch_name: explicitName || safeWorkLoc || (String(companyHint || '').trim() || null)
+  };
+}
+
+/**
  * All-India Radar & State Clustering Data (Aapke Screenshot 2 Jaisa)
  */
-export async function getNationwideRadarData(company = 'TNT00001', branchCode = null) {
+export async function getNationwideRadarData(company = 'TNT00001', branchCode = null, tenantId = null) {
   const supabase = getAdminClient();
   try {
     // Look for active pings in the last 6 hours
     const recentThreshold = new Date(Date.now() - 6 * 3600 * 1000).toISOString();
-    const isAllCompanies = !company || String(company).toLowerCase() === 'all' || String(company).toLowerCase() === 'all companies';
+    const matchInfo = await buildCompanyMatchAliases(tenantId || company);
+    const isAllCompanies = matchInfo.isAll || !company || String(company).toLowerCase() === 'all' || String(company).toLowerCase() === 'all companies';
 
-    const buildRadarQuery = () => {
-      let query = supabase
-        .from('employee_live_locations')
-        .select('user_id, latitude, longitude, accuracy_meters, speed_kmh, battery_pct, is_moving, recorded_at, branch_code, company')
-        .gte('recorded_at', recentThreshold)
-        .order('recorded_at', { ascending: false });
+    const { getTenantBranches } = await import('@/app/actions/tenantBranches');
+    const branchesRes = !isAllCompanies
+      ? await getTenantBranches(matchInfo.tenantId || matchInfo.tenantCode || company).catch(() => ({ branches: [] }))
+      : { branches: [] };
+    const tenantBranches = Array.isArray(branchesRes?.branches) ? branchesRes.branches : [];
 
-      if (!isAllCompanies) {
-        query = query.eq('company', company);
-      }
-
-      if (branchCode) {
-        query = query.eq('branch_code', branchCode);
-      }
-      return query;
-    };
+    const aliasSet = new Set((matchInfo.aliases || []).map((a) => String(a || '').toLowerCase().trim()).filter(Boolean));
+    if (company) aliasSet.add(String(company).toLowerCase().trim());
+    tenantBranches.forEach((b) => {
+      [b.company, b.branch_code, b.custom_code, b.legacy_code, b.branch_name].forEach((tok) => {
+        if (tok) aliasSet.add(String(tok).toLowerCase().trim());
+      });
+    });
 
     const todayIST = new Intl.DateTimeFormat('en-CA', {
       timeZone: 'Asia/Kolkata',
@@ -795,14 +864,61 @@ export async function getNationwideRadarData(company = 'TNT00001', branchCode = 
       day: '2-digit'
     }).format(new Date());
 
+    // Fetch tenant's users so unit sub-companies (e.g. NSMLR under New Swan Group) & attendance match accurately
+    let tenantUsersQuery = supabase
+      .from('user_roles')
+      .select('id, user_id, emp_name, email, emp_mobile, emp_code, role, company, company_name, branch_code, branch_name, work_location_name, tenant_id, module_access');
+
+    const { data: allRoleRows } = await tenantUsersQuery;
+    const tenantUserIds = new Set();
+    const userDetailsMap = new Map();
+
+    const belongsToResolvedTenant = (u) => {
+      if (isAllCompanies) return true;
+      const uTid = String(u.tenant_id || '').toLowerCase().trim();
+      const uCmp = String(u.company || '').toLowerCase().trim();
+      const uCmpName = String(u.company_name || '').toLowerCase().trim();
+      if (matchInfo.tenantId && uTid === String(matchInfo.tenantId).toLowerCase()) return true;
+      if (uCmp && aliasSet.has(uCmp)) return true;
+      if (uCmpName && aliasSet.has(uCmpName)) return true;
+      return false;
+    };
+
+    for (const u of allRoleRows || []) {
+      if (!belongsToResolvedTenant(u)) continue;
+      if (u.id) {
+        tenantUserIds.add(u.id);
+        userDetailsMap.set(u.id, u);
+      }
+      if (u.user_id) {
+        tenantUserIds.add(u.user_id);
+        userDetailsMap.set(u.user_id, u);
+      }
+      if (u.company) aliasSet.add(String(u.company).toLowerCase().trim());
+    }
+
+    const buildRadarQuery = () => {
+      return supabase
+        .from('employee_live_locations')
+        .select('user_id, latitude, longitude, accuracy_meters, speed_kmh, battery_pct, is_moving, recorded_at, branch_code, company')
+        .gte('recorded_at', recentThreshold)
+        .order('recorded_at', { ascending: false });
+    };
+
+    let attQuery = supabase
+      .from('attendance_records')
+      .select('user_id, email, in_time, out_time, in_location, emp_name, tenant_id')
+      .eq('attendance_date', todayIST)
+      .not('in_time', 'is', null)
+      .is('out_time', null);
+
+    if (!isAllCompanies && matchInfo.tenantId) {
+      attQuery = attQuery.eq('tenant_id', matchInfo.tenantId);
+    }
+
     const [{ data: rawPings, error }, { data: activeAttendance }] = await Promise.all([
       fetchPaginatedQuery(buildRadarQuery, { maxRows: 10000 }),
-      supabase
-        .from('attendance_records')
-        .select('user_id, email, in_time, out_time, in_location, emp_name, tenant_id')
-        .eq('attendance_date', todayIST)
-        .not('in_time', 'is', null)
-        .is('out_time', null)
+      attQuery
     ]);
 
     if (error) {
@@ -810,9 +926,16 @@ export async function getNationwideRadarData(company = 'TNT00001', branchCode = 
       return [];
     }
 
+    // Scope pings to the active tenant without dropping branch sub-units like NSMLR/NSTLP or branch_code=null rows
+    const scopedPings = (rawPings || []).filter((p) => {
+      if (isAllCompanies) return true;
+      const pCmp = String(p.company || '').toLowerCase().trim();
+      return tenantUserIds.has(p.user_id) || (pCmp && aliasSet.has(pCmp));
+    });
+
     // Keep latest accurate (<=300m or null) ping per user; fallback to any ping only if none accurate
     const userMap = new Map();
-    (rawPings || []).forEach(p => {
+    scopedPings.forEach((p) => {
       const existing = userMap.get(p.user_id);
       const isCurAcc = p.accuracy_meters == null || Number(p.accuracy_meters) <= 300;
       if (!existing) {
@@ -825,14 +948,18 @@ export async function getNationwideRadarData(company = 'TNT00001', branchCode = 
       }
     });
 
-    (activeAttendance || []).forEach(att => {
+    (activeAttendance || []).forEach((att) => {
       const uId = att.user_id;
+      if (!isAllCompanies && !tenantUserIds.has(uId) && matchInfo.tenantId && att.tenant_id !== matchInfo.tenantId) {
+        return;
+      }
       if (uId && !userMap.has(uId) && att.in_location) {
         const match = att.in_location.match(/GPS\s*\(\s*([0-9.-]+)\s*,\s*([0-9.-]+)\s*\)/i);
         if (match) {
           const lat = parseFloat(match[1]);
           const lng = parseFloat(match[2]);
           if (!isNaN(lat) && !isNaN(lng)) {
+            const uRow = userDetailsMap.get(uId);
             userMap.set(uId, {
               user_id: uId,
               latitude: lat,
@@ -841,8 +968,8 @@ export async function getNationwideRadarData(company = 'TNT00001', branchCode = 
               battery_pct: 90,
               is_moving: false,
               recorded_at: att.in_time,
-              branch_code: null,
-              company: att.tenant_id === '00000000-0000-0000-0000-000000000001' ? 'New Swan Group' : company,
+              branch_code: uRow?.branch_code || null,
+              company: uRow?.company || company,
               status: 'ON_DUTY_ACTIVE_SHIFT'
             });
           }
@@ -852,29 +979,54 @@ export async function getNationwideRadarData(company = 'TNT00001', branchCode = 
 
     const activeEmployees = Array.from(userMap.values());
 
-    // Fetch employee names & details from user_roles
-    const userIds = activeEmployees.map(e => e.user_id).filter(isUuid);
-    let userDetailsMap = new Map();
-    if (userIds.length > 0) {
+    // Fill any missing user details if ping belonged to an external alias match
+    const missingUserIds = activeEmployees.map((e) => e.user_id).filter((id) => isUuid(id) && !userDetailsMap.has(id));
+    if (missingUserIds.length > 0) {
       const { data: users } = await supabase
         .from('user_roles')
-        .select('id, user_id, emp_name, email, emp_mobile, role, company, branch_name')
-        .or(`id.in.(${userIds.join(',')}),user_id.in.(${userIds.join(',')})`);
-      (users || []).forEach(u => {
+        .select('id, user_id, emp_name, email, emp_mobile, emp_code, role, company, company_name, branch_code, branch_name, work_location_name, module_access')
+        .or(`id.in.(${missingUserIds.join(',')}),user_id.in.(${missingUserIds.join(',')})`);
+      (users || []).forEach((u) => {
         if (u.id) userDetailsMap.set(u.id, u);
         if (u.user_id) userDetailsMap.set(u.user_id, u);
       });
     }
 
-    return activeEmployees.map(e => {
-      const details = userDetailsMap.get(e.user_id) || {};
-      return {
-        ...e,
-        name: details.emp_name || details.email || 'Field Person',
-        phone: details.emp_mobile || '',
-        role: details.role || 'Sales Executive'
-      };
-    });
+    const enriched = await Promise.all(
+      activeEmployees.map(async (e) => {
+        const details = userDetailsMap.get(e.user_id) || {};
+        const resolvedBranch = await resolveCanonicalBranchInfo(
+          { ...details, branch_code: e.branch_code || details.branch_code },
+          details.company || e.company,
+          tenantBranches
+        );
+        return {
+          ...e,
+          name: details.emp_name || details.email || 'Field Person',
+          phone: details.emp_mobile || '',
+          emp_code: details.emp_code || null,
+          role: details.role || 'Sales Executive',
+          branch_code: resolvedBranch.branch_code || e.branch_code || null,
+          branch_name: resolvedBranch.branch_name || details.branch_name || 'Main Branch'
+        };
+      })
+    );
+
+    if (branchCode && String(branchCode).toLowerCase() !== 'all' && String(branchCode).toLowerCase() !== 'all branches') {
+      const { expandCompanyAliases, matchesCompanyToken } = await import('@/utils/branchAccess');
+      const allowedBranchTokens = expandCompanyAliases(branchCode);
+      return enriched.filter((e) => {
+        const details = userDetailsMap.get(e.user_id) || {};
+        return (
+          matchesCompanyToken(e.branch_code, allowedBranchTokens) ||
+          matchesCompanyToken(e.branch_name, allowedBranchTokens) ||
+          matchesCompanyToken(e.company, allowedBranchTokens) ||
+          matchesCompanyToken(details.company, allowedBranchTokens)
+        );
+      });
+    }
+
+    return enriched;
   } catch (err) {
     console.error('Error in getNationwideRadarData:', err);
     return [];
@@ -888,31 +1040,34 @@ export async function getDailyConveyanceVouchers(company = 'TNT00001', branchCod
   const supabase = getAdminClient();
   try {
     const targetDate = dateStr || new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+    const matchInfo = await buildCompanyMatchAliases(company);
 
-    let query = supabase
+    const query = supabase
       .from('daily_travel_summaries')
       .select('*')
-      .eq('company', company)
       .eq('date', targetDate)
       .order('total_km', { ascending: false });
 
-    if (branchCode) {
-      query = query.eq('branch_code', branchCode);
-    }
-
-    const { data: summaries, error } = await query;
+    const { data: rawSummaries, error } = await query;
     if (error) {
       console.error('Error fetching travel summaries:', error);
       return [];
     }
 
+    const aliasSet = new Set((matchInfo.aliases || []).map((a) => String(a || '').toLowerCase().trim()).filter(Boolean));
+    const summaries = (rawSummaries || []).filter((s) => {
+      if (matchInfo.isAll) return true;
+      const sc = String(s.company || '').toLowerCase().trim();
+      return sc && aliasSet.has(sc);
+    });
+
     // Get user details (`user_roles` uses `emp_name` and `emp_mobile`)
-    const userIds = [...new Set((summaries || []).map(s => s.user_id).filter(isUuid))];
+    const userIds = [...new Set(summaries.map(s => s.user_id).filter(isUuid))];
     let userDetailsMap = new Map();
     if (userIds.length > 0) {
       const { data: users } = await supabase
         .from('user_roles')
-        .select('id, user_id, emp_name, email, emp_mobile, role, vehicle_type, conveyance_rate_per_km')
+        .select('id, user_id, emp_name, email, emp_mobile, role, company, branch_code, branch_name, vehicle_type, conveyance_rate_per_km')
         .or(`id.in.(${userIds.join(',')}),user_id.in.(${userIds.join(',')})`);
       (users || []).forEach(u => {
         if (u.id) userDetailsMap.set(u.id, u);
@@ -920,7 +1075,7 @@ export async function getDailyConveyanceVouchers(company = 'TNT00001', branchCod
       });
     }
 
-    return (summaries || []).map(s => {
+    let mapped = summaries.map(s => {
       const u = userDetailsMap.get(s.user_id) || {};
       const resolvedVehicle = s.vehicle_type || u.vehicle_type || 'BIKE';
       return {
@@ -932,6 +1087,22 @@ export async function getDailyConveyanceVouchers(company = 'TNT00001', branchCod
         conveyance_rate_per_km: s.conveyance_rate_per_km ?? u.conveyance_rate_per_km ?? (resolvedVehicle === 'NONE' ? 0 : 4.50)
       };
     });
+
+    if (branchCode && String(branchCode).toLowerCase() !== 'all' && String(branchCode).toLowerCase() !== 'all branches') {
+      const { expandCompanyAliases, matchesCompanyToken } = await import('@/utils/branchAccess');
+      const allowedBranchTokens = expandCompanyAliases(branchCode);
+      mapped = mapped.filter((s) => {
+        const u = userDetailsMap.get(s.user_id) || {};
+        return (
+          matchesCompanyToken(s.branch_code, allowedBranchTokens) ||
+          matchesCompanyToken(u.branch_code, allowedBranchTokens) ||
+          matchesCompanyToken(u.branch_name, allowedBranchTokens) ||
+          matchesCompanyToken(u.company, allowedBranchTokens)
+        );
+      });
+    }
+
+    return mapped;
   } catch (err) {
     console.error('Error in getDailyConveyanceVouchers:', err);
     return [];
@@ -1284,15 +1455,29 @@ export async function reportEmployeeDeviceHealth(snapshot = {}) {
 
     let branchCode = snapshot?.branchCode || snapshot?.branch_code || null;
     const admin = getAdminClient();
-    if (!branchCode && admin) {
+    if (admin) {
       try {
-        const { data: roleRow } = await admin
-          .from('user_roles')
-          .select('tenant_id, company, branch_name, work_location_name, module_access')
-          .eq('user_id', effectiveUserId)
-          .limit(1)
-          .maybeSingle();
-        branchCode = roleRow?.module_access?.branch_code || roleRow?.branch_name || roleRow?.work_location_name || null;
+        const [{ data: roleRow }, branchesRes] = await Promise.all([
+          admin
+            .from('user_roles')
+            .select('tenant_id, company, branch_code, branch_name, work_location_name, module_access')
+            .eq('user_id', effectiveUserId)
+            .limit(1)
+            .maybeSingle(),
+          import('@/app/actions/tenantBranches').then((m) =>
+            m.getTenantBranches(tenantInfo?.tenantId || canonicalCompany).catch(() => ({ branches: [] }))
+          )
+        ]);
+        const resolved = await resolveCanonicalBranchInfo(
+          { ...(roleRow || {}), branch_code: branchCode || roleRow?.branch_code },
+          roleRow?.company || canonicalCompany,
+          branchesRes?.branches || []
+        );
+        if (resolved.branch_code) {
+          branchCode = resolved.branch_code;
+        } else if (!branchCode) {
+          branchCode = roleRow?.module_access?.branch_code || roleRow?.branch_name || null;
+        }
       } catch {
         // Non-blocking lookup
       }

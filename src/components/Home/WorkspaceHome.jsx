@@ -324,6 +324,7 @@ export default function WorkspaceHome({
         try {
           localStorage.setItem(`att_today_record_${tenantId}_${normEmail}_${todayDate}`, JSON.stringify(localRecord));
           window.dispatchEvent(new CustomEvent('attendance_updated'));
+          window.dispatchEvent(new CustomEvent('crm_attendance_changed', { detail: { type, record: localRecord } }));
         } catch {}
       }
       setTodayAttendance(localRecord);
@@ -373,6 +374,7 @@ export default function WorkspaceHome({
         if (typeof window !== 'undefined') {
           try {
             window.dispatchEvent(new CustomEvent('attendance_updated'));
+            window.dispatchEvent(new CustomEvent('crm_attendance_changed', { detail: { type, record: res.data || null } }));
           } catch {}
         }
         await loadTodayAttendance();

@@ -25,7 +25,7 @@ import {
   TrackingMapToolbar, TrackingRouteDock, TrackingPlaybackControls, TrackingRangeOverview
 } from '@/components/FieldForce/FieldTrackingDashboardUI';
 import trackingStyles from '@/components/FieldForce/LiveTrackingDashboard.module.css';
-import LiveFleetTrackingTab from '@/components/FieldForce/LiveFleetTrackingTab';
+import LiveFleetTrackingTab, { resolveDisplayBranchName } from '@/components/FieldForce/LiveFleetTrackingTab';
 import { deriveTrackingDeviceStatus } from '@/components/FieldForce/trackingDeviceStatus';
 import {
   resolveTrackingDateRange, enumerateTrackingDates, fetchTrackingDay, peekTrackingDay,
@@ -992,7 +992,7 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
     if (!silent) setLoadingRadar(true);
     try {
       const [radarData, allMembers] = await Promise.all([
-        getNationwideRadarData(selectedCompany, selectedBranch || null),
+        getNationwideRadarData(selectedCompany, selectedBranch || null, tenantId || null),
         getTeamMembers(selectedCompany, tenantId, branchScopePayload)
       ]);
 
@@ -1024,7 +1024,9 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
             role: m.role || 'Field Staff',
             phone: m.emp_mobile || m.phone || '',
             emp_code: m.emp_code || m.employee_id || m.code || null,
-            branch_name: m.branch_name || m.work_location_name || 'Main Branch',
+            branch_code: m.branch_code || pingMatch?.branch_code || null,
+            branch_name: resolveDisplayBranchName(m, pingMatch),
+            company: m.company || pingMatch?.company || '',
             hasPings: Boolean(pingMatch),
             battery_pct: pingMatch?.battery_pct,
             last_ping: pingMatch?.recorded_at || pingMatch?.last_ping || null
@@ -1265,6 +1267,9 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
     };
 
     const ticker = setInterval(() => setLiveNowMs(Date.now()), 5000);
+    const liveRoutePoller = setInterval(() => {
+      syncClockAndLiveRoute();
+    }, 30000);
     if (typeof document !== 'undefined') {
       document.addEventListener('visibilitychange', syncClockAndLiveRoute);
     }
@@ -1273,6 +1278,7 @@ export default function LiveFieldTrackingMap({ company = 'New Swan Group', branc
     }
     return () => {
       clearInterval(ticker);
+      clearInterval(liveRoutePoller);
       if (typeof document !== 'undefined') {
         document.removeEventListener('visibilitychange', syncClockAndLiveRoute);
       }
